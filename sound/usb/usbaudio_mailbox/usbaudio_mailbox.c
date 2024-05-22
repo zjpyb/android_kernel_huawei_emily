@@ -56,12 +56,12 @@ static void nv_check_work(struct work_struct *wk)
 }
 static DECLARE_WORK(nv_check_work_queue, nv_check_work);
 
-int usbaudio_mailbox_send_data(void *pmsg_body, unsigned int msg_len, unsigned int msg_priority)
+int usbaudio_mailbox_send_data(const void *pmsg_body, unsigned int msg_len, unsigned int msg_priority)
 {
 	unsigned int ret = 0;
 
 	ret = DRV_MAILBOX_SENDMAIL(MAILBOX_MAILCODE_ACPU_TO_HIFI_USBAUDIO, pmsg_body, msg_len);
-	if (MAILBOX_OK != ret) {
+	if (ret != 0) {
 		pr_err("usbaudio channel send mail failed, ret=%d\n", ret);
 	}
 
@@ -89,13 +89,13 @@ static void usbaudio_mailbox_recv_proc(const void *usr_para,
 	struct mb_queue *mail_handle, unsigned int mail_len)
 {
 	struct usbaudio_rcv_msg rcv_msg;
-	unsigned int ret = MAILBOX_OK;
+	unsigned int ret = 0;
 	unsigned int mail_size = mail_len;
 
 	memset(&rcv_msg, 0, sizeof(struct usbaudio_rcv_msg));/* unsafe_function_ignore: memset */
 
 	ret = DRV_MAILBOX_READMAILDATA(mail_handle, (unsigned char*)&rcv_msg, &mail_size);
-	if ((ret != MAILBOX_OK)
+	if ((ret != 0)
 		|| (mail_size == 0)
 		|| (mail_size > sizeof(rcv_msg))) {
 		pr_err("mailbox read error, read result:%u, read mail size:%u\n",
@@ -145,7 +145,7 @@ static void usbaudio_mailbox_recv_proc(const void *usr_para,
 
 static int usbaudio_mailbox_isr_register(mb_msg_cb receive_func)
 {
-	int ret = MAILBOX_OK;
+	int ret = 0;
 
 	if (receive_func == NULL) {
 		pr_err("receive func is null\n");
@@ -154,7 +154,7 @@ static int usbaudio_mailbox_isr_register(mb_msg_cb receive_func)
 
 	ret = DRV_MAILBOX_REGISTERRECVFUNC(MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO,
 		receive_func, NULL);
-	if (ret != MAILBOX_OK) {
+	if (ret != 0) {
 		pr_err("register receive func error, ret:%u, mailcode:0x%x\n",
 			ret, MAILBOX_MAILCODE_HIFI_TO_ACPU_USBAUDIO);
 		return ERROR;

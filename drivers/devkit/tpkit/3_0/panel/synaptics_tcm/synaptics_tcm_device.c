@@ -107,7 +107,7 @@ static void device_capture_touch_report(unsigned int count)
 			report = false;
 			goto exit;
 		}
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&device_hcd->report,
 				remaining_size);
 		if (retval < 0) {
@@ -205,7 +205,7 @@ static int device_capture_touch_report_config(unsigned int count)
 
 	LOCK_BUFFER(tcm_hcd->config);
 
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&tcm_hcd->config,
 			size);
 	if (retval < 0) {
@@ -312,7 +312,7 @@ static ssize_t device_read(struct file *filp, char __user *buf,
 	LOCK_BUFFER(device_hcd->resp);
 
 	if (device_hcd->raw_mode) {
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&device_hcd->resp,
 				count);
 		if (retval < 0) {
@@ -380,7 +380,7 @@ static ssize_t device_write(struct file *filp, const char __user *buf,
 	}
 
 	LOCK_BUFFER(device_hcd->out);
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&device_hcd->out,
 			count == 1 ? count + 1 : count);
 	if (retval < 0) {

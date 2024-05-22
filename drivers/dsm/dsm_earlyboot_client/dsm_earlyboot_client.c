@@ -38,6 +38,7 @@
 
 #include <huawei_platform/log/hw_log.h>
 
+#define DEFAULT_BUFFER_SIZE 1024
 #define HWLOG_TAG	DSM_EARLYBOOT_CLIENT
 HWLOG_REGIST();
 
@@ -48,7 +49,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 	{
 		.name = "dsm_spi",
@@ -56,7 +57,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 	{
 		.name = "smartpa",
@@ -64,7 +65,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 	{
 		.name = "dsm_selinux",
@@ -72,7 +73,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 #ifdef CONFIG_HUAWEI_SDCARD_VOLD
 	{
@@ -81,16 +82,24 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 #endif
+	{
+		.name = "fbe_vold",
+		.device_name = NULL,
+		.ic_name = NULL,
+		.module_name = NULL,
+		.fops = NULL,
+		.buff_size = DEFAULT_BUFFER_SIZE,
+	},
 	{
 		.name = "dsm_e4defrag",
 		.device_name = NULL,
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 	{
 		.name = "dsm_uart",
@@ -98,7 +107,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 	{
 		.name = "dsm_f2fsck",
@@ -106,7 +115,7 @@ static struct dsm_dev public_client_devices[] = {
 		.ic_name = NULL,
 		.module_name = NULL,
 		.fops = NULL,
-		.buff_size = 1024,
+		.buff_size = DEFAULT_BUFFER_SIZE,
 	},
 };
 

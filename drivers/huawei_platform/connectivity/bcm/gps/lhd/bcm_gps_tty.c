@@ -665,8 +665,8 @@ static unsigned int bcm_tty_poll(struct file *filp, poll_table *wait)
 
 int bcm4774_suspend(gps_tty_platform_device *p, pm_message_t state)
 {
-	struct tty_struct *ttypoint;
-	struct file *ttyfile;
+	struct tty_struct *ttypoint = NULL;
+	struct file *ttyfile = NULL;
 
 	if((NULL == priv) || (NULL == priv->tty) || (NULL == priv->tty->private_data))
 	{
@@ -694,8 +694,8 @@ int bcm4774_suspend(gps_tty_platform_device *p, pm_message_t state)
 
 int bcm4774_resume(gps_tty_platform_device *p)
 {
-	struct tty_struct *ttypoint;
-	struct file *ttyfile;
+	struct tty_struct *ttypoint = NULL;
+	struct file *ttyfile = NULL;
 
 	if((NULL == priv) || (NULL == priv->tty) || (NULL == priv->tty->private_data))
 	{

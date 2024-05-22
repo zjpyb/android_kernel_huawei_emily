@@ -99,7 +99,7 @@ alternative_else_nop_endif
 	stp	x0, x1, [sp, #16 * 0]
 	stp	x2, x3, [sp, #16 * 1]
 	mov	x3, xzr
-	ldr_this_cpu	x0, pmu_counter, x1
+	ldr_this_cpu	x0, g_wa2_pmu_counter, x1
 	msr	pmselr_el0, x0
 	isb
 	mrs	x2, pmxevcntr_el0
@@ -111,7 +111,7 @@ alternative_else_nop_endif
 	isb
 	cmp	x0, x2
 	cset	x3, ne
-	adr_l	x0, v2_apply
+	adr_l	x0, g_wa2_apply
 	str	x3, [x0, x1]
 	ldp	x0, x1, [sp, #16 * 0]
 	ldp	x2, x3, [sp, #16 * 1]
@@ -222,13 +222,18 @@ alternative_cb_end
 1:
 
 	mov	x29, xzr			// fp pointed to user-space
+
+#ifdef CONFIG_SHADOW_CALL_STACK
+	ldr	x18, [tsk, #TSK_TI_SCS]		// Restore shadow call stack
+	str	xzr, [tsk, #TSK_TI_SCS]
+#endif
 	.else
 	add	x21, sp, #S_FRAME_SIZE
 	get_thread_info tsk
 	/* Save the task's original addr_limit and set USER_DS */
 	ldr	x20, [tsk, #TSK_TI_ADDR_LIMIT]
 	str	x20, [sp, #S_ORIG_ADDR_LIMIT]
-#ifdef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
+#ifdef CONFIG_HKIP_ADDR_LIMIT_PROTECTION
 	ldr	w2, [tsk, #THREAD_PID]
 
 	adrp	x1, hkip_addr_limit_bits	// page aligned
@@ -309,7 +314,7 @@ alternative_else_nop_endif
 	.macro	kernel_exit, el
 	.if	\el != 0
 	/* Restore the task's original addr_limit. */
-#ifdef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
+#ifdef CONFIG_HKIP_ADDR_LIMIT_PROTECTION
 	ldr	w2, [sp, #S_ORIG_ADDR_LIMIT_HKIP]
 	cbz	w2, 1f				// ultra-fast path: idle task
 	ldr	w3, [sp, #(S_ORIG_ADDR_LIMIT_HKIP + 4)]
@@ -345,6 +350,12 @@ alternative_endif
 	.if	\el == 0
 	ct_user_enter
 	.endif
+
+#ifdef CONFIG_SHADOW_CALL_STACK
+	.if	\el == 0
+	str	x18, [tsk, #TSK_TI_SCS]		// Save shadow call stack
+	.endif
+#endif
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
 	/*
@@ -436,6 +447,9 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 
 	.macro	irq_stack_entry
 	mov	x19, sp			// preserve the original sp
+#ifdef CONFIG_SHADOW_CALL_STACK
+	mov	x20, x18		// preserve the original shadow stack
+#endif
 
 	/*
 	 * Compare sp with the base of the task stack.
@@ -453,6 +467,12 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 
 	/* switch to the irq stack */
 	mov	sp, x26
+
+#ifdef CONFIG_SHADOW_CALL_STACK
+	/* also switch to the irq shadow stack */
+	ldr_this_cpu x18, irq_shadow_call_stack_ptr, x26
+#endif
+
 9998:
 	.endm
 
@@ -462,6 +482,10 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 	 */
 	.macro	irq_stack_exit
 	mov	sp, x19
+#ifdef CONFIG_SHADOW_CALL_STACK
+	/* x20 is also preserved */
+	mov	x18, x20
+#endif
 	.endm
 
 /*
@@ -686,6 +710,10 @@ el1_sync:
 	b.eq	el1_sp_pc
 	cmp	x24, #ESR_ELx_EC_UNKNOWN	// unknown exception in EL1
 	b.eq	el1_undef
+#ifdef CONFIG_TLB_CONFLICT_WORKAROUND
+	cmp	x24, #ESR_ELx_EC_IABT_CUR	// IABT (current EL)
+	b.eq	el1_iabt_curr_el
+#endif
 	cmp	x24, #ESR_ELx_EC_BREAKPT_CUR	// debug exception in EL1
 	b.ge	el1_dbg
 	b	el1_inv
@@ -747,6 +775,13 @@ el1_inv:
 	mov	x1, #BAD_SYNC
 	bl	bad_mode
 	ASM_BUG()
+#ifdef CONFIG_TLB_CONFLICT_WORKAROUND
+el1_iabt_curr_el:
+	mrs	x0, far_el1
+	mov	x2, sp
+	bl	do_iabt_curr_el
+	kernel_exit 1
+#endif
 ENDPROC(el1_sync)
 
 	.align	6

@@ -270,6 +270,82 @@
 	*(.data..init_task)						\
 	VMLINUX_SYMBOL(__end_init_task) = .;
 
+#ifdef CONFIG_HKIP_PRMEM
+/*
+ * It's important that pages containing WR_RARE data do not hold anything
+ * else, to avoid both accidentally unprotecting something that is supposed
+ * to stay read-only all the time and also to not protect something else
+ * that is supposed to be writeable all the time.
+ *
+ * RW_AFTER_INIT_DATA is provided as support during development/debug.
+ */
+
+#define PRMEM_OBJECT(object)						\
+	VMLINUX_SYMBOL(__start_data_##object) = .;			\
+	*(.data..##object);						\
+	VMLINUX_SYMBOL(__end_data_##object) = .;
+
+#define PRMEM_WR_DATA							\
+	PRMEM_OBJECT(prmem_wr)
+
+#define PRMEM_WR_AFTER_INIT_DATA					\
+	PRMEM_OBJECT(prmem_wr_after_init)
+
+#define PRMEM_RW_DATA							\
+	PRMEM_OBJECT(prmem_rw)
+
+#define PRMEM_POOLS(type)						\
+	PRMEM_OBJECT(type##_prmem_pools)
+
+#define PRMEM_OBJ_CACHES						\
+	PRMEM_OBJECT(prmem_object_caches)
+
+#define PRMEM_POOLS_DATA						\
+	VMLINUX_SYMBOL(__start_data_prmem_pools) = .;			\
+	PRMEM_POOLS(ro_no_recl)						\
+	PRMEM_POOLS(wr_no_recl)						\
+	PRMEM_POOLS(start_wr_no_recl)					\
+	PRMEM_POOLS(start_wr_recl)					\
+	PRMEM_POOLS(wr_recl)						\
+	PRMEM_POOLS(ro_recl)						\
+	PRMEM_POOLS(rw_recl)						\
+	VMLINUX_SYMBOL(__end_data_prmem_pools) = .;
+
+/* All sections contain a filler quad word, to avoid them being empty. */
+#define FILLER  QUAD(0xDEADBEEF)
+
+#define PRMEM_SECTIONS							\
+	. = ALIGN(PAGE_SIZE);						\
+	VMLINUX_SYMBOL(__start_data_prmem) = .;				\
+	.prmem_wr_data : ALIGN(PAGE_SIZE) {				\
+		VMLINUX_SYMBOL(__start_data_wr) = .;			\
+		PRMEM_POOLS_DATA					\
+		PRMEM_OBJ_CACHES					\
+		PRMEM_WR_DATA						\
+		FILLER;							\
+		. = ALIGN((PAGE_SIZE));					\
+		VMLINUX_SYMBOL(__end_data_wr) = .;			\
+	}								\
+	.prmem_wr_after_init_data : ALIGN(PAGE_SIZE) {			\
+		VMLINUX_SYMBOL(__start_data_wr_after_init) = .;		\
+		PRMEM_WR_AFTER_INIT_DATA				\
+		FILLER;							\
+		. = ALIGN((PAGE_SIZE));					\
+		VMLINUX_SYMBOL(__end_data_wr_after_init) = .;		\
+	}								\
+	.prmem_rw_data : ALIGN(PAGE_SIZE) {				\
+		VMLINUX_SYMBOL(__start_data_rw) = .;			\
+		PRMEM_RW_DATA						\
+		FILLER;							\
+		. = ALIGN((PAGE_SIZE));					\
+		VMLINUX_SYMBOL(__end_data_rw) = .;			\
+	}								\
+	. = ALIGN(PAGE_SIZE);						\
+	VMLINUX_SYMBOL(__end_data_prmem) = .;
+#else /* CONFIG_HKIP_PRMEM */
+#define PRMEM_SECTIONS
+#endif /* CONFIG_HKIP_PRMEM */
+
 /*
  * Allow architectures to handle ro_after_init data on their
  * own by defining an empty RO_AFTER_INIT_DATA.

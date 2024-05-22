@@ -328,6 +328,11 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head,
 			return 0;
 
 		page = f2fs_get_tmp_page(sbi, blkaddr);
+		if (IS_ERR(page)) {
+			err = PTR_ERR(page);
+			break;
+		}
+
 		if (PageChecked(page)) {
 			f2fs_msg(sbi->sb, KERN_ERR, "Abandon looped node block list");
 			destroy_fsync_dnodes(head, 1);
@@ -339,10 +344,6 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head,
 		 * will truncate all those pages in the end of recovery.
 		 */
 		SetPageChecked(page);
-		if (IS_ERR(page)) {
-			err = PTR_ERR(page);
-			break;
-		}
 
 		if (!is_recoverable_dnode(page))
 			break;

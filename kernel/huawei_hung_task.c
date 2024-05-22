@@ -48,6 +48,8 @@
 #include <linux/syscalls.h>
 #include <asm/traps.h>
 #include <linux/suspend.h>
+#include <linux/spinlock.h>
+#include "securec.h"
 #ifdef CONFIG_HISI_BB
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #endif
@@ -58,12 +60,18 @@
 #include <chipset_common/hwzrhung/zrhung.h>
 #endif
 #include "huawei_hung_task.h"
+#ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM
+#include <linux/huawei_check_mmap_sem.h>
+#endif
+#ifdef CONFIG_HW_EAS_SCHED
+#include <linux/hw/eas_hw.h>
+#endif
 /* MICRO DEFINITION */
 #define RWSEM_READER_OWNED ((struct task_struct *)1UL)
 #define ENABLE_SHOW_LEN 8
-#define WHITELIST_STORE_LEN 200
+#define WHITELIST_STORE_LEN 400
 #define IGNORELIST_LENGTH 100
-#define CONCERNLIST_LENGTH 11
+#define CONCERNLIST_LENGTH 61
 #define WHITE_LIST 1
 #define BLACK_LIST 2
 #define HT_ENABLE 1
@@ -80,7 +88,7 @@
 #define HUNG_ONE_HOUR (3600 / HEARTBEAT_TIME)
 #define HUNG_TEN_MINUTES (600 / HEARTBEAT_TIME)
 #define HUNGTASK_REPORT_TIMECOST TWENTY_SECONDS
-#define HUNGTASK_DUMP_IN_PANIC_LOOSE 3
+#define HUNGTASK_DUMP_IN_PANIC_LOOSE 5
 #define HUNGTASK_DUMP_IN_PANIC_STRICT 2
 #define MAX_DUMP_TIMES 10
 #define REFRESH_INTERVAL THREE_MINUTES
@@ -127,6 +135,8 @@
 #define TOPAPP_HUNG_RECORDED 2
 #define MAX_BLOCKED_TASK_CNT 4
 #define WATCHDOG_THREAD_NAME "watchdog"
+#define FROZEN_BUF_LEN 1024
+#define MAX_REMOVE_LIST_NUM 200
 /*
  * Limit number of tasks checked in a batch.
  * This value controls the preemptibility of khungtaskd since preemption
@@ -197,11 +207,13 @@ static struct hungtask_ignorelist_table ignorelist[IGNORELIST_LENGTH];
 static pid_t processes_reported_to_jank[MAX_BLOCKED_TASK_CNT];
 static bool whitelist_empty = true;
 static bool janklist_empty = true;
+static int remove_cnt;
+static struct task_item *remove_list[MAX_REMOVE_LIST_NUM + 1];
 /* the number of tasks checked */
 static int __read_mostly sysctl_hung_task_check_count = PID_MAX_LIMIT;
 /* zero means infinite timeout - no checking done */
 static unsigned long __read_mostly huawei_hung_task_timeout_secs = CONFIG_DEFAULT_HUNG_TASK_TIMEOUT;
-static int did_panic; /*if not 0, then check no more */
+static int did_panic; /* if not 0, then check no more */
 /*
  * should we panic (and reboot, if panic_timeout= is set)
  * when a hung task is detected:
@@ -259,6 +271,11 @@ static struct task_hung_upload upload_hungtask;
 static bool in_suspend;
 static struct rtc_time jank_last_tm;
 static struct rtc_time jank_tm;
+static DEFINE_SPINLOCK(list_tasks_lock);
+static char frozen_buf[FROZEN_BUF_LEN];
+static int frozen_used;
+static bool frozed_head;
+
 enum hash_turn {
 	HASH_TURN_END = 0,
 	HASH_TURN_FIRST = 1,
@@ -360,8 +377,10 @@ static int hunglist_hash_locate(pid_t pid, int goal,
 	int valueExpect;
 	int valueDisappoint;
 
-	if (pid <= 0)
+	if (pid <= 0) {
+		pr_err("invalid pid %d\n", pid);
 		return ret;
+	}
 	valueExpect = (goal == HASH_FIND) ? pid : 0;
 	valueDisappoint = (goal == HASH_INSERT) ? pid : 0;
 	ret = pid % CONCERNLIST_LENGTH;
@@ -416,6 +435,17 @@ static pid_t get_pid_by_name(const char *name)
 	struct task_struct *g = NULL;
 	struct task_struct *t = NULL;
 	int pid = 0;
+
+/*
+ * Try to find system_server's pid by name "PowerManagerSer" first.
+ * If fail, then retry with name "system_server".
+ */
+	if (!strcmp("system_server", name)) {
+		pid = get_pid_by_name("PowerManagerSer");
+		if (pid)
+			return pid;
+		pr_info("retry with %s\n", name);
+	}
 
 	rcu_read_lock();
 	do_each_thread(g, t) {
@@ -535,12 +565,13 @@ static void refresh_pids(void)
 	empty_whitelist();
 	for (i = 0; i < CONCERNLIST_LENGTH; i++) {
 		if (strlen(whitetmplist[i].name) > 0) {
-			pr_err("hungtask: whitetmplist[%d].name %s\n", i, whitetmplist[i].name);
 			whitetmplist[i].pid = get_pid_by_name(whitetmplist[i].name);
 			hash_index = hunglist_hash_locate(whitetmplist[i].pid, HASH_INSERT, whitelist);
 			if (hash_index != HASH_ERROR)
 				pr_err("hungtask: whitelist[%d]-%s-%d\n",
-				       i, whitetmplist[i].name, whitelist[hash_index].pid);
+					i, whitetmplist[i].name, whitelist[hash_index].pid);
+			else
+				pr_err("can't find %s\n", whitetmplist[i].name);
 		}
 	}
 	empty_janklist();
@@ -643,6 +674,9 @@ void hwhungtask_dump_blocked_tasks(struct task_item *taskitem, struct task_struc
 			       p->group_leader->comm, p->thread.cpu_context.sp,
 			       last_arrival, last_queued);
 
+#if defined(CONFIG_HW_EAS_SCHED) || defined(CONFIG_HISI_EAS_SCHED)
+		print_hung_task_sched_info(p);
+#endif
 		sched_show_task(p);
 	}
 }
@@ -667,7 +701,9 @@ void show_state_filter_ext(unsigned long state_filter)
 		touch_nmi_watchdog();
 		if (((p->state == TASK_RUNNING) || (p->state & state_filter)) &&
 		    (ignorelist_hash_locate(p->pid, HASH_FIND, ignorelist) == HASH_ERROR)) {
+			spin_lock(&list_tasks_lock);
 			taskitem = find_task(p->pid, &list_tasks);
+			spin_unlock(&list_tasks_lock);
 			hwhungtask_dump_blocked_tasks(taskitem, p);
 		}
 	}
@@ -680,7 +716,9 @@ void show_state_filter_ext(unsigned long state_filter)
 
 void hwhungtask_show_state_filter(unsigned long state_filter)
 {
+	pr_err("BinderChain_SysRq start\n");
 	show_state_filter_ext(state_filter);
+	pr_err("BinderChain_SysRq end\n");
 }
 EXPORT_SYMBOL(hwhungtask_show_state_filter);
 
@@ -837,27 +875,48 @@ static void remove_list_tasks(struct task_item *item)
 	kfree(item);
 }
 
+static void shrink_process_item(struct task_item *item, bool *is_finish)
+{
+	if (remove_cnt >= MAX_REMOVE_LIST_NUM) {
+		int i;
+
+		remove_list[remove_cnt++] = item;
+		for (i = 0; i < remove_cnt; i++)
+			remove_list_tasks(remove_list[i]);
+		remove_cnt = 0;
+		*is_finish = false;
+	} else {
+		remove_list[remove_cnt++] = item;
+	}
+}
+
 static void shrink_list_tasks(void)
 {
-	bool found = false;
+	int i;
+	bool is_finish = false;
+	struct rb_node *n = NULL;
+	struct task_item *item = NULL;
 
-	do {
-		struct rb_node *n;
-		struct task_item *item = NULL;
-
-		found = false;
+	pr_info("hungtask: %s start\n", __FUNCTION__);
+	spin_lock(&list_tasks_lock);
+	while (!is_finish) {
+		is_finish = true;
 		for (n = rb_first(&list_tasks); n != NULL; n = rb_next(n)) {
 			item = rb_entry(n, struct task_item, node);
 			if (!item)
 				continue;
 			if (item->isdone_wa && item->isdone_jank) {
-				found = true;
-				break;
+				shrink_process_item(item, &is_finish);
+				if (!is_finish)
+					break;
 			}
 		}
-		if (found)
-			remove_list_tasks(item);
-	} while (found);
+	}
+	for (i = 0; i < remove_cnt; i++)
+		remove_list_tasks(remove_list[i]);
+	remove_cnt = 0;
+	spin_unlock(&list_tasks_lock);
+	pr_info("hungtask: %s end\n", __FUNCTION__);
 }
 
 static void check_parameters(void)
@@ -941,6 +1000,9 @@ static void hungtask_report_zrhung(unsigned int event)
 			 report_name, report_pid, report_tasktype, report_hungtime);
 	if (report_load) {
 		show_state_filter_ext(TASK_UNINTERRUPTIBLE);
+#if defined(CONFIG_HW_EAS_SCHED) || defined(CONFIG_HISI_EAS_SCHED)
+		print_cpu_rq_info();
+#endif
 		pr_err("hungtask: %s end\n", report_buf_tag);
 		snprintf(report_buf_tag_cmd, sizeof(report_buf_tag_cmd), "R=%s", report_buf_tag);
 		zrhung_send_event(ZRHUNG_WP_HUNGTASK, report_buf_tag_cmd, report_buf_text);
@@ -980,12 +1042,14 @@ static int watchdog_nosched_check(void)
 			return ret;
 		}
 		if (watchdog_nosched_cnt == noschedule_dump_cnt) {
-			pr_err("hungtask: vmwatchdog not scheduled for %ds\n", noschedule_dump_cnt * HEARTBEAT_TIME);
+			pr_err("hungtask: vmwatchdog not scheduled for %ds\n",
+				noschedule_dump_cnt * HEARTBEAT_TIME);
 			watchdog_nosched_cnt++;
 			return HUNGTASK_EVENT_LAZYWATCHDOG;
 		}
 		if (watchdog_nosched_cnt > noschedule_panic_cnt) {
-			pr_err("hungtask: vmwatchdog not scheduled for %ds\n", noschedule_panic_cnt * HEARTBEAT_TIME);
+			pr_err("hungtask: vmwatchdog not scheduled for %ds\n",
+				noschedule_panic_cnt * HEARTBEAT_TIME);
 #ifdef CONFIG_HW_ZEROHUNG
 			snprintf(cmd, MAX_ZRHUNG_CMD_BUF_SIZE, "S,P=%d", systemserver_pid);
 			zrhung_send_event(ZRHUNG_WP_HUNGTASK, cmd, "hungtask: vmwatchdog not scheduled for 120s.");
@@ -993,6 +1057,9 @@ static int watchdog_nosched_check(void)
 			watchdog_nosched_cnt = 0;
 			pr_err("print all cpu stack and D state stack\n");
 			show_state_filter_ext(TASK_UNINTERRUPTIBLE);
+#if defined(CONFIG_HW_EAS_SCHED) || defined(CONFIG_HISI_EAS_SCHED)
+			print_cpu_rq_info();
+#endif
 			do_panic();
 		}
 	}
@@ -1013,6 +1080,14 @@ static void post_process(void)
 	int err;
 	char config_str[ZRHUNG_CONFIG_LENGTH] = {0};
 #endif
+
+	if (frozen_used) {
+		pr_err("%s", frozen_buf);
+		memset(frozen_buf, 0, sizeof(frozen_buf));
+		frozen_used = 0;
+		frozed_head = false;
+	}
+
 	memset(processes_reported_to_jank, 0,
 		sizeof(pid_t) * MAX_BLOCKED_TASK_CNT);
 	if (hung_task_dump_and_upload == HUNG_TASK_UPLOAD_ONCE) {
@@ -1031,6 +1106,9 @@ static void post_process(void)
 		hung_task_must_panic = 0;
 		pr_err("Task %s:%d blocked for %ds is causing panic\n",
 		       upload_hungtask.name, upload_hungtask.pid, whitelist_panic_cnt * HEARTBEAT_TIME);
+#ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM
+		check_mmap_sem(upload_hungtask.pid);
+#endif
 		do_panic();
 	}
 	if ((ignore_state == IGN_STATE_INIT) && (cur_heartbeat > ONE_MINUTE)) {
@@ -1089,6 +1167,27 @@ static bool rcu_lock_break(struct task_struct *g, struct task_struct *t)
 	return can_cont;
 }
 
+#ifndef CONFIG_FINAL_RELEASE
+static int print_frozen_list_item(int pid)
+{
+	int tmp;
+
+	if (!frozed_head) {
+		tmp = snprintf(frozen_buf, FROZEN_BUF_LEN, "%s", "FROZEN Pid:");
+		if (tmp < 0)
+			return -1;
+		frozen_used += min(tmp, FROZEN_BUF_LEN - 1);
+		frozed_head = true;
+	}
+	tmp = snprintf(frozen_buf + frozen_used, FROZEN_BUF_LEN - frozen_used, "%d,",
+	    pid);
+	if (tmp < 0)
+		return -1;
+	frozen_used += min(tmp, FROZEN_BUF_LEN - frozen_used - 1);
+	return frozen_used;
+}
+#endif
+
 static int dump_task_wa(struct task_item *item, int dump_cnt, struct task_struct *task, int flag)
 {
 	int ret = 0;
@@ -1103,9 +1202,16 @@ static int dump_task_wa(struct task_item *item, int dump_cnt, struct task_struct
 		item->dump_wa = 1;
 		if (!hung_task_dump_and_upload && task->flags & PF_FROZEN) {
 #ifndef CONFIG_FINAL_RELEASE
-			pr_err("hungtask: Task %s:%d,tgid:%d,type:%d FROZEN for %ds\n",
-			       item->name, item->pid, item->tgid,
-			       item->task_type, item->time_in_d_state * HEARTBEAT_TIME);
+			int tmp = print_frozen_list_item(item->pid);
+			if (tmp < 0)
+				return ret;
+			if (tmp >= FROZEN_BUF_LEN - 1) {
+				pr_err("%s", frozen_buf);
+				memset(frozen_buf, 0, sizeof(frozen_buf));
+				frozen_used = 0;
+				frozed_head = false;
+				print_frozen_list_item(item->pid);
+			}
 #endif
 		} else if (!hung_task_dump_and_upload) {
 			pr_err("hungtask: Ready to dump a task %s\n", item->name);
@@ -1357,7 +1463,9 @@ static ssize_t watchdog_nosched_store(struct kobject *kobj,
 	p = memchr(buf, '\n', count);
 	len = p ? (size_t)(p - buf) : count;
 	memset(tmp, 0, sizeof(tmp));
-	strncpy(tmp, buf, len);
+	if (strncpy_s(tmp, sizeof(tmp), buf, len) != EOK)
+		pr_err("strncpy from buf to tmp failed\n");
+
 	if (strncmp(tmp, "on", strlen(tmp)) == 0) {
 		hungtask_watchdog_nosched_enable = 1;
 		pr_err("hungtask: set watchdog_nosched_enable to enable\n");
@@ -1401,7 +1509,9 @@ static ssize_t enable_store(struct kobject *kobj,
 	p = memchr(buf, '\n', count);
 	len = p ? (size_t)(p - buf) : count;
 	memset(tmp, 0, sizeof(tmp));
-	strncpy(tmp, buf, len);
+	if (strncpy_s(tmp, sizeof(tmp), buf, len) != EOK)
+		pr_err("strncpy from buf to tmp failed\n");
+
 	if (strncmp(tmp, "on", strlen(tmp)) == 0) {
 		hungtask_enable = HT_ENABLE;
 		pr_info("hungtask: set hungtask_enable to enable\n");
@@ -1498,7 +1608,7 @@ static ssize_t monitorlist_store(struct kobject *kobj,
 	pr_err("hungtask: whitelist is %s\n", cur);
 	hash_lists_init();
 	/* generate the new whitelist */
-	for (;;) {
+	for (; ; ) {
 		token = strsep(&cur, ",");
 		if (token && strlen(token)) {
 			strncpy(whitetmplist[index].name, token, TASK_COMM_LEN);

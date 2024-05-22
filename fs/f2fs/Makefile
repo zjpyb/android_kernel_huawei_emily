@@ -10,4 +10,7 @@ f2fs-$(CONFIG_F2FS_FS_XATTR) += xattr.o
 f2fs-$(CONFIG_F2FS_FS_POSIX_ACL) += acl.o
 f2fs-$(CONFIG_F2FS_IO_TRACE) += trace.o
 f2fs-y		+= sdp_context.o policy.o keyinfo.o ecdh.o
+f2fs-$(CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3) += sdp_metadata.o fbe3_trace.o
 f2fs-$(CONFIG_F2FS_TURBO_ZONE) += turbo_zone.o
+f2fs-$(CONFIG_HWDPS) += hwdps_context.o
+f2fs-y		+= hp_preallocate.o

@@ -645,4 +645,8 @@ void i3c_master_queue_ibi(struct i3c_dev_desc *dev, struct i3c_ibi_slot *slot);
 
 struct i3c_ibi_slot *i3c_master_get_free_ibi_slot(struct i3c_dev_desc *dev);
 
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+int i3c_init_secos(struct i2c_adapter *adap);
+int i3c_exit_secos(struct i2c_adapter *adap);
+#endif
 #endif /* I3C_MASTER_H */

@@ -4,6 +4,8 @@
 EXTRA_CFLAGS += -Idrivers/media/huawei/camera/sensor/flash
 EXTRA_CFLAGS += -Idrivers/media/huawei/camera/
 EXTRA_CFLAGS += -fno-pic
+EXTRA_CFLAGS += -Idrivers/hisi/tzdriver/libhwsecurec
+EXTRA_CFLAGS += -Idrivers/regulator
 
 ifeq ($(TARGET_VERSION_MODE),factory)
 EXTRA_CFLAGS += -DCAMERA_FLASH_FACTORY_TEST
@@ -32,7 +34,9 @@ obj-$(CONFIG_HISI_CAMERA_LM3646_MIX) += lm3646_mix.o
 obj-$(CONFIG_HISI_CAMERA_MP3336_MIX) += mp3336_mix.o
 obj-$(CONFIG_HISI_CAMERA_MP3336_MIX_IR) += mp3336_mix_ir.o
 obj-$(CONFIG_HISI_CAMERA_LM3646_MIX_IR) += lm3646_mix_ir.o
+obj-$(CONFIG_HISI_CAMERA_LM3644TT_MIX_IR) += lm3644tt_mix_ir.o
 #obj-y += lm3646_front.o
 obj-$(CONFIG_HISI_CAMERA_SCHARGER) += scharger_flash.o
-obj-$(CONFIG_HISI_CAMERA_AW3642) += aw3642.o
-obj-$(CONFIG_HISI_CAMERA_AW3642_FRONT) += aw3642_front.o
+obj-$(CONFIG_CAMERA_AW3642) += aw3642.o
+obj-$(CONFIG_CAMERA_AW3642_FRONT) += aw3642_front.o
+obj-$(CONFIG_HISI_CAMERA_SMARTPA) += smartpa_flash.o

@@ -1,15 +1,39 @@
+/*
+ * bootdevice.c
+ *
+ * bootdevice init
+ *
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef BOOTDEVICE_H
 #define BOOTDEVICE_H
 #include <linux/device.h>
 
-enum bootdevice_type { BOOT_DEVICE_EMMC = 0, BOOT_DEVICE_UFS = 1, BOOT_DEVICE_MAX };
-#define UFS_VENDOR_HYNIX       0x1AD
+enum bootdevice_type {
+	BOOT_DEVICE_EMMC = 0,
+	BOOT_DEVICE_UFS = 1,
+	BOOT_DEVICE_MAX
+};
 
-#define MAX_PARTITION_NAME_LENGTH       36
+#define UFS_VENDOR_HYNIX 0x1AD
+
+#define MAX_PARTITION_NAME_LENGTH 36
 struct flash_find_index_user {
 	char name[MAX_PARTITION_NAME_LENGTH];
 	int index;
 };
+
 #define INDEXEACCESSDATA _IOWR('M', 26, struct flash_find_index_user)
 
 void set_bootdevice_type(enum bootdevice_type type);
@@ -23,22 +47,26 @@ void set_bootdevice_pre_eol_info(u8 pre_eol_info);
 void set_bootdevice_life_time_est_typ_a(u8 life_time_est_typ_a);
 void set_bootdevice_life_time_est_typ_b(u8 life_time_est_typ_b);
 void set_bootdevice_manfid(unsigned int manfid);
-void set_bootdevice_rev_handler(int (*get_rev_func)(const struct device *, char *));
+void set_bootdevice_rev_handler(int (*get_rev_func)(const struct device *,
+						    char *));
 
 #define MAX_RPMB_REGION_NUM 4
 #define MAX_FRAME_BIT 64
 /* we use 0x rpmb to indicate a valid value */
 #define RPMB_DONE 0x72706D62 /* 'r', 'p', 'm', 'b' */
-struct rpmb_config_info{
-	u64 rpmb_total_blks;/*  rpmb total size is  (rpmb_total_blks * rpmb_blk_size)*/
-	u64 rpmb_read_frame_support;/*bit 64 to mark the read frames support*/
-	u64 rpmb_write_frame_support;/*bit 64 to mark the write frames support*/
-	u64 rpmb_unit_size;/*default value is 128Kbyte*/
-	u8 rpmb_region_size[MAX_RPMB_REGION_NUM];/*number of unit*/
-	u8 rpmb_blk_size;/* one blk size is 2 << rpmb_blk_size*/
-	u8 rpmb_read_align;/*0:no align 1:align*/
-	u8 rpmb_write_align;/*0:no align 1:align*/
-	u8 rpmb_region_enable;/*bit to enable region*/
+struct rpmb_config_info {
+	/* rpmb total size is (rpmb_total_blks * rpmb_blk_size) */
+	u64 rpmb_total_blks;
+	/* bit 64 to mark the read frames support */
+	u64 rpmb_read_frame_support;
+	/* bit 64 to mark the write frames support */
+	u64 rpmb_write_frame_support;
+	u64 rpmb_unit_size; /* default value is 128Kbyte */
+	u8 rpmb_region_size[MAX_RPMB_REGION_NUM]; /* number of unit */
+	u8 rpmb_blk_size; /* one blk size is 2 << rpmb_blk_size */
+	u8 rpmb_read_align; /* 0:no align 1:align */
+	u8 rpmb_write_align; /* 0:no align 1:align */
+	u8 rpmb_region_enable; /* bit to enable region */
 };
 
 void set_rpmb_total_blks(u64 total_blks);
@@ -62,7 +90,7 @@ u64 get_rpmb_unit_size(void);
 u8 get_rpmb_region_size(int region_num);
 int get_rpmb_config_ready_status(void);
 struct rpmb_config_info get_rpmb_config(void);
-void set_rpmb_blk_count(uint64_t blk_count);
-int get_rpmb_blk_count(uint64_t *blk_count, int delay_ms);
+void set_rpmb_blk_count(u64 blk_count);
+int get_rpmb_blk_count(u64 *blk_count, int delay_ms);
 
 #endif

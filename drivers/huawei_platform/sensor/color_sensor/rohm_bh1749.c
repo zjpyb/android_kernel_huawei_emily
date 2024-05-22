@@ -377,7 +377,7 @@ static bool bh1749_handle_als(struct bh1749_ctx_t *ctx, bool in_cal_mode)
 
 	// read valid status
 	bh1749_get_byte(ctx->handle, ROHM_BH1749_MODECONTROL2, &valid_data);
-	hwlog_debug("%s: BH1749_MODECONTROL2 = 0x%x\n", __func__, valid_data);
+	hwlog_info("%s: BH1749_MODECONTROL2 = 0x%x\n", __func__, valid_data);
 
 	if (valid_data & RGBC_VALID_HIGH) {
 		// read 6 ADC data
@@ -388,7 +388,7 @@ static bool bh1749_handle_als(struct bh1749_ctx_t *ctx, bool in_cal_mode)
 
 		bh1749_get_buf(ctx->handle, ROHM_BH1749_IR_DATA, adc_data, 2);
 		rgb_rawdata.ir = (adc_data[1] << 8) | adc_data[0];
-		hwlog_debug("%s: r=%d, g = %d, b = %d, ir = %d\n", __func__,
+		hwlog_info("%s: r=%d, g = %d, b = %d, ir = %d\n", __func__,
 			rgb_rawdata.red, rgb_rawdata.green,
 			rgb_rawdata.blue, rgb_rawdata.ir);
 
@@ -1047,15 +1047,15 @@ static void rohmdriver_work(struct work_struct *work)
 		read_nv_first_in = -1; // -1: do not read again.
 	}
 
-	hwlog_debug("rohm driver_work\n");
+	hwlog_info("rohm driver_work\n");
 	re_enable = bh1749_event_handler((struct bh1749_ctx_t *)chip->device_ctx,
 		chip->in_cal_mode);
-	hwlog_debug("rohm_bh1749: re_enable = %d\n", re_enable);
+	hwlog_info("rohm_bh1749: re_enable = %d\n", re_enable);
 
 	if (bh1749_get_rgb_avai((struct bh1749_ctx_t *)chip->device_ctx) &
 		BH1749_FEATURE_ALS) {
 		if (chip->in_cal_mode == false) {
-			hwlog_debug("rohm driver_work: osal_report_als\n");
+			hwlog_info("rohm driver_work: osal_report_als\n");
 			osal_report_als(chip);
 		} else {
 			hwlog_warn("rohm driver_work: calibration mode\n");

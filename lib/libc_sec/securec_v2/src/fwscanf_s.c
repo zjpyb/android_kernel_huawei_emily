@@ -43,4 +43,3 @@ int fwscanf_s(FILE *stream, const wchar_t *format, ...)
     return ret;
 }
 
-

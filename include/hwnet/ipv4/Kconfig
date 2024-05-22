@@ -19,3 +19,7 @@ config HW_CHR_TCP_SMALL_WIN_PROC
 	bool "Huawei tcp small window monitor proc support"
 	depends on HW_CHR_TCP_SMALL_WIN_MONITOR
 	default n
+
+config HW_WIFI_TEMP
+	bool "Huawei wifi temperature upload"
+	default n

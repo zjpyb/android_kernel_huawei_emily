@@ -73,17 +73,21 @@ TRACE_EVENT(cpufreq_schedutil_get_util, /* [false alarm]:TRACE_EVENT是原生宏
 		     unsigned long max,
 		     unsigned long top,
 		     unsigned long pred,
+		     unsigned long max_pred,
+		     unsigned long cpu_pred,
 		     unsigned int iowait,
 		     unsigned int flag,
 		     unsigned int ed,
 		     unsigned int od),
-	    TP_ARGS(cpu, util, max, top, pred, iowait, flag, ed, od),
+	    TP_ARGS(cpu, util, max, top, pred, max_pred, cpu_pred, iowait, flag, ed, od),
 	    TP_STRUCT__entry(
 		    __field(unsigned int,	cpu)
 		    __field(unsigned long,	util)
 		    __field(unsigned long,	max)
 		    __field(unsigned long,	top)
 		    __field(unsigned long,	pred)
+		    __field(unsigned long,	max_pred)
+		    __field(unsigned long,	cpu_pred)
 		    __field(unsigned int,	iowait)
 		    __field(unsigned int,	flag)
 		    __field(unsigned int,	ed)
@@ -95,14 +99,17 @@ TRACE_EVENT(cpufreq_schedutil_get_util, /* [false alarm]:TRACE_EVENT是原生宏
 		    __entry->max = max;
 		    __entry->top = top;
 		    __entry->pred = pred;
+		    __entry->max_pred = max_pred;
+		    __entry->cpu_pred = cpu_pred;
 		    __entry->iowait = iowait;
 		    __entry->flag = flag;
 		    __entry->ed = ed;
 		    __entry->od = od;
 	    ),
-	    TP_printk("cpu=%u util=%lu max=%lu top=%lu pred=%lu iowait=%u flag=%u ed=%u od=%u",
+	    TP_printk("cpu=%u util=%lu max=%lu top=%lu pred=%lu,%lu,%lu iowait=%u flag=%u ed=%u od=%u",
 		      __entry->cpu, __entry->util, __entry->max, __entry->top, __entry->pred,
-		      __entry->iowait, __entry->flag, __entry->ed, __entry->od)
+		      __entry->max_pred, __entry->cpu_pred, __entry->iowait, __entry->flag,
+		      __entry->ed, __entry->od)
 );
 
 TRACE_EVENT(cpufreq_schedutil_notyet, /* [false alarm]:TRACE_EVENT是原生宏定义 */

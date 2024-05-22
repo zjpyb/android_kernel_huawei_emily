@@ -13,7 +13,10 @@
 #include "xattr.h"
 
 #include <trace/events/erofs.h>
+
+#ifdef CONFIG_FILE_MAP
 #include <linux/file_map.h>
+#endif
 
 /* no locking */
 static int read_inode(struct inode *inode, void *data)

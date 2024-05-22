@@ -3,7 +3,7 @@
  *
  * driver for Fairchild fusb301 typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,39 +16,39 @@
  *
  */
 
-#include <linux/i2c.h>
+#include "fusb301.h"
 #include <linux/delay.h>
-#include <linux/gpio.h>
-#include <linux/timer.h>
-#include <linux/param.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/fs.h>
+#include <linux/gpio.h>
+#include <linux/i2c.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/platform_device.h>
+#include <linux/kernel.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <asm/irq.h>
-#include <linux/uaccess.h>
-#include <linux/fs.h>
+#include <linux/param.h>
+#include <linux/platform_device.h>
+#include <linux/module.h>
 #include <linux/reboot.h>
+#include <linux/slab.h>
+#include <linux/timer.h>
+#include <linux/workqueue.h>
+#include <linux/uaccess.h>
+#include <asm/irq.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_typec_dev.h>
 #include <huawei_platform/usb/hw_typec_platform.h>
-#include <huawei_platform/power/power_devices_info.h>
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#include "fusb301.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -422,7 +422,7 @@ static int fusb301_detect_input_current(void)
 	return di->dev_st.input_current;
 }
 
-struct typec_device_ops fusb301_ops = {
+static struct typec_device_ops fusb301_ops = {
 	.clean_int_mask = fusb301_clean_mask,
 	.detect_attachment_status = fusb301_detect_attachment_status,
 	.detect_cc_orientation = fusb301_detect_cc_orientation,
@@ -431,40 +431,6 @@ struct typec_device_ops fusb301_ops = {
 	.ctrl_output_current = fusb301_ctrl_output_current,
 	.ctrl_port_mode = fusb301_ctrl_port_mode,
 };
-
-static struct attribute *fusb301_attributes[] = {
-	NULL,
-};
-
-static const struct attribute_group fusb301_attr_group = {
-	.attrs = fusb301_attributes,
-};
-
-static int fusb301_create_sysfs(void)
-{
-	int ret = 0;
-	struct class *typec_class = NULL;
-	struct device *new_dev = NULL;
-
-	typec_class = hw_typec_get_class();
-	if (typec_class) {
-		new_dev = device_create(typec_class, NULL, 0, NULL, "fusb301");
-		if (IS_ERR(new_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			return PTR_ERR(new_dev);
-		}
-
-		ret = sysfs_create_group(&new_dev->kobj, &fusb301_attr_group);
-		if (ret)
-			hwlog_err("sysfs group create failed\n");
-	}
-
-	return ret;
-}
-
-static void fusb301_remove_sysfs(struct typec_device_info *di)
-{
-}
 
 static irqreturn_t fusb301_irq_handler(int irq, void *dev_id)
 {
@@ -491,6 +457,7 @@ static irqreturn_t fusb301_irq_handler(int irq, void *dev_id)
 static void fusb301_initialization(void)
 {
 	u8 reg_val = 0;
+	int ret;
 
 	/* reset */
 	fusb301_write_reg(FUSB301_REG_RESET, FUSB301_RESET);
@@ -503,7 +470,10 @@ static void fusb301_initialization(void)
 	hwlog_info("reg_manual value=%d\n", reg_val);
 
 	/* read FUSB301_REG_INT register to clear the irq first */
-	fusb301_detect_attachment_status();
+	ret = fusb301_detect_attachment_status();
+	if (ret < 0)
+		hwlog_err("fusb301 attachment status error\n");
+
 	fusb301_ctrl_port_mode(TYPEC_HOST_PORT_MODE_DRP);
 	fusb301_clean_mask();
 }
@@ -512,15 +482,14 @@ static int fusb301_shutdown_prepare(struct notifier_block *nb,
 	unsigned long event, void *data)
 {
 	switch (event) {
-	/* fall through */
 	case SYS_DOWN:
 	case SYS_HALT:
 	case SYS_POWER_OFF:
-		hwlog_err("prepare to shutdown, event=%ld\n", event);
+		hwlog_err("prepare to shutdown, event=%lu\n", event);
 		fusb301_ctrl_port_mode(TYPEC_HOST_PORT_MODE_UFP);
 		break;
 	default:
-		hwlog_err("error event, ignore, event=%ld\n", event);
+		hwlog_err("error event, ignore, event=%lu\n", event);
 		break;
 	}
 
@@ -530,15 +499,13 @@ static int fusb301_shutdown_prepare(struct notifier_block *nb,
 static int fusb301_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret;
+	int ret = -1;
 	u32 gpio_enb_val = 1;
 	struct typec_device_info *di = NULL;
 	struct typec_device_info *pdi = NULL;
 	struct device_node *node = NULL;
 	struct power_devices_info_data *power_dev_info = NULL;
 	u32 typec_trigger_otg = 0;
-
-	hwlog_info("probe begin\n");
 
 	g_reboot_nb.notifier_call = NULL;
 
@@ -555,29 +522,15 @@ static int fusb301_probe(struct i2c_client *client,
 	node = di->dev->of_node;
 	i2c_set_clientdata(client, di);
 
-	di->gpio_enb = of_get_named_gpio(node, "fusb301_typec,gpio_enb", 0);
-	hwlog_info("gpio_enb=%d\n", di->gpio_enb);
-
-	if (!gpio_is_valid(di->gpio_enb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"fusb301_gpio_enb", &gpio_enb_val, 0))
 		goto fail_check_i2c;
-	}
 
-	ret = gpio_request(di->gpio_enb, "fusb301_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
+	ret = power_gpio_config_output(node,
+		"fusb301_typec,gpio_enb", "fusb301_en",
+		&di->gpio_enb, gpio_enb_val);
+	if (ret)
 		goto fail_check_i2c;
-	}
-
-	if (power_dts_read_u32(node, "fusb301_gpio_enb", &gpio_enb_val, 0))
-		goto fail_free_gpio_enb;
-
-	ret = gpio_direction_output(di->gpio_enb, gpio_enb_val);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		goto fail_free_gpio_enb;
-	}
 
 	ret = fusb301_device_check();
 	if (ret) {
@@ -588,59 +541,33 @@ static int fusb301_probe(struct i2c_client *client,
 	g_reboot_nb.notifier_call = fusb301_shutdown_prepare;
 	register_reboot_notifier(&g_reboot_nb);
 
-	(void)power_dts_read_u32(node, "typec_trigger_otg",
-		&typec_trigger_otg, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"typec_trigger_otg", &typec_trigger_otg, 0);
 	di->typec_trigger_otg = !!typec_trigger_otg;
 
-	di->gpio_intb = of_get_named_gpio(node, "fusb301_typec,gpio_intb", 0);
-	hwlog_info("gpio_intb=%d\n", di->gpio_intb);
-
-	if (!gpio_is_valid(di->gpio_intb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	ret = power_gpio_config_interrupt(node,
+		"fusb301_typec,gpio_intb", "fusb301_int",
+		&di->gpio_intb, &di->irq_intb);
+	if (ret)
 		goto fail_free_gpio_enb;
-	}
 
 	pdi = typec_chip_register(di, &fusb301_ops, THIS_MODULE);
 	if (!pdi) {
 		hwlog_err("typec register chip error\n");
 		ret = -EINVAL;
-		goto fail_free_gpio_enb;
-	}
-
-	ret = gpio_request(di->gpio_intb, "fusb301_int");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		goto fail_free_gpio_enb;
-	}
-
-	di->irq_intb = gpio_to_irq(di->gpio_intb);
-	if (di->irq_intb < 0) {
-		hwlog_err("gpio map to irq fail\n");
-		ret = -EINVAL;
-		goto fail_free_gpio_intb;
-	}
-
-	ret = gpio_direction_input(di->gpio_intb);
-	if (ret) {
-		hwlog_err("gpio set input fail\n");
 		goto fail_free_gpio_intb;
 	}
 
 	fusb301_initialization();
 
 	ret = request_irq(di->irq_intb, fusb301_irq_handler,
-			IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
-			"fusb301_int", pdi);
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
+		"fusb301_int", pdi);
 	if (ret) {
 		hwlog_err("gpio irq request fail\n");
 		di->irq_intb = -1;
 		goto fail_free_gpio_intb;
 	}
-
-	ret = fusb301_create_sysfs();
-	if (ret)
-		goto fail_create_sysfs;
 
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
@@ -659,17 +586,13 @@ static int fusb301_probe(struct i2c_client *client,
 	fusb301_ctrl_output_current(TYPEC_HOST_CURRENT_HIGH);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
-	hwlog_info("probe end\n");
 	return 0;
 
-fail_create_sysfs:
-	fusb301_remove_sysfs(di);
 fail_free_gpio_intb:
 	gpio_free(di->gpio_intb);
 fail_free_gpio_enb:
 	if (g_reboot_nb.notifier_call)
 		unregister_reboot_notifier(&g_reboot_nb);
-
 	gpio_free(di->gpio_enb);
 fail_check_i2c:
 	devm_kfree(&client->dev, di);
@@ -682,12 +605,9 @@ static int fusb301_remove(struct i2c_client *client)
 {
 	struct typec_device_info *di = i2c_get_clientdata(client);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	fusb301_remove_sysfs(di);
 	free_irq(di->irq_intb, di);
 	gpio_set_value(di->gpio_enb, 1);
 	gpio_free(di->gpio_enb);
@@ -695,7 +615,6 @@ static int fusb301_remove(struct i2c_client *client)
 	g_fusb301_dev = NULL;
 	devm_kfree(&client->dev, di);
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

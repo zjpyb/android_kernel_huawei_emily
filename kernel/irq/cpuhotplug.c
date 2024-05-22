@@ -11,7 +11,7 @@
 #include <linux/interrupt.h>
 #include <linux/ratelimit.h>
 #include <linux/irq.h>
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 #include <linux/cpumask.h>
 #endif
 
@@ -59,7 +59,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	const struct cpumask *affinity;
 	bool brokeaff = false;
 	int err;
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	struct cpumask available_cpus;
 #endif
 
@@ -114,7 +114,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	if (maskchip && chip->irq_mask)
 		chip->irq_mask(d);
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	cpumask_copy(&available_cpus, affinity);
 	cpumask_andnot(&available_cpus, &available_cpus, cpu_isolated_mask);
 

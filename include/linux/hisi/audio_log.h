@@ -24,6 +24,18 @@
 #define AUDIO_LOGD(fmt, ...)
 #endif
 
+#ifdef LLT_TEST
+#include <stdio.h>
+#define AUDIO_LOGI(fmt, ...) \
+	printf(LOG_TAG" audio[I]:%s:%d: "fmt"\n", __func__, __LINE__, ##__VA_ARGS__)
+
+#define AUDIO_LOGW(fmt, ...) \
+	printf(LOG_TAG" audio[W]:%s:%d: "fmt"\n", __func__, __LINE__, ##__VA_ARGS__)
+
+#define AUDIO_LOGE(fmt, ...) \
+	printf(LOG_TAG" audio[E]:%s:%d: "fmt"\n", __func__, __LINE__, ##__VA_ARGS__)
+#else
+#ifdef CONFIG_AUDIO_DEBUG
 #define AUDIO_LOGI(fmt, ...) \
 	pr_info(LOG_TAG" audio[I]:%s:%d: "fmt"\n", __func__, __LINE__, ##__VA_ARGS__)
 
@@ -32,5 +44,16 @@
 
 #define AUDIO_LOGE(fmt, ...) \
 	pr_err(LOG_TAG" audio[E]:%s:%d: "fmt"\n", __func__, __LINE__, ##__VA_ARGS__)
+#else
+#define AUDIO_LOGI(fmt, ...) \
+	pr_info(LOG_TAG" audio[I]:%d: "fmt"\n", __LINE__, ##__VA_ARGS__)
+
+#define AUDIO_LOGW(fmt, ...) \
+	pr_warn(LOG_TAG" audio[W]:%d: "fmt"\n", __LINE__, ##__VA_ARGS__)
+
+#define AUDIO_LOGE(fmt, ...) \
+	pr_err(LOG_TAG" audio[E]:%d: "fmt"\n", __LINE__, ##__VA_ARGS__)
+#endif
+#endif
 
 #endif

@@ -23,13 +23,13 @@
 #include <linux/regulator/consumer.h>
 #include <linux/of_gpio.h>
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
 
-#define GTP_DRIVER_VERSION			"v1.0<2018/05/17>"
+#define GTP_DRIVER_VERSION			"v1.15<2020/07/21>"
 
 #define LCD_PANEL_INFO_MAX_LEN			128
 #define LCD_PANEL_TYPE_DEVICE_NODE_NAME		"huawei,lcd_panel_type"
@@ -56,6 +56,7 @@
 #define GTX8_RETRY_NUM_3			3
 #define GTX8_RETRY_NUM_10			10
 #define GTX8_RETRY_NUM_20			20
+#define GTX8_RETRY_NUM_30 30
 #define GTX8_RETRY_NUM_50 50
 #define GTX8_CFG_HEAD_LEN			4
 #define GTX8_CFG_MAX_LEN			1024
@@ -68,6 +69,15 @@
 #define GTX8_FW_NAME_LEN			64
 #define GT_RAWDATA_CSV_VERTICAL_SCREEN		1
 #define GT_RAWDATA_CSV_RXTX_ROTATE 2
+#define GTX8_CHARGE_BUFEER_LEN 3
+#define GTX8_CHARGE_MODE_DELAY_TIME 50
+#define GTX8_CHARGE_ON_VALUE_0 0x06
+#define GTX8_CHARGE_ON_VALUE_1 0x00
+#define GTX8_CHARGE_ON_VALUE_2 0xFA
+#define GTX8_CHARGE_OFF_VALUE_0 0x07
+#define GTX8_CHARGE_OFF_VALUE_1 0x00
+#define GTX8_CHARGE_OFF_VALUE_2 0xF9
+#define GTX8_CHARGE_REG_VALUE 0xFF
 
 
 #define GTX8_EXIST				1
@@ -81,7 +91,7 @@
 #define TOUCH_DATA_LEN_4 			4
 #define DMNNY_BYTE_LEN_2 			2
 #define TOUCH_DATA_LEN_1 1
-#define BYTES_PEN_COORD 12
+#define BYTES_PEN_COORD 14
 #define GTX8_EDGE_DATA_SIZE			20
 #define HEAD_LEN 1
 #define TAIL_LEN 2
@@ -116,6 +126,7 @@
 #define GTP_CMD_STYLUS_NORMAL		0x13
 #define GTP_CMD_STYLUS_SWITCH_OFF	0x14
 #define GTX8_CMD_STYLUS_RESPONSE_MODE 0x16
+#define GTX8_CMD_PEN_NORMAL_MODE_7382 0x17
 #define GTX8_CMD_GESTURE			0x08
 #define GTX8_CMD_GESTURE_EXIT 0x0A
 #define GTX8_CMD_START_SEND_CFG			0x80
@@ -132,6 +143,18 @@
 #define GTP_REG_DOZE_STAT			0x3100
 #define GTP_REG_ESD_TICK_R			0x3103
 #define GTP_REG_ESD_TICK_R_GT7382 0x8043
+
+#define GTP_REG_FREQ_TX1_GT7382 11
+#define GTP_REG_FREQ_TX2_GT7382 12
+#define GTP_REG_STYLUS3_SHIF_FREQ 0xFF22
+#define GTP_SHIFT_FREQ_IDLE 0xFF
+#define GTP_SHIFT_FREQ_ACTIVE 0x55
+#define GTP_SHIFT_FREQ_CONFIRM 0xAA
+#define STYLUS3_FREQ_SHIFT_REQUEST (1 << 2)
+#define STYLUS3_APP_SWITCH (1 << 3)
+#define STYLUS3_PLAM_SUPPRESSION_ON (1 << 4)
+#define GLOBAL_PALM_SUPPRESSION_ON 1
+#define GLOBAL_PALM_SUPPRESSION_OFF 0
 
 #define GTP_REG_SENSOR_NUM			0x5473
 #define GTP_REG_DRIVER_GROUP_A_NUM		0x5477
@@ -157,6 +180,17 @@
 #define GTP_REG_VID_GT7382 0x8244
 #define GTP_REG_SENSOR_ID_GT7382 0xFF80
 #define GTP_I2C_DETECT_ADDR_GT7382 0x8000
+#define SYTULS_CONNECT_BUFFER_LEN 3
+#define SYTULS_CONNECT_ON_COMMAND 0x18
+#define SYTULS_CONNECT_ON_VALUE 0x00
+#define SYTULS_CONNECT_ON_CHECKSUM 0xE8
+#define SYTULS_CONNECT_OFF_COMMAND 0x19
+#define SYTULS_CONNECT_OFF_VALUE 0x00
+#define SYTULS_CONNECT_OFF_CHECKSUM 0xE7
+#define SYTULS_DELAY 50
+#define SYTULS_CONNECT_STATUS 2
+#define SYTULS_DISCONNECT_STATUS 0
+#define SYTULS_VALUE 2
 
 #define WD_TRI_TIMES_5				5
 #define GTP_REG_LEN_6			6
@@ -202,6 +236,7 @@
 #define HW_REG_G1_ACCESS1 0x4255
 #define HW_REG_G1_ACCESS2 0x4299
 #define GT738X_SEND_CFG_DELAY 210
+#define GT738X_ISP_STATE_REG 0x4195
 
 #define ISP_READY_FLAG 0x55
 #define START_WRITE_FLASH 0xaa
@@ -274,6 +309,7 @@
 #define ROI_TRACKID_MASK			0x0f
 #define GTX8_BIT_AND_0x0F			0x0f
 #define GTX8_ROI_SRC_STATUS_INDEX		2
+#define ROI_DATA_BYTES				2
 
 /* Regiter for short  test*/
 #define SHORT_STATUS_REG			0x5095
@@ -356,6 +392,8 @@
 #define MAX_SEN_NUM_6861 29
 #define ACTUAL_RX_NUM_6861 40
 #define ACTUAL_TX_NUM_6861 22
+#define MAX_MAP_DEV_NUM_6861 40
+#define MAX_MAP_SEN_NUM_6861 36
 
 #define MAX_DRV_NUM_6862			47
 #define MAX_SEN_NUM_6862			29
@@ -367,7 +405,8 @@
 /* easy wakeup */
 #define GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE 	  0x80
 #define GTX8_PEN_WAKEUP_ONLI_SCREEN_ON_EVENT_TYPE 	  0x81
-#define GTX8_PEN_CLICK_EVENT_TYPE 0xCC
+#define GTX8_FINGER_DOUBLE_CLICK_EVENT_TYPE 0xCC
+#define GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE_GT7382H 0xC0
 #define GTX8_GESTURE_EVENT_FLAG_BIT     (1<<5)
 
 #define PID_DATA_MAX_LEN		8
@@ -417,15 +456,47 @@
 
 #define TS_SWITCH_PEN_RESPON_FAST_CMD_DATA	    0
 #define TS_SWITCH_PEN_RESPON_NORMAL_CMD_DATA	1
-
+#define TS_SWITCH_PEN_NORMAL_CMD_DATA_7382 0
+#define TS_SWITCH_PEN_CMD_LEN 3
+#define TS_PEN_PALM_SUPPRESSION_CMD 1
+#define TS_PEN_PALM_SUPPRESSION_IN_CHECK 0xE9
+#define TS_PEN_PALM_SUPPRESSION_OUT_CHECK 0xE8
 
 #define  GTX8_AFTER_REST_DELAY  100
 #define GT73X_AFTER_REST_DELAY 250
 #define GT73X_AFTER_REST_DELAY_440 440
+/*
+ * After TP resets, it need 420ms dealy to make sure ic is working normal.
+ * After TP resets, LCD consumes about 170ms before TP resume,
+ * so it just need anthor 250ms to be used to init TP ic.
+ */
+#define GT73X_AFTER_REST_DELAY_GESTURE_MODE 250
 
 
 #define getU32(a) ((u32)getUint((u8 *)(a), 4))
 #define getU16(a) ((u16)getUint((u8 *)(a), 2))
+
+/* gt7382 stylus3 type info */
+#define GT73X_STYLUS3_TYPE1 52 /* cd52 stylus */
+#define GT73X_STYLUS3_TYPE2 1 /* Alita stylus */
+#define GT73X_STYLUS3_TYPE3 2 /* cd54 stylus */
+#define GT73X_STYLUS3_TYPE_DATA_LEN 3
+#define GT73X_STYLU3_TYPE_DATA0 0xC1
+#define GT73X_STYLU3_TYPE1_DATA1 0x01
+#define GT73X_STYLU3_TYPE1_DATA2 0x3E
+#define GT73X_STYLU3_TYPE2_DATA1 0x02
+#define GT73X_STYLU3_TYPE2_DATA2 0x3D
+#define GT73X_STYLU3_TYPE3_DATA1 0x03
+#define GT73X_STYLU3_TYPE3_DATA2 0x3C
+#define GT73X_STYLUS3_TYPE_CHECK_REG_ADDR 0xFF40
+#define GT73X_STYLUS3_TYPE_CHECK_DATA_LEN 1
+#define GT73X_STYLUS3_TYPE_DEF_CHECK_DATA 0x00
+#define GT73X_STYLUS3_TYPE1_CHECK_DATA 0x01
+#define GT73X_STYLUS3_TYPE2_CHECK_DATA 0x02
+#define GT73X_STYLUS3_TYPE3_CHECK_DATA 0x03
+#define GT73X_STYLUS3_TYPE_RETRY 3
+#define MOVE_8_BIT 8
+#define GET_8BIT_DATA 0xFF
 
 #if defined (CONFIG_HUAWEI_DSM)
 extern struct dsm_client *ts_dclient;
@@ -649,6 +720,16 @@ struct gtx8_ts_data {
 	struct pinctrl_state *pins_default;
 	struct pinctrl_state *pins_suspend;
 	struct pinctrl_state *pins_gesture;
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	struct pinctrl_state *pinctrl_state_reset_high;
+	struct pinctrl_state *pinctrl_state_reset_low;
+	struct pinctrl_state *pinctrl_state_release;
+	struct pinctrl_state *pinctrl_state_int_high;
+	struct pinctrl_state *pinctrl_state_int_low;
+	struct pinctrl_state *pinctrl_state_as_int;
+	struct pinctrl_state *pinctrl_state_iovdd_low;
+	struct pinctrl_state *pinctrl_state_iovdd_high;
+#endif
 	struct ts_kit_device_data *dev_data;
 	struct gtx8_ts_regs reg;
 	struct gtx8_ts_ops ops;
@@ -690,6 +771,8 @@ struct gtx8_ts_data {
 	int support_filename_contain_projectid;
 	int support_checked_esd_reset_chip;
 	int delete_insignificant_chip_info;
+	u32 support_pen_use_max_resolution;
+	u32 support_retry_read_gesture;
 	u32 in_recovery_mode;
 	int ic_type;
 	u32 power_self_ctrl;/*0-LCD control, 1-tp controlled*/

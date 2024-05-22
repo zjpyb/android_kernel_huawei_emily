@@ -135,7 +135,6 @@ void pe_snk_select_capability_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 			pd_event->msg_sec, pd_port->last_rdo);
 	} else {
 		/* new request, for debug only */
-		/* pd_dpm_sink_vbus(pd_port, false); */
 		PE_DBG("NewReq, rdo:0x%08x\r\n", pd_port->last_rdo);
 	}
 

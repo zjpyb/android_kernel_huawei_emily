@@ -1358,12 +1358,12 @@ static int st_holster_switch(struct ts_holster_info *info)
 {
 	int retval = NO_ERR;
 
-	TS_LOG_INFO("holster switch(%d) action: %d\n", info->holster_switch, info->op_action);
 	if (!info) {
 		TS_LOG_ERR("synaptics_holster_switch: info is Null\n");
 		retval = -ENOMEM;
 		return retval;
 	}
+	TS_LOG_INFO("holster switch(%d) action: %d\n", info->holster_switch, info->op_action);
 
 	switch (info->op_action) {
 		case TS_ACTION_WRITE:
@@ -1567,9 +1567,9 @@ static int st_chip_get_info(struct ts_chip_info_param *info)
 {
 	int retval = NO_ERR;
 	struct fts_ts_info *ts_info = fts_get_info();
-	
+
 	snprintf(info->ic_vendor, sizeof(info->ic_vendor), "st");
-	snprintf(info->mod_vendor, sizeof(info->ic_vendor), ts_info->project_id);
+	snprintf(info->mod_vendor, sizeof(info->mod_vendor), ts_info->project_id);
 	snprintf(info->fw_vendor, sizeof(info->fw_vendor),
 		 "%x.%x", ftsInfo.u16_fwVer, ftsInfo.u16_cfgId);
 
@@ -1963,10 +1963,10 @@ static int st_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);

@@ -13,8 +13,35 @@ struct tz_status {
 	uint32_t max_lba;       /* max LBA(4KB unit) */
 	uint32_t total_vpc;     /* Total VPC, Valid when TurboZone Enable */
 	uint8_t close_qcnt;     /* blocks to return */
-	uint8_t forbidden;      /* already used once, cannot enable again */
-	uint8_t reserved[2];    /* reserved */
+	uint8_t forbidden;      /* already used once, cannot enable again, reserved for 2.0 */
+	uint16_t tz_close_cnt;  /* for 2.0 */
+};
+
+struct tz_cap_info {
+	uint32_t marked_slc_blks;  /* turbo zone marked slc blks, unit: 4K */
+	uint32_t marked_tlc_blks;  /* turbo zone marked tlc blks, unit: 4K */
+	uint32_t remain_slc_blks;  /* remained slc blks, unit: 4K */
+	uint32_t slc_exist_status; /* slc exist flag */
+};
+
+struct tz_blk_info {
+	uint32_t addr;  /* query blk info lba */
+	uint16_t len;   /* query blk info length */
+	uint8_t *flags; /* the return info of query lba */
+	uint16_t buf_len; /* the flags buffer length */
+};
+
+enum {
+	TZ_INVALID = 0,
+	TZ_VER_1_0 = 1,
+	TZ_VER_2_0 = 2,
+};
+
+enum {
+	TZ_READ_DESC	= 1,
+	TZ_STATUS	= 2,
+	TZ_CAP_INFO	= 3,
+	TZ_BLK_INFO	= 4,
 };
 
 enum tz_desc_id {
@@ -27,6 +54,14 @@ enum tz_desc_id {
 	TZ_FORCE_OPEN_FLAG  = 0x10,
 #endif
 	TZ_DESC_MAX,
+};
+
+enum vendor_ctrl_desc_id {
+	VENDOR_IDN_TT_UNIT_RD		= 0x05,
+	DEVICE_CAPABILITY_FLAG		= 0x06,
+	VENDOR_IDN_TT_UNIT_WT		= 0x08,
+	SET_TZ_STREAM_ID		= 0x0C,
+	VENDOR_CTRL_MAX,
 };
 
 /* UTP QUERY Transaction Specific Fields OpCode */
@@ -47,8 +82,27 @@ enum query_opcode {
 	UPIU_QUERY_OPCODE_M_GC_CHECK = 0xF2,
 #endif /* CONFIG_HISI_UFS_MANUAL_BKOPS */
 	UPIU_QUERY_OPCODE_READ_HI1861_FSR = 0xF3, /*for hi1861*/
+	UPIU_QUERY_OPCODE_VENDOR_READ = 0xF8,
+	UPIU_QUERY_OPCODE_VENDOR_WRITE = 0xF9,
 	UPIU_QUERY_OPCODE_TZ_CTRL = 0xFA,
 	UPIU_QUERY_OPCODE_READ_TZ_DESC = 0xFB,
 	UPIU_QUERY_OPCODE_MAX,
 };
+
+#ifndef CONFIG_HISI_DEBUG_FS
+void delete_ufs_product_name(char *cmdline);
+#endif
+
+#if defined(CONFIG_HISI_DEBUG_FS) && defined(CONFIG_HISI_UFS_HC)
+void ufs_change_vol_pre(void);
+void ufs_change_vol_post(void);
+#else
+static inline void ufs_change_vol_pre(void)
+{
+}
+static inline void ufs_change_vol_post(void)
+{
+}
+#endif
+
 #endif /* UAPI_UFS_H_ */

@@ -32,6 +32,9 @@
 #ifdef CONFIG_HISI_LB
 #include <linux/hisi/hisi_lb.h>
 #endif
+#ifdef CONFIG_HISI_CMA_RECORD_DEBUG
+#include <linux/hisi/hisi_cma_debug.h>
+#endif
 #include <asm/cacheflush.h>
 
 static int swiotlb __ro_after_init;
@@ -158,6 +161,11 @@ static void *__dma_alloc(struct device *dev, size_t size,
 	if (!ptr)
 		goto no_mem;
 
+#ifdef CONFIG_HISI_CMA_RECORD_DEBUG
+	if (!attrs)
+		record_dma_cma_caller_info(dev, flags);
+#endif
+
 	/* no need for non-cacheable mapping if coherent */
 	if (coherent)
 		return ptr;
@@ -199,6 +207,22 @@ static void __dma_free(struct device *dev, size_t size,
 	}
 	__dma_free_coherent(dev, size, swiotlb_addr, dma_handle, attrs);
 }
+
+#ifdef CONFIG_HISI_IOMMU_DMA
+void *dma_iommu_alloc(struct device *dev, size_t size,
+				dma_addr_t *dma_handle, gfp_t flags,
+				unsigned long attrs)
+{
+	return __dma_alloc(dev, size, dma_handle, flags, attrs);
+}
+
+void dma_iommu_free(struct device *dev, size_t size,
+				void *vaddr, dma_addr_t dma_handle,
+				unsigned long attrs)
+{
+	__dma_free(dev, size, vaddr, dma_handle, attrs);
+}
+#endif
 
 static dma_addr_t __swiotlb_map_page(struct device *dev, struct page *page,
 				     unsigned long offset, size_t size,
@@ -773,6 +797,11 @@ static int __iommu_mmap_attrs(struct device *dev, struct vm_area_struct *vma,
 	if (dma_mmap_from_dev_coherent(dev, vma, cpu_addr, size, &ret))
 		return ret;
 
+	if (!is_vmalloc_addr(cpu_addr)) {
+		unsigned long pfn = page_to_pfn(virt_to_page(cpu_addr));
+		return __swiotlb_mmap_pfn(vma, pfn, size);
+	}
+
 	if (attrs & DMA_ATTR_FORCE_CONTIGUOUS) {
 		/*
 		 * DMA_ATTR_FORCE_CONTIGUOUS allocations are always remapped,
@@ -795,6 +824,11 @@ static int __iommu_get_sgtable(struct device *dev, struct sg_table *sgt,
 {
 	unsigned int count = PAGE_ALIGN(size) >> PAGE_SHIFT;
 	struct vm_struct *area = find_vm_area(cpu_addr);
+
+	if (!is_vmalloc_addr(cpu_addr)) {
+		struct page *page = virt_to_page(cpu_addr);
+		return __swiotlb_get_sgtable_page(sgt, page, size);
+	}
 
 	if (attrs & DMA_ATTR_FORCE_CONTIGUOUS) {
 		/*

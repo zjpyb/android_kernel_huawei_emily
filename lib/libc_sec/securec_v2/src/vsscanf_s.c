@@ -5,7 +5,6 @@
  * Create: 2014-02-25
  */
 
-#define SECUREC_INLINE_INIT_FILE_STREAM_STR 1
 #include "secinput.h"
 #if defined(SECUREC_VXWORKS_PLATFORM) && !SECUREC_IN_KERNEL && \
     (!defined(SECUREC_SYSAPI4VXWORKS) && !defined(SECUREC_CTYPE_MACRO_ADAPT))
@@ -63,11 +62,11 @@ int vsscanf_s(const char *buffer, const char *format, va_list argList)
      * "   \v\f\t\r\n", "%s", str, strSize
      * Do not check all character, just first and last character then consider it is white string
      */
-    if (isspace((int)buffer[0]) && isspace((int)buffer[count - 1])) {
+    if (isspace((int)(unsigned char)buffer[0]) != 0 && isspace((int)(unsigned char)buffer[count - 1]) != 0) {
         SecClearDestBuf(buffer, format, argList);
     }
 #endif
-    SecInitFileStreamFromString(&fStr, buffer, (int)count);
+    SECUREC_FILE_STREAM_FROM_STRING(&fStr, buffer, count);
     retVal = SecInputS(&fStr, format, argList);
     if (retVal < 0) {
         SECUREC_ERROR_INVALID_PARAMTER("vsscanf_s");

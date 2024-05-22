@@ -30,9 +30,13 @@
 #define KBHB_IOCTL_ATTR_STOP        (_IOW(KBHBIO, 0x04, short))
 #define KBHB_IOCTL_INTERVAL_SET     (_IOW(KBHBIO, 0x05, short))
 #define KBHB_IOCTL_CMD              (_IOW(KBHBIO, 0x06, short))
+#define KBHB_IOCTL_SEND_DATA        (_IOW(KBHBIO, 0x07, short))
 
-#define NOTIFY_EVENT_NONE           (0)
-#define NOTIFY_EVENT_DETECT         (1)
+#define NOTIFY_EVENT_NONE           0
+#define NOTIFY_EVENT_DETECT         1
+#define NOTIFY_EVENT_RECV_NFC_REQ   2
+#define NOTIFY_EVENT_NEAR           3
+#define NOTIFY_EVENT_FAR            4
 
 struct kb_dev_ops {
 	int  (*process_kbdata)(char *data, int count);

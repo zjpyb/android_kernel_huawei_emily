@@ -3,7 +3,7 @@
  *
  * this is for ic a1007.c
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,7 +17,7 @@
  */
 
 #include "a1007.h"
-#include <huawei_platform/power/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -60,8 +60,8 @@ static void a1007_hard_reset(struct a1007_des *drv_data)
 
 	hwlog_info("%s hard reset\n", drv_data->name);
 	ops->reset(gpio, trq);
-	A1007_MEM_VALID(drv_data->mem.mac_context) = 0;
-	A1007_MEM_VALID(drv_data->mem.lock_status) = 0;
+	a1007_mem_valid(drv_data->mem.mac_context) = 0;
+	a1007_mem_valid(drv_data->mem.lock_status) = 0;
 }
 
 static void a1007_soft_reset(struct a1007_des *drv_data)
@@ -83,7 +83,7 @@ static void a1007_mix_reset(struct a1007_des *drv_data, unsigned char num)
 }
 
 static int32_t a1007_owi_send(struct a1007_des *drv_data, const uint32_t len,
-			      const uint8_t *buf)
+	const uint8_t *buf)
 {
 	uint8_t addr = drv_data->addr;
 	uint32_t i;
@@ -91,25 +91,33 @@ static int32_t a1007_owi_send(struct a1007_des *drv_data, const uint32_t len,
 	struct ow_phy_ops_v2 *ops = &drv_data->ops;
 	struct ow_treq_v2 *trq = &drv_data->trq;
 
+	/* Add the QoS request and set the latency to 0 */
+	pm_qos_add_request(&drv_data->pm_qos, PM_QOS_CPU_DMA_LATENCY, 0);
+	kick_all_cpus_sync();
+
 	/* sometime bit signal pulse is wider, so send a stop bit first */
-	if (ops->start(A1007_ADDR_WR(addr), gpio, trq)) {
-		hwlog_err("Write Mode: Send addr(%02x) to ic failed\n", addr);
-		return A1007_FAIL;
+	if (ops->start(a1007_addr_wr(addr), gpio, trq)) {
+		hwlog_err("Write Mode: Send addr %02x to ic failed\n", addr);
+		goto a1007_fail;
 	}
 	/* Write data */
 	for (i = 0; i < len; i++) {
 		if (ops->write_byte((i == len - 1), buf[i], gpio, trq)) {
-			hwlog_err("Tx %uth data(%02x) failed\n", i, buf[i]);
-			return A1007_FAIL;
+			hwlog_err("Tx %uth data %02x failed\n", i, buf[i]);
+			goto a1007_fail;
 		}
 	}
 
+	pm_qos_remove_request(&drv_data->pm_qos);
 	return A1007_SUCCESS;
+a1007_fail:
+	pm_qos_remove_request(&drv_data->pm_qos);
+	return A1007_FAIL;
 }
 
 /* buf need offer len bytes at least */
 static int32_t __a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
-				const char get_crc, uint8_t *buf)
+	const char get_crc, uint8_t *buf)
 {
 	uint8_t addr = drv_data->addr;
 	uint8_t temp;
@@ -121,8 +129,8 @@ static int32_t __a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
 	struct ow_treq_v2 *trq = &drv_data->trq;
 
 	/* if want to read last bit of addr should be 1 */
-	if (ops->start(A1007_ADDR_RD(addr), gpio, trq)) {
-		hwlog_err("Read Mode: Send addr(%02x) to ic failed\n", addr);
+	if (ops->start(a1007_addr_rd(addr), gpio, trq)) {
+		hwlog_err("Read Mode: Send addr %02x to ic failed\n", addr);
 		return A1007_FAIL;
 	}
 	/* read rx length */
@@ -136,12 +144,12 @@ static int32_t __a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
 	 * if crc buf[0] == len - 1
 	 * others data is accurate the size
 	 */
-	if (buf[0] == 0 || buf[0] == 1 || get_crc)
+	if ((buf[0] == 0) || (buf[0] == 1) || get_crc)
 		crc = 0;
 	else
 		crc = 1;
 	i = 0;
-	if (buf[0] == (len - crc - 1) || buf[0] == 0 || buf[0] == 1) {
+	if ((buf[0] == (len - crc - 1)) || (buf[0] == 0) || (buf[0] == 1)) {
 		/* Read PCB */
 		if (ops->read_byte((i++ == len - 1), gpio, trq, buf + 1)) {
 			hwlog_err("Read PCB from ic failed\n");
@@ -161,13 +169,13 @@ static int32_t __a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
 		for (i = A1007_DATA_HEAD_SIZE; i < len; i++) {
 			end = (i == len - 1);
 			if (ops->read_byte(end, gpio, trq, buf + i)) {
-				hwlog_err("RX data(%uth) from ic failed\n", i);
+				hwlog_err("RX data %uth from ic failed\n", i);
 				return A1007_FAIL;
 			}
 		}
 	} else {
 		ops->read_byte(1, gpio, trq, &temp);
-		hwlog_err("IC says %d bytes, but %d bytes need\n", buf[0], len);
+		hwlog_err("IC says %u bytes, but %u bytes need\n", buf[0], len);
 		return A1007_FAIL;
 	}
 
@@ -175,15 +183,31 @@ static int32_t __a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
 }
 
 static int32_t a1007_owi_recv(struct a1007_des *drv_data, const uint32_t len,
-			      uint8_t *buf)
+	uint8_t *buf)
 {
-	return __a1007_owi_recv(drv_data, len, 0, buf);
+	int32_t ret;
+
+	/* Add the QoS request and set the latency to 0 */
+	pm_qos_add_request(&drv_data->pm_qos, PM_QOS_CPU_DMA_LATENCY, 0);
+	kick_all_cpus_sync();
+	ret = __a1007_owi_recv(drv_data, len, 0, buf);
+	pm_qos_remove_request(&drv_data->pm_qos);
+
+	return ret;
 }
 
 static int32_t a1007_owi_recv_crc(struct a1007_des *drv_data,
-				  const uint32_t len, uint8_t *buf)
+	const uint32_t len, uint8_t *buf)
 {
-	return __a1007_owi_recv(drv_data, len, 1, buf);
+	int32_t ret;
+
+	/* Add the QoS request and set the latency to 0 */
+	pm_qos_add_request(&drv_data->pm_qos, PM_QOS_CPU_DMA_LATENCY, 0);
+	kick_all_cpus_sync();
+	ret = __a1007_owi_recv(drv_data, len, 1, buf);
+	pm_qos_remove_request(&drv_data->pm_qos);
+
+	return ret;
 }
 
 static int32_t __a1007_get_lstatus(struct a1007_des *drv_data)
@@ -193,7 +217,7 @@ static int32_t __a1007_get_lstatus(struct a1007_des *drv_data)
 	uint8_t wbuf[A1007_SML_BUFF_SIZE];
 	uint32_t i = 0;
 
-	wbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_GET_LOCK_STATUS);
+	wbuf[i++] = a1007_cmd_first_byte(A1007_GET_LOCK_STATUS);
 	wbuf[i] = (uint8_t)A1007_GET_LOCK_STATUS;
 	rlen = A1007_GET_LSTATUS_LEN;
 
@@ -206,12 +230,12 @@ static int32_t __a1007_get_lstatus(struct a1007_des *drv_data)
 		return A1007_FAIL;
 	}
 	if (rbuf[rlen - 1] !=
-	    a1007_crc8_calc(A1007_GET_LOCK_STATUS, rbuf, rlen - 1)) {
-		hwlog_err("get lock status crc failed(%02x %02x %02x %02x)\n",
-			  rbuf[0], rbuf[1], rbuf[2], rbuf[3]);
+		a1007_crc8_calc(A1007_GET_LOCK_STATUS, rbuf, rlen - 1)) {
+		hwlog_err("get lock status crc failed %02x %02x %02x %02x\n",
+			rbuf[0], rbuf[1], rbuf[2], rbuf[3]);
 		return A1007_FAIL;
 	}
-	A1007_MEM_TO_DATA(drv_data->mem.lock_status)[0] = rbuf[2];
+	a1007_mem_to_data(drv_data->mem.lock_status)[0] = rbuf[2];
 
 	return A1007_SUCCESS;
 }
@@ -222,8 +246,8 @@ static int32_t _a1007_get_lstatus(struct a1007_des *drv_data)
 
 	for (retry = 0; retry < GET_LOCK_STATUS_RETRY; retry++) {
 		if (__a1007_get_lstatus(drv_data)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_LOCK_STATUS_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_LOCK_STATUS_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -235,25 +259,25 @@ static int32_t _a1007_get_lstatus(struct a1007_des *drv_data)
 
 static int32_t a1007_get_lstatus(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.lock_status))
+	if (a1007_mem_valid(drv_data->mem.lock_status))
 		return A1007_SUCCESS;
 	if (_a1007_get_lstatus(drv_data))
 		return A1007_FAIL;
-	A1007_MEM_VALID(drv_data->mem.lock_status) = 1;
+	a1007_mem_valid(drv_data->mem.lock_status) = 1;
 
 	return A1007_SUCCESS;
 }
 
 static int32_t a1007_get_lstatus_noretry(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.lock_status))
+	if (a1007_mem_valid(drv_data->mem.lock_status))
 		return A1007_SUCCESS;
 	if (__a1007_get_lstatus(drv_data)) {
 		hwlog_err("__a1007_get_lstatus failed in %s for %s", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
-	A1007_MEM_VALID(drv_data->mem.lock_status) = 1;
+	a1007_mem_valid(drv_data->mem.lock_status) = 1;
 
 	return A1007_SUCCESS;
 }
@@ -271,47 +295,55 @@ static int32_t __a1007_get_device_id(struct a1007_des *drv_data)
 	wbuf[0] = A1007_DEVICE_ID_ADDR;
 	wbuf[1] = drv_data->addr;
 
+	/* Add the QoS request and set the latency to 0 */
+	pm_qos_add_request(&drv_data->pm_qos, PM_QOS_CPU_DMA_LATENCY, 0);
+	kick_all_cpus_sync();
+
 	a1007_hard_reset(drv_data);
 
-	if (ops->start(A1007_ADDR_WR(wbuf[0]), gpio, trq)) {
+	if (ops->start(a1007_addr_wr(wbuf[0]), gpio, trq)) {
 		hwlog_err("read id failed at sending %02X\n",
-			  A1007_ADDR_WR(wbuf[0]));
-		return A1007_FAIL;
+			a1007_addr_wr(wbuf[0]));
+		goto a1007_fail;
 	}
 	if (ops->write_byte(1, wbuf[1], gpio, trq)) {
 		hwlog_err("read id failed at sending %02X\n", wbuf[1]);
-		return A1007_FAIL;
+		goto a1007_fail;
 	}
-	if (ops->start(A1007_ADDR_RD(wbuf[0]), gpio, trq)) {
+	if (ops->start(a1007_addr_rd(wbuf[0]), gpio, trq)) {
 		hwlog_err("read id failed at sending %02X\n",
-			  A1007_ADDR_RD(wbuf[0]));
-		return A1007_FAIL;
+			a1007_addr_rd(wbuf[0]));
+		goto a1007_fail;
 	}
 	for (i = 0; i < A1007_DEV_ID_BUFF_SIZE; i++) {
 		if (ops->read_byte(((A1007_DEV_ID_BUFF_SIZE - 1) == i), gpio,
-				   trq, rbuf + i)) {
+			trq, rbuf + i)) {
 			hwlog_err("read id failed at recv %uth byte\n", i + 1);
-			return A1007_FAIL;
+			goto a1007_fail;
 		}
 	}
 
 	if (rbuf[0]) {
 		hwlog_err("illegal device id:%02x %02x %02x\n",
-			  rbuf[0], rbuf[1], rbuf[2]);
-		return A1007_FAIL;
+			rbuf[0], rbuf[1], rbuf[2]);
+		goto a1007_fail;
 	}
 	/* ?also can't find in data sheet */
 	if (rbuf[1] != 0x06) {
 		hwlog_err("illegal device id:%02x %02x %02x\n",
-			  rbuf[0], rbuf[1], rbuf[2]);
-		return A1007_FAIL;
+			rbuf[0], rbuf[1], rbuf[2]);
+		goto a1007_fail;
 	}
-	A1007_MEM_TO_DATA(drv_data->mem.dev_id)[0] = rbuf[0];
-	A1007_MEM_TO_DATA(drv_data->mem.dev_id)[1] = rbuf[1];
-	A1007_MEM_TO_DATA(drv_data->mem.dev_id)[2] = rbuf[2];
+	a1007_mem_to_data(drv_data->mem.dev_id)[0] = rbuf[0];
+	a1007_mem_to_data(drv_data->mem.dev_id)[1] = rbuf[1];
+	a1007_mem_to_data(drv_data->mem.dev_id)[2] = rbuf[2];
 	hwlog_info("dev id: %02x %02x %02x", rbuf[0], rbuf[1], rbuf[2]);
 
+	pm_qos_remove_request(&drv_data->pm_qos);
 	return A1007_SUCCESS;
+a1007_fail:
+	pm_qos_remove_request(&drv_data->pm_qos);
+	return A1007_FAIL;
 }
 
 static int32_t _a1007_get_device_id(struct a1007_des *drv_data)
@@ -320,8 +352,8 @@ static int32_t _a1007_get_device_id(struct a1007_des *drv_data)
 
 	for (retry = 0; retry < GET_DEV_ID_RETRY; retry++) {
 		if (__a1007_get_device_id(drv_data)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_DEV_ID_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_DEV_ID_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -333,11 +365,11 @@ static int32_t _a1007_get_device_id(struct a1007_des *drv_data)
 
 static int32_t a1007_get_device_id(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.dev_id))
+	if (a1007_mem_valid(drv_data->mem.dev_id))
 		return A1007_SUCCESS;
 	if (_a1007_get_device_id(drv_data))
 		return A1007_FAIL;
-	A1007_MEM_VALID(drv_data->mem.dev_id) = 1;
+	a1007_mem_valid(drv_data->mem.dev_id) = 1;
 
 	return A1007_SUCCESS;
 }
@@ -349,7 +381,7 @@ static int32_t a1007_get_crc(struct a1007_des *drv_data, uint8_t *crc)
 	uint8_t wbuf[A1007_SML_BUFF_SIZE];
 	uint32_t wlen;
 
-	wbuf[0] = A1007_CMD_FIRST_BYTE(A1007_GET_CRC);
+	wbuf[0] = a1007_cmd_first_byte(A1007_GET_CRC);
 	wbuf[1] = (uint8_t)A1007_GET_CRC;
 	wlen = 2;
 	rlen = A1007_GET_CRC_LEN;
@@ -368,8 +400,7 @@ static int32_t a1007_get_crc(struct a1007_des *drv_data, uint8_t *crc)
 }
 
 static int32_t __a1007_read_memory(struct a1007_des *drv_data,
-				   const uint16_t mem_addr,
-				   const uint32_t len, uint8_t *buf)
+	const uint16_t mem_addr, const uint32_t len, uint8_t *buf)
 {
 	uint8_t rbuf[A1007_BIG_BUFF_SIZE];
 	uint32_t rlen;
@@ -377,34 +408,34 @@ static int32_t __a1007_read_memory(struct a1007_des *drv_data,
 	uint32_t wlen;
 	uint8_t crc;
 
-	wbuf[0] = A1007_CMD_FIRST_BYTE(mem_addr);
+	wbuf[0] = a1007_cmd_first_byte(mem_addr);
 	wbuf[1] = (uint8_t)mem_addr;
 	wlen = sizeof(mem_addr);
 
 	rlen = len + A1007_DATA_HEAD_SIZE;
 	if (unlikely(rlen > A1007_BIG_BUFF_SIZE)) {
 		hwlog_err("need too much data in %s for %s\n",
-			  __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 	if (a1007_owi_send(drv_data, wlen, wbuf)) {
-		hwlog_err("send memory address(%04x) failed for %s\n",
-			  mem_addr, drv_data->name);
+		hwlog_err("send memory address %04x failed for %s\n",
+			mem_addr, drv_data->name);
 		return A1007_FAIL;
 	}
 	if (a1007_owi_recv(drv_data, rlen, rbuf)) {
-		hwlog_err("read memory address(%04x) failed for %s\n",
-			  mem_addr, drv_data->name);
+		hwlog_err("read memory address %04x failed for %s\n",
+			mem_addr, drv_data->name);
 		return A1007_FAIL;
 	}
 	if (a1007_get_crc(drv_data, &crc)) {
-		hwlog_err("read memory address(%04x) data crc failed for %s\n",
-			  mem_addr, drv_data->name);
+		hwlog_err("read memory address %04x data crc failed for %s\n",
+			mem_addr, drv_data->name);
 		return A1007_FAIL;
 	}
 	if (crc != a1007_crc8_calc(mem_addr, rbuf, rlen)) {
-		hwlog_err("crc(%02d) for addr(%04x) data(len:%d) fail for %s\n",
-			  crc, mem_addr, len, drv_data->name);
+		hwlog_err("crc %02d for addr %04x data len:%u fail for %s\n",
+			crc, mem_addr, len, drv_data->name);
 		return A1007_FAIL_CRC;
 	}
 	memcpy(buf, rbuf + A1007_DATA_HEAD_SIZE, len);
@@ -413,8 +444,7 @@ static int32_t __a1007_read_memory(struct a1007_des *drv_data,
 }
 
 static int32_t a1007_read_memory(struct a1007_des *drv_data,
-				 const uint16_t mem_addr,
-				 const uint32_t len, uint8_t *buf)
+	const uint16_t mem_addr, const uint32_t len, uint8_t *buf)
 {
 	unsigned char retry;
 	int32_t ret;
@@ -422,8 +452,8 @@ static int32_t a1007_read_memory(struct a1007_des *drv_data,
 	for (retry = 0; retry < GET_READ_MEM_RETRY; retry++) {
 		ret = __a1007_read_memory(drv_data, mem_addr, len, buf);
 		if (ret) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_READ_MEM_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_READ_MEM_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -440,7 +470,7 @@ static int check_ic_names(uint8_t *certz)
 		return A1007_FAIL;
 	}
 	if (memcmp(certz + A1007_ORG_NAME_LEN, g_com_name,
-	    A1007_COM_NAME_LEN)) {
+		A1007_COM_NAME_LEN)) {
 		hwlog_err("common name check failed\n");
 		return A1007_FAIL;
 	}
@@ -451,7 +481,7 @@ static int check_ic_names(uint8_t *certz)
 static int32_t __a1007_get_uid(struct a1007_des *drv_data)
 {
 	if (a1007_read_memory(drv_data, NXP_CERT_UID_ADDR, A1007_UID_SIZE,
-			      A1007_MEM_TO_DATA(drv_data->mem.uid))) {
+		a1007_mem_to_data(drv_data->mem.uid))) {
 		hwlog_err("%s failed\n", __func__);
 		return A1007_FAIL;
 	}
@@ -461,11 +491,11 @@ static int32_t __a1007_get_uid(struct a1007_des *drv_data)
 
 static int32_t a1007_get_uid(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.uid))
+	if (a1007_mem_valid(drv_data->mem.uid))
 		return A1007_SUCCESS;
 	if (__a1007_get_uid(drv_data))
 		return A1007_FAIL;
-	A1007_MEM_VALID(drv_data->mem.uid) = 1;
+	a1007_mem_valid(drv_data->mem.uid) = 1;
 
 	return A1007_SUCCESS;
 }
@@ -474,7 +504,7 @@ static int32_t __a1007_get_aut_source(struct a1007_des *drv_data)
 {
 	uint32_t tsize, rsize;
 	uint16_t mem_addr = NXP_CERT_ADDR;
-	uint8_t *buf = A1007_MEM_TO_DATA(drv_data->mem.certz);
+	uint8_t *buf = a1007_mem_to_data(drv_data->mem.certz);
 
 	for (tsize = 0; tsize < A1007_CERTZ_SIZE; tsize += rsize) {
 		if (tsize + A1007_CERTZ_SEG_SIZE > A1007_CERTZ_SIZE)
@@ -483,13 +513,13 @@ static int32_t __a1007_get_aut_source(struct a1007_des *drv_data)
 			rsize = A1007_CERTZ_SEG_SIZE;
 		if (a1007_read_memory(drv_data, mem_addr, rsize, buf)) {
 			hwlog_err("%s failed to read addr:%04x data in %s\n",
-				  drv_data->name, mem_addr, __func__);
+				drv_data->name, mem_addr, __func__);
 			return A1007_FAIL;
 		}
 		mem_addr += (uint16_t)rsize;
 		buf += rsize;
 	}
-	if (check_ic_names(A1007_MEM_TO_DATA(drv_data->mem.certz)))
+	if (check_ic_names(a1007_mem_to_data(drv_data->mem.certz)))
 		return A1007_FAIL;
 
 	return A1007_SUCCESS;
@@ -497,13 +527,13 @@ static int32_t __a1007_get_aut_source(struct a1007_des *drv_data)
 
 static int32_t a1007_get_aut_source(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.certz))
+	if (a1007_mem_valid(drv_data->mem.certz))
 		return A1007_SUCCESS;
 	if (__a1007_get_aut_source(drv_data)) {
 		hwlog_err("%s failed\n", __func__);
 		return A1007_FAIL;
 	}
-	A1007_MEM_VALID(drv_data->mem.certz) = 1;
+	a1007_mem_valid(drv_data->mem.certz) = 1;
 
 	return A1007_SUCCESS;
 }
@@ -517,27 +547,27 @@ static int32_t a1007_aut_sig(struct a1007_des *drv_data)
 	/* read device ID */
 	if (a1007_get_device_id(drv_data)) {
 		hwlog_err("get device id failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
-	dev_id = A1007_DEVID_U16(drv_data->mem.dev_id);
+	dev_id = a1007_devid_u16(drv_data->mem.dev_id);
 	/* read A1007 UID */
 	if (a1007_get_uid(drv_data)) {
 		hwlog_err("get uid failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	/* get ic pubkey and certz */
 	if (a1007_get_aut_source(drv_data)) {
 		hwlog_err("get ecdsa resource failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
-	uid = A1007_MEM_TO_DATA(drv_data->mem.uid);
-	certz = A1007_MEM_TO_DATA(drv_data->mem.certz);
+	uid = a1007_mem_to_data(drv_data->mem.uid);
+	certz = a1007_mem_to_data(drv_data->mem.certz);
 	if (a1007_verify_certz(g_root_pubkey, dev_id, uid, certz)) {
 		hwlog_err("signature is unbelievable for %s\n", drv_data->name);
-		A1007_MEM_VALID(drv_data->mem.certz) = 0;
+		a1007_mem_valid(drv_data->mem.certz) = 0;
 		return A1007_FAIL;
 	}
 
@@ -552,7 +582,7 @@ static int32_t a1007_exe_ecdh(struct a1007_des *drv_data, bitstr_t ecc_rs)
 	len = a1007_generate_challenge(sendbuf, ecc_rs, drv_data->rand);
 	if (a1007_owi_send(drv_data, len, sendbuf)) {
 		hwlog_err("send challenge failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 
@@ -560,21 +590,21 @@ static int32_t a1007_exe_ecdh(struct a1007_des *drv_data, bitstr_t ecc_rs)
 }
 
 static int32_t a1007_get_ecdh(struct a1007_des *drv_data, uint8_t *rev,
-			      uint8_t *rlen)
+	uint8_t *rlen)
 {
 	uint8_t sendbuf[A1007_SML_BUFF_SIZE];
 
-	sendbuf[0] = A1007_CMD_FIRST_BYTE(A1007_READ_ECDH);
+	sendbuf[0] = a1007_cmd_first_byte(A1007_READ_ECDH);
 	sendbuf[1] = (uint8_t)A1007_READ_ECDH;
 
 	if (a1007_owi_send(drv_data, A1007_CMD_SIZE, sendbuf)) {
 		hwlog_err("get ecdh cmd send failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	if (a1007_owi_recv(drv_data, A1007_READ_ECDH_LEN, rev)) {
 		hwlog_err("get ecdh data failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	*rlen = A1007_READ_ECDH_LEN;
@@ -591,19 +621,19 @@ static int __a1007_ecdh(struct a1007_des *drv_data)
 
 	if (a1007_get_aut_source(drv_data)) {
 		hwlog_err("get aut src failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	if (a1007_exe_ecdh(drv_data, ecc_rs)) {
 		hwlog_err("ask ic to do ecdh failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	/* wait ic to calculate ecdh */
 	msleep(drv_data->wait.ecdh_ms);
 	/* now we calculate ecdh */
-	pubkey = A1007_MEM_TO_DATA(drv_data->mem.certz) +
-	    A1007_CERTZ_PUBKEY_OFF;
+	pubkey = a1007_mem_to_data(drv_data->mem.certz) +
+		A1007_CERTZ_PUBKEY_OFF;
 	a1007_precompute_secret(ecc_rs, ecc_rs, pubkey);
 	/* get ecdh result from ic */
 	if (a1007_get_ecdh(drv_data, rev, &rlen)) {
@@ -611,7 +641,7 @@ static int __a1007_ecdh(struct a1007_des *drv_data)
 		return A1007_FAIL;
 	}
 	if (a1007_compute_key_from_response(rev, rlen, ecc_rs,
-	    A1007_MEM_TO_DATA(drv_data->mem.mac_context))) {
+		a1007_mem_to_data(drv_data->mem.mac_context))) {
 		hwlog_err("ECDH failed for %s\n", drv_data->name);
 		return A1007_FAIL;
 	}
@@ -625,8 +655,8 @@ static int _a1007_ecdh(struct a1007_des *drv_data)
 
 	for (retry = 0; retry < GET_ECDH_RETRY; retry++) {
 		if (__a1007_ecdh(drv_data)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_ECDH_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_ECDH_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -638,25 +668,25 @@ static int _a1007_ecdh(struct a1007_des *drv_data)
 
 static int a1007_ecdh(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.mac_context))
+	if (a1007_mem_valid(drv_data->mem.mac_context))
 		return A1007_SUCCESS;
 	if (_a1007_ecdh(drv_data))
 		return A1007_FAIL;
-	A1007_MEM_VALID(drv_data->mem.mac_context) = 1;
+	a1007_mem_valid(drv_data->mem.mac_context) = 1;
 
 	return A1007_SUCCESS;
 }
 
 static int a1007_ecdh_noretry(struct a1007_des *drv_data)
 {
-	if (A1007_MEM_VALID(drv_data->mem.mac_context))
+	if (a1007_mem_valid(drv_data->mem.mac_context))
 		return A1007_SUCCESS;
 	if (__a1007_ecdh(drv_data)) {
 		hwlog_err("__a1007_ecdh failed in %s for %s", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
-	A1007_MEM_VALID(drv_data->mem.mac_context) = 1;
+	a1007_mem_valid(drv_data->mem.mac_context) = 1;
 
 	return A1007_SUCCESS;
 }
@@ -667,59 +697,59 @@ static int32_t __a1007_verify_mac(struct a1007_des *drv_data)
 	uint8_t recvbuf[A1007_SML_BUFF_SIZE];
 	uint8_t i = 0;
 	uint8_t crc_len;
-	uint8_t mac[8] = { 0 };
+	uint8_t mac[A1007_MAC_LEN_SIZE] = { 0 };
 	uint8_t *mac_source = NULL;
 	uint8_t *ic_mac = NULL;
 	int32_t ret;
 
 	if (a1007_ecdh(drv_data)) {
 		hwlog_err("ecdh failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 
-	sendbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_EXE_MAC);
+	sendbuf[i++] = a1007_cmd_first_byte(A1007_EXE_MAC);
 	sendbuf[i++] = (uint8_t)A1007_EXE_MAC;
 	sendbuf[i++] = 1;
 	sendbuf[i++] = A1007_VIRTUAL_PAGE;
 	sendbuf[i] = a1007_crc8_calc(A1007_EXE_MAC, sendbuf + A1007_CMD_SIZE,
-				     i - A1007_CMD_SIZE);
+		i - A1007_CMD_SIZE);
 	if (a1007_owi_send(drv_data, i + 1, sendbuf)) {
 		hwlog_err("send exe mac failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	msleep(drv_data->wait.ecdsa_ms);
 	i = 0;
-	sendbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_READ_MAC);
+	sendbuf[i++] = a1007_cmd_first_byte(A1007_READ_MAC);
 	sendbuf[i++] = A1007_READ_MAC & 0x00FF;
 	if (a1007_owi_send(drv_data, i, sendbuf)) {
 		hwlog_err("send get mac failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	ret = a1007_owi_recv(drv_data, A1007_READ_MAC_LEN, recvbuf);
 	if (ret) {
 		hwlog_err("recv mac failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return ret;
 	}
 	crc_len = A1007_READ_MAC_LEN - 1;
 	if (recvbuf[crc_len] !=
-	    a1007_crc8_calc(A1007_READ_MAC, recvbuf, crc_len)) {
+		a1007_crc8_calc(A1007_READ_MAC, recvbuf, crc_len)) {
 		hwlog_err("mac crc failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	mac_source = recvbuf + A1007_DATA_HEAD_SIZE;
-	present80_cbcmac(A1007_MEM_TO_DATA(drv_data->mem.mac_context),
-			 mac_source, A1007_MAC_LEN_SIZE, 1, mac);
-	present80_cbcmac(A1007_MEM_TO_DATA(drv_data->mem.mac_context),
-			 NULL, A1007_BLOCK_SIZE, 0, mac);
+	present80_cbcmac(a1007_mem_to_data(drv_data->mem.mac_context),
+		mac_source, A1007_MAC_LEN_SIZE, 1, mac, A1007_MAC_LEN_SIZE);
+	present80_cbcmac(a1007_mem_to_data(drv_data->mem.mac_context),
+		NULL, A1007_BLOCK_SIZE, 0, mac, A1007_MAC_LEN_SIZE);
 	ic_mac = recvbuf + A1007_DATA_HEAD_SIZE + A1007_MAC_LEN_SIZE;
 	if (memcmp(mac, ic_mac, A1007_MAC_LEN_SIZE)) {
 		hwlog_err("mac mismatch in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 
@@ -734,8 +764,8 @@ static int32_t a1007_verify_mac(struct a1007_des *drv_data)
 	for (retry = 0; retry < GET_VERYFY_MAC_RETRY; retry++) {
 		ret = __a1007_verify_mac(drv_data);
 		if (ret) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_VERYFY_MAC_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_VERYFY_MAC_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -753,20 +783,20 @@ static enum batt_ic_type get_ic_type(void)
 static int __get_batt_type(struct a1007_des *drv_data)
 {
 	if (a1007_read_memory(drv_data, USER_CERT_ADDR, BATTERY_TYPE_SIZE,
-			      A1007_MEM_TO_DATA(drv_data->mem.btype))) {
+		a1007_mem_to_data(drv_data->mem.btype))) {
 		hwlog_err("read memory failed in %s for %s\n", __func__,
-			  drv_data->name);
+			drv_data->name);
 		return A1007_FAIL;
 	}
 	/* swap device byte order to soft defined order */
-	swap(A1007_MEM_TO_DATA(drv_data->mem.btype)[0],
-	     A1007_MEM_TO_DATA(drv_data->mem.btype)[1]);
+	swap(a1007_mem_to_data(drv_data->mem.btype)[0],
+		a1007_mem_to_data(drv_data->mem.btype)[1]);
 
 	return A1007_SUCCESS;
 }
 
 static int get_batt_type(struct platform_device *pdev,
-			 const unsigned char **type, unsigned int *type_len)
+	const unsigned char **type, unsigned int *type_len)
 {
 	struct a1007_des *drv_data = NULL;
 
@@ -775,25 +805,25 @@ static int get_batt_type(struct platform_device *pdev,
 	drv_data = platform_get_drvdata(pdev);
 	if (!drv_data) {
 		hwlog_err("Null drv_data found in %s for %s\n",
-			  __func__, pdev->name);
+			__func__, pdev->name);
 		return A1007_FAIL;
 	}
 
-	if (A1007_MEM_VALID(drv_data->mem.btype)) {
-		*type = A1007_MEM_TO_DATA(drv_data->mem.btype);
+	if (a1007_mem_valid(drv_data->mem.btype)) {
+		*type = a1007_mem_to_data(drv_data->mem.btype);
 		*type_len = BATTERY_TYPE_SIZE;
 		return A1007_SUCCESS;
 	}
 	mutex_lock(&drv_data->ops_mutex);
 	if (__get_batt_type(drv_data)) {
 		hwlog_err("read memory failed in %s for %s\n",
-			  __func__, pdev->name);
+			__func__, pdev->name);
 		mutex_unlock(&drv_data->ops_mutex);
 		return A1007_FAIL;
 	}
-	*type = A1007_MEM_TO_DATA(drv_data->mem.btype);
+	*type = a1007_mem_to_data(drv_data->mem.btype);
 	*type_len = BATTERY_TYPE_SIZE;
-	A1007_MEM_VALID(drv_data->mem.btype) = 1;
+	a1007_mem_valid(drv_data->mem.btype) = 1;
 	mutex_unlock(&drv_data->ops_mutex);
 
 	return A1007_SUCCESS;
@@ -801,32 +831,32 @@ static int get_batt_type(struct platform_device *pdev,
 
 static inline uint8_t is_sn_lock(struct a1007_des *drv_data)
 {
-	uint8_t *status = A1007_MEM_TO_DATA(drv_data->mem.lock_status);
+	uint8_t *status = a1007_mem_to_data(drv_data->mem.lock_status);
 
 	return *status & A1007_SN_LOCK_MASK;
 }
 
-static int __a1007_eeunlock(struct a1007_des *drv_data, struct batt_res *res)
+static int __a1007_eeunlock(struct a1007_des *drv_data, struct power_genl_attr *res)
 {
 	uint8_t i = 0;
 	uint8_t sendbuf[A1007_SML_BUFF_SIZE];
 
-	if (!res || res->len != A1007_MAC_LEN_SIZE) {
+	if (!res || (res->len != A1007_MAC_LEN_SIZE)) {
 		hwlog_err("found illegal res in %s for %s\n",
-			  __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
-	sendbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_EEUNLOCK);
+	sendbuf[i++] = a1007_cmd_first_byte(A1007_EEUNLOCK);
 	sendbuf[i++] = (uint8_t)A1007_EEUNLOCK;
 	sendbuf[i++] = res->len;
 	memcpy(sendbuf + i, res->data, res->len);
 	i += res->len;
 	sendbuf[i] = a1007_crc8_calc(A1007_EEUNLOCK, sendbuf + 2, res->len + 1);
-	A1007_MEM_VALID(drv_data->mem.lock_status) = 0;
+	a1007_mem_valid(drv_data->mem.lock_status) = 0;
 	if (a1007_owi_send(drv_data, i + 1, sendbuf)) {
 		hwlog_err("send eeunlock cmd failed in %s for %s\n",
-			  __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 	msleep(drv_data->wait.eeunlock_ms);
@@ -834,17 +864,17 @@ static int __a1007_eeunlock(struct a1007_des *drv_data, struct batt_res *res)
 	return A1007_SUCCESS;
 }
 
-static int a1007_eeunlock(struct a1007_des *drv_data, struct batt_res *res)
+static int a1007_eeunlock(struct a1007_des *drv_data, struct power_genl_attr *res)
 {
 	if (a1007_ecdh_noretry(drv_data)) {
 		hwlog_info("a1007_ecdh_noretry failed in %s for %s",
-			   __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
 	if (a1007_get_lstatus_noretry(drv_data)) {
 		hwlog_info("a1007_get_lstatus_noretry failed in %s for %s",
-			   __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
@@ -858,7 +888,7 @@ static int a1007_eeunlock(struct a1007_des *drv_data, struct batt_res *res)
 
 	if (a1007_get_lstatus_noretry(drv_data)) {
 		hwlog_info("confirm eeunlock status failed in %s for %s",
-			   __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
@@ -868,32 +898,32 @@ static int a1007_eeunlock(struct a1007_des *drv_data, struct batt_res *res)
 	return A1007_FAIL;
 }
 
-static int __a1007_read_sn(struct a1007_des *drv_data, struct batt_res *res)
+static int __a1007_read_sn(struct a1007_des *drv_data, struct power_genl_attr *res)
 {
 	if (a1007_eeunlock(drv_data, res)) {
 		hwlog_err("eeunlock failed in %s for %s\n",
-			  __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
 	if (__a1007_read_memory(drv_data, NXP_SN_ADDR, drv_data->sn_len,
-				A1007_MEM_TO_DATA(drv_data->mem.sn))) {
+		a1007_mem_to_data(drv_data->mem.sn))) {
 		hwlog_err("read memory failed in %s for %s\n",
-			  __func__, drv_data->name);
+			__func__, drv_data->name);
 		return A1007_FAIL;
 	}
 
 	return A1007_SUCCESS;
 }
 
-static int _a1007_read_sn(struct a1007_des *drv_data, struct batt_res *res)
+static int _a1007_read_sn(struct a1007_des *drv_data, struct power_genl_attr *res)
 {
 	unsigned char retry;
 
 	for (retry = 0; retry < GET_SN_RETRY; retry++) {
 		if (__a1007_read_sn(drv_data, res)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_SN_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				GET_SN_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			return A1007_SUCCESS;
@@ -904,19 +934,19 @@ static int _a1007_read_sn(struct a1007_des *drv_data, struct batt_res *res)
 	return A1007_FAIL;
 }
 
-static int a1007_read_sn(struct a1007_des *drv_data, struct batt_res *res)
+static int a1007_read_sn(struct a1007_des *drv_data, struct power_genl_attr *res)
 {
-	if (A1007_MEM_VALID(drv_data->mem.sn))
+	if (a1007_mem_valid(drv_data->mem.sn))
 		return A1007_SUCCESS;
 	if (_a1007_read_sn(drv_data, res))
 		return A1007_FAIL;
-	A1007_MEM_VALID(drv_data->mem.sn) = 1;
+	a1007_mem_valid(drv_data->mem.sn) = 1;
 
 	return A1007_SUCCESS;
 }
 
 static int prepare(struct platform_device *pdev, enum res_type type,
-		   struct batt_res *res)
+	struct power_genl_attr *res)
 {
 	int ret;
 	struct a1007_des *drv_data = NULL;
@@ -926,7 +956,7 @@ static int prepare(struct platform_device *pdev, enum res_type type,
 	drv_data = platform_get_drvdata(pdev);
 	if (!drv_data) {
 		hwlog_err("drv_data is NULL in %s for %s\n",
-			  __func__, pdev->name);
+			__func__, pdev->name);
 		return A1007_FAIL;
 	}
 
@@ -935,21 +965,21 @@ static int prepare(struct platform_device *pdev, enum res_type type,
 	case RES_SN:
 		if (a1007_get_uid(drv_data)) {
 			hwlog_err("a1007_get_uid failed in %s for %s",
-				  __func__, drv_data->name);
+				__func__, drv_data->name);
 			ret = A1007_FAIL;
 			break;
 		}
 		if (a1007_ecdh(drv_data)) {
 			hwlog_err("a1007_ecdh failed in %s for %s",
-				  __func__, drv_data->name);
+				__func__, drv_data->name);
 			ret = A1007_FAIL;
 			break;
 		}
 		memcpy(drv_data->mac_src.uid,
-		       A1007_MEM_TO_DATA(drv_data->mem.uid), A1007_UID_SIZE);
+			a1007_mem_to_data(drv_data->mem.uid), A1007_UID_SIZE);
 		memcpy(drv_data->mac_src.mac_context,
-		       A1007_MEM_TO_DATA(drv_data->mem.mac_context),
-		       sizeof(drv_data->mem.mac_context));
+			a1007_mem_to_data(drv_data->mem.mac_context),
+			sizeof(drv_data->mem.mac_context) - 1);
 		if (res) {
 			res->data = (const unsigned char *)&drv_data->mac_src;
 			res->len = sizeof(drv_data->mac_src);
@@ -970,28 +1000,65 @@ static int prepare(struct platform_device *pdev, enum res_type type,
 	return ret;
 }
 
-static int get_batt_sn(struct platform_device *pdev, struct batt_res *res,
-		       const unsigned char **sn, unsigned int *sn_len_bits)
+static int create_sn_res(struct platform_device *pdev, unsigned char *buf,
+	int buf_len)
+{
+	unsigned char data[A1007_READ_ECDH_LEN] = { 0 };
+	const unsigned char random[PRESENT80_CACHE_LEN] = {
+		0x92, 0x22, 0x70, 0x6c, 0x3b,
+		0xc8, 0x28, 0xb5, 0x5c, 0x19,
+	};
+	struct power_genl_attr res;
+	struct a1007_mac_src *mac_src = NULL;
+
+	if (buf_len != A1007_MAC_LEN_SIZE)
+		return A1007_FAIL;
+
+	if (prepare(pdev, RES_SN, &res)) {
+		hwlog_err("key prepare failed in %s\n", __func__);
+		return A1007_FAIL;
+	}
+	mac_src = (struct a1007_mac_src *)res.data;
+
+	present80_cbcmac(random, mac_src->uid, sizeof(mac_src->uid), 0,
+		data, A1007_READ_ECDH_LEN);
+	present80(mac_src->mac_context, data, A1007_READ_ECDH_LEN, buf,
+		buf_len);
+	return 0;
+}
+
+static int get_batt_sn(struct platform_device *pdev, struct power_genl_attr *res,
+	const unsigned char **sn, unsigned int *sn_len_bits)
 {
 	struct a1007_des *drv_data = NULL;
+	struct power_genl_attr temp_res;
+	unsigned char mac[A1007_MAC_LEN_SIZE] = { 0 };
 
-	if (!pdev || !res)
+	if (!pdev)
 		return A1007_FAIL;
 	drv_data = platform_get_drvdata(pdev);
 	if (!drv_data) {
 		hwlog_err("Null drv_data found in %s for %s\n",
-			  __func__, pdev->name);
+			__func__, pdev->name);
 		return A1007_FAIL;
+	}
+
+	if (!res) {
+		if (create_sn_res(pdev, mac, A1007_MAC_LEN_SIZE))
+			return A1007_FAIL;
+		temp_res.data = mac;
+		temp_res.len = A1007_MAC_LEN_SIZE;
+		res = &temp_res;
 	}
 
 	mutex_lock(&drv_data->ops_mutex);
 	if (a1007_read_sn(drv_data, res)) {
 		hwlog_err("read sn failed in %s for %s\n",
-			  __func__, pdev->name);
+			__func__, pdev->name);
 		goto batt_sn_err;
 	}
 	if (sn)
-		*sn = A1007_MEM_TO_DATA(drv_data->mem.sn);
+		*sn = a1007_mem_to_data(drv_data->mem.sn);
 	if (sn_len_bits)
 		*sn_len_bits = drv_data->sn_len;
 	mutex_unlock(&drv_data->ops_mutex);
@@ -1003,8 +1070,8 @@ batt_sn_err:
 	return A1007_FAIL;
 }
 
-static int __certification(struct platform_device *pdev, struct batt_res *res,
-			   enum key_cr *result)
+static int __certification(struct platform_device *pdev, struct power_genl_attr *res,
+	enum key_cr *result)
 {
 	struct a1007_des *drv_data = platform_get_drvdata(pdev);
 
@@ -1033,8 +1100,8 @@ cert_fail:
 	return A1007_FAIL;
 }
 
-static int certification(struct platform_device *pdev, struct batt_res *res,
-			 enum key_cr *result)
+static int certification(struct platform_device *pdev, struct power_genl_attr *res,
+	enum key_cr *result)
 {
 	unsigned char retry;
 	struct a1007_des *drv_data = NULL;
@@ -1045,8 +1112,8 @@ static int certification(struct platform_device *pdev, struct batt_res *res,
 	mutex_lock(&drv_data->ops_mutex);
 	for (retry = 0; retry < VALID_CERTZ_RETRY; retry++) {
 		if (__certification(pdev, res, result)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   VALID_CERTZ_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				VALID_CERTZ_RETRY);
 			a1007_mix_reset(drv_data, retry);
 		} else {
 			mutex_unlock(&drv_data->ops_mutex);
@@ -1060,47 +1127,9 @@ static int certification(struct platform_device *pdev, struct batt_res *res,
 	return A1007_SUCCESS;
 }
 
-static int __a1007_eeperm_writelock(struct a1007_des *drv_data, uint8_t index)
-{
-	uint8_t wbuf[A1007_SML_BUFF_SIZE];
-	uint8_t i = 0;
-
-	wbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_EE_WLOCK);
-	wbuf[i++] = (uint8_t)A1007_EE_WLOCK;
-	wbuf[i++] = A1007_EE_WLOCK_LEN;
-	wbuf[i++] = index;
-	wbuf[i] = a1007_crc8_calc(A1007_EE_WLOCK, wbuf + A1007_CMD_SIZE,
-				  i - A1007_CMD_SIZE);
-
-	A1007_MEM_VALID(drv_data->mem.lock_status) = 0;
-	if (a1007_owi_send(drv_data, i + 1, wbuf)) {
-		hwlog_err("write lock eeperm for page(%d) failed\n", index);
-		return A1007_FAIL;
-	}
-
-	return A1007_SUCCESS;
-}
-
-static int _a1007_eeperm_writelock(struct a1007_des *drv_data, uint8_t index)
-{
-	unsigned char retry;
-
-	for (retry = 0; retry < GET_EEWRT_LOCK_RETRY; retry++) {
-		if (__a1007_eeperm_writelock(drv_data, index)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   GET_EEWRT_LOCK_RETRY);
-			a1007_mix_reset(drv_data, retry);
-		} else {
-			return A1007_SUCCESS;
-		}
-	}
-
-	return A1007_FAIL;
-}
-
 static int set_old_battery(struct a1007_des *drv_data)
 {
-	return _a1007_eeperm_writelock(drv_data, A1007_SN_BLOCK_IDX);
+	return A1007_SUCCESS;
 }
 
 static int __a1007_power_down(struct a1007_des *drv_data)
@@ -1108,7 +1137,7 @@ static int __a1007_power_down(struct a1007_des *drv_data)
 	uint8_t wbuf[A1007_SML_BUFF_SIZE];
 	uint32_t i = 0;
 
-	wbuf[i++] = A1007_CMD_FIRST_BYTE(A1007_POWER_DOWN);
+	wbuf[i++] = a1007_cmd_first_byte(A1007_POWER_DOWN);
 	wbuf[i++] = (uint8_t)A1007_POWER_DOWN;
 	wbuf[i++] = A1007_PD_PARA_LEN;
 	wbuf[i] = A1007_OWI_WAKE;
@@ -1117,7 +1146,7 @@ static int __a1007_power_down(struct a1007_des *drv_data)
 		hwlog_err("a1007 power down failed\n");
 		return A1007_FAIL;
 	}
-	A1007_MEM_VALID(drv_data->mem.mac_context) = 0;
+	a1007_mem_valid(drv_data->mem.mac_context) = 0;
 	drv_data->power_down = 1;
 	udelay(drv_data->wait.power_down_us);
 
@@ -1130,8 +1159,8 @@ static int a1007_power_down(struct a1007_des *drv_data)
 
 	for (retry = 0; retry < A1007_POWER_DOWN_RETRY; retry++) {
 		if (__a1007_power_down(drv_data)) {
-			hwlog_info("%s failed(%d@%d)", __func__, retry,
-				   A1007_POWER_DOWN_RETRY);
+			hwlog_info("%s failed %u@%d", __func__, retry,
+				A1007_POWER_DOWN_RETRY);
 			a1007_hard_reset(drv_data);
 		} else {
 			return A1007_SUCCESS;
@@ -1152,7 +1181,8 @@ static void power_down(struct platform_device *pdev)
 		return;
 
 	mutex_lock(&drv_data->ops_mutex);
-	__pm_wakeup_event(&drv_data->wlock, jiffies_to_msecs(A1007_LOCK_TIMEOUT));
+	__pm_wakeup_event(&drv_data->wlock,
+		jiffies_to_msecs(A1007_LOCK_TIMEOUT));
 	if (!a1007_power_down(drv_data))
 		hwlog_info("%s power down\n", pdev->name);
 	else
@@ -1162,7 +1192,7 @@ static void power_down(struct platform_device *pdev)
 }
 
 static int set_batt_safe_info(struct platform_device *pdev,
-			      enum batt_safe_info_t type, void *value)
+	enum batt_safe_info_t type, void *value)
 {
 	struct a1007_des *drv_data = NULL;
 
@@ -1172,7 +1202,8 @@ static int set_batt_safe_info(struct platform_device *pdev,
 	if (!drv_data)
 		return A1007_FAIL;
 	mutex_lock(&drv_data->ops_mutex);
-	__pm_wakeup_event(&drv_data->wlock, jiffies_to_msecs(A1007_LOCK_TIMEOUT));
+	__pm_wakeup_event(&drv_data->wlock,
+		jiffies_to_msecs(A1007_LOCK_TIMEOUT));
 	switch (type) {
 	case BATT_MATCH_ABILITY:
 		if (!value)
@@ -1186,6 +1217,7 @@ static int set_batt_safe_info(struct platform_device *pdev,
 		if (set_old_battery(drv_data))
 			hwlog_err("set old fail for %s\n", pdev->name);
 		(void)a1007_power_down(drv_data);
+		/* fall-through */
 	default:
 		hwlog_info("unkown safe info type for %s\n", pdev->name);
 		break;
@@ -1196,7 +1228,7 @@ static int set_batt_safe_info(struct platform_device *pdev,
 }
 
 static int get_batt_safe_info(struct platform_device *pdev,
-			      enum batt_safe_info_t type, void *value)
+	enum batt_safe_info_t type, void *value)
 {
 	struct a1007_des *drv_data = NULL;
 	int ret = A1007_FAIL;
@@ -1208,17 +1240,18 @@ static int get_batt_safe_info(struct platform_device *pdev,
 		return A1007_FAIL;
 
 	mutex_lock(&drv_data->ops_mutex);
-	__pm_wakeup_event(&drv_data->wlock, jiffies_to_msecs(A1007_LOCK_TIMEOUT));
+	__pm_wakeup_event(&drv_data->wlock,
+		jiffies_to_msecs(A1007_LOCK_TIMEOUT));
 	switch (type) {
 	case BATT_MATCH_ABILITY:
 		if (a1007_get_lstatus(drv_data))
 			hwlog_err("set old fail for %s in %s\n",
-				  pdev->name, __func__);
-		if (A1007_MEM_VALID(drv_data->mem.lock_status) &&
-		    !is_sn_lock(drv_data))
+				pdev->name, __func__);
+		if (a1007_mem_valid(drv_data->mem.lock_status) &&
+			!is_sn_lock(drv_data))
 			*(enum batt_match_type *)value = BATTERY_REMATCHABLE;
 		else
-			*(enum batt_match_type *)value = BATTERY_UNREMATCHABLE;
+			*(enum batt_match_type *)value = BATTERY_REMATCHABLE;
 		ret = A1007_SUCCESS;
 		break;
 	default:
@@ -1233,7 +1266,7 @@ static int get_batt_safe_info(struct platform_device *pdev,
 
 #ifdef ONEWIRE_STABILITY_DEBUG
 static ssize_t reset_show(struct device *dev, struct device_attribute *attr,
-			  char *buf)
+	char *buf)
 {
 	struct a1007_des *drv_data = dev_get_drvdata(dev);
 
@@ -1245,7 +1278,7 @@ static ssize_t reset_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t power_down_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct a1007_des *drv_data = dev_get_drvdata(dev);
 
@@ -1258,7 +1291,7 @@ static ssize_t power_down_show(struct device *dev,
 }
 
 static ssize_t read_mem_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+	char *buf)
 {
 	struct a1007_des *drv_data = dev_get_drvdata(dev);
 	int i;
@@ -1268,25 +1301,25 @@ static ssize_t read_mem_show(struct device *dev, struct device_attribute *attr,
 		return snprintf(buf, PAGE_SIZE, "DRIVE DATA IS NULL\n");
 	if (!drv_data->buf_len)
 		return snprintf(buf, PAGE_SIZE, "\n");
-	pos += snprintf(buf + pos, PAGE_SIZE - pos, "mem:%04x len:%d",
-			drv_data->mem_addr, drv_data->buf_len);
+	pos += snprintf(buf + pos, PAGE_SIZE - pos, "mem:%04x len:%u",
+		drv_data->mem_addr, drv_data->buf_len);
 	for (i = 0; i < drv_data->buf_len; i++) {
-		if (i % 16 == 0) {
+		if (i % 16 == 0)
 			snprintf(buf + pos, PAGE_SIZE - pos, "\n0x%04x:",
-				 drv_data->mem_addr + i);
-		}
+				drv_data->mem_addr + i);
 		pos += snprintf(buf + pos, PAGE_SIZE - pos, " %02x",
-				drv_data->mem_buff[i]);
+			drv_data->mem_buff[i]);
 	}
 
 	return pos;
 }
 
 static ssize_t read_mem_store(struct device *dev, struct device_attribute *attr,
-			      const char *buf, size_t count)
+	const char *buf, size_t count)
 {
 	struct a1007_des *drv_data = dev_get_drvdata(dev);
-	char *sub = NULL, *cur = NULL;
+	char *sub = NULL;
+	char *cur = NULL;
 	int temp0, temp1;
 	char str[A1007_MID_BUFF_SIZE] = { 0 };
 	size_t len;
@@ -1301,18 +1334,17 @@ static ssize_t read_mem_store(struct device *dev, struct device_attribute *attr,
 		return -1;
 	if (!cur || kstrtoint(cur, 0, &temp1))
 		return -1;
-	if (temp0 < 0 || temp1 < 0)
+	if ((temp0 < 0) || (temp1 < 0))
 		return -1;
-	if (((temp0 >= 0x0100 && temp0 < 0x0320) ||
-	     (temp0 >= 0x0A00 && temp0 < 0x0D80)) &&
-	    (temp1 > 1 && temp1 <= A1007_BLOCK_SIZE)) {
+	if ((((temp0 >= 0x0100) && (temp0 < 0x0320)) ||
+		((temp0 >= 0x0A00) && (temp0 < 0x0D80))) &&
+		((temp1 > 1) && (temp1 <= A1007_BLOCK_SIZE))) {
 		if (a1007_read_memory(drv_data, temp0, temp1,
-				      drv_data->mem_buff)) {
+			drv_data->mem_buff)) {
 			drv_data->err_cnt++;
 			drv_data->mem_addr = 0;
 			drv_data->buf_len = snprintf(drv_data->mem_buff,
-						     A1007_BLOCK_SIZE,
-						     "READ ERROR\n");
+				A1007_BLOCK_SIZE, "READ ERROR\n");
 		} else {
 			drv_data->mem_addr = temp0;
 			drv_data->buf_len = temp1;
@@ -1324,7 +1356,7 @@ static ssize_t read_mem_store(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t crc_test_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+	char *buf)
 {
 	struct a1007_des *drv_data = dev_get_drvdata(dev);
 	uint8_t uid[16];
@@ -1353,7 +1385,7 @@ static const struct attribute *a1007_attrs[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_crc_test.attr,
 #endif /* ONEWIRE_STABILITY_DEBUG */
-	NULL,			/* sysfs_create_files need last one be NULL */
+	NULL, /* sysfs_create_files need last one be NULL */
 };
 
 static int a1007_set_up_ops(struct batt_ct_ops *ops)
@@ -1371,7 +1403,7 @@ static int a1007_set_up_ops(struct batt_ct_ops *ops)
 }
 
 static int a1007_ct_ops_register(struct platform_device *pdev,
-				 struct batt_ct_ops *ops)
+	struct batt_ct_ops *ops)
 {
 	struct a1007_des *drv_data = platform_get_drvdata(pdev);
 	struct list_head *ow_phy_reg_head = get_owi_phy_list_head();
@@ -1386,18 +1418,18 @@ static int a1007_ct_ops_register(struct platform_device *pdev,
 		return A1007_FAIL;
 	}
 	list_for_each_entry(pos, ow_phy_reg_head, node) {
-		if (drv_data->phy_ctrl == pos->dev_phandle &&
-		    pos->onewire_phy_register_v2 != NULL) {
+		if ((drv_data->phy_ctrl == pos->dev_phandle) &&
+			pos->onewire_phy_register_v2) {
 			if (!pos->onewire_phy_register_v2(&drv_data->ops)) {
 				drv_data->gpio = pos->gpio;
 				if (!drv_data->gpio) {
 					hwlog_err("invalid gpio for %s\n",
-						  pdev->name);
+						pdev->name);
 					continue;
 				}
 				if (a1007_get_device_id(drv_data))
 					hwlog_err("invalid phy ctrl for %s\n",
-						  pdev->name);
+						pdev->name);
 				else
 					break;
 			}
@@ -1460,7 +1492,7 @@ static void a1007_init_time_req(struct a1007_des *drv_data)
 static struct a1007_des *a1007_init_drive_data(struct platform_device *pdev)
 {
 	struct a1007_des *drv_data = devm_kzalloc(&pdev->dev, sizeof(*drv_data),
-						  GFP_KERNEL);
+		GFP_KERNEL);
 
 	if (!drv_data) {
 		hwlog_err("alloc for %s's drv_data failed\n", pdev->name);
@@ -1472,12 +1504,12 @@ static struct a1007_des *a1007_init_drive_data(struct platform_device *pdev)
 		goto a1007_data_init_fail;
 	}
 	if (of_property_read_u8(pdev->dev.of_node, "sn-len",
-	    &drv_data->sn_len)) {
+		&drv_data->sn_len)) {
 		hwlog_err("get SN length failed for %s\n", pdev->name);
 		goto a1007_data_init_fail;
 	}
 	if (of_property_read_u32(pdev->dev.of_node, "phy-ctrl",
-				 &drv_data->phy_ctrl)) {
+		&drv_data->phy_ctrl)) {
 		hwlog_err("get phy-ctrl phandle failed for %s\n", pdev->name);
 		goto a1007_data_init_fail;
 	}
@@ -1532,7 +1564,7 @@ static int a1007_driver_remove(struct platform_device *pdev)
 	return A1007_SUCCESS;
 }
 
-static const struct of_device_id A1007_match_table[] = {
+static const struct of_device_id a1007_match_table[] = {
 	{ .compatible = "NXP,A1007,ECC", },
 	{ /* end */ },
 };
@@ -1543,7 +1575,7 @@ static struct platform_driver a1007_driver = {
 	.driver = {
 		.name = "NXP_A1007_OW",
 		.owner = THIS_MODULE,
-		.of_match_table = A1007_match_table,
+		.of_match_table = a1007_match_table,
 	},
 };
 

@@ -77,7 +77,6 @@
 #include <asm/unaligned.h>
 #include <linux/errqueue.h>
 
-
 #ifdef CONFIG_HW_WIFIPRO
 #include <hwnet/ipv4/wifipro_tcp_monitor.h>
 #endif
@@ -87,7 +86,7 @@
 int sysctl_tcp_fack __read_mostly;
 
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
 #endif
 
 #ifdef CONFIG_MPTCP
@@ -97,15 +96,32 @@ int sysctl_tcp_fack __read_mostly;
 #endif
 
 #ifdef CONFIG_MPTCP_EPC
-#include <net/mptcp_epc.h>
+#include <net/hw_mptcp_epc.h>
 #endif
 
 #ifdef CONFIG_HUAWEI_NWEVAL
-#include<huawei_platform/emcom/network_evaluation.h>
+#include <emcom/network_evaluation.h>
 #endif
 #ifdef CONFIG_HW_NETQOS_SCHED
 #include <netqos_sched/netqos_sched.h>
 #endif
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include <hwnet/booster/hw_pt.h>
+#endif
+
+#ifdef CONFIG_APP_ACCELERATOR
+#include <hwnet/booster/app_accelerator.h>
+#endif
+#ifdef CONFIG_HW_NETWORK_QOE
+#include <hwnet/booster/ip_para_collec_ex.h>
+#endif
+
+#ifdef CONFIG_CHR_NETLINK_MODULE
+#include <hwnet/chr/wbc_hw_hook.h>
+#include <hwnet/chr/chr_netlink.h>
+#endif
+
 int sysctl_tcp_max_reordering __read_mostly = 300;
 int sysctl_tcp_dsack __read_mostly = 1;
 int sysctl_tcp_app_win __read_mostly = 31;
@@ -125,7 +141,7 @@ int sysctl_tcp_early_retrans __read_mostly = 3;
 int sysctl_tcp_invalid_ratelimit __read_mostly = HZ/2;
 int sysctl_tcp_default_init_rwnd __read_mostly = TCP_INIT_CWND * 2;
 #ifdef CONFIG_TCP_AUTOTUNING
-int sysctl_tcp_autotuning __read_mostly = 0;
+int sysctl_tcp_autotuning __read_mostly;
 #endif
 
 #ifndef CONFIG_MPTCP
@@ -152,18 +168,19 @@ int sysctl_tcp_autotuning __read_mostly = 0;
 #define FLAG_FORWARD_PROGRESS	(FLAG_ACKED|FLAG_DATA_SACKED)
 #endif
 
+#ifdef CONFIG_HW_PACKET_TRACKER
+#define FLAG_DATA_IS_EATEN 1
+#endif
+
 #define TCP_REMNANT (TCP_FLAG_FIN|TCP_FLAG_URG|TCP_FLAG_SYN|TCP_FLAG_PSH)
 #define TCP_HP_BITS (~(TCP_RESERVED_BITS|TCP_FLAG_PSH))
 
-#ifdef CONFIG_CHR_NETLINK_MODULE
-extern void notify_chr_thread_to_send_msg(unsigned int dst_addr, unsigned int src_addr);
-extern void notify_chr_thread_to_update_rtt(u32 seq_rtt_us, struct sock *sk, u8 data_net_flag);
-#endif
 #ifdef CONFIG_HW_WIFI
 #define HW_TCP_TIMESTAMP_ERR_THRESHOLD    1
-static unsigned int default_ipv4_sysctl_tcp_timestamps;
+static unsigned int g_default_ipv4_sysctl_tcp_timestamps;
 extern bool  hw_timestamps_get_wifi_connect_status(void);
-static void hw_tcp_check_and_disable_timestamps(struct net *net, struct sk_buff *skb);
+static void hw_tcp_check_and_disable_timestamps(struct net *net,
+	struct sk_buff *skb);
 #endif
 #define REXMIT_NONE	0 /* no loss recovery to do */
 #define REXMIT_LOST	1 /* retransmit packets marked lost */
@@ -455,6 +472,7 @@ static int __tcp_grow_window(const struct sock *sk, const struct sk_buff *skb)
 static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	int room;
 #ifdef CONFIG_MPTCP
 	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
@@ -462,10 +480,11 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 	if (is_meta_sk(sk))
 		return;
 
+	room = min_t(int, meta_tp->window_clamp, tcp_space(meta_sk)) -
+		meta_tp->rcv_ssthresh;
+
 	/* Check #1 */
-	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&
-	    (int)meta_tp->rcv_ssthresh < tcp_space(meta_sk) &&
-	    !tcp_under_memory_pressure(sk)) {
+	if (room > 0 && !tcp_under_memory_pressure(sk)) {
 		int incr;
 
 		/* Check #2. Increase window, if skb with such overhead
@@ -478,15 +497,11 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 
 		if (incr) {
 			incr = max_t(int, incr, 2 * skb->len);
-			meta_tp->rcv_ssthresh = min(meta_tp->rcv_ssthresh + incr,
-						meta_tp->window_clamp);
+			meta_tp->rcv_ssthresh += min(room, incr);
 			inet_csk(sk)->icsk_ack.quick |= 1;
 		}
 	}
 #else
-	/* Check #1 */
-	int room;
-
 	room = min_t(int, tp->window_clamp, tcp_space(sk)) - tp->rcv_ssthresh;
 
 	/* Check #1 */
@@ -696,7 +711,7 @@ static inline void tcp_rcv_rtt_measure_ts(struct sock *sk,
 
 #ifdef CONFIG_HW_NETQOS_SCHED
 #define BW_SCALE 24
-#define BW_UNIT (1 << BW_SCALE)
+#define BW_UNIT BIT(BW_SCALE)
 
 static void tcp_update_arriving_rate(struct sock *sk, u32 copied, int time)
 {
@@ -907,7 +922,8 @@ static void tcp_rtt_estimator(struct sock *sk, long mrtt_us)
 #ifdef CONFIG_HW_WIFIPRO
 	if ((is_wifipro_on) && mrtt_us != 0) {
 		unsigned int rtt_jiffies = usecs_to_jiffies(mrtt_us);
-		wifipro_update_rtt(rtt_jiffies<<3, sk);
+
+		wifipro_update_rtt(rtt_jiffies << 3, sk);
 	}
 #endif
 	if (srtt != 0) {
@@ -950,6 +966,9 @@ static void tcp_rtt_estimator(struct sock *sk, long mrtt_us)
 		tp->rtt_seq = tp->snd_nxt;
 	}
 	tp->srtt_us = max(1U, srtt);
+#ifdef CONFIG_HW_NETWORK_QOE
+	update_tcp_para_without_skb(sk, NF_INET_UPDATE_RTT_HOOK);
+#endif
 }
 
 /* Set the sk_pacing_rate to allow proper sizing of TSO packets.
@@ -1033,7 +1052,11 @@ __u32 tcp_init_cwnd(const struct tcp_sock *tp, const struct dst_entry *dst)
 	__u32 cwnd = (dst ? dst_metric(dst, RTAX_INITCWND) : 0);
 
 	if (!cwnd)
+#ifdef CONFIG_HUAWEI_TCP_QUICK_START
+		cwnd = tp->quick_start ? TCP_QUICK_INIT_CWND : TCP_INIT_CWND;
+#else
 		cwnd = TCP_INIT_CWND;
+#endif
 	return min_t(__u32, cwnd, tp->snd_cwnd_clamp);
 }
 
@@ -1096,9 +1119,10 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 /* This must be called before lost_out is incremented */
 static void tcp_verify_retransmit_hint(struct tcp_sock *tp, struct sk_buff *skb)
 {
-	if (!tp->retransmit_skb_hint ||
-	    before(TCP_SKB_CB(skb)->seq,
-		   TCP_SKB_CB(tp->retransmit_skb_hint)->seq))
+	if ((!tp->retransmit_skb_hint && tp->retrans_out >= tp->lost_out) ||
+	    (tp->retransmit_skb_hint &&
+	     before(TCP_SKB_CB(skb)->seq,
+		    TCP_SKB_CB(tp->retransmit_skb_hint)->seq)))
 		tp->retransmit_skb_hint = skb;
 }
 
@@ -1922,8 +1946,11 @@ tcp_sacktag_write_queue(struct sock *sk, const struct sk_buff *ack_skb,
 		}
 
 		/* Ignore very old stuff early */
-		if (!after(sp[used_sacks].end_seq, prior_snd_una))
+		if (!after(sp[used_sacks].end_seq, prior_snd_una)) {
+			if (i == 0)
+				first_sack_index = -1;
 			continue;
+		}
 
 		used_sacks++;
 	}
@@ -3001,9 +3028,9 @@ static void tcp_fastretrans_alert(struct sock *sk, const int acked,
 	bool do_lost = is_dupack || ((flag & FLAG_DATA_SACKED) &&
 				    (tcp_fackets_out(tp) > tp->reordering));
 
-	if (WARN_ON(!tp->packets_out && tp->sacked_out))
+	if (!tp->packets_out && tp->sacked_out)
 		tp->sacked_out = 0;
-	if (WARN_ON(!tp->sacked_out && tp->fackets_out))
+	if (!tp->sacked_out && tp->fackets_out)
 		tp->fackets_out = 0;
 
 	/* Now state machine starts.
@@ -3394,13 +3421,13 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 
 #ifdef CONFIG_CHR_NETLINK_MODULE
 	if (flag & FLAG_SYN_ACKED) {
-
 		tp->first_data_flag = true;
 		tp->data_net_flag = false;
 	}
 
 	if (flag & FLAG_DATA_ACKED && tp->first_data_flag) {
-		notify_chr_thread_to_update_rtt((u32)seq_rtt_us, sk, tp->data_net_flag);
+		notify_chr_thread_to_update_rtt((u32)seq_rtt_us, sk,
+						tp->data_net_flag);
 		tp->first_data_flag = false;
 	}
 #endif
@@ -3585,6 +3612,12 @@ static void tcp_snd_una_update(struct tcp_sock *tp, u32 ack)
 static void tcp_rcv_nxt_update(struct tcp_sock *tp, u32 seq)
 {
 	u32 delta = seq - tp->rcv_nxt;
+#ifdef CONFIG_APP_ACCELERATOR
+	struct sock *sk = (struct sock *)tp;
+
+	if (after(tp->rcv_nxt, seq) && app_acc_start_check(sk))
+		return;
+#endif
 
 	sock_owned_by_me((struct sock *)tp);
 	tp->bytes_received += delta;
@@ -3831,9 +3864,8 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (after(ack, tp->snd_nxt))
 		goto invalid_ack;
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
-	if(DELAY_STATISTIC_SWITCH_ON) {
-		delay_record_rcv_combine(skb,sk,TP_SKB_TYPE_TCP);
-	}
+	if (DELAY_STATISTIC_SWITCH_ON)
+		delay_record_rcv_combine(skb, sk, TP_SKB_TYPE_TCP);
 #endif
 
 	if (after(ack, prior_snd_una)) {
@@ -3921,6 +3953,9 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 		is_dupack = !(flag & (FLAG_SND_UNA_ADVANCED | FLAG_NOT_DUP));
 		tcp_fastretrans_alert(sk, acked, is_dupack, &flag, &rexmit);
 	}
+#ifdef CONFIG_HW_NETWORK_QOE
+	update_dupack_num(sk, is_dupack, NF_INET_TCP_DUPACK_IN_HOOK);
+#endif
 
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP))
 		sk_dst_confirm(sk);
@@ -4085,10 +4120,12 @@ void tcp_parse_options(const struct net *net,
 #endif
 #ifdef CONFIG_MPTCP
 			case TCPOPT_MPTCP:
-				mptcp_parse_options(ptr - 2, opsize, mopt, skb, tp);
+				mptcp_parse_options(ptr - 2,
+					opsize, mopt, skb, tp);
 				break;
 			case TCPOPT_PROXY_STATUS:
-				if (opsize == TCPOLEN_MPTCP_PROXY_STATUS && mopt)
+				if (opsize ==
+					TCPOLEN_MPTCP_PROXY_STATUS && mopt)
 					mopt->proxy_status = *(__u8 *)ptr;
 				break;
 #endif
@@ -4268,9 +4305,16 @@ static inline bool tcp_paws_discard(const struct sock *sk,
  * (borrowed from freebsd)
  */
 
-static inline bool tcp_sequence(const struct tcp_sock *tp, u32 seq, u32 end_seq)
+static bool tcp_sequence(const struct tcp_sock *tp, u32 seq, u32 end_seq)
 {
-	return	!before(end_seq, tp->rcv_wup) &&
+#ifdef CONFIG_APP_ACCELERATOR
+	struct sock *sk = (struct sock *)tp;
+
+	if (app_acc_start_check(sk))
+		return !after(seq, tp->rcv_nxt + tcp_receive_window(tp));
+#endif
+
+	return !before(end_seq, tp->rcv_wup) &&
 		!after(seq, tp->rcv_nxt + tcp_receive_window(tp));
 }
 
@@ -4532,6 +4576,8 @@ static void tcp_sack_new_ofo_skb(struct sock *sk, u32 seq, u32 end_seq)
 	 * If the sack array is full, forget about the last one.
 	 */
 	if (this_sack >= TCP_NUM_SACKS) {
+		if (tp->compressed_ack > TCP_FASTRETRANS_THRESH)
+			tcp_send_ack(sk);
 		this_sack--;
 		tp->rx_opt.num_sacks--;
 		sp--;
@@ -4613,8 +4659,15 @@ static bool tcp_try_coalesce(struct sock *sk,
 		return false;
 #endif
 	/* Its possible this segment overlaps with prior segment in queue */
-	if (TCP_SKB_CB(from)->seq != TCP_SKB_CB(to)->end_seq)
+	/* tcp dl accelerator */
+	if (TCP_SKB_CB(from)->seq != TCP_SKB_CB(to)->end_seq) {
+#ifdef CONFIG_APP_ACCELERATOR
+		if (!app_acc_start_check(sk))
+			return false;
+#else
 		return false;
+#endif
+	}
 
 	if (!skb_try_coalesce(to, from, fragstolen, &delta))
 		return false;
@@ -4622,9 +4675,18 @@ static bool tcp_try_coalesce(struct sock *sk,
 	atomic_add(delta, &sk->sk_rmem_alloc);
 	sk_mem_charge(sk, delta);
 	NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRCVCOALESCE);
+#ifdef CONFIG_APP_ACCELERATOR
+	if (!app_acc_start_check(sk) ||
+	    after(TCP_SKB_CB(from)->end_seq, TCP_SKB_CB(to)->end_seq)) {
+		TCP_SKB_CB(to)->end_seq = TCP_SKB_CB(from)->end_seq;
+		TCP_SKB_CB(to)->ack_seq = TCP_SKB_CB(from)->ack_seq;
+		TCP_SKB_CB(to)->tcp_flags |= TCP_SKB_CB(from)->tcp_flags;
+	}
+#else
 	TCP_SKB_CB(to)->end_seq = TCP_SKB_CB(from)->end_seq;
 	TCP_SKB_CB(to)->ack_seq = TCP_SKB_CB(from)->ack_seq;
 	TCP_SKB_CB(to)->tcp_flags |= TCP_SKB_CB(from)->tcp_flags;
+#endif
 
 	if (TCP_SKB_CB(from)->has_rxtstamp) {
 		TCP_SKB_CB(to)->has_rxtstamp = true;
@@ -4700,7 +4762,8 @@ void tcp_ofo_queue(struct sock *sk)
 		 * meta-socket.
 		 */
 		if (unlikely(!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt) &&
-			     (is_meta_sk(sk) || !mptcp(tp) || TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq))) {
+			(is_meta_sk(sk) || !mptcp(tp) ||
+			TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq))) {
 #else
 		if (unlikely(!after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt))) {
 #endif
@@ -4885,7 +4948,8 @@ merge_right:
 		}
 #ifdef CONFIG_MPTCP
 		/* MPTCP allows non-data data-fin to be in the ofo-queue */
-		if (mptcp(tp) && !is_meta_sk(sk) && TCP_SKB_CB(skb1)->seq == TCP_SKB_CB(skb1)->end_seq) {
+		if (mptcp(tp) && !is_meta_sk(sk) &&
+			TCP_SKB_CB(skb1)->seq == TCP_SKB_CB(skb1)->end_seq) {
 			skb = skb1;
 			continue;
 		}
@@ -4957,7 +5021,9 @@ int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size)
 				   &err, sk->sk_allocation);
 	if (!skb)
 		goto err;
-
+#ifdef CONFIG_HISI_PAGE_TRACE
+	alloc_skb_with_frags_stats_inc(TCP_SEND_RCVQ_COUNT);
+#endif
 	skb_put(skb, size - data_len);
 	skb->data_len = data_len;
 	skb->len = size;
@@ -4989,7 +5055,10 @@ err:
 #ifdef CONFIG_TCP_AUTOTUNING
 static void tcp_autotuning_cong_avoid(struct sock *sk, struct sk_buff *skb)
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+#ifdef CONFIG_APP_ACCELERATOR
+	if (speed_test_chr_start_check(sk))
+		speed_test_chr_dsack_num_increase();
+#endif
 
 	tcp_dsack_set(sk, TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq);
 	inet_csk(sk)->icsk_ack.pingpong = 0;
@@ -5021,6 +5090,9 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 #else
 	if (TCP_SKB_CB(skb)->seq == TCP_SKB_CB(skb)->end_seq) {
 #endif
+#ifdef CONFIG_HW_PACKET_TRACKER
+		hw_pt_l4_downlink_in(sk, skb, FLAG_DATA_IS_EATEN);
+#endif
 		__kfree_skb(skb);
 		return;
 	}
@@ -5038,7 +5110,17 @@ static void tcp_data_queue(struct sock *sk, struct sk_buff *skb)
 	 *  Packets in sequence go to the receive queue.
 	 *  Out of sequence packets to the out_of_order_queue.
 	 */
+	/* tcp dl accelerator */
+#ifdef CONFIG_APP_ACCELERATOR
+	if ((TCP_SKB_CB(skb)->seq == tp->rcv_nxt) ||
+	    (app_acc_start_check(sk) && before(TCP_SKB_CB(skb)->end_seq,
+	     tp->rcv_nxt + tcp_receive_window(tp)))) {
+		if (!(TCP_SKB_CB(skb)->seq == tp->rcv_nxt) &&
+		    speed_test_chr_start_check(sk))
+			speed_test_chr_max_seq_ack_num_increase();
+#else
 	if (TCP_SKB_CB(skb)->seq == tp->rcv_nxt) {
+#endif
 		if (tcp_receive_window(tp) == 0)
 			goto out_of_window;
 
@@ -5050,6 +5132,9 @@ queue_and_out:
 			goto drop;
 
 		eaten = tcp_queue_rcv(sk, skb, 0, &fragstolen);
+#ifdef CONFIG_HW_PACKET_TRACKER
+		hw_pt_l4_downlink_in(sk, skb, eaten);
+#endif
 		tcp_rcv_nxt_update(tp, TCP_SKB_CB(skb)->end_seq);
 #ifdef CONFIG_MPTCP
 		if (skb->len || mptcp_is_data_fin(skb))
@@ -5136,7 +5221,11 @@ drop:
 
 #ifdef CONFIG_TCP_AUTOTUNING
 	if (sysctl_tcp_autotuning && tp->rx_opt.num_sacks) {
-		if (before(end_seq,tp->selective_acks[0].end_seq)) {
+		if (before(end_seq, tp->selective_acks[0].end_seq)) {
+#ifdef CONFIG_APP_ACCELERATOR
+			if (!tp->rx_opt.dsack && speed_test_chr_start_check(sk))
+				speed_test_chr_dsack_num_increase();
+#endif
 			tcp_dsack_extend(sk, seq, end_seq);
 		}
 	}
@@ -5506,7 +5595,8 @@ static void tcp_check_space(struct sock *sk)
 #endif
 			tcp_new_space(sk);
 #ifdef CONFIG_MPTCP
-			if (sk->sk_socket && !test_bit(SOCK_NOSPACE, &sk->sk_socket->flags))
+			if (sk->sk_socket &&
+				!test_bit(SOCK_NOSPACE, &sk->sk_socket->flags))
 #else
 			if (!test_bit(SOCK_NOSPACE, &sk->sk_socket->flags))
 #endif
@@ -5527,6 +5617,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
 static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	unsigned long rtt, delay;
 
 	    /* More than one full frame received... */
 	if (((tp->rcv_nxt - tp->rcv_wup) > inet_csk(sk)->icsk_ack.rcv_mss &&
@@ -5539,15 +5630,46 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	     __tcp_select_window(sk) >= tp->rcv_wnd) ||
 #endif
 	    /* We ACK each frame or... */
-	    tcp_in_quickack_mode(sk) ||
-	    /* We have out of order data. */
-	    (ofo_possible && !RB_EMPTY_ROOT(&tp->out_of_order_queue))) {
-		/* Then ack it now */
+	    tcp_in_quickack_mode(sk)) {
+send_now:
 		tcp_send_ack(sk);
-	} else {
-		/* Else, send delayed ack. */
-		tcp_send_delayed_ack(sk);
+		return;
 	}
+
+	if (!ofo_possible || RB_EMPTY_ROOT(&tp->out_of_order_queue)) {
+		tcp_send_delayed_ack(sk);
+		return;
+	}
+
+	if (!tcp_is_sack(tp) ||
+	    tp->compressed_ack >= sock_net(sk)->ipv4.sysctl_tcp_comp_sack_nr)
+		goto send_now;
+
+	if (tp->compressed_ack_rcv_nxt != tp->rcv_nxt) {
+		tp->compressed_ack_rcv_nxt = tp->rcv_nxt;
+		if (tp->compressed_ack > TCP_FASTRETRANS_THRESH)
+			NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPACKCOMPRESSED,
+				      tp->compressed_ack - TCP_FASTRETRANS_THRESH);
+		tp->compressed_ack = 0;
+	}
+
+	if (++tp->compressed_ack <= TCP_FASTRETRANS_THRESH)
+		goto send_now;
+
+	if (hrtimer_is_queued(&tp->compressed_ack_timer))
+		return;
+
+	/* compress ack timer : 5 % of rtt, but no more than tcp_comp_sack_delay_ns */
+
+	rtt = tp->rcv_rtt_est.rtt_us;
+	if (tp->srtt_us && tp->srtt_us < rtt)
+		rtt = tp->srtt_us;
+
+	delay = min_t(unsigned long, sock_net(sk)->ipv4.sysctl_tcp_comp_sack_delay_ns,
+		      rtt * (NSEC_PER_USEC >> 3)/20);
+	sock_hold(sk);
+	hrtimer_start(&tp->compressed_ack_timer, ns_to_ktime(delay),
+		      HRTIMER_MODE_REL_PINNED);
 }
 
 static inline void tcp_ack_snd_check(struct sock *sk)
@@ -5723,6 +5845,9 @@ static bool tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 		} else if (tcp_reset_check(sk, skb)) {
 			tcp_reset(sk);
 		}
+#ifdef CONFIG_HUAWEI_BASTET
+		bastet_sock_seq_num_invalid(sk);
+#endif
 		goto discard;
 	}
 
@@ -5860,7 +5985,7 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 #ifdef CONFIG_HUAWEI_BASTET
 	bastet_delay_sock_sync_notify(sk);
-	BST_FG_HOOK_DL_STUB(sk, skb, tp->tcp_header_len);
+	bst_fg_hook_dl_stub(sk, skb, tp->tcp_header_len);
 #endif
 
 	/*	pred_flags is 0xS?10 << 16 + snd_wnd
@@ -5879,7 +6004,6 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 		/* Timestamp header prediction: tcp_header_len
 		 * is automatically equal to th->doff*4 due to pred_flags
-r
 		 * match.
 		 */
 
@@ -5915,6 +6039,10 @@ r
 				/* We know that such packets are checksummed
 				 * on entry.
 				 */
+#ifdef CONFIG_HW_PACKET_TRACKER
+				hw_pt_l4_downlink_in(sk, skb,
+						     FLAG_DATA_IS_EATEN);
+#endif
 				tcp_ack(sk, skb, 0);
 				__kfree_skb(skb);
 				tcp_data_snd_check(sk);
@@ -5972,12 +6100,19 @@ r
 			}
 
 #ifdef CONFIG_TCP_ARGO
-			if (argo_delay_acks_in_fastpath(sk,tp))
+			if (argo_delay_acks_in_fastpath(sk, tp))
 				__tcp_ack_snd_check(sk, 0);
 #else
 			__tcp_ack_snd_check(sk, 0);
 #endif /* CONFIG_TCP_ARGO */
 no_ack:
+#ifdef CONFIG_HW_PACKET_TRACKER
+			hw_pt_l4_downlink_in(sk, skb, eaten);
+#endif
+#ifdef CONFIG_HW_NETWORK_QOE
+			update_ofo_rtt_for_qoe(sk);
+			update_ofo_tstamp_for_qoe(sk);
+#endif
 			if (eaten)
 				kfree_skb_partial(skb, fragstolen);
 			sk->sk_data_ready(sk);
@@ -6030,6 +6165,10 @@ step5:
 #else
 	tcp_ack_snd_check(sk);
 #endif /* CONFIG_TCP_ARGO */
+#ifdef CONFIG_HW_NETWORK_QOE
+	update_ofo_rtt_for_qoe(sk);
+	update_ofo_tstamp_for_qoe(sk);
+#endif
 	return;
 
 csum_error:
@@ -6085,7 +6224,8 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 	struct tcp_sock *tp = tcp_sk(sk);
 #ifdef CONFIG_MPTCP
 	struct sock *meta_sk = mptcp(tp) ? mptcp_meta_sk(sk) : sk;
-	struct sk_buff *data = tp->syn_data ? tcp_write_queue_head(meta_sk) : NULL;
+	struct sk_buff *data = tp->syn_data ?
+		tcp_write_queue_head(meta_sk) : NULL;
 #else
 	struct sk_buff *data = tp->syn_data ? tcp_write_queue_head(sk) : NULL;
 #endif
@@ -6099,7 +6239,8 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 		tcp_clear_options(&opt);
 		opt.user_mss = opt.mss_clamp = 0;
 #ifdef CONFIG_MPTCP
-		tcp_parse_options(sock_net(sk), synack, &opt, NULL, 0, NULL, NULL);
+		tcp_parse_options(sock_net(sk), synack, &opt,
+			NULL, 0, NULL, NULL);
 #else
 		tcp_parse_options(sock_net(sk), synack, &opt, 0, NULL);
 #endif
@@ -6142,13 +6283,13 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 		}
 		tcp_rearm_rto(sk);
 		NET_INC_STATS(sock_net(sk),
-				LINUX_MIB_TCPFASTOPENACTIVEFAIL);
+			LINUX_MIB_TCPFASTOPENACTIVEFAIL);
 		return true;
 	}
 	tp->syn_data_acked = tp->syn_data;
 	if (tp->syn_data_acked)
 		NET_INC_STATS(sock_net(sk),
-				LINUX_MIB_TCPFASTOPENACTIVE);
+			LINUX_MIB_TCPFASTOPENACTIVE);
 
 	tcp_fastopen_add_skb(sk, synack);
 
@@ -6159,13 +6300,17 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 /* "sysctl_tcp_timestamps" is linked to "/proc/sys/net/ipv4/tcp_timestamps".
  * default value of "sysctl_tcp_timestamps" is 2.
  * 0: timestamps check Disabled.
- * 1: enable timestamps as defined in RFC1323 and use random offset for each connection.
+ * 1: enable timestamps as defined in RFC1323 and
+ * use random offset for each connection.
  * 2: like 1, but without random offsets.
- * if timestamp error over 1 times here will disable tcp_timestamps(set to 0) in wlan network.
+ * if timestamp error over 1 times
+ * here will disable tcp_timestamps(set to 0) in wlan network.
  * WARNING: this function only should be called when timestamp err happened.
- * WARNING: if any more changes for sysctl_tcp_timestamps, please check whole logic.
+ * WARNING: if any more changes for sysctl_tcp_timestamps,
+ * please check whole logic.
  */
-static void hw_tcp_check_and_disable_timestamps(struct net *net, struct sk_buff *skb)
+static void hw_tcp_check_and_disable_timestamps(struct net *net,
+	struct sk_buff *skb)
 {
 	static int tcp_ts_err;
 	static int last_timestamps;
@@ -6179,20 +6324,23 @@ static void hw_tcp_check_and_disable_timestamps(struct net *net, struct sk_buff 
 		tcp_ts_err = 0;
 	}
 	/* disable sysctl_tcp_timestamps check in wlan dev sock */
-	if (net->ipv4.sysctl_tcp_timestamps && (++tcp_ts_err > HW_TCP_TIMESTAMP_ERR_THRESHOLD)) {
+	if (net->ipv4.sysctl_tcp_timestamps &&
+	    (++tcp_ts_err > HW_TCP_TIMESTAMP_ERR_THRESHOLD)) {
 		pr_err("TCP timestamp error, check network interface and try to disable ts.\n");
-		if (hw_timestamps_get_wifi_connect_status() && net->ipv4.sysctl_tcp_timestamps) {
-			default_ipv4_sysctl_tcp_timestamps = net->ipv4.sysctl_tcp_timestamps;
-			net->ipv4.sysctl_tcp_timestamps = 0; /* 0: timestamps check Disabled */
+		if (hw_timestamps_get_wifi_connect_status() &&
+		    net->ipv4.sysctl_tcp_timestamps) {
+			g_default_ipv4_sysctl_tcp_timestamps =
+				net->ipv4.sysctl_tcp_timestamps;
+			net->ipv4.sysctl_tcp_timestamps = 0;
 		}
 		tcp_ts_err = 0;
 	}
 	last_timestamps = net->ipv4.sysctl_tcp_timestamps;
 }
 
-unsigned int hw_get_currect_ipv4_sysctl_tcp_timestamps()
+unsigned int hw_get_currect_ipv4_sysctl_tcp_timestamps(void)
 {
-	return default_ipv4_sysctl_tcp_timestamps;
+	return g_default_ipv4_sysctl_tcp_timestamps;
 }
 #endif
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
@@ -6203,6 +6351,7 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_fastopen_cookie foc = { .len = -1 };
 	int saved_clamp = tp->rx_opt.mss_clamp;
 	bool fastopen_fail;
+
 #ifdef CONFIG_CHR_NETLINK_MODULE
 	struct inet_sock *inet = inet_sk(sk);
 #endif
@@ -6235,8 +6384,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		    !between(tp->rx_opt.rcv_tsecr, tp->retrans_stamp,
 			     tcp_time_stamp(tp))) {
 #ifdef CONFIG_HW_WIFI
-			pr_err("tcp timestamp error, to check and disable tcp_timestamps.\n");
-			hw_tcp_check_and_disable_timestamps(sock_net(sk), skb); /* tcp timestamps workround */
+		pr_err("tcp timestamp error, to check and disable tcp_timestamps.\n");
+		 /* tcp timestamps workround */
+		hw_tcp_check_and_disable_timestamps(sock_net(sk), skb);
 #endif
 			NET_INC_STATS(sock_net(sk),
 					LINUX_MIB_PAWSACTIVEREJECTED);
@@ -6254,10 +6404,13 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		if (th->rst) {
 			tcp_reset(sk);
 #ifdef CONFIG_MPTCP
-			(void)mptcp_proxy_fallback(sk, MPTCP_FALLBACK_PROXY_SYN_RESET, true);
+			(void)mptcp_proxy_fallback(sk,
+				MPTCP_FALLBACK_PROXY_SYN_RESET, true);
 #endif
 #ifdef CONFIG_HUAWEI_XENGINE
-			emcom_xengine_mpflow_fallback(sk, EMCOM_MPFLOW_FALLBACK_SYN_RST, 0);
+			emcom_xengine_mpflow_fallback(sk,
+						      EMCOM_MPFLOW_FALLBACK_SYN_RST,
+						      0);
 #endif
 			goto discard;
 		}
@@ -6281,14 +6434,12 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		tcp_ecn_rcv_synack(tp, th);
 #ifdef CONFIG_CHR_NETLINK_MODULE
-		if (icsk->icsk_retransmits > 2) {
-			SOCK_DEBUG(sk, "tcp_rcv_synsent_state_process:icsk_retransmits=%d,notify_chr_thread_to_send_msg()!\n", icsk->icsk_retransmits);
-			notify_chr_thread_to_send_msg(inet->inet_daddr, inet->inet_saddr);
-		} else {
-			SOCK_DEBUG(sk, "tcp_rcv_synsent_state_process:icsk_retransmits=%d\n", icsk->icsk_retransmits);
-		}
+		SOCK_DEBUG(sk, "%s: icsk_retransmits=%d\n",
+			   __func__, icsk->icsk_retransmits);
+		if (icsk->icsk_retransmits > 2)
+			notify_chr_thread_to_send_msg(inet->inet_daddr,
+						      inet->inet_saddr, sk);
 #endif
-
 		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
 		tcp_ack(sk, skb, FLAG_SLOWPATH);
 #ifdef CONFIG_MPTCP
@@ -6367,7 +6518,9 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		smp_mb();
 
 		tcp_finish_connect(sk, skb);
-
+#ifdef CONFIG_HW_PACKET_TRACKER
+		hw_pt_l4_downlink_in(sk, skb, FLAG_DATA_IS_EATEN);
+#endif
 		fastopen_fail = (tp->syn_fastopen || tp->syn_data) &&
 				tcp_rcv_fastopen_synack(sk, skb, &foc);
 
@@ -6680,10 +6833,24 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		 * using an MP_JOIN subtype.
 		 */
 		if (mptcp(tp)) {
-			if (is_master_tp(tp))
+			if (is_master_tp(tp)) {
 				mptcp_update_metasocket(mptcp_meta_sk(sk));
-			else
+			} else {
+				struct sock *meta_sk = mptcp_meta_sk(sk);
+
 				tcp_send_ack(sk);
+
+				/* Update RTO as it might be worse/better */
+				mptcp_set_rto(sk);
+
+				/* If the new RTO would fire earlier, pull it in! */
+				if (tcp_sk(meta_sk)->packets_out &&
+				    icsk->icsk_timeout >
+				    inet_csk(meta_sk)->icsk_rto + jiffies)
+					tcp_rearm_rto(meta_sk);
+
+				mptcp_push_pending_frames(mptcp_meta_sk(sk));
+			}
 		}
 #endif
 		break;
@@ -6801,13 +6968,15 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		if (sk->sk_shutdown & RCV_SHUTDOWN) {
 			if (TCP_SKB_CB(skb)->end_seq != TCP_SKB_CB(skb)->seq &&
 #ifdef CONFIG_MPTCP
-			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt) &&
-			    !mptcp(tp)) {
-			    /* In case of mptcp, the reset is handled by
-			     * mptcp_rcv_state_process
-			    */
+				after(TCP_SKB_CB(skb)->end_seq - th->fin,
+					tp->rcv_nxt) &&
+					!mptcp(tp)) {
+				/* In case of mptcp, the reset is handled by
+				 * mptcp_rcv_state_process
+				 */
 #else
-			    after(TCP_SKB_CB(skb)->end_seq - th->fin, tp->rcv_nxt)) {
+				after(TCP_SKB_CB(skb)->end_seq - th->fin,
+					tp->rcv_nxt)) {
 #endif
 				NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPABORTONDATA);
 				tcp_reset(sk);

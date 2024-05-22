@@ -57,7 +57,9 @@ enum IREFTABLE_TYPE{
 #define HX_SHIFT_1BUF	1
 #define HX_SHIFT_2BUF	2
 #define HX_SHIFT_3BUF	3
-
+#define HIMAX_FIRMWARE_NAME_STR_LEN 64
+#define HIMAX_IREF_ARRAY_LINE_SIZE 16
+#define HIMAX_IREF_ARRAY_ROW_SIZE 2
 //used in firmware upgrade
 //1uA
 static unsigned char E_IrefTable_1[16][2] = { {0x20,0x0F},{0x20,0x1F},{0x20,0x2F},{0x20,0x3F},
@@ -305,10 +307,9 @@ static int hx852xes_lock_flash(int enable)
 /*change 1~7 MA */
 static void hx852xf_changeIref(int selected_iref){
 
-	unsigned char temp_iref[16][2] = {	{0x00,0x00},{0x00,0x00},{0x00,0x00},{0x00,0x00},
-									{0x00,0x00},{0x00,0x00},{0x00,0x00},{0x00,0x00},
-									{0x00,0x00},{0x00,0x00},{0x00,0x00},{0x00,0x00},
-									{0x00,0x00},{0x00,0x00},{0x00,0x00},{0x00,0x00}};
+	unsigned char temp_iref
+		[HIMAX_IREF_ARRAY_LINE_SIZE][HIMAX_IREF_ARRAY_ROW_SIZE]
+		= { {0} };
 	int i = 0;
 	int j = 0;
 	uint8_t cmd[10] = {0};
@@ -485,9 +486,11 @@ static void hx852xf_changeIref(int selected_iref){
 		TS_LOG_ERR("%s: i2c access fail!\n", __func__);
 		return ;
 	}
-
+	if (iref_number >= HIMAX_IREF_ARRAY_LINE_SIZE) {
+		TS_LOG_ERR("%s: iref_number out of max len\n", __func__);
+		return;
+	}
 	TS_LOG_INFO("%s:cmd[0]=%d,cmd[1]=%d,temp_iref_1=%d,temp_iref_2=%d\n",__func__, cmd[0], cmd[1], temp_iref[iref_number][0], temp_iref[iref_number][1]);
-
 	if(cmd[0] != temp_iref[iref_number][0] || cmd[1] != temp_iref[iref_number][1]){
 		TS_LOG_ERR("%s: IREF Read Back is not match.\n", __func__);
 		TS_LOG_ERR("%s: Iref [0]=%d,[1]=%d\n", __func__,cmd[0],cmd[1]);
@@ -901,7 +904,8 @@ int hx852xf_fts_ctpm_fw_upgrade_with_fs(const unsigned char *fw, int len, bool c
 {
 	const unsigned char* ImageBuffer = fw;
 	int fullFileLength = len;
-	int i = 0, j = 0;
+	unsigned int i;
+	int j = 0;
 	int ff_cnt = 0;
 	int f_addr = 0;
 	int clm_cnt = 0;
@@ -1121,7 +1125,7 @@ int hx852xes_fts_ctpm_fw_upgrade_with_fs(const unsigned char *fw, int len, bool 
 {
 	const unsigned char *ImageBuffer = fw;
 	int fullFileLength = len;
-	int i = 0;
+	unsigned int i;
 	uint8_t cmd[5] = {0};
 	uint8_t last_byte = 0;
 	uint8_t prePage = 0;
@@ -1628,12 +1632,13 @@ int himax_fw_update_boot(char *file_name)
 {
 	int err = NO_ERR;
 	const  struct firmware *fw_entry = NULL;
-	char firmware_name[64] = "";
+	char firmware_name[HIMAX_FIRMWARE_NAME_STR_LEN] = "";
 
 	TS_LOG_INFO("%s: enter!\n", __func__);
 	TS_LOG_INFO("himax start to request firmware  %s", file_name);
 	himax_get_fw_name(file_name);
-	snprintf(firmware_name, PAGE_SIZE, "ts/%s", file_name);
+	snprintf(firmware_name, HIMAX_FIRMWARE_NAME_STR_LEN - 1,
+		"ts/%s", file_name);
 	TS_LOG_INFO("%s, request_firmware name: %s\n",__func__,firmware_name);
 
 	err = request_firmware(&fw_entry, firmware_name, &g_himax_ts_data->tskit_himax_data->ts_platform_data->client->dev);

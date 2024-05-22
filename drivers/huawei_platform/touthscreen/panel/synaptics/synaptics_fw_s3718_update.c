@@ -29,7 +29,6 @@
 #include <asm/uaccess.h>
 #include <linux/vmalloc.h>
 #include "synaptics.h"
-#include <../../huawei_touchscreen_chips.h>
 
 #define FORCE_UPDATE false
 #define DO_LOCKDOWN false
@@ -683,7 +682,7 @@ static int fwu_allocate_read_config_buf(unsigned int count)
 		kfree(fwu->read_config_buf);
 		fwu->read_config_buf = kzalloc(count, GFP_KERNEL);
 		if (!fwu->read_config_buf) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			     __func__);
 			fwu->read_config_buf_size = 0;
@@ -746,17 +745,17 @@ static int synaptics_get_f34_addr(struct synaptics_rmi4_data *rmi4_data,
 					(unsigned char *)&rmi_fd,
 					sizeof(rmi_fd));
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read map register\n");
+			ts_log_err("Failed to read map register\n");
 			return retval;
 		}
 
 		if (SYNAPTICS_RMI4_F34 == rmi_fd.fn_number) {
-			TS_LOG_INFO("Found F%02x\n", rmi_fd.fn_number);
+			ts_log_info("Found F%02x\n", rmi_fd.fn_number);
 			*f34_address = rmi_fd.ctrl_base_addr;
 			return NO_ERR;
 		}
 	}
-	TS_LOG_ERR("Failed to get f34 addr\n");
+	ts_log_err("Failed to get f34 addr\n");
 	return -EINVAL;
 }
 
@@ -767,28 +766,28 @@ int synaptics_fw_s3718_configid(struct synaptics_rmi4_data *rmi4_data, u8 *buf,
 	unsigned char config_id[4];
 	unsigned char f34_ctrl_base_addr = 0;
 
-	TS_LOG_INFO("synaptics_fw_configid called\n");
+	ts_log_info("synaptics_fw_configid called\n");
 
 	rc = synaptics_get_f34_addr(rmi4_data, &f34_ctrl_base_addr);
 	if (rc < 0) {
-		TS_LOG_ERR("failed to scan pdt\n");
+		ts_log_err("failed to scan pdt\n");
 	}
 
 	rc = rmi4_data->i2c_read(rmi4_data, f34_ctrl_base_addr, config_id,
 				 sizeof(config_id));
 	if (rc < 0) {
-		TS_LOG_ERR("Could not read configid\n");
+		ts_log_err("Could not read configid\n");
 		return rc;
 	}
 
-	TS_LOG_INFO("config ID 0x%02X, 0x%02X, 0x%02X, 0x%02X,addr = 0x%02x\n",
+	ts_log_info("config ID 0x%02X, 0x%02X, 0x%02X, 0x%02X,addr = 0x%02x\n",
 		    config_id[0], config_id[1], config_id[2], config_id[3],
 		    f34_ctrl_base_addr);
 
 	snprintf(buf, buf_size, "%02x %02x %02x %02x\n",
 		 config_id[0], config_id[1], config_id[2], config_id[3]);
 
-	TS_LOG_INFO("buf = %s\n", buf);
+	ts_log_info("buf = %s\n", buf);
 	return 0;
 }
 
@@ -812,65 +811,65 @@ static void fwu_parse_partition_table(const unsigned char *partition_table,
 		physical_address =
 		    ptable->start_physical_address_15_8 << 8 | ptable->
 		    start_physical_address_7_0;
-		TS_LOG_DEBUG("%s: Partition entry %d:\n", __func__, ii);
+		ts_log_debug("%s: Partition entry %d:\n", __func__, ii);
 		for (offset = 0; offset < 8; offset++) {
-			TS_LOG_DEBUG("%s: 0x%02x\n", __func__,
+			ts_log_debug("%s: 0x%02x\n", __func__,
 				     partition_table[index + offset]);
 		}
 		switch (ptable->partition_id) {
 		case CORE_CODE_PARTITION:
 			blkcount->ui_firmware = partition_length;
 			phyaddr->ui_firmware = physical_address;
-			TS_LOG_DEBUG("%s: Core code block count: %d\n",
+			ts_log_debug("%s: Core code block count: %d\n",
 				     __func__, blkcount->ui_firmware);
 			break;
 		case CORE_CONFIG_PARTITION:
 			blkcount->ui_config = partition_length;
 			phyaddr->ui_config = physical_address;
-			TS_LOG_DEBUG("%s: Core config block count: %d\n",
+			ts_log_debug("%s: Core config block count: %d\n",
 				     __func__, blkcount->ui_config);
 			break;
 		case BOOTLOADER_PARTITION:
 			blkcount->bl_image = partition_length;
-			TS_LOG_DEBUG("%s: Bootloader block count: %d\n",
+			ts_log_debug("%s: Bootloader block count: %d\n",
 				     __func__, blkcount->bl_image);
 			break;
 		case UTILITY_PARAMETER_PARTITION:
 			blkcount->utility_param = partition_length;
-			TS_LOG_DEBUG("%s: Utility parameter block count: %d\n",
+			ts_log_debug("%s: Utility parameter block count: %d\n",
 				     __func__, blkcount->utility_param);
 			break;
 		case DISPLAY_CONFIG_PARTITION:
 			blkcount->dp_config = partition_length;
 			phyaddr->dp_config = physical_address;
-			TS_LOG_DEBUG("%s: Display config block count: %d\n",
+			ts_log_debug("%s: Display config block count: %d\n",
 				     __func__, blkcount->dp_config);
 			break;
 		case FLASH_CONFIG_PARTITION:
 			blkcount->fl_config = partition_length;
-			TS_LOG_DEBUG("%s: Flash config block count: %d\n",
+			ts_log_debug("%s: Flash config block count: %d\n",
 				     __func__, blkcount->fl_config);
 			break;
 		case GUEST_CODE_PARTITION:
 			blkcount->guest_code = partition_length;
 			phyaddr->guest_code = physical_address;
-			TS_LOG_DEBUG("%s: Guest code block count: %d\n",
+			ts_log_debug("%s: Guest code block count: %d\n",
 				     __func__, blkcount->guest_code);
 			break;
 		case GUEST_SERIALIZATION_PARTITION:
 			blkcount->pm_config = partition_length;
-			TS_LOG_DEBUG
+			ts_log_debug
 			    ("%s: Guest serialization block count: %d\n",
 			     __func__, blkcount->pm_config);
 			break;
 		case GLOBAL_PARAMETERS_PARTITION:
 			blkcount->bl_config = partition_length;
-			TS_LOG_DEBUG("%s: Global parameters block count: %d\n",
+			ts_log_debug("%s: Global parameters block count: %d\n",
 				     __func__, blkcount->bl_config);
 			break;
 		case DEVICE_CONFIG_PARTITION:
 			blkcount->lockdown = partition_length;
-			TS_LOG_DEBUG("%s: Device config block count: %d\n",
+			ts_log_debug("%s: Device config block count: %d\n",
 				     __func__, blkcount->lockdown);
 			break;
 		};
@@ -1098,7 +1097,7 @@ static void fwu_parse_image_header_05_06(void)
 	} else {
 		if ((sizeof(fwu->img.cstmr_product_id) < PRODUCT_ID_SIZE) ||
 			(sizeof(header->cstmr_product_id) < PRODUCT_ID_SIZE))
-			TS_LOG_ERR("%s: Failed to copy custom product ID string\n",
+			ts_log_err("%s: Failed to copy custom product ID string\n",
 				__func__);
 		else
 			memcpy((void *)fwu->img.cstmr_product_id,
@@ -1112,7 +1111,7 @@ static void fwu_parse_image_header_05_06(void)
 		fwu->img.firmware_id = le_to_uint(header->firmware_id);
 	if ((sizeof(fwu->img.product_id) < PRODUCT_ID_SIZE) ||
 		(sizeof(header->product_id) < PRODUCT_ID_SIZE))
-		TS_LOG_ERR("%s: Failed to copy product ID string\n", __func__);
+		ts_log_err("%s: Failed to copy product ID string\n", __func__);
 	else
 		memcpy((void *)fwu->img.product_id,
 			(const void *)header->product_id,
@@ -1133,7 +1132,7 @@ static int fwu_parse_image_info(void)
 
 	memset(&fwu->img, 0x00, sizeof(fwu->img));
 
-	TS_LOG_INFO("header->major_header_version is %d",
+	ts_log_info("header->major_header_version is %d",
 		    header->major_header_version);
 
 	switch (header->major_header_version) {
@@ -1145,14 +1144,14 @@ static int fwu_parse_image_info(void)
 		fwu_parse_image_header_05_06();
 		break;
 	default:
-		TS_LOG_ERR("%s: Unsupported image file format (0x%02x)\n",
+		ts_log_err("%s: Unsupported image file format (0x%02x)\n",
 			   __func__, header->major_header_version);
 		return -EINVAL;
 	}
 
 	if (fwu->bl_version == BL_V7) {
 		if (!fwu->img.contains_flash_config) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: No flash config found in firmware image\n",
 			     __func__);
 			return -EINVAL;
@@ -1166,7 +1165,7 @@ static int fwu_parse_image_info(void)
 	} else {
 		fwu->new_partition_table = false;
 	}
-	TS_LOG_INFO("fwu_parse_image_info out\n");
+	ts_log_info("fwu_parse_image_info out\n");
 	return 0;
 }
 
@@ -1182,7 +1181,7 @@ static int fwu_read_flash_status(void)
 				   fwu->off.flash_status, &status,
 				   sizeof(status));
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read F01 device status\n");
+		ts_log_err("Failed to read F01 device status\n");
 		return retval;
 	}
 
@@ -1200,7 +1199,7 @@ static int fwu_read_flash_status(void)
 		fwu->flash_status = 0x00;
 
 	if (fwu->flash_status != 0x00) {
-		TS_LOG_INFO("%s: Flash status = %d, command = 0x%02x\n",
+		ts_log_info("%s: Flash status = %d, command = 0x%02x\n",
 			   __func__, fwu->flash_status, fwu->command);
 	}
 
@@ -1209,7 +1208,7 @@ static int fwu_read_flash_status(void)
 				   fwu->off.flash_cmd, &command,
 				   sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read flash command\n", __func__);
+		ts_log_err("%s: Failed to read flash command\n", __func__);
 		return retval;
 	}
 
@@ -1240,14 +1239,14 @@ static int fwu_wait_for_idle(int timeout_ms, bool poll)
 		if (poll || (count == timeout_count)){
 			retval = fwu_read_flash_status();
 			if (retval < 0){
-				TS_LOG_ERR("fwu_read_flash_status failed\n");
+				ts_log_err("fwu_read_flash_status failed\n");
 			}
 		}
 		if ((fwu->command == CMD_IDLE) && (fwu->flash_status == 0x00))
 			return 0;
 	} while (count < timeout_count);
 
-	TS_LOG_ERR("%s: Timed out waiting for idle status\n", __func__);
+	ts_log_err("%s: Timed out waiting for idle status\n", __func__);
 
 	return -ETIMEDOUT;
 }
@@ -1313,7 +1312,7 @@ static int fwu_write_f34_v7_command_single_transaction(unsigned char cmd)
 				    base + fwu->off.partition_id,
 				    data_1_5.data, sizeof(data_1_5.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write single transaction command\n",
+		ts_log_err("%s: Failed to write single transaction command\n",
 			   __func__);
 		return retval;
 	}
@@ -1361,7 +1360,7 @@ static int fwu_write_f34_v7_command(unsigned char cmd)
 		command = CMD_V7_ENTER_BL;
 		break;
 	default:
-		TS_LOG_ERR("%s: Invalid command 0x%02x\n", __func__, cmd);
+		ts_log_err("%s: Invalid command 0x%02x\n", __func__, cmd);
 		return -EINVAL;
 	};
 
@@ -1391,7 +1390,7 @@ static int fwu_write_f34_v7_command(unsigned char cmd)
 				    base + fwu->off.flash_cmd,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write flash command\n", __func__);
+		ts_log_err("%s: Failed to write flash command\n", __func__);
 		return retval;
 	}
 
@@ -1466,7 +1465,7 @@ static int fwu_write_f34_v5v6_command(unsigned char cmd)
 		command = CMD_V5V6_ERASE_OEM_DATA;
 		break;
 	default:
-		TS_LOG_ERR("%s: Invalid command 0x%02x\n", __func__, cmd);
+		ts_log_err("%s: Invalid command 0x%02x\n", __func__, cmd);
 		return -EINVAL;
 	}
 
@@ -1485,7 +1484,7 @@ static int fwu_write_f34_v5v6_command(unsigned char cmd)
 				       fwu->bootloader_id,
 				       sizeof(fwu->bootloader_id));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to write bootloader ID\n",
+			ts_log_err("%s: Failed to write bootloader ID\n",
 				   __func__);
 			return retval;
 		}
@@ -1500,7 +1499,7 @@ static int fwu_write_f34_v5v6_command(unsigned char cmd)
 				    base + fwu->off.flash_cmd,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write command 0x%02x\n", __func__,
+		ts_log_err("%s: Failed to write command 0x%02x\n", __func__,
 			   command);
 		return retval;
 	}
@@ -1558,7 +1557,7 @@ static int fwu_write_f34_v7_partition_id(unsigned char cmd)
 #ifdef SYNA_UPP
 	case CMD_READ_UTILITY_PARAM:
 		partition = UTILITY_PARAMETER_PARTITION;
-		TS_LOG_INFO("partition = %d\n", partition);
+		ts_log_info("partition = %d\n", partition);
 		break;
 #endif
 	case CMD_ERASE_ALL:
@@ -1586,7 +1585,7 @@ static int fwu_write_f34_v7_partition_id(unsigned char cmd)
 		partition = BOOTLOADER_PARTITION;
 		break;
 	default:
-		TS_LOG_ERR("%s: Invalid command 0x%02x\n", __func__, cmd);
+		ts_log_err("%s: Invalid command 0x%02x\n", __func__, cmd);
 		return -EINVAL;
 	};
 
@@ -1594,7 +1593,7 @@ static int fwu_write_f34_v7_partition_id(unsigned char cmd)
 				    base + fwu->off.partition_id,
 				    &partition, sizeof(partition));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write partition ID\n", __func__);
+		ts_log_err("%s: Failed to write partition ID\n", __func__);
 		return retval;
 	}
 
@@ -1634,7 +1633,7 @@ static int fwu_read_f34_v7_partition_table(void)
 				    (unsigned char *)&block_number,
 				    sizeof(block_number));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write block number\n", __func__);
+		ts_log_err("%s: Failed to write block number\n", __func__);
 		return retval;
 	}
 
@@ -1645,19 +1644,19 @@ static int fwu_read_f34_v7_partition_table(void)
 				    base + fwu->off.transfer_length,
 				    length, sizeof(length));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write transfer length\n", __func__);
+		ts_log_err("%s: Failed to write transfer length\n", __func__);
 		return retval;
 	}
 
 	retval = fwu_write_f34_command(CMD_READ_CONFIG);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write command\n", __func__);
+		ts_log_err("%s: Failed to write command\n", __func__);
 		return retval;
 	}
 
 	retval = fwu_wait_for_idle(WRITE_WAIT_MS, true);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to wait for idle status\n", __func__);
+		ts_log_err("%s: Failed to wait for idle status\n", __func__);
 		return retval;
 	}
 
@@ -1666,7 +1665,7 @@ static int fwu_read_f34_v7_partition_table(void)
 				   fwu->read_config_buf,
 				   fwu->partition_table_bytes);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read block data\n", __func__);
+		ts_log_err("%s: Failed to read block data\n", __func__);
 		return retval;
 	}
 
@@ -1690,7 +1689,7 @@ static int fwu_read_f34_v7_queries(void)
 	retval = fwu->fn_ptr->read(rmi4_data,
 				   base, query_0.data, sizeof(query_0.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read query 0\n", __func__);
+		ts_log_err("%s: Failed to read query 0\n", __func__);
 		return retval;
 	}
 
@@ -1700,7 +1699,7 @@ static int fwu_read_f34_v7_queries(void)
 				   base + offset,
 				   query_1_7.data, sizeof(query_1_7.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read queries 1 to 7\n", __func__);
+		ts_log_err("%s: Failed to read queries 1 to 7\n", __func__);
 		return retval;
 	}
 
@@ -1738,7 +1737,7 @@ static int fwu_read_f34_v7_queries(void)
 				fwu->partitions++;
 		}
 
-		TS_LOG_DEBUG("%s: Supported partitions: 0x%02x\n", __func__,
+		ts_log_debug("%s: Supported partitions: 0x%02x\n", __func__,
 			     query_1_7.data[index + offset]);
 	}
 
@@ -1747,7 +1746,7 @@ static int fwu_read_f34_v7_queries(void)
 	kfree(fwu->read_config_buf);
 	fwu->read_config_buf = kzalloc(fwu->partition_table_bytes, GFP_KERNEL);
 	if (!fwu->read_config_buf) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu->read_config_buf\n",
+		ts_log_err("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			   __func__);
 		fwu->read_config_buf_size = 0;
 		return -ENOMEM;
@@ -1757,7 +1756,7 @@ static int fwu_read_f34_v7_queries(void)
 
 	retval = fwu_read_f34_v7_partition_table();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read partition table\n", __func__);
+		ts_log_err("%s: Failed to read partition table\n", __func__);
 		return retval;
 	}
 
@@ -1789,7 +1788,7 @@ static int fwu_read_f34_v5v6_queries(void)
 				   fwu->bootloader_id,
 				   sizeof(fwu->bootloader_id));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read bootloader ID\n", __func__);
+		ts_log_err("%s: Failed to read bootloader ID\n", __func__);
 		return retval;
 	}
 
@@ -1812,7 +1811,7 @@ static int fwu_read_f34_v5v6_queries(void)
 	retval = fwu->fn_ptr->read(rmi4_data,
 				   base + fwu->off.block_size, buf, 2);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read block size info\n", __func__);
+		ts_log_err("%s: Failed to read block size info\n", __func__);
 		return retval;
 	}
 
@@ -1831,7 +1830,7 @@ static int fwu_read_f34_v5v6_queries(void)
 				   fwu->flash_properties.data,
 				   sizeof(fwu->flash_properties.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read flash properties\n", __func__);
+		ts_log_err("%s: Failed to read flash properties\n", __func__);
 		return retval;
 	}
 
@@ -1849,7 +1848,7 @@ static int fwu_read_f34_v5v6_queries(void)
 	retval = fwu->fn_ptr->read(rmi4_data,
 				   base + fwu->off.block_count, buf, count);
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read block count info\n");
+		ts_log_err("Failed to read block count info\n");
 		return retval;
 	}
 
@@ -1883,7 +1882,7 @@ static int fwu_read_f34_v5v6_queries(void)
 				      properties_2.data,
 				      sizeof(properties_2.data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read flash properties 2\n",
+			ts_log_err("%s: Failed to read flash properties 2\n",
 				   __func__);
 			return retval;
 		}
@@ -1900,16 +1899,16 @@ static int fwu_read_f34_v5v6_queries(void)
 		if (properties_2.has_lockdown_data){
 			fwu->has_lockdown_data = true;
 			count += 2;
-			TS_LOG_DEBUG("!!!!!!!!has_lockdown_data!!!!!!\n");
+			ts_log_debug("!!!!!!!!has_lockdown_data!!!!!!\n");
 		}
 		if (properties_2.has_lcm_data){
 			fwu->has_lcm_data = true;
 			count += 2;
-			TS_LOG_DEBUG("!!!!!!!!has_lcm_data!!!!!!\n");
+			ts_log_debug("!!!!!!!!has_lcm_data!!!!!!\n");
 		}
 		if (properties_2.has_oem_data){
 			fwu->has_oem_data = true;
-			TS_LOG_DEBUG("!!!!!!!!has_oem_data!!!!!!\n");
+			ts_log_debug("!!!!!!!!has_oem_data!!!!!!\n");
 			count += 2;
 		}
 #if 0
@@ -1920,7 +1919,7 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					count);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
@@ -1935,7 +1934,7 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					2);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
@@ -1943,7 +1942,7 @@ static int fwu_read_f34_v5v6_queries(void)
 			batohs(&fwu->blkcount.guest_code, &(buf[0]));
 			count++;
 			fwu->has_guest_code = true;
-			TS_LOG_DEBUG("#########fwu->blkcount.guest_code = %d #########\n", fwu->blkcount.guest_code);
+			ts_log_debug("#########fwu->blkcount.guest_code = %d #########\n", fwu->blkcount.guest_code);
 		}
 		if (properties_2.has_force_config){
 			retval = fwu->fn_ptr->read(rmi4_data,
@@ -1951,7 +1950,7 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					2);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
@@ -1959,7 +1958,7 @@ static int fwu_read_f34_v5v6_queries(void)
 			batohs(&fwu->blkcount.force_config, &(buf[0]));
 			count++;
 			fwu->has_force_config = true;
-			TS_LOG_DEBUG("#########fwu->blkcount.force_config = %d #########\n", fwu->blkcount.force_config);
+			ts_log_debug("#########fwu->blkcount.force_config = %d #########\n", fwu->blkcount.force_config);
 		}
 		if (properties_2.has_lockdown_data){
 			retval = fwu->fn_ptr->read(rmi4_data,
@@ -1967,7 +1966,7 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					2);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
@@ -1976,7 +1975,7 @@ static int fwu_read_f34_v5v6_queries(void)
 			batohs(&fwu->blkcount.lockdown_data, &(buf[0]));
 			count++;
 			fwu->has_lockdown_data = true;
-			TS_LOG_DEBUG("#########fwu->blkcount.lockdown_data = %d #########\n", fwu->blkcount.lockdown_data);
+			ts_log_debug("#########fwu->blkcount.lockdown_data = %d #########\n", fwu->blkcount.lockdown_data);
 		}
 		if (properties_2.has_lcm_data){
 			retval = fwu->fn_ptr->read(rmi4_data,
@@ -1984,7 +1983,7 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					2);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
@@ -1992,7 +1991,7 @@ static int fwu_read_f34_v5v6_queries(void)
 			batohs(&fwu->blkcount.lcm_data, &(buf[0]));
 			count++;
 			fwu->has_lcm_data = true;
-			TS_LOG_DEBUG("#########fwu->blkcount.lcm_data = %d #########\n", fwu->blkcount.lcm_data);
+			ts_log_debug("#########fwu->blkcount.lcm_data = %d #########\n", fwu->blkcount.lcm_data);
 		}
 		if (properties_2.has_oem_data){
 			retval = fwu->fn_ptr->read(rmi4_data,
@@ -2000,14 +1999,14 @@ static int fwu_read_f34_v5v6_queries(void)
 					buf,
 					2);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read guest code block count\n",
 				     __func__);
 				return retval;
 			}
 			batohs(&fwu->blkcount.oem_data, &(buf[0]));
 			fwu->has_oem_data = true;
-			TS_LOG_DEBUG("#########fwu->blkcount.oem_data = %d #########\n", fwu->blkcount.oem_data);
+			ts_log_debug("#########fwu->blkcount.oem_data = %d #########\n", fwu->blkcount.oem_data);
 		}
 	}
 
@@ -2057,7 +2056,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 				    (unsigned char *)&block_number,
 				    sizeof(block_number));
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read flash status\n");
+		ts_log_err("Failed to read flash status\n");
 		return retval;
 	}
 
@@ -2088,7 +2087,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 				       base + fwu->off.transfer_length, length,
 				       sizeof(length));
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write transfer length (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2096,7 +2095,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 
 		retval = fwu_write_f34_command(command);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write command (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2106,7 +2105,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 		    fwu->fn_ptr->write(rmi4_data, base + fwu->off.payload,
 				       block_ptr, transfer * fwu->block_size);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write block data (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2118,7 +2117,7 @@ static int fwu_write_f34_v7_blocks(unsigned char *block_ptr,
 		} else {
 			retval = fwu_wait_for_idle(WRITE_WAIT_MS, true);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to wait for idle status (%d blocks remaining)\n",
 				     __func__, remaining);
 				return retval;
@@ -2150,7 +2149,7 @@ static int fwu_write_f34_v5v6_blocks(unsigned char *block_ptr,
 				    base + fwu->off.block_number,
 				    block_number, sizeof(block_number));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write block number\n", __func__);
+		ts_log_err("%s: Failed to write block number\n", __func__);
 		return retval;
 	}
 
@@ -2159,7 +2158,7 @@ static int fwu_write_f34_v5v6_blocks(unsigned char *block_ptr,
 		    fwu->fn_ptr->write(rmi4_data, base + fwu->off.payload,
 				       block_ptr, fwu->block_size);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write block data (block %d)\n",
 			     __func__, blk);
 			return retval;
@@ -2167,14 +2166,14 @@ static int fwu_write_f34_v5v6_blocks(unsigned char *block_ptr,
 
 		retval = fwu_write_f34_command(command);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to write command for block %d\n",
+			ts_log_err("%s: Failed to write command for block %d\n",
 				   __func__, blk);
 			return retval;
 		}
 
 		retval = fwu_wait_for_idle(WRITE_WAIT_MS, true);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to wait for idle status (block %d)\n",
 			     __func__, blk);
 			return retval;
@@ -2223,7 +2222,7 @@ static int fwu_read_f34_v7_blocks(unsigned short block_cnt,
 				    (unsigned char *)&block_number,
 				    sizeof(block_number));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write block number\n", __func__);
+		ts_log_err("%s: Failed to write block number\n", __func__);
 		return retval;
 	}
 
@@ -2246,7 +2245,7 @@ static int fwu_read_f34_v7_blocks(unsigned short block_cnt,
 				       base + fwu->off.transfer_length, length,
 				       sizeof(length));
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write transfer length (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2254,7 +2253,7 @@ static int fwu_read_f34_v7_blocks(unsigned short block_cnt,
 
 		retval = fwu_write_f34_command(command);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write command (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2262,7 +2261,7 @@ static int fwu_read_f34_v7_blocks(unsigned short block_cnt,
 
 		retval = fwu_wait_for_idle(WRITE_WAIT_MS, true);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to wait for idle status (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2273,7 +2272,7 @@ static int fwu_read_f34_v7_blocks(unsigned short block_cnt,
 				      &fwu->read_config_buf[index],
 				      transfer * fwu->block_size);
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to read block data (%d blocks remaining)\n",
 			     __func__, remaining);
 			return retval;
@@ -2304,27 +2303,27 @@ static int fwu_read_f34_v5v6_blocks(unsigned short block_cnt,
 				    base + fwu->off.block_number,
 				    block_number, sizeof(block_number));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write block number\n", __func__);
+		ts_log_err("%s: Failed to write block number\n", __func__);
 		return retval;
 	}
 
 	retval = fwu_allocate_read_config_buf(6000);
 	if (retval) {
-		TS_LOG_ERR("%s: allocate_read_config_buf fail\n", __func__);
+		ts_log_err("%s: allocate_read_config_buf fail\n", __func__);
 		return 0;
 	}
 
 	for (blk = 0; blk < block_cnt; blk++) {
 		retval = fwu_write_f34_command(command);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to write read config command\n",
+			ts_log_err("%s: Failed to write read config command\n",
 				   __func__);
 			return retval;
 		}
 
 		retval = fwu_wait_for_idle(WRITE_WAIT_MS, true);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to wait for idle status\n",
+			ts_log_err("%s: Failed to wait for idle status\n",
 				   __func__);
 			return retval;
 		}
@@ -2334,7 +2333,7 @@ static int fwu_read_f34_v5v6_blocks(unsigned short block_cnt,
 				      &fwu->read_config_buf[index],
 				      fwu->block_size);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read block data (block %d)\n",
+			ts_log_err("%s: Failed to read block data (block %d)\n",
 				   __func__, blk);
 			return retval;
 		}
@@ -2368,12 +2367,12 @@ static int fwu_get_image_firmware_id(unsigned int *fw_id)
 		*fw_id = fwu->img.firmware_id;
 	} else {
 		if (!fwu->image_name) {
-			TS_LOG_ERR("fwu->image_name is NULL, return\n");
+			ts_log_err("fwu->image_name is NULL, return\n");
 			return -EINVAL;
 		}
 		strptr = strnstr(fwu->image_name, "PR", MAX_IMAGE_NAME_LEN);
 		if (!strptr) {
-			TS_LOG_ERR("%s: No valid PR number (PRxxxxxxx) "
+			ts_log_err("%s: No valid PR number (PRxxxxxxx) "
 				   "found in image file name (%s)\n", __func__,
 				   fwu->image_name);
 			return -EINVAL;
@@ -2382,7 +2381,7 @@ static int fwu_get_image_firmware_id(unsigned int *fw_id)
 		strptr += 2;
 		firmware_id = kzalloc(MAX_FIRMWARE_ID_LEN, GFP_KERNEL);
 		if (!firmware_id) {
-			TS_LOG_ERR("%s: Failed to alloc mem for firmware_id\n",
+			ts_log_err("%s: Failed to alloc mem for firmware_id\n",
 				   __func__);
 			return -ENOMEM;
 		}
@@ -2394,7 +2393,7 @@ static int fwu_get_image_firmware_id(unsigned int *fw_id)
 		retval = sstrtoul(firmware_id, 10, (unsigned long *)fw_id);
 		kfree(firmware_id);
 		if (retval) {
-			TS_LOG_ERR("%s: Failed to obtain image firmware ID\n",
+			ts_log_err("%s: Failed to obtain image firmware ID\n",
 				   __func__);
 			return -EINVAL;
 		}
@@ -2435,19 +2434,19 @@ static enum flash_area fwu_go_nogo(void)
 	    fwu->fn_ptr->read(rmi4_data, fwu->f34_fd.ctrl_base_addr, config_id,
 			      sizeof(config_id));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read device config ID\n", __func__);
+		ts_log_err("%s: Failed to read device config ID\n", __func__);
 		flash_area = NONE;
 		goto exit;
 	}
 	device_config_id = be_to_uint(config_id);
-	TS_LOG_INFO("Device config ID = 0x%02x 0x%02x 0x%02x 0x%02x\n",
+	ts_log_info("Device config ID = 0x%02x 0x%02x 0x%02x 0x%02x\n",
 		    config_id[0], config_id[1], config_id[2], config_id[3]);
 
 	if (g_ts_data.chip_data->is_multi_protocal){
 		last_3_num[0] = 0x0f & config_id[2];
 		last_3_num[1] = 0x0f & (config_id[3] >> 4);
 		last_3_num[2] = 0x0f & config_id[3];
-		TS_LOG_INFO("last_3_num[0] = 0x%02x, last_3_num[1] = 0x%02x, last_3_num[2] = 0x%02x\n",
+		ts_log_info("last_3_num[0] = 0x%02x, last_3_num[1] = 0x%02x, last_3_num[2] = 0x%02x\n",
 			last_3_num[0], last_3_num[1], last_3_num[2]);
 		/* syna_wx_wy */
 		rmi4_data->new_wx_wy = true;
@@ -2456,12 +2455,12 @@ static enum flash_area fwu_go_nogo(void)
 				rmi4_data->synaptics_chip_data->adv_width + ii,
 				"%s", dts_set_buf + ii);
 			if (-1 == retval)
-				TS_LOG_ERR("sscanf has failed\n");
-			TS_LOG_INFO("temp_buf[%d]=%02x, last_3_num[%d]=%02x\n",
+				ts_log_err("sscanf has failed\n");
+			ts_log_info("temp_buf[%d]=%02x, last_3_num[%d]=%02x\n",
 				ii, dts_set_buf[ii], ii, last_3_num[ii]);
 
 			if (dts_set_buf[ii] > last_3_num[ii]) {
-				TS_LOG_INFO("set old protocol\n");
+				ts_log_info("set old protocol\n");
 				rmi4_data->new_wx_wy = false;
 				break;
 			}
@@ -2471,11 +2470,11 @@ static enum flash_area fwu_go_nogo(void)
 		}
 		/* syna_wx_wy end */
 	}
-	TS_LOG_INFO("new_wx_wy = %d\n", rmi4_data->new_wx_wy);
+	ts_log_info("new_wx_wy = %d\n", rmi4_data->new_wx_wy);
 
 	/* Get image config ID */
 	image_config_id = be_to_uint(fwu->img.ui_config.data);
-	TS_LOG_INFO("Image config ID = 0x%02x 0x%02x 0x%02x 0x%02x\n",
+	ts_log_info("Image config ID = 0x%02x 0x%02x 0x%02x 0x%02x\n",
 		    fwu->img.ui_config.data[0],
 		    fwu->img.ui_config.data[1],
 		    fwu->img.ui_config.data[2], fwu->img.ui_config.data[3]);
@@ -2490,16 +2489,16 @@ static enum flash_area fwu_go_nogo(void)
 		 fwu->img.ui_config.data[1], fwu->img.ui_config.data[2],
 		 fwu->img.ui_config.data[3]);
 
-	TS_LOG_INFO("Device config ID %d, .img config ID %d\n",
+	ts_log_info("Device config ID %d, .img config ID %d\n",
 		    device_config_id, image_config_id);
 
 	if (image_config_id != device_config_id) {
-		TS_LOG_INFO("img configid is different from device configid\n");
+		ts_log_info("img configid is different from device configid\n");
 
 		if (FW_UPDATE_TO_HIGH ==
 		    fwu->rmi4_data->synaptics_chip_data->fw_update_logic) {
 			if (image_config_id < device_config_id) {
-				TS_LOG_INFO
+				ts_log_info
 				    ("imageConfigID[%d] is little than deviceConfigID[%d], then no need update\n",
 				     image_config_id, device_config_id);
 				flash_area = NONE;
@@ -2515,9 +2514,9 @@ static enum flash_area fwu_go_nogo(void)
 
 exit:
 	if (flash_area == NONE)
-		TS_LOG_INFO("Nothing needs to be updated\n");
+		ts_log_info("Nothing needs to be updated\n");
 	else
-		TS_LOG_INFO("Update %s block\n",
+		ts_log_info("Update %s block\n",
 			    flash_area == UI_FIRMWARE ? "UI FW" : "CONFIG");
 	return flash_area;
 }
@@ -2536,7 +2535,7 @@ static int fwu_scan_pdt(void)
 	struct synaptics_rmi4_fn_desc rmi_fd;
 	fwu->in_ub_mode = false;
 
-	TS_LOG_INFO("fwu_scan_pdt called\n");
+	ts_log_info("fwu_scan_pdt called\n");
 
 	for (addr = PDT_START; addr > PDT_END; addr -= PDT_ENTRY_SIZE) {
 		retval =
@@ -2546,7 +2545,7 @@ static int fwu_scan_pdt(void)
 			return retval;
 
 		if (rmi_fd.fn_number) {
-			TS_LOG_INFO("Found F%02x\n", rmi_fd.fn_number);
+			ts_log_info("Found F%02x\n", rmi_fd.fn_number);
 			switch (rmi_fd.fn_number) {
 			case SYNAPTICS_RMI4_F01:
 				f01found = true;
@@ -2578,7 +2577,7 @@ static int fwu_scan_pdt(void)
 					fwu->bl_version = BL_V7;
 					break;
 				default:
-					TS_LOG_ERR
+					ts_log_err
 					    ("%s: Unrecognized F34 version\n",
 					     __func__);
 					return -EINVAL;
@@ -2607,13 +2606,13 @@ static int fwu_scan_pdt(void)
 	}
 
 	if (!f01found || !f34found) {
-		TS_LOG_ERR("%s: Failed to find both F01 and F34\n", __func__);
+		ts_log_err("%s: Failed to find both F01 and F34\n", __func__);
 		if (!f35found) {
-			TS_LOG_ERR("%s: Failed to find F35\n", __func__);
+			ts_log_err("%s: Failed to find F35\n", __func__);
 			return -EINVAL;
 		} else {
 			fwu->in_ub_mode = true;
-			TS_LOG_DEBUG("%s: In microbootloader mode\n", __func__);
+			ts_log_debug("%s: In microbootloader mode\n", __func__);
 			fwu_recovery_check_status();
 			return 0;
 		}
@@ -2647,7 +2646,7 @@ static int fwu_enter_flash_prog(void)
 		return retval;
 
 	if (!fwu->in_bl_mode) {
-		TS_LOG_ERR("%s: BL mode not entered\n", __func__);
+		ts_log_err("%s: BL mode not entered\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2660,7 +2659,7 @@ static int fwu_enter_flash_prog(void)
 				   f01_device_control.data,
 				   sizeof(f01_device_control.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read F01 device control\n", __func__);
+		ts_log_err("%s: Failed to read F01 device control\n", __func__);
 		return retval;
 	}
 
@@ -2672,7 +2671,7 @@ static int fwu_enter_flash_prog(void)
 				    f01_device_control.data,
 				    sizeof(f01_device_control.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write F01 device control\n",
+		ts_log_err("%s: Failed to write F01 device control\n",
 			   __func__);
 		return retval;
 	}
@@ -2689,7 +2688,7 @@ static int fwu_check_ui_firmware_size(void)
 	block_count = fwu->img.ui_firmware.size / fwu->block_size;
 
 	if (block_count != fwu->blkcount.ui_firmware) {
-		TS_LOG_ERR("%s: UI firmware size mismatch\n", __func__);
+		ts_log_err("%s: UI firmware size mismatch\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2703,7 +2702,7 @@ static int fwu_check_ui_configuration_size(void)
 	block_count = fwu->img.ui_config.size / fwu->block_size;
 
 	if (block_count != fwu->blkcount.ui_config) {
-		TS_LOG_ERR("%s: UI configuration size mismatch\n", __func__);
+		ts_log_err("%s: UI configuration size mismatch\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2717,7 +2716,7 @@ static int fwu_check_dp_configuration_size(void)
 	block_count = fwu->img.dp_config.size / fwu->block_size;
 
 	if (block_count != fwu->blkcount.dp_config) {
-		TS_LOG_ERR("%s: Display configuration size mismatch\n",
+		ts_log_err("%s: Display configuration size mismatch\n",
 			   __func__);
 		return -EINVAL;
 	}
@@ -2732,7 +2731,7 @@ static int fwu_check_bl_configuration_size(void)
 	block_count = fwu->img.bl_config.size / fwu->block_size;
 
 	if (block_count != fwu->blkcount.bl_config) {
-		TS_LOG_ERR("%s: Bootloader configuration size mismatch\n",
+		ts_log_err("%s: Bootloader configuration size mismatch\n",
 			   __func__);
 		return -EINVAL;
 	}
@@ -2746,7 +2745,7 @@ static int fwu_check_guest_code_size(void)
 
 	block_count = fwu->img.guest_code.size / fwu->block_size;
 	if (block_count != fwu->blkcount.guest_code) {
-		TS_LOG_ERR("%s: Guest code size mismatch\n", __func__);
+		ts_log_err("%s: Guest code size mismatch\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2790,13 +2789,13 @@ static int fwu_erase_configuration(void)
 		break;
 	}
 
-	TS_LOG_DEBUG("%s: Erase command written\n", __func__);
+	ts_log_debug("%s: Erase command written\n", __func__);
 
 	retval = fwu_wait_for_idle(ERASE_WAIT_MS, true);
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+	ts_log_debug("%s: Idle status detected\n", __func__);
 
 	return retval;
 }
@@ -2809,13 +2808,13 @@ static int fwu_erase_bootloader(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Erase command written\n", __func__);
+	ts_log_debug("%s: Erase command written\n", __func__);
 
 	retval = fwu_wait_for_idle(ERASE_WAIT_MS, false);
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+	ts_log_debug("%s: Idle status detected\n", __func__);
 
 	return 0;
 }
@@ -2828,13 +2827,13 @@ static int fwu_erase_utility_parameter(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Erase command written\n", __func__);
+	ts_log_debug("%s: Erase command written\n", __func__);
 
 	retval = fwu_wait_for_idle(ERASE_WAIT_MS, false);
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+	ts_log_debug("%s: Idle status detected\n", __func__);
 
 	return 0;
 }
@@ -2847,13 +2846,13 @@ static int fwu_erase_guest_code(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Erase command written\n", __func__);
+	ts_log_debug("%s: Erase command written\n", __func__);
 
 	retval = fwu_wait_for_idle(ERASE_WAIT_MS, true);
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+	ts_log_debug("%s: Idle status detected\n", __func__);
 
 	return 0;
 }
@@ -2867,7 +2866,7 @@ static int fwu_erase_lockdown_data(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG(
+	ts_log_debug(
 			"%s: Erase command written\n",
 			__func__);
 
@@ -2877,7 +2876,7 @@ static int fwu_erase_lockdown_data(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG(
+	ts_log_debug(
 			"%s: Idle status detected\n",
 			__func__);
 
@@ -2894,14 +2893,14 @@ static int fwu_erase_all(void)
 		if (retval < 0)
 			return retval;
 
-		TS_LOG_DEBUG("%s: Erase command written\n", __func__);
+		ts_log_debug("%s: Erase command written\n", __func__);
 
 		msleep(1000);
 		retval = fwu_wait_for_idle(ERASE_WAIT_MS, true);
 		if (retval < 0)
 			return retval;
 
-		TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+		ts_log_debug("%s: Idle status detected\n", __func__);
 
 		fwu->config_area = UI_CONFIG_AREA;
 		retval = fwu_erase_configuration();
@@ -2914,14 +2913,14 @@ static int fwu_erase_all(void)
 		if (retval < 0)
 			return retval;
 
-		TS_LOG_DEBUG("%s: Erase all command written\n", __func__);
+		ts_log_debug("%s: Erase all command written\n", __func__);
 		if (g_ts_data.chip_data->delay_for_fw_update)
 			msleep(800);
 		retval = fwu_wait_for_idle(ERASE_WAIT_MS, true);
 		if (retval < 0)
 			return retval;
 
-		TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+		ts_log_debug("%s: Idle status detected\n", __func__);
 	}
 
 	if (fwu->flash_properties.has_disp_config) {
@@ -2970,7 +2969,7 @@ static int fwu_read_utility_parameter(void)
 	memset(fwu->read_config_buf, 0x00, utility_param_size);
 
 	fwu->read_config_buf_size = utility_param_size;
-	TS_LOG_INFO("utility_param_size = %d\n", utility_param_size);
+	ts_log_info("utility_param_size = %d\n", utility_param_size);
 	retval = fwu_read_f34_blocks(fwu->blkcount.utility_param, CMD_READ_UTILITY_PARAM);
 	if (retval < 0)
 		return retval;
@@ -2994,7 +2993,7 @@ static int fwu_write_utility_parameter(void)
 	if (fwu->img.force_param.size) {
 		if (fwu->img.force_param.size >
 			(utility_param_size - CHECKSUM_ARRAY_LEN)) {
-			TS_LOG_ERR("%s: Failed to copy force parameter data\n",
+			ts_log_err("%s: Failed to copy force parameter data\n",
 				__func__);
 			return -EINVAL;
 		}
@@ -3072,7 +3071,7 @@ static int fwu_write_flash_configuration(void)
 	fwu->config_block_count = fwu->config_size / fwu->block_size;
 
 	if (fwu->config_block_count != fwu->blkcount.fl_config) {
-		TS_LOG_ERR("%s: Flash configuration size mismatch\n", __func__);
+		ts_log_err("%s: Flash configuration size mismatch\n", __func__);
 		return -EINVAL;
 	}
 
@@ -3080,14 +3079,14 @@ static int fwu_write_flash_configuration(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Erase flash configuration command written\n",
+	ts_log_debug("%s: Erase flash configuration command written\n",
 		     __func__);
 
 	retval = fwu_wait_for_idle(ERASE_WAIT_MS, true);
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG("%s: Idle status detected\n", __func__);
+	ts_log_debug("%s: Idle status detected\n", __func__);
 
 	retval = fwu_write_configuration();
 	if (retval < 0)
@@ -3135,7 +3134,7 @@ static int fwu_write_partition_table(void)
 	kfree(fwu->read_config_buf);
 	fwu->read_config_buf = kzalloc(fwu->config_size, GFP_KERNEL);
 	if (!fwu->read_config_buf) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu->read_config_buf\n",
+		ts_log_err("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			   __func__);
 		fwu->read_config_buf_size = 0;
 		return -ENOMEM;
@@ -3172,7 +3171,7 @@ static int fwu_write_bl_area_v7(void)
 	bool has_utility_param;
 	struct synaptics_rmi4_data *rmi4_data = fwu->rmi4_data;
 
-	TS_LOG_INFO("%s is called\n", __func__);
+	ts_log_info("%s is called\n", __func__);
 	has_utility_param = fwu->has_utility_param;
 	if (fwu->has_utility_param) {
 		retval = fwu_erase_utility_parameter();
@@ -3197,7 +3196,7 @@ static int fwu_write_bl_area_v7(void)
 	retval = fwu_write_bootloader();
 	if (retval < 0)
 		return retval;
-	TS_LOG_INFO("%s: success to write bootloader\n", __func__);
+	ts_log_info("%s: success to write bootloader\n", __func__);
 	msleep(F35_RESET_WAIT_MS);
 	fwu_scan_pdt();
 	rmi4_data->reset_device(rmi4_data);
@@ -3212,7 +3211,7 @@ static int fwu_write_bl_area_v7(void)
 	retval = fwu_write_configuration();
 	if (retval < 0)
 		return retval;
-	TS_LOG_INFO("%s: success to write flash config\n", __func__);
+	ts_log_info("%s: success to write flash config\n", __func__);
 	rmi4_data->reset_device(rmi4_data);
 	retval = fwu_read_f34_queries();
 	if (retval < 0)
@@ -3229,7 +3228,7 @@ static int fwu_write_bl_area_v7(void)
 		retval = fwu_write_utility_parameter();
 		if (retval < 0)
 			return retval;
-		TS_LOG_INFO("%s: success to write utility param\n", __func__);
+		ts_log_info("%s: success to write utility param\n", __func__);
 	}
 	return 0;
 }
@@ -3338,7 +3337,7 @@ static int fwu_do_read_config(void)
 		break;
 	case DP_CONFIG_AREA:
 		if (!fwu->flash_properties.has_disp_config) {
-			TS_LOG_ERR("%s: Display configuration not supported\n",
+			ts_log_err("%s: Display configuration not supported\n",
 				   __func__);
 			return -EINVAL;
 		}
@@ -3346,7 +3345,7 @@ static int fwu_do_read_config(void)
 		break;
 	case PM_CONFIG_AREA:
 		if (!fwu->flash_properties.has_pm_config) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Permanent configuration not supported\n",
 			     __func__);
 			return -EINVAL;
@@ -3355,7 +3354,7 @@ static int fwu_do_read_config(void)
 		break;
 	case BL_CONFIG_AREA:
 		if (!fwu->flash_properties.has_bl_config) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Bootloader configuration not supported\n",
 			     __func__);
 			return -EINVAL;
@@ -3363,12 +3362,12 @@ static int fwu_do_read_config(void)
 		block_count = fwu->blkcount.bl_config;
 		break;
 	default:
-		TS_LOG_ERR("%s: Invalid config area\n", __func__);
+		ts_log_err("%s: Invalid config area\n", __func__);
 		return -EINVAL;
 	}
 
 	if (block_count == 0) {
-		TS_LOG_ERR("%s: Invalid block count\n", __func__);
+		ts_log_err("%s: Invalid block count\n", __func__);
 		return -EINVAL;
 	}
 	/*mutex_lock(&rmi4_data->rmi4_exp_init_mutex);*/
@@ -3381,7 +3380,7 @@ static int fwu_do_read_config(void)
 	kfree(fwu->read_config_buf);
 	fwu->read_config_buf = kzalloc(fwu->config_size, GFP_KERNEL);
 	if (!fwu->read_config_buf) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu->read_config_buf\n",
+		ts_log_err("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			   __func__);
 		fwu->read_config_buf_size = 0;
 		retval = -ENOMEM;
@@ -3414,9 +3413,9 @@ static int fwu_do_read_lockdown_data(void)
 		kfree(fwu->read_config_buf);
 
 	fwu->read_config_buf = kzalloc(fwu->config_size, GFP_KERNEL);
-	TS_LOG_DEBUG("fwu->config_size = %d \n", fwu->config_size);
+	ts_log_debug("fwu->config_size = %d \n", fwu->config_size);
 	if (!fwu->read_config_buf) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu->read_config_buf\n",
+		ts_log_err("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			   __func__);
 		fwu->read_config_buf_size = 0;
 		retval = -ENOMEM;
@@ -3446,7 +3445,7 @@ static int fwu_do_lockdown(void)
 				   fwu->flash_properties.data,
 				   sizeof(fwu->flash_properties.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read flash properties\n", __func__);
+		ts_log_err("%s: Failed to read flash properties\n", __func__);
 		return retval;
 	}
 
@@ -3475,17 +3474,17 @@ static int fwu_start_write_guest_code(void)
 		return -EINVAL;
 
 	if (!fwu->has_guest_code) {
-		TS_LOG_ERR("%s: Guest code not supported\n", __func__);
+		ts_log_err("%s: Guest code not supported\n", __func__);
 		return -EINVAL;
 	}
 
 	if (!fwu->img.contains_guest_code) {
-		TS_LOG_ERR("%s: No guest code in firmware image\n", __func__);
+		ts_log_err("%s: No guest code in firmware image\n", __func__);
 		return -EINVAL;
 	}
 
 	if (rmi4_data->sensor_sleep) {
-		TS_LOG_ERR("%s: Sensor sleeping\n", __func__);
+		ts_log_err("%s: Sensor sleeping\n", __func__);
 		return -ENODEV;
 	}
 	/*rmi4_data->stay_awake = true;*/
@@ -3543,7 +3542,7 @@ static int fwu_start_write_config(void)
 		if (retval < 0)
 			return retval;
 		if (device_fw_id != image_fw_id) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Device and image firmware IDs don't match\n",
 			     __func__);
 			return -EINVAL;
@@ -3554,12 +3553,12 @@ static int fwu_start_write_config(void)
 		break;
 	case DP_CONFIG_AREA:
 		if (!fwu->flash_properties.has_disp_config) {
-			TS_LOG_ERR("%s: Display configuration not supported\n",
+			ts_log_err("%s: Display configuration not supported\n",
 				   __func__);
 			return -EINVAL;
 		}
 		if (!fwu->img.contains_disp_config) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: No display configuration in firmware image\n",
 			     __func__);
 			return -EINVAL;
@@ -3569,12 +3568,12 @@ static int fwu_start_write_config(void)
 			return retval;
 		break;
 	default:
-		TS_LOG_ERR("%s: Configuration not supported\n", __func__);
+		ts_log_err("%s: Configuration not supported\n", __func__);
 		return -EINVAL;
 	}
 
 	if (rmi4_data->sensor_sleep) {
-		TS_LOG_ERR("%s: Sensor sleeping\n", __func__);
+		ts_log_err("%s: Sensor sleeping\n", __func__);
 		return -ENODEV;
 	}
 	/*rmi4_data->stay_awake = true;*/
@@ -3589,7 +3588,7 @@ static int fwu_start_write_config(void)
 
 	retval = fwu_erase_configuration();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to erase config\n", __func__);
+		ts_log_err("%s: Failed to erase config\n", __func__);
 		goto exit;
 	}
 
@@ -3642,16 +3641,16 @@ static int fwu_start_reflash(void)
 
 	retval = fwu_do_reflash();
 	if (retval < 0) {
-		TS_LOG_ERR("fwu_do_reflash read error\n");
+		ts_log_err("fwu_do_reflash read error\n");
 	}
 	rmi4_data->reset_device(rmi4_data);
 
 	retval = fwu_read_flash_status();
 
 	if (retval < 0)
-		TS_LOG_ERR("fwu_read_flash_status read error\n");
+		ts_log_err("fwu_read_flash_status read error\n");
 	else
-		TS_LOG_INFO("fwu->in_bl_mode is %s\n",
+		ts_log_info("fwu->in_bl_mode is %s\n",
 			    fwu->in_bl_mode ? "in bl mode" : "normal mode");
 	/*rmi4_data->stay_awake = false;*/
 
@@ -3670,14 +3669,14 @@ static int fwu_recovery_check_status(void)
 	retval = fwu->fn_ptr->read(rmi4_data,
 				   base + F35_ERROR_CODE_OFFSET, &status, 1);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read status\n", __func__);
+		ts_log_err("%s: Failed to read status\n", __func__);
 		return retval;
 	}
 
 	status = status & MASK_5BIT;
 
 	if (status != 0x00) {
-		TS_LOG_ERR("%s: Recovery mode status = %d\n", __func__, status);
+		ts_log_err("%s: Recovery mode status = %d\n", __func__, status);
 		return -EINVAL;
 	}
 
@@ -3697,11 +3696,7 @@ static int fwu_recovery_erase_all(void)
 				    base + F35_CHUNK_COMMAND_OFFSET,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_INFO("fwu_recovery_erase_all\n");
-#if defined (CONFIG_HUAWEI_DSM)
-		g_ts_data.dsm_info.constraints_UPDATE_status =
-		    fwu_enter_flash_prog_fail;
-#endif
+		ts_log_info("fwu_recovery_erase_all\n");
 		return retval;
 	}
 
@@ -3734,7 +3729,7 @@ static int fwu_recovery_write_chunk(void)
 				    base + F35_CHUNK_NUM_LSB_OFFSET,
 				    chunk_number, sizeof(chunk_number));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write chunk number\n", __func__);
+		ts_log_err("%s: Failed to write chunk number\n", __func__);
 		return retval;
 	}
 
@@ -3754,7 +3749,7 @@ static int fwu_recovery_write_chunk(void)
 		memset(buf, 0x00, F35_CHUNK_SIZE);
 		if ((chunk_size > sizeof(buf)) ||
 			(chunk_size > (fwu->image_size - bytes_written))) {
-			TS_LOG_ERR("%s: Failed to copy data\n", __func__);
+			ts_log_err("%s: Failed to copy data\n", __func__);
 			return -EINVAL;
 		}
 		memcpy((void *)buf, (const void *)chunk_ptr, chunk_size);
@@ -3763,7 +3758,7 @@ static int fwu_recovery_write_chunk(void)
 		    fwu->fn_ptr->write(rmi4_data, base + F35_CHUNK_DATA_OFFSET,
 				       buf, sizeof(buf));
 		if (retval < 0) {
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: Failed to write chunk data (chunk %d)\n",
 			     __func__, chunk);
 			return retval;
@@ -3774,7 +3769,7 @@ static int fwu_recovery_write_chunk(void)
 
 	retval = fwu_recovery_check_status();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write chunk data\n", __func__);
+		ts_log_err("%s: Failed to write chunk data\n", __func__);
 		return retval;
 	}
 
@@ -3794,7 +3789,7 @@ static int fwu_recovery_reset(void)
 				    base + F35_CHUNK_COMMAND_OFFSET,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to issue reset command\n", __func__);
+		ts_log_err("%s: Failed to issue reset command\n", __func__);
 		return retval;
 	}
 
@@ -3809,7 +3804,7 @@ static int fwu_start_recovery(void)
 	struct synaptics_rmi4_data *rmi4_data = fwu->rmi4_data;
 
 	if (rmi4_data->sensor_sleep) {
-		TS_LOG_ERR("%s: Sensor sleeping\n", __func__);
+		ts_log_err("%s: Sensor sleeping\n", __func__);
 		return -ENODEV;
 	}
 	/*rmi4_data->stay_awake = true;*/
@@ -3820,7 +3815,7 @@ static int fwu_start_recovery(void)
 
 	retval = fwu_recovery_erase_all();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to do erase all in recovery mode\n",
+		ts_log_err("%s: Failed to do erase all in recovery mode\n",
 			   __func__);
 		goto exit;
 	}
@@ -3829,7 +3824,7 @@ static int fwu_start_recovery(void)
 
 	retval = fwu_recovery_write_chunk();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write chunk data in recovery mode\n",
+		ts_log_err("%s: Failed to write chunk data in recovery mode\n",
 			   __func__);
 		goto exit;
 	}
@@ -3838,7 +3833,7 @@ static int fwu_start_recovery(void)
 
 	retval = fwu_recovery_reset();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to reset device in recovery mode\n",
+		ts_log_err("%s: Failed to reset device in recovery mode\n",
 			   __func__);
 		goto exit;
 	}
@@ -3868,13 +3863,13 @@ int synaptics_fw_s3718_update(void)
 	if (fwu->in_ub_mode){
 		retval = fwu_start_recovery();
 		if (retval < 0){
-			TS_LOG_ERR("Failed to do recovery\n");
+			ts_log_err("Failed to do recovery\n");
 			return -ENODEV;
 		}
 	}else{
 		retval = fwu_start_reflash();
 		if (retval < 0){
-			TS_LOG_ERR("Failed to update firmware\n");
+			ts_log_err("Failed to update firmware\n");
 			fwu->image = NULL;
 			return -ENODEV;
 		}
@@ -3907,7 +3902,7 @@ static void fwu_startup_fw_update_work(struct work_struct *work)
 		msleep(FB_READY_WAIT_MS);
 		timeout--;
 		if (timeout == 0) {
-			TS_LOG_ERR("%s: Timed out waiting for FB ready\n",
+			ts_log_err("%s: Timed out waiting for FB ready\n",
 				   __func__);
 			return;
 		}
@@ -3938,17 +3933,17 @@ static int synaptics_read_lockdown_data(void)
 	int retval = -EINVAL;
 
 	if (fwu->bl_version != BL_V6) {
-		TS_LOG_ERR("%s: Not support lockdown data in bl v.%d\n", __func__, fwu->bl_version);
+		ts_log_err("%s: Not support lockdown data in bl v.%d\n", __func__, fwu->bl_version);
 		goto out;
 	}
 	else if (!fwu->has_lockdown_data){
-		TS_LOG_ERR("%s: Not support lockdown data in this firmware\n", __func__);
+		ts_log_err("%s: Not support lockdown data in this firmware\n", __func__);
 		goto out;
 	}
 
 	retval = fwu_do_read_lockdown_data();
 	if (retval < 0){
-		TS_LOG_ERR( "%s: Failed to read lockdown data\n",__func__);
+		ts_log_err( "%s: Failed to read lockdown data\n",__func__);
 		goto out;
 	}
 out:
@@ -3965,7 +3960,7 @@ static int fwu_erase_oem_data(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG(
+	ts_log_debug(
 			"%s: Erase command written\n",
 			__func__);
 
@@ -3975,7 +3970,7 @@ static int fwu_erase_oem_data(void)
 	if (retval < 0)
 		return retval;
 
-	TS_LOG_DEBUG(
+	ts_log_debug(
 			"%s: Idle status detected\n",
 			__func__);
 
@@ -3988,11 +3983,11 @@ static int synaptics_read_oem_data(void)
 	unsigned short block_count;
 
 	if (fwu->bl_version != BL_V6) {
-		TS_LOG_ERR("%s: Not support oem data in bl v.%d\n", __func__, fwu->bl_version);
+		ts_log_err("%s: Not support oem data in bl v.%d\n", __func__, fwu->bl_version);
 		goto out;
 	}
 	else if (!fwu->has_oem_data){
-		TS_LOG_ERR("%s: Not support oem data in this firmware\n", __func__);
+		ts_log_err("%s: Not support oem data in this firmware\n", __func__);
 		goto out;
 	}
 #if 0
@@ -4000,7 +3995,7 @@ static int synaptics_read_oem_data(void)
 
 	retval = fwu_do_read_config();
 	if (retval < 0){
-		TS_LOG_ERR( "%s: Failed to read config\n",__func__);
+		ts_log_err( "%s: Failed to read config\n",__func__);
 		goto out;
 	}
 #else
@@ -4011,7 +4006,7 @@ static int synaptics_read_oem_data(void)
 		kfree(fwu->read_config_buf);
 	fwu->read_config_buf = kzalloc(fwu->config_size, GFP_KERNEL);
 	if (!fwu->read_config_buf) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu->read_config_buf\n",
+		ts_log_err("%s: Failed to alloc mem for fwu->read_config_buf\n",
 			   __func__);
 		fwu->read_config_buf_size = 0;
 		return -ENOMEM;
@@ -4031,14 +4026,14 @@ short get_oem_data_info(void)
 	struct synaptics_rmi4_data *rmi4_data;
 
 	if(!fwu || !fwu->rmi4_data){
-		TS_LOG_ERR("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
+		ts_log_err("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
 		return -EIO;
 	}
 	rmi4_data = fwu->rmi4_data;
 
 	retval = synaptics_fw_data_s3718_init(rmi4_data);
 	if(retval){
-		TS_LOG_ERR("%s: synap_fw_data_s3718_init  Failed \n", __func__);
+		ts_log_err("%s: synap_fw_data_s3718_init  Failed \n", __func__);
 		return -EIO;
 	}
 
@@ -4070,7 +4065,7 @@ int get_oem_data(unsigned char *oem_data, unsigned short leng)
 
 
 	if(!fwu || !fwu->rmi4_data){
-		TS_LOG_ERR("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
+		ts_log_err("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
 		return -EIO;
 	}
 
@@ -4078,7 +4073,7 @@ int get_oem_data(unsigned char *oem_data, unsigned short leng)
 
 	retval = synaptics_fw_data_s3718_init(rmi4_data);
 	if (retval) {
-		TS_LOG_ERR("%s: synap_fw_data_s3718_init  Failed \n", __func__);
+		ts_log_err("%s: synap_fw_data_s3718_init  Failed \n", __func__);
 		return -EIO;
 	}
 
@@ -4103,7 +4098,7 @@ int get_oem_data(unsigned char *oem_data, unsigned short leng)
 	if (!strncmp(rmi4_data->rmi4_mod_info.product_id_string, "S3330",5)) {
 		retval = synaptics_fw_data_s3718_init(rmi4_data);
 		if (retval) {
-			TS_LOG_ERR("%s: synap_fw_data_s3718_init  Failed \n", __func__);
+			ts_log_err("%s: synap_fw_data_s3718_init  Failed \n", __func__);
 			return -EIO;
 		}
 		fwu->config_area = PM_CONFIG_AREA;
@@ -4166,7 +4161,7 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 	struct synaptics_rmi4_data *rmi4_data;
 
 	if(!fwu || !fwu->rmi4_data){
-		TS_LOG_ERR("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
+		ts_log_err("%s: fwu or  fwu->rmi4_data is null  \n", __func__);
 		return -EIO;
 	}
 
@@ -4174,7 +4169,7 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 
 	retval = synaptics_fw_data_s3718_init(rmi4_data);
 	if (retval) {
-		TS_LOG_ERR("%s: synap_fw_data_s3718_init  Failed \n", __func__);
+		ts_log_err("%s: synap_fw_data_s3718_init  Failed \n", __func__);
 		return -EIO;
 	}
 
@@ -4233,7 +4228,7 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 
 		block_count = fwu->blkcount.pm_config;
 		if (block_count == 0) {
-			TS_LOG_ERR("%s: Invalid block count\n", __func__);
+			ts_log_err("%s: Invalid block count\n", __func__);
 			return -EINVAL;
 		}
 
@@ -4260,7 +4255,7 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 
 		block_count = fwu->blkcount.pm_config;
 		if (block_count == 0) {
-			TS_LOG_ERR( "%s: Invalid block count\n",__func__);
+			ts_log_err( "%s: Invalid block count\n",__func__);
 			return -EINVAL;
 		}
 
@@ -4294,7 +4289,7 @@ int set_oem_data(unsigned char *oem_data, unsigned short leng)
 		if (retval < 0)
 			goto exit;
 		if ((unsigned long)( fwu->blkcount.oem_data * fwu->block_size) > SYNAPTCS_SHORTMULTI_SPACE){
-			TS_LOG_INFO( "%s fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
+			ts_log_info( "%s fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
 			goto exit;
 		}
 		memset(fwu->read_config_buf, 0x00, fwu->blkcount.oem_data * fwu->block_size);
@@ -4361,7 +4356,7 @@ exit:
 int get_lockdown_data(unsigned char *lockdown_data, unsigned short leng)
 {
 	int retval = -EINVAL;
-	TS_LOG_INFO( "%s: Get lockdown data\n",__func__);
+	ts_log_info( "%s: Get lockdown data\n",__func__);
 
 	retval = synaptics_read_lockdown_data();
 	if (retval < 0)
@@ -4373,7 +4368,7 @@ int get_lockdown_data(unsigned char *lockdown_data, unsigned short leng)
 int set_lockdown_data(unsigned char *lockdown_data, unsigned short leng)
 {
 	int retval = -EINVAL;
-	TS_LOG_INFO( "%s: Start\n",__func__);
+	ts_log_info( "%s: Start\n",__func__);
 
 	retval = fwu_enter_flash_prog();
 	if (retval < 0)
@@ -4382,7 +4377,7 @@ int set_lockdown_data(unsigned char *lockdown_data, unsigned short leng)
 	if (retval < 0)
 		goto exit;
 	if((unsigned long)(fwu->blkcount.lockdown_data * fwu->block_size) > SYNAPTCS_SHORTMULTI_SPACE){
-		TS_LOG_INFO( "fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
+		ts_log_info( "fwu->blkcount.oem_data * fwu->block_size > 0x7FFFFFFF\n",__func__);
 		retval = -EINVAL;
 		goto exit;
 	}
@@ -4405,7 +4400,7 @@ int synaptics_get_project_id(unsigned char *projectid, int plen)
 		fwu->rmi4_data->rmi4_mod_info.project_id_string;
 
 	if (!projectid || !fwu || !fwu->rmi4_data){
-		TS_LOG_ERR("%s error!", __func__);
+		ts_log_err("%s error!", __func__);
 		return -1;
 	}
 	snprintf(projectid, plen, "%s", project_id);
@@ -4419,8 +4414,8 @@ static int synaptics_read_project_id(void)
 	unsigned char *project_id =
 	    fwu->rmi4_data->rmi4_mod_info.project_id_string;
 
-	TS_LOG_INFO("%s: fwu->bl_version = %d\n", __func__, fwu->bl_version);
-	TS_LOG_INFO("%s: ic_type = %d\n", __func__, fwu->rmi4_data->synaptics_chip_data->ic_type);
+	ts_log_info("%s: fwu->bl_version = %d\n", __func__, fwu->bl_version);
+	ts_log_info("%s: ic_type = %d\n", __func__, fwu->rmi4_data->synaptics_chip_data->ic_type);
 
 	if (fwu->bl_version != BL_V7) {
 		if ((fwu->rmi4_data->synaptics_chip_data->ic_type != SYNAPTICS_TD4322)
@@ -4434,11 +4429,11 @@ static int synaptics_read_project_id(void)
 		} else {
 			retval = fwu_read_f34_queries();
 			if (retval < 0) {
-				TS_LOG_ERR("fwu_read_f34_queries failed \n");
+				ts_log_err("fwu_read_f34_queries failed \n");
 			}
 			retval = get_lockdown_data(project_id, SYNAPTICS_RMI4_PROJECT_ID_SIZE);
 			if (retval < 0) {
-				TS_LOG_INFO("get_lockdown_data failed \n");
+				ts_log_info("get_lockdown_data failed \n");
 				memcpy(project_id,
 					fwu->rmi4_data->rmi4_mod_info.product_id_string,
 					SYNAPTICS_RMI4_PROJECT_ID_SIZE);
@@ -4456,13 +4451,13 @@ static int synaptics_read_project_id(void)
 					memcpy(fwu->rmi4_data->rmi4_mod_info.project_id_string, "MAHA211010", SYNAPTICS_RMI4_PROJECT_ID_SIZE);  //MAHA_LGD_TD4322
 				}
 				else
-				TS_LOG_INFO("%s:unknow project!!!\n", __func__);
+				ts_log_info("%s:unknow project!!!\n", __func__);
 
 				retval = 0;
 				fwu->write_project_id = true;
 				goto out;
 			} else {
-			TS_LOG_INFO("%s get_lockdown_data successfully\n", __func__);
+			ts_log_info("%s get_lockdown_data successfully\n", __func__);
 			goto out;
 			}
 		}
@@ -4471,7 +4466,7 @@ static int synaptics_read_project_id(void)
 
 	retval = fwu_do_read_config();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read config\n", __func__);
+		ts_log_err("%s: Failed to read config\n", __func__);
 		goto out;
 	}
 
@@ -4487,7 +4482,7 @@ static int synaptics_read_project_id(void)
 	project_id[index] = 0;
 
 	if (!project_id[0] && 0 == fwu->read_config_buf[0] && 1 == fwu->read_config_buf[1]){
-		TS_LOG_INFO("%s: read project id fail from oemdata, try read from oemdata again\n", __func__);
+		ts_log_info("%s: read project id fail from oemdata, try read from oemdata again\n", __func__);
 		for (index = 2;
 		     index < SYNAPTICS_RMI4_PROJECT_ID_SIZE+2 && index < fwu->config_size;
 		     index++) {
@@ -4500,7 +4495,7 @@ static int synaptics_read_project_id(void)
 		project_id[index-2] = 0;
 	}
 out:
-	TS_LOG_INFO("%s: project id is: %s\n", __func__, project_id);
+	ts_log_info("%s: project id is: %s\n", __func__, project_id);
 	return retval;
 }
 
@@ -4510,27 +4505,27 @@ int synaptics_fw_data_s3718_init(struct synaptics_rmi4_data *rmi4_data)
 	struct pdt_properties pdt_props;
 
 	if (fwu) {
-		TS_LOG_DEBUG("%s: Handle already exists\n", __func__);
+		ts_log_debug("%s: Handle already exists\n", __func__);
 		return 0;
 	}
 
 	fwu = kzalloc(sizeof(*fwu), GFP_KERNEL);
 	if (!fwu) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fwu\n", __func__);
+		ts_log_err("%s: Failed to alloc mem for fwu\n", __func__);
 		retval = -ENOMEM;
 		goto exit;
 	}
 
 	fwu->fn_ptr = kzalloc(sizeof(*(fwu->fn_ptr)), GFP_KERNEL);
 	if (!fwu->fn_ptr) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fn_ptr\n", __func__);
+		ts_log_err("%s: Failed to alloc mem for fn_ptr\n", __func__);
 		retval = -ENOMEM;
 		goto exit_free_fwu;
 	}
 
 	fwu->image_name = kzalloc(MAX_IMAGE_NAME_LEN, GFP_KERNEL);
 	if (!fwu->image_name) {
-		TS_LOG_ERR("%s: Failed to alloc mem for image name\n",
+		ts_log_err("%s: Failed to alloc mem for image name\n",
 			   __func__);
 		retval = -ENOMEM;
 		goto exit_free_fn_ptr;
@@ -4544,11 +4539,11 @@ int synaptics_fw_data_s3718_init(struct synaptics_rmi4_data *rmi4_data)
 				   PDT_PROPS,
 				   pdt_props.data, sizeof(pdt_props.data));
 	if (retval < 0) {
-		TS_LOG_DEBUG
+		ts_log_debug
 		    ("%s: Failed to read PDT properties, assuming 0x00\n",
 		     __func__);
 	} else if (pdt_props.has_bsr) {
-		TS_LOG_ERR("%s: Reflash for LTS not currently supported\n",
+		ts_log_err("%s: Reflash for LTS not currently supported\n",
 			   __func__);
 		retval = -ENODEV;
 		goto exit_free_mem;
@@ -4566,7 +4561,7 @@ int synaptics_fw_data_s3718_init(struct synaptics_rmi4_data *rmi4_data)
 
 	retval = synaptics_read_project_id();
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read project id\n");
+		ts_log_err("Failed to read project id\n");
 		goto exit_free_mem;
 	}
 
@@ -4678,32 +4673,32 @@ int synaptics_get_fw_data_s3718_boot(char *file_name,
 		 file_name, synaptics_sett_param_regs->module_name);
 	firmware_name[RMI_PRODUCT_ID_LENGTH + file_name_size] = 0;
 
-	TS_LOG_INFO("file_name size = %ld, Requesting firmware image %s\n",
+	ts_log_info("file_name size = %ld, Requesting firmware image %s\n",
 		    file_name_size, firmware_name);
 
 	if (fwu->in_ub_mode) {
 		retval = request_firmware(&fwu->fw_entry_boot, "ts/synaptics.hex", dev);
 		if (retval != 0) {
-			TS_LOG_ERR("synaptics.hex not available\n");
+			ts_log_err("synaptics.hex not available\n");
 			return retval;
 		}
 	} else {
 		retval = request_firmware(&fwu->fw_entry_boot, firmware_name, dev);
 		if (retval != 0) {
-			TS_LOG_ERR("Firmware image %s not available\n", firmware_name);
+			ts_log_err("Firmware image %s not available\n", firmware_name);
 			return retval;
 		}
 	}
 
 	if (fwu->fw_entry_boot == NULL) {
-		TS_LOG_ERR("fw is null\n");
+		ts_log_err("fw is null\n");
 		return -EINVAL;
 	}
 
 	fwu->image = fwu->fw_entry_boot->data;
 	fwu->image_size = fwu->fw_entry_boot->size;
 
-	TS_LOG_INFO("Firmware image size = %ld\n", fwu->fw_entry_boot->size);
+	ts_log_info("Firmware image size = %ld\n", fwu->fw_entry_boot->size);
 	return NO_ERR;
 }
 
@@ -4713,20 +4708,20 @@ int synaptics_get_fw_data_s3718_sd(void)
 {
 	int retval;
 
-	TS_LOG_INFO("synaptics_get_fw_data_sd called\n");
+	ts_log_info("synaptics_get_fw_data_sd called\n");
 
 	retval = file_open_firmware(&(fwu->fw_entry_sd));
 	if (retval != 0) {
-		TS_LOG_ERR("file_open_firmware error, code = %d\n", retval);
+		ts_log_err("file_open_firmware error, code = %d\n", retval);
 		return retval;
 	}
 
 	fwu->image = fwu->fw_entry_sd;
 
 	if (fwu->image)
-		TS_LOG_INFO("get sd entry OK++++++\n");
+		ts_log_info("get sd entry OK++++++\n");
 
-	TS_LOG_INFO("synaptics_get_fw_data_sd done\n");
+	ts_log_info("synaptics_get_fw_data_sd done\n");
 	return NO_ERR;
 }
 
@@ -4739,21 +4734,21 @@ bool synaptics_check_fw_s3718_version(void)
 	if (fwu->in_ub_mode)
 		return 1;
 
-	TS_LOG_INFO("synaptics_check_fw_s3718_version in\n");
+	ts_log_info("synaptics_check_fw_s3718_version in\n");
 
 	retval = fwu_parse_image_info();
 	if (retval < 0) {
-		TS_LOG_ERR("fwu_parse_image_info error\n");
+		ts_log_err("fwu_parse_image_info error\n");
 		return false;
 	}
 
 	if (fwu->bl_version != fwu->img.bl_version) {
-		TS_LOG_ERR("%s: Bootloader version mismatch\n", __func__);
+		ts_log_err("%s: Bootloader version mismatch\n", __func__);
 		return false;
 	}
 
 	if (!fwu->force_update && fwu->new_partition_table) {
-		TS_LOG_INFO("%s: Partition table mismatch\n", __func__);
+		ts_log_info("%s: Partition table mismatch\n", __func__);
 	}
 
 	retval = fwu_read_flash_status();
@@ -4761,21 +4756,21 @@ bool synaptics_check_fw_s3718_version(void)
 		return false;
 
 	if (fwu->in_bl_mode) {
-		TS_LOG_INFO("%s: Device in bootloader mode\n", __func__);
+		ts_log_info("%s: Device in bootloader mode\n", __func__);
 	}
 
 	flash_area = fwu_go_nogo();
 	if (flash_area == UI_FIRMWARE) {
-		TS_LOG_INFO("update fw\n");
+		ts_log_info("update fw\n");
 		return true;
 	} else {
-		TS_LOG_INFO("no need to update fw\n");
+		ts_log_info("no need to update fw\n");
 		return false;
 	}
 }
 
 void synaptics_fw_data_s3718_release(void)
 {
-	TS_LOG_INFO("s3718 release fw resource\n");
+	ts_log_info("s3718 release fw resource\n");
 	//Do not need to release hw data during the test
 }

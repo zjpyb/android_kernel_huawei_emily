@@ -184,7 +184,6 @@ static int32_t volte_send_data(struct voice_proxy_data_node *node, struct send_t
 	if (ret) {
 		AUDIO_LOGE("send node fail, ret:%d", ret);
 		kfree(node);
-		node = NULL;
 	}
 
 	return ret; /* lint !e438 */
@@ -240,7 +239,6 @@ int32_t proxy_push_data(void *data)
 			} else {
 				AUDIO_LOGE("no avail node");
 				kfree(node);
-				node = NULL;
 				return -EINVAL;
 			}
 		}  else {
@@ -307,7 +305,6 @@ int32_t proxy_pull_data(int8_t *data, int32_t size)
 		}
 
 		kfree(node);
-		node = NULL;
 	} else {
 		spin_unlock_bh(&priv.pull_lock);
 		ret = -EAGAIN;
@@ -440,7 +437,6 @@ static int get_voice_data(int8_t *rev_buf, struct send_tfagent_data *buf, struct
 			AUDIO_LOGE("rx frame info error, codec_type, frame type:%d, %d",
 				rx->codec_type, rx->frame_type);
 			kfree(node);
-			node = NULL;
 			return -EINVAL;
 		}
 		buf->buf_size = amrnb_frame_length[rx->frame_type];
@@ -455,7 +451,6 @@ static int get_voice_data(int8_t *rev_buf, struct send_tfagent_data *buf, struct
 			(amrnb_frame_length[tx->frame_type] > PROXY_VOICE_CODEC_MAX_DATA_LEN))) {
 			AUDIO_LOGE("tx frame type error %d", tx->frame_type);
 			kfree(node);
-			node = NULL;
 			return -EINVAL;
 		}
 		buf->buf_size = amrnb_frame_length[tx->frame_type];
@@ -499,7 +494,6 @@ static int32_t volte_add_pull_data(int8_t *rev_buf, uint32_t buf_size, int32_t t
 	if (ret) {
 		AUDIO_LOGE("kzalloc push_node failed %d", ret);
 		kfree(node);
-		node = NULL;
 		goto OUT;
 	}
 
@@ -600,7 +594,6 @@ static void volte_get_decryped_data(int8_t *data, uint32_t *size)
 
 		list_del_init(&node->list_node);
 		kfree(node);
-		node = NULL;
 
 		priv.decrypted_cnt--;
 		priv.first_plaintext = false;
@@ -627,7 +620,6 @@ static void volte_get_encrypted_data(int8_t *data, uint32_t *size)
 
 		list_del_init(&node->list_node);
 		kfree(node);
-		node = NULL;
 
 		priv.encrypted_cnt--;
 		priv.first_ciphertext = false;
@@ -790,5 +782,4 @@ module_init(volte_init);
 module_exit(volte_exit);
 
 MODULE_DESCRIPTION("voice proxy volte driver");
-MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 MODULE_LICENSE("GPL");

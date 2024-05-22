@@ -30,7 +30,7 @@
 #define int_to_frac(x) ((x) << FRAC_BITS)
 #define frac_to_int(x) ((x) >> FRAC_BITS)
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 #define MIN_POWER_DIFF 50
 #define BOARDIPA_PID_RESET_TEMP 2000
 extern unsigned int g_ipa_board_state[];
@@ -243,7 +243,7 @@ static u32 pid_controller(struct thermal_zone_device *tz,
 		if (abs(i_next) < max_power_frac) {
 			i = i_next;
 			params->err_integral += err;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 			if (params->err_integral > MAX_S48)
 				params->err_integral = MAX_S48;
 			else if (params->err_integral < -MAX_S48)
@@ -259,7 +259,7 @@ static u32 pid_controller(struct thermal_zone_device *tz,
 	 * error (i.e. driving closer to the line) results in less
 	 * power being applied, slowing down the controller)
 	 */
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	if (tz->passive_delay != 0) {
 		d = mul_frac(tz->tzp->k_d, err - params->prev_err);
 		d = div_frac(d, tz->passive_delay);
@@ -285,7 +285,7 @@ static u32 pid_controller(struct thermal_zone_device *tz,
 					  frac_to_int(p), frac_to_int(i),
 					  frac_to_int(d), power_range);
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	/*lint -e702 -e704 -e712 -e747 -esym(702,704,712,747,*)*/
 	trace_IPA_allocator_pid(frac_to_int(err),
 					  frac_to_int(params->err_integral),
@@ -373,15 +373,21 @@ static void divvy_up_power(u32 *req_power, u32 *max_power, int num_actors,
 static void get_cur_power(struct thermal_zone_device *tz)
 {
 	struct thermal_instance *instance;
-	struct power_allocator_params *params = tz->governor_data;
+	struct power_allocator_params *params = NULL;
 	u32 total_req_power;
-	int trip_max_desired_temperature = params->trip_max_desired_temperature;
+	int trip_max_desired_temperature;
 
 	if (0 == tz->tzp->cur_enable)
 		return;
 
 	mutex_lock(&tz->lock);
+	if (tz->governor_data == NULL) {
+		mutex_unlock(&tz->lock);
+		return;
+	}
 
+	params = tz->governor_data;
+	trip_max_desired_temperature = params->trip_max_desired_temperature;
 	total_req_power = 0;
 
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
@@ -408,7 +414,7 @@ static void get_cur_power(struct thermal_zone_device *tz)
 	mutex_unlock(&tz->lock);
 }
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 				struct thermal_instance *instance, u32 *soc_sustainable_power,
 				u32 granted_power)
@@ -451,7 +457,7 @@ static inline int power_actor_set_powers(struct thermal_zone_device *tz,
 	return 0;
 }
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 int thermal_zone_cdev_get_power(const char *thermal_zone_name, const char *cdev_name, unsigned int *power)
 {
 	struct thermal_instance *instance;
@@ -498,19 +504,26 @@ static int allocate_power(struct thermal_zone_device *tz,
 #endif
 {
 	struct thermal_instance *instance;
-	struct power_allocator_params *params = tz->governor_data;
+	struct power_allocator_params *params = NULL;
 	u32 *req_power, *max_power, *granted_power, *extra_actor_power;
 	u32 *weighted_req_power;
 	u32 total_req_power, max_allocatable_power, total_weighted_req_power;
 	u32 total_granted_power, power_range;
 	int i, num_actors, total_weight, ret = 0;
-	int trip_max_desired_temperature = params->trip_max_desired_temperature;
+	int trip_max_desired_temperature;
 	u32 cur_enable;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	u32 soc_sustainable_power = 0;
 #endif
 
 	mutex_lock(&tz->lock);
+	if (tz->governor_data == NULL) {
+		mutex_unlock(&tz->lock);
+		return -EINVAL;
+	}
+
+	params = tz->governor_data;
+	trip_max_desired_temperature = params->trip_max_desired_temperature;
 
 	num_actors = 0;
 	total_weight = 0;
@@ -519,7 +532,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 		    cdev_is_power_actor(instance->cdev)) {
 			num_actors++;
 			total_weight += instance->weight;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 			instance->cdev->ipa_enabled = true;
 #endif
 		}
@@ -561,7 +574,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
 		int weight;
 		struct thermal_cooling_device *cdev = instance->cdev;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		instance->cdev->ipa_enabled = true;
 #endif
 
@@ -612,7 +625,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 
 		if (!cdev_is_power_actor(instance->cdev))
 			continue;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		power_actor_set_powers(tz, instance, &soc_sustainable_power, granted_power[i]);/*lint !e661 !e662*/
 #else
 		power_actor_set_power(instance->cdev, instance,
@@ -629,7 +642,7 @@ static int allocate_power(struct thermal_zone_device *tz,
 				      max_allocatable_power, tz->temperature,
 				      control_temp - tz->temperature);
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	trace_IPA_allocator(tz->temperature, control_temp, switch_temp, control_temp - tz->temperature,
 					num_actors, power_range, req_power, total_req_power,
 					max_power, max_allocatable_power, granted_power, total_granted_power);
@@ -800,7 +813,7 @@ static void power_allocator_unbind(struct thermal_zone_device *tz)
 	tz->governor_data = NULL;
 }
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 {
 	int ret;
@@ -876,10 +889,10 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 	 * We get called for every trip point but we only need to do
 	 * our calculations once
 	 */
-	if (trip != params.trip_max_desired_temperature)
+	if (trip != params->trip_max_desired_temperature)
 		return 0;
 
-	ret = tz->ops->get_trip_temp(tz, params.trip_switch_on,
+	ret = tz->ops->get_trip_temp(tz, params->trip_switch_on,
 				     &switch_on_temp);
 
 	if (!ret && (tz->temperature < switch_on_temp)) {
@@ -891,7 +904,7 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 
 	tz->passive = 1;
 
-	ret = tz->ops->get_trip_temp(tz, params.trip_max_desired_temperature,
+	ret = tz->ops->get_trip_temp(tz, params->trip_max_desired_temperature,
 				&control_temp);
 	if (ret) {
 		dev_warn(&tz->device,
@@ -904,7 +917,7 @@ static int power_allocator_throttle(struct thermal_zone_device *tz, int trip)
 }
 #endif
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 void update_pid_value(struct thermal_zone_device *tz)
 {
 	int ret;

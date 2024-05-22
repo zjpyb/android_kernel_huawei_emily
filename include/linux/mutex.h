@@ -241,9 +241,4 @@ mutex_trylock_recursive(struct mutex *lock)
 
 	return mutex_trylock(lock);
 }
-
-#ifdef CONFIG_HW_VIP_THREAD
-#include <chipset_common/hwcfs/hwcfs_mutex.h>
-#endif
-
 #endif /* __LINUX_MUTEX_H */

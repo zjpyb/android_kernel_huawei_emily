@@ -1,9 +1,5 @@
 /*
- * trans_rtg.h
- *
- * trans rtg thread header
- *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,6 +10,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
+ * trans rtg thread header
  */
 
 #ifndef TRANS_RTG_H
@@ -21,8 +18,6 @@
 
 #include <linux/sched.h>
 #include <linux/types.h>
-
-#include "set_rtg.h"
 
 #define DEFAULT_TRANS_DEPTH (-100)
 #define DEFAULT_MAX_THREADS (-100)

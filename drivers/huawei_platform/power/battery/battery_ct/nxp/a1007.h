@@ -3,7 +3,7 @@
  *
  * a1007 driver head file for battery checker
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -28,6 +28,7 @@
 #include <huawei_platform/power/power_mesg_srv.h>
 #include <linux/pm_wakeup.h>
 #include <linux/mutex.h>
+#include <linux/pm_qos.h>
 
 #include "lib/a1007_crypto.h"
 #include "lib/present80.h"
@@ -87,14 +88,14 @@
 #define A1007_POWER_DOWN        0x0901
 #define A1007_PD_PARA_LEN       1
 #define A1007_OWI_WAKE          0x02
-#define A1007_CMD_FIRST_BYTE(x) ((x) >> 8)
+#define a1007_cmd_first_byte(x) ((x) >> 8)
 
-#define A1007_ADDR_WR(addr)     ((addr) & 0xFE)
-#define A1007_ADDR_RD(addr)     ((addr) | 0x01)
+#define a1007_addr_wr(addr)     ((addr) & 0xFE)
+#define a1007_addr_rd(addr)     ((addr) | 0x01)
 
-#define A1007_MEM_TO_DATA(ptr)  ((ptr) + 1)
-#define A1007_MEM_VALID(ptr)    (*(ptr))
-#define A1007_DEVID_U16(ptr)    ((*((ptr) + 2) << 8) + *((ptr) + 3))
+#define a1007_mem_to_data(ptr)  ((ptr) + 1)
+#define a1007_mem_valid(ptr)    (*(ptr))
+#define a1007_devid_u16(ptr)    ((*((ptr) + 2) << 8) + *((ptr) + 3))
 
 #define A1007_FAIL_CRC          256
 #define A1007_INVALID_CMD       2
@@ -135,12 +136,13 @@ struct a1007_des {
 	struct a1007_mem mem;
 	struct wakeup_source wlock;
 	struct mutex ops_mutex;
+	struct pm_qos_request pm_qos;
 #ifdef ONEWIRE_STABILITY_DEBUG
 	uint32_t err_cnt;
 	uint16_t mem_addr;
 	uint8_t buf_len;
 	uint8_t mem_buff[A1007_BLOCK_SIZE];
-#endif				/* ONEWIRE_STABILITY_DEBUG */
+#endif /* ONEWIRE_STABILITY_DEBUG */
 };
 
 #endif /* _A1007_H_ */

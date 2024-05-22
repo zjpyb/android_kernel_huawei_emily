@@ -59,6 +59,10 @@ void arch_set_max_freq_scale(struct cpumask *cpus,
 
 	for_each_cpu(cpu, cpus)
 		per_cpu(max_freq_scale, cpu) = scale;
+
+#ifdef CONFIG_HISI_EAS_SCHED
+	update_cpus_capacity(cpus);
+#endif
 }
 
 static DEFINE_MUTEX(cpu_scale_mutex);
@@ -81,6 +85,9 @@ static ssize_t cpu_capacity_show(struct device *dev,
 static void update_topology_flags_workfn(struct work_struct *work);
 static DECLARE_WORK(update_topology_flags_work, update_topology_flags_workfn);
 
+#ifdef CONFIG_ARCH_HISI
+static DEVICE_ATTR_RO(cpu_capacity);
+#else
 static ssize_t cpu_capacity_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf,
@@ -101,10 +108,6 @@ static ssize_t cpu_capacity_store(struct device *dev,
 		return ret;
 	if (new_capacity > SCHED_CAPACITY_SCALE)
 		return -EINVAL;
-#ifdef CONFIG_HISI_EAS_SCHED
-	if (!new_capacity)
-		return -EINVAL;
-#endif
 
 	mutex_lock(&cpu_scale_mutex);
 
@@ -146,6 +149,7 @@ static ssize_t cpu_capacity_store(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(cpu_capacity);
+#endif
 
 static int register_cpu_capacity_sysctl(void)
 {

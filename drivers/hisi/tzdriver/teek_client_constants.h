@@ -1,8 +1,23 @@
-
+/*
+ * teek_client_constants.h
+ *
+ * macro declaration for libteec interface for kernel CA.
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 #include <linux/types.h>
 
-#ifndef _TEEK_CLIENT_CONSTANTS_H_
-#define _TEEK_CLIENT_CONSTANTS_H_
+#ifndef TEEK_CLIENT_CONSTANTS_H
+#define TEEK_CLIENT_CONSTANTS_H
 
 enum global_service_cmd_id {
 	GLOBAL_CMD_ID_INVALID = 0x0,
@@ -10,24 +25,23 @@ enum global_service_cmd_id {
 	GLOBAL_CMD_ID_OPEN_SESSION = 0x2,
 	GLOBAL_CMD_ID_CLOSE_SESSION = 0x3,
 	GLOBAL_CMD_ID_LOAD_SECURE_APP = 0x4,
-	/* < Global Task 动态加载安全应用*/
-	GLOBAL_CMD_ID_NEED_LOAD_APP = 0x5, /* < Global Task 判断是否是需要加载安全应用 */
+	GLOBAL_CMD_ID_NEED_LOAD_APP = 0x5,
 	GLOBAL_CMD_ID_REGISTER_AGENT = 0x6,
 	GLOBAL_CMD_ID_UNREGISTER_AGENT = 0x7,
 	GLOBAL_CMD_ID_REGISTER_NOTIFY_MEMORY = 0x8,
 	GLOBAL_CMD_ID_UNREGISTER_NOTIFY_MEMORY = 0x9,
-	GLOBAL_CMD_ID_INIT_CONTENT_PATH = 0xa,  /* < Global Task初始化content path */
+	GLOBAL_CMD_ID_INIT_CONTENT_PATH = 0xa,
 	GLOBAL_CMD_ID_TERMINATE_CONTENT_PATH = 0xb,
-	/* < Global Task释放content path */
 	GLOBAL_CMD_ID_ALLOC_EXCEPTION_MEM = 0xc,
 	GLOBAL_CMD_ID_TEE_TIME = 0xd,
 	GLOBAL_CMD_ID_TEE_INFO = 0xe,
-	GLOBAL_CMD_ID_REGISTER_RDR_MEM = 0xf,
-	GLOBAL_CMD_ID_KILL_TASK = 0x10,		 /* Global Task Kill session */
-	GLOBAL_CMD_ID_TUI_EXCEPTION = 0x11,      /* TUI异常事件处理 */
-	GLOBAL_CMD_ID_ADJUST_TIME = 0x12,        /* TIME时间校正处理 */
-	GLOBAL_CMD_ID_SET_CA_HASH = 0x13,        /* set ca hash info设置用于检验CA身份的ha sh */
-	GLOBAL_CMD_ID_SET_BUILD_VERSION = 0x14,  /* set the Android's build version */
+	GLOBAL_CMD_ID_REGISTER_LOG_MEM = 0xf,
+	GLOBAL_CMD_ID_KILL_TASK = 0x10,
+	GLOBAL_CMD_ID_TUI_EXCEPTION = 0x11,
+	GLOBAL_CMD_ID_ADJUST_TIME = 0x12,
+	GLOBAL_CMD_ID_SET_CA_HASH = 0x13,
+	/* set the Android's build version */
+	GLOBAL_CMD_ID_SET_BUILD_VERSION = 0x14,
 	GLOBAL_CMD_ID_REGISTER_TTF_MEM = 0x15,
 	/* get session key for encrypting dialog */
 	GLOBAL_CMD_ID_GET_SESSION_SECURE_PARAMS = 0x16,
@@ -35,10 +49,8 @@ enum global_service_cmd_id {
 	GLOBAL_CMD_ID_REGISTER_UNUSUAL_TTF_MEM = 0x18,
 	GLOBAL_CMD_ID_REGISTER_ION_MEM = 0x19,
 	GLOBAL_CMD_ID_DUMP_MEMINFO = 0x1a,
-#ifdef CONFIG_TEE_SMP
 	/* this cmd will be used to service no ca handle cmd */
 	GLOBAL_CMD_ID_SET_SERVE_CMD = 0x1b,
-#endif
 	GLOBAL_CMD_ID_ADD_DYNAMIC_ION = 0x1c,
 	GLOBAL_CMD_ID_DEL_DYNAMIC_ION = 0x1d,
 	GLOBAL_CMD_ID_LOAD_SECURE_APP_ION = 0x1e,
@@ -52,21 +64,20 @@ enum global_service_cmd_id {
 	GLOBAL_CMD_ID_MAX = 0x7FFFFFFF
 };
 
-// Return Codes
 enum teec_result {
 	TEEC_SUCCESS = 0x0,
 	TEEC_ERROR_INVALID_CMD = 0x1,
 	TEEC_ERROR_SERVICE_NOT_EXIST = 0x2,
 	TEEC_ERROR_SESSION_NOT_EXIST = 0x3,
-	TEEC_ERROR_SESSION_MAXIMUM,          /* < 安全服务的链接数已满 */
-	TEEC_ERROR_REGISTER_EXIST_SERVICE,   /* < 注册已经存在的安全服务 */
-	TEEC_ERROR_TAGET_DEAD_FATAL,         /* < 安全服务Global出错 ，(安全服务Global是所有安全服务的基础) */
-	TEEC_ERROR_READ_DATA,                /* < 读取文件错误  */
-	TEEC_ERROR_WRITE_DATA,               /* < 写入文件错误  */
-	TEEC_ERROR_TRUNCATE_OBJECT,          /* < 截断文件错误  */
-	TEEC_ERROR_SEEK_DATA,                /* < 查找文件错误  */
-	TEEC_ERROR_RENAME_OBJECT,            /* < 重命名文件错误  */
-	TEEC_ERROR_TRUSTED_APP_LOAD_ERROR,   /* < 打开会话时，加载安全服务失败*/
+	TEEC_ERROR_SESSION_MAXIMUM,
+	TEEC_ERROR_REGISTER_EXIST_SERVICE,
+	TEEC_ERROR_TAGET_DEAD_FATAL,
+	TEEC_ERROR_READ_DATA,
+	TEEC_ERROR_WRITE_DATA,
+	TEEC_ERROR_TRUNCATE_OBJECT,
+	TEEC_ERROR_SEEK_DATA,
+	TEEC_ERROR_RENAME_OBJECT,
+	TEEC_ERROR_TRUSTED_APP_LOAD_ERROR,
 	TEEC_ERROR_GENERIC = 0xFFFF0000,
 	TEEC_ERROR_ACCESS_DENIED = 0xFFFF0001,
 	TEEC_ERROR_CANCEL = 0xFFFF0002,
@@ -90,27 +101,32 @@ enum teec_result {
 	TEE_ERROR_GT_DEAD = 0xFFFF3124,
 	TEEC_ERROR_MAC_INVALID = 0xFFFF3071,
 	TEEC_CLIENT_INTR = 0xFFFF4000,
-	TEE_ERROR_CA_AUTH_FAIL = 0xFFFFCFE5,
+	TEEC_ERROR_TUI_IN_USE = 0xFFFF7110,
+	TEEC_ERROR_TUI_SWITCH_CHANNAL,
+	TEEC_ERROR_TUI_CFG_DRIVER,
+	TEEC_ERROR_TUI_INVALID_EVENT,
+	TEEC_ERROR_TUI_POLL_EVENT,
+	TEEC_ERROR_TUI_CANCELED,
+	TEEC_ERROR_TUI_EXIT,
+	TEEC_ERROR_TUI_NOT_AVAILABLE,
+	TEEC_ERROR_SEC_FLASH_NOT_AVAILABLE,
+	TEEC_ERROR_CA_AUTH_FAIL = 0xFFFFCFE5,
 	TEE_ERROR_AUDIT_FAIL = 0xFFFF9112,
 };
 
-// Return Code Origins
 enum TEEC_ReturnCodeOrigin {
 	TEEC_ORIGIN_API = 0x1,
 	TEEC_ORIGIN_COMMS = 0x2,
 	TEEC_ORIGIN_TEE = 0x3,
 	TEEC_ORIGIN_TRUSTED_APP = 0x4,
-	TEEC_ORIGIN_TRUSTED_APP_TUI = 0x5,
 };
 
-// Shared Memory Control
 enum TEEC_SharedMemCtl {
 	TEEC_MEM_INPUT = 0x1,
 	TEEC_MEM_OUTPUT = 0x2,
 	TEEC_MEM_INOUT = 0x3,
 };
 
-// API Parameter Types
 enum TEEC_ParamType {
 	TEEC_NONE = 0x0,
 	TEEC_VALUE_INPUT = 0x01,
@@ -139,7 +155,6 @@ enum TEE_ParamType {
 	TEE_PARAM_TYPE_ION_SGLIST_INPUT = 0x9,
 };
 
-// Session Login Methods
 enum TEEC_LoginMethod {
 	TEEC_LOGIN_PUBLIC = 0x0,
 	TEEC_LOGIN_USER,

@@ -1,11 +1,11 @@
 menu "VCODEC DRIVER Configuration"
 
-config VCODEC_PLATFORM_HIVCODECV210
-        tristate "v210 Vcodec configs"
+config VCODEC_PLATFORM_HIVCODECV200
+        tristate "v200 Vcodec configs"
         default n
 
-config VCODEC_PLATFORM_KIRIN970
-        tristate "970 Vcodec configs"
+config VCODEC_PLATFORM_HIVCODECV210
+        tristate "v210 Vcodec configs"
         default n
 
 config VCODEC_PLATFORM_HIVCODECV300
@@ -20,29 +20,22 @@ config VCODEC_PLATFORM_HIVCODECV500
         tristate "v500 Vcodec configs"
         default n
 
-if VCODEC_PLATFORM_HIVCODECV210
-source "drivers/vcodec/hi_vcodec/vdec_hivna/Kconfig"
-source "drivers/vcodec/hi_vcodec/venc_hivna/drv/venc/Kconfig"
-endif
+config VCODEC_PLATFORM_HIVCODECV520
+        tristate "v520 Vcodec configs"
+        default n
 
-if VCODEC_PLATFORM_KIRIN970
-source "drivers/vcodec/hi_vcodec/vdec_hivna/Kconfig"
-source "drivers/vcodec/hi_vcodec/venc_hivna/drv/venc/Kconfig"
-endif
+config VCODEC_PLATFORM_HIVCODECV600
+        tristate "v600 Vcodec configs"
+        default n
 
-if VCODEC_PLATFORM_HIVCODECV300
-source "drivers/vcodec/hi_vcodec/vdec_hivna/Kconfig"
-source "drivers/vcodec/hi_vcodec/venc_hivna/drv/venc/Kconfig"
-endif
+config VCODEC_DPM_ENABLE
+        bool "dpm hwmon second version config"
+        depends on DPM_HWMON
+        default n
+        help
+            Second version for kernel dpm
 
-if VCODEC_PLATFORM_HIVCODECV310
 source "drivers/vcodec/hi_vcodec/vdec_hivna/Kconfig"
 source "drivers/vcodec/hi_vcodec/venc_hivna/drv/venc/Kconfig"
-endif
-
-if VCODEC_PLATFORM_HIVCODECV500
-source "drivers/vcodec/hi_vcodec/vdec_hivna/Kconfig"
-source "drivers/vcodec/hi_vcodec/venc_hivna/drv/venc/Kconfig"
-endif
 
 endmenu

@@ -1,19 +1,17 @@
 /*
- * hisi_arch_watchpoint.c - a hisilicon unified watchpoint facility,
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * watch point module
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
  */
 
@@ -89,13 +87,11 @@ void arch_read_wvr(u64 *buf, u32 len)
 {
 	int i;
 	int core_num_wrps = hw_breakpoint_slots(TYPE_DATA);
-
-	if ( len < core_num_wrps ) {
+	if ( len < (unsigned int)core_num_wrps )
 		pr_err(" buf size out of memory\n");
-	}
-	for (i = 0; i < core_num_wrps; ++i) {
+
+	for (i = 0; i < core_num_wrps; ++i)
 		buf[i] = read_wb_reg(AARCH64_DBG_REG_WVR, i);
-	}
 }
 
 /*
@@ -105,11 +101,9 @@ void arch_read_wcr(u64 *buf, u32 len)
 {
 	int i;
 	int core_num_wrps = hw_breakpoint_slots(TYPE_DATA);
-
-	if ( len < core_num_wrps ) {
+	if ( len < (unsigned int)core_num_wrps )
 		pr_err(" buf size out of memory\n");
-	}
-	for (i = 0; i < core_num_wrps; ++i) {
+
+	for (i = 0; i < core_num_wrps; ++i)
 		buf[i] = read_wb_reg(AARCH64_DBG_REG_WCR, i);
-	}
 }

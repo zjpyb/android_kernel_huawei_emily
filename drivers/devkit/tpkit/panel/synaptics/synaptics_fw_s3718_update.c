@@ -29,7 +29,7 @@
 #include <asm/uaccess.h>
 #include <linux/vmalloc.h>
 #include "synaptics.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 #define SYNAPTICS_FW_S3718_MANUAL_UPDATE_FILE_NAME	"ts/touch_screen_firmware.img"
 #define FORCE_UPDATE false
 #define DO_LOCKDOWN false
@@ -3709,7 +3709,7 @@ static int fwu_recovery_erase_all(void)
 	if (retval < 0) {
 		TS_LOG_ERR("fwu_recovery_erase_all\n");
 #if defined (CONFIG_HUAWEI_DSM)
-		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status =
+		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status =
 		    fwu_enter_flash_prog_fail;
 #endif
 		return retval;
@@ -4083,7 +4083,7 @@ int synap_get_oem_data(unsigned char *oem_data, unsigned short leng)
 		fwu->config_area = PM_CONFIG_AREA;
 		block_count = fwu->blkcount.pm_config;
 		if (block_count == 0) {
-			dev_err(rmi4_data->pdev->dev.parent,"%s: Invalid block count\n",__func__);
+			TS_LOG_ERR("%s: Invalid block count\n", __func__);
 			return -EINVAL;
 		}
 
@@ -4639,6 +4639,5 @@ bool synap_check_fw_s3718_version(void)
 void synap_fw_data_s3718_release(void)
 {
 	TS_LOG_INFO("s3718 release fw resource\n");
-	//Do not need to release hw data during the test
-	return 0;
+	/* Do not need to release hw data during the test */
 }

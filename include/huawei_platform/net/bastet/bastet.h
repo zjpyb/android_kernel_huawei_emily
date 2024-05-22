@@ -1,18 +1,8 @@
-/* bastet.h
- *
- * Bastet Head File.
- *
- * Copyright (C) 2014 Huawei Device Co.,Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description: Bastet head file.
+ * Author: zhuweichen@huawei.com
+ * Create: 2014-09-01
  */
 
 #ifndef _BASTET_H
@@ -35,13 +25,25 @@ struct bastet_reconn {
 	atomic_t handover;
 };
 
+/*
+ * struct bastet_hbm - bastet heartbeat message structer.
+ * @reply_offset:heartbeat reply has received offset length
+ * @reply_len:heartbeat reply length
+ * @reply_content:heartbeat reply content
+ * @reply_filter_cnt:heartbeat reply start filter counter
+ * @reply_matched_cnt:heartbeat reply matched counter
+ * @frozen:process frozen state
+ * @hbm_lock:heartbeat message lock of this unit.
+ *
+ * used to record the bastet heartbeat message information.
+ */
 struct bastet_hbm {
-	int32_t reply_offset;			/* heartbeat reply has received offset length */
-	uint32_t reply_len;				/* heartbeat reply length */
-	uint8_t *reply_content;			/* heartbeat reply content */
-	atomic_t reply_filter_cnt;		/* heartbeat reply start filter counter */
-	atomic_t reply_matched_cnt;		/* heartbeat reply matched counter */
-	atomic_t frozen;				/* process frozen state */
+	int32_t reply_offset;
+	uint32_t reply_len;
+	uint8_t *reply_content;
+	atomic_t reply_filter_cnt;
+	atomic_t reply_matched_cnt;
+	atomic_t frozen;
 	spinlock_t hbm_lock;
 };
 
@@ -72,31 +74,33 @@ struct bastet_sock {
 	struct bastet_hbm hbm;
 };
 
+void bastet_sock_seq_num_invalid(struct sock *sk);
 bool bastet_sock_send_prepare(struct sock *sk);
 bool bastet_sock_recv_prepare(struct sock *sk, struct sk_buff *skb);
 void bastet_sock_release(struct sock *sk);
 void bastet_delay_sock_sync_notify(struct sock *sk);
 bool bastet_sock_repair_prepare_notify(struct sock *sk, int val);
 unsigned char *bastet_save_uid_info(const char *table_name,
-		struct xt_table_info *newinfo, int *buf_len);
+	struct xt_table_info *newinfo, int *buf_len);
 void bastet_indicate_uid_info(unsigned char *buf, int buf_len);
 void bastet_wait_traffic_flow(void);
 int bastet_send_priority_msg(struct sock *sk, struct msghdr *msg, size_t size);
 void bastet_reconn_config(struct sock *sk, int val);
 void bastet_reconn_init(void);
 void bastet_inet_release(struct sock *sk);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
 int bastet_block_recv(struct socket *sock, struct msghdr *msg,
-		 size_t size, int flags, int *addr_len, int err);
-#else
-int bastet_block_recv(struct kiocb *iocb,
-		struct socket *sock, struct msghdr *msg,
-		size_t size, int flags, int *addr_len, int err);
-#endif
+	size_t size, int flags, int *addr_len, int err);
 int bastet_check_reconn(struct socket *sock);
 void bastet_check_partner(const struct sock *sk, int state);
 int bastet_check_hb_reply(struct sock *sk, struct msghdr *msg, int err);
 void bastet_clear_hb_reply(struct bastet_sock *bsk);
 void bastet_mark_hb_reply(struct sock *sk, struct sk_buff *skb, int len);
-
-#endif  /* _BASTET_H */
+#ifdef CONFIG_NETFILTER_XT_MATCH_QTAGUID
+/* declare these functions to call the system update flow function */
+extern void bastet_update_if_tag_stat(const char *ifname,
+	uid_t uid, const struct sock *sk,
+	enum ifs_tx_rx direction, int proto, int bytes);
+extern int bastet_update_total_bytes(const char *dev_name,
+	int proto, unsigned long tx_bytes, unsigned long rx_bytes);
+#endif
+#endif /* _BASTET_H */

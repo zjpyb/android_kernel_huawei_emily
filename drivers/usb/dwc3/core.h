@@ -165,12 +165,13 @@
 #define DWC3_OSTS		0xcc10
 
 /* Link Registers */
-#define DWC3_LLUCTL(n)		(0xd024 + ((n) * 0x80))
-#define DWC3_LINK_GDBGLTSSM(n)    (0xd050 + ((n) * 0x80))
-#define DWC3_LSCDTIM1(n)	(0xd02c + ((n) * 0x80))
-#define DWC3_LSCDTIM2(n)	(0xd030 + ((n) * 0x80))
 #define DWC3_LU1LFPSTXTIM(n)	(0xd004 + ((n) * 0x80))
 #define DWC3_LSKIPFREQ(n)	(0xd020 + ((n) * 0x80))
+#define DWC3_LLUCTL(n)		(0xd024 + ((n) * 0x80))
+#define DWC3_LSCDTIM1(n)	(0xd02c + ((n) * 0x80))
+#define DWC3_LSCDTIM2(n)	(0xd030 + ((n) * 0x80))
+#define DWC3_LLINKERRINJ(n)	(0xd048 + ((n) * 0x80))
+#define DWC3_LINK_GDBGLTSSM(n)	(0xd050 + ((n) * 0x80))
 
 
 /* Bit fields */
@@ -221,14 +222,14 @@
 #define DWC3_GCTL_DSBLCLKGTNG		BIT(0)
 
 /* Global User Control 1 Register */
+#define DWC3_GUCTL1_FILTER_SE0_FSLS_EOP	BIT(29)
 #define DWC3_GUCTL1_TX_IPGAP_LINECHECK_DIS	BIT(28)
 #define DWC3_GUCTL1_DEV_L1_EXIT_BY_HW	BIT(24)
-
-
-/* Global User Control Register 1 */
 #define DWC3_GUCTL1_RESERVED26		BIT(26)
 #define DWC3_GUCTL1_HW_LPM_CAP_DISABLE		BIT(13)
 #define DWC3_GUCTL1_HW_LPM_HLE_DISABLE		BIT(14)
+#define DWC3_GUCTL1_DISREFCLKGTNG_BIT		BIT(11)
+#define DWC3_GUCTL1_LOA_FILTER_EN		BIT(0)
 /* Global User Control Register */
 #define DWC3_GUCTL_DTOUT(n)			((n) << 0)
 #define DWC3_GUCTL_DTOUT_MASK			DWC3_GUCTL_DTOUT(0x7FF)
@@ -849,6 +850,7 @@ struct dwc3_scratchpad_array {
  * @usb3_phy: pointer to USB3 PHY
  * @usb2_generic_phy: pointer to USB2 PHY
  * @usb3_generic_phy: pointer to USB3 PHY
+ * @phys_ready: flag to indicate that PHYs are ready
  * @ulpi: pointer to ulpi interface
  * @isoch_delay: wValue from Set Isochronous Delay request;
  * @u2sel: parameter from Set SEL request.
@@ -946,6 +948,8 @@ struct dwc3 {
 
 	struct phy		*usb2_generic_phy;
 	struct phy		*usb3_generic_phy;
+
+	bool			phys_ready;
 
 	struct ulpi		*ulpi;
 
@@ -1078,6 +1082,20 @@ struct dwc3 {
 	unsigned		pcd_suspended:1;
 	unsigned		dis_split_quirk:1;
 	unsigned		gctl_reset_quirk:1;
+	unsigned		dis_pipe_clk_quirk:1;
+	unsigned		en_host_u2_susphy_quirk:1;
+	unsigned		dis_dcfg_lpm:1;
+	unsigned		pullup_ulpi_reset_phy_quirk:1;
+	unsigned		filter_se0_fsls_quirk:1;
+	unsigned		loa_filter_en_quirk:1;
+	unsigned		support_s3_wakeup:1;
+	unsigned		enable_p4_gate:1;
+	unsigned		clear_svc_opp_per_hs:1;
+	unsigned		disable_rx_thres:1;
+	unsigned		set_svc_opp_per_hs_sep:1;
+	unsigned		adjust_dtout:1;
+	unsigned		force_disable_host_lpm:1;
+	unsigned		enable_hst_imm_retry:1;
 
 	u16			imod_interval;
 };

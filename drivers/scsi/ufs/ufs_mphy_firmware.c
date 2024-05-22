@@ -6160,7 +6160,7 @@ int config_mphy_reg(struct ufs_hba *hba)
 
 	for (i = 0; i < ARRAY_SIZE(phy_value); i++) {
 		err =
-		    ufs_kirin_polling_mphy_write(hba, PHY_START + i,
+		    hufs_polling_mphy_write(hba, PHY_START + i,
 						 phy_value[i]);
 		if (err)
 			goto out;
@@ -6172,20 +6172,20 @@ out:
 }
 
 /*lint -e648 -e845*/
+#ifndef CONFIG_HISI_UFS_HC
 int ufs_update_hc_fw(struct ufs_hba *hba)
 {
 	int retry = 100;
 	int err = 0;
-	struct ufs_kirin_host *host = hba->priv;
+	struct hufs_host *host = hba->priv;
 
 	if (unlikely(hba->host->is_emulator))
 		return 0;
 
 	while ((0 == (UFS_SYS_PHY_SRAM_INIT_DONE &
 		      ufs_sys_ctrl_readl(host, UFS_SYS_PHY_SRAM_MEM_CTRL_S)))
-	       && retry--) {
+	       && retry--)
 		mdelay(1);
-	}
 
 	if (retry < 0)
 		pr_info("%s, wait PHY_SRAM_INIT_DONE timeout\n", __func__);
@@ -6198,4 +6198,5 @@ int ufs_update_hc_fw(struct ufs_hba *hba)
 
 	return err;
 }
+#endif
 /*lint +e648 +e845*/

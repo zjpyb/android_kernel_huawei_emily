@@ -37,5 +37,7 @@ static inline void clr_bits(unsigned int mask, volatile void __iomem *addr)
  */
 int get_contexthub_dts_status(void);
 
+int get_ext_contexthub_dts_status(void);
+
 #endif
 

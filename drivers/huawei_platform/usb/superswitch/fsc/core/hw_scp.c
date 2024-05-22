@@ -30,9 +30,10 @@
 #include "hw_scp.h"
 #include "core.h"
 #include "../Platform_Linux/fusb3601_global.h"
-#include <huawei_platform/power/wired_channel_switch.h>
+#include "ana_hs_kit/ana_hs.h"
+#include <chipset_common/hwpower/hardware_channel/wired_channel_switch.h>
 #ifdef CONFIG_DIRECT_CHARGER
-#include <huawei_platform/power/direct_charger.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
 #endif
 #include <linux/hisi/usb/hisi_usb.h>
 #include <linux/power/hisi/charger/hisi_charger_scp.h>
@@ -133,7 +134,7 @@ static void FUSB3601_clear_scp_event1(void)
 	if (!ret)
 	    hwlog_info("%s:i2c error\n", __func__);
 }
-static int FUSB3601_fcp_stop_charge_config(void)
+static int FUSB3601_fcp_stop_charge_config(void *dev_data)
 {
 #ifdef CONFIG_DIRECT_CHARGER
 	FUSB3601_clear_scp_event1();
@@ -164,7 +165,11 @@ int FUSB3601_vout_enable(int enable)
 		data =FUSB3601_VOUT_DISABLE;
 	}
 	ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_FM_CONTROL3, 1, &data);
+	if (!ret)
+		hwlog_err("i2c write failure\n");
 	ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_FM_CONTROL3,&data);
+	if (!ret)
+		hwlog_err("i2c read failure\n");
 	hwlog_info("%s:FM_CONTROL3 after writing is : [0x%x], ret = %d\n", __func__, data,ret);
 	if (ret)
 		return 0;
@@ -185,7 +190,11 @@ int FUSB3601_msw_enable(int enable)
 		data =FUSB3601_MSM_EN_LOW;
 	}
 	ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_FM_CONTROL1, 1, &data);
+	if (!ret)
+		hwlog_err("i2c write failure\n");
 	ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_FM_CONTROL1,&data);
+	if (!ret)
+		hwlog_err("i2c read failure\n");
 	hwlog_info("%s:FM_CONTROL1 after writing is : [0x%x], ret = %d\n", __func__, data,ret);
 	if (ret)
 		return 0;
@@ -193,11 +202,11 @@ int FUSB3601_msw_enable(int enable)
 		return -1;
 }
 
-static int FUSB3601_chip_reset_nothing(void)
+static int FUSB3601_chip_reset_nothing(void *dev_data)
 {
 	return 0;
 }
-static int FUSB3601_fcp_adapter_reset(void)
+static int FUSB3601_fcp_adapter_reset(void *dev_data)
 {
 	int ret = 0;
 	FSC_U8 data;
@@ -532,7 +541,7 @@ static int FUSB3601_scp_adapter_reg_write(int val, int reg)
                 -1: other fail
                 1:fcp adapter but detect fail
 ***************************************************************************/
-static int FUSB3601_accp_adapter_detect(void)
+static int FUSB3601_accp_adapter_detect(void *dev_data)
 {
 	int ret;
 	int i;
@@ -612,7 +621,7 @@ static int FUSB3601_is_support_scp(void)
     return 0;
 }
 
-static int FUSB3601_scp_init(void)
+static int FUSB3601_scp_init(void *dev_data)
 {
 	int ret;
 	FSC_U8 data;
@@ -638,6 +647,7 @@ static int FUSB3601_scp_init(void)
 		ret = FUSB3601_scp_get_adapter_vendor_id();
 		if (IWATT_ADAPTER == ret || WELTREND_ADAPTER == ret || ID0X32_ADAPTER == ret) {
 			usb_analog_hs_plug_in_out_handle(DIRECT_CHARGE_IN);
+			ana_hs_plug_handle(DIRECT_CHARGE_IN);
 			hwlog_info("%s :  config rd on Dm for IWATT\n ",__func__);
 		}
 #endif
@@ -650,7 +660,7 @@ static int FUSB3601_scp_init(void)
 	hwlog_info("%s\n", __func__);
 	return 0;
 }
-static int FUSB3601_scp_exit(void)
+static int FUSB3601_scp_exit(void *dev_data)
 {
 	int ret;
 	FSC_U8 data;
@@ -671,6 +681,7 @@ static int FUSB3601_scp_exit(void)
 #ifdef CONFIG_USB_ANALOG_HS_INTERFACE
 		hwlog_info("%s :  disable rd on Dm\n ",__func__);
 		usb_analog_hs_plug_in_out_handle(DIRECT_CHARGE_OUT);
+		ana_hs_plug_handle(DIRECT_CHARGE_OUT);
 #endif
 		data = FUSB3601_DPD_DISABLE;
 		ret = FUSB3601_fusb_I2C_WriteData(FUSB3601_SCP_ENABLE2, 1, &data);
@@ -717,7 +728,7 @@ static int FUSB3601_scp_get_adapter_vendor_id(void)
 	}
 }
 
-static int FUSB3601_scp_adaptor_reset(void)
+static int FUSB3601_scp_adaptor_reset(void *dev_data)
 {
 	return 0;
 }
@@ -752,10 +763,9 @@ static enum hisi_charger_type FUSB3601_get_charger_type(void)
 
 struct charge_switch_ops FUSB3601_switch_ops = {
 	.get_charger_type = FUSB3601_get_charger_type,
-	.is_water_intrused = NULL,
 };
 
-static int fusb3601_fcp_reg_read_block(int reg, int *val, int num)
+static int fusb3601_fcp_reg_read_block(int reg, int *val, int num, void *dev_data)
 {
 	int ret;
 	int i;
@@ -779,7 +789,7 @@ static int fusb3601_fcp_reg_read_block(int reg, int *val, int num)
 	return 0;
 }
 
-static int fusb3601_fcp_reg_write_block(int reg, const int *val, int num)
+static int fusb3601_fcp_reg_write_block(int reg, const int *val, int num, void *dev_data)
 {
 	int ret;
 	int i;
@@ -812,7 +822,7 @@ static struct fcp_protocol_ops fusb3601_fcp_protocol_ops = {
 	.is_accp_charger_type = NULL,
 };
 
-static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
+static int fusb3601_scp_reg_read_block(int reg, int *val, int num, void *dev_data)
 {
 	int ret;
 	int i;
@@ -838,7 +848,7 @@ static int fusb3601_scp_reg_read_block(int reg, int *val, int num)
 	return 0;
 }
 
-static int fusb3601_scp_reg_write_block(int reg, const int *val, int num)
+static int fusb3601_scp_reg_write_block(int reg, const int *val, int num, void *dev_data)
 {
 	int ret;
 	int i;
@@ -873,7 +883,7 @@ static struct scp_protocol_ops fusb3601_scp_protocol_ops = {
 };
 
 #ifdef CONFIG_SUPERSWITCH_FSC
-static int FUSB3601_chsw_set_wired_channel(int flag)
+static int FUSB3601_chsw_set_wired_channel(int flag, int tmp)
 {
 	int ret = 0;
 	if (WIRED_CHANNEL_CUTOFF == flag) {
@@ -887,7 +897,7 @@ static int FUSB3601_chsw_set_wired_channel(int flag)
 		wired_channel_status = flag;
 	return ret;
 }
-static int FUSB3601_chsw_get_wired_channel(void)
+static int FUSB3601_chsw_get_wired_channel(int flag)
 {
 	return wired_channel_status;
 }

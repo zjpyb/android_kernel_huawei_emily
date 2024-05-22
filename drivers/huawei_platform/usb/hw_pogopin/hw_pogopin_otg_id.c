@@ -3,7 +3,7 @@
  *
  * pogopin id driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,29 +16,29 @@
  *
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/hisi/hisi_adc.h>
+#include <linux/hisi/usb/hisi_usb.h>
 #include <linux/interrupt.h>
-#include <linux/spinlock.h>
+#include <linux/kernel.h>
+#include <linux/mfd/hisi_pmic.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/of_gpio.h>
+#include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/pm_wakeup.h>
-#include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/delay.h>
-#include <linux/of_address.h>
 #include <linux/regulator/consumer.h>
-#include <linux/clk.h>
-#include <linux/of_gpio.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <linux/mfd/hisi_pmic.h>
-#include <linux/hisi/hisi_adc.h>
-#include <pmic_interface.h>
-#include <huawei_platform/power/power_dts.h>
-#include <huawei_platform/usb/hw_pogopin.h>
+#include <linux/spinlock.h>
+#include <chipset_common/hwpower/common_module/power_cmdline.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
 #include <huawei_platform/log/hw_log.h>
+#include <huawei_platform/usb/hw_pogopin.h>
 #include <huawei_platform/usb/hw_pogopin_otg_id.h>
-#include <huawei_platform/power/power_cmdline.h>
+#include <pmic_interface.h>
 
 /* include platform head-file */
 #if defined(CONFIG_DEC_USB)
@@ -67,12 +67,10 @@ static int pogopin_event_notifier_call(struct notifier_block *nb,
 	case CHARGER_TYPE_NONE:
 		hwlog_info("off mode\n");
 		if ((pogopin_current_status == TYPEC_INTERFACE) ||
-			(pogopin_current_status == POGOPIN_AND_TYPEC)) {
+			(pogopin_current_status == POGOPIN_AND_TYPEC))
 			pogopin_5pin_completion_devoff();
-		}
 		msleep(SLEEP_50MS);
 		break;
-	/* fall through: all the charging event */
 	case CHARGER_TYPE_SDP:
 	case CHARGER_TYPE_CDP:
 	case CHARGER_TYPE_DCP:
@@ -84,6 +82,28 @@ static int pogopin_event_notifier_call(struct notifier_block *nb,
 		break;
 	default:
 		hwlog_info("ignore other types %ld\n", event);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static int pogopin_otg_status_check_notifier_call(struct notifier_block *nb,
+	unsigned long event, void *data)
+{
+	struct pogopin_otg_id_dev *di = g_pogopin_otg_id_di;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return NOTIFY_OK;
+	}
+
+	switch (event) {
+	case POGOPIN_CHARGER_OUT_COMPLETE:
+		if (gpio_get_value(di->gpio) == LOW)
+			schedule_work(&di->otg_intb_work);
+		break;
+	default:
 		break;
 	}
 
@@ -135,18 +155,32 @@ static int pogopin_otg_id_adc_sampling(struct pogopin_otg_id_dev *di)
 
 static void pogopin_otg_in_handle(struct pogopin_otg_id_dev *di)
 {
-	int pogopin_current_int_status = pogopin_get_interface_status();
+	int pogopin_current_status = pogopin_get_interface_status();
 	unsigned long timeout;
 
 	hwlog_info("pogopin otg insert cutoff cc,wait data and power switch\n");
-	pogopin_5pin_typec_detect_disable(TRUE);
+
+	/* open ocp when plug in pogo otg */
+	if (di->ocp_control_support)
+		gpio_set_value(di->ocp_en_gpio, HIGH);
+
+	/* disable cc to remove typec devices */
+	if (!pogopin_typec_chg_ana_audio_support() ||
+		(pogopin_typec_chg_ana_audio_support() &&
+		!pogopin_5pin_get_ana_audio_status()))
+		pogopin_5pin_typec_detect_disable(TRUE);
 	pogopin_5pin_reinit_completion_devoff();
-	if (pogopin_current_int_status == TYPEC_INTERFACE)
+	if (pogopin_current_status == TYPEC_INTERFACE)
 		timeout = pogopin_5pin_wait_for_completion(TIMEOUT_1000MS);
 	else
 		timeout = pogopin_5pin_wait_for_completion(TIMEOUT_200MS);
-
+	pogopin_5pin_set_pogo_status(POGO_OTG);
 	hwlog_info("start pogopin otg,wait timeout =%ld\n", timeout);
+	/* enable cc to detect typec pd and ana audio event */
+	if (pogopin_typec_chg_ana_audio_support()) {
+		if (!pogopin_5pin_get_ana_audio_status())
+			pogopin_5pin_typec_detect_disable(false);
+	}
 	pogopin_5pin_otg_in_switch_from_typec();
 }
 
@@ -155,19 +189,41 @@ static void pogopin_otg_out_handle(struct pogopin_otg_id_dev *di)
 	unsigned long timeout;
 
 	hwlog_info("pogopin otg out,switch to typec, wait\n");
+
+	/* close ocp when plug out pogo otg */
+	if (di->ocp_control_support)
+		gpio_set_value(di->ocp_en_gpio, LOW);
+
 	pogopin_5pin_remove_switch_to_typec();
+	pogopin_5pin_set_pogo_status(POGO_NONE);
+	/* disable and enable cc to detect typec event */
+	if (pogopin_typec_chg_ana_audio_support()) {
+		if (!pogopin_5pin_get_ana_audio_status()) {
+			/* and set charger type remove when pogo remove otg */
+			if ((pogopin_get_interface_status() ==
+				TYPEC_INTERFACE) ||
+				(pogopin_get_interface_status() ==
+				POGOPIN_AND_TYPEC))
+				pogopin_event_notify(POGOPIN_OTG_AND_CHG_STOP);
+			pogopin_5pin_typec_detect_disable(true);
+			msleep(POGOPIN_TIME_DELAYE_300MS);
+		}
+	}
 	timeout = pogopin_5pin_wait_for_completion(TIMEOUT_800MS);
 
 	hwlog_info("enable typec detect,wait timeout = %ld\n", timeout);
-	pogopin_5pin_typec_detect_disable(FALSE);
+	if (!pogopin_typec_chg_ana_audio_support() ||
+		(pogopin_typec_chg_ana_audio_support() &&
+		!pogopin_5pin_get_ana_audio_status()))
+		pogopin_5pin_typec_detect_disable(FALSE);
 }
 
 static void pogopin_otg_id_intb_work(struct work_struct *work)
 {
 	int gpio_value;
 	int avgvalue;
-	static bool is_otg_has_inserted = FALSE;
 	struct pogopin_otg_id_dev *di = NULL;
+	static bool pogo_otg_trigger = false;
 
 	if (!work) {
 		hwlog_err("work is null\n");
@@ -175,8 +231,9 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 	}
 
 	di = container_of(work, struct pogopin_otg_id_dev, otg_intb_work);
-	if (!di) {
-		hwlog_err("di is null\n");
+	if (!di || (pogopin_is_charging() &&
+		pogopin_typec_chg_ana_audio_support())) {
+		hwlog_err("di is null, or pogo charging ignore otg event\n");
 		return;
 	}
 
@@ -186,20 +243,29 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 	if (gpio_value == LOW) {
 		avgvalue = pogopin_otg_id_adc_sampling(di);
 		if ((avgvalue >= 0) && (avgvalue <= ADC_VOLTAGE_LIMIT)) {
-			is_otg_has_inserted = TRUE;
+			pogo_otg_trigger = true;
 			pogopin_otg_in_handle(di);
-			hisi_usb_otg_event(ID_FALL_EVENT);
+			chip_usb_otg_event(ID_FALL_EVENT);
+			if (pogopin_typec_chg_ana_audio_support())
+				pogopin_otg_status_change_process(POGO_OTG);
 		} else {
 			hwlog_info("avgvalue is %d\n", avgvalue);
-			is_otg_has_inserted = TRUE;
 		}
 		pogopin_5pin_reinit_completion_devoff();
 	} else {
-		is_otg_has_inserted = FALSE;
-		hisi_usb_otg_event(ID_RISE_EVENT);
+		/* ignore otg plug out event when undetect otg plug in event */
+		if (pogopin_typec_chg_ana_audio_support() &&
+			!pogo_otg_trigger) {
+			hwlog_err("%s:otg insert error, do nothing\n", __func__);
+			return;
+		}
+		pogo_otg_trigger = false;
+		chip_usb_otg_event(ID_RISE_EVENT);
 		pogopin_otg_out_handle(di);
 		pogopin_5pin_reinit_completion_devoff();
 		pogopin_get_interface_status();
+		if (pogopin_typec_chg_ana_audio_support())
+			pogopin_otg_status_change_process(POGO_NONE);
 	}
 }
 
@@ -216,7 +282,6 @@ static irqreturn_t pogopin_otg_id_irq_handle(int irq, void *dev_id)
 	disable_irq_nosync(di->irq);
 	pogopin_5pin_int_irq_disable(TRUE);
 	gpio_value = gpio_get_value(di->gpio);
-
 	if (gpio_value == LOW)
 		irq_set_irq_type(di->irq, IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND);
 	else
@@ -240,13 +305,160 @@ static int pogopin_otg_id_parse_dts(struct pogopin_otg_id_dev *di,
 		return -EINVAL;
 	}
 
-	(void)power_dts_read_u32(np, "sampling_time_optimize",
-		&di->sampling_time_optimize, 0);
-	(void)power_dts_read_u32(np, "fpga_flag", &di->fpga_flag, 0);
-	if (power_dts_read_u32(np, "otg_adc_channel", &di->otg_adc_channel, 0))
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sampling_time_optimize", &di->sampling_time_optimize, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"fpga_flag", &di->fpga_flag, 0);
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"otg_adc_channel", &di->otg_adc_channel, 0))
 		return -EINVAL;
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ocp_control_support", &di->ocp_control_support, 0);
+
+	if (di->ocp_control_support) {
+		di->ocp_en_gpio = of_get_named_gpio(np, "ocp_en_gpio", 0);
+		hwlog_info("ocp_en_gpio=%d\n", di->ocp_en_gpio);
+		if (!gpio_is_valid(di->ocp_en_gpio)) {
+			hwlog_err("gpio is not valid\n");
+			return -EINVAL;
+		}
+
+		di->ocp_int_gpio = of_get_named_gpio(np, "ocp_int_gpio", 0);
+		hwlog_info("ocp_int_gpio=%d\n", di->ocp_int_gpio);
+		if (!gpio_is_valid(di->ocp_int_gpio)) {
+			hwlog_err("gpio is not valid\n");
+			return -EINVAL;
+		}
+	}
 
 	return 0;
+}
+
+static void pogopin_ocp_irq_work(struct work_struct *work)
+{
+	struct pogopin_otg_id_dev *di = g_pogopin_otg_id_di;
+	int gpio_value;
+
+	gpio_value = gpio_get_value(di->ocp_int_gpio);
+	hwlog_info("%s gpio_value:%d\n", __func__, gpio_value);
+	/* close ocp and boost Power supply when ocp happen */
+	if (gpio_value == LOW) {
+		pogopin_set_buck_boost_gpio(LOW);
+		msleep(OCP_DELAY_2MS);
+		gpio_set_value(di->ocp_en_gpio, LOW);
+	}
+}
+
+static irqreturn_t pogopin_ocp_handler(int irq, void *dev_id)
+{
+	struct pogopin_otg_id_dev *di = dev_id;
+	int gpio_value;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return IRQ_HANDLED;
+	}
+
+	disable_irq_nosync(di->ocp_irq);
+	gpio_value = gpio_get_value(di->ocp_int_gpio);
+	if (gpio_value == LOW)
+		irq_set_irq_type(di->ocp_irq,
+			IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND);
+	else
+		irq_set_irq_type(di->ocp_irq,
+			IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND);
+
+	enable_irq(di->ocp_irq);
+	schedule_work(&di->ocp_work);
+
+	return IRQ_HANDLED;
+}
+
+int pogopin_request_ocp_irq(struct pogopin_otg_id_dev *di)
+{
+	int ret;
+	int gpio_value;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	di->ocp_irq = gpio_to_irq(di->ocp_int_gpio);
+	if (di->ocp_irq < 0) {
+		hwlog_err("gpio map to irq fail\n");
+		return -EINVAL;
+	}
+	hwlog_info("ocp_irq=%d\n", di->ocp_irq);
+
+	gpio_value = gpio_get_value(di->ocp_int_gpio);
+	/* request ocp irq */
+	if (gpio_value == LOW)
+		ret = request_irq(di->ocp_irq, pogopin_ocp_handler,
+			IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND,
+			"ocp_irq", di);
+	else
+		ret = request_irq(di->ocp_irq, pogopin_ocp_handler,
+			IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND,
+			"ocp_irq", di);
+
+	if (ret) {
+		hwlog_err("gpio irq request fail\n");
+		di->ocp_irq = -1;
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int pogopin_set_ocp_gpio(struct pogopin_otg_id_dev *di)
+{
+	int ret;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	/* request ocp en gpio */
+	ret = gpio_request(di->ocp_en_gpio, "ocp_en_gpio");
+	if (ret) {
+		hwlog_err("ocp en gpio request fail\n");
+		goto fail_ocp_en_gpio;
+	}
+
+	/* set ocp en gpio direction */
+	ret = gpio_direction_output(di->ocp_en_gpio, LOW);
+	if (ret < 0) {
+		hwlog_err("gpio set output fail\n");
+		goto fail_ocp_en_gpio_dir;
+	}
+
+	/* request ocp int gpio */
+	ret = gpio_request(di->ocp_int_gpio, "ocp_int_gpio");
+	if (ret) {
+		hwlog_err("gpio request fail\n");
+		goto fail_ocp_en_gpio_dir;
+	}
+
+	/* set ocp int gpio direction */
+	ret = gpio_direction_input(di->ocp_int_gpio);
+	if (ret < 0) {
+		hwlog_err("gpio set input fail\n");
+		goto fail_ocp_int_gpio_dir;
+	}
+
+	if (pogopin_request_ocp_irq(di) < 0)
+		goto fail_ocp_int_gpio_dir;
+
+	return 0;
+
+fail_ocp_int_gpio_dir:
+	gpio_free(di->ocp_int_gpio);
+fail_ocp_en_gpio_dir:
+	gpio_free(di->ocp_en_gpio);
+fail_ocp_en_gpio:
+	return -EINVAL;
 }
 
 static int pogopin_otg_id_irq_init(struct pogopin_otg_id_dev *di)
@@ -278,8 +490,6 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 	struct device *dev = NULL;
 	struct pogopin_otg_id_dev *di = NULL;
 
-	hwlog_info("probe begin\n");
-
 	if (power_cmdline_is_powerdown_charging_mode()) {
 		hwlog_err("in charger mode, exit pogopin otg probe\n");
 		return -EINVAL;
@@ -299,10 +509,18 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 	np = dev->of_node;
 
 	di->pogopin_nb.notifier_call = pogopin_event_notifier_call;
-	ret = hisi_charger_type_notifier_register(&di->pogopin_nb);
+	ret = chip_charger_type_notifier_register(&di->pogopin_nb);
 	if (ret < 0) {
 		hwlog_err("charger_type_notifier register failed\n");
 		goto fail_register_charge_notifier;
+	}
+
+	di->pogopin_otg_status_check_nb.notifier_call =
+		pogopin_otg_status_check_notifier_call;
+	ret = pogopin_event_notifier_register(&di->pogopin_otg_status_check_nb);
+	if (ret < 0) {
+		hwlog_err("pogopin otg_notifier register failed\n");
+		goto fail_register_otg_check_notifier;
 	}
 
 	ret = pogopin_otg_id_parse_dts(di, np);
@@ -314,6 +532,13 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		hwlog_err("gpio request fail\n");
 		goto fail_request_gpio;
+	}
+
+	if (di->ocp_control_support) {
+		if (pogopin_set_ocp_gpio(di) < 0) {
+			hwlog_err("ocp gpio set fail\n");
+			goto fail_set_gpio_direction;
+		}
 	}
 
 	avgvalue = pogopin_otg_id_adc_sampling(di);
@@ -335,15 +560,20 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 
 	/* init otg intr handle work function */
 	INIT_WORK(&di->otg_intb_work, pogopin_otg_id_intb_work);
+	/* init ocp intr handle work function */
+	if (di->ocp_control_support)
+		INIT_WORK(&di->ocp_work, pogopin_ocp_irq_work);
 
 	/* check the otg status when the phone poweron */
+	/* call work function to handle irq */
 	ret = gpio_get_value(di->gpio);
-	if (ret == 0) {
-		/* call work function to handle irq */
+	if (ret == 0)
 		schedule_work(&di->otg_intb_work);
-	}
+	/* check ocp status when machine boot up */
+	/* call work function to handle irq */
+	if (di->ocp_control_support)
+		pogopin_ocp_handler(di->ocp_irq, di);
 
-	hwlog_info("probe end\n");
 	return 0;
 
 fail_request_irq:
@@ -351,7 +581,9 @@ fail_set_gpio_direction:
 	gpio_free(di->gpio);
 fail_request_gpio:
 fail_parse_dts:
-	hisi_charger_type_notifier_unregister(&di->pogopin_nb);
+	pogopin_event_notifier_unregister(&di->pogopin_otg_status_check_nb);
+fail_register_otg_check_notifier:
+	chip_charger_type_notifier_unregister(&di->pogopin_nb);
 fail_register_charge_notifier:
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
@@ -364,19 +596,20 @@ static int pogopin_otg_id_remove(struct platform_device *pdev)
 {
 	struct pogopin_otg_id_dev *di = g_pogopin_otg_id_di;
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	hisi_charger_type_notifier_unregister(&di->pogopin_nb);
+	chip_charger_type_notifier_unregister(&di->pogopin_nb);
 	free_irq(di->irq, pdev);
+	if (di->ocp_control_support) {
+		free_irq(di->ocp_irq, pdev);
+		gpio_free(di->ocp_int_gpio);
+	}
 	gpio_free(di->gpio);
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
 	g_pogopin_otg_id_di = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

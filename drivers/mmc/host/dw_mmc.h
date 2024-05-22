@@ -16,7 +16,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/mmc/dw_mmc.h>
-#include "dw_mmc_hisi.h"
+#include "dw_mmc_zodiac.h"
 #define DW_MMC_240A		0x240a
 #define DW_MMC_280A		0x280a
 
@@ -162,6 +162,8 @@
 #define SDMMC_GET_FCNT(x)		(((x)>>17) & 0x1FFF)
 #define SDMMC_STATUS_DMA_REQ		BIT(31)
 #define SDMMC_STATUS_BUSY		BIT(9)
+#define SDMMC_STATUS_MC_BUSY		BIT(10)
+
 /* FIFOTH register defines */
 #define SDMMC_SET_FIFOTH(m, r, t)	(((m) & 0x7) << 28 | \
 					 ((r) & 0xFFF) << 16 | \
@@ -261,7 +263,6 @@
 
 extern int dw_mci_probe(struct dw_mci *host);
 extern void dw_mci_remove(struct dw_mci *host);
-extern void dw_mci_set_cd(struct dw_mci *host);
 
 #ifdef CONFIG_PM
 extern int dw_mci_runtime_suspend(struct device *device);

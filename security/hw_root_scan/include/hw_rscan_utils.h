@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the hw_rscan_utils.h - get current run mode, eng or user
  * Author: likun <quentin.lee@huawei.com>
  *         likan <likan82@huawei.com>
@@ -19,9 +19,12 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include "hw_rscan_interface.h"
+#include "securec.h"
 
 #define EOF (-1)
-#define LINE_LEN_SHORT (200)
+#define LINE_LEN_SHORT 200
+
+#define var_not_used(variable)  do { (void)(variable); } while (0)
 
 /*
  * the length of list of rproc is limited to 840 byte,
@@ -43,8 +46,8 @@
  */
 #define RSCAN_ERROR "[Error]"
 #define RSLogError(tag, fmt, args...) \
-	pr_err_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_ERROR,\
-						tag, __func__, ##args)
+	pr_err_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_ERROR, \
+				tag, __func__, ##args)
 
 /*
  * A convenient interface for warning log print, Root Scan Log warning.
@@ -54,8 +57,8 @@
  */
 #define RSCAN_WARNING "[WARNING]"
 #define RSLogWarning(tag, fmt, args...) \
-	pr_warn_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_WARNING,\
-						tag, __func__, ##args)
+	pr_warn_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_WARNING, \
+				tag, __func__, ##args)
 
 /*
  * A convenient interface for trace log print, Root Scan Log trace.
@@ -65,8 +68,8 @@
  */
 #define RSCAN_TRACE "[TRACE]"
 #define RSLogTrace(tag, fmt, args...) \
-	pr_info_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_TRACE,\
-						tag, __func__, ##args)
+	pr_info_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_TRACE, \
+				tag, __func__, ##args)
 
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
 /*
@@ -77,13 +80,12 @@
  */
 #define RSCAN_DEBUG "[DEBUG]"
 #define RSLogDebug(tag, fmt, args...) \
-	printk_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_DEBUG,\
-							tag, __func__, ##args)
+	printk_ratelimited("%s[%s][%s] " fmt "\n", RSCAN_DEBUG, \
+				tag, __func__, ##args)
 #else
 #define RSLogDebug(tag, fmt, args...) no_printk(fmt, ##args)
 #endif
 
+bool get_xom_enable(void);
+
 #endif
-
-
-

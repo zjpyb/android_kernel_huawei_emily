@@ -12,12 +12,12 @@ menuconfig MMC
 	  If you want MMC/SD/SDIO support, you should say Y here and
 	  also to your specific host controller driver.
 
-config HISI_MMC
-	bool "HISI MMC"
+config ZODIAC_MMC
+	bool "ZODIAC MMC"
 	depends on MMC
 	default y
 	help
-	   config HISI mmc driver
+	   config ZODIAC mmc driver
 
 config MMC_SIM_GPIO_EXCHANGE
 	bool "MMC SIM GPIO EXCHANGE"
@@ -61,9 +61,9 @@ config HISI_MMC_FLUSH_REDUCE_WHITE_LIST
 	help
 	   Enable this config will enfore white list check on eMMC devices for flush reduce
 
-config HISI_MMC_MANUAL_BKOPS
+config ZODIAC_MMC_MANUAL_BKOPS
 	bool "MMC manual BKOPS support"
-	depends on HISI_BKOPS
+	depends on MAS_BKOPS
 	default n
 	help
 	 MMC manual BKOPS support

@@ -3,7 +3,7 @@
  *
  * this is for all onewire phy
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -61,10 +61,10 @@ void __hw_delay_v2(unsigned long cycles)
 }
 
 /*
- *It will set whole bank gpio to a state without checking current gpio bank
- *direction state.
- *Caution: It's only can be use in the safe environment & param in!
- *         Time sensitive!!!
+ * It will set whole bank gpio to a state without checking current gpio bank
+ * direction state
+ * Caution: It's only can be use in the safe environment & param in
+ * Time sensitive
  */
 void gpio_direction_output_unsafe(unsigned char value, struct ow_gpio_des *gpio)
 {
@@ -73,10 +73,10 @@ void gpio_direction_output_unsafe(unsigned char value, struct ow_gpio_des *gpio)
 }
 
 /*
- *It will set whole bank gpio to a state without checking current gpio
- *bank direction state.
- *Caution: It's only can be use in the safe environment & param in!
- *         Time sensitive!!!
+ * It will set whole bank gpio to a state without checking current gpio
+ * bank direction state
+ * Caution: It's only can be use in the safe environment & param in
+ * Time sensitive
  */
 void gpio_direction_input_unsafe(struct ow_gpio_des *gpio)
 {
@@ -84,9 +84,9 @@ void gpio_direction_input_unsafe(struct ow_gpio_des *gpio)
 }
 
 /*
- *Set value to gpio value register without checking current gpio direction state
- *Caution: It's only can be use in the safe environment & param in!
- *         Time sensitive!!!
+ * Set value to gpio value register without checking current gpio direction state
+ * Caution: It's only can be use in the safe environment & param in
+ * Time sensitive
  */
 void gpio_set_value_unsafe(unsigned char value, struct ow_gpio_des *gpio)
 {
@@ -94,19 +94,19 @@ void gpio_set_value_unsafe(unsigned char value, struct ow_gpio_des *gpio)
 }
 
 /*
- *Read value from gpio value register without checking current gpio
- *direction state.
- *Caution: It's only can be use in the safe environment & param in!
- *         Time sensitive!!!
+ * Read value from gpio value register without checking current gpio
+ * direction state
+ * Caution: It's only can be use in the safe environment & param in
+ * Time sensitive
  */
 unsigned char gpio_get_value_unsafe(struct ow_gpio_des *gpio)
 {
 	return !!readb(gpio->gpio_data_addr);
 }
 /*
- *Get current gpio bank direction data
- *Caution: It's only can be use in the safe environment & param in!
- *         Time sensitive!!!
+ * Get current gpio bank direction data
+ * Caution: It's only can be use in the safe environment & param in
+ * Time sensitive
  */
 void get_current_gpio_bank_dir(struct ow_gpio_des *gpio)
 {
@@ -120,7 +120,7 @@ void get_current_gpio_bank_dir(struct ow_gpio_des *gpio)
 }
 
 int get_gpio_phy_addr(struct platform_device *pdev,
-		      struct ow_gpio_des *pl061_gpio)
+	struct ow_gpio_des *pl061_gpio)
 {
 	int ret;
 	u32 gpio_reg_property[GPIO_REG_PROPERTY_SIZE];
@@ -130,13 +130,13 @@ int get_gpio_phy_addr(struct platform_device *pdev,
 		return -1;
 	/* get onewire gpio description from device tree */
 	gpio_chip_np = of_parse_phandle(pdev->dev.of_node, "onewire-gpio",
-					GPIO_CHIP_PHANDLE_INDEX);
+		GPIO_CHIP_PHANDLE_INDEX);
 	if (!gpio_chip_np) {
 		hwlog_err("NULL: gpio_chip_np found in %s\n", __func__);
 		return ONEWIRE_NULL_INPARA;
 	}
 	ret = of_property_read_u32_array(gpio_chip_np, "reg", gpio_reg_property,
-					 GPIO_REG_PROPERTY_SIZE);
+		GPIO_REG_PROPERTY_SIZE);
 	if (ret) {
 		hwlog_err("DTS:gpio reg property not found in %s\n", __func__);
 		return ONEWIRE_DTS_FAIL;
@@ -148,8 +148,7 @@ int get_gpio_phy_addr(struct platform_device *pdev,
 	pl061_gpio->length <<= SHIFT_32;
 	pl061_gpio->length += gpio_reg_property[LENGTH_LOW32BIT];
 	ret = of_property_read_u32_index(pdev->dev.of_node, "onewire-gpio",
-					 ONEWIRE_GPIO_OFFSET_INDEX,
-					 &pl061_gpio->offset);
+		ONEWIRE_GPIO_OFFSET_INDEX, &pl061_gpio->offset);
 	if (ret) {
 		hwlog_err("DTS:offset not found in %s\n", __func__);
 		return ONEWIRE_DTS_FAIL;
@@ -159,7 +158,7 @@ int get_gpio_phy_addr(struct platform_device *pdev,
 }
 
 int init_gpio_iomem_addr(struct platform_device *pdev,
-			 struct ow_gpio_des *pl061_gpio)
+	struct ow_gpio_des *pl061_gpio)
 {
 	void *gpio_virtual_base_addr = NULL;
 
@@ -167,21 +166,20 @@ int init_gpio_iomem_addr(struct platform_device *pdev,
 		return -1;
 	/* get virtual address from physic address */
 	gpio_virtual_base_addr = devm_ioremap(&pdev->dev,
-					      pl061_gpio->gpio_phy_base_addr,
-					      pl061_gpio->length);
+		pl061_gpio->gpio_phy_base_addr, pl061_gpio->length);
 	if (!gpio_virtual_base_addr) {
 		hwlog_err("NULL:virtual_base_addr found in %s\n", __func__);
 		return ONEWIRE_NULL_INPARA;
 	}
 	pl061_gpio->gpio_data_addr = gpio_virtual_base_addr +
-				    BIT(pl061_gpio->offset + PL061_DATA_OFFSET);
+		BIT(pl061_gpio->offset + PL061_DATA_OFFSET);
 	pl061_gpio->gpio_dir_addr = gpio_virtual_base_addr + PL061_DIR_OFFSET;
 
 	return ONEWIRE_SUCCESS;
 }
 
 int get_gpio_for_ow(struct platform_device *pdev,
-		    struct ow_gpio_des *pl061_gpio, const char *gpio_name)
+	struct ow_gpio_des *pl061_gpio, const char *gpio_name)
 {
 	int gpio_id;
 	struct gpio_desc *desc = NULL;
@@ -196,10 +194,10 @@ int get_gpio_for_ow(struct platform_device *pdev,
 		return -1;
 	/* get gpio id */
 	gpio_id = of_get_named_gpio(pdev->dev.of_node, "onewire-gpio",
-				    GPIO_INDEX);
+		GPIO_INDEX);
 	if (gpio_id < 0) {
 		hwlog_err("No gpio named onewire-gpio required by %s\n",
-			  __func__);
+			__func__);
 		return ONEWIRE_GPIO_FAIL;
 	}
 	desc = gpio_to_desc(gpio_id);
@@ -232,7 +230,7 @@ int get_gpio_for_ow(struct platform_device *pdev,
 	}
 	/* get the gpio */
 	if (devm_gpio_request(&pdev->dev, gpio_id, gpio_name)) {
-		hwlog_err("Gpio request failed(%d) in %s\n", gpio_id, __func__);
+		hwlog_err("Gpio request failed %d in %s\n", gpio_id, __func__);
 		return ONEWIRE_GPIO_FAIL;
 	}
 	gpio_direction_output(gpio_id, HIGH_VOLTAGE);

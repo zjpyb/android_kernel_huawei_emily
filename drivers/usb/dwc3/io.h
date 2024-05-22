@@ -23,15 +23,15 @@
 #include "trace.h"
 #include "debug.h"
 #include "core.h"
-int hisi_dwc3_is_powerdown(void);
 
+extern int chip_dwc3_is_powerdown(void);
 static inline u32 dwc3_readl(void __iomem *base, u32 offset)
 {
 	u32 value;
 
-#ifdef CONFIG_USB_DWC3_HISI
+#ifdef CONFIG_USB_DWC3_CHIP
 
-	if (unlikely(hisi_dwc3_is_powerdown()))
+	if (unlikely(chip_dwc3_is_powerdown()))
 		return 0;
 #endif
 	/*
@@ -54,8 +54,8 @@ static inline u32 dwc3_readl(void __iomem *base, u32 offset)
 static inline void dwc3_writel(void __iomem *base, u32 offset, u32 value)
 {
 
-#ifdef CONFIG_USB_DWC3_HISI
-	if (unlikely(hisi_dwc3_is_powerdown()))
+#ifdef CONFIG_USB_DWC3_CHIP
+	if (unlikely(chip_dwc3_is_powerdown()))
 		return;
 #endif
 

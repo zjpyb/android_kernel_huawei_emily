@@ -46,19 +46,19 @@ extern unsigned int sysctl_sched_walt_cpu_high_irqload;
 extern unsigned int sysctl_sched_walt_cpu_overload_irqload;
 extern unsigned int sysctl_sched_force_upmigrate_duration;
 #endif
-#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
-extern unsigned int sysctl_sched_walt_rotate_big_tasks;
+#ifdef CONFIG_SCHED_RUNNING_TASK_ROTATION
+extern unsigned int sysctl_sched_rotate_big_tasks;
 #endif
 #endif
 
-#ifdef CONFIG_HISI_RT_CAS
+#ifdef CONFIG_RT_CAS
 extern unsigned int sysctl_sched_enable_rt_cas;
 #endif
-#ifdef CONFIG_HISI_RT_ACTIVE_LB
+#ifdef CONFIG_RT_ACTIVE_LB
 extern unsigned int sysctl_sched_enable_rt_active_lb;
 #endif
 
-#ifdef CONFIG_HISI_RENDER_RT_DEBUG
+#ifdef CONFIG_RENDER_RT_DEBUG
 extern unsigned int sysctl_sched_enable_render_rt_trace;
 #endif
 
@@ -76,9 +76,9 @@ extern unsigned int sysctl_numa_balancing_scan_period_max;
 extern unsigned int sysctl_numa_balancing_scan_size;
 
 #ifdef CONFIG_SCHED_DEBUG
-extern unsigned int sysctl_sched_migration_cost;
-extern unsigned int sysctl_sched_nr_migrate;
-extern unsigned int sysctl_sched_time_avg;
+extern __read_mostly unsigned int sysctl_sched_migration_cost;
+extern __read_mostly unsigned int sysctl_sched_nr_migrate;
+extern __read_mostly unsigned int sysctl_sched_time_avg;
 #endif
 
 int sched_proc_update_handler(struct ctl_table *table, int write,

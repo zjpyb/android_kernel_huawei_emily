@@ -29,6 +29,8 @@
 #endif
 
 #define MSEC(time) (time*HZ/1000)
+#define ion_function 0
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 #include <drivers/staging/android/sync.h>
 /*ion fault,use func replace*/
@@ -62,6 +64,8 @@ struct wq_head_list wq_list;
 /*for fence timeout worker memory*/
 static struct kmem_cache *fence_wk_cache;
 #endif
+
+#ifndef CONFIG_MTK_PLATFORM
 typedef struct ion_device *(*get_iondev_fun)(void);
 static get_iondev_fun get_iondev;
 
@@ -80,7 +84,7 @@ struct ion_heaps_head {
 static struct kmem_cache *ion_heap_cache;
 struct ion_heaps_head ion_heaps;
 /*ion fault end*/
-
+#endif
 /*workqueue is for fence timeout fault*/
 
 /*for fence timeout worker memory*/
@@ -218,6 +222,7 @@ int fit_set_args(struct fault_impl *fault, int args, char *argv[])
 		fault->delay = 10000;
 	return 0;
 }
+#ifndef CONFIG_MTK_PLATFORM
 /*ion heaps allocate*/
 int ion_heap_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	unsigned long len, unsigned long align, unsigned long flags)
@@ -301,6 +306,7 @@ int replace_ion_func(void)
 	UP_READ(dev);
 	return 1;
 }
+#endif
 
 /*Convert arguments to faults, then inject and inject them.*/
 static struct fault_impl *args2fault(int args, char *argv[])
@@ -327,11 +333,13 @@ static struct fault_impl *args2fault(int args, char *argv[])
 	if (NULL == fault)
 		return NULL;
 	memcpy(fault, &fault_tmp, sizeof(struct fault_impl));
+	#ifndef CONFIG_MTK_PLATFORM
 	if (fault->fault == FAULT_ION_ALLOC && !replace_ion_func())
 		return NULL;
+	#endif
 	return fault;
 }
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 static int rasprobe_handler(kbase_mmu_hw_do_operation)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
 {
@@ -342,6 +350,7 @@ static int rasprobe_handler(kbase_mmu_hw_do_operation)
 	rasprobe_seturn(regs, 1);
 	return 0;
 }
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 static int rasprobe_handler_entry(fence_check_cb_func)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
@@ -421,6 +430,7 @@ void delay_block(unsigned long long ms)
  *-->kbase_gpu_irq_handler -->kbase_reg_read get gpu status
  *--->kbase_pm_reset_do_normal wait timeout,check status
  */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 static int rasprobe_handler(kbase_pm_wait_for_reset)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
 {
@@ -448,8 +458,10 @@ static int rasprobe_handler_entry(kbase_gpu_complete_hw)
 		rasprobe_setarg(regs, 2, 0x4);
 	return 0;
 }
+#endif
 
-static int rasprobe_handler_entry(hisi_powerkey_handler)
+#ifdef CONFIG_MTK_PLATFORM
+static int rasprobe_handler_entry(key_int_handler)
 	(struct rasprobe_instance *ri, struct pt_regs *regs)
 {
 	struct RasRegs *rr = NULL;
@@ -464,27 +476,171 @@ static int rasprobe_handler_entry(hisi_powerkey_handler)
 		return 0;
 	if (!is_fault(fault))
 		return 0;
+	printk("rGPU:chipset = %d, input=%ld will set invalid value\n", fault->chipset_irq, (long)rr->args[0]);
 	/* chipeset irq */
-	rasprobe_setarg(regs, 0, 0);/*set 0 to ignore irq*/
+	rasprobe_setarg(regs, 0, 510);/*set 0 to ignore irq*/
+	return 0;
+}
+#elif defined CONFIG_ARCH_HISI
+static int rasprobe_handler_entry(powerkey_down_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("down: chipset = %d, input=%ld will set null\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
 	return 0;
 }
 
+static int rasprobe_handler_entry(powerkey_up_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("up: chipset = %d, input=%ld will set null\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
+	return 0;
+}
+
+static int rasprobe_handler_entry(powerkey_1s_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("1s: chipset = %d, input=%ld will set null\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
+	return 0;
+}
+
+static int rasprobe_handler_entry(powerkey_6s_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("6s: chipset = %d, input=%ld will set null\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
+	return 0;
+}
+
+static int rasprobe_handler_entry(powerkey_8s_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("8s: chipset = %d, input=%ld will set null\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
+	return 0;
+}
+
+static int rasprobe_handler_entry(powerkey_10s_hdl)
+	(struct rasprobe_instance *ri, struct pt_regs *regs)
+{
+	struct RasRegs *rr = NULL;
+	struct fault_impl *fault = fault_include(FAULT_CHIPSET_HUNG);
+
+	rasprobe_entry(ri, regs);
+	rr = (struct RasRegs *)ri->data;
+	if (!fault)
+		return 0;
+	if (fault->chipset_irq != -1)
+		return 0;
+	if (!is_fault(fault))
+		return 0;
+	printk("10s: chipset = %d, input=%ld will set one\n", fault->chipset_irq, (long)rr->args[0]);
+	/* chipeset irq */
+	rasprobe_setargptr(regs, 1, NULL);/*set 0 to ignore irq*/
+	return 0;
+}
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 rasprobe_define(kbase_pm_wait_for_reset);/*hard_reset*/
 rasprobe_define(kbase_mmu_hw_do_operation);/*soft_reset*/
 rasprobe_entry_define(kbase_gpu_complete_hw);/*gpu_fault*/
+#endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 rasprobe_entry_define(fence_check_cb_func);/*fence_timeout*/
 #endif
-rasprobe_entry_define(hisi_powerkey_handler);/*chipset_hang*/
+#ifdef CONFIG_MTK_PLATFORM
+rasprobe_entry_define(key_int_handler);/*chipset_hang*/
+#else
+rasprobe_entry_define(powerkey_down_hdl);/*chipset_hang*/
+rasprobe_entry_define(powerkey_up_hdl);/*chipset_hang*/
+rasprobe_entry_define(powerkey_1s_hdl);/*chipset_hang*/
+rasprobe_entry_define(powerkey_6s_hdl);/*chipset_hang*/
+rasprobe_entry_define(powerkey_8s_hdl);/*chipset_hang*/
+rasprobe_entry_define(powerkey_10s_hdl);/*chipset_hang*/
+#endif
 
 static struct rasprobe *probes[] = {
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	&rasprobe_name(kbase_pm_wait_for_reset),
 	&rasprobe_name(kbase_mmu_hw_do_operation),
 	&rasprobe_name(kbase_gpu_complete_hw),
+	#endif
 	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	&rasprobe_name(fence_check_cb_func),
 	#endif
-	&rasprobe_name(hisi_powerkey_handler)
+	#ifdef CONFIG_MTK_PLATFORM
+	&rasprobe_name(key_int_handler)
+	#else
+	&rasprobe_name(powerkey_down_hdl),
+	&rasprobe_name(powerkey_up_hdl),
+	&rasprobe_name(powerkey_1s_hdl),
+	&rasprobe_name(powerkey_6s_hdl),
+	&rasprobe_name(powerkey_8s_hdl),
+	&rasprobe_name(powerkey_10s_hdl)
+	#endif
 };
 
 static int cmd_main(void *data, int argc, char *args[])
@@ -531,24 +687,28 @@ proc_ops_define(rGPU);
 static int tool_init(void)
 {
 	/*1. initialize memory*/
-	ras_debugset(1);
+	ras_debugset(0);
 	ras_retn_iferr(ras_check());
 	memset(&fault_injected, 0, sizeof(struct fault_list));
+	#ifndef CONFIG_MTK_PLATFORM
 	rwlock_init(&ion_heaps.rwk);
 	INIT_LIST_HEAD(&ion_heaps.stlist);
 	/*2.ion fault*/
 	get_iondev = (get_iondev_fun)kallsyms_lookup_name("get_ion_device");
 	ras_retn_if(!get_iondev, -EINVAL);
+	#endif
 
 	/*3. initialize probes and interface*/
 	ras_retn_iferr(register_rasprobes(probes, ARRAY_SIZE(probes)));
 	if (proc_init(MODULE_NAME, &proc_ops_name(rGPU), &fault_injected))
 		goto out_unreg;
+	#ifndef CONFIG_MTK_PLATFORM
 	ion_heap_cache = kmem_cache_create("ion_replace_item",
 		sizeof(struct ion_replace_item), 0,
 		SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL);
 	if (!ion_heap_cache)
 		goto out_proc;
+	#endif
 
 	#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	rwlock_init(&wq_list.rwk);
@@ -589,8 +749,10 @@ static void tool_exit(void)
 	check_del_work(0);
 	kmem_cache_destroy(fence_wk_cache);
 	#endif
+	#ifndef CONFIG_MTK_PLATFORM
 	restore_ion_allocate();
 	kmem_cache_destroy(ion_heap_cache);
+	#endif
 }
 module_init(tool_init);
 module_exit(tool_exit);

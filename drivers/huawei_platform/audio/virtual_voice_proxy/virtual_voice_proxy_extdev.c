@@ -28,6 +28,7 @@
 #define VIRTUAL_PROXY_VOICE_SET_DISABLE  _IO('V', 0x3)
 
 #define IO_BLOCK_TIMEOUT 9000
+#define VIRTUAL_VOICE_WR_ERR_LIMIT 20
 
 enum virtual_voice_status {
 	STATUS_CLOSE = 0,
@@ -62,8 +63,11 @@ struct proxy_extdev_priv {
 	char *spkdata_buf;
 	/* voice proxy mode */
 	uint32_t proxy_mode;
-	struct mutex ioctl_mutex;
 	bool disable_virtual_call;
+	struct virtual_voice_memory_pool tx_mem_pool;
+	struct virtual_voice_memory_pool rx_mem_pool;
+	int32_t tx_read_err_cnt;
+	int32_t rx_write_err_cnt;
 };
 
 static struct proxy_extdev_priv proxye_priv;
@@ -75,7 +79,115 @@ static struct proxy_extdev_priv proxye_priv;
 LIST_HEAD(recv_voice_proxy_rx_queue);
 LIST_HEAD(send_voice_proxy_tx_queue);
 
-static void proxy_extdev_clear_queue(struct list_head *queue)
+static void proxy_extdev_check_read_write_data_err_cnt(void);
+
+static struct virtual_voice_proxy_data_node *virtual_voice_data_node_malloc(
+	struct virtual_voice_memory_pool *mem_pool,
+	uint32_t size)
+{
+	int ret;
+	void *ptr = NULL;
+	struct virtual_voice_proxy_data_node *node = NULL;
+	struct vir_free_node *mem_node = NULL;
+
+	if (mem_pool == NULL)
+		return NULL;
+
+	ptr = virtual_voice_malloc(mem_pool, size, &ret);
+	if (ptr == NULL) {
+		loge("node malloc in pool failed\n");
+		return NULL;
+	}
+
+	if (ret == VIR_MEM_BLOCK_POOL_NOT_USE) {
+		node = ptr;
+		/* only for virtual_voice_free use the node_cmd->mem_node */
+		node->mem_node = ptr;
+	} else {
+		mem_node = ptr;
+		node = (struct virtual_voice_proxy_data_node *)(mem_node->data);
+		if (node == NULL) {
+			loge("node is NULL\n");
+			virtual_voice_free(mem_pool,
+				(void **)(&mem_node), VIR_MEM_BLOCK_POOL_USE);
+			return NULL;
+		}
+		node->mem_node = mem_node;
+	}
+	node->mem_status = ret;
+	return node;
+}
+
+static void virtual_voice_data_node_free(
+	struct virtual_voice_memory_pool *mem_pool,
+	struct virtual_voice_proxy_data_node **node)
+{
+	struct virtual_voice_proxy_data_node *node_data = NULL;
+
+	if (node == NULL || *node == NULL || mem_pool == NULL)
+		return;
+
+	node_data = *node;
+	virtual_voice_free(mem_pool,
+		(void **)(&node_data->mem_node),
+		node_data->mem_status);
+}
+
+static int32_t virtual_voice_proxy_create_data_node(
+	struct virtual_voice_memory_pool *mem_pool,
+	struct virtual_voice_proxy_data_node **node,
+	const int8_t *data, int32_t size)
+{
+	struct virtual_voice_proxy_data_node *n = NULL;
+
+	if (node == NULL || data == NULL || mem_pool == NULL) {
+		loge("input parameter invalid");
+		return -EINVAL;
+	}
+
+	n = virtual_voice_data_node_malloc(mem_pool,
+		sizeof(struct virtual_voice_proxy_data_node) + size);
+	if (n == NULL) {
+		loge("kzalloc failed\n");
+		*node = NULL;
+		return -ENOMEM;
+	}
+
+	memcpy(n->list_data.data, data, size);
+	n->list_data.size = size;
+	*node = n;
+	return 0;
+}
+
+static void virtual_voice_data_memory_pool_free(void)
+{
+	spin_lock_bh(&proxye_priv.write_lock);
+	if (!list_empty_careful(&recv_voice_proxy_rx_queue)) {
+		spin_unlock_bh(&proxye_priv.write_lock);
+		return;
+	}
+	if (virtual_voice_memory_pool_free_node_full_idle(
+		&proxye_priv.rx_mem_pool)) {
+		logi("voice rx data mem pool prepare free\n");
+		virtual_voice_memory_pool_free(&proxye_priv.rx_mem_pool);
+	}
+	spin_unlock_bh(&proxye_priv.write_lock);
+
+	spin_lock_bh(&proxye_priv.read_lock);
+	if (!list_empty_careful(&send_voice_proxy_tx_queue)) {
+		spin_unlock_bh(&proxye_priv.read_lock);
+		return;
+	}
+	if (virtual_voice_memory_pool_free_node_full_idle(
+		&proxye_priv.tx_mem_pool)) {
+		logi("voice tx data mem pool prepare free\n");
+		virtual_voice_memory_pool_free(&proxye_priv.tx_mem_pool);
+	}
+	spin_unlock_bh(&proxye_priv.read_lock);
+}
+
+static void proxy_extdev_clear_queue(struct virtual_voice_memory_pool *mem_pool,
+	struct list_head *queue)
 {
 	uint32_t cnt = 0;
 	struct virtual_voice_proxy_data_node *node = NULL;
@@ -89,8 +201,14 @@ static void proxy_extdev_clear_queue(struct list_head *queue)
 		node = list_first_entry(queue,
 					struct virtual_voice_proxy_data_node,
 					list_node);
+		if (node == NULL) {
+			loge("node is NULL\n");
+			break;
+		}
 		list_del_init(&node->list_node);
-		kfree(node);
+		virtual_voice_data_node_free(mem_pool,
+			(struct virtual_voice_proxy_data_node **)(&node));
+		node = NULL;
 	}
 
 	logi("proxy_extdev:clear queue cnt is %u\n", cnt);
@@ -128,12 +246,48 @@ static int proxy_extdev_read_check(struct file *file, char __user *user_buf,
 		return -EINVAL;
 	}
 
-	if (size < VOICE_PROXY_LIMIT_PARAM_SIZE) {
-		loge("param err, size(%zd) < PROXY_EXTDEV_TX_DATA_SIZE:%ld\n",
+	if (size != VOICE_PROXY_LIMIT_PARAM_SIZE) {
+		loge("param err, size(%zd) < PROXY_EXTDEV_TX_DATA_SIZE:%d\n",
 			size, VOICE_PROXY_LIMIT_PARAM_SIZE);
 		return -EINVAL;
 	}
 
+	return 0;
+}
+
+static int proxy_extdev_voice_read_data(char __user *user_buf,
+	const void *buffer, int32_t size)
+{
+	int ret;
+
+	if (size != VOICE_PROXY_LIMIT_PARAM_SIZE) {
+		loge("copy size is not right, size: %d\n", size);
+		return -ENOEXEC;
+	}
+
+	ret = copy_to_user(user_buf, buffer, size);
+	if (ret != 0) {
+		loge("copy_to_user fail, ret: %d\n", ret);
+		proxye_priv.tx_read_err_cnt++;
+		ret = -ENOEXEC;
+	} else {
+		proxye_priv.tx_read_err_cnt = 0;
+		ret = size;
+	}
+	return ret;
+}
+
+static int proxy_extdev_readcheck_node_size(
+	struct virtual_voice_proxy_data_node *node,
+	size_t size)
+{
+	if (size < node->list_data.size) {
+		loge("size:%zd < node->list_data.size:%d\n",
+			size, node->list_data.size);
+		virtual_voice_data_node_free(&proxye_priv.tx_mem_pool,
+			(struct virtual_voice_proxy_data_node **)(&node));
+		return -EAGAIN;
+	}
 	return 0;
 }
 
@@ -155,11 +309,13 @@ static ssize_t proxy_extdev_read(struct file *file, char __user *user_buf,
 			proxye_priv.read_wait_flag > 0,
 			msecs_to_jiffies(IO_BLOCK_TIMEOUT));
 		if (ret <= 0) {
-			if (ret != -ERESTARTSYS)
-				loge("wait event fail, 0x%x.\n", ret);
-
+			loge("wait event fail, 0x%x.\n", ret);
 			return -EBUSY;
 		}
+		ret = proxy_extdev_read_check(file, user_buf, size);
+		if (ret < 0)
+			return ret;
+
 		spin_lock_bh(&proxye_priv.read_lock);
 	}
 	proxye_priv.read_wait_flag = 0;
@@ -167,34 +323,32 @@ static ssize_t proxy_extdev_read(struct file *file, char __user *user_buf,
 		node = list_first_entry(&send_voice_proxy_tx_queue,
 					struct virtual_voice_proxy_data_node,
 					list_node);
-
-		list_del_init(&node->list_node);
-		if (proxye_priv.tx_cnt > 0)
-			proxye_priv.tx_cnt--;
-
-		if (size < node->list_data.size) {
-			loge("size(%zd) < node->list_data.size(%d)\n",
-				size, node->list_data.size);
-			kfree(node);
-			node = NULL;
+		if (node == NULL) {
+			loge("node is NULL\n");
 			spin_unlock_bh(&proxye_priv.read_lock);
 			return -EAGAIN;
 		}
-
-		if (copy_to_user(user_buf, node->list_data.data,
-			node->list_data.size)) {
-			loge("copy_to_user fail\n");
-			ret = -EFAULT;
-		} else {
-			ret = node->list_data.size;
+		list_del_init(&node->list_node);
+		if (proxye_priv.tx_cnt > 0)
+			proxye_priv.tx_cnt--;
+		ret = proxy_extdev_readcheck_node_size(node, size);
+		if (ret < 0) {
+			spin_unlock_bh(&proxye_priv.read_lock);
+			return ret;
 		}
-		kfree(node);
+		spin_unlock_bh(&proxye_priv.read_lock);
+		ret = proxy_extdev_voice_read_data(user_buf,
+			(void *)(node->list_data.data), node->list_data.size);
+		spin_lock_bh(&proxye_priv.read_lock);
+		virtual_voice_data_node_free(&proxye_priv.tx_mem_pool,
+			(struct virtual_voice_proxy_data_node **)(&node));
 		node = NULL;
 		spin_unlock_bh(&proxye_priv.read_lock);
+		proxy_extdev_check_read_write_data_err_cnt();
 	} else {
 		spin_unlock_bh(&proxye_priv.read_lock);
 		ret = -EAGAIN;
-		loge("list is empty, read again\n");
+		logw("list is empty, read again\n");
 	}
 	return ret;
 }
@@ -216,14 +370,13 @@ static int32_t virtual_voice_add_rx_data(int8_t *data, uint32_t size)
 			VOICE_PROXY_QUEUE_SIZE_MAX);
 		return -ENOMEM;
 	}
-	spin_unlock_bh(&proxye_priv.write_lock);
-
-	ret = virtual_voice_proxy_create_data_node(&node, data, (int)size);
-	if (ret) {
+	ret = virtual_voice_proxy_create_data_node(&proxye_priv.rx_mem_pool,
+		&node, data, (int)size);
+	if (ret != 0) {
 		loge("node kzalloc failed\n");
-		return -EFAULT;
+		spin_unlock_bh(&proxye_priv.write_lock);
+		return -ENOMEM;
 	}
-	spin_lock_bh(&proxye_priv.write_lock);
 	list_add_tail(&node->list_node, &recv_voice_proxy_rx_queue);
 	proxye_priv.rx_cnt++;
 	spin_unlock_bh(&proxye_priv.write_lock);
@@ -263,8 +416,8 @@ static int proxy_extdev_write_check(struct file *filp, const char __user *buff,
 		return -EINVAL;
 	}
 
-	if (size < VOICE_PROXY_LIMIT_PARAM_SIZE) {
-		loge("para error, size:%zd(>%ld)\n", size,
+	if (size != VOICE_PROXY_LIMIT_PARAM_SIZE) {
+		loge("para error, size:%zd > %d\n", size,
 			VOICE_PROXY_LIMIT_PARAM_SIZE);
 		return -EINVAL;
 	}
@@ -272,28 +425,53 @@ static int proxy_extdev_write_check(struct file *filp, const char __user *buff,
 	return 0;
 }
 
+static int proxy_extdev_voice_write_data(void *buffer,
+	const char __user *user_buf, int32_t size)
+{
+	int ret;
+
+	if (size != VOICE_PROXY_LIMIT_PARAM_SIZE) {
+		loge("copy size is not right, size: %d\n", size);
+		return -ENOEXEC;
+	}
+
+	ret = copy_from_user(buffer, user_buf, size);
+	if (ret != 0) {
+		loge("copy_from_user fail, ret: 0x%x\n", ret);
+		proxye_priv.rx_write_err_cnt++;
+		ret = -ENOEXEC;
+	} else {
+		proxye_priv.rx_write_err_cnt = 0;
+		ret = size;
+	}
+	return ret;
+}
+
 static ssize_t proxy_extdev_write(struct file *filp, const char __user *buff,
 			size_t size, loff_t *offp)
 {
 	int32_t ret;
 	int8_t *data = NULL;
+	struct virtual_voice_proxy_data_node *node = NULL;
 
 	UNUSED_PARAMETER(offp);
 	ret = proxy_extdev_write_check(filp, buff, size);
 	if (ret < 0)
 		return ret;
 
-	data = kzalloc((size_t)VOICE_PROXY_LIMIT_PARAM_SIZE, GFP_ATOMIC);
-	if (data == NULL) {
-		loge("malloc data_buf failed\n");
+	spin_lock_bh(&proxye_priv.write_lock);
+	node = virtual_voice_data_node_malloc(&proxye_priv.rx_mem_pool,
+		sizeof(*node) + size);
+	if (node == NULL) {
+		spin_unlock_bh(&proxye_priv.write_lock);
+		loge("kzalloc rev node failed\n");
 		return -ENOMEM;
 	}
-
-	if (copy_from_user(data, buff, size)) {
-		loge("copy_from_user fail\n");
-		ret = -EFAULT;
+	spin_unlock_bh(&proxye_priv.write_lock);
+	data = (int8_t *)node->list_data.data;
+	ret = proxy_extdev_voice_write_data((void *)data, buff, size);
+	if (ret < 0)
 		goto extdev_write_err;
-	}
 
 	ret = wait_event_interruptible_timeout(proxye_priv.write_waitq,
 		proxye_priv.write_wait_flag > 0,
@@ -305,33 +483,43 @@ static ssize_t proxy_extdev_write(struct file *filp, const char __user *buff,
 		ret = -EBUSY;
 		goto extdev_write_err;
 	}
+	ret = proxy_extdev_write_check(filp, buff, size);
+	if (ret < 0)
+		goto extdev_write_err;
 
 	spin_lock_bh(&proxye_priv.write_lock);
 	proxye_priv.write_wait_flag = 0;
 	spin_unlock_bh(&proxye_priv.write_lock);
-
-	ret = virtual_voice_proxy_add_data(virtual_voice_add_rx_data, data,
-		(uint32_t)size, ID_VIRTUAL_VOICE_PROXY_RX_NTF);
+	ret = virtual_voice_proxy_add_data(virtual_voice_add_rx_data,
+		data, (uint32_t)size, ID_VIRTUAL_VOICE_PROXY_RX_NTF);
 	if (ret <= 0) {
 		loge("call voice_proxy_add_data fail\n");
+		ret = -EAGAIN;
 		goto extdev_write_err;
 	}
-
 	ret = (int)size;
 extdev_write_err:
-	kfree(data);
-	data = NULL;
+	spin_lock_bh(&proxye_priv.write_lock);
+	virtual_voice_data_node_free(&proxye_priv.rx_mem_pool,
+		(struct virtual_voice_proxy_data_node **)(&node));
+	spin_unlock_bh(&proxye_priv.write_lock);
+	proxy_extdev_check_read_write_data_err_cnt();
+	node = NULL;
 	return ret;
 }
 
+/* call this function not use lock */
 static int proxy_extdev_set_mode_to_hifi(struct virtual_voice_proxy_mode mode_msg)
 {
 	int ret;
 
 	logi("mode_msg.mode [%d]\n", mode_msg.mode);
 	if (mode_msg.mode == VIRTUAL_CALL_STATUS_ON) {
-		proxy_extdev_clear_queue(&recv_voice_proxy_rx_queue);
+		spin_lock_bh(&proxye_priv.write_lock);
+		proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+			&recv_voice_proxy_rx_queue);
 		proxye_priv.rx_cnt = 0;
+		spin_unlock_bh(&proxye_priv.write_lock);
 	}
 
 	ret = voice_proxy_mailbox_send_msg_cb(
@@ -345,6 +533,36 @@ static int proxy_extdev_set_mode_to_hifi(struct virtual_voice_proxy_mode mode_ms
 	proxye_priv.proxy_mode = mode_msg.mode;
 
 	return 0;
+}
+
+/* call this function not use lock */
+static void proxy_extdev_check_read_write_data_err_cnt(void)
+{
+	struct virtual_voice_proxy_mode mode_msg;
+
+	if (proxye_priv.tx_read_err_cnt > VIRTUAL_VOICE_WR_ERR_LIMIT ||
+		proxye_priv.rx_write_err_cnt > VIRTUAL_VOICE_WR_ERR_LIMIT) {
+		loge("err_cnt exceed limit, set off mde rd_cnt:%d, wr_cnt:%d\n",
+			proxye_priv.tx_read_err_cnt,
+			proxye_priv.rx_write_err_cnt);
+		mode_msg.mode = VIRTUAL_CALL_STATUS_OFF;
+		mode_msg.msg_id = ID_VIRTUAL_VOICE_PROXY_SET_MODE;
+		proxy_extdev_set_mode_to_hifi(mode_msg);
+		proxye_priv.is_proxy_open = false;
+		proxye_priv.proxy_mode = VIRTUAL_CALL_STATUS_OFF;
+		proxye_priv.read_wait_flag++;
+		proxye_priv.write_wait_flag++;
+		wake_up(&proxye_priv.read_waitq);
+		wake_up(&proxye_priv.write_waitq);
+		spin_lock_bh(&proxye_priv.write_lock);
+		proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+			&recv_voice_proxy_rx_queue);
+		spin_unlock_bh(&proxye_priv.write_lock);
+		spin_lock_bh(&proxye_priv.read_lock);
+		proxy_extdev_clear_queue(&proxye_priv.tx_mem_pool,
+			&send_voice_proxy_tx_queue);
+		spin_unlock_bh(&proxye_priv.read_lock);
+	}
 }
 
 static int proxy_extdev_set_mode(uintptr_t arg)
@@ -404,13 +622,16 @@ static int proxy_extdev_open(struct inode *finode, struct file *fd)
 	spin_lock_bh(&proxye_priv.write_lock);
 	proxye_priv.is_dev_open = true;
 	proxye_priv.is_proxy_open = true;
-	proxy_extdev_clear_queue(&recv_voice_proxy_rx_queue);
+	proxye_priv.tx_read_err_cnt = 0;
+	proxye_priv.rx_write_err_cnt = 0;
 	proxye_priv.rx_cnt = 0;
 	proxye_priv.write_wait_flag = 0;
-
-	proxy_extdev_clear_queue(&send_voice_proxy_tx_queue);
 	proxye_priv.tx_cnt = 0;
 	proxye_priv.read_wait_flag = 0;
+	proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+		&recv_voice_proxy_rx_queue);
+	proxy_extdev_clear_queue(&proxye_priv.tx_mem_pool,
+		&send_voice_proxy_tx_queue);
 	spin_unlock_bh(&proxye_priv.write_lock);
 
 	return 0;
@@ -439,7 +660,14 @@ static int proxy_extdev_close(struct inode *node, struct file *filp)
 	mode_msg.mode = VIRTUAL_CALL_STATUS_OFF;
 	mode_msg.msg_id = ID_VIRTUAL_VOICE_PROXY_SET_MODE;
 	proxy_extdev_set_mode_to_hifi(mode_msg);
-
+	spin_lock_bh(&proxye_priv.write_lock);
+	proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+		&recv_voice_proxy_rx_queue);
+	spin_unlock_bh(&proxye_priv.write_lock);
+	spin_lock_bh(&proxye_priv.read_lock);
+	proxy_extdev_clear_queue(&proxye_priv.tx_mem_pool,
+		&send_voice_proxy_tx_queue);
+	spin_unlock_bh(&proxye_priv.read_lock);
 	return 0;
 }
 
@@ -468,7 +696,6 @@ static long proxy_extdev_ioctl(struct file *fd,
 		return -EINVAL;
 	}
 
-	mutex_lock(&proxye_priv.ioctl_mutex);
 	switch (cmd) {
 	case VIRTUAL_PROXY_VOICE_WAKE_UP_READ:
 		proxy_extdev_wake_up_read();
@@ -480,7 +707,6 @@ static long proxy_extdev_ioctl(struct file *fd,
 		ret = -EINVAL;
 		break;
 	}
-	mutex_unlock(&proxye_priv.ioctl_mutex);
 
 	return (long)ret;
 }
@@ -547,12 +773,18 @@ static void proxy_extdev_sign_init(void)
 static int32_t proxy_extdev_add_tx_data(int8_t *rev_buf, uint32_t buf_size)
 {
 	int32_t ret;
-	int8_t *data_buf = NULL;
 	struct virtual_voice_proxy_data_node *node = NULL;
 
 	UNUSED_PARAMETER(rev_buf);
 	UNUSED_PARAMETER(buf_size);
-
+	if (!proxye_priv.is_dev_open) {
+		logw("the dev not open, so not wakeup read_waitq\n");
+		return -ECANCELED;
+	}
+	if (!proxye_priv.is_proxy_open) {
+		logw("the proxy not open, so not wakeup read_waitq\n");
+		return -ECANCELED;
+	}
 	spin_lock_bh(&proxye_priv.read_lock);
 	if (proxye_priv.tx_cnt > VOICE_PROXY_QUEUE_SIZE_MAX) {
 		logw("tx_cnt[%d] is out of range\n", proxye_priv.tx_cnt);
@@ -563,28 +795,21 @@ static int32_t proxy_extdev_add_tx_data(int8_t *rev_buf, uint32_t buf_size)
 	}
 	spin_unlock_bh(&proxye_priv.read_lock);
 
-	data_buf = kzalloc((size_t)VOICE_PROXY_LIMIT_PARAM_SIZE, GFP_ATOMIC);
-	if (data_buf == NULL) {
-		loge("malloc data_buf failed\n");
-		return -ENOMEM;
-	}
-
 	if (proxye_priv.spkdata_buf == NULL) {
 		loge("priv.spkdata_buffer is NULL\n");
+		ret = -ENOMEM;
 		goto add_tx_data_err;
-	} else {
-		memcpy(data_buf, proxye_priv.spkdata_buf,
-			VOICE_PROXY_LIMIT_PARAM_SIZE);
 	}
-
-	ret = virtual_voice_proxy_create_data_node(&node, data_buf,
+	spin_lock_bh(&proxye_priv.read_lock);
+	ret = virtual_voice_proxy_create_data_node(&proxye_priv.tx_mem_pool,
+		&node, proxye_priv.spkdata_buf,
 		(int)VOICE_PROXY_LIMIT_PARAM_SIZE);
 	if (ret != 0) {
+		spin_unlock_bh(&proxye_priv.read_lock);
 		loge("data_node kzalloc failed\n");
+		ret = -ENOMEM;
 		goto add_tx_data_err;
 	}
-
-	spin_lock_bh(&proxye_priv.read_lock);
 	list_add_tail(&node->list_node, &send_voice_proxy_tx_queue);
 	proxye_priv.tx_cnt++;
 	proxye_priv.read_wait_flag++;
@@ -592,8 +817,6 @@ static int32_t proxy_extdev_add_tx_data(int8_t *rev_buf, uint32_t buf_size)
 	wake_up(&proxye_priv.read_waitq);
 
 add_tx_data_err:
-	kfree(data_buf);
-	data_buf = NULL;
 	return ret;
 }
 
@@ -605,28 +828,30 @@ static void proxy_extdev_get_rx_data(uint32_t *size)
 		loge("param size is NULL\n");
 		return;
 	}
-
 	spin_lock_bh(&proxye_priv.write_lock);
 	if (!list_empty_careful(&recv_voice_proxy_rx_queue)) {
 		node = list_first_entry(&recv_voice_proxy_rx_queue,
 					struct virtual_voice_proxy_data_node,
 					list_node);
-
+		if (node == NULL) {
+			loge("node is NULL\n");
+			spin_unlock_bh(&proxye_priv.write_lock);
+			return;
+		}
 		list_del_init(&node->list_node);
-
 		if (proxye_priv.rx_cnt > 0)
 			proxye_priv.rx_cnt--;
 
 		if (*size < (uint32_t)node->list_data.size) {
 			loge("size is invalid,size = %d,list_data.size = %d\n",
 				*size, node->list_data.size);
-			kfree(node);
+			virtual_voice_data_node_free(&proxye_priv.rx_mem_pool,
+				(struct virtual_voice_proxy_data_node **)(&node));
 			node = NULL;
 			*size = 0;
 			spin_unlock_bh(&proxye_priv.write_lock);
 			return;
 		}
-
 		*size = (uint32_t)node->list_data.size;
 		if (proxye_priv.micdata_buf != NULL)
 			memcpy(proxye_priv.micdata_buf, node->list_data.data,
@@ -634,10 +859,10 @@ static void proxy_extdev_get_rx_data(uint32_t *size)
 		else
 			loge("priv.micdata_buffer is NULL\n");
 
-		kfree(node);
+		virtual_voice_data_node_free(&proxye_priv.rx_mem_pool,
+			(struct virtual_voice_proxy_data_node **)(&node));
 		node = NULL;
 		spin_unlock_bh(&proxye_priv.write_lock);
-
 		proxye_priv.first_rx = false;
 		proxye_priv.rx_confirm = false;
 	} else {
@@ -646,42 +871,49 @@ static void proxy_extdev_get_rx_data(uint32_t *size)
 	}
 }
 
-static void proxy_extdev_receive_status_notify(int8_t *rev_buf,
+static int proxy_extdev_status_notify_check(int8_t *rev_buf,
 		uint32_t buf_size)
 {
-	struct virtual_voice_proxy_rev_msg *status_ind = NULL;
-
 	if (rev_buf == NULL) {
 		loge("proxy_extdev:status notify param rev_buf is NULL\n");
-		return;
+		return -EINVAL;
 	}
 
 	if (buf_size < sizeof(struct virtual_voice_proxy_rev_msg)) {
 		loge("msg size is %u error, it not less than %ld\n",
 			buf_size, sizeof(struct virtual_voice_proxy_rev_msg));
-		return;
+		return -EINVAL;
 	}
+	return 0;
+}
+
+static void proxy_extdev_receive_status_notify(int8_t *rev_buf,
+		uint32_t buf_size)
+{
+	struct virtual_voice_proxy_rev_msg *status_ind = NULL;
+
+	if (proxy_extdev_status_notify_check(rev_buf, buf_size) < 0)
+		return;
 
 	status_ind = (struct virtual_voice_proxy_rev_msg *)rev_buf;
-
 	logi("proxy_extdev:status indication, status is %u(1-open,0-close)\n",
 		status_ind->voice_status);
-
-	spin_lock_bh(&proxye_priv.read_lock);
 	if (status_ind->voice_status == STATUS_OPEN) {
+		spin_lock_bh(&proxye_priv.read_lock);
 		if (!proxye_priv.is_proxy_open) {
-			proxy_extdev_clear_queue(&send_voice_proxy_tx_queue);
 			proxye_priv.tx_cnt = 0;
 			proxye_priv.read_wait_flag = 0;
-
-			proxy_extdev_clear_queue(&recv_voice_proxy_rx_queue);
 			proxye_priv.rx_cnt = 0;
 			proxye_priv.write_wait_flag = 0;
 		}
 		proxye_priv.is_proxy_open = true;
 		proxye_priv.first_rx = true;
 		proxye_priv.rx_confirm = false;
+		proxye_priv.tx_read_err_cnt = 0;
+		proxye_priv.rx_write_err_cnt = 0;
+		spin_unlock_bh(&proxye_priv.read_lock);
 	} else if (status_ind->voice_status == STATUS_CLOSE) {
+		spin_lock_bh(&proxye_priv.read_lock);
 		if (proxye_priv.is_dev_open) {
 			logi("set read and write wakeup waitq\n");
 			proxye_priv.read_wait_flag++;
@@ -689,9 +921,17 @@ static void proxy_extdev_receive_status_notify(int8_t *rev_buf,
 		}
 		proxye_priv.is_proxy_open = false;
 		proxye_priv.proxy_mode = VIRTUAL_CALL_STATUS_OFF;
-	}
-	spin_unlock_bh(&proxye_priv.read_lock);
 
+		proxy_extdev_clear_queue(&proxye_priv.tx_mem_pool,
+			&send_voice_proxy_tx_queue);
+		spin_unlock_bh(&proxye_priv.read_lock);
+		spin_lock_bh(&proxye_priv.write_lock);
+		proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+			&recv_voice_proxy_rx_queue);
+		spin_unlock_bh(&proxye_priv.write_lock);
+		virtual_voice_data_memory_pool_free();
+		virtual_voice_cmd_memory_pool_free();
+	}
 	if (status_ind->voice_status == STATUS_CLOSE &&
 		proxye_priv.is_dev_open) {
 		logi("the voice finished and dev still open, wakeup waitq\n");
@@ -711,7 +951,8 @@ static void proxy_extdev_receive_tx_notify(int8_t *rev_buf, uint32_t buf_size)
 
 	ret = proxy_extdev_add_tx_data(rev_buf, buf_size);
 	if (ret) {
-		loge("send tx data to read func failed\n");
+		if (ret != -ECANCELED)
+			loge("send tx data to read func failed\n");
 		return;
 	}
 
@@ -721,7 +962,6 @@ static void proxy_extdev_receive_tx_notify(int8_t *rev_buf, uint32_t buf_size)
 
 static void proxy_extdev_receive_rx_confirm(int8_t *rev_buf, uint32_t buf_size)
 {
-
 	UNUSED_PARAMETER(rev_buf);
 	UNUSED_PARAMETER(buf_size);
 
@@ -730,9 +970,18 @@ static void proxy_extdev_receive_rx_confirm(int8_t *rev_buf, uint32_t buf_size)
 
 static void proxy_extdev_handle_rx_notify(uint32_t *size, uint16_t *msg_id)
 {
-
 	if (size == NULL || msg_id == NULL) {
 		loge("handle_rx_ntf fail, param is NULL\n");
+		return;
+	}
+
+	if (!proxye_priv.is_proxy_open) {
+		logw("the proxy not open not notify");
+		return;
+	}
+
+	if (!proxye_priv.is_dev_open) {
+		logw("the dev not open not notify\n");
 		return;
 	}
 
@@ -753,6 +1002,16 @@ static void proxy_extdev_handle_request_micdata(int8_t *rev_buf,
 {
 	UNUSED_PARAMETER(rev_buf);
 	UNUSED_PARAMETER(buf_size);
+
+	if (!proxye_priv.is_proxy_open) {
+		logw("the proxy not open not request micdata\n");
+		return;
+	}
+
+	if (!proxye_priv.is_dev_open) {
+		logw("the dev not open not request micdata\n");
+		return;
+	}
 
 	spin_lock_bh(&proxye_priv.write_lock);
 	proxye_priv.write_wait_flag++;
@@ -808,6 +1067,9 @@ static void proxy_extdev_proxy_deregister_msg_cmd_callback(void)
 
 static void proxy_extdev_priv_data_init(void)
 {
+	unsigned int size = sizeof(struct virtual_voice_proxy_data_node) +
+		VOICE_PROXY_LIMIT_PARAM_SIZE;
+
 	memset(&proxye_priv, 0, sizeof(proxye_priv));
 	proxye_priv.read_wait_flag = 0;
 	proxye_priv.write_wait_flag = 0;
@@ -819,12 +1081,8 @@ static void proxy_extdev_priv_data_init(void)
 	spin_lock_init(&proxye_priv.write_lock);
 	init_waitqueue_head(&proxye_priv.read_waitq);
 	init_waitqueue_head(&proxye_priv.write_waitq);
-	mutex_init(&proxye_priv.ioctl_mutex);
-}
-
-static void proxy_extdev_priv_data_deinit(void)
-{
-	mutex_destroy(&proxye_priv.ioctl_mutex);
+	virtual_voice_memory_pool_init(&proxye_priv.tx_mem_pool, size);
+	virtual_voice_memory_pool_init(&proxye_priv.rx_mem_pool, size);
 }
 
 static int proxy_extdev_probe(struct platform_device *pdev)
@@ -841,21 +1099,22 @@ static int proxy_extdev_probe(struct platform_device *pdev)
 
 	proxy_extdev_sign_init();
 	proxy_extdev_proxy_register_msg_cmd_callback();
+
 	ret = misc_register(&voice_proxy_ctl_device);
 	if (ret) {
 		loge("voice proxy extdev ctl misc register fail\n");
 		goto micdata_err1;
 	}
 
-	proxye_priv.micdata_buf = ioremap_wc(HISI_AP_VIRTUAL_CALL_UPLINK_ADDR,
-					HISI_AP_VIRTUAL_CALL_UPLINK_SIZE);
+	proxye_priv.micdata_buf = ioremap_wc(AP_VIRTUAL_CALL_UPLINK_ADDR,
+					AP_VIRTUAL_CALL_UPLINK_SIZE);
 	if (proxye_priv.micdata_buf == NULL) {
 		loge("micdata_buffer buffer ioremap err\n");
 		goto micdata_err1;
 	}
 
-	proxye_priv.spkdata_buf = ioremap_wc(HISI_AP_VIRTUAL_CALL_DOWNLINK_ADDR,
-					HISI_AP_VIRTUAL_CALL_DOWNLINK_SIZE);
+	proxye_priv.spkdata_buf = ioremap_wc(AP_VIRTUAL_CALL_DOWNLINK_ADDR,
+					AP_VIRTUAL_CALL_DOWNLINK_SIZE);
 	if (proxye_priv.spkdata_buf == NULL) {
 		loge("spkdata_buffer buffer ioremap err\n");
 		goto spkdata_err2;
@@ -869,7 +1128,6 @@ spkdata_err2:
 		proxye_priv.micdata_buf = NULL;
 	}
 micdata_err1:
-	proxy_extdev_priv_data_deinit();
 	misc_deregister(&proxy_extdev_misc_device);
 	proxy_extdev_proxy_deregister_msg_cmd_callback();
 	misc_deregister(&voice_proxy_ctl_device);
@@ -880,11 +1138,15 @@ micdata_err1:
 static int proxy_extdev_remove(struct platform_device *pdev)
 {
 	UNUSED_PARAMETER(pdev);
-
-	proxy_extdev_priv_data_deinit();
+	proxye_priv.is_proxy_open = false;
 	misc_deregister(&proxy_extdev_misc_device);
 	proxy_extdev_proxy_deregister_msg_cmd_callback();
 	misc_deregister(&voice_proxy_ctl_device);
+	proxy_extdev_clear_queue(&proxye_priv.rx_mem_pool,
+		&recv_voice_proxy_rx_queue);
+	proxy_extdev_clear_queue(&proxye_priv.tx_mem_pool,
+		&send_voice_proxy_tx_queue);
+	virtual_voice_data_memory_pool_free();
 
 	if (proxye_priv.micdata_buf != NULL) {
 		iounmap(proxye_priv.micdata_buf);
@@ -895,7 +1157,6 @@ static int proxy_extdev_remove(struct platform_device *pdev)
 		iounmap(proxye_priv.spkdata_buf);
 		proxye_priv.spkdata_buf = NULL;
 	}
-
 	return 0;
 }
 

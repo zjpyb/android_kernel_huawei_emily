@@ -75,7 +75,7 @@ struct mmc_fixup {
 	/* for MMC cards */
 	unsigned int ext_csd_rev;
 
-	void (*vendor_fixup)(struct mmc_card *card, int data);
+	void (*vendor_fixup)(struct mmc_card *card, unsigned int data);
 	int data;
 };
 

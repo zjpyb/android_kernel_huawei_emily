@@ -1,14 +1,17 @@
 /*
- * Copyright (C) 2018 Hisilicon
- * Author: Hisilicon <>
+ * hisi_tcpc_ops.h
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Hisilicon tcpc ops interface defination
+ *
+ * Copyright (c) 2017-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
 
@@ -26,11 +29,13 @@ struct hisi_tcpc_reg_ops {
 void hisi_tcpc_reg_ops_register(struct i2c_client *client, struct hisi_tcpc_reg_ops *reg_ops);
 void hisi_tcpc_irq_gpio_register(struct i2c_client *client, int irq_gpio);
 void hisi_tcpc_set_vusb_uv_det_sts(bool en);
+void hisi_tcpc_notify_chip_version(unsigned int version);
 #else
 static inline void hisi_tcpc_reg_ops_register(struct i2c_client *client,
 		struct hisi_tcpc_reg_ops *reg_ops){}
 static inline void hisi_tcpc_irq_gpio_register(struct i2c_client *client, int irq_gpio){}
 static inline void hisi_tcpc_set_vusb_uv_det_sts(bool en){}
+static inline void hisi_tcpc_notify_chip_version(unsigned int version){}
 #endif
 
 #endif /* _HISI_TCPC_REG_OPS_H_ */

@@ -252,6 +252,7 @@ int ipu_clock_start(struct ics_clock *clk)
 	ret = ipu_clock_set(clk, clk->start_rate);
 	if (ret) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:ipu_clock_set_rate failed,ret=%d\n", __func__, ret);
+		clk_disable_unprepare(clk->ipu_clk_ptr);
 		mutex_unlock(&clk->clk_mutex);
 		return ret;
 	}

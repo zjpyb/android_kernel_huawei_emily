@@ -16,10 +16,20 @@
 
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
-#include <linux/hisi/hisi_hhee.h>
+#if defined(CONFIG_MTK_PLATFORM)
+#include <uni/hkip/hkip_hvc.h>
+#else
+#include <linux/hisi/hkip_hhee.h>
+#endif
 
 #define HHEE_EVENT_MAGIC    0x6851895ba852fb79
 #define MAX_UPLOAD_INFO_LEN 64
+
+#if defined(CONFIG_MTK_PLATFORM)
+#define ATKINFO_DTS  "hkip,hkip-atkinfo"
+#else
+#define ATKINFO_DTS  "hisi,hkip-atkinfo"
+#endif
 
 struct hkip_atkinfo {
 	struct hhee_event_header *header;
@@ -106,6 +116,7 @@ extern int __init atkinfo_create_debugfs(struct hkip_atkinfo *atkinfo);
 #else
 static inline int atkinfo_create_debugfs(struct hkip_atkinfo *atkinfo)
 {
+	(void)atkinfo;
 	return 0;
 }
 #endif

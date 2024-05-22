@@ -13,6 +13,11 @@ obj-$(CONFIG_ST_TS_KIT_3_0)  += st/
 obj-$(CONFIG_PARADE_TS_KIT_3_0)  += parade/
 obj-$(CONFIG_ATMEL_TS_KIT_3_0)  += atmel/
 obj-$(CONFIG_ELAN_TS_KIT_3_0)  += elan/
+obj-$(CONFIG_MSTAR_TS_KIT_3_0)  += mstar/
+obj-$(CONFIG_GOODIX_GTX8_BRL_TS_KIT_3_0) += gtx8_brl/
+obj-$(CONFIG_HIMAX_TS_KIT_3_0)  += himax_64/
+obj-$(CONFIG_ILITEK_TS_KIT_3_0) +=ilitek/
+obj-$(CONFIG_CHIPONE_TS_KIT_3_0) += chipone/
 #ifeq ($(CONFIG_HUAWEI_TS_TEST_3_0),y)
 #EXTRA_CFLAGS += -DHUAWEI_TOUCHSCREEN_TEST
 #endif

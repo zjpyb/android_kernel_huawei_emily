@@ -38,7 +38,7 @@
 #include <linux/pm_wakeup.h>
 
 #include <linux/device.h>
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 
 #if defined(CONFIG_TRUSTONIC_TRUSTED_UI)

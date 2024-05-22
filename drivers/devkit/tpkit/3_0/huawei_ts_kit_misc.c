@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -22,8 +22,10 @@
 #include <linux/uaccess.h>
 #include <linux/input.h>
 #include <linux/input/mt.h>
+#include <huawei_ts_kit_algo.h>
 
 #include "trace-events-touch.h"
+#include <linux/errno.h>
 
 static unsigned int daemon_max_fingers_supproted;
 
@@ -62,7 +64,7 @@ static void copy_normal_to_fold_fingers(struct ts_fingers *dst,
 static long ts_ioctl_get_fingers_info(unsigned long arg)
 {
 	int ret = 0;
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
 	struct ts_normal_fingers n_fingers;
 
@@ -103,9 +105,130 @@ static long ts_ioctl_get_fingers_info(unsigned long arg)
 	return ret;
 }
 
+static long ts_ioctl_get_finger_pen_info(unsigned long arg)
+{
+	int ret = 0;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("%s: Not support 3.x protocol\n", __func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	trace_touch(TOUCH_TRACE_ALGO_GET_DATA, TOUCH_TRACE_FUNC_IN,
+		"with aft");
+	/* wait event */
+	atomic_set(&pdata->finger_pen_waitq_flag, AFT_WAITQ_WAIT);
+	if (down_interruptible(&pdata->finger_pen_aft_send))
+		TS_LOG_INFO(" Failed to down_interruptible()\n");
+
+	if (atomic_read(&pdata->finger_pen_waitq_flag) == AFT_WAITQ_WAIT) {
+		atomic_set(&pdata->finger_pen_waitq_flag, AFT_WAITQ_IGNORE);
+		return -EINVAL;
+	}
+	if (atomic_read(&pdata->finger_pen_waitq_flag) == AFT_WAITQ_WAKEUP) {
+		if (copy_to_user(argp, &pdata->finger_pen_send_aft_info,
+			sizeof(pdata->finger_pen_send_aft_info))) {
+			TS_LOG_ERR("%s: Failed to copy_from_user()\n",
+				__func__);
+			return -EFAULT;
+		}
+	}
+	trace_touch(TOUCH_TRACE_ALGO_GET_DATA, TOUCH_TRACE_FUNC_OUT,
+		"with aft");
+	return ret;
+}
+
+static long ts_ioctl_get_stylus3_connect_status(unsigned long arg)
+{
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	int ret;
+
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	ret = down_interruptible(&pdata->stylus3_status_flag);
+	if (ret) {
+		TS_LOG_INFO("get_stylus3_connect_status down Failed\n");
+		return -EFAULT;
+	}
+	if (copy_to_user(argp, &pdata->current_stylus3_status,
+		sizeof(pdata->current_stylus3_status))) {
+		TS_LOG_ERR("%s: Failed to copy_from_user()\n",
+			__func__);
+		return -EFAULT;
+	}
+	return 0;
+}
+
+static long ts_ioctl_get_callback_events(unsigned long arg)
+{
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	int ret;
+	if ((pdata->feature_info.pen_info.pen_change_protocol !=
+		SUPPORT_CHANGE_PEN_PROTOCOL) &&
+		((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE))) {
+		TS_LOG_ERR("%s: Not support stylus3\n", __func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	ret = down_interruptible(&pdata->stylus3_callback_flag);
+	if (ret) {
+		TS_LOG_INFO("%s, Failed to down_interruptible()\n", __func__);
+	} else {
+		if (copy_to_user(argp, &pdata->stylus3_callback_event,
+			sizeof(pdata->stylus3_callback_event))) {
+			TS_LOG_ERR("%s: Failed to copy_to_user()\n", __func__);
+			return -EFAULT;
+		}
+		TS_LOG_INFO("%s, eventClass=%d, eventCode=%d, extraInfo=%s\n",
+			__func__, pdata->stylus3_callback_event.event_class,
+			pdata->stylus3_callback_event.event_code,
+			pdata->stylus3_callback_event.extra_info);
+	}
+	atomic_set(&pdata->callback_event_flag, false);
+	return 0;
+}
+
+static long ts_ioctl_get_stylus3_shift_freq_info(unsigned long arg)
+{
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("%s: Not support stylus3\n", __func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	if (down_interruptible(&pdata->stylus3_shift_freq_flag))
+		TS_LOG_INFO(" Failed to down_interruptible()\n");
+	if (copy_to_user(argp, &pdata->stylus3_shift_freq_info,
+		sizeof(pdata->stylus3_shift_freq_info))) {
+		TS_LOG_ERR("%s: Failed to copy_to_user()\n", __func__);
+		return -EFAULT;
+	}
+	return 0;
+}
+
 static long ts_ioctl_get_aft_param_info(unsigned long arg)
 {
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 
 	if (arg == 0) {
 		TS_LOG_ERR("arg == 0\n");
@@ -124,13 +247,13 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 	struct ts_fingers data;
 	struct ts_normal_fingers *n_data = NULL;
 	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	struct ts_fingers *finger = NULL;
 	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
 	int finger_num;
 	unsigned int id;
-	unsigned short last_fingers_status = 0;
-	unsigned short filtered_fingers = 0;
+	unsigned short last_fingers_status;
+	unsigned short filtered_fingers;
 	unsigned short current_fingers_status = 0;
 	int ret;
 
@@ -181,8 +304,7 @@ static long ts_ioctl_set_coordinates(unsigned long arg)
 	trace_touch(TOUCH_TRACE_INPUT, TOUCH_TRACE_FUNC_IN, "with aft");
 	ts_check_touch_window(finger);
 	finger_num = ts_count_fingers(finger);
-	TS_LOG_DEBUG("%s:finger_num = %d\n", __func__, finger_num);
-
+	TS_LOG_DEBUG("%s:finger_num down = %d\n", __func__, finger_num);
 	for (id = 0; id < finger_num; id++) {
 		if (finger->fingers[id].status & TS_FINGER_PRESS) {
 			current_fingers_status |= (unsigned int)BIT_MASK(id);
@@ -237,6 +359,129 @@ out:
 	return 0;
 }
 
+static void ts_report_pen_event(struct input_dev *input,
+	struct ts_tool tool, int pressure, int tool_type, int tool_value)
+{
+	input_report_abs(input, ABS_X, tool.x);
+	input_report_abs(input, ABS_Y, tool.y);
+	input_report_abs(input, ABS_PRESSURE, pressure);
+
+	/* check if the pen support tilt event */
+	if ((tool.tilt_x != 0) || (tool.tilt_y != 0)) {
+		input_report_abs(input, ABS_TILT_X, tool.tilt_x);
+		input_report_abs(input, ABS_TILT_Y, tool.tilt_y);
+	}
+
+	if ((tool.tool_type != WACOM_RUBBER_TO_PEN) &&
+		(tool.tool_type != WACOM_PEN_TO_RUBBER))
+		input_report_key(input, BTN_TOUCH, tool.tip_status);
+
+	input_report_key(input, tool_type, tool_value);
+	input_sync(input);
+}
+
+static long ts_ioctl_set_pens(unsigned long arg)
+{
+	struct ts_pens data;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_pens *pens = NULL;
+	struct input_dev *input = g_ts_kit_platform_data.pen_dev;
+	int key_value;
+	int id;
+
+	trace_touch(TOUCH_TRACE_ALGO_SET_EVENT, TOUCH_TRACE_FUNC_IN,
+		"with aft");
+
+	if (!input) {
+		TS_LOG_ERR("The command node or input device is not exist!\n");
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	if (copy_from_user(&data, argp, sizeof(*pens))) {
+		TS_LOG_ERR("%s: Failed to copy_from_user()\n", __func__);
+		return -EFAULT;
+	}
+	pens = &data;
+	trace_touch(TOUCH_TRACE_ALGO_SET_EVENT, TOUCH_TRACE_FUNC_OUT,
+		"with aft");
+
+	/*
+	 * If aft missed return event back
+	 * drop these event which before current time
+	 */
+	if (atomic_read(&pdata->aft_in_slow_status)) {
+		TS_LOG_INFO("aft_in_slow_statusted, daemon dont't report\n");
+		goto out;
+	}
+
+	trace_touch(TOUCH_TRACE_INPUT, TOUCH_TRACE_FUNC_IN, "with aft");
+
+	/* report pen basic single button */
+	for (id = 0; id < TS_MAX_PEN_BUTTON; id++) {
+		if (pens->buttons[id].status == 0)
+			continue;
+		else if (pens->buttons[id].status == TS_PEN_BUTTON_PRESS)
+			key_value = 1;
+		else
+			key_value = 0;
+
+		if (pens->buttons[id].key != 0) {
+			TS_LOG_ERR("type is %d, button is %d, value is %d\n",
+				id, pens->buttons[id].key, key_value);
+			input_report_key(input, pens->buttons[id].key,
+				key_value);
+		}
+	}
+
+	/*
+	 * report tool change hover -> leave -> in
+	 * when hover or leave, the pressure must be 0;
+	 * when hover, tool value will report 1, means inrange;
+	 * when leave, tool value will report 0, means outrange.
+	 */
+	if (pens->tool.tool_type == WACOM_RUBBER_TO_PEN) {
+		/* rubber hover */
+		ts_report_pen_event(input, pens->tool, 0, BTN_TOOL_RUBBER, 1);
+		/* rubber leave */
+		ts_report_pen_event(input, pens->tool, 0, BTN_TOOL_RUBBER, 0);
+		/* pen in */
+		pens->tool.tool_type = BTN_TOOL_PEN;
+	} else if (pens->tool.tool_type == WACOM_PEN_TO_RUBBER) {
+		/* pen hover */
+		ts_report_pen_event(input, pens->tool, 0, BTN_TOOL_PEN, 1);
+		/* pen leave */
+		ts_report_pen_event(input, pens->tool, 0, BTN_TOOL_PEN, 0);
+		/* rubber in */
+		pens->tool.tool_type = BTN_TOOL_RUBBER;
+	}
+	/* pen or rubber report point */
+	ts_report_pen_event(input, pens->tool, pens->tool.pressure,
+		pens->tool.tool_type,
+		pens->tool.pen_inrange_status);
+	TS_LOG_DEBUG("%s, pen_pressure=%d\n", __func__, pens->tool.pressure);
+#if defined(CONFIG_HUAWEI_DSM)
+	if (pdata->feature_info.pen_info.supported_pen_alg) {
+		if (ts_pen_open_confirm(pens) != 0) {
+			input_report_key(input, TS_STYLUS_WAKEUP_SCREEN_ON, 1);
+			input_sync(input);
+			input_report_key(input, TS_STYLUS_WAKEUP_SCREEN_ON, 0);
+			input_sync(input);
+			TS_LOG_INFO("%s: report TS_STYLUS_WAKEUP_SCREEN_ON\n",
+				__func__);
+		}
+	}
+#endif
+	atomic_set(&pdata->last_aft_filtered_pen_pressure, pens->tool.pressure);
+	trace_touch(TOUCH_TRACE_PEN_REPORT, TOUCH_TRACE_FUNC_OUT, "report pen");
+out:
+	atomic_set(&pdata->aft_in_slow_status, 0);
+	return 0;
+}
+
 static void dump_diff_data_debug(void)
 {
 	int i = 0;
@@ -269,7 +514,8 @@ int copy_fingers_to_aft_daemon(struct ts_kit_platform_data *pdata,
 			"with aft");
 		memcpy(&pdata->fingers_send_aft_info, fingers,
 			sizeof(struct ts_fingers));
-		dump_fingers_info_debug(fingers->fingers);
+		dump_fingers_info_debug(fingers->fingers,
+			g_ts_kit_platform_data.max_fingers);
 		/* clear slow status if daemon not busy */
 		atomic_set(&pdata->aft_in_slow_status, 0);
 		atomic_set(&pdata->fingers_waitq_flag, AFT_WAITQ_WAKEUP);
@@ -286,26 +532,35 @@ int copy_fingers_to_aft_daemon(struct ts_kit_platform_data *pdata,
 		}
 		return 0;
 	} else if (atomic_read(&pdata->fingers_waitq_flag) != AFT_WAITQ_IDLE) {
+		/*
+		 * when aft in slow status
+		 * we set the flag aft_in_slow_status as soon as possible
+		 * That will reduce the conflict probability of
+		 * daemon report touch and driver report touch
+		 */
+		if (pdata->use_aft_slow_status)
+			atomic_set(&pdata->aft_in_slow_status, 1);
 		up(&pdata->fingers_aft_send);
-		TS_LOG_DEBUG("[MUTI_AFT] ts_algo_calibrate hal aglo process too slow\n");
+		TS_LOG_DEBUG(
+			"[MUTI_AFT] ts_algo_calibrate hal aglo process too slow\n");
 		aft_filtered_fingers = atomic_read(
 					&pdata->last_aft_filtered_fingers);
 		for (id = 0; id < pdata->max_fingers; id++) {
 			if ((fingers->fingers[id].status & TS_FINGER_PRESS)) {
 				 /* update input event from chip report */
 				input_flag |= (1U << id);
-				if (aft_filtered_fingers & (1U << id)) {
+				if (aft_filtered_fingers & (1U << id))
 					/* release last filtered finger */
 					fingers->fingers[id].status =
 						TS_FINGER_RELEASE;
-				}
 			}
 		}
 		aft_filtered_fingers &= input_flag;
 		atomic_set(&pdata->last_input_fingers_status, input_flag);
 		atomic_set(&pdata->last_aft_filtered_fingers,
 			aft_filtered_fingers);
-		atomic_set(&pdata->aft_in_slow_status, 1);
+		if (!pdata->use_aft_slow_status)
+			atomic_set(&pdata->aft_in_slow_status, 1);
 		TS_LOG_DEBUG("aft_filtered_fingers=%x, input_flag=%x\n",
 			aft_filtered_fingers, input_flag);
 	} else {
@@ -313,6 +568,103 @@ int copy_fingers_to_aft_daemon(struct ts_kit_platform_data *pdata,
 	}
 
 	return -EINVAL;
+}
+
+int copy_finger_pen_to_aft_daemon(struct ts_kit_platform_data *pdata,
+	struct ts_finger_pen_info *finger_pen)
+{
+	u32 id;
+	unsigned short aft_filtered_fingers;
+	unsigned short input_flag = 0;
+	u32 finger_pen_flag = 0;
+
+	if (pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE) {
+		TS_LOG_DEBUG("%s:aft_pen not enable\n", __func__);
+		return -EINVAL;
+	}
+	if (atomic_read(&pdata->finger_pen_waitq_flag) == AFT_WAITQ_WAIT) {
+		trace_touch(TOUCH_TRACE_DATA2ALGO, TOUCH_TRACE_FUNC_IN,
+			"with aft");
+		memcpy(&pdata->finger_pen_send_aft_info, finger_pen,
+			sizeof(pdata->finger_pen_send_aft_info));
+		finger_pen_flag =
+			pdata->finger_pen_send_aft_info.finger_pen_flag;
+		if (finger_pen_flag == TS_ONLY_FINGER ||
+			(finger_pen_flag == TS_FINGER_PEN))
+			dump_fingers_info_debug(
+				(struct ts_finger *)&(finger_pen->report_finger_info),
+				g_ts_kit_platform_data.max_fingers);
+		/* clear slow status if daemon not busy */
+		atomic_set(&pdata->aft_in_slow_status, 0);
+		atomic_set(&pdata->finger_pen_waitq_flag, AFT_WAITQ_WAKEUP);
+		up(&pdata->finger_pen_aft_send);
+		trace_touch(TOUCH_TRACE_DATA2ALGO, TOUCH_TRACE_FUNC_OUT,
+			"with aft");
+		ts_work_after_input(); /* read roi data for some ic */
+		TS_LOG_DEBUG("%s:copy to daemon buffer done\n", __func__);
+		if (pdata->chip_data->diff_data_report_supported) {
+			atomic_set(&(pdata->diff_data_status),
+				DIFF_DATA_WAKEUP);
+			up(&(pdata->diff_data_report_flag));
+			dump_diff_data_debug();
+		}
+		return 0;
+	} else if (atomic_read(&pdata->finger_pen_waitq_flag) !=
+		AFT_WAITQ_IDLE) {
+		up(&pdata->finger_pen_aft_send);
+		TS_LOG_DEBUG(
+			"[MUTI_AFT] ts_algo_calibrate hal aglo process too slow\n");
+		if (finger_pen_flag == TS_ONLY_FINGER ||
+			(finger_pen_flag == TS_FINGER_PEN)) {
+			aft_filtered_fingers = atomic_read(
+					&pdata->last_aft_filtered_fingers);
+			for (id = 0; id < TS_MAX_FINGER; id++) {
+				if ((finger_pen->report_finger_info.fingers[id].status & TS_FINGER_PRESS)) {
+					/* update input event from chip report */
+					input_flag |= (1 << id);
+					if (aft_filtered_fingers & (1 << id))
+						/* release last filtered finger */
+						finger_pen->report_finger_info.fingers[id].status =
+							TS_FINGER_RELEASE;
+				}
+			}
+			aft_filtered_fingers &= input_flag;
+			atomic_set(&pdata->last_input_fingers_status,
+				input_flag);
+			atomic_set(&pdata->last_aft_filtered_fingers,
+				aft_filtered_fingers);
+			TS_LOG_DEBUG("aft_filtered_fingers=%x, input_flag=%x\n",
+			aft_filtered_fingers, input_flag);
+			if (finger_pen_flag == TS_FINGER_PEN)
+				finger_pen->report_pen_info.tool.pressure =
+					atomic_read(&pdata->last_aft_filtered_pen_pressure);
+		} else {
+			finger_pen->report_pen_info.tool.pressure =
+				atomic_read(&pdata->last_aft_filtered_pen_pressure);
+			TS_LOG_DEBUG("last_aft_filtered_pen_pressure:%d\n",
+				finger_pen->report_pen_info.tool.pressure);
+		}
+		atomic_set(&pdata->aft_in_slow_status, 1);
+	} else {
+		TS_LOG_DEBUG("[MUTI_AFT] ts_finger_pen_algo_calibrate no wait\n");
+	}
+
+	return -EINVAL;
+}
+
+void copy_stylus3_shift_freq_to_aft_daemon(
+	struct shift_freq_info *shift_freq_info)
+{
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support stylus3");
+		return;
+	}
+	memcpy(&pdata->stylus3_shift_freq_info, shift_freq_info,
+		sizeof(pdata->stylus3_shift_freq_info));
+	up(&pdata->stylus3_shift_freq_flag);
 }
 
 static int aft_get_info_misc_open(struct inode *inode, struct file *filp)
@@ -328,8 +680,8 @@ static int aft_get_info_misc_release(struct inode *inode, struct file *filp)
 
 static int ts_ioctl_get_diff_data_info(unsigned long arg)
 {
-	int ret = 0;
-	void __user *argp = (void __user *)arg;
+	int ret;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	if (arg == 0) {
@@ -360,8 +712,9 @@ static int ts_ioctl_get_diff_data_info(unsigned long arg)
 				DIFF_DATA_WAKEUP) {
 			if (copy_to_user(argp, dev->diff_data,
 					dev->diff_data_len)) {
-				TS_LOG_ERR("%s:[DIFF_DATA]Failed to copy_to_user()\n",
-						__func__);
+				TS_LOG_ERR(
+					"%s:[DIFF_DATA]Failed to copy_to_user()\n",
+					__func__);
 				return -EFAULT;
 			}
 			TS_LOG_DEBUG("%s:[DIFF_DATA] success\n", __func__);
@@ -376,10 +729,41 @@ static int ts_ioctl_get_diff_data_info(unsigned long arg)
 	return 0;
 }
 
-static long aft_get_info_misc_ioctl(struct file *filp,
-		unsigned int cmd, unsigned long arg)
+static int ts_ioctl_get_stylus3_type(unsigned long arg)
 {
-	long ret;
+	int ret = NO_ERR;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support 3.x protocol\n");
+		return -EINVAL;
+	}
+	if (!pdata->chip_data->send_stylus_type_to_fw) {
+		TS_LOG_ERR("%s: unsupported send stylus type to fw\n",
+			__func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("%s: arg == 0\n", __func__);
+		return -EINVAL;
+	}
+	if (copy_to_user(argp, &pdata->current_stylus3_type_info,
+		sizeof(pdata->current_stylus3_type_info))) {
+		TS_LOG_ERR("%s: copy stylus type info to user failed\n",
+			__func__);
+		return -EFAULT;
+	}
+
+	return ret;
+}
+
+static long aft_get_info_misc_ioctl(struct file *filp,
+	unsigned int cmd, unsigned long arg)
+{
+	long ret = -EINVAL;
 
 	switch (cmd) {
 	case INPUT_AFT_IOCTL_CMD_GET_TS_FINGERS_INFO:
@@ -395,6 +779,25 @@ static long aft_get_info_misc_ioctl(struct file *filp,
 		break;
 	case INPUT_AFT_IOCTL_CMD_GET_DIFF_DATA_INFO:
 		ret = ts_ioctl_get_diff_data_info(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_GET_TS_FINGER_PEN_INFO:
+		ret = ts_ioctl_get_finger_pen_info(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_GET_STYLUS3_CONNECT_STATUS:
+		if ((g_ts_kit_platform_data.pen_aft_enable_flag ==
+			SUPPORT_PEN_AFT) &&
+			(g_ts_kit_platform_data.aft_param.aft_enable_flag ==
+			TS_PEN_AFT_ENABLE))
+			ret = ts_ioctl_get_stylus3_connect_status(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_GET_CALLBACK_EVENTS:
+		ret = ts_ioctl_get_callback_events(arg);
+		break;
+	case IOCTL_CMD_READ_STYLUS3_SHIFT_FREQ_INFO:
+		ret = ts_ioctl_get_stylus3_shift_freq_info(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_GET_BTPEN_TYPE_TO_TPIC:
+		ret = ts_ioctl_get_stylus3_type(arg);
 		break;
 	default:
 		TS_LOG_ERR("cmd unknown.%x\n", (cmd));
@@ -429,7 +832,7 @@ static int aft_set_info_misc_release(struct inode *inode, struct file *filp)
 
 int ts_send_sensibility_cmd(unsigned int sensibility_cfg)
 {
-	int error = NO_ERR;
+	int error;
 	struct ts_cmd_node cmd;
 
 	TS_LOG_DEBUG("%s:in\n", __func__);
@@ -454,7 +857,7 @@ out:
 static int ts_ioctl_set_sensibility_cfg(unsigned long arg)
 {
 	int ret;
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	unsigned int sensibility_cfg = 0;
 
 	if (arg == 0) {
@@ -503,7 +906,7 @@ static void ts_report_keyevent(unsigned int key_value)
 }
 static int ts_ioctl_set_key_value(unsigned long arg)
 {
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	unsigned int key_value;
 
 	if (arg == 0) {
@@ -522,7 +925,7 @@ static int ts_ioctl_set_key_value(unsigned long arg)
 
 static int ts_ioctl_set_double_click(unsigned long arg)
 {
-	void __user *argp = (void __user *)arg;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	struct double_click_data data;
 	struct ts_easy_wakeup_info *easy_wakeup_info = NULL;
 
@@ -540,8 +943,8 @@ static int ts_ioctl_set_double_click(unsigned long arg)
 	}
 	TS_LOG_INFO("%s:key_code = %d\n", __func__, data.key_code);
 	easy_wakeup_info = &g_ts_kit_platform_data.chip_data->easy_wakeup_info;
-	easy_wakeup_info->easywake_position[0] = (data.x_position << 16) |
-						data.y_position;
+	easy_wakeup_info->easywake_position[0] =
+		(data.x_position << EASYWAKE_POSITION_SHIFT) | data.y_position;
 	ts_report_keyevent(data.key_code);
 	return 0;
 }
@@ -600,10 +1003,231 @@ static int ts_ioctl_set_tp_ic_command(unsigned long arg)
 	return 0;
 }
 
-static long aft_set_info_misc_ioctl(struct file *filp,
-		unsigned int cmd, unsigned long arg)
+static int ts_ioctl_set_stylus3_connect_status(unsigned long arg)
 {
-	long ret;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	unsigned int stylus3_status;
+
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&stylus3_status, argp, sizeof(stylus3_status))) {
+		TS_LOG_ERR("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	TS_LOG_INFO("%s:stylus3_status = %u\n", __func__, stylus3_status);
+	atomic_set(&g_ts_kit_platform_data.current_stylus3_status,
+		stylus3_status);
+	up(&g_ts_kit_platform_data.stylus3_status_flag);
+	if (dev->send_bt_status_to_fw) {
+		if (ops->chip_stylus3_connect_state)
+			ops->chip_stylus3_connect_state(stylus3_status);
+	}
+	return 0;
+}
+
+void ts_update_stylu3_shif_freq_flag(unsigned int status, bool set_flag)
+{
+	unsigned int last_status;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support stylus3");
+		return;
+	}
+
+	last_status = atomic_read(&(pdata->current_stylus3_status));
+	if (set_flag)
+		last_status |= status;
+	else
+		last_status &= ~status;
+
+	TS_LOG_INFO("%s, last_status=%x\n", __func__, last_status);
+	atomic_set(&(pdata->current_stylus3_status), last_status);
+	up(&(pdata->stylus3_status_flag));
+}
+
+static int set_stylus3_change_protocol(unsigned long arg)
+{
+	unsigned int stylus_status;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if (arg == 0) {
+		TS_LOG_ERR("do not change\n");
+		return -EINVAL;
+	}
+	if (copy_from_user(&stylus_status, argp, sizeof(stylus_status))) {
+		TS_LOG_ERR("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	/* bt close,do not need handle */
+	if (stylus_status == 0) {
+		TS_LOG_ERR("do not change pen protocol\n");
+		return NO_ERR;
+	}
+	/* change pen protocol to 2.2 */
+	g_ts_kit_platform_data.stylus3_callback_event.event_class =
+	SUPPORT_PEN_PROTOCOL_CLASS;
+	g_ts_kit_platform_data.stylus3_callback_event.event_code =
+	SUPPORT_PEN_PROTOCOL_CODE;
+	TS_LOG_INFO("%s: to pen\n", __func__);
+	atomic_set(&pdata->callback_event_flag, true);
+	up(&(pdata->stylus3_callback_flag));
+	return NO_ERR;
+}
+
+static int ts_ioctl_set_callback_events(unsigned long arg)
+{
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support stylus3");
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+	if (atomic_read(&pdata->callback_event_flag) != false) {
+		TS_LOG_ERR("%s, ret=%d,callback event not handle, need retry\n",
+			__func__, EBUSY);
+		return -EBUSY;
+	}
+	if (copy_from_user(&g_ts_kit_platform_data.stylus3_callback_event,
+		argp, sizeof(g_ts_kit_platform_data.stylus3_callback_event))) {
+		TS_LOG_ERR("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	TS_LOG_INFO("%s, eventClass=%d, eventCode=%d, extraInfo=%s\n", __func__,
+		g_ts_kit_platform_data.stylus3_callback_event.event_class,
+		g_ts_kit_platform_data.stylus3_callback_event.event_code,
+		g_ts_kit_platform_data.stylus3_callback_event.extra_info);
+	atomic_set(&pdata->callback_event_flag, true);
+	up(&g_ts_kit_platform_data.stylus3_callback_flag);
+	TS_LOG_INFO("%s, wake up callback_event\n", __func__);
+	return 0;
+}
+
+static int ts_ioctl_set_stylus3_ack_freq(unsigned long arg)
+{
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+	int ret;
+
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support stylus3\n");
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("arg == 0\n");
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&g_ts_kit_platform_data.ack_freq,
+		argp, sizeof(g_ts_kit_platform_data.ack_freq))) {
+		TS_LOG_ERR("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	TS_LOG_INFO("%s daemon set ack ok\n", __func__);
+	if (ops->chip_write_hop_ack) {
+		ret = ops->chip_write_hop_ack();
+		return ret;
+	}
+	return 0;
+}
+
+static int ts_ioctl_set_stylus3_type(unsigned long arg)
+{
+	int ret = NO_ERR;
+	u32 stylus3_type_info;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support 3.x protocol\n");
+		return -EINVAL;
+	}
+	if (!pdata->chip_data->send_stylus_type_to_fw) {
+		TS_LOG_ERR("%s: unsupported send stylus type to fw\n",
+			__func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("%s: arg == 0\n", __func__);
+		return -EINVAL;
+	}
+	if (copy_from_user(&stylus3_type_info, argp,
+		sizeof(stylus3_type_info))) {
+		TS_LOG_ERR("%s: copy stylus type info from user failed\n",
+			__func__);
+		return -EFAULT;
+	}
+	pdata->current_stylus3_type_info = stylus3_type_info;
+	TS_LOG_INFO("%s: current_stylus3_type_info = 0x%x\n", __func__,
+		pdata->current_stylus3_type_info);
+	if (ops->chip_stylus3_type_info_handle) {
+		if (ops->chip_stylus3_type_info_handle(pdata->current_stylus3_type_info)) {
+			TS_LOG_ERR("%s: send stylus type info to ic failed\n",
+				__func__);
+			return -EFAULT;
+		}
+	}
+
+	return ret;
+}
+
+static int ts_ioctl_set_stylus3_plam_suppression(unsigned long arg)
+{
+	int ret = NO_ERR;
+	unsigned int suppression_type;
+	void __user *argp = (void __user *)(uintptr_t)arg;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if ((pdata->pen_aft_enable_flag != SUPPORT_PEN_AFT) ||
+		(pdata->aft_param.aft_enable_flag != TS_PEN_AFT_ENABLE)) {
+		TS_LOG_ERR("not support 3.x protocol\n");
+		return -EINVAL;
+	}
+	if (!pdata->chip_data->support_stylus3_plam_suppression) {
+		TS_LOG_ERR("%s: unsupported stylus3 plam suppression\n",
+			__func__);
+		return -EINVAL;
+	}
+	if (arg == 0) {
+		TS_LOG_ERR("%s: arg == 0\n", __func__);
+		return -EINVAL;
+	}
+	if (copy_from_user(&suppression_type, argp, sizeof(suppression_type))) {
+		TS_LOG_ERR("%s: copy stylus3 type info from user failed\n",
+			__func__);
+		return -EFAULT;
+	}
+	if (ops->chip_send_supression_cmd_to_fw)
+		ops->chip_send_supression_cmd_to_fw(suppression_type);
+	TS_LOG_INFO("%s: over\n", __func__);
+
+	return ret;
+}
+
+static long aft_set_info_misc_ioctl(struct file *filp,
+	unsigned int cmd, unsigned long arg)
+{
+	long ret = -EINVAL;
 
 	switch (cmd) {
 	case INPUT_AFT_IOCTL_CMD_SET_COORDINATES:
@@ -626,9 +1250,34 @@ static long aft_set_info_misc_ioctl(struct file *filp,
 	case INPUT_IOCTL_CMD_SET_TP_IC_COMMAND:
 		ret = ts_ioctl_set_tp_ic_command(arg);
 		break;
+	case INPUT_AFT_IOCTL_CMD_SET_PENS:
+		ret = ts_ioctl_set_pens(arg);
+		break;
+	case INPUT_AFT_IOCTRL_CMD_SET_STYLUS3_CONNECT_STATUS:
+		if (g_ts_kit_platform_data.feature_info.pen_info.pen_change_protocol ==
+			SUPPORT_CHANGE_PEN_PROTOCOL) {
+			return set_stylus3_change_protocol(arg);
+		}
+		if ((g_ts_kit_platform_data.pen_aft_enable_flag ==
+			SUPPORT_PEN_AFT) &&
+			(g_ts_kit_platform_data.aft_param.aft_enable_flag ==
+			TS_PEN_AFT_ENABLE))
+			ret = ts_ioctl_set_stylus3_connect_status(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_SET_CALLBACK_EVENTS:
+		ret = ts_ioctl_set_callback_events(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_SET_STYLUS3_ACK_FREQ:
+		ret = ts_ioctl_set_stylus3_ack_freq(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_SET_BTPEN_TYPE_TO_TPIC:
+		ret = ts_ioctl_set_stylus3_type(arg);
+		break;
+	case INPUT_AFT_IOCTL_CMD_SET_STYLUS3_PLAM_SUPPRESSION_STATUS:
+		ret = ts_ioctl_set_stylus3_plam_suppression(arg);
+		break;
 	default:
 		TS_LOG_ERR("cmd unknown: %x\n", cmd);
-		ret = -EINVAL;
 	}
 	return ret;
 }
@@ -649,10 +1298,35 @@ static struct miscdevice g_aft_set_info_misc_device = {
 int ts_kit_misc_init(struct ts_kit_platform_data *pdata)
 {
 	int error;
+	char set_node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
+	char get_node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
 
 	if (!pdata->aft_param.aft_enable_flag) {
 		TS_LOG_INFO("%s: aft not enable\n", __func__);
 		return 0;
+	}
+	if (pdata->multi_panel_index != SINGLE_TOUCH_PANEL) {
+		error = snprintf(get_node_name, MULTI_PANEL_NODE_BUF_LEN,
+			"%s%d", DEVICE_AFT_GET_INFO,
+			g_ts_kit_platform_data.multi_panel_index);
+		if (error < 0) {
+			TS_LOG_ERR("%s: snprintf err\n", __func__);
+			return -EINVAL;
+		}
+		g_aft_get_info_misc_device.name = (const char *)get_node_name;
+		TS_LOG_INFO("%s: aft get info name = %s\n", __func__,
+			g_aft_get_info_misc_device.name);
+
+		error = snprintf(set_node_name, MULTI_PANEL_NODE_BUF_LEN,
+			"%s%d", DEVICE_AFT_SET_INFO,
+			g_ts_kit_platform_data.multi_panel_index);
+		if (error < 0) {
+			TS_LOG_ERR("%s: snprintf err\n", __func__);
+			return -EINVAL;
+		}
+		g_aft_set_info_misc_device.name = (const char *)set_node_name;
+		TS_LOG_INFO("%s: aft set info name = %s\n", __func__,
+			g_aft_set_info_misc_device.name);
 	}
 
 	error = misc_register(&g_aft_get_info_misc_device);
@@ -672,8 +1346,29 @@ int ts_kit_misc_init(struct ts_kit_platform_data *pdata)
 	sema_init(&pdata->diff_data_report_flag, 0);
 	atomic_set(&pdata->diff_data_status, DIFF_DATA_IDLE);
 	atomic_set(&pdata->aft_in_slow_status, 0);
-	atomic_set(&g_ts_kit_platform_data.last_input_fingers_status, 0);
-	atomic_set(&g_ts_kit_platform_data.last_aft_filtered_fingers, 0);
+	atomic_set(&pdata->last_input_fingers_status, 0);
+	atomic_set(&pdata->last_aft_filtered_fingers, 0);
+	if ((pdata->pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+		(pdata->aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE)) {
+		sema_init(&pdata->finger_pen_aft_send, 0);
+		atomic_set(&pdata->finger_pen_waitq_flag, AFT_WAITQ_IDLE);
+		atomic_set(&pdata->last_aft_filtered_pen_pressure, 0);
+		sema_init(&pdata->stylus3_status_flag, STATUS_FLAG_INIT_VALUE);
+		atomic_set(&pdata->current_stylus3_status, 0);
+		sema_init(&pdata->stylus3_shift_freq_flag,
+			STATUS_FLAG_INIT_VALUE);
+		sema_init(&pdata->stylus3_callback_flag,
+			STATUS_FLAG_INIT_VALUE);
+		sema_init(&pdata->stylus3_ack_freq_flag,
+			STATUS_FLAG_INIT_VALUE);
+		atomic_set(&pdata->callback_event_flag, false);
+	}
+	if (pdata->feature_info.pen_info.pen_change_protocol ==
+		SUPPORT_CHANGE_PEN_PROTOCOL) {
+		atomic_set(&pdata->callback_event_flag, false);
+		sema_init(&pdata->stylus3_callback_flag,
+		STATUS_FLAG_INIT_VALUE);
+	}
 	return error;
 }
 

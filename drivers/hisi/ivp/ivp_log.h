@@ -1,7 +1,20 @@
+/*
+ * This file is IVP log related operations.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _IVP_LOG_H_
 #define _IVP_LOG_H_
 
-#define LOG_TAG "HISI_IVP"
+#define LOG_TAG "IVP_LOG"
 #define PRINT_DEBUG 0
 #define PRINT_INFO  1
 #define PRINT_WARN  1

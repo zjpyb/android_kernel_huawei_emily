@@ -1,41 +1,65 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: Ai predict head file.
+ * Author: liubinjun@huawei.com
+ * Create: 2018-05-15
+ */
 
+#ifndef _AI_PREDICT_H
+#define _AI_PREDICT_H
 
-#ifndef ai_predict__h
-#define ai_predict__h
+/* type definition for platform migration */
+#define TRUE 1
+#define FALSE 0
 
-//type definition for platform migration.
-#define AI_DOUBLE      long
-#define AI_INT         int
-#define TRUE    1
-#define FALSE   0
+/* features numbers in train data sets */
+#define FEATURE_NUM 10
 
-#define FEATURE_NUM  10    //features numbers in train data sets.
-#define ADA_SUB_CLFS_NUM      300
+#define ADA_SUB_CLFS_NUM 300
+#define QUADRUPLES 4
 
-/*use for float to int  transformation process.
-attation:need avoid overflow. int is 32bit(4 billion) in Hisi.*/
-#define FLOAT_TO_INT_ENLARGE_10E3   1000         //for 'threshold' param.  [0,65535]
-#define FLOAT_TO_INT_ENLARGE_10E6   1000000      //for 'weight' param.  maybe a float number.
+enum pp_para_index_enum {
+	PP_INDEX_0 = 0,
+	PP_INDEX_1 = 1,
+	PP_INDEX_2 = 2,
+	PP_INDEX_3 = 3,
 
-/* The ClassifierInfo structure using int expression. */
+	PP_INDEX_BUFF
+};
+
+/*
+ * use for float to int  transformation process
+ * attation: need avoid overflow. int is 32bit(4 billion) in Hisi
+ */
+/* for 'threshold' param. [0,65535] */
+#define FLOAT_TO_INT_ENLARGE_10E3 1000
+/* for 'weight' param. maybe a float number */
+#define FLOAT_TO_INT_ENLARGE_10E6 1000000
+
+/* The ClassifierInfo structure using int expression */
 typedef struct classifier_info_int_exp {
-	AI_INT     (*pp_param)[4];
-	AI_INT     sub_clfs_num;        //sub-clfs number.
+	int (*pp_param)[QUADRUPLES];
+	int sub_clfs_num; /* sub-clfs number */
 } classifier_info_int_exp_type;
 
 /* The ClassifierInfo structure: */
 typedef struct judge_rlt_info_int_calc {
-	AI_INT     is_ps_slow;     //if it's a ps slow yes or not.  when TRUE, it's a psSlow. when FALSE, it's a psNormal.
-	AI_INT     final_clf_value;//the total judge value. Generally, when > 0, regard as a ps slow.
+	/*
+	 * if it's a ps slow yes or not
+	 * when TRUE, it's a psSlow. when FALSE, it's a psNormal
+	 */
+	int is_ps_slow;
+	/* the total judge value. Generally, when > 0, regard as a ps slow */
+	int final_clf_value;
 
-	AI_DOUBLE  ps_slow_proba;  //the probability if if it's a ps slow.
-	AI_DOUBLE  ps_norm_proba;  //the probability if if it's a ps normal.
-	AI_INT     vote_positvie;  //the sub-clfs numbers that vote as ps slow.
-	AI_INT     vote_negative;  //the sub-clfs numbers that vote as ps normal.
+	long ps_slow_proba; /* the probability if if it's a ps slow */
+	long ps_norm_proba; /* the probability if if it's a ps normal */
+	int vote_positvie; /* the sub-clfs numbers vote as ps slow */
+	int vote_negative; /* the sub-clfs numbers vote as ps normal */
 } judge_rlt_info_int_calc_type;
 
-/* Returns the AI(algorithm module) judgement result with Adaboost Algorithm. */
-judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(classifier_info_int_exp_type clf_info, AI_INT x_smp[], AI_INT app_qoe_level);
-
+/* Returns the AI(algorithm module) judgement result with Adaboost Algorithm */
+judge_rlt_info_int_calc_type judge_single_smp_using_clf_info_int_exp(
+	classifier_info_int_exp_type clf_info, const int x_smp[], int app_qoe_level);
 
 #endif

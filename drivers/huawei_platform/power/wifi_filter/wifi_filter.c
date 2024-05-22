@@ -4,7 +4,6 @@
 /*****************************************************************************
   1 头文件包含
 *****************************************************************************/
-//#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
@@ -27,6 +26,9 @@
 #include <huawei_platform/connectivity/hw_connectivity.h>
 #include <linux/fb.h>
 
+#include <linux/time.h>
+#include <linux/timex.h>
+#include <linux/rtc.h>
 /******************************************************************************
    2 宏定义
 ******************************************************************************/
@@ -80,6 +82,9 @@ ipt_get_target_c(const struct ipt_entry *e)
 {
     return ipt_get_target((struct ipt_entry *)e);
 }
+
+static bool add_to_screenoff_table(hw_wifi_filter_item *pItem);
+
 /******************************************************************************
    4 私有定义
 ******************************************************************************/
@@ -88,8 +93,10 @@ enum WakeCondition{
     WAKE_ADD,
     WAKE_SCRN_ON,
     WAKE_SCRN_OFF,
-    WAKE_CLR_DOZE,
-    WAKE_ENTER_DOZE
+    WAKE_EXIT_DOZE,
+    WAKE_ENTER_DOZE,
+    WAKE_EXIT_NIGHT,
+    WAKE_ENTER_NIGHT
 };
 enum FilterType{
     TYPE_HEAD = 0,
@@ -116,6 +123,8 @@ typedef struct {
 }wifi_filter_item_info;
 
 static wifi_filter_item_info g_item_info;
+struct timer_list mytimer;
+static bool bIsNight = false;
 /******************************************************************************
    5 全局变量定义
 ******************************************************************************/
@@ -123,13 +132,33 @@ static wifi_filter_item_info g_item_info;
 /******************************************************************************
    6 函数实现
 ******************************************************************************/
+static void timer_callback(unsigned long data)
+{
+    switch (data) {
+        case 0:
+            mytimer.data = 1;//1:now is day,0:now is night
+            mytimer.expires = jiffies + 18*60*60*HZ;//18 hours before 24:0:0
+            wake_up_condition = WAKE_EXIT_NIGHT;
+            break;
+        case 1:
+            mytimer.data = 0;
+            mytimer.expires = jiffies + 6*60*60*HZ;//6 hours before 06:0:0
+            wake_up_condition = WAKE_ENTER_NIGHT;
+            break;
+        default:
+            break;
+    }
+    add_timer(&mytimer);
+    wake_up_interruptible(&mythread_wq);
+}
+
 /*
  * get screen state
  */
 static int wifi_filter_fb_notifier_cb(struct notifier_block *self,
     unsigned long event, void *data)
 {
-    struct fb_event *fb_event;
+    struct fb_event *fb_event = NULL;
     int *blank = NULL;
 
     if (!bIsSupportWifiFilter) {
@@ -182,6 +211,9 @@ static void unreg_fb_notification(void)
 
 int hw_register_wlan_filter(struct hw_wlan_filter_ops *ops)
 {
+    int interval;
+    struct timex txc;
+    struct rtc_time tm;
     if ( NULL == ops ) {
         return -1;
     }
@@ -211,6 +243,26 @@ int hw_register_wlan_filter(struct hw_wlan_filter_ops *ops)
     }
     spin_unlock_bh(&g_item_info.item_lock);
     bIsSupportWifiFilter = true;
+
+    mytimer.function = timer_callback;
+    do_gettimeofday(&(txc.time));
+	if ( sys_tz.tz_minuteswest == 0 )
+		txc.time.tv_sec -= -8*60*60;
+    rtc_time_to_tm(txc.time.tv_sec,&tm);
+    FILTER_LOGI("local time is %04d-%02d-%02d %02d:%02d:%02d",
+        tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,tm.tm_hour,tm.tm_min,tm.tm_sec);
+    if(0<=tm.tm_hour&&tm.tm_hour<6) {
+        mytimer.data = 0;
+		bIsNight = true;
+        interval = 6*60*60-(tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec);
+    } else {
+        mytimer.data = 1;
+		bIsNight = false;
+        interval = 24*60*60-(tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec);
+    }
+    FILTER_LOGE("interval is %d s",interval);
+    mytimer.expires = jiffies + interval*HZ;
+    add_timer(&mytimer);
     return 0;
 }
 EXPORT_SYMBOL(hw_register_wlan_filter);
@@ -222,6 +274,8 @@ int hw_unregister_wlan_filter()
     gWlanFilterOps.get_filter_pkg_stat  = NULL;
     gWlanFilterOps.set_filter_enable    = NULL;
     gWlanFilterOps.set_filter_enable_ex = NULL;
+    del_timer_sync(&mytimer);
+    FILTER_LOGI("hw_unregister_wlan_filter");
     spin_lock_bh(&g_item_info.item_lock);
     if (g_item_info.p_items_data != NULL) {
         kfree(g_item_info.p_items_data);
@@ -233,29 +287,9 @@ int hw_unregister_wlan_filter()
 }
 EXPORT_SYMBOL(hw_unregister_wlan_filter);
 
-static bool is_in_items_array(hw_wifi_filter_item *item)
-{
-    int i;
-
-    if (g_item_info.p_items_data == NULL) {
-        return false;
-    }
-    FILTER_LOGD("scrnoff_items_cnt=%d,doze_items_cnt=%d",
-        g_item_info.scrnoff_item_cnt,g_item_info.doze_item_cnt);
-    for(i = 0; i < (g_item_info.scrnoff_item_cnt+ g_item_info.doze_item_cnt); i++)
-    {
-        g_item_info.p_items_data[i].filter_cnt = 1;
-        if (item->port == g_item_info.p_items_data[i].port)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 void get_wifi_filter_info(struct sk_buff *skb, hw_wifi_filter_item *pItem)
 {
-    const struct iphdr *ip;
+    const struct iphdr *ip = NULL;
 
     if (NULL == skb) {
         FILTER_LOGE("skb is null");
@@ -272,12 +306,12 @@ void get_wifi_filter_info(struct sk_buff *skb, hw_wifi_filter_item *pItem)
     }
 
     if (ip->protocol == IPPROTO_TCP) {
-        FILTER_LOGD("tcp dest=%d, source=%d",  ntohs(tcp_hdr(skb)->dest),ntohs(tcp_hdr(skb)->source));
+		FILTER_LOGI("tcp dest=%d, source=%d",  ntohs(tcp_hdr(skb)->dest),ntohs(tcp_hdr(skb)->source));
         pItem->port = tcp_hdr(skb)->dest;
         pItem->protocol = IPPROTO_TCP;
         pItem->filter_cnt = 0;
     } else if (ip->protocol == IPPROTO_UDP) {
-        FILTER_LOGD("udp dest=%d,source=%d", ntohs(udp_hdr(skb)->dest), ntohs(udp_hdr(skb)->source));
+		FILTER_LOGI("udp dest=%d,source=%d", ntohs(udp_hdr(skb)->dest), ntohs(udp_hdr(skb)->source));
         pItem->port = udp_hdr(skb)->dest;
         pItem->protocol = IPPROTO_UDP;
         pItem->filter_cnt = 0;
@@ -287,38 +321,47 @@ void get_wifi_filter_info(struct sk_buff *skb, hw_wifi_filter_item *pItem)
     }
 }
 
-static bool add_to_screenoff_table(struct sk_buff *skb)
+static bool handle_screenoff_info(struct sk_buff *skb)
 {
-    hw_wifi_filter_item item;
+	hw_wifi_filter_item item;
+	bool ret = false;
 
-    if (g_item_info.p_items_data == NULL) {
-        return false;
-    }
-    memset(&item, 0, sizeof(hw_wifi_filter_item));
+	memset(&item, 0, sizeof(hw_wifi_filter_item));
+	get_wifi_filter_info(skb, &item);
+	ret = add_to_screenoff_table(&item);
 
-    get_wifi_filter_info(skb, &item);
-
-    if (is_in_items_array(&item)) {
-        FILTER_LOGD("port %d has exist",ntohs(item.port));
-        return false;
-    }
-    FILTER_LOGD("scrnoff_index=%d",g_item_info.scrnoff_index);
-
-    memcpy(&g_item_info.p_items_data[g_item_info.scrnoff_index++],
-        &item,sizeof(hw_wifi_filter_item));
-
-    if (g_item_info.scrnoff_index < ITEM_SCREENOFF_MAX) {
-        if (g_item_info.scrnoff_item_cnt < ITEM_SCREENOFF_MAX) {
-            g_item_info.scrnoff_item_cnt = g_item_info.scrnoff_index;
-        }
-    } else {
-        g_item_info.scrnoff_item_cnt = ITEM_SCREENOFF_MAX;
-        g_item_info.scrnoff_index = 0;
-    }
-    return true;
+	return ret;
 }
 
-static bool add_to_doze_table(struct sk_buff *skb)
+static bool add_to_screenoff_table(hw_wifi_filter_item *p_item)
+{
+	if (g_item_info.p_items_data == NULL) {
+		return false;
+	}
+
+	FILTER_LOGI("scrnoff_index=%d",g_item_info.scrnoff_index);
+
+	if (g_item_info.scrnoff_index >= ITEM_SCREENOFF_MAX) {
+		FILTER_LOGE("add_to_screenoff_table too much!");
+		return false;
+	}
+
+	if (g_item_info.scrnoff_item_cnt + g_item_info.doze_index >= g_item_cnt_max) {
+		FILTER_LOGE("add_to_doze_table too much!");
+		return false;
+	}
+
+	memcpy(&g_item_info.p_items_data[g_item_info.scrnoff_index++],
+	p_item, sizeof(hw_wifi_filter_item));
+	if (g_item_info.scrnoff_index < ITEM_SCREENOFF_MAX) {
+		g_item_info.scrnoff_item_cnt = g_item_info.scrnoff_index;
+	} else {
+		g_item_info.scrnoff_item_cnt = ITEM_SCREENOFF_MAX;
+		g_item_info.scrnoff_index = 0;
+	}
+	return true;
+}
+static bool handle_doze_info(struct sk_buff *skb)
 {
     hw_wifi_filter_item item;
 
@@ -327,10 +370,11 @@ static bool add_to_doze_table(struct sk_buff *skb)
     }
     memset(&item, 0, sizeof(hw_wifi_filter_item));
     get_wifi_filter_info(skb, &item);
-    if (is_in_items_array(&item)) {
-        FILTER_LOGD("port %d has exist",ntohs(item.port));
-        return false;
-    }
+
+	if (g_item_info.scrnoff_item_cnt + g_item_info.doze_index >= g_item_cnt_max) {
+		FILTER_LOGE("add_to_doze_table too much!");
+		return false;
+	}
 
     memcpy(&g_item_info.p_items_data[g_item_info.scrnoff_item_cnt+g_item_info.doze_index],
         &item,sizeof(hw_wifi_filter_item));
@@ -339,9 +383,7 @@ static bool add_to_doze_table(struct sk_buff *skb)
      * in order to save space,doze item max count along with screenoff item count
      */
     if (g_item_info.doze_index < (g_item_cnt_max - g_item_info.scrnoff_item_cnt)) {
-        if (g_item_info.doze_item_cnt < (g_item_cnt_max - g_item_info.scrnoff_item_cnt)) {
-            g_item_info.doze_item_cnt = g_item_info.doze_index;
-        }
+		g_item_info.doze_item_cnt = g_item_info.doze_index;
     } else {
         g_item_info.doze_item_cnt = (g_item_cnt_max - g_item_info.scrnoff_item_cnt);
         g_item_info.doze_index = 0;
@@ -356,79 +398,107 @@ void get_filter_info(
     const struct xt_table_info *private,
     const struct ipt_entry *e)
 {
-    bool success = false;
-    spin_lock_bh(&g_item_info.item_lock);
+	bool success = false;
+	spin_lock_bh(&g_item_info.item_lock);
 
-    if (!bIsSupportWifiFilter) {
-        FILTER_LOGD("wifi filter is not support");
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    if (!bDozeEnable){
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    if (NULL == state) {
-        FILTER_LOGE("state is null");
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    if (hook != NF_INET_LOCAL_IN) {
-        FILTER_LOGD("hook is %d", hook);
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
+	if (!bIsSupportWifiFilter) {
+		FILTER_LOGD("wifi filter is not support");
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (!bDozeEnable){
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (NULL == state) {
+		FILTER_LOGE("state is null");
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (hook != NF_INET_LOCAL_IN) {
+		FILTER_LOGD("hook is %d", hook);
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
 
-    success = add_to_doze_table(skb);
-    if (!success) {
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
+	success = handle_doze_info(skb);
+	if (!success) {
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
 
-    spin_unlock_bh(&g_item_info.item_lock);
+	spin_unlock_bh(&g_item_info.item_lock);
 
-    wake_up_condition = WAKE_ADD;
-    wake_up_interruptible(&mythread_wq);
+	wake_up_condition = WAKE_ADD;
+	wake_up_interruptible(&mythread_wq);
 }
 
 void get_filter_infoEx(struct sk_buff *skb)
 {
-    bool success = false;
-    spin_lock_bh(&g_item_info.item_lock);
+	bool success = false;
+	spin_lock_bh(&g_item_info.item_lock);
 
-    if (!bIsSupportWifiFilter) {
-        FILTER_LOGD("wifi filter is not support");
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    if (skb->dev!= NULL){
-        if (strncmp(skb->dev->name,WLAN_NAME,strlen(WLAN_NAME))!=0){
-            spin_unlock_bh(&g_item_info.item_lock);
-            return;
-        }
-    }
-    if (!bScreenoff) {
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    if (!bDozeEnable){
-        FILTER_LOGD("screen if off,doze is not enable");
-        //add to screenoff table
-        success = add_to_screenoff_table(skb);
-    } else {
-        //add to doze table
-        success = add_to_doze_table(skb);
-    }
-    if (!success) {
-        spin_unlock_bh(&g_item_info.item_lock);
-        return;
-    }
-    spin_unlock_bh(&g_item_info.item_lock);
-    wake_up_condition = WAKE_ADD;
-    wake_up_interruptible(&mythread_wq);
+	if (!bIsSupportWifiFilter) {
+		FILTER_LOGD("wifi filter is not support");
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (skb->dev != NULL) {
+		if (strncmp(skb->dev->name, WLAN_NAME, strlen(WLAN_NAME)) != 0) {
+			spin_unlock_bh(&g_item_info.item_lock);
+			return;
+		}
+	}
+	if (!bScreenoff) {
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (!bDozeEnable) {
+		FILTER_LOGD("screen if off,doze is not enable");
+		// add to screenoff table
+		success = handle_screenoff_info(skb);
+	} else {
+		// add to doze table
+		success = handle_doze_info(skb);
+	}
+	if (!success) {
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	spin_unlock_bh(&g_item_info.item_lock);
+	wake_up_condition = WAKE_ADD;
+	wake_up_interruptible(&mythread_wq);
 
 }
 
+void get_pg_app_info(int port, int protocol)
+{
+	hw_wifi_filter_item item;
+	bool success = false;
+
+	spin_lock_bh(&g_item_info.item_lock);
+
+	if (!bIsSupportWifiFilter) {
+		FILTER_LOGD("wifi filter is not support");
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	if (!bScreenoff) {
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+
+	item.port = port;
+	item.protocol = protocol;
+	success = add_to_screenoff_table(&item);
+	if (!success) {
+		spin_unlock_bh(&g_item_info.item_lock);
+		return;
+	}
+	spin_unlock_bh(&g_item_info.item_lock);
+	wake_up_condition = WAKE_ADD;
+	wake_up_interruptible(&mythread_wq);
+}
 
 static int hw_add_filter_items(hw_wifi_filter_item *items, int count)
 {
@@ -436,7 +506,7 @@ static int hw_add_filter_items(hw_wifi_filter_item *items, int count)
     {
         return -1;
     }
-    FILTER_LOGD("hw_add_filter_items count=%d", count);
+	FILTER_LOGI("hw_add_filter_items count=%d", count);
 
     return gWlanFilterOps.add_filter_items(items, count);
 }
@@ -492,7 +562,6 @@ int hw_set_net_filter_enable(int enable)
     int count = 0;
     int i;
     FILTER_LOGD("doze enable=%d", enable);
-    bDozeEnable = (bool)enable;
 
     if (!enable) {
         if(gWlanFilterOps.get_filter_pkg_stat != NULL)
@@ -506,7 +575,7 @@ int hw_set_net_filter_enable(int enable)
                 FILTER_LOGD("i = %d,filter packet count=%d",i,g_item_info.p_items_data[i].filter_cnt);
             }
         }
-        wake_up_condition = WAKE_CLR_DOZE;
+        wake_up_condition = WAKE_EXIT_DOZE;
         wake_up_interruptible(&mythread_wq);
     } else {
         wake_up_condition = WAKE_ENTER_DOZE;
@@ -521,7 +590,7 @@ static int wifi_filter_threadfn(void *data)
     while(1)
     {
         wait_event_interruptible(mythread_wq, wake_up_condition);
-        FILTER_LOGD("filter thread wake_up_condition=%d",wake_up_condition);
+		FILTER_LOGI("filter thread wake_up_condition=%d",wake_up_condition);
         switch(wake_up_condition) {
         case WAKE_ADD:
             if (g_item_info.p_items_data != NULL) {
@@ -540,15 +609,36 @@ static int wifi_filter_threadfn(void *data)
                 gWlanFilterOps.set_filter_enable(true);
             }
             break;
-        case WAKE_CLR_DOZE:
+        case WAKE_EXIT_DOZE:
+            bDozeEnable = false;
             hw_clear_doze_item();
             if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                FILTER_LOGD("doze set_filter_enable_ex false");
                 gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,false);
             }
             break;
         case WAKE_ENTER_DOZE:
+            bDozeEnable = true;
             if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                FILTER_LOGD("doze set_filter_enable_ex true");
                 gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,true);
+            }
+            break;
+        case WAKE_ENTER_NIGHT:
+            bIsNight = true;
+            if (!bDozeEnable) {
+                break;
+            }
+            if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                FILTER_LOGD("night set_filter_enable_ex true");
+                gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,true);
+            }
+            break;
+        case WAKE_EXIT_NIGHT:
+            bIsNight = false;
+            if (gWlanFilterOps.set_filter_enable_ex != NULL) {
+                FILTER_LOGD("night set_filter_enable_ex false");
+                gWlanFilterOps.set_filter_enable_ex(TYPE_ICMP,false);
             }
             break;
         default:
@@ -562,6 +652,7 @@ static int wifi_filter_threadfn(void *data)
 static int __init init_kthread(void)
 {
     int err;
+    init_timer(&mytimer);
     init_waitqueue_head(&mythread_wq);
     WifiFilterThread = kthread_run(wifi_filter_threadfn,NULL,"wifi_filter_thread");
     if (IS_ERR(WifiFilterThread))

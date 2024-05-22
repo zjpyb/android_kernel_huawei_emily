@@ -1,9 +1,8 @@
-obj-$(CONFIG_USB_F_BALONG_ACM)	+= usb_f_balong_acm.o
-usb_f_balong_acm-y		:= f_balong_acm.o balong_acm.o usb_vendor.o
-usb_f_balong_acm-y		+= hisi_adp_acm.o hisi_adp_usb.o hisi_adp_acm_test.o
-usb_f_balong_acm-$(CONFIG_HISI_DEBUG_FS)	+= hiusb_acm_debug.o
+obj-$(CONFIG_USB_F_MODEM_ACM)	+= usb_f_modem_acm.o
+usb_f_modem_acm-y		:= f_modem_acm.o modem_acm.o usb_vendor.o
+usb_f_modem_acm-y		+= chip_adp_acm.o chip_adp_usb.o chip_adp_acm_test.o
+usb_f_modem_acm-y	+= hiusb_acm_debug.o
 
-obj-y += hisi_adp_interface_fake.o
+obj-y += chip_adp_interface_fake.o
 
-obj-$(CONFIG_USB_HW_F_ACM)	+= usb_hw_f_acm.o
-usb_hw_f_acm-y			:= hw_f_acm.o hw_u_serial.o
+obj-$(CONFIG_USB_F_SOURCESINK_EXT)	+= f_sourcesink_ext.o

@@ -127,7 +127,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	const struct cpumask *affinity = irq_data_get_affinity_mask(d);
 	struct irq_chip *c;
 	bool ret = false;
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	struct cpumask available_cpus;
 #endif
 
@@ -138,7 +138,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	if (irqd_is_per_cpu(d) || !cpumask_test_cpu(smp_processor_id(), affinity))
 		return false;
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	cpumask_copy(&available_cpus, affinity);
 	cpumask_andnot(&available_cpus, &available_cpus, cpu_isolated_mask);
 	/* keep affinity first when conflict with isolation */
@@ -147,7 +147,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 #endif
 
 	if (cpumask_any_and(affinity, cpu_online_mask) >= nr_cpu_ids) {
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 		/*
 		 * The order of preference for selecting a fallback CPU is
 		 *

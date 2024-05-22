@@ -31,7 +31,7 @@
 #define NETLINK_SMC		22	/* SMC monitoring */
 
 #ifdef CONFIG_CHR_NETLINK_MODULE
-#define NETLINK_CHR_EVENT_NL  23
+#define NETLINK_CHR_EVENT_NL 23
 #endif
 
 #ifdef CONFIG_HW_WIFIPRO
@@ -55,9 +55,9 @@
 
 #define NETLINK_HW_LOGCAT_EXT 31
 
-/*netd communicate with hwfilter */
+/* netd communicate with hwfilter */
 #ifdef CONFIG_HW_NETFILTER_MODULE
-#define NETLINK_HW_NF   32
+#define NETLINK_HW_NF 32
 #endif
 
 #if (defined(CONFIG_HW_CPULOAD_NOTI) || defined(CONFIG_HW_VIP_THREAD) \
@@ -78,7 +78,7 @@
 #endif
 
 #ifdef CONFIG_HW_NETBOOSTER_MODULE
-#define NETLINK_NETBOOSTER  37
+#define NETLINK_NETBOOSTER 37
 #endif
 
 #ifdef CONFIG_HISI_CAMERA_VL53L0_970
@@ -95,7 +95,13 @@
 
 #define NETLINK_OLLIE 41
 
-#define MAX_LINKS 42
+#ifdef CONFIG_HW_WAUDIO_MODULE
+#define NETLINK_WIFI_AUDIO_EVENT 42 /* Huawei wifi audio event */
+#endif
+
+#define NETLINK_WIFI_EXT 43
+
+#define MAX_LINKS 44
 
 struct sockaddr_nl {
 	__kernel_sa_family_t	nl_family;	/* AF_NETLINK	*/

@@ -1,20 +1,20 @@
 /*
- * Copyright (c) 2009-2018, The Linux Foundation. All rights reserved.
+ * socinfo.c
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * information about soc info
+ *
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
  */
-/*
- * SOC Info Routines
- *
- */
+
 #define pr_fmt(fmt) "%s: " fmt, __func__
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -26,13 +26,13 @@
 
 #define SOC_STR_LEN 256
 
-static char hisi_soc_str[SOC_STR_LEN];
+static char lpcpu_soc_str[SOC_STR_LEN];
 static bool string_generated;
 
-static char *hisi_read_hardware_id(void)
+static char *lpcpu_read_hardware_id(void)
 {
 	if (string_generated)
-		return hisi_soc_str;
+		return lpcpu_soc_str;
 
 	return "UNKNOWN SOC TYPE";
 }
@@ -44,24 +44,22 @@ static int __init socinfo_init(void)
 	const char *nm = NULL;
 
 	nm = of_flat_dt_get_machine_name();
-	if (!nm) {
+	if (nm == NULL) {
 		pr_err("can't get machine_name\n");
 		return -EINVAL;
 	}
 
 	upper = toupper(nm[0]);
 
-	/*
-	 * Hardware:	Hisilicon Kirin970
-	 */
-	ret = sprintf_s(hisi_soc_str, SOC_STR_LEN,
-			"Hisilicon %c%s",
-			upper,
-			&nm[1]);
+#ifdef CONFIG_PRODUCT_ARMPC
+	ret = sprintf_s(lpcpu_soc_str, SOC_STR_LEN, "%c%s", upper, &nm[1]);
+#else
+	ret = sprintf_s(lpcpu_soc_str, SOC_STR_LEN, "vendor %c%s", upper, &nm[1]);
+#endif
 	if (ret < 0)
 		return ret;
 
-	arch_read_hardware_id = hisi_read_hardware_id;
+	arch_read_hardware_id = lpcpu_read_hardware_id;
 	string_generated = true;
 
 	return 0;
@@ -70,7 +68,7 @@ static int __init socinfo_init(void)
 static void __exit socinfo_exit(void)
 {
 }
+
 module_init(socinfo_init);
 module_exit(socinfo_exit);
-
 MODULE_LICENSE("GPL");

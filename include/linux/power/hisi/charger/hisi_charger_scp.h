@@ -19,7 +19,7 @@
 #ifndef _HISI_CHARGER_SCP_H_
 #define _HISI_CHARGER_SCP_H_
 
-#include <huawei_platform/power/direct_charger.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
 
 #ifndef BIT
 #define BIT(x) (1 << x)

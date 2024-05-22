@@ -94,6 +94,7 @@ static long usb_audio_power_v600_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case IOCTL_USB_AUDIO_POWER_BUCKBOOST_NO_HEADSET_CMD:
+		pd_dpm_set_audio_power_no_hs_state(true);
 		queue_delayed_work(v600_pdata->v600_delay_wq,
 			&v600_pdata->v600_delay_work,
 			msecs_to_jiffies(USB_DISCONNECT_TIME));
@@ -101,6 +102,7 @@ static long usb_audio_power_v600_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case IOCTL_USB_AUDIO_POWER_SCHARGER_CMD:
 		pd_dpm_vbus_ctrl(CHARGER_TYPE_NONE);
+		pd_dpm_set_audio_power_no_hs_state(false);
 		ret = 0;
 		break;
 	default:
@@ -129,7 +131,7 @@ static const struct file_operations usb_audio_power_v600_fops = {
 
 static struct miscdevice usb_audio_power_v600_miscdev = {
 	.minor =    MISC_DYNAMIC_MINOR,
-	.name =     "usb_audio_power",
+	.name =     "dig_hs_power",
 	.fops =     &usb_audio_power_v600_fops,
 };
 

@@ -1,18 +1,8 @@
-/* bastet_channel.c
- *
- * Bastet Tcp Priority Channel.
- *
- * Copyright (C) 2014 Huawei Device Co.,Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2015-2020. All rights reserved.
+ * Description: Bastet Tcp priority channel.
+ * Author: zhuweichen@huawei.com
+ * Create: 2015-09-01
  */
 
 #include <linux/fdtable.h>
@@ -22,48 +12,41 @@
 #include <net/sock.h>
 #include <huawei_platform/net/bastet/bastet.h>
 #include <huawei_platform/net/bastet/bastet_utils.h>
+#include <huawei_platform/net/bastet/bastet_interface.h>
 
-#define BST_PRIO_NORM					0
-#define BST_PRIO_HIGH					1
-#define BST_PRIO_LPWR					2
+#define BST_PRIO_NORM 0
+#define BST_PRIO_HIGH 1
+#define BST_PRIO_LPWR 2
 
-#define MAX_PRIORITY_DATA_MEM			1500
-#define MAX_PRIORITY_DATA_PKT			1330
-#define MAX_COUNT_SIZE				1024
-#define WAIT_SOCK_PROP_TIMEOUT			(3 * HZ)
+#define MAX_PRIORITY_DATA_MEM 1500
+#define MAX_PRIORITY_DATA_PKT 1330
+#define MAX_COUNT_SIZE 1024
+#define WAIT_SOCK_PROP_TIMEOUT (3 * HZ)
 
-#define MOBILE_NAME						"rmnet"
+#define MOBILE_NAME "rmnet"
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 #ifndef tcp_jiffies32
 #define tcp_jiffies32 tcp_time_stamp
 #endif
 #endif
 
-typedef enum{
-	FLAGS_PROP_NONE = 0,
-	FLAGS_PROP_SEQ_ONLY,
-	FLAGS_PROP_SEQ_TS,
-	FLAGS_PROP_FULL
-} flags_property;
+const uint8_t flags_prop_none = 0;
+const uint8_t flags_prop_seq_only = 1;
+const uint8_t flags_prop_seq_ts = 2;
+const uint8_t flags_prop_full = 3;
 
-typedef enum{
-	FLAGS_PKT_TYPE_NONE = 0,
-	FLAGS_PKT_TYPE_HEAD,
-	FLAGS_PKT_TYPE_TAIL,
-	FLAGS_PKT_TYPE_SINGLE
-} flags_pkt_type;
-
-extern void bastet_sync_prop_cancel(struct sock *sk);
-extern void set_channel_occupied(void);
-extern void clear_channel_occupied(void);
+const uint8_t flags_pkt_type_none;
+const uint8_t flags_pkt_type_head;
+const uint8_t flags_pkt_type_tail;
+const uint8_t flags_pkt_type_single;
 
 static void bastet_get_link_id(struct sock *sk, struct bst_sock_id *guide)
 {
-	struct fdtable *fdt;
-	struct socket *sock;
-	unsigned int i = 0;
-	int err;
+	struct fdtable *fdt = NULL;
+	struct socket *sock = NULL;
+	unsigned int i;
+	int err = 0;
 	bool match = false;
 
 	fdt = files_fdtable(current->files);
@@ -96,56 +79,56 @@ static uint8_t bastet_get_prio_level(uint32_t flags)
 
 static uint8_t set_packet_type(uint32_t cur, uint32_t count, size_t size)
 {
-	uint8_t type = FLAGS_PKT_TYPE_NONE;
+	uint8_t type;
 
 	if (count == 0 || size == MAX_PRIORITY_DATA_PKT)
-		type = FLAGS_PKT_TYPE_SINGLE;
+		type = flags_pkt_type_single;
 	else if (cur == 0)
-		type = FLAGS_PKT_TYPE_HEAD;
+		type = flags_pkt_type_head;
 	else if (cur == count)
-		type = FLAGS_PKT_TYPE_TAIL;
+		type = flags_pkt_type_tail;
 	else
-		type = FLAGS_PKT_TYPE_NONE;
+		type = flags_pkt_type_none;
 
 	return type;
 }
 
 static int32_t bastet_send_priority_data(struct sock *sk,
-		struct msghdr *msg,
-		struct bst_ind_priority_prop *prop,
-		bool wq_empty)
+	struct msghdr *msg, struct bst_ind_priority_prop *prop,
+	bool wq_empty)
 {
 	int32_t ret = 0;
 	const struct iovec *iov = msg->msg_iter.iov;
 	size_t size = iov->iov_len;
 	unsigned char __user *from = iov->iov_base;
-	uint32_t count = 0;
-	uint32_t len = 0;
+	uint32_t count;
+	uint32_t len;
 	uint32_t i;
 
 	count = size / MAX_PRIORITY_DATA_PKT;
-	if (MAX_COUNT_SIZE < count) {
-		BASTET_LOGE("invalid count size %d", count);
+	if (count > MAX_COUNT_SIZE) {
+		bastet_loge("invalid count size %d", count);
 		return -EINVAL;
 	}
 	for (i = 0; i <= count; i++) {
-		len = count > i
-			? MAX_PRIORITY_DATA_PKT : size % MAX_PRIORITY_DATA_PKT;
+		len = count > i ?
+			MAX_PRIORITY_DATA_PKT : size % MAX_PRIORITY_DATA_PKT;
 		if (len == 0)
 			break;
 		prop->pkt_type = set_packet_type(i, count, size);
-		prop->sync_prop.seq = tcp_sk(sk)->write_seq
-			+ i * MAX_PRIORITY_DATA_PKT;
-		prop->sync_prop.ts_current = tcp_jiffies32
-			+ tcp_sk(sk)->tsoffset;
+		prop->sync_prop.seq = tcp_sk(sk)->write_seq +
+			i * MAX_PRIORITY_DATA_PKT;
+		tcp_mstamp_refresh(tcp_sk(sk));
+		prop->sync_prop.ts_current = tcp_time_stamp(tcp_sk(sk)) +
+			tcp_sk(sk)->tsoffset;
 		prop->len = len;
 		if (i == 0) {
 			if (wq_empty)
-				prop->seq_type = FLAGS_PROP_FULL;
+				prop->seq_type = flags_prop_full;
 			else
-				prop->seq_type = FLAGS_PROP_SEQ_TS;
+				prop->seq_type = flags_prop_seq_ts;
 		} else {
-			prop->seq_type = FLAGS_PROP_NONE;
+			prop->seq_type = flags_prop_none;
 		}
 		ret = copy_from_user(prop->data,
 			from + i * MAX_PRIORITY_DATA_PKT, len);
@@ -153,25 +136,20 @@ static int32_t bastet_send_priority_data(struct sock *sk,
 			break;
 
 		post_indicate_packet(BST_IND_PRIORITY_DATA, prop,
-			sizeof(struct bst_ind_priority_prop) + len);
+			sizeof(*prop) + len);
 		memset(prop->data, 0, len);
 	}
 	return ret;
 }
 
 static void bastet_send_wq_data(struct sock *sk,
-				struct sk_buff *skb,
-				struct bst_ind_priority_prop *prop,
-				bool first_skb)
+	struct sk_buff *skb, struct bst_ind_priority_prop *prop,
+	bool first_skb)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-#else
-	struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
-#endif
 	struct tcp_sock *tp = tcp_sk(sk);
 	uint32_t size = skb->len;
-	uint32_t count = 0;
-	uint32_t len = 0;
+	uint32_t count;
+	uint32_t len;
 	uint32_t i;
 
 	count = size / MAX_PRIORITY_DATA_PKT;
@@ -181,42 +159,32 @@ static void bastet_send_wq_data(struct sock *sk,
 		if (len == 0)
 			break;
 		prop->pkt_type = set_packet_type(i, count, size);
-		prop->sync_prop.seq = TCP_SKB_CB(skb)->seq
-			+ i * MAX_PRIORITY_DATA_PKT;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
+		prop->sync_prop.seq = TCP_SKB_CB(skb)->seq +
+			i * MAX_PRIORITY_DATA_PKT;
 		prop->sync_prop.ts_current = tp->tsoffset;
-#else
-		prop->sync_prop.ts_current = tcb->when + tp->tsoffset;
-#endif
 		prop->len = len;
-		prop->seq_type = (first_skb && i == 0)
-			? FLAGS_PROP_FULL : FLAGS_PROP_SEQ_TS;
+		prop->seq_type = (first_skb && i == 0) ?
+			flags_prop_full : flags_prop_seq_ts;
 		memcpy(prop->data, skb->data, len);
 		post_indicate_packet(BST_IND_PRIORITY_DATA, prop,
-			sizeof(struct bst_ind_priority_prop) + len);
+			sizeof(*prop) + len);
 		memset(prop->data, 0, len);
 	}
 }
 
-static void bastet_pick_wq(struct sock *sk,
-		struct bst_ind_priority_prop *prop)
+static void bastet_pick_wq(struct sock *sk, struct bst_ind_priority_prop *prop)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	bool first = true;
 
 	skb = tcp_write_queue_head(sk);
-	while (skb) {
+	while (skb != NULL) {
 		bastet_send_wq_data(sk, skb, prop, first);
 		if (first)
 			first = false;
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-		/* tp->scoreboard_skb_hint = NULL; */
-#else
-		tp->scoreboard_skb_hint = NULL;
-#endif
 		if (skb == tp->retransmit_skb_hint)
 			tp->retransmit_skb_hint = NULL;
 		if (skb == tp->lost_skb_hint)
@@ -237,47 +205,67 @@ static void bastet_pick_wq(struct sock *sk,
 static void bastet_update_seq(struct sock *sk, size_t size, bool block)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	int ret = 0;
+	int ret;
 
 	if (block && sk->bastet) {
 		sk->bastet->flag = false;
 		ret = wait_event_interruptible_timeout(sk->bastet->wq,
 			sk->bastet->flag, WAIT_SOCK_PROP_TIMEOUT);
-		BASTET_LOGI("wait_event_interruptible_timeout ret=%d", ret);
+		bastet_logi("wait_event_interruptible_timeout ret=%d", ret);
 	}
 	tp->write_seq += size;
 	tp->snd_nxt = tp->write_seq;
 }
 
-static int bastet_send_priority_msg_internal(struct sock *sk,
-				struct msghdr *msg, size_t size)
+static void handle_bastet_sock_state(uint8_t sync_state,
+	struct sock *sk, size_t size)
 {
-	struct bst_ind_priority_prop *prop;
+	switch (sync_state) {
+	case BST_SOCK_VALID:
+		/* sock sync property is in AP, so cancel sync timer */
+		bastet_sync_prop_cancel(sk);
+		/* fall-through */
+	case BST_SOCK_NOT_USED:
+	case BST_SOCK_NOT_CREATED:
+		bastet_update_seq(sk, size, false);
+		break;
+	case BST_SOCK_INVALID:
+	case BST_SOCK_UPDATING:
+		bastet_update_seq(sk, size, true);
+		break;
+	default:
+		bastet_loge("Unknown sync state: %d", sync_state);
+		break;
+	}
+}
+
+static int bastet_send_priority_msg_internal(struct sock *sk,
+	struct msghdr *msg, size_t size)
+{
+	struct bst_ind_priority_prop *prop = NULL;
 	struct bst_sock_id guide;
 	struct bst_sock_sync_prop sync_prop;
 	struct bst_sock_comm_prop comm_prop;
 	uint32_t flags = msg->msg_flags;
-	uint8_t priority = 0;
-	uint8_t sync_state = BST_SOCK_NOT_USED;
+	uint8_t sync_state;
 	bool empty = false;
 
 	sk->prio_channel = true;
 	bastet_get_link_id(sk, &guide);
 	bastet_get_comm_prop(sk, &comm_prop);
 	bastet_get_sock_prop(sk, &sync_prop);
-	priority = bastet_get_prio_level(flags);
 	sync_state = get_bastet_sock_state(sk);
 
-	prop = kmalloc(MAX_PRIORITY_DATA_MEM, GFP_ATOMIC);
+	prop = kzalloc(MAX_PRIORITY_DATA_MEM, GFP_ATOMIC);
 	if (prop == NULL) {
-		BASTET_LOGE("failed to kmalloc");
+		bastet_loge("failed to kmalloc");
 		return 0;
 	}
 	memset(prop, 0, MAX_PRIORITY_DATA_MEM);
 	prop->guide = guide;
 	prop->comm_prop = comm_prop;
 	prop->sync_prop = sync_prop;
-	prop->priority = priority;
+	prop->priority = bastet_get_prio_level(flags);
 	prop->sync_state = sync_state;
 
 	set_channel_occupied();
@@ -291,49 +279,31 @@ static int bastet_send_priority_msg_internal(struct sock *sk,
 	}
 
 	kfree(prop);
-	switch (sync_state) {
-	case BST_SOCK_VALID:
-		/* sock sync property is in AP, so cancel sync timer */
-		bastet_sync_prop_cancel(sk);
-	case BST_SOCK_NOT_USED:
-	case BST_SOCK_NOT_CREATED:
-		bastet_update_seq(sk, size, false);
-		break;
-	case BST_SOCK_INVALID:
-	case BST_SOCK_UPDATING:
-		bastet_update_seq(sk, size, true);
-		break;
-	default:
-		BASTET_LOGE("Unknown sync state: %d", sync_state);
-		break;
-	}
+	handle_bastet_sock_state(sync_state, sk, size);
 
 	return 1;
 }
 
-/**
- * Function: bastet_check_mobile
- * Description: check whether socket network type is mobile
- * Input: struct sock *sk, struct sock pointer
- * Output:
+/*
+ * bastet_check_mobile - bastet mobile state check.
+ * @sk, struct sock pointer
+ *
+ * check whether socket network type is mobile
+ *
  * Return: ture, mobile
- *         false, non-mobile
- * Date: 2015.01.19
- * Author: Pengyu ID: 00188486
+ * false, non-mobile
  */
 static bool bastet_check_mobile(struct sock *sk)
 {
 	if (!is_wifi_proxy(sk)) {
-		struct dst_entry *dst;
+		struct dst_entry *dst = NULL;
 		/* struct net_device is in struct dst_entry */
 		dst = __sk_dst_get(sk);
 		if (dst && dst->dev) {
 			/* check whether socket network device name is mobile */
-			if (memcmp(MOBILE_NAME,
-						dst->dev->name,
-						strlen(MOBILE_NAME)) == 0) {
+			if (memcmp(MOBILE_NAME, dst->dev->name,
+				strlen(MOBILE_NAME)) == 0)
 				return true;
-			}
 		}
 	}
 
@@ -342,47 +312,58 @@ static bool bastet_check_mobile(struct sock *sk)
 
 static bool bastet_check_prio_flag(struct sock *sk, struct msghdr *msg)
 {
-	if (!IS_ERR_OR_NULL(msg) ||(msg->msg_flags & (MSG_HRT | MSG_LPW))) {
-		/* only mobile type support hrt&lpw channel */
-		if (!bastet_check_mobile(sk))
-			return false;
-		if (msg->msg_flags & MSG_HRT) {
-			/* if uid is foreground, it means this
-			 * uid had been identified as hrt uid.
+	if (IS_ERR_OR_NULL(msg) && !(msg->msg_flags & (MSG_HRT | MSG_LPW)))
+		return false;
+
+	/* only mobile type support hrt&lpw channel */
+	if (!bastet_check_mobile(sk))
+		return false;
+	if (msg->msg_flags & MSG_HRT) {
+		/*
+		 * if uid is foreground, it means this
+		 * uid had been identified as hrt uid.
+		 */
+		if (!is_sock_foreground(sk)) {
+			/*
+			 * if sk is not identified as prio_channel,
+			 * it means it is the first time,
+			 * indicate bastetd to identify it to hrt uid.
 			 */
-			if (!is_sock_foreground(sk)) {
-				/* if sk is not identified as prio_channel,
-				 * it means it is the first time,
-				 * indicate bastetd to identify it to hrt uid.
+			if (!sk->prio_channel) {
+				uid_t uid = sock_i_uid(sk).val;
+
+				bastet_logi("BST_IND_PRIORITY_UID, uid=%d",
+					uid);
+				post_indicate_packet(BST_IND_PRIORITY_UID,
+					&uid, sizeof(int32_t));
+				/*
+				 * continue to send hrt data,
+				 * no matter foreground or background
 				 */
-				if (!sk->prio_channel) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-					uid_t uid = sock_i_uid(sk).val;
-#else
-					int uid = sock_i_uid(sk);
-#endif
-					BASTET_LOGI(
-						"BST_IND_PRIORITY_UID, uid=%d",
-						uid);
-					post_indicate_packet(
-						BST_IND_PRIORITY_UID,
-						&uid, sizeof(int32_t));
-					/* continue to send hrt data,
-					 * no matter foreground or background
-					 */
-				} else {
-					/* it is prio_channel,
-					 * but not in the foreground
-					 */
-					return false;
-				}
+			} else {
+				/*
+				 * it is prio_channel,
+				 * but not in the foreground
+				 */
+				return false;
 			}
 		}
-		return true;
 	}
-	return false;
+	return true;
 }
 
+/*
+ * bastet_send_priority_msg - send the priority msg.
+ * @sk: struct sock pointer
+ * @msg: message header
+ * @size: message size
+ *
+ * jude the message state, if the channel,proxy,buffer is ok,
+ * then send the message into priority.
+ *
+ * Return: 1 success
+ * Otherwise is fail.
+ */
 int bastet_send_priority_msg(struct sock *sk, struct msghdr *msg, size_t size)
 {
 	if (!is_bastet_enabled())

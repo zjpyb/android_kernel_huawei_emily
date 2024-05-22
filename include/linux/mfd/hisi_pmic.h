@@ -1,49 +1,51 @@
 /*
- * Header file for device driver Hi6421 PMIC
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
  *
- * Copyright (c) 2013 Linaro Ltd.
- * Copyright (C) 2011 Hisilicon.
+ * pmic.h
  *
- * Guodong Xu <guodong.xu@linaro.org>
+ * Header file for device driver PMIC
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef	__HISI_PMIC_H
 #define	__HISI_PMIC_H
 
 #include <linux/irqdomain.h>
+#include <linux/irq.h>
 
-#define HISI_REGS_ENA_PROTECT_TIME	(0) 	/* in microseconds */
-#define HISI_ECO_MODE_ENABLE		(1)
-#define HISI_ECO_MODE_DISABLE		(0)
+#define PMIC_REGS_ENA_PROTECT_TIME	0 /* in microseconds */
+#define PMIC_ECO_MODE_ENABLE		1
+#define PMIC_ECO_MODE_DISABLE		0
+
+#define PMIC_DIEID_BUF		100
+#define PMIC_DIEID_TEM_SAVE_BUF	4
+
+#define PMIC_IRQ_NAME_SIZE		20
+
+#define SPMI_PMIC_COMP		"hisilicon-hisi-pmic-spmi"
+#define SPMI_SUB_PMIC_COMP	"hisilicon-hisi-sub-pmic-spmi"
+#define SPMI_MMW_PMIC_COMP	"hisilicon-hisi-mmw-pmic-spmi"
 
 typedef int (*pmic_ocp_callback)(char *);
-
-struct irq_mask_info {
-	int start_addr;
-	int array;
-};
-
-struct irq_info {
-	int start_addr;
-	int array;
-};
 
 struct bit_info {
 	int addr;
 	int bit;
+};
+
+struct vbus_irq_info {
+	unsigned int addr;
+	unsigned int shift;
+	unsigned int mask;
 };
 
 struct write_lock {
@@ -51,30 +53,28 @@ struct write_lock {
 	int val;
 };
 
-struct hisi_pmic {
-	struct resource		*res;
-	struct device		*dev;
-	void __iomem		*regs;
-	spinlock_t		lock;
-	struct irq_domain	*domain;
-	int			irq;
-	int			gpio;
-	unsigned int	*irqs;
-	int			irqnum;
-	int			irqarray;
-	struct irq_mask_info irq_mask_addr;
-	struct irq_info irq_addr;
-	int			irqnum1;
-	int			irqarray1;
-	struct irq_mask_info irq_mask_addr1;
-	struct irq_info irq_addr1;
+struct vendor_pmic {
+	struct resource *res;
+	struct device *dev;
+	void __iomem *regs;
+	spinlock_t lock;
+	struct irq_domain *domain;
+	int irq;
+	int gpio;
+	unsigned int *irqs;
+	int irqnum;
+	int irqarray;
 	struct write_lock normal_lock;
 	struct write_lock debug_lock;
-#if defined(CONFIG_HISI_DIEID)
-	char			*dieid_name;
-	unsigned int			dieid_reg_num;
-	unsigned int			*dieid_regs;
-#endif
+	char *dieid_name;
+	unsigned int dieid_reg_num;
+	unsigned int *dieid_regs;
+	int *irq_mask_addr_arry;
+	int *irq_addr_arry;
+	char irq_name[PMIC_IRQ_NAME_SIZE];
+	char chip_irq_name[PMIC_IRQ_NAME_SIZE];
+	struct irq_chip irq_chip;
+	int powerkey_irq_down_up;
 };
 
 /* 0:disable; 1:enable */
@@ -84,45 +84,150 @@ void set_uv_mntn_resered_reg_bit(void);
 
 #if defined(CONFIG_HISI_PMIC) || defined(CONFIG_HISI_PMIC_PMU_SPMI)
 /* Register Access Helpers */
-u32 hisi_pmic_read(struct hisi_pmic *pmic, int reg);
-void hisi_pmic_write(struct hisi_pmic *pmic, int reg, u32 val);
-void hisi_pmic_rmw(struct hisi_pmic *pmic, int reg, u32 mask, u32 bits);
+u32 main_pmic_read(struct vendor_pmic *pmic, int reg);
+void main_pmic_write(struct vendor_pmic *pmic, int reg, u32 val);
+void hisi_pmic_rmw(struct vendor_pmic *pmic, int reg, u32 mask, u32 bits);
+unsigned int pmic_read_reg(int addr);
+void pmic_write_reg(int addr, int val);
 unsigned int hisi_pmic_reg_read(int addr);
 void hisi_pmic_reg_write(int addr, int val);
-void hisi_pmic_reg_write_lock(int addr, int val);
-int hisi_pmic_array_read(int addr, char *buff, unsigned int len);
-int hisi_pmic_array_write(int addr, const char *buff, unsigned int len);
-extern int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list);
-extern int hisi_pmic_get_vbus_status(void);
-extern int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler);
+void pmic_reg_write_lock(int addr, int val);
+int pmic_array_read(int addr, char *buff, unsigned int len);
+int pmic_array_write(int addr, const char *buff, unsigned int len);
+extern int pmic_get_irq_byname(unsigned int pmic_irq_list);
+extern int pmic_get_vbus_status(void);
+void pmic_vbus_irq_mask(int enable);
+void pmic_clear_vbus_irq(int enable);
+extern int hisi_pmic_special_ocp_register(
+	char *power_name, pmic_ocp_callback handler);
 #if defined(CONFIG_HISI_PMIC_SUB_PMU_SPMI)
- u32 hisi_sub_pmic_read(struct hisi_pmic *pmic, int reg);
- void hisi_sub_pmic_write(struct hisi_pmic *pmic, int reg, u32 val);
- unsigned int hisi_sub_pmic_reg_read(int addr);
- void hisi_sub_pmic_reg_write(int addr, int val) ;
- int hisi_sub_pmic_array_read(int addr, char *buff, unsigned int len);
- int hisi_sub_pmic_array_write(int addr, const char *buff, unsigned int len);
+u32 sub_pmic_read(struct vendor_pmic *pmic, int reg);
+void sub_pmic_write(struct vendor_pmic *pmic, int reg, u32 val);
+int pmic_subpmu_get_dieid(char *dieid, unsigned int len);
 #endif
-#if defined(CONFIG_HISI_DIEID)
-u32 hisi_pmic_read_sub_pmu(u8 sid ,int reg);
-void hisi_pmic_write_sub_pmu(u8 sid ,int reg, u32 val);
-int hisi_pmic_get_dieid(char *dieid, unsigned int len);
-#endif
+
+#if defined(CONFIG_HISI_PMIC_SUB_PMU_SPMI)
+unsigned int hisi_sub_pmic_reg_read(int addr);
+void hisi_sub_pmic_reg_write(int addr, int val);
+unsigned int mmw_pmic_reg_read(int addr);
+void mmw_pmic_reg_write(int addr, int val);
 #else
-static inline u32 hisi_pmic_read(struct hisi_pmic *pmic, int reg) { return 0; }
-static inline void hisi_pmic_write(struct hisi_pmic *pmic, int reg, u32 val) {}
-static inline void hisi_pmic_rmw(struct hisi_pmic *pmic, int reg, u32 mask, u32 bits) {}
-static inline unsigned int hisi_pmic_reg_read(int addr) { return 0; }
-static inline void hisi_pmic_reg_write(int addr, int val) {}
-static inline void hisi_pmic_reg_write_lock(int addr, int val) {}
-static inline int hisi_pmic_array_read(int addr, char *buff, unsigned int len) { return 0; }
-static inline int hisi_pmic_array_write(int addr, const char *buff, unsigned int len) { return 0; }
-static inline int hisi_get_pmic_irq_byname(unsigned int pmic_irq_list) { return -1; }
-static inline int hisi_pmic_get_vbus_status(void) { return 1; }
-static inline int hisi_pmic_special_ocp_register(char *power_name, pmic_ocp_callback handler){ return 0; }
-static inline u32 hisi_pmic_read_sub_pmu(u8 sid ,int reg) { return 0; }
-static inline void hisi_pmic_write_sub_pmu(u8 sid ,int reg, u32 val) {}
-static inline int hisi_pmic_get_dieid(char *dieid){ return 0;}
+static inline unsigned int hisi_sub_pmic_reg_read(int addr)
+{
+	return 0;
+}
+static inline void hisi_sub_pmic_reg_write(int addr, int val)
+{
+}
+static inline unsigned int mmw_pmic_reg_read(int addr)
+{
+	return 0;
+}
+static inline void mmw_pmic_reg_write(int addr, int val)
+{
+}
+#endif
+
+u32 pmic_read_sub_pmu(u8 sid, int reg);
+void pmic_write_sub_pmu(u8 sid, int reg, u32 val);
+int pmic_get_dieid(char *dieid, unsigned int len);
+#if defined(CONFIG_SUBPMU) && defined(CONFIG_HISI_DIEID)
+int hisi_subpmu_get_dieid(char *dieid, unsigned int len);
+#endif
+
+static inline int hisi_sub_pmu_pmic_dieid(char *dieid, unsigned int len)
+{
+	int ret;
+#if defined(CONFIG_SUBPMU) && defined(CONFIG_HISI_DIEID)
+	ret = hisi_subpmu_get_dieid(dieid, len);
+#elif defined(CONFIG_HISI_PMIC_SUB_PMU_SPMI)
+	ret = pmic_subpmu_get_dieid(dieid, len);
+#endif
+	return ret;
+}
+
+#else
+static inline u32 main_pmic_read(struct vendor_pmic *pmic, int reg)
+{
+	return 0;
+}
+static inline void main_pmic_write(struct vendor_pmic *pmic, int reg, u32 val)
+{
+}
+static inline void hisi_pmic_rmw(
+	struct vendor_pmic *pmic, int reg, u32 mask, u32 bits)
+{
+}
+static inline unsigned int pmic_read_reg(int addr)
+{
+	return 0;
+}
+static inline void pmic_write_reg(int addr, int val)
+{
+}
+
+/* for modem & endpoint */
+static inline unsigned int hisi_pmic_reg_read(int addr)
+{
+	return 0;
+}
+static inline void hisi_pmic_reg_write(int addr, int val)
+{
+}   /* for modem & endpoint */
+
+static inline void pmic_reg_write_lock(int addr, int val)
+{
+}
+static inline int pmic_array_read(int addr, char *buff, unsigned int len)
+{
+	return 0;
+}
+static inline int pmic_array_write(
+	int addr, const char *buff, unsigned int len)
+{
+	return 0;
+}
+static inline int pmic_get_irq_byname(unsigned int pmic_irq_list)
+{
+	return -1;
+}
+static inline int pmic_get_vbus_status(void)
+{
+	return 1;
+}
+static inline void pmic_vbus_irq_mask(int enable)
+{
+}
+static inline void pmic_clear_vbus_irq(int enable)
+{
+}
+static inline int pmic_special_ocp_register(
+	char *power_name, pmic_ocp_callback handler)
+{
+	return 0;
+}
+static inline int hisi_pmic_special_ocp_register(
+	char *power_name, pmic_ocp_callback handler)
+{
+	return 0;
+}
+static inline u32 pmic_read_sub_pmu(u8 sid, int reg)
+{
+	return 0;
+}
+static inline void pmic_write_sub_pmu(u8 sid, int reg, u32 val)
+{
+}
+static inline int pmic_get_dieid(char *dieid)
+{
+	return 0;
+}
+
+static inline int hisi_sub_pmu_pmic_dieid(char *dieid, unsigned int len)
+{
+	return 0;
+}
+
 #endif
 
 #ifdef CONFIG_HISI_HI6421V500_PMU
@@ -174,7 +279,7 @@ enum pmic_irq_list {
 };
 #endif
 
-#ifdef CONFIG_HISI_SR_DEBUG
+#ifdef CONFIG_SR_DEBUG
 extern void get_ip_regulator_state(void);
 #endif
-#endif		/* __HISI_PMIC_H */
+#endif /* __HISI_PMIC_H */

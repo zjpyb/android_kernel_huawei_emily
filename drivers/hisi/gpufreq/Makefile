@@ -1,3 +1,4 @@
-obj-$(CONFIG_HISI_GPUFREQ)      += gpufreq.o
+obj-$(CONFIG_GPUTOP_FREQ) += gpu_top.o
+obj-$(CONFIG_GPU_FHSS) += gpu_fhss.o
 
-ccflags-$(CONFIG_HISI_GPUFREQ)  +=
+ccflags-$(CONFIG_GPUFREQ) +=

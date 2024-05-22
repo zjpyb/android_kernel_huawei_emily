@@ -1,12 +1,27 @@
+/*
+ * Copyright (C) Huawei Technologies Co., Ltd. 2017-2020. All rights reserved.
+ * Description: Implementation of 1) sdp context inherit;
+ *                                2) set/get sdp context.
+ * Create: 2017-11-10
+ * History: 2020-10-10 add hwdps
+ */
 
 #include <keys/user-type.h>
 #include <linux/printk.h>
 #include <linux/mount.h>
 #include <linux/fs.h>
 #include <linux/f2fs_fs.h>
+#include <linux/fscrypt_common.h>
 #include "f2fs.h"
 #include "xattr.h"
 #include "sdp_internal.h"
+
+#include "sdp_metadata.h"
+
+#ifdef CONFIG_HWDPS
+#include <huawei_platform/hwdps/hwdps_fs_hooks.h>
+#include <huawei_platform/hwdps/hwdps_limits.h>
+#endif
 
 #if F2FS_FS_SDP_ENCRYPTION
 static inline bool f2fs_inode_is_config_encryption(struct inode *inode)
@@ -42,19 +57,18 @@ int f2fs_inode_set_sdp_encryption_flags(struct inode *inode, void *fs_data,
 		return res;
 
 	flags |= sdp_enc_flag;
-
 	return sb->s_sdp_cop->set_sdp_encrypt_flags(inode, fs_data, &flags);
 }
 
 static inline bool fscrypt_valid_enc_modes(u32 contents_mode,
-					   u32 filenames_mode)
+	u32 filenames_mode)
 {
 	if (contents_mode == FS_ENCRYPTION_MODE_AES_128_CBC &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_128_CTS)
+		filenames_mode == FS_ENCRYPTION_MODE_AES_128_CTS)
 		return true;
 
 	if (contents_mode == FS_ENCRYPTION_MODE_AES_256_XTS &&
-	    filenames_mode == FS_ENCRYPTION_MODE_AES_256_CTS)
+		filenames_mode == FS_ENCRYPTION_MODE_AES_256_CTS)
 		return true;
 
 	return false;
@@ -82,12 +96,21 @@ static int f2fs_create_sdp_encryption_context_from_policy(struct inode *inode,
 	if (policy->flags & ~FS_POLICY_FLAGS_VALID)
 		return -EINVAL;
 
-	memcpy(master_key_descriptor_tmp, policy->master_key_descriptor,
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	if (S_ISREG(inode->i_mode) && (inode->i_crypt_info) &&
+	    i_size_read(inode)) {
+		pr_err("f2fs_sdp %s: inode(%lu) the file is not null in FBE3, can not set sdp.\n",
+		       __func__, inode->i_ino);
+		return -EINVAL;
+	}
+#endif
+	if (S_ISREG(inode->i_mode)) {
+		memcpy(master_key_descriptor_tmp, policy->master_key_descriptor,
 			FS_KEY_DESCRIPTOR_SIZE);
-	res = f2fs_inode_check_sdp_keyring(master_key_descriptor_tmp, 0);
-	if (res)
-		return res;
-
+		res = f2fs_inode_check_sdp_keyring(master_key_descriptor_tmp, 0);
+		if (res)
+			return res;
+	}
 	sdp_ctx.format = FS_ENCRYPTION_CONTEXT_FORMAT_V2;
 	memcpy(sdp_ctx.master_key_descriptor, policy->master_key_descriptor,
 					FS_KEY_DESCRIPTOR_SIZE);
@@ -228,6 +251,147 @@ static int f2fs_fscrypt_ioctl_get_sdp_policy(struct file *filp,
 	return 0;
 }
 
+#ifdef CONFIG_HWDPS
+static int check_inode_flag(struct inode *inode)
+{
+	int res;
+	u32 flags = 0;
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+
+	if (!sbi || !sbi->s_sdp_cop || !sbi->s_sdp_cop->get_sdp_encrypt_flags) {
+		pr_err("%s get_sdp_encrypt_flags NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	res = sbi->s_sdp_cop->get_sdp_encrypt_flags(inode, NULL, &flags);
+	if (res != 0) {
+		pr_err("%s get_sdp_encrypt_flags err = %d\n", __func__, res);
+		return -EFAULT;
+	}
+
+	if ((flags & HWDPS_ENABLE_FLAG) != 0) {
+		pr_err("%s has flag, no need to set again\n", __func__);
+		return -EEXIST;
+	}
+
+	if (F2FS_INODE_IS_SDP_ENCRYPTED(flags) != 0) {
+		pr_err("%s has sdp flag, fialed to set dps flag\n", __func__);
+		return -EFAULT;
+	}
+	return 0;
+}
+
+static int set_dps_attr_and_flag(struct inode *inode)
+{
+	int ret;
+	uint8_t *encoded_wfek = NULL;
+	uint32_t encoded_len = HWDPS_ENCODED_WFEK_SIZE;
+	secondary_buffer_t buffer_wfek = { &encoded_wfek, &encoded_len };
+
+	if (S_ISREG(inode->i_mode)) {
+		ret = hwdps_get_fek_from_origin(
+			inode->i_crypt_info->ci_master_key,
+			inode, &buffer_wfek);
+		if (ret != 0) {
+			pr_err("f2fs_dps hwdps_get_fek_from_origin err %d\n",
+				ret);
+			goto err;
+		}
+	} else {
+		encoded_wfek = kzalloc(HWDPS_ENCODED_WFEK_SIZE, GFP_NOFS);
+		if (!encoded_wfek) {
+			pr_err("f2fs_dps kzalloc err\n");
+			ret = -ENOMEM;
+			goto err;
+		}
+	}
+	ret = inode->i_sb->s_cop->set_hwdps_attr(inode, encoded_wfek,
+		encoded_len, NULL);
+	if (ret != 0) {
+		pr_err("f2fs_dps set_hwdps_attr err\n");
+		goto err;
+	}
+
+	ret = f2fs_set_hwdps_enable_flags(inode, NULL);
+	if (ret != 0) {
+		pr_err("f2fs_dps f2fs_set_hwdps_enable_flags err %d\n", ret);
+		goto err;
+	}
+err:
+	kzfree(encoded_wfek);
+	return ret;
+}
+
+static int set_dps_policy_inner(struct file *filp, struct inode *inode)
+{
+	int ret;
+
+	ret = mnt_want_write_file(filp);
+	if (ret != 0) {
+		pr_err("f2fs_dps mnt_want_write_file erris %d\n", ret);
+		return ret;
+	}
+
+	inode_lock(inode);
+	ret = check_inode_flag(inode);
+	if (ret == -EEXIST) {
+		ret = 0;
+		goto err;
+	}
+	if (ret != 0)
+		goto err;
+
+	ret = set_dps_attr_and_flag(inode);
+	if (ret != 0)
+		goto err;
+	// just set hw_enc_flag for regular file
+	if (S_ISREG(inode->i_mode) && inode->i_crypt_info)
+		inode->i_crypt_info->ci_hw_enc_flag |=
+			HWDPS_XATTR_ENABLE_FLAG_NEW;
+err:
+	inode_unlock(inode);
+	mnt_drop_write_file(filp);
+	return ret;
+}
+
+static int f2fs_fscrypt_ioctl_set_dps_policy(struct file *filp,
+		const void __user *arg)
+{
+	struct fscrypt_dps_policy policy = {0};
+	struct inode *inode = file_inode(filp);
+
+	if (!inode_owner_or_capable(inode)) {
+		pr_err("%s inode_owner_or_capable\n", __func__);
+		return -EACCES;
+	}
+
+	if (copy_from_user(&policy, arg, sizeof(policy))) {
+		pr_err("%s copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+
+	if (policy.version != 0) {
+		pr_err("%s policy.version : %u\n", __func__, policy.version);
+		return -EINVAL;
+	}
+
+	return set_dps_policy_inner(filp, inode);
+}
+
+int f2fs_ioc_set_dps_encryption_policy(struct file *filp, unsigned long arg)
+{
+	struct inode *inode = NULL;
+
+	if (!filp)
+		return -EINVAL;
+	inode = file_inode(filp);
+
+	f2fs_update_time(F2FS_I_SB(inode), REQ_TIME);
+	return f2fs_fscrypt_ioctl_set_dps_policy(filp,
+		(const void __user *)arg);
+}
+#endif
+
 static int f2fs_fscrypt_ioctl_get_policy_type(struct file *filp,
 					      void __user *arg)
 {
@@ -262,6 +426,10 @@ static int f2fs_fscrypt_ioctl_get_policy_type(struct file *filp,
 		policy.encryption_type = FSCRYPT_SDP_ECE_CLASS;
 	else if (flags & F2FS_XATTR_SDP_SECE_ENABLE_FLAG)
 		policy.encryption_type = FSCRYPT_SDP_SECE_CLASS;
+#ifdef CONFIG_HWDPS
+	else if (flags & HWDPS_ENABLE_FLAG)
+		policy.encryption_type = FSCRYPT_DPS_CLASS;
+#endif
 	else
 		goto out;
 out:
@@ -297,10 +465,10 @@ int f2fs_ioc_get_encryption_policy_type(struct file *filp, unsigned long arg)
 
 int f2fs_inode_check_sdp_keyring(u8 *descriptor, int enforce)
 {
-	int res = -ENOKEY;
-	struct key *keyring_key;
-	const struct user_key_payload *ukp;
-	struct fscrypt_sdp_key *master_sdp_key;
+	int res = -EKEYREVOKED;
+	struct key *keyring_key = NULL;
+	const struct user_key_payload *ukp = NULL;
+	struct fscrypt_sdp_key *master_sdp_key = NULL;
 
 	keyring_key = fscrypt_request_key(descriptor,
 			FS_KEY_DESC_PREFIX, FS_KEY_DESC_PREFIX_SIZE);
@@ -326,6 +494,14 @@ int f2fs_inode_check_sdp_keyring(u8 *descriptor, int enforce)
 	}
 
 	master_sdp_key = (struct fscrypt_sdp_key *)ukp->data;
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+
+	if (master_sdp_key->sdpclass != FSCRYPT_SDP_SECE_CLASS 
+			&& master_sdp_key->sdpclass != FSCRYPT_SDP_ECE_CLASS) {
+		goto out;
+	}
+#else
+
 	if (master_sdp_key->sdpclass == FSCRYPT_SDP_SECE_CLASS) {
 		if (enforce == 1) {
 			u8 sdp_pri_key[FS_MAX_KEY_SIZE] = { 0 };
@@ -338,6 +514,7 @@ int f2fs_inode_check_sdp_keyring(u8 *descriptor, int enforce)
 	} else if (master_sdp_key->sdpclass != FSCRYPT_SDP_ECE_CLASS) {
 		goto out;
 	}
+#endif
 
 	res = 0;
 out:
@@ -384,8 +561,11 @@ int f2fs_sdp_crypt_inherit(struct inode *parent, struct inode *child,
 					F2FS_XATTR_SDP_SECE_CONFIG_FLAG);
 	else
 		res = -EOPNOTSUPP;
-	if (res)
+	if (res) {
 		res = -EINVAL;
+		goto out;
+	}
+
 out:
 	up_write(&F2FS_I(child)->i_sdp_sem);
 	return res;

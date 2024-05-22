@@ -18,12 +18,16 @@
 #endif
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-#include "hisi-clk-debug.h"
+#ifndef CONFIG_ARCH_HISI_CLK_EXTREME
+#include "hisi/debug/clk-debug.h"
+#else
+#include "hisi_extreme/debug/clk-debug.h"
+#endif
 #include <securec.h>
 #endif
 
 #ifdef CONFIG_HISI_CLK
-extern int IS_FPGA(void);
+extern int is_fpga(void);
 #endif
 /*
  * DOC: basic fixed multiplier and divider clock that cannot gate
@@ -74,12 +78,12 @@ static int clk_factor_set_rate(struct clk_hw *hw, unsigned long rate,
 }
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-static int hi3xxx_dumpfixed_factor(struct clk_hw *hw, char* buf, struct seq_file *s)
+static int hi3xxx_dumpfixed_factor(struct clk_hw *hw, char* buf, int buf_length, struct seq_file *s)
 {
 	int ret = 0;
 	struct clk_fixed_factor *fix = to_clk_fixed_factor(hw);
-	if(buf && !s) {
-		ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, \
+	if(buf && !s && (buf_length > 0)) {
+		ret = snprintf_s(buf, buf_length, buf_length - 1, \
 			"[%s] : fixed div value = %d\n", __clk_get_name(hw->clk), fix->div);
 		if(ret == -1)
 			pr_err("%s snprintf_s failed!\n", __func__);
@@ -203,7 +207,7 @@ static struct clk *_of_fixed_factor_clk_setup(struct device_node *node)
 
 	of_property_read_string(node, "clock-output-names", &clk_name);
 #ifdef CONFIG_HISI_CLK
-	if (IS_FPGA()) {
+	if (is_fpga()) {
 		if (NULL != of_find_property(node, "clock-fpga", NULL)) {
 			if (of_property_read_string(node, "clock-fpga", &parent_name)) {
 				pr_err("[%s] %s node clock-fpga value is NULL!\n",
@@ -261,6 +265,7 @@ static int of_fixed_factor_clk_remove(struct platform_device *pdev)
 {
 	struct clk *clk = platform_get_drvdata(pdev);
 
+	of_clk_del_provider(pdev->dev.of_node);
 	clk_unregister_fixed_factor(clk);
 
 	return 0;

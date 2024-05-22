@@ -36,7 +36,7 @@
 #include <linux/kconfig.h>
 
 #ifdef CONFIG_MPTCP_EPC
-#include <net/mptcp_epc.h>
+#include <net/hw_mptcp_epc.h>
 #endif
 
 /* is seq1 < seq2 ? */
@@ -292,9 +292,15 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 	__wsum csum_tcp = 0; /* cumulative checksum of pld + mptcp-header */
 	int ans = 1, overflowed = 0, offset = 0, dss_csum_added = 0;
 	int iter = 0;
+	u32 next_seq, offset_seq;
 
 	skb_queue_walk_safe(&sk->sk_receive_queue, tmp, tmp1) {
 		unsigned int csum_len;
+
+		/* init next seq in first round  */
+		if (!iter)
+			next_seq = TCP_SKB_CB(tmp)->seq;
+		offset_seq = next_seq - TCP_SKB_CB(tmp)->seq;
 
 		if (before(tp->mptcp->map_subseq + tp->mptcp->map_data_len, TCP_SKB_CB(tmp)->end_seq))
 			/* Mapping ends in the middle of the packet -
@@ -304,20 +310,22 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		else
 			csum_len = tmp->len;
 
+		csum_len -= offset_seq;
 		offset = 0;
 		if (overflowed) {
 			char first_word[4];
 			first_word[0] = 0;
 			first_word[1] = 0;
 			first_word[2] = 0;
-			first_word[3] = *(tmp->data);
+			first_word[3] = *(tmp->data + offset_seq);
 			csum_tcp = csum_partial(first_word, 4, csum_tcp);
 			offset = 1;
 			csum_len--;
 			overflowed = 0;
 		}
 
-		csum_tcp = skb_checksum(tmp, offset, csum_len, csum_tcp);
+		csum_tcp = skb_checksum(tmp, offset + offset_seq, csum_len,
+					csum_tcp);
 
 		/* Was it on an odd-length? Then we have to merge the next byte
 		 * correctly (see above)
@@ -353,6 +361,7 @@ static int mptcp_verif_dss_csum(struct sock *sk)
 		    !before(TCP_SKB_CB(tmp1)->seq,
 			    tp->mptcp->map_subseq + tp->mptcp->map_data_len))
 			break;
+		next_seq = TCP_SKB_CB(tmp)->end_seq;
 	}
 
 	/* Now, checksum must be 0 */
@@ -593,7 +602,8 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 	 */
 	if (!tp->mptcp->fully_established) {
 		tp->mptcp->init_rcv_wnd -= skb->len;
-		if (tp->mptcp->init_rcv_wnd < 0)
+		if (mptcp_cap_is_local(tp->mptcp_cap_flag) ||
+		    tp->mptcp->init_rcv_wnd < 0)
 			mptcp_become_fully_estab(sk);
 	}
 
@@ -2205,10 +2215,9 @@ bool mptcp_handle_options(struct sock *sk, const struct tcphdr *th,
 	if (tp->mpcb->infinite_mapping_rcv || tp->mpcb->infinite_mapping_snd)
 		return false;
 
-	if (th->fin || (mopt->mp_fclose && mopt->proxy_status)) {
+	if (th->fin || (mopt->mp_fclose && mopt->proxy_status))
 		(void)mptcp_proxy_fallback(mptcp_meta_sk(sk), mopt->proxy_status,
 			mopt->proxy_status?true:false);
-	}
 
 	if (mptcp_mp_fastclose_rcvd(sk))
 		return true;

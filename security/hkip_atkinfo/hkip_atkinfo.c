@@ -37,6 +37,9 @@ unsigned int disable_upload;
 
 static int msg_channel_callback(unsigned int len, void *buf)
 {
+	(void)len;
+	(void)buf;
+
 	if (!g_atkinfo)
 		return -EINVAL;
 
@@ -102,23 +105,14 @@ static int upload_events_kill_atkprocess(struct hkip_atkinfo *atkinfo)
 			return -EINVAL;
 		j = i % hdr->buffer_capacity;
 
-		if ((hdr->events[j].type > HHEE_EV_MW_START &&
-		    hdr->events[j].type < HHEE_EV_MW_END) ||
-		    (hdr->events[j].type > HHEE_EV_SR_START &&
-		    hdr->events[j].type < HHEE_EV_SR_END)) {
-			saudit_log(HKIP, STP_RISK, 0,
-				"event=%d,type=%d,ctxid=%d,",
-				j, hdr->events[j].type, hdr->events[j].ctx_id);
+		saudit_log(HKIP, STP_RISK, 0, "event=%d,type=%d,ctxid=%d,",
+			j, hdr->events[j].type, hdr->events[j].ctx_id);
 
-			/* modify read_offset once finished to upload events */
-			ftr->read_offset++;
-			pr_info("%s: event[%d] type:%d/ts[j].typpid:%d succ\n",
-				MODULE_NAME, j,
-				hdr->events[j].type, hdr->events[j].ctx_id);
-		} else {
-			pr_err("%s: get a wrong type event\n", MODULE_NAME);
-			ret = -EINVAL;
-		}
+		/* modify read_offset once finished to upload events */
+		ftr->read_offset++;
+		pr_info("%s: event[%d] type:%d/ts[j].typpid:%d succ\n",
+			MODULE_NAME, j,
+			hdr->events[j].type, hdr->events[j].ctx_id);
 	}
 
 	return ret;
@@ -202,8 +196,7 @@ int hkip_atkinfo_check_enable(void)
 {
 	unsigned int dts_enable = 0;
 	int ret;
-	struct device_node *np = of_find_compatible_node(NULL, NULL,
-		"hisi,hkip-atkinfo");
+	struct device_node *np = of_find_compatible_node(NULL, NULL, ATKINFO_DTS);
 
 	if (!np && !of_find_property(np, "hkip_atkinfo_enable", NULL)) {
 		pr_err("%s: no hkip-atkinfo node found\n", MODULE_NAME);
@@ -356,7 +349,7 @@ static int hkip_atkinfo_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id hkip_atkinfo_of_table[] = {
-	{ .compatible = "hisi,hkip-atkinfo" },
+	{ .compatible = ATKINFO_DTS },
 	{ },
 };
 

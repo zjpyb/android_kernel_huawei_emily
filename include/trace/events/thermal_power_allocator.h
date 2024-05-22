@@ -279,6 +279,132 @@ TRACE_EVENT(IPA_actor_cpu_limit,
 		__entry->power)
 ); /* [false alarm]:fortify */
 
+TRACE_EVENT(IPA_actor_cpu_pdata_to_freq,
+		TP_PROTO(int level, unsigned int freq_mhz,
+			unsigned int voltage, unsigned long long calc_power,
+			u32 power_table, unsigned long normalized_pdata),
+
+		TP_ARGS(level, freq_mhz, voltage, calc_power, power_table,
+			normalized_pdata),
+
+		TP_STRUCT__entry(
+			__field(int, level)
+			__field(unsigned int, freq_mhz)
+			__field(unsigned int, voltage)
+			__field(unsigned long long, calc_power)
+			__field(u32, power_table)
+			__field(unsigned long, normalized_pdata)
+			),
+
+		TP_fast_assign(
+				__entry->level = level;
+				__entry->freq_mhz = freq_mhz;
+				__entry->voltage = voltage;
+				__entry->calc_power = calc_power;
+				__entry->power_table = power_table;
+				__entry->normalized_pdata = normalized_pdata;
+			      ),
+
+		TP_printk("%d,%u,%u,%llu,%u,%lu",
+				__entry->level,
+				__entry->freq_mhz,
+				__entry->voltage,
+				__entry->calc_power,
+				__entry->power_table,
+				__entry->normalized_pdata)
+); /* [false alarm]:fortify */
+
+TRACE_EVENT(IPA_actor_gpu_pdata_to_freq,
+		TP_PROTO(int level, unsigned int freq_mhz,
+			unsigned int voltage, unsigned long long calc_power,
+			u32 power_table, unsigned long normalized_pdata),
+
+		TP_ARGS(level, freq_mhz, voltage, calc_power, power_table,
+			normalized_pdata),
+
+		TP_STRUCT__entry(
+			__field(int, level)
+			__field(unsigned int, freq_mhz)
+			__field(unsigned int, voltage)
+			__field(unsigned long long, calc_power)
+			__field(u32, power_table)
+			__field(unsigned long, normalized_pdata)
+			),
+
+		TP_fast_assign(
+				__entry->level = level;
+				__entry->freq_mhz = freq_mhz;
+				__entry->voltage = voltage;
+				__entry->calc_power = calc_power;
+				__entry->power_table = power_table;
+				__entry->normalized_pdata = normalized_pdata;
+			      ),
+
+		TP_printk("%d,%u,%u,%llu,%u,%lu",
+				__entry->level,
+				__entry->freq_mhz,
+				__entry->voltage,
+				__entry->calc_power,
+				__entry->power_table,
+				__entry->normalized_pdata)
+); /* [false alarm]:fortify */
+
+TRACE_EVENT(IPA_actor_cpu_normalize_power,
+		TP_PROTO(unsigned long normalized_pdata,
+			unsigned int dynamic_power,
+			unsigned int freq_mhz,
+			unsigned int voltage),
+
+		 TP_ARGS(normalized_pdata, dynamic_power, freq_mhz, voltage),
+
+		 TP_STRUCT__entry(
+			__field(unsigned long, normalized_pdata)
+			__field(unsigned int, dynamic_power)
+			__field(unsigned int, freq_mhz)
+			__field(unsigned int, voltage)
+			),
+
+		 TP_fast_assign(
+			 __entry->normalized_pdata = normalized_pdata;
+			 __entry->dynamic_power = dynamic_power;
+			 __entry->freq_mhz = freq_mhz;
+			 __entry->voltage = voltage;
+			 ),
+		  TP_printk("%lu,%u,%u,%u",
+				  __entry->normalized_pdata,
+				  __entry->dynamic_power,
+				  __entry->freq_mhz,
+				  __entry->voltage)
+); /* [false alarm]:fortify */
+
+TRACE_EVENT(IPA_actor_gpu_normalize_power,
+		TP_PROTO(unsigned long normalized_pdata,
+			unsigned int dynamic_power,
+			unsigned int freq_mhz,
+			unsigned int voltage),
+
+		 TP_ARGS(normalized_pdata, dynamic_power, freq_mhz, voltage),
+
+		 TP_STRUCT__entry(
+			__field(unsigned long, normalized_pdata)
+			__field(unsigned int, dynamic_power)
+			__field(unsigned int, freq_mhz)
+			__field(unsigned int, voltage)
+			),
+
+		 TP_fast_assign(
+			 __entry->normalized_pdata = normalized_pdata;
+			 __entry->dynamic_power = dynamic_power;
+			 __entry->freq_mhz = freq_mhz;
+			 __entry->voltage = voltage;
+			 ),
+		  TP_printk("%lu,%u,%u,%u",
+				  __entry->normalized_pdata,
+				  __entry->dynamic_power,
+				  __entry->freq_mhz,
+				  __entry->voltage)
+); /* [false alarm]:fortify */
+
 TRACE_EVENT(IPA_actor_cpu_cooling,
 	TP_PROTO(const struct cpumask *cpus, unsigned int freq,
 		unsigned long cdev_state),

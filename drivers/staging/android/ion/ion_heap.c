@@ -14,6 +14,8 @@
  *
  */
 
+#define pr_fmt(fmt) "[ION: ]" fmt
+
 #include <linux/err.h>
 #include <linux/freezer.h>
 #include <linux/kthread.h>
@@ -26,7 +28,7 @@
 #ifdef CONFIG_HISI_LB
 #include <linux/hisi/hisi_lb.h>
 #endif
-#ifdef CONFIG_HISI_SVM
+#if defined(CONFIG_HISI_SVM) || defined(CONFIG_ARM_SMMU_V3)
 #include <linux/hisi/hisi_svm.h>
 #endif
 #include "ion.h"
@@ -52,8 +54,11 @@ void *ion_heap_map_kernel(struct ion_heap *heap,
 		pgprot = pgprot_writecombine(PAGE_KERNEL);
 
 #ifdef CONFIG_HISI_LB
-	if (buffer->plc_id)
+	if (buffer->plc_id) {
+		pr_info("%s:magic-%lu,lb_pid-%u\n", __func__,
+			buffer->magic, buffer->plc_id);
 		lb_pid_prot_build(buffer->plc_id, &pgprot);
+	}
 #endif
 
 	for_each_sg(table->sgl, sg, table->nents, i) {
@@ -79,6 +84,32 @@ void ion_heap_unmap_kernel(struct ion_heap *heap,
 	vunmap(buffer->vaddr);
 }
 
+#ifdef CONFIG_HISI_LB
+static int remap_lb_pfn_range(struct ion_buffer *buffer, struct page *page,
+	struct vm_area_struct *vma, unsigned long addr, unsigned long len)
+{
+	int ret = 0;
+	unsigned int gid_idx;
+	pgprot_t newprot = vma->vm_page_prot;
+
+	gid_idx = lb_page_to_gid(page);
+	newprot = pgprot_lb(newprot, gid_idx);
+	ret = remap_pfn_range(vma, addr, page_to_pfn(page), len, newprot);
+
+	return ret;
+}
+#endif
+
+void ion_lb_close(struct vm_area_struct *area)
+{
+	pr_info("%s:start-0x%lx,end-0x%lx\n", __func__, area->vm_start,
+		area->vm_end);
+}
+
+const struct vm_operations_struct ion_lb_vm_ops = {
+	.close = ion_lb_close,
+};
+
 int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 		      struct vm_area_struct *vma)
 {
@@ -90,7 +121,14 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 	int ret;
 
 #ifdef CONFIG_HISI_LB
-	if (buffer->plc_id)
+	if (buffer->plc_id) {
+		pr_info("%s:magic-%lu,start-0x%lx,end-0x%lx\n", __func__,
+			buffer->magic, vma->vm_start, vma->vm_end);
+		if (!vma->vm_ops)
+			vma->vm_ops = &ion_lb_vm_ops;
+	}
+
+	if (buffer->plc_id && buffer->plc_id != PID_NPU)
 		lb_pid_prot_build(buffer->plc_id, &vma->vm_page_prot);
 #endif
 
@@ -108,8 +146,14 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 			offset = 0;
 		}
 		len = min(len, remainder);
-		ret = remap_pfn_range(vma, addr, page_to_pfn(page), len,
-				      vma->vm_page_prot);
+
+#ifdef CONFIG_HISI_LB
+		if (buffer->plc_id == PID_NPU)
+			ret = remap_lb_pfn_range(buffer, page, vma, addr, len);
+		else
+#endif
+			ret = remap_pfn_range(vma, addr, page_to_pfn(page), len,
+				vma->vm_page_prot);
 		if (ret)
 			return ret;
 		addr += len;
@@ -118,7 +162,7 @@ int ion_heap_map_user(struct ion_heap *heap, struct ion_buffer *buffer,
 	}
 
 done:
-#ifdef CONFIG_HISI_SVM
+#if defined(CONFIG_HISI_SVM) || defined(CONFIG_ARM_SMMU_V3)
 	if (test_bit(MMF_SVM, &vma->vm_mm->flags)) {
 		hisi_svm_flush_cache(vma->vm_mm,
 				     vma->vm_start,
@@ -131,12 +175,12 @@ done:
 
 static int ion_heap_clear_pages(struct page **pages, int num, pgprot_t pgprot)
 {
-	void *addr = vm_map_ram(pages, num, -1, pgprot);
+	void *addr = vmap(pages, num, VM_MAP, pgprot);
 
 	if (!addr)
 		return -ENOMEM;
 	memset(addr, 0, PAGE_SIZE * num);
-	vm_unmap_ram(addr, num);
+	vunmap(addr);
 
 	return 0;
 }
@@ -309,11 +353,11 @@ static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
 {
 	struct ion_heap *heap = container_of(shrinker, struct ion_heap,
 					     shrinker);
-	int freed = 0;
-	int to_scan = sc->nr_to_scan;
+	unsigned long freed = 0;
+	unsigned long to_scan = sc->nr_to_scan;
 
 	if (to_scan == 0)
-		return 0;
+		return SHRINK_STOP;
 
 	/*
 	 * shrink the free list first, no point in zeroing the memory if we're
@@ -325,11 +369,12 @@ static unsigned long ion_heap_shrink_scan(struct shrinker *shrinker,
 
 	to_scan -= freed;
 	if (to_scan <= 0)
-		return freed; /* [false alarm]:fortify */
+		return freed ? freed : SHRINK_STOP;
 
 	if (heap->ops->shrink)
 		freed += heap->ops->shrink(heap, sc->gfp_mask, to_scan);
-	return freed; /* [false alarm]:fortify */
+
+	return freed ? freed : SHRINK_STOP;
 }
 
 void ion_heap_init_shrinker(struct ion_heap *heap)

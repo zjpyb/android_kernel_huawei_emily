@@ -3,7 +3,7 @@
  *
  * Fingerprint UD Hub Channel driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,48 +16,54 @@
  *
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
+
 #include <huawei_platform/inputhub/fingerprinthub.h>
 
-#include "contexthub_route.h"
 #include "contexthub_boot.h"
+#include "contexthub_route.h"
 #include "protocol.h"
+#include "sensor_info.h"
 
 static int fp_ref_cnt;
 static bool fingerprint_status[FINGERPRINT_TYPE_END];
 
-extern int flag_for_sensor_test;
+#define FHB_CONFIG_UD_OPTICAL_BRIGHTNESS 14
+#define UD_AOD_BRIGHTNESS_LENGTH         5
+/* aod optical brightness value */
+static uint8_t g_opt_brt[UD_AOD_BRIGHTNESS_LENGTH] = {0};
+/* aod optical brightness length */
+static uint8_t g_opt_brt_len;
 
 extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
 extern int send_app_config_cmd_with_resp(int tag,
 	void *app_config, bool use_lock);
+extern void inputhub_route_clean_buffer(unsigned short port);
 
 struct fingerprint_cmd_map {
 	int fhb_ioctl_app_cmd;
 	int ca_type;
 	int tag;
-	obj_cmd_t cmd;
+	enum obj_cmd cmd;
 };
 
 #define CA_TYPE_DEFAULT (-1)
 static const struct fingerprint_cmd_map fingerprint_cmd_map_tab[] = {
-	{ FHB_IOCTL_FP_START,       CA_TYPE_DEFAULT, TAG_FP_UD,
-		CMD_CMN_OPEN_REQ },
-	{ FHB_IOCTL_FP_STOP,        CA_TYPE_DEFAULT, TAG_FP_UD,
-		CMD_CMN_CLOSE_REQ },
+	{ FHB_IOCTL_FP_START, CA_TYPE_DEFAULT, TAG_FP_UD, CMD_CMN_OPEN_REQ },
+	{ FHB_IOCTL_FP_STOP,  CA_TYPE_DEFAULT, TAG_FP_UD, CMD_CMN_CLOSE_REQ },
 	{ FHB_IOCTL_FP_DISABLE_SET, CA_TYPE_DEFAULT, TAG_FP_UD,
 		FHB_IOCTL_FP_DISABLE_SET_CMD },
 };
 
-static void update_fingerprint_info(obj_cmd_t cmd, fingerprint_type_t type)
+static void update_fingerprint_info(enum obj_cmd cmd, fingerprint_type_t type)
 {
 	switch (cmd) {
 	case CMD_CMN_OPEN_REQ:
@@ -91,7 +97,7 @@ static void fingerprint_report(void)
 		sizeof(fingerprint_upload.data));
 }
 
-static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd,
+static int send_fingerprint_cmd_internal(int tag, enum obj_cmd cmd,
 	fingerprint_type_t type, bool use_lock)
 {
 	interval_param_t interval_param;
@@ -101,6 +107,8 @@ static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd,
 	update_fingerprint_info(cmd, type);
 	if (cmd == CMD_CMN_OPEN_REQ) {
 		if (really_do_enable_disable(&fp_ref_cnt, true, type)) {
+			inputhub_route_clean_buffer(ROUTE_FHB_UD_PORT);
+
 			app_config[0] = SUB_CMD_FINGERPRINT_OPEN_REQ;
 			if (use_lock) {
 				inputhub_sensor_enable(tag, true);
@@ -148,7 +156,7 @@ static int send_fingerprint_cmd(unsigned int cmd, unsigned long arg)
 	int i;
 	const int len = ARRAY_SIZE(fingerprint_cmd_map_tab);
 
-	if (flag_for_sensor_test)
+	if (get_flag_for_sensor_test())
 		return 0;
 
 	hwlog_info("fingerprint:%s enter\n", __func__);
@@ -177,11 +185,46 @@ static int send_fingerprint_cmd(unsigned int cmd, unsigned long arg)
 		fingerprint_cmd_map_tab[i].cmd, arg_value, true);
 }
 
+static int fingerprint_recovery_config_para(const void *data, int len)
+{
+	fingerprint_req_t fp_pkt;
+	struct write_info pkg_ap;
+	int ret;
+
+	memset(&fp_pkt, 0, sizeof(fp_pkt));
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+
+	if (len > sizeof(fp_pkt.buf)) {
+		hwlog_warn("fingerprint: %s len is out of size, len=%d\n",
+			__func__, len);
+		return -1;
+	}
+
+	memcpy(&fp_pkt.buf[0], data, len);
+
+	fp_pkt.len = len;
+	fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;
+
+	hwlog_info("fingerprint: %s data=%d, len=%d\n",
+		__func__, fp_pkt.buf[0], len);
+
+	pkg_ap.tag = TAG_FP_UD;
+	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+	pkg_ap.wr_buf = &fp_pkt;
+	pkg_ap.wr_len = sizeof(fp_pkt);
+	ret = write_customize_cmd(&pkg_ap, NULL, false);
+	if (ret)
+		hwlog_err("fhb_ud_write fail,ret=%d\n", ret);
+
+	return ret;
+}
+
 static void enable_fingerprint_when_recovery_iom3(void)
 {
 	fingerprint_type_t type;
 
 	fp_ref_cnt = 0;
+	fingerprint_recovery_config_para(g_opt_brt, g_opt_brt_len);
 	for (type = FINGERPRINT_TYPE_START;
 		type < FINGERPRINT_TYPE_END; ++type) {
 		if (fingerprint_status[type]) {
@@ -227,7 +270,7 @@ static ssize_t fhb_ud_write(struct file *file, const char __user *data,
 {
 	fingerprint_req_t fp_pkt;
 	int ret;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 
 	memset(&fp_pkt, 0, sizeof(fp_pkt));
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -240,6 +283,11 @@ static ssize_t fhb_ud_write(struct file *file, const char __user *data,
 	if (copy_from_user(fp_pkt.buf, data, len)) {
 		hwlog_warn("fingerprint:%s copy_from_user failed\n", __func__);
 		return -EFAULT;
+	}
+	if (fp_pkt.buf[0] == FHB_CONFIG_UD_OPTICAL_BRIGHTNESS) {
+		g_opt_brt_len =
+			(len < sizeof(g_opt_brt) ? len : sizeof(g_opt_brt));
+		memcpy(g_opt_brt, fp_pkt.buf, g_opt_brt_len);
 	}
 	fp_pkt.len = len;
 	fp_pkt.sub_cmd = SUB_CMD_FINGERPRINT_CONFIG_SENSOR_DATA_REQ;

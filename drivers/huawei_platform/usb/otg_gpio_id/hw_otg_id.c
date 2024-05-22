@@ -3,7 +3,7 @@
  *
  * gpio based for otgid driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,30 +16,30 @@
  *
  */
 
+#include "hw_otg_id.h"
+#include <linux/clk.h>
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/hisi/hisi_adc.h>
+#include <linux/hisi/usb/hisi_usb.h>
 #include <linux/interrupt.h>
-#include <linux/spinlock.h>
+#include <linux/mfd/hisi_pmic.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/of_gpio.h>
+#include <linux/of_irq.h>
 #include <linux/platform_device.h>
 #include <linux/pm_wakeup.h>
-#include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/delay.h>
-#include <linux/of_address.h>
 #include <linux/regulator/consumer.h>
-#include <linux/clk.h>
-#include <linux/of_gpio.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <huawei_platform/power/power_dts.h>
-#include <linux/mfd/hisi_pmic.h>
-#include <pmic_interface.h>
-#include <linux/hisi/hisi_adc.h>
+#include <linux/spinlock.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
 #include <huawei_platform/log/hw_log.h>
+#include <pmic_interface.h>
 #ifdef CONFIG_HUAWEI_YCABLE
 #include <huawei_platform/usb/hw_ycable.h>
 #endif
-#include "hw_otg_id.h"
 
 #define HWLOG_TAG otgid
 HWLOG_REGIST();
@@ -88,7 +88,7 @@ static int hw_is_usb_cable_connected(void)
 		ret = (hisi_pmic_reg_read(PMIC_STATUS0_ADDR(0)) &
 			(VBUS4P3_D10 | VBUS_COMP_VBAT_D20));
 #else
-		ret = hisi_pmic_get_vbus_status();
+		ret = pmic_get_vbus_status();
 #endif /* CONFIG_DEC_USB */
 	}
 
@@ -128,7 +128,6 @@ static int hw_otg_id_notifier_call(struct notifier_block *nb,
 			di->otg_irq_enabled = true;
 		}
 		break;
-	/* fall-through */
 	case CHARGER_TYPE_SDP:
 	case CHARGER_TYPE_CDP:
 	case CHARGER_TYPE_DCP:
@@ -226,7 +225,7 @@ static void hw_otg_id_intb_work(struct work_struct *work)
 
 		if ((avgvalue >= 0) && (avgvalue <= ADC_VOLTAGE_LIMIT)) {
 			is_otg_has_inserted = true;
-			hisi_usb_otg_event(ID_FALL_EVENT);
+			chip_usb_otg_event(ID_FALL_EVENT);
 #ifdef CONFIG_HUAWEI_YCABLE
 			ycable_handle_otg_event(ID_FALL_EVENT,
 				!YCABLE_NEED_WAIT);
@@ -240,8 +239,8 @@ static void hw_otg_id_intb_work(struct work_struct *work)
 				 * so here reinit it
 				 */
 				ycable_init_devoff_completion();
-				hisi_usb_otg_event(CHARGER_DISCONNECT_EVENT);
-				hisi_usb_otg_event(ID_FALL_EVENT);
+				chip_usb_otg_event(CHARGER_DISCONNECT_EVENT);
+				chip_usb_otg_event(ID_FALL_EVENT);
 				ycable_handle_otg_event(ID_FALL_EVENT,
 					YCABLE_NEED_WAIT);
 			}
@@ -250,7 +249,7 @@ static void hw_otg_id_intb_work(struct work_struct *work)
 	} else {
 		hwlog_info("send ID_RISE_EVENT\n");
 		is_otg_has_inserted = false;
-		hisi_usb_otg_event(ID_RISE_EVENT);
+		chip_usb_otg_event(ID_RISE_EVENT);
 	}
 }
 
@@ -281,10 +280,12 @@ static irqreturn_t hw_otg_id_irq_handle(int irq, void *dev_id)
 static int hw_otg_id_parse_dts(struct otg_gpio_id_dev *di,
 	struct device_node *np)
 {
-	(void)power_dts_read_u32(np, "sampling_time_optimize",
-		&di->sampling_time_optimize, 0);
-	(void)power_dts_read_u32(np, "fpga_flag", &di->fpga_flag, 0);
-	if (power_dts_read_u32(np, "otg_adc_channel", &di->otg_adc_channel, 0))
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sampling_time_optimize", &di->sampling_time_optimize, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"fpga_flag", &di->fpga_flag, 0);
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"otg_adc_channel", &di->otg_adc_channel, 0))
 		return -EINVAL;
 
 	return 0;
@@ -298,8 +299,6 @@ static int hw_otg_id_probe(struct platform_device *pdev)
 	struct device_node *np = NULL;
 	struct device *dev = NULL;
 	struct otg_gpio_id_dev *di = NULL;
-
-	hwlog_info("probe begin\n");
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -323,18 +322,16 @@ static int hw_otg_id_probe(struct platform_device *pdev)
 	di->otg_nb.notifier_call = hw_otg_id_notifier_call;
 
 #ifdef CONFIG_DEC_USB
-	ret = hisi_usb_otg_irq_notifier_register(&di->otg_nb);
+	ret = chip_usb_otg_irq_notifier_register(&di->otg_nb);
 #else
-	ret = hisi_charger_type_notifier_register(&di->otg_nb);
+	ret = chip_charger_type_notifier_register(&di->otg_nb);
 #endif /* CONFIG_DEC_USB */
-
 	if (ret) {
 		hwlog_err("charger_type_notifier register failed\n");
 		goto fail_parse_dts;
 	}
 
 	INIT_WORK(&di->otg_intb_work, hw_otg_id_intb_work);
-
 	di->gpio = of_get_named_gpio(np, "otg-gpio", 0);
 	hwlog_info("gpio=%d\n", di->gpio);
 
@@ -406,16 +403,15 @@ static int hw_otg_id_probe(struct platform_device *pdev)
 	if (ret == 0)
 		schedule_work(&di->otg_intb_work);
 
-	hwlog_info("probe end\n");
 	return 0;
 
 fail_free_gpio:
 	gpio_free(di->gpio);
 fail_register_notifier:
 #ifdef CONFIG_DEC_USB
-	hisi_usb_otg_irq_notifier_unregister(&di->otg_nb);
+	chip_usb_otg_irq_notifier_unregister(&di->otg_nb);
 #else
-	hisi_charger_type_notifier_unregister(&di->otg_nb);
+	chip_charger_type_notifier_unregister(&di->otg_nb);
 #endif /* CONFIG_DEC_USB */
 fail_parse_dts:
 	devm_kfree(&pdev->dev, di);
@@ -428,15 +424,13 @@ static int hw_otg_id_remove(struct platform_device *pdev)
 {
 	struct otg_gpio_id_dev *di = g_otg_gpio_id_dev;
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
 #ifdef CONFIG_DEC_USB
-	hisi_usb_otg_irq_notifier_unregister(&di->otg_nb);
+	chip_usb_otg_irq_notifier_unregister(&di->otg_nb);
 #else
-	hisi_charger_type_notifier_unregister(&di->otg_nb);
+	chip_charger_type_notifier_unregister(&di->otg_nb);
 #endif /* CONFIG_DEC_USB */
 
 	free_irq(di->irq, pdev);
@@ -444,10 +438,8 @@ static int hw_otg_id_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, di);
 	g_otg_gpio_id_dev = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
-
 
 static const struct of_device_id hw_otg_id_of_match[] = {
 	{

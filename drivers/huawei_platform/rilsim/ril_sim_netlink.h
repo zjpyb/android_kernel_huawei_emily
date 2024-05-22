@@ -33,4 +33,4 @@ typedef struct tag_knl_ril_sim_card_info {
 	int  sim_slot_id;
 } knl_ril_sim_card_info;
 
-#endif /*_RIL_SIM_NETLINK_H*/
+#endif

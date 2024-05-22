@@ -84,75 +84,72 @@ enum SENSOR_POWER_CHECK {
 
 typedef struct
 {
-    u32 mutex;
-    u16 index;
-    u16 pingpang;
-    u32 buff;
-    u32 ddr_log_buff_cnt;
-    u32 ddr_log_buff_index;
-    u32 ddr_log_buff_last_update_index;
+	u32 mutex;
+	u16 index;
+	u16 pingpang;
+	u32 buff;
+	u32 ddr_log_buff_cnt;
+	u32 ddr_log_buff_index;
+	u32 ddr_log_buff_last_update_index;
 } log_buff_t;
 
 typedef struct WRONG_WAKEUP_MSG
 {
-    u32 flag;
-    u64 time;
-    u32 irq0;
-    u32 irq1;
-    u32 recvfromapmsg[4];
-    u32 recvfromlpmsg[4];
-    u32 sendtoapmsg[4];
-    u32 sendtolpmsg[4];
-    u32 recvfromapmsgmode;
-    u32 recvfromlpmsgmode;
-    u32 sendtoapmsgmode;
-    u32 sendtolpmsgmode;
+	u32 flag;
+	u64 time;
+	u32 irq0;
+	u32 irq1;
+	u32 recvfromapmsg[4];
+	u32 recvfromlpmsg[4];
+	u32 sendtoapmsg[4];
+	u32 sendtolpmsg[4];
+	u32 recvfromapmsgmode;
+	u32 recvfromlpmsgmode;
+	u32 sendtoapmsgmode;
+	u32 sendtolpmsgmode;
 } wrong_wakeup_msg_t;
 
-typedef enum DUMP_LOC
-{
-    DL_NONE = 0,
-    DL_TCM,
-    DL_EXT,
-    DL_BOTTOM = DL_EXT,
-} dump_loc_t;
+enum dump_loc {
+	DL_NONE = 0,
+	DL_TCM,
+	DL_EXT,
+	DL_BOTTOM = DL_EXT,
+};
 
 enum DUMP_REGION
 {
-    DE_TCM_CODE,
-    DE_DDR_CODE,
-    DE_DDR_DATA,
-    DE_BOTTOM = 16,
+	DE_TCM_CODE,
+	DE_DDR_CODE,
+	DE_DDR_DATA,
+	DE_BOTTOM = 16,
 };
 
-typedef struct DUMP_REGION_CONFIG
-{
-    u8 loc;
-    u8 reserved[3];
-} dump_region_config_t;
+struct dump_region_config {
+	u8 loc;
+	u8 reserved[3];
+};
 
-typedef struct DUMP_CONFIG
-{
-    u64 dump_addr;
-    u32 dump_size;
-    u64 ext_dump_addr;
-    u32 ext_dump_size;
-    u8 enable;
-    u8 finish;
-    u8 reason;
-    dump_region_config_t elements[DE_BOTTOM];
-} dump_config_t;
+struct dump_config {
+	u64 dump_addr;
+	u32 dump_size;
+	u64 ext_dump_addr;
+	u32 ext_dump_size;
+	u8 enable;
+	u8 finish;
+	u8 reason;
+	struct dump_region_config elements[DE_BOTTOM];
+};
 
-typedef struct {
+struct timestamp_kernel {
 	u64 syscnt;
 	u64 kernel_ns;
-}timestamp_kernel_t;
+};
 
-typedef struct {
+struct timestamp_iomcu_base {
 	u64 syscnt;
 	u64 kernel_ns;
 	u32 timer32k_cyc;
-}timestamp_iomcu_base_t;
+};
 
 typedef struct {
 	const char *dts_comp_mipi;
@@ -166,15 +163,15 @@ typedef struct {
 
 struct CONFIG_ON_DDR
 {
-	dump_config_t dump_config;
+	struct dump_config dump_config;
 	log_buff_t LogBuffCBBackup;
 	wrong_wakeup_msg_t WrongWakeupMsg;
 	u32 log_level;
 	float gyro_offset[3];
 	u8 modem_open_app_state;
 	u64 reserved;
-	timestamp_kernel_t timestamp_base;
-	timestamp_iomcu_base_t timestamp_base_iomcu;
+	struct timestamp_kernel timestamp_base;
+	struct timestamp_iomcu_base timestamp_base_iomcu;
 };
 
 /*receive data from mcu,you should copy the buf each time.*/

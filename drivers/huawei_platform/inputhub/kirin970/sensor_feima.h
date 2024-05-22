@@ -13,7 +13,9 @@ struct sensor_cookie {
 	struct device *dev;
 };
 typedef struct {
-    uint16_t sub_cmd;
-    uint16_t sar_info;
+	uint16_t sub_cmd;
+	uint16_t sar_info;
 } rpc_ioctl_t;
+void send_lcd_freq_to_sensorhub(uint32_t lcd_freq);
+
 #endif //__SENSOR_FEIMA_H__

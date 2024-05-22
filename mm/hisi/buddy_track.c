@@ -1,3 +1,19 @@
+/*
+ * mm/hisi/buddy_track.c
+ *
+ * Copyright(C) 2019-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/stddef.h>
 #include <linux/hisi/mem_trace.h>
 #include <linux/memory.h>
@@ -22,37 +38,37 @@ struct buddy_node {
 	int type;
 };
 
-static struct funcmap *fmap;
+static struct funcmap *func_map;
 static int buddy_track_on;
 static int buddy_track_open;
 static struct mutex buddy_mutex;
 static struct rb_root buddy_rb;
-static spinlock_t buddy_lock;
+static DEFINE_SPINLOCK(buddy_lock);
 static int buddy_global_init;
 
 #define ORDER_SHIFT          60UL
-#define CALLER_MASK          (0xFUL<<ORDER_SHIFT)
-#define PAGE_SIZE_UP(size) (((size) + PAGE_SIZE-1) >> PAGE_SHIFT)
-#define FMAP_SIZE(size) (PAGE_SIZE_UP(size) * sizeof(fmap))
+#define CALLER_MASK          (0xFUL << ORDER_SHIFT)
+#define page_size_up(size) (((size) + PAGE_SIZE - 1) >> PAGE_SHIFT)
+#define fmap_size(size) (page_size_up(size) * sizeof(struct funcmap))
 
-#define PageTrack(page) (PageDrv(page) && !PageLslub(page)           \
-			&& !PageSKB(page) && !PageION(page)          \
-			&& !PageVmalloc(page) && !PageZspage(page)   \
-			&& !PageReserved(page) && !PageLRU(page))    \
+#define page_exc(p) (!PageLslub(p) && !PageSKB(p) && !PageION(p) \
+			 && !PageVmalloc(p) && !PageZspage(p)   \
+			&& !PageReserved(p) && !PageLRU(p))    \
 
-#define BUDDYPfnTrack(pfn)  PageTrack(pfn_to_page(pfn))
-#define LSLUBPfnTrack(pfn)  PageLslub(pfn_to_page(pfn))
-#define BuddyTrack(s, type, pfn) ((type == s##_TRACK) && s##PfnTrack(pfn))
+#define page_track(page) (PageDrv(page) && page_exc(page))
+
+#define buddy_pfn_track(pfn)  page_track(pfn_to_page(pfn))
+#define lslub_pfn_track(pfn)  PageLslub(pfn_to_page(pfn))
 #define invalid_buddy_type(type) (type != BUDDY_TRACK  \
 				&& type != LSLUB_TRACK)
 
 static inline struct funcmap *page_to_funcmap(struct page *page)
 {
-	return (fmap + page_to_pfn(page));/*lint !e704*/
+	return (func_map + page_to_pfn(page));/*lint !e704*/
 }
 
 void set_buddy_track(struct page *page,
-	unsigned int order, unsigned long caller)
+				unsigned int order, unsigned long caller)
 {
 	unsigned long flags;
 	unsigned long __caller;
@@ -70,7 +86,7 @@ void set_buddy_track(struct page *page,
 }
 
 void set_lslub_track(struct page *page,
-	unsigned int order, unsigned long caller)
+				unsigned int order, unsigned long caller)
 {
 	unsigned long flags;
 	unsigned long __caller;
@@ -96,7 +112,7 @@ static void buddy_track_info_dump(unsigned long pfn)
 {
 	unsigned long caller;
 
-	if (BUDDYPfnTrack(pfn) || LSLUBPfnTrack(pfn)) {/*lint !e704*/
+	if (buddy_pfn_track(pfn) || lslub_pfn_track(pfn)) {/*lint !e704*/
 		caller = get_buddy_caller(pfn);
 		if (caller)
 			pr_err("pfn:0x%lx,caller:%pS,order:%lu\n",
@@ -122,14 +138,22 @@ void buddy_track_show(void)
 int buddy_track_map(int nid)
 {
 	phys_addr_t size;
+	unsigned long flags;
 	void *base = NULL;
-
-	size = FMAP_SIZE(memblock_end_of_DRAM() - memblock_start_of_DRAM());
+#ifndef CONFIG_HISI_MEM_OFFLINE
+	size = fmap_size(memblock_end_of_DRAM() - memblock_start_of_DRAM());
+#else
+	size = fmap_size(bootloader_memory_limit - memblock_start_of_DRAM());
+#endif
 	base = memblock_virt_alloc_node_nopanic(size, nid);
 	if (!base)
 		return -ENOMEM;
-	fmap = base;
+	func_map = base;
+
+	spin_lock_irqsave(&buddy_lock, flags);
 	buddy_track_on = 1;
+	spin_unlock_irqrestore(&buddy_lock, flags);
+
 	return 0;
 }
 
@@ -137,19 +161,25 @@ int buddy_track_unmap(void)
 {
 	phys_addr_t i, size;
 	unsigned long flags;
-	struct page *p = NULL;;
+	struct page *p = NULL;
 
-	if (!fmap)
+	if (!func_map)
 		return -EINVAL;
 
-	if (!buddy_track_on)
-		return 0;
-
 	spin_lock_irqsave(&buddy_lock, flags);
+	if (!buddy_track_on) {
+		spin_unlock_irqrestore(&buddy_lock, flags);
+		return 0;
+	}
+
 	buddy_track_on = 0;
 	spin_unlock_irqrestore(&buddy_lock, flags);
-	p = virt_to_page(fmap);
-	size = FMAP_SIZE(memblock_end_of_DRAM() - memblock_start_of_DRAM());
+	p = virt_to_page(func_map);
+#ifndef CONFIG_HISI_MEM_OFFLINE
+	size = fmap_size(memblock_end_of_DRAM() - memblock_start_of_DRAM());
+#else
+	size = fmap_size(bootloader_memory_limit - memblock_start_of_DRAM());
+#endif
 	for (i = 0; (i < (size >> PAGE_SHIFT)) && p; i++, p++) {
 		__ClearPageReserved(p);
 		__free_pages(p, 0);
@@ -179,11 +209,11 @@ static void buddy_add_node(unsigned long caller, int type)
 	while (*p) {
 		parent = *p;
 		entry = rb_entry(parent, struct buddy_node, node);
-		if (caller < entry->caller)
+		if (caller < entry->caller) {
 			p = &(*p)->rb_left;
-		else if (caller > entry->caller)
+		} else if (caller > entry->caller) {
 			p = &(*p)->rb_right;
-		else {
+		} else {
 			atomic_inc(&entry->ref);
 			return;
 		}
@@ -216,19 +246,21 @@ static void buddy_fetch_stack(int type)
 	struct memblock_region *reg = NULL;
 	unsigned long start, end;
 
+	if (invalid_buddy_type(type))
+		return;
+
 	for_each_memblock(memory, reg) {
 		start = __phys_to_pfn(reg->base);
 		end = __phys_to_pfn(reg->base + reg->size);
 		for (pfn = start; pfn < end && pfn_valid(pfn); pfn++) {
-			if (BuddyTrack(BUDDY, type, pfn)    /*lint !e704*/
-			   || BuddyTrack(LSLUB, type, pfn)) /*lint !e704*/
+			if (buddy_pfn_track(pfn) || lslub_pfn_track(pfn)) /*lint !e704*/
 				buddy_add_caller(type, pfn);
 		}
 	}
 }
 
 static size_t buddy_read_node(
-	struct hisi_stack_info *buf, size_t len, int type)
+	struct mm_stack_info *buf, size_t len, int type)
 {
 	struct rb_node *n = NULL;
 	struct buddy_node *vnode = NULL;
@@ -258,10 +290,13 @@ static size_t buddy_read_node(
 int hisi_buddy_stack_open(int type)
 {
 	pr_err("into %s, type:%d\n", __func__, type);
+
 	if (invalid_buddy_type(type))
 		return -EINVAL;
+
 	if (!buddy_track_on)
 		return -EINVAL;
+
 	mutex_lock(&buddy_mutex);
 	if (buddy_track_open) {
 		mutex_unlock(&buddy_mutex);
@@ -270,6 +305,7 @@ int hisi_buddy_stack_open(int type)
 	buddy_fetch_stack(type);
 	buddy_track_open = 1;
 	mutex_unlock(&buddy_mutex);
+
 	return 0;
 }
 
@@ -282,7 +318,7 @@ int hisi_buddy_stack_close(void)
 }
 
 size_t hisi_buddy_stack_read(
-	struct hisi_stack_info *buf, size_t len, int type)
+	struct mm_stack_info *buf, size_t len, int type)
 {
 	size_t cnt;
 
@@ -302,8 +338,8 @@ static int __init buddy_track_init(void)
 {
 	mutex_init(&buddy_mutex);
 	buddy_buid_rbtree();
-	spin_lock_init(&buddy_lock);
-	/*notice:buddy work before late_initcall*/
+
+	/* notice:buddy work before late_initcall */
 	buddy_global_init = 1;
 
 	return 0;

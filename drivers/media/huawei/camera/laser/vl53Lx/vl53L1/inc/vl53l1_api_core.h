@@ -118,8 +118,8 @@ extern "C" {
 
 
 VL53L1_Error VL53L1_get_version(
-	VL53L1_DEV            Dev,
-	VL53L1_ll_version_t  *pversion);
+	VL53L1_DEV                  Dev,
+	struct VL53L1_ll_version_t  *pversion);
 
 
 
@@ -209,7 +209,7 @@ VL53L1_Error VL53L1_software_reset(
 
 VL53L1_Error VL53L1_set_part_to_part_data(
 	VL53L1_DEV                            Dev,
-	VL53L1_calibration_data_t            *pcal_data);
+	struct VL53L1_calibration_data_t      *pcal_data);
 
 
 
@@ -228,7 +228,7 @@ VL53L1_Error VL53L1_set_part_to_part_data(
 
 VL53L1_Error VL53L1_get_part_to_part_data(
 	VL53L1_DEV                            Dev,
-	VL53L1_calibration_data_t            *pcal_data);
+	struct VL53L1_calibration_data_t      *pcal_data);
 
 
 
@@ -247,7 +247,7 @@ VL53L1_Error VL53L1_get_part_to_part_data(
 
 VL53L1_Error VL53L1_get_tuning_debug_data(
 	VL53L1_DEV                            Dev,
-	VL53L1_tuning_parameters_t            *ptun_data);
+	struct VL53L1_tuning_parameters_t     *ptun_data);
 
 
 
@@ -452,8 +452,8 @@ VL53L1_Error VL53L1_get_interrupt_polarity(
 
 
 VL53L1_Error VL53L1_get_refspadchar_config_struct(
-	VL53L1_DEV                     Dev,
-	VL53L1_refspadchar_config_t   *pdata);
+	VL53L1_DEV                           Dev,
+	struct VL53L1_refspadchar_config_t   *pdata);
 
 
 
@@ -467,8 +467,8 @@ VL53L1_Error VL53L1_get_refspadchar_config_struct(
 
 
 VL53L1_Error VL53L1_set_refspadchar_config_struct(
-	VL53L1_DEV                     Dev,
-	VL53L1_refspadchar_config_t   *pdata);
+	VL53L1_DEV                           Dev,
+	struct VL53L1_refspadchar_config_t   *pdata);
 
 
 
@@ -528,8 +528,8 @@ VL53L1_Error VL53L1_get_range_ignore_threshold(
 
 
 VL53L1_Error VL53L1_set_user_zone(
-	VL53L1_DEV          Dev,
-	VL53L1_user_zone_t *puser_zone);
+	VL53L1_DEV                Dev,
+	struct VL53L1_user_zone_t *puser_zone);
 
 
 
@@ -544,8 +544,8 @@ VL53L1_Error VL53L1_set_user_zone(
 
 
 VL53L1_Error VL53L1_get_user_zone(
-	VL53L1_DEV          Dev,
-	VL53L1_user_zone_t *puser_zone);
+	VL53L1_DEV                Dev,
+	struct VL53L1_user_zone_t *puser_zone);
 
 
 
@@ -560,8 +560,8 @@ VL53L1_Error VL53L1_get_user_zone(
 
 
 VL53L1_Error VL53L1_get_mode_mitigation_roi(
-	VL53L1_DEV          Dev,
-	VL53L1_user_zone_t *pmm_roi);
+	VL53L1_DEV                Dev,
+	struct VL53L1_user_zone_t *pmm_roi);
 
 
 
@@ -581,8 +581,8 @@ VL53L1_Error VL53L1_get_mode_mitigation_roi(
 
 
 VL53L1_Error VL53L1_set_zone_config(
-	VL53L1_DEV             Dev,
-	VL53L1_zone_config_t  *pzone_cfg);
+	VL53L1_DEV                   Dev,
+	struct VL53L1_zone_config_t  *pzone_cfg);
 
 
 
@@ -599,8 +599,8 @@ VL53L1_Error VL53L1_set_zone_config(
 
 
 VL53L1_Error VL53L1_get_zone_config(
-	VL53L1_DEV             Dev,
-	VL53L1_zone_config_t  *pzone_cfg);
+	VL53L1_DEV                   Dev,
+	struct VL53L1_zone_config_t  *pzone_cfg);
 
 
 
@@ -856,9 +856,9 @@ VL53L1_Error VL53L1_get_measurement_results(
 
 
 VL53L1_Error VL53L1_get_device_results(
-	VL53L1_DEV                 Dev,
-	VL53L1_DeviceResultsLevel  device_result_level,
-	VL53L1_range_results_t    *prange_results);
+	VL53L1_DEV                       Dev,
+	VL53L1_DeviceResultsLevel        device_result_level,
+	struct VL53L1_range_results_t    *prange_results);
 
 
 
@@ -901,8 +901,8 @@ VL53L1_Error VL53L1_clear_interrupt_and_enable_next_range(
 
 
 VL53L1_Error VL53L1_get_histogram_bin_data(
-	VL53L1_DEV                   Dev,
-	VL53L1_histogram_bin_data_t *phist_data);
+	VL53L1_DEV                         Dev,
+	struct VL53L1_histogram_bin_data_t *phist_data);
 
 
 
@@ -916,10 +916,10 @@ VL53L1_Error VL53L1_get_histogram_bin_data(
 
 
 void VL53L1_copy_sys_and_core_results_to_range_results(
-	int32_t                           gain_factor,
-	VL53L1_system_results_t          *psys,
-	VL53L1_core_results_t            *pcore,
-	VL53L1_range_results_t           *presults);
+	int32_t                                 gain_factor,
+	struct VL53L1_system_results_t          *psys,
+	struct VL53L1_core_results_t            *pcore,
+	struct VL53L1_range_results_t           *presults);
 
 
 
@@ -930,8 +930,8 @@ void VL53L1_copy_sys_and_core_results_to_range_results(
 
 
 VL53L1_Error VL53L1_set_zone_dss_config(
-	  VL53L1_DEV                      Dev,
-	  VL53L1_zone_private_dyn_cfg_t  *pzone_dyn_cfg);
+	  VL53L1_DEV                            Dev,
+	  struct VL53L1_zone_private_dyn_cfg_t  *pzone_dyn_cfg);
 
 
 
@@ -1000,8 +1000,8 @@ VL53L1_Error VL53L1_set_GPIO_interrupt_config(
 
 
 VL53L1_Error VL53L1_set_GPIO_interrupt_config_struct(
-	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_interrupt_config_t	intconf);
+	VL53L1_DEV                              Dev,
+	struct VL53L1_GPIO_interrupt_config_t   intconf);
 
 
 
@@ -1013,8 +1013,8 @@ VL53L1_Error VL53L1_set_GPIO_interrupt_config_struct(
 
 
 VL53L1_Error VL53L1_get_GPIO_interrupt_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_interrupt_config_t	*pintconf);
+	VL53L1_DEV                              Dev,
+	struct VL53L1_GPIO_interrupt_config_t   *pintconf);
 
 
 
@@ -1064,10 +1064,10 @@ VL53L1_Error VL53L1_get_dmax_mode(
 
 
 VL53L1_Error VL53L1_get_dmax_calibration_data(
-	VL53L1_DEV                      Dev,
-	VL53L1_DeviceDmaxMode           dmax_mode,
-	uint8_t                         zone_id,
-	VL53L1_dmax_calibration_data_t *pdmax_cal);
+	VL53L1_DEV                            Dev,
+	VL53L1_DeviceDmaxMode                 dmax_mode,
+	uint8_t                               zone_id,
+	struct VL53L1_dmax_calibration_data_t *pdmax_cal);
 
 
 
@@ -1083,8 +1083,8 @@ VL53L1_Error VL53L1_get_dmax_calibration_data(
 
 
 VL53L1_Error VL53L1_set_hist_dmax_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_hist_gen3_dmax_config_t *pdmax_cfg);
+	VL53L1_DEV                            Dev,
+	struct VL53L1_hist_gen3_dmax_config_t *pdmax_cfg);
 
 
 
@@ -1099,8 +1099,8 @@ VL53L1_Error VL53L1_set_hist_dmax_config(
 
 
 VL53L1_Error VL53L1_get_hist_dmax_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_hist_gen3_dmax_config_t *pdmax_cfg);
+	VL53L1_DEV                            Dev,
+	struct VL53L1_hist_gen3_dmax_config_t *pdmax_cfg);
 
 
 
@@ -1179,8 +1179,8 @@ VL53L1_Error VL53L1_get_offset_correction_mode(
 
 
 VL53L1_Error VL53L1_set_zone_calibration_data(
-	VL53L1_DEV                         Dev,
-	VL53L1_zone_calibration_results_t *pzone_cal);
+	VL53L1_DEV                               Dev,
+	struct VL53L1_zone_calibration_results_t *pzone_cal);
 
 
 
@@ -1195,8 +1195,8 @@ VL53L1_Error VL53L1_set_zone_calibration_data(
 
 
 VL53L1_Error VL53L1_get_zone_calibration_data(
-	VL53L1_DEV                         Dev,
-	VL53L1_zone_calibration_results_t *pzone_cal);
+	VL53L1_DEV                               Dev,
+	struct VL53L1_zone_calibration_results_t *pzone_cal);
 
 
 
@@ -1581,8 +1581,8 @@ VL53L1_Error VL53L1_set_target_order_mode(
 
 
 VL53L1_Error VL53L1_set_dmax_reflectance_values(
-	VL53L1_DEV                          Dev,
-	VL53L1_dmax_reflectance_array_t    *pdmax_reflectances);
+	VL53L1_DEV                              Dev,
+	struct VL53L1_dmax_reflectance_array_t  *pdmax_reflectances);
 
 
 
@@ -1597,8 +1597,8 @@ VL53L1_Error VL53L1_set_dmax_reflectance_values(
 
 
 VL53L1_Error VL53L1_get_dmax_reflectance_values(
-	VL53L1_DEV                          Dev,
-	VL53L1_dmax_reflectance_array_t    *pdmax_reflectances);
+	VL53L1_DEV                              Dev,
+	struct VL53L1_dmax_reflectance_array_t  *pdmax_reflectances);
 
 
 
@@ -1888,9 +1888,8 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_set_scalers(
 
 
 VL53L1_Error VL53L1_get_current_xtalk_settings(
-	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_calibration_results_t *pxtalk
-	);
+	VL53L1_DEV                                Dev,
+	struct VL53L1_xtalk_calibration_results_t *pxtalk);
 
 
 
@@ -1909,8 +1908,7 @@ VL53L1_Error VL53L1_get_current_xtalk_settings(
 
 VL53L1_Error VL53L1_set_current_xtalk_settings(
 	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_calibration_results_t *pxtalk
-	);
+	struct VL53L1_xtalk_calibration_results_t *pxtalk);
 
 #ifdef __cplusplus
 }

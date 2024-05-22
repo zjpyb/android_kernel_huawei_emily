@@ -65,7 +65,7 @@ static int fail(const char *type, int temp)
 
 static void restore(struct Fault *ft)
 {
-	if (!ft->thermal_type)
+	if (ft->thermal_type)
 		ras_free(ft->thermal_type);
 	memset(ft, 0, sizeof(struct Fault));
 }
@@ -128,8 +128,8 @@ static int rasprobe_handler(tsens_tz_get_temp) (struct rasprobe_instance *ri,
 }
 #endif
 
-#ifdef CONFIG_HISI_COUL
-static int rasprobe_handler(hisi_battery_temperature) (struct rasprobe_instance
+#ifdef CONFIG_COUL_DRV
+static int rasprobe_handler(coul_drv_battery_temperature) (struct rasprobe_instance
 						       *ri,
 						       struct pt_regs *regs) {
 	int temp = should_fail("Battery");
@@ -174,8 +174,8 @@ static int rasprobe_handler(power_supply_read_temp) (struct rasprobe_instance
 }
 
 rasprobe_define(power_supply_read_temp);
-#ifdef CONFIG_HISI_COUL
-rasprobe_define(hisi_battery_temperature);
+#ifdef CONFIG_COUL_DRV
+rasprobe_define(coul_drv_battery_temperature);
 #endif
 
 #ifdef CONFIG_HISI_IPA_THERMAL
@@ -197,8 +197,8 @@ static struct rasprobe *probes[] = {
 	&rasprobe_name(tsens_tz_get_temp),
 #endif
 
-#ifdef CONFIG_HISI_COUL
-	&rasprobe_name(hisi_battery_temperature),
+#ifdef CONFIG_COUL_DRV
+	&rasprobe_name(couk_drv_battery_temperature),
 #endif
 #ifdef CONFIG_HISI_IPA_THERMAL
 	&rasprobe_name(get_temp_value),

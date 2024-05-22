@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -40,10 +40,18 @@
 #define TS_PEN_BUTTON_RELEASE (1 << 5)
 #define TS_PEN_BUTTON_PRESS (1 << 6)
 #define TS_PEN_KEY_NONE 0
+#define STYLUS3_CONNECTED_MASK (1 << 1)
+#define STYLUS3_PLAM_SUPPRESSION_MASK (1 << 4)
 
 #define THP_INPUT_DEV_COMPATIBLE "huawei,thp_input"
 #define THP_PEN_INPUT_DEV_COMPATIBLE "huawei,thp_pen_input"
 #define THP_EXTRA_KEY_INPUT_DEV_COMPATIBLE "huawei,thp_extra_key_input_dev"
+
+#define THP_DATA_ARRAY_SIZE 2
+#define THP_PROJECTID_LEN 9
+#define THP_PROJECTID_PRODUCT_NAME_LEN 4
+#define THP_PROJECTID_IC_NAME_LEN 2
+#define THP_PROJECTID_VENDOR_ID_LEN 2
 
 enum input_mt_wrapper_state {
 	INPUT_MT_WRAPPER_STATE_DEFAULT,
@@ -94,7 +102,7 @@ struct thp_key_info {
 };
 
 struct thp_volumn_info {
-	unsigned char data[2];
+	unsigned char data[THP_DATA_ARRAY_SIZE];
 };
 
 struct input_mt_wrapper_touch_data {
@@ -148,13 +156,20 @@ enum input_mt_wrapper_keyevent {
 	INPUT_MT_WRAPPER_KEYEVENT_AWAY = 1 << 2,
 };
 
+struct thp_app_info {
+	unsigned int len;
+	char __user *buf;
+};
+
 #define PROX_VALUE_LEN 3
 #define PROX_EVENT_LEN 12
 #define APPROCH_EVENT_VALUE 0
 #define AWAY_EVENT_VALUE 1
 
 /* commands */
-#define INPUT_MT_WRAPPER_IO_TYPE (0xB9)
+#define INPUT_MT_WRAPPER_IO_TYPE 0xB9
+#define INPUT_MT_GET_IO_TYPE 0xBA
+#define INPUT_MT_SET_IO_TYPE 0xBB
 #define INPUT_MT_WRAPPER_IOCTL_CMD_SET_COORDINATES \
 	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x01, \
 		struct thp_mt_wrapper_ioctl_touch_data)
@@ -181,7 +196,7 @@ enum input_mt_wrapper_keyevent {
 #define INPUT_MT_WRAPPER_IOCTL_CMD_REPORT_PEN \
 	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x0c, \
 		struct thp_mt_wrapper_ioctl_pen_data)
-#ifdef CONFIG_HUAWEI_SHB_THP
+#if ((defined CONFIG_HUAWEI_SHB_THP) || (defined CONFIG_HUAWEI_THP_MTK))
 #define INPUT_MT_WRAPPER_IOCTL_CMD_SHB_EVENT \
 	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x0d, struct thp_shb_info)
 #endif
@@ -191,11 +206,31 @@ enum input_mt_wrapper_keyevent {
 	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x0f, uint32_t)
 #define INPUT_MT_WRAPPER_IOCTL_GET_POWER_SWITCH \
 	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x10, uint32_t)
+#define INPUT_MT_WRAPPER_IOCTL_GET_APP_INFO \
+	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x11, struct thp_app_info)
+#define INPUT_MT_WRAPPER_IOCTL_READ_FINGER_RESOLUTION_MAGNIFICATION \
+	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x12, uint32_t)
 
+#define INPUT_MT_IOCTL_CMD_GET_STYLUS3_CONNECT_STATUS \
+	_IOWR(INPUT_MT_GET_IO_TYPE, 0x05, unsigned int)
+#define INPUT_MT_IOCTRL_CMD_SET_STYLUS3_CONNECT_STATUS \
+	_IOWR(INPUT_MT_SET_IO_TYPE, 0x08, unsigned int)
+#define INPUT_MT_IOCTL_CMD_GET_CALLBACK_EVENTS \
+	_IOWR(INPUT_MT_GET_IO_TYPE, 0x07, struct tp_callback_event)
+#define INPUT_MT_IOCTL_CMD_SET_CALLBACK_EVENTS \
+	_IOWR(INPUT_MT_SET_IO_TYPE, 0x09, struct tp_callback_event)
+#define INPUT_MT_IOCTL_CMD_SET_DAEMON_INIT_PROTECT \
+	_IOWR(INPUT_MT_SET_IO_TYPE, 0x0a, uint32_t)
+#define INPUT_MT_IOCTL_CMD_SET_DAEMON_POWER_RESET \
+	_IOWR(INPUT_MT_SET_IO_TYPE, 0x0b, uint32_t)
+#define INPUT_MT_IOCTL_CMD_SET_STYLUS3_PLAM_SUPPRESSION_STATUS \
+	_IOWR(INPUT_MT_SET_IO_TYPE, 0x0c, unsigned int)
 
 int thp_mt_wrapper_init(void);
 void thp_mt_wrapper_exit(void);
 int thp_mt_wrapper_wakeup_poll(void);
 void thp_clean_fingers(void);
+int thp_mt_wrapper_esd_event(unsigned int status);
+unsigned int thp_get_finger_resolution_magnification(void);
 
 #endif /* _INPUT_MT_WRAPPER_H_ */

@@ -182,6 +182,7 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	struct sock *child;
 #ifdef CONFIG_MPTCP
 	struct sock *meta_sk;
+	int ret;
 #endif
 	bool own_req;
 
@@ -230,7 +231,11 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	tp->rcv_wup = tp->rcv_nxt;
 
 	meta_sk = child;
-	if (!mptcp_check_req_fastopen(meta_sk, req)) {
+	ret = mptcp_check_req_fastopen(meta_sk, req);
+	if (ret < 0)
+		return NULL;
+
+	if (ret == 0) {
 		child = tcp_sk(meta_sk)->mpcb->master_sk;
 		tp = tcp_sk(child);
 	}

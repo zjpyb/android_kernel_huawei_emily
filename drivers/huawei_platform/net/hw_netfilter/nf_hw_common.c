@@ -1,12 +1,19 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2020. All rights reserved.
+ * Description: This file used by the netfilter hook for app download monitor
+ *              and ad filter.
+ * Author: chenzhongxian@huawei.com
+ * Create: 2016-05-28
+ */
 
-
+#include <linux/ctype.h>
+#include <linux/jhash.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/types.h>
-#include <linux/string.h>
-#include <linux/kernel.h>/* add for log */
-#include <linux/ctype.h>/* add for tolower */
 #include <linux/slab.h>
-#include <linux/jhash.h>/* add for jhash */
+#include <linux/string.h>
+#include <linux/types.h>
+
 #include "nf_hw_common.h"
 
 const char *strfind(const char *s1, const char *s2)
@@ -56,7 +63,7 @@ const char *strfinds2(const char *s1, const char *s2, int s2l)
 	register const unsigned char *p = (unsigned char *)s2;
 
 	do {
-		if (p  == (const unsigned char *) s2 + s2l || !*p)
+		if (p == (const unsigned char *)s2 + s2l || !*p)
 			return (const char *)s1;
 		if (*p == *s || tolower(*p) == tolower(*s)) {
 			++p;
@@ -65,56 +72,62 @@ const char *strfinds2(const char *s1, const char *s2, int s2l)
 			p = (const unsigned char *)s2;
 			if (!*s)
 				return NULL;
-			s = (const unsigned char *) ++s1;
+			s1++;
+			s = (const unsigned char *)s1;
 		}
 	} while (1);
 }
 
 const char *substring(const char *src, const char *f, const char *s, int *l)
 {
-	/* "k=<xxx>"  f="k=<"  s=">" ret="xxx"*/
+	/* "k=<xxx>"  f="k=<"  s=">" ret="xxx" */
 	const char *pf = NULL;
 	const char *ps = NULL;
 	const char *ret = NULL;
-	int datalen = *l;
-	int flen = strlen(f);
+	int datalen;
+	int flen;
+
+	if ((src == NULL) || (f == NULL) || (s == NULL) || (l == NULL))
+		return NULL;
+
+	datalen = *l;
+	flen = strlen(f);
 
 	*l = 0;
-	if (0 == flen)
+	if (flen == 0)
 		return NULL;
-	if (0 == strlen(s))
+	if (strlen(s) == 0)
 		return NULL;
 	pf = strfindpos(src, f, datalen);
-	if (NULL == pf)
+	if (pf == NULL)
 		return NULL;
 	ps = strfindpos(pf + flen, s, datalen - (pf + flen - src));
-	if (NULL == ps)
+	if (ps == NULL)
 		return NULL;
 	ret = pf + strlen(f);
 	*l = ps - ret;
 	return ret;
 }
 
-void byte_to_hex(const void *pin, int ilen, void *pout, int olen)
+void byte_to_hex(const char *pin, int ilen, char *pout, int olen)
 {
 	char hex[] = "0123456789ABCDEF";
-	int i = 0;
+	int i;
 	unsigned char *input = (unsigned char *)pin;
 	unsigned char *output = (unsigned char *)pout;
 
 	if (ilen <= 0 || olen <= 1)
 		return;
 	for (i = 0; i < ilen; i++) {
-		if (i * 2 + 1 > olen-1)
+		if (i * DOUBLE_TIME + 1 > olen - 1)
 			break;
-		output[i * 2] = hex[input[i] / 16];
-		output[i * 2 + 1] = hex[input[i] % 16];
+		output[i * DOUBLE_TIME] = hex[input[i] / HEX_LEN];
+		output[i * DOUBLE_TIME + 1] = hex[input[i] % HEX_LEN];
 	}
-	if (i * 2 <= olen)
-		output[i * 2] = 0;
+	if (i * DOUBLE_TIME <= olen)
+		output[i * DOUBLE_TIME] = 0;
 	else
-		output[(i - 1) * 2 + 1] = 0;
-
+		output[(i - 1) * DOUBLE_TIME + 1] = 0;
 }
 
 unsigned char hex_string_to_value(unsigned char ch)
@@ -122,30 +135,31 @@ unsigned char hex_string_to_value(unsigned char ch)
 	if (ch >= '0' && ch <= '9')
 		return ch - '0';
 	else if (ch >= 'A' && ch <= 'F')
-		return (ch - 'A') + 10;
+		return (ch - 'A') + HEX_VALUE_OFFSET;
 	else if (ch >= 'a' && ch <= 'f')
-		return (ch - 'a') + 10;
+		return (ch - 'a') + HEX_VALUE_OFFSET;
 	return 0;
 }
 
-void hex_to_byte(const void *pin, int inlen, void *pout, int olen)
+void hex_to_byte(const char *pin, int inlen, char *pout, int olen)
 {
-	int i = 0;
-	int j = 0;
+	int i;
+	int j;
 	unsigned char *input = (unsigned char *)pin;
 	unsigned char *output = (unsigned char *)pout;
-	int n = inlen / 2;
+	int n = inlen / DOUBLE_TIME;
 
 	output[0] = 0;
-	if (olen < inlen / 2 || inlen <= 1)
+	if (olen < inlen / DOUBLE_TIME || inlen <= 1)
 		return;
 
 	for (i = 0; i < n; i++) {
 		output[i] = 0;
-		for (j = 0; j < 2; j++) {
-			output[i] += hex_string_to_value(input[i * 2 + j]);
+		for (j = 0; j < DOUBLE_TIME; j++) {
+			output[i] +=
+				hex_string_to_value(input[i * DOUBLE_TIME + j]);
 			if (j == 0)
-				output[i] *= 16;
+				output[i] *= HEX_LEN;
 			}
 		}
 }
@@ -154,11 +168,11 @@ u64 get_cur_time(void)
 {
 	u64 ret = (u64)jiffies;
 
-	ret = ret * 1000 / HZ;
+	ret = ret * US_MS / HZ;
 	return ret;
 }
 
-/*remove the blank char from the right,fill with \0*/
+/* remove the blank char from the right,fill with \0 */
 void right_trim(char *p)
 {
 	int len = strlen(p);
@@ -166,9 +180,10 @@ void right_trim(char *p)
 
 	while (pos >= p) {
 		if (*pos == ' ' || *pos == '\t' || *pos == '\f' ||
-				*pos == '\v' || *pos == '\0' || *pos == 160 ||
-				*pos == '\r' || *pos == '\n')
-					*pos = 0;
+			*pos == '\v' || *pos == '\0' ||
+			*pos == POS_INVALID_VALUE ||
+			*pos == '\r' || *pos == '\n')
+			*pos = 0;
 		else
 			break;
 		pos--;
@@ -182,8 +197,9 @@ const char *left_trim(const char *p)
 
 	while (*pos != 0) {
 		if (*pos == ' ' || *pos == '\t' || *pos == '\f' ||
-				*pos == '\v' || *pos == '\0' || *pos == 160 ||
-				*pos == '\r' || *pos == '\n')
+			*pos == '\v' || *pos == '\0' ||
+			*pos == POS_INVALID_VALUE ||
+			*pos == '\r' || *pos == '\n')
 			pos++;
 		else
 			break;
@@ -204,21 +220,45 @@ char *get_url_path(const char *data, int datalen)
 		return NULL;
 	}
 	temurl = kmalloc(uplen + 1, GFP_ATOMIC);
-	if (NULL == temurl)
+	if (temurl == NULL)
 		return NULL;
 	memcpy(temurl, urlpath, uplen);
 	temurl[uplen] = 0;
 	right_trim(temurl);
 	temurl1 = left_trim(temurl);
 
-	temp = kmalloc(uplen + 64, GFP_ATOMIC);
-	if (NULL == temp) {
+	temp = kmalloc(uplen + ULR_LEN_OFFSET_64, GFP_ATOMIC);
+	if (temp == NULL) {
 		kfree(temurl);
 		return NULL;
 	}
-	snprintf(temp, uplen + 64, "%s", temurl1);
+	snprintf(temp, uplen + ULR_LEN_OFFSET_64, "%s", temurl1);
 	uplen = strlen(temurl1);
 	temp[uplen] = 0;
+	kfree(temurl);
+	return temp;
+}
+
+static char * get_url_form_data_post_proc(const char *temurl, char *temhost,
+	int uplen, int hlen)
+{
+	const char *temurl1 = NULL;
+	const char *temhost1 = NULL;
+	char *temp = NULL;
+
+	temurl1 = left_trim(temurl);
+	right_trim(temhost);
+	temhost1 = left_trim(temhost);
+	temp = kmalloc(uplen + hlen + ULR_LEN_OFFSET_64, GFP_ATOMIC);
+	if (temp == NULL) {
+		kfree(temhost);
+		kfree(temurl);
+		return NULL;
+	}
+	if (snprintf(temp, uplen + hlen + ULR_LEN_OFFSET_64, "http://%s%s",
+		temhost1, temurl1) == -1)
+		pr_info("snprintf return error\n");
+	kfree(temhost);
 	kfree(temurl);
 	return temp;
 }
@@ -230,8 +270,6 @@ char *get_url_form_data(const char *data, int datalen)
 	int hlen = datalen;
 	char *temurl = NULL;
 	char *temhost = NULL;
-	const char *temurl1 = NULL;
-	const char *temhost1 = NULL;
 	char *temp = NULL;
 	const char *urlpath = substring(data, " ", " HTTP", &uplen);
 	const char *host = substring(data, "Host:", "\n", &hlen);
@@ -240,13 +278,13 @@ char *get_url_form_data(const char *data, int datalen)
 		pr_info("\nhwad:upath ul=%d hl=%d\n", uplen, hlen);
 		return NULL;
 	}
-	if (strfindpos(urlpath, "http://", 10)) {
+	if (strfindpos(urlpath, "http://", HTTP_HEAD_LEN)) {
 		const char *urltem = left_trim(urlpath);
 		int len = uplen - (urltem - urlpath);
 
 		if (len > 0) {
 			temurl = kmalloc(len + 1, GFP_ATOMIC);
-			if (NULL == temurl)
+			if (temurl == NULL)
 				return NULL;
 			memset(temurl, 0, len + 1);
 			memcpy(temurl, urltem, len);
@@ -254,10 +292,10 @@ char *get_url_form_data(const char *data, int datalen)
 		}
 	}
 	temurl = kmalloc(uplen + 1, GFP_ATOMIC);
-	if (NULL == temurl)
+	if (temurl == NULL)
 		return NULL;
 	temhost = kmalloc(hlen + 1, GFP_ATOMIC);
-	if (NULL == temhost) {
+	if (temhost == NULL) {
 		kfree(temurl);
 		return NULL;
 	}
@@ -266,25 +304,13 @@ char *get_url_form_data(const char *data, int datalen)
 	memcpy(temhost, host, hlen);
 	temhost[hlen] = 0;
 	right_trim(temurl);
-	temurl1 = left_trim(temurl);
-
-	right_trim(temhost);
-	temhost1 = left_trim(temhost);
-	temp = kmalloc(uplen + hlen + 64, GFP_ATOMIC);
-	if (NULL == temp) {
-		kfree(temhost);
-		kfree(temurl);
-		return NULL;
-	}
-	snprintf(temp, uplen + hlen + 64, "http://%s%s", temhost1, temurl1);
-	kfree(temhost);
-	kfree(temurl);
+	temp = get_url_form_data_post_proc(temurl, temhost, uplen, hlen);
 	return temp;
 }
 
 unsigned int get_hash_id(int uid)
 {
-	unsigned int  hid = jhash_3words(uid, 0, 0, 1005);
+	unsigned int  hid = jhash_3words(uid, 0, 0, HASH_INITVAL);
 
 	hid %= MAX_HASH;
 	return hid;

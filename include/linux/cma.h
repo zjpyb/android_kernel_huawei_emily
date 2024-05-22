@@ -20,6 +20,11 @@
 struct cma;
 
 extern unsigned long totalcma_pages;
+#ifdef CONFIG_ZONE_MEDIA
+extern unsigned long cma_min_pfn;
+extern unsigned long cma_max_pfn;
+extern bool is_cma_pfn(unsigned long pfn);
+#endif
 extern phys_addr_t cma_get_base(const struct cma *cma);
 extern unsigned long cma_get_size(const struct cma *cma);
 extern const char *cma_get_name(const struct cma *cma);

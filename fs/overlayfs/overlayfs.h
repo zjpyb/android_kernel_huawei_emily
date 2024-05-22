@@ -135,17 +135,15 @@ static inline int ovl_do_symlink(struct inode *dir, struct dentry *dentry,
 static inline int ovl_do_setxattr(struct dentry *dentry, const char *name,
 				  const void *value, size_t size, int flags)
 {
-
-	int err = vfs_setxattr(NULL, dentry, name, value, size, flags);
+	int err = vfs_setxattr(dentry, name, value, size, flags);
 	pr_debug("setxattr(%pd2, \"%s\", \"%*pE\", %zu, 0x%x) = %i\n",
 		 dentry, name, min((int)size, 48), value, size, flags, err);
-
 	return err;
 }
 
 static inline int ovl_do_removexattr(struct dentry *dentry, const char *name)
 {
-	int err = vfs_removexattr(NULL, dentry, name);
+	int err = vfs_removexattr(dentry, name);
 	pr_debug("removexattr(%pd2, \"%s\") = %i\n", dentry, name, err);
 	return err;
 }

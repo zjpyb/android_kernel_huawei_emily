@@ -8,10 +8,14 @@
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
-#include <linux/pmalloc.h>
+#ifdef CONFIG_HKIP_SELINUX_PROT
+#include <linux/hisi/prmem.h>
+#endif
 #include "hashtab.h"
 
-extern struct gen_pool *selinux_pool;
+#ifdef CONFIG_HKIP_SELINUX_PROT
+extern struct prmem_pool selinux_pool;
+#endif
 
 struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *key),
 			       int (*keycmp)(struct hashtab *h, const void *key1, const void *key2),
@@ -20,7 +24,11 @@ struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *
 	struct hashtab *p;
 	u32 i;
 
-	p = pzalloc(selinux_pool, sizeof(*p), GFP_KERNEL);
+#ifdef CONFIG_HKIP_SELINUX_PROT
+	p = pzalloc(&selinux_pool, sizeof(*p), PRMEM_NO_FLAGS);
+#else
+	p = kzalloc(sizeof(*p), GFP_KERNEL);
+#endif
 	if (!p)
 		return p;
 
@@ -28,12 +36,19 @@ struct hashtab *hashtab_create(u32 (*hash_value)(struct hashtab *h, const void *
 	p->nel = 0;
 	p->hash_value = hash_value;
 	p->keycmp = keycmp;
-	p->htable = pmalloc(selinux_pool, sizeof(*(p->htable)) * size,
-			    GFP_KERNEL);
+#ifdef CONFIG_HKIP_SELINUX_PROT
+	p->htable = pmalloc(&selinux_pool, sizeof(*(p->htable)) * size, PRMEM_NO_FLAGS);
 	if (!p->htable) {
-		pfree(selinux_pool, p);
+		pfree(p);
 		return NULL;
 	}
+#else
+	p->htable = kmalloc_array(size, sizeof(*p->htable), GFP_KERNEL);
+	if (!p->htable) {
+		kfree(p);
+		return NULL;
+	}
+#endif
 
 	for (i = 0; i < size; i++)
 		p->htable[i] = NULL;
@@ -62,7 +77,11 @@ int hashtab_insert(struct hashtab *h, void *key, void *datum)
 	if (cur && (h->keycmp(h, key, cur->key) == 0))
 		return -EEXIST;
 
-	newnode = pzalloc(selinux_pool, sizeof(*newnode), GFP_KERNEL);
+#ifdef CONFIG_HKIP_SELINUX_PROT
+	newnode = pzalloc(&selinux_pool, sizeof(*newnode), PRMEM_NO_FLAGS);
+#else
+	newnode = kzalloc(sizeof(*newnode), GFP_KERNEL);
+#endif
 	if (!newnode)
 		return -ENOMEM;
 	newnode->key = key;
@@ -111,15 +130,24 @@ void hashtab_destroy(struct hashtab *h)
 		while (cur) {
 			temp = cur;
 			cur = cur->next;
-			pfree(selinux_pool, temp);
+#ifdef CONFIG_HKIP_SELINUX_PROT
+			pfree(temp);
+#else
+			kfree(temp);
+#endif
 		}
 		h->htable[i] = NULL;
 	}
 
-	pfree(selinux_pool, h->htable);
+#ifdef CONFIG_HKIP_SELINUX_PROT
+	pfree(h->htable);
 	h->htable = NULL;
-
-	pfree(selinux_pool, h);
+	pfree(h);
+#else
+	kfree(h->htable);
+	h->htable = NULL;
+	kfree(h);
+#endif
 }
 
 int hashtab_map(struct hashtab *h,

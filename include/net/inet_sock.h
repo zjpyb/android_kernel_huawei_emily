@@ -135,11 +135,6 @@ static inline int inet_request_bound_dev_if(const struct sock *sk,
 	return sk->sk_bound_dev_if;
 }
 
-static inline struct ip_options_rcu *ireq_opt_deref(const struct inet_request_sock *ireq)
-{
-	return rcu_dereference(ireq->ireq_opt);
-}
-
 struct inet_cork {
 	unsigned int		flags;
 	__be32			addr;
@@ -151,6 +146,7 @@ struct inet_cork {
 	__u8			ttl;
 	__s16			tos;
 	char			priority;
+	__u16			gso_size;
 };
 
 struct inet_cork_full {

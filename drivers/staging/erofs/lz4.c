@@ -43,6 +43,7 @@
 #include "internal.h"
 #include <asm/unaligned.h>
 #include <linux/string.h>	 /* memset, memcpy */
+#include <linux/delay.h>
 
 #include "lz4armv8/lz4accel.h"
 
@@ -198,7 +199,12 @@ static FORCE_INLINE int __lz4_decompress_safe_partial(
 		length = token >> ML_BITS;
 
 		/* ip < iend before the increment */
-		DBG_BUGON(ip > iend);
+		if (ip > iend) {
+			errln("ip[0x%px] > iend[0x%px] op[0x%px] > oend[0x%px] src[0x%px] dst[0x%px] src_ptr[0x%px] dst_ptr[0x%px] (srcSize:%i, dstSize:%i) length:%zd",
+				ip, iend, op, oend, src, dst, src_ptr, dst_ptr, inputSize, outputSize, length);
+			return -ENOMEM;
+		}
+
 		/*
 		 * A two-stage shortcut for the most common case:
 		 * 1) If the literal length is 0..14, and there is enough
@@ -440,8 +446,12 @@ static ssize_t lz4_decompress(const void *source,
                                          &srcPtr,
                                          source + inputSize - LZ4_FAST_MARGIN,
                                          dip);
-                if (ret)
+                if (ret) {
+			errln("LZ4_ACCELERATOR failed source[%px, %zd] dest[%px, %zd] srcPtr[%px] dstPtr[%px] dip[%u] ret:%zd",
+			      source, inputSize, dest, outputSize,
+			      srcPtr, dstPtr, dip, ret);
                         return -1;
+		}
         }
 #endif
         /* Finish in safe */

@@ -27,12 +27,12 @@
 #include <linux/task_work.h>
 #include <linux/hisi/pagecache_manage.h>
 #include <linux/sched/task.h>
+#ifdef CONFIG_BOOT_DETECTOR
+#include <hwbootfail/chipsets/common/bootfail_common.h>
+#endif
 
 #include "pnode.h"
 #include "internal.h"
-#ifdef CONFIG_HW_BFMR_HISI
-#include <chipset_common/bfmr/common/bfmr_common.h>
-#endif
 
 /* Maximum number of mounts in a mount namespace */
 unsigned int sysctl_mount_max __read_mostly = 100000;
@@ -1467,7 +1467,7 @@ static void namespace_unlock(void)
 	if (likely(hlist_empty(&head)))
 		return;
 
-	synchronize_rcu();
+	synchronize_rcu_expedited();
 
 	group_pin_kill(&head);
 }
@@ -1742,9 +1742,6 @@ SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
 	struct mount *mnt;
 	int retval;
 	int lookup_flags = 0;
-#ifdef CONFIG_HW_BFMR_HISI
-	char bfmr_umount_name[BFMR_MOUNT_NAME_SIZE] = {0};
-#endif
 
 	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
 		return -EINVAL;
@@ -1771,15 +1768,6 @@ SYSCALL_DEFINE2(umount, char __user *, name, int, flags)
 		goto dput_and_out;
 
 	retval = do_umount(mnt, flags);
-
-#ifdef CONFIG_HW_BFMR_HISI
-	if (retval != 0)
-		goto dput_and_out;
-	if (copy_from_user(bfmr_umount_name, name,
-		BFMR_MOUNT_NAME_SIZE - 1) == 0)
-		bfmr_set_mount_state(bfmr_umount_name, false,
-			sizeof(bfmr_umount_name));
-#endif
 
 dput_and_out:
 	/* we mustn't call path_put() as that would clear mnt_expiry_mark */
@@ -2810,7 +2798,7 @@ void *copy_mount_options(const void __user * data)
 	 * the remainder of the page.
 	 */
 	/* copy_from_user cannot cross TASK_SIZE ! */
-	size = TASK_SIZE - (unsigned long)data;
+	size = TASK_SIZE - (unsigned long)untagged_addr(data);
 	if (size > PAGE_SIZE)
 		size = PAGE_SIZE;
 
@@ -2849,8 +2837,10 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	struct path path;
 	unsigned int mnt_flags = 0, sb_flags;
 	int retval = 0;
-#ifdef CONFIG_HW_BFMR_HISI
-	char bfmr_mount_name[BFMR_MOUNT_NAME_SIZE] = {0};
+
+#ifdef CONFIG_BOOT_DETECTOR
+	if (process_data_mount_in_erecovery(dir_name) != 0)
+		return -1;
 #endif
 
 	/* Discard magic */
@@ -2927,15 +2917,6 @@ long do_mount(const char *dev_name, const char __user *dir_name,
 	else
 		retval = do_new_mount(&path, type_page, sb_flags, mnt_flags,
 				      dev_name, data_page);
-
-#ifdef CONFIG_HW_BFMR_HISI
-	if (retval != 0)
-		goto dput_out;
-	if (copy_from_user(bfmr_mount_name, dir_name,
-		BFMR_MOUNT_NAME_SIZE - 1) == 0)
-		bfmr_set_mount_state(bfmr_mount_name, true,
-			sizeof(bfmr_mount_name));
-#endif
 
 dput_out:
 	path_put(&path);
@@ -3275,8 +3256,8 @@ SYSCALL_DEFINE2(pivot_root, const char __user *, new_root,
 	/* make certain new is below the root */
 	if (!is_path_reachable(new_mnt, new.dentry, &root))
 		goto out4;
-	root_mp->m_count++; /* pin it so it won't go away */
 	lock_mount_hash();
+	root_mp->m_count++; /* pin it so it won't go away */
 	detach_mnt(new_mnt, &parent_path);
 	detach_mnt(root_mnt, &root_parent);
 	if (root_mnt->mnt.mnt_flags & MNT_LOCKED) {

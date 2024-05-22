@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the hw_rscan_module.c for root scanner kernel space init and deinit
  * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
  *         likun <quentin.lee@huawei.com>
@@ -74,15 +74,15 @@ enum ree_rs_mask {
 	RS_SETID,
 };
 
-#define check_status(status, type)    (((status) >> (type)) & (0x1))
+#define check_status(status, type)    ((status) >> (type) & 0x1)
 
 struct item_bits {
-	int item_ree_bit;
-	int item_tee_bit;
+	unsigned int item_ree_bit;
+	unsigned int item_tee_bit;
 	unsigned int item_ree_mask;
 };
 
-#define              MAX_NUM_OF_ITEM          6
+#define MAX_NUM_OF_ITEM 6
 
 int rscan_dynamic_init(void);
 
@@ -94,7 +94,7 @@ int rscan_dynamic_init(void);
  *         30th bit for system call verify, and so on.
  * @result, used for return results for each scanner item
  *          that correspond to ops_mask. In this function, result have been
- *          processed. For example, rproc had filtered whitelist.
+ *          processed. For example, rproc had filtered trustlist.
  * @error_code, scan process result.
  * @return:
  *     Overall root status, return 0 if the device keep unrooted.

@@ -1,16 +1,30 @@
-#ifndef _HISI_USB_CHARGER_H_
-#define _HISI_USB_CHARGER_H_
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: chip_usb_bc12.h for charger type check
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2  of
+ * the License as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#ifndef _CHIP_USB_CHARGER_H_
+#define _CHIP_USB_CHARGER_H_
 
 #include <linux/hisi/usb/hisi_usb.h>
 #include "dwc3-hisi.h"
 
 /*
- * hisi dwc3 bc registers
+ * chip dwc3 bc registers
  */
-#define BC_CTRL0		0x30		/* BC¿ØÖÆÆ÷¼Ä´æÆ÷0 */
-#define BC_CTRL1		0x34		/* BC¿ØÖÆÆ÷¼Ä´æÆ÷1 */
-#define BC_CTRL2		0x38		/* BC¿ØÖÆÆ÷¼Ä´æÆ÷2 */
-#define BC_STS0			0x3C		/* BC×´Ì¬¼Ä´æÆ÷0 */
+#define BC_CTRL0		0x30  /* BC Control register 0 */
+#define BC_CTRL1		0x34  /* BC Control register 1 */
+#define BC_CTRL2		0x38  /* BC Control register 2 */
+#define BC_STS0			0x3C  /* BC STS register 0 */
 
 /* BC_CTRL0 */
 # define BC_CTRL0_BC_IDPULLUP		(1 << 10)
@@ -46,27 +60,48 @@
 # define BC_STS0_BC_SESSVLD		(1 << 0)
 
 /*
- * hisi usb bc
+ * chip usb bc
  */
 
 #define BC_AGAIN_DELAY_TIME_1 200
 #define BC_AGAIN_DELAY_TIME_2 8000
 #define BC_AGAIN_ONCE	1
 #define BC_AGAIN_TWICE	2
-void notify_charger_type(struct hisi_dwc3_device *hisi_dwc3);
+void notify_charger_type(struct chip_dwc3_device *chip_dwc3);
 
 /* bc interface */
-void hisi_bc_disable_vdp_src(struct hisi_dwc3_device *hisi_dwc3);
-void hisi_bc_enable_vdp_src(struct hisi_dwc3_device *hisi_dwc3);
-void hisi_bc_dplus_pulldown(struct hisi_dwc3_device *hisi_dwc);
-void hisi_bc_dplus_pullup(struct hisi_dwc3_device *hisi_dwc);
-enum hisi_charger_type detect_charger_type(struct hisi_dwc3_device *hisi_dwc3);
-void schedule_bc_again(struct hisi_dwc3_device *hisi_dwc);
-void cancel_bc_again(struct hisi_dwc3_device *hisi_dwc, int sync);
-bool enumerate_allowed(struct hisi_dwc3_device *hisi_dwc);
-bool sleep_allowed(struct hisi_dwc3_device *hisi_dwc);
-bool bc_again_allowed(struct hisi_dwc3_device *hisi_dwc);
-int hisi_usb_bc_init(struct hisi_dwc3_device *hisi_dwc);
-void hisi_usb_bc_exit(struct hisi_dwc3_device *hisi_dwc);
-int hisi_bc_is_bcmode_on(void);
-#endif /* _HISI_USB_CHARGER_H_ */
+#ifndef CONFIG_CHIP_USB_NEW_FRAME
+void chip_bc_disable_vdp_src(struct chip_dwc3_device *chip_dwc3);
+void chip_bc_enable_vdp_src(struct chip_dwc3_device *chip_dwc3);
+void chip_bc_dplus_pulldown(struct chip_dwc3_device *chip_dwc);
+void chip_bc_dplus_pullup(struct chip_dwc3_device *chip_dwc);
+enum hisi_charger_type detect_charger_type(struct chip_dwc3_device *chip_dwc3);
+#else
+static inline void chip_bc_disable_vdp_src(struct chip_dwc3_device *chip_dwc3)
+{
+}
+static inline void chip_bc_enable_vdp_src(struct chip_dwc3_device *chip_dwc3)
+{
+}
+static inline void chip_bc_dplus_pulldown(struct chip_dwc3_device *chip_dwc)
+{
+}
+static inline void chip_bc_dplus_pullup(struct chip_dwc3_device *chip_dwc)
+{
+}
+static inline enum hisi_charger_type detect_charger_type(
+		struct chip_dwc3_device *chip_dwc3)
+{
+	return CHARGER_TYPE_NONE;
+}
+#endif /* CONFIG_CHIP_USB_NEW_FRAME */
+
+void schedule_bc_again(struct chip_dwc3_device *chip_dwc);
+void cancel_bc_again(struct chip_dwc3_device *chip_dwc, int sync);
+bool enumerate_allowed(const struct chip_dwc3_device *chip_dwc);
+bool sleep_allowed(const struct chip_dwc3_device *chip_dwc);
+bool bc_again_allowed(const struct chip_dwc3_device *chip_dwc);
+int chip_usb_bc_init(struct chip_dwc3_device *chip_dwc);
+void chip_usb_bc_exit(struct chip_dwc3_device *chip_dwc);
+int chip_bc_is_bcmode_on(void);
+#endif /* _CHIP_USB_CHARGER_H_ */

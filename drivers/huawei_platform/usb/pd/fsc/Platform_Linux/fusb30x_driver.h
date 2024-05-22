@@ -1,9 +1,19 @@
 /*
- * File:   fusb30x_driver.h
- * Author: Tim Bremm <tim.bremm@fairchildsemi.com>
- * Company: Fairchild Semiconductor
+ * fusb30x_driver.h
  *
- * Created on September 2, 2015, 9:02 AM
+ * fusb30x_driver driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifndef FUSB30X_DRIVER_H

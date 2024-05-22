@@ -59,6 +59,7 @@ void ras_sleep(unsigned long long ms);
 
 unsigned long long ras_ns(void);
 unsigned long long ras_ms(void);
+void ras_delay(unsigned long long ms);
 
 int ras_debugset(int level);	/* set level, return old level*/
 #define ras_info(msg) __ras_info(__FILE__, __func__, __LINE__, msg);

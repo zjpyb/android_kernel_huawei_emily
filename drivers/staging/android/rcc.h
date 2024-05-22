@@ -28,8 +28,12 @@ struct rcc_module {
 	int					full_clean_flag;
 	/* flag to indicate that we will wake up ignoring cpu load */
 	int					force_compress_flag;
+	/* flag to indicate that we will do normal compress */
+	int					normal_compress_flag;
 	/* flag to indicate that we should pause compress now */
 	int					pause_flag;
+	/* when we start to pause */
+	unsigned long					pause_time;
 	/* old cpu stat, for calculate cpu idle. */
 	clock_t				last_cpu_stat[INDEX_CPU_MAX];
 	/*  last time to get cpu stat. */
@@ -74,6 +78,8 @@ struct rcc_module {
 /* threshold time for idle stat judgement. in ms. */
 #define RCC_IDLE_THRESHOLD		70
 
+#define RCC_MAX_CPULOAD		100
+
 /* swap full percent for stop compress thread. in percent. */
 #define RCC_SWAP_PERCENT_LOW		85
 /* stop free process until +RCC_SWAP_PERCENT_LOW_EX */
@@ -84,10 +90,12 @@ struct rcc_module {
 /* stop free process until RCC_FREE_PAGE_MIN+RCC_FREE_PAGE_MIN_EX */
 #define RCC_FREE_PAGE_MIN_EX		((48 * 1024 * 1024) >> (PAGE_SHIFT))
 
-/* keep uncompressed anon pages at least RCC_ANON_PAGE_MIN_ON_BOOT at full compress */
-#define RCC_ANON_PAGE_MIN_ON_BOOT		((160*1024*1024)>>(PAGE_SHIFT))
+/* keep uncompressed anon pages at
+ * least RCC_ANON_PAGE_MIN_ON_BOOT at full compress
+ */
+#define RCC_ANON_PAGE_MIN_ON_BOOT	((160 * 1024 * 1024) >> (PAGE_SHIFT))
 /* when anon pages larger than RCC_ANON_PAGE_MAX_ON_BOOT, start compress. */
-#define RCC_ANON_PAGE_MAX_ON_BOOT		((320*1024*1024)>>(PAGE_SHIFT))
+#define RCC_ANON_PAGE_MAX_ON_BOOT	((320 * 1024 * 1024) >> (PAGE_SHIFT))
 
 /* keep uncompressed anon pages at least RCC_ANON_PAGE_MIN. */
 #define RCC_ANON_PAGE_MIN		((200 * 1024 * 1024) >> (PAGE_SHIFT))
@@ -96,9 +104,9 @@ struct rcc_module {
 /* different RCC_ANON_PAGE_MIN for different ram */
 #define RCC_ANON_PAGE_RAM_GAP		((250 * 1024 * 1024) >> (PAGE_SHIFT))
 /* force reclaim pages one */
-#define RCC_ANON_PAGE_FORCE_ONCE		((100 * 1024 * 1024) >> (PAGE_SHIFT))
+#define RCC_ANON_PAGE_FORCE_ONCE	((100 * 1024 * 1024) >> (PAGE_SHIFT))
 
-#define TOTAL_RAM_PAGES_1G	(1 << 18)
+#define TOTAL_RAM_PAGES_1G		BIT(18)
 
 /* full clean file pages. */
 #define RCC_FULL_CLEAN_FILE_PAGE	((16 * 1024 * 1024) >> (PAGE_SHIFT))
@@ -119,12 +127,12 @@ struct rcc_module {
 #define RCC_IDLE_FAST			20
 
 #define WS_NEED_WAKEUP			0
-#define WF_NOT_ENABLED			(1 << 0)
-#define WF_CPU_BUSY				(1 << 1)
-#define WF_MEM_FREE_ENOUGH		(1 << 2)
-#define WF_SWAP_FULL			(1 << 3)
-#define WF_NO_ANON_PAGE			(1 << 4)
-#define WF_AVAIL_ENOUGH			(1 << 5)
+#define WF_NOT_ENABLED			BIT(0)
+#define WF_CPU_BUSY			BIT(1)
+#define WF_MEM_FREE_ENOUGH		BIT(2)
+#define WF_SWAP_FULL			BIT(3)
+#define WF_NO_ANON_PAGE			BIT(4)
+#define WF_AVAIL_ENOUGH			BIT(5)
 
 #define RCC_WAIT_INFINITE		-1
 

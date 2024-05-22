@@ -3,7 +3,7 @@
  *
  * driver file for TI tusb320 typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,37 +16,39 @@
  *
  */
 
-#include <linux/i2c.h>
+#include "tusb320.h"
 #include <linux/delay.h>
-#include <linux/gpio.h>
-#include <linux/timer.h>
-#include <linux/param.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/fs.h>
+#include <linux/gpio.h>
+#include <linux/i2c.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/platform_device.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <asm/irq.h>
+#include <linux/param.h>
+#include <linux/platform_device.h>
+#include <linux/slab.h>
+#include <linux/timer.h>
+#include <linux/workqueue.h>
 #include <linux/uaccess.h>
-#include <linux/fs.h>
+#include <asm/irq.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_i2c.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/power/power_devices_info.h>
+#include <huawei_platform/usb/hw_typec_dev.h>
+#include <huawei_platform/usb/hw_typec_platform.h>
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#include <huawei_platform/usb/hw_typec_dev.h>
-#include <huawei_platform/usb/hw_typec_platform.h>
-#include "tusb320.h"
+
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -55,78 +57,35 @@
 #define HWLOG_TAG typec_tusb320
 HWLOG_REGIST();
 
-struct typec_device_info *g_tusb320_dev;
+static struct typec_device_info *g_tusb320_dev;
 static int input_current = -1;
 static u8 attach_status;
 
 static int tusb320_detect_port_mode(void);
 static int tusb320_detect_input_current(void);
 
-static int tusb320_i2c_read(struct typec_device_info *di,
-	unsigned char *rxdata, int length)
-{
-	int ret;
-	struct i2c_msg msgs[] = {
-		{
-			.addr = di->client->addr,
-			.flags = I2C_M_RD,
-			.len = length,
-			.buf = rxdata,
-		},
-	};
-
-	/* i2c_transfer returns number of messages transferred */
-	ret = i2c_transfer(di->client->adapter, msgs, 1);
-	if (ret < 0)
-		hwlog_err("read transfer error %d\n", ret);
-
-	return ret;
-}
-
-static int tusb320_i2c_write(struct typec_device_info *di,
-	unsigned char *txdata, int length)
-{
-	int ret;
-	struct i2c_msg msg[] = {
-		{
-			.addr = di->client->addr,
-			.flags = 0,
-			.len = length,
-			.buf = txdata,
-		},
-	};
-
-	/* i2c_transfer returns number of messages transferred */
-	ret = i2c_transfer(di->client->adapter, msg, 1);
-	if (ret < 0)
-		hwlog_err("write transfer error reg=%x,%d\n", txdata[0], ret);
-
-	return ret;
-}
-
 static int tusb320_read_reg(u8 reg, u8 *val)
 {
-	int ret;
-	u8 buf[1];
 	struct typec_device_info *di = g_tusb320_dev;
 
-	buf[0] = reg;
-	ret = tusb320_i2c_write(di, buf, 1);
-	if (ret < 0)
-		return ret;
+	if (!di) {
+		hwlog_err("chip not init\n");
+		return -EIO;
+	}
 
-	return tusb320_i2c_read(di, val, 1);
+	return power_i2c_u8_read_byte(di->client, reg, val);
 }
 
 static int tusb320_write_reg(u8 reg, u8 val)
 {
-	u8 buf[2]; /* 2 byte */
 	struct typec_device_info *di = g_tusb320_dev;
 
-	buf[0] = reg;
-	buf[1] = val;
+	if (!di) {
+		hwlog_err("chip not init\n");
+		return -EIO;
+	}
 
-	return tusb320_i2c_write(di, buf, 2);
+	return power_i2c_u8_write_byte(di->client, reg, val);
 }
 
 static int tusb320_clean_mask(void)
@@ -484,7 +443,7 @@ static int tusb320_detect_input_current(void)
 	return di->dev_st.input_current;
 }
 
-struct typec_device_ops tusb320_ops = {
+static struct typec_device_ops tusb320_ops = {
 	.clean_int_mask = tusb320_clean_mask,
 	.detect_attachment_status = tusb320_detect_attachment_status,
 	.detect_cc_orientation = tusb320_detect_cc_orientation,
@@ -493,40 +452,6 @@ struct typec_device_ops tusb320_ops = {
 	.ctrl_output_current = tusb320_ctrl_output_current,
 	.ctrl_port_mode = tusb320_ctrl_port_mode,
 };
-
-static struct attribute *tusb320_attributes[] = {
-	NULL,
-};
-
-static const struct attribute_group tusb320_attr_group = {
-	.attrs = tusb320_attributes,
-};
-
-static int tusb320_create_sysfs(void)
-{
-	int ret = 0;
-	struct class *typec_class = NULL;
-	struct device *new_dev = NULL;
-
-	typec_class = hw_typec_get_class();
-	if (typec_class) {
-		new_dev = device_create(typec_class, NULL, 0, NULL, "tusb320");
-		if (IS_ERR(new_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			return PTR_ERR(new_dev);
-		}
-
-		ret = sysfs_create_group(&new_dev->kobj, &tusb320_attr_group);
-		if (ret)
-			hwlog_err("sysfs group create failed\n");
-	}
-
-	return ret;
-}
-
-static void tusb320_remove_sysfs(struct typec_device_info *di)
-{
-}
 
 static irqreturn_t tusb320_irq_handler(int irq, void *dev_id)
 {
@@ -566,7 +491,7 @@ static void tusb320_initialization(void)
 static int tusb320_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret;
+	int ret = -1;
 	u32 gpio_enb_val = 1;
 	struct typec_device_info *di = NULL;
 	struct typec_device_info *pdi = NULL;
@@ -574,8 +499,6 @@ static int tusb320_probe(struct i2c_client *client,
 	struct power_devices_info_data *power_dev_info = NULL;
 	u32 typec_trigger_otg = 0;
 	u32 mdelay = 0;
-
-	hwlog_info("probe begin\n");
 
 	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
@@ -590,35 +513,22 @@ static int tusb320_probe(struct i2c_client *client,
 	node = di->dev->of_node;
 	i2c_set_clientdata(client, di);
 
-	di->gpio_enb = of_get_named_gpio(node, "tusb320_typec,gpio_enb", 0);
-	hwlog_info("gpio_enb=%d\n", di->gpio_enb);
-
-	if (!gpio_is_valid(di->gpio_enb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"tusb320_gpio_enb", &gpio_enb_val, 0))
 		goto fail_check_i2c;
-	}
 
-	ret = gpio_request(di->gpio_enb, "tusb320_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
+	ret = power_gpio_config_output(node,
+		"tusb320_typec,gpio_enb", "tusb320_en",
+		&di->gpio_enb, gpio_enb_val);
+	if (ret)
 		goto fail_check_i2c;
-	}
-
-	if (power_dts_read_u32(node, "tusb320_gpio_enb", &gpio_enb_val, 0))
-		goto fail_free_gpio_enb;
-
-	ret = gpio_direction_output(di->gpio_enb, gpio_enb_val);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		goto fail_free_gpio_enb;
-	}
 
 	/*
 	 * t_i2c_en in the spec
 	 * time from enable signal active to i2c access available
 	 */
-	(void)power_dts_read_u32(node, "tusb320_mdelay", &mdelay, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"tusb320_mdelay", &mdelay, 0);
 	if (mdelay) {
 		hwlog_info("wait for %d ms before i2c access\n", mdelay);
 		msleep(mdelay);
@@ -630,48 +540,26 @@ static int tusb320_probe(struct i2c_client *client,
 		goto fail_free_gpio_enb;
 	}
 
-	(void)power_dts_read_u32(node, "typec_trigger_otg",
-		&typec_trigger_otg, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"typec_trigger_otg", &typec_trigger_otg, 0);
 	di->typec_trigger_otg = !!typec_trigger_otg;
 
-	di->gpio_intb = of_get_named_gpio(node, "tusb320_typec,gpio_intb", 0);
-	hwlog_info("gpio_intb=%d\n", di->gpio_intb);
-
-	if (!gpio_is_valid(di->gpio_intb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	ret = power_gpio_config_interrupt(node,
+		"tusb320_typec,gpio_intb", "tusb320_int",
+		&di->gpio_intb, &di->irq_intb);
+	if (ret)
 		goto fail_free_gpio_enb;
-	}
 
 	pdi = typec_chip_register(di, &tusb320_ops, THIS_MODULE);
 	if (!pdi) {
 		hwlog_err("typec register chip error\n");
 		ret = -EINVAL;
-		goto fail_free_gpio_enb;
-	}
-
-	ret = gpio_request(di->gpio_intb, "tusb320_int");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		goto fail_free_gpio_enb;
-	}
-
-	di->irq_intb = gpio_to_irq(di->gpio_intb);
-	if (di->irq_intb < 0) {
-		hwlog_err("gpio map to irq fail\n");
-		ret = -EINVAL;
-		goto fail_free_gpio_intb;
-	}
-
-	ret = gpio_direction_input(di->gpio_intb);
-	if (ret) {
-		hwlog_err("gpio set input fail\n");
 		goto fail_free_gpio_intb;
 	}
 
 	ret = request_irq(di->irq_intb, tusb320_irq_handler,
-			IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
-			"tusb320_int", pdi);
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
+		"tusb320_int", pdi);
 	if (ret) {
 		hwlog_err("gpio irq request fail\n");
 		di->irq_intb = -1;
@@ -683,10 +571,6 @@ static int tusb320_probe(struct i2c_client *client,
 		hwlog_err("clear interrupt mask error %d\n", ret);
 		goto fail_free_gpio_irq;
 	}
-
-	ret = tusb320_create_sysfs();
-	if (ret)
-		goto fail_create_sysfs;
 
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
@@ -707,11 +591,8 @@ static int tusb320_probe(struct i2c_client *client,
 	tusb320_ctrl_output_current(TYPEC_HOST_CURRENT_HIGH);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
-	hwlog_info("probe end\n");
 	return 0;
 
-fail_create_sysfs:
-	tusb320_remove_sysfs(di);
 fail_free_gpio_irq:
 	free_irq(di->gpio_intb, di);
 fail_free_gpio_intb:
@@ -729,12 +610,9 @@ static int tusb320_remove(struct i2c_client *client)
 {
 	struct typec_device_info *di = i2c_get_clientdata(client);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	tusb320_remove_sysfs(di);
 	free_irq(di->irq_intb, di);
 	gpio_set_value(di->gpio_enb, 1);
 	gpio_free(di->gpio_enb);
@@ -742,7 +620,6 @@ static int tusb320_remove(struct i2c_client *client)
 	g_tusb320_dev = NULL;
 	devm_kfree(&client->dev, di);
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

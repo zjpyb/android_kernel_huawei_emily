@@ -21,11 +21,11 @@
 #include <linux/jiffies.h>
 #include <linux/version.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/types.h>
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+#if (KERNEL_VERSION(3, 9, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/rt.h>
 #endif /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)) */
 
@@ -34,7 +34,7 @@
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <uapi/linux/sched/types.h>
 #endif
 
@@ -84,7 +84,7 @@ pd_msg_t *pd_alloc_msg(struct tcpc_device *tcpc_dev)
 
 static void __pd_free_msg(struct tcpc_device *tcpc_dev, pd_msg_t *pd_msg)
 {
-	int index = pd_msg - tcpc_dev->pd_msg_buffer;
+	u32 index = pd_msg - tcpc_dev->pd_msg_buffer;
 	uint8_t mask = 1 << index;
 
 	if ((mask & tcpc_dev->pd_msg_buffer_allocated) == 0)
@@ -115,19 +115,20 @@ void pd_free_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 	mutex_unlock(&tcpc_dev->access_lock);
 }
 
-/*----------------------------------------------------------------------------*/
-
 static bool __pd_get_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 {
 	int index = 0;
+
+	if (!tcpc_dev || !pd_event)
+		return false;
 
 	if (tcpc_dev->pd_event_count <= 0)
 		return false;
 
 	tcpc_dev->pd_event_count--;
 
-	*pd_event = tcpc_dev->
-		pd_event_ring_buffer[tcpc_dev->pd_event_head_index];
+	*pd_event =
+		tcpc_dev->pd_event_ring_buffer[tcpc_dev->pd_event_head_index];
 
 	if (tcpc_dev->pd_event_count) {
 		index = tcpc_dev->pd_event_head_index + 1;
@@ -185,10 +186,8 @@ bool pd_put_event(struct tcpc_device *tcpc_dev, const pd_event_t *pd_event,
 	return ret;
 }
 
-/*----------------------------------------------------------------------------*/
-
-static inline void pd_get_attention_event(
-	struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
+static void pd_get_attention_event(struct tcpc_device *tcpc_dev,
+	pd_event_t *pd_event)
 {
 	pd_event_t attention_evt = {
 		.event_type = PD_EVT_PD_MSG,
@@ -196,26 +195,17 @@ static inline void pd_get_attention_event(
 		.pd_msg = NULL,
 	};
 
+	if (!tcpc_dev || !pd_event)
+		return;
+
 	*pd_event = attention_evt;
 	pd_event->pd_msg = __pd_alloc_msg(tcpc_dev);
-	if (pd_event->pd_msg == NULL)
+	if (!pd_event->pd_msg)
 		return;
 	tcpc_dev->pd_pending_vdm_attention = false;
 	*pd_event->pd_msg = tcpc_dev->pd_attention_vdm_msg;
 }
-static inline bool pd_check_vdm_state_ready(pd_port_t *pd_port)
-{
-	switch (pd_port->pe_vdm_state) {
-	case PE_SNK_READY:
-	case PE_SRC_READY:
-#ifdef CONFIG_USB_PD_CUSTOM_DBGACC
-	case PE_DBG_READY:
-#endif	/* CONFIG_USB_PD_CUSTOM_DBGACC */
-		return true;
-	default:
-		return false;
-	}
-}
+
 bool pd_get_vdm_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 {
 	pd_event_t delay_evt = {
@@ -262,8 +252,7 @@ bool pd_get_vdm_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 		return true;
 	}
 
-	if (tcpc_dev->pd_pending_vdm_attention
-		&& pd_check_vdm_state_ready(&tcpc_dev->pd_port)) {
+	if (tcpc_dev->pd_pending_vdm_attention) {
 		mutex_lock(&tcpc_dev->access_lock);
 		pd_get_attention_event(tcpc_dev, pd_event);
 		mutex_unlock(&tcpc_dev->access_lock);
@@ -272,11 +261,16 @@ bool pd_get_vdm_event(struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
 	return false;
 }
 
-static inline bool reset_pe_vdm_state(
-		struct tcpc_device *tcpc_dev, uint32_t vdm_hdr)
+static bool reset_pe_vdm_state(struct tcpc_device *tcpc_dev, uint32_t vdm_hdr)
 {
+	pd_port_t *pd_port = NULL;
 	bool vdm_reset = false;
-	pd_port_t *pd_port = &tcpc_dev->pd_port;
+
+	if (!tcpc_dev)
+		return false;
+
+	pd_port = &tcpc_dev->pd_port;
+
 	if (PD_VDO_SVDM(vdm_hdr)) {
 		if (PD_VDO_CMDT(vdm_hdr) == CMDT_INIT)
 			vdm_reset = true;
@@ -288,32 +282,44 @@ static inline bool reset_pe_vdm_state(
 		tcpc_dev->pd_pending_vdm_reset = true;
 	return vdm_reset;
 }
-static inline bool pd_is_init_attention_event(
-	struct tcpc_device *tcpc_dev, pd_event_t *pd_event)
+
+static bool pd_is_init_attention_event(struct tcpc_device *tcpc_dev,
+	pd_event_t *pd_event)
 {
-	uint32_t vdm_hdr = pd_event->pd_msg->payload[0];
+	uint32_t vdm_hdr;
+
+	if (!pd_event)
+		return false;
+
+	vdm_hdr = pd_event->pd_msg->payload[0];
+
 	if ((PD_VDO_CMDT(vdm_hdr) == CMDT_INIT) &&
-			PD_VDO_CMD(vdm_hdr) == CMD_ATTENTION) {
+		PD_VDO_CMD(vdm_hdr) == CMD_ATTENTION)
 		return true;
-	}
 	return false;
 }
 
 bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
-		pd_event_t *pd_event, bool from_port_partner)
+	pd_event_t *pd_event, bool from_port_partner)
 {
+	pd_msg_t *pd_msg = NULL;
 	bool ignore_evt = false;
-	pd_msg_t *pd_msg = pd_event->pd_msg;
 
+	if (!tcpc_dev || !pd_event)
+		return false;
+
+	pd_msg = pd_event->pd_msg;
 	mutex_lock(&tcpc_dev->access_lock);
 
 	if (from_port_partner &&
 		pd_is_init_attention_event(tcpc_dev, pd_event)) {
-		TCPC_DBG("AttentionEVT\r\n");
+		TCPC_DBG("AttentionEVT\n");
 		ignore_evt = true;
 		tcpc_dev->pd_pending_vdm_attention = true;
 		tcpc_dev->pd_attention_vdm_msg = *pd_msg;
-		atomic_inc(&tcpc_dev->pending_event); /* do not really wake up process*/
+
+		/* do not really wake up process */
+		atomic_inc(&tcpc_dev->pending_event);
 		wake_up_interruptible(&tcpc_dev->event_loop_wait_que);
 	}
 	if (tcpc_dev->pd_pending_vdm_event && (!ignore_evt)) {
@@ -322,8 +328,8 @@ bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
 
 		if (from_port_partner) {
 			if (pd_event_msg_match(&tcpc_dev->pd_vdm_event,
-					PD_EVT_CTRL_MSG, PD_CTRL_GOOD_CRC)) {
-				TCPC_DBG("PostponeVDM GoodCRC\r\n");
+				PD_EVT_CTRL_MSG, PD_CTRL_GOOD_CRC)) {
+				TCPC_DBG("PostponeVDM GoodCRC\n");
 				tcpc_dev->pd_pending_vdm_good_crc = true;
 			}
 
@@ -331,9 +337,9 @@ bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
 		}
 	}
 	if (ignore_evt) {
-			__pd_free_event(tcpc_dev, pd_event);
-			mutex_unlock(&tcpc_dev->access_lock);
-			return false;
+		__pd_free_event(tcpc_dev, pd_event);
+		mutex_unlock(&tcpc_dev->access_lock);
+		return false;
 	}
 
 	tcpc_dev->pd_vdm_event = *pd_event;
@@ -342,19 +348,18 @@ bool pd_put_vdm_event(struct tcpc_device *tcpc_dev,
 
 	if (from_port_partner) {
 
-		if (pd_msg == NULL) {
+		if (!pd_msg) {
 			PD_ERR("the pd_msg is NULL\n");
 			mutex_unlock(&tcpc_dev->access_lock);
 			return false;
 		}
-		/* pd_msg->time_stamp = 0; */
 		tcpc_dev->pd_last_vdm_msg = *pd_msg;
 		reset_pe_vdm_state(tcpc_dev, pd_msg->payload[0]);
 #ifdef CONFIG_USB_PD_POSTPONE_FIRST_VDM
 		postpone_vdm_event(tcpc_dev);
 		mutex_unlock(&tcpc_dev->access_lock);
 		return true;
-#endif	/* CONFIG_USB_PD_POSTPONE_FIRST_VDM */
+#endif /* CONFIG_USB_PD_POSTPONE_FIRST_VDM */
 	}
 
 	atomic_inc(&tcpc_dev->pending_event); /* do not really wake up process*/
@@ -431,10 +436,7 @@ void pd_event_buf_reset(struct tcpc_device *tcpc_dev)
 	mutex_unlock(&tcpc_dev->access_lock);
 }
 
-/*----------------------------------------------------------------------------*/
-
-static inline bool __pd_put_hw_event(
-	struct tcpc_device *tcpc_dev, uint8_t hw_event)
+static bool __pd_put_hw_event(struct tcpc_device *tcpc_dev, uint8_t hw_event)
 {
 	pd_event_t evt = {
 		.event_type = PD_EVT_HW_MSG,
@@ -442,17 +444,22 @@ static inline bool __pd_put_hw_event(
 		.pd_msg = NULL,
 	};
 
+	if (!tcpc_dev)
+		return false;
+
 	return __pd_put_event(tcpc_dev, &evt, false);
 }
 
-static inline bool __pd_put_pe_event(
-	struct tcpc_device *tcpc_dev, uint8_t pe_event)
+static bool __pd_put_pe_event(struct tcpc_device *tcpc_dev, uint8_t pe_event)
 {
 	pd_event_t evt = {
 		.event_type = PD_EVT_PE_MSG,
 		.msg = pe_event,
 		.pd_msg = NULL,
 	};
+
+	if (!tcpc_dev)
+		return false;
 
 	return __pd_put_event(tcpc_dev, &evt, false);
 }
@@ -505,13 +512,17 @@ void pd_put_recv_hard_reset_event(struct tcpc_device *tcpc_dev)
 
 void pd_put_sent_hard_reset_event(struct tcpc_device *tcpc_dev)
 {
+	if (!tcpc_dev)
+		return;
+
 	mutex_lock(&tcpc_dev->access_lock);
 	if (tcpc_dev->pd_wait_hard_reset_complete) {
 		tcpc_dev->pd_transmit_state = PD_TX_STATE_GOOD_CRC;
 		__pd_event_buf_reset(tcpc_dev);
 		__pd_put_pe_event(tcpc_dev, PD_PE_HARD_RESET_COMPLETED);
-	} else
-		TCPC_DBG("[HReset] Unattached\r\n");
+	} else {
+		TCPC_DBG("[HReset] Unattached\n");
+	}
 	mutex_unlock(&tcpc_dev->access_lock);
 }
 
@@ -868,14 +879,18 @@ void pd_notify_pe_transmit_msg(
 
 void pd_notify_pe_pr_changed(pd_port_t *pd_port)
 {
-	struct tcpc_device *tcpc_dev = pd_port->tcpc_dev;
+	struct tcpc_device *tcpc_dev = NULL;
 
-	/* Check mutex later, actually,
-	   typec layer will igrone all cc-change during PR-SWAP */
+	if (!pd_port)
+		return;
 
-	/* mutex_lock(&tcpc_dev->access_lock); */
+	tcpc_dev = pd_port->tcpc_dev;
+
+	/*
+	 * Check mutex later, actually,
+	 * typec layer will igrone all cc-change during PR-SWAP
+	 */
 	tcpc_typec_handle_pe_pr_swap(tcpc_dev);
-	/* mutex_unlock(&tcpc_dev->access_lock); */
 }
 
 void pd_notify_pe_src_explicit_contract(pd_port_t *pd_port)
@@ -885,9 +900,7 @@ void pd_notify_pe_src_explicit_contract(pd_port_t *pd_port)
 	if (pd_port->explicit_contract)
 		return;
 
-	/*mutex_lock(&tcpc_dev->access_lock); */
 	tcpc_typec_advertise_explicit_contract(tcpc_dev);
-	/*mutex_unlock(&tcpc_dev->access_lock); */
 }
 
 static void tcpci_event_wake_lock(struct tcpc_device *tcpc)
@@ -902,30 +915,30 @@ static void tcpci_event_wake_unlock(struct tcpc_device *tcpc)
 		__pm_relax(&tcpc->tcpci_event_wakelock);
 }
 
-/* ---- init  ---- */
 static int tcpc_event_thread(void *param)
 {
-	struct tcpc_device *tcpc_dev = param;
-	struct sched_param sch_param = {.sched_priority = MAX_RT_PRIO - 2};
+	struct tcpc_device *tcpc_dev = NULL;
+	/* 2:set schedule priority to MAX_RT_PRIO - 2 */
+	struct sched_param sch_param = { .sched_priority = MAX_RT_PRIO - 2 };
 
-#if 0
-	set_user_nice(current, -20);
-	current->flags |= PF_NOFREEZE;
-#endif
+	if (!param)
+		return -EINVAL;
+
+	tcpc_dev = param;
 	sched_setscheduler(current, SCHED_FIFO, &sch_param);
 
 	while (true) {
 		wait_event_interruptible(tcpc_dev->event_loop_wait_que,
-				atomic_read(&tcpc_dev->pending_event) |
-				tcpc_dev->event_loop_thead_stop);
+			atomic_read(&tcpc_dev->pending_event) ||
+			tcpc_dev->event_loop_thead_stop);
 		if (kthread_should_stop() || tcpc_dev->event_loop_thead_stop)
 			break;
 
 		tcpci_event_wake_lock(tcpc_dev);
 
-		do {
+		do
 			atomic_dec_if_positive(&tcpc_dev->pending_event);
-		} while (pd_policy_engine_run(tcpc_dev));
+		while (pd_policy_engine_run(tcpc_dev));
 
 		tcpci_event_wake_unlock(tcpc_dev);
 	}

@@ -20,37 +20,36 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/vmalloc.h>
-#include <linux/fs.h>
-#include <linux/string.h>
-#include <linux/slab.h>
-#include <linux/version.h>
-#include <linux/ioctl.h>
-#include <linux/uaccess.h>
+#include <log/hiview_hievent.h>
+#include <asm/current.h>
 #include "huawei_platform/log/hw_log.h"
 #include "chipset_common/hwzrhung/zrhung.h"
 #include "zrhung_common.h"
 #include "zrhung_transtation.h"
 
 #define HWLOG_TAG zrhung
-#define BUF_SIZE (sizeof(struct zrhung_write_event) + ZRHUNG_CMD_LEN_MAX + ZRHUNG_MSG_LEN_MAX + 2)
+#define WP_TO_RAW_ID_BASE 10000
 
 HWLOG_REGIST();
-static uint8_t g_buf[BUF_SIZE];
-static DEFINE_SPINLOCK(lock);
+
+int zrhung_send_hievent(enum zrhung_wp_id id, const char *cmd_buf, const char *msg_buf)
+{
+	int ret;
+	int raw_id = id + WP_TO_RAW_ID_BASE;
+
+	ret = hiview_send_raw_event(raw_id, "%d%d%s%s%s%s", current->pid,
+				    current->tgid, current->comm,
+				    current->comm, msg_buf, cmd_buf);
+	if (ret < 0)
+		hwlog_err("failed to send hievent");
+	return ret;
+}
 
 int zrhung_send_event(enum zrhung_wp_id id, const char *cmd_buf, const char *msg_buf)
 {
 	int ret;
 	int cmd_len = 0;
 	int msg_len = 0;
-	char *p = NULL;
-	char *out_buf = NULL;
-	struct zrhung_write_event evt = {0};
-	int total_len = sizeof(evt);
-	unsigned long flags;
-
-	memset(&evt, 0, sizeof(evt));
 	if (zrhung_is_id_valid(id) < 0) {
 		hwlog_err("Bad watchpoint id");
 		return -EINVAL;
@@ -62,7 +61,6 @@ int zrhung_send_event(enum zrhung_wp_id id, const char *cmd_buf, const char *msg
 		hwlog_err("watchpoint cmd too long");
 		return -EINVAL;
 	}
-	total_len += cmd_len + 1;
 
 	if (msg_buf)
 		msg_len = strlen(msg_buf);
@@ -70,43 +68,9 @@ int zrhung_send_event(enum zrhung_wp_id id, const char *cmd_buf, const char *msg
 		hwlog_err("watchpoint msg buffer too long");
 		return -EINVAL;
 	}
-	total_len += msg_len + 1;
 
-	spin_lock_irqsave(&lock, flags);
-	out_buf = g_buf;
-
-	/* construct the message */
-	evt.magic = MAGIC_NUM;
-	evt.len = total_len;
-	evt.wp_id = id;
-	evt.cmd_len = cmd_len + 1;
-	evt.msg_len = msg_len + 1;
-
-	memset(out_buf, 0, total_len);
-	p = out_buf;
-	memcpy(p, &evt, sizeof(evt));
-	p += sizeof(evt);
-
-	if (cmd_len > 0)
-		memcpy(p, cmd_buf, cmd_len);
-
-	p += cmd_len;
-	*p = 0;
-	p++;
-
-	if (msg_buf)
-		memcpy(p, msg_buf, msg_len);
-
-	p += msg_len;
-	*p = 0;
-
-	/* send the message */
-	ret = htrans_write_event_kernel(out_buf);
-	spin_unlock_irqrestore(&lock, flags);
-
-	hwlog_info("zrhung send event from kernel: wp=%d, ret=%d", evt.wp_id,
-		   ret);
-
+	ret = zrhung_send_hievent(id, cmd_buf, msg_buf);
+	hwlog_info("zrhung send event from kernel: wp=%d, ret=%d", id, ret);
 	return ret;
 }
 EXPORT_SYMBOL(zrhung_send_event);

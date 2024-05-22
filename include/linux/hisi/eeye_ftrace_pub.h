@@ -13,5 +13,5 @@ static inline int save_eeye_ftrace_buffer(int reason) { return 0; }
 static inline void eeye_set_fb_reason(int reason) { return; }
 #endif
 
-#endif /*_EEYE_FTRACE_PUB_H*/
+#endif /* _EEYE_FTRACE_PUB_H */
 

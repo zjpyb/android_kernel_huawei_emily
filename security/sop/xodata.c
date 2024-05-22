@@ -1,39 +1,60 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2021. All rights reserved.
+ * Description: sop kernel module
+ * Create: 2019-08-03
+ */
 
-
-#include <linux/init.h>
 #include <linux/errno.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/uaccess.h>
-#include <linux/ioctl.h>
-#include <linux/vmalloc.h>
-#include <linux/slab.h>
-#include <linux/miscdevice.h>
 #include <linux/file.h>
+#if defined(CONFIG_MTK_PLATFORM)
+#include <uni/hkip/hkip.h>
+#elif defined(CONFIG_ARCH_HISI)
+#include <linux/hisi/hkip.h>
+#endif
+#include <linux/init.h>
+#include <linux/ioctl.h>
+#include <linux/kernel.h>
 #include <linux/list.h>
+#include <linux/miscdevice.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
+#include <linux/module.h>
 #include <linux/sched/mm.h>
-#include <linux/hisi/hisi_hkip.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
+#include <linux/vmalloc.h>
+
 #include "securec.h"
 
 #define SOPLOCK_MAX_LEN 256
 #define SOPLOCK_IOC 0xff
+/* the max number share library sop protect */
+#define SO_PROTECT_MAX 8
 /* 1 2 3.. just distinguish different command */
 #define SOPLOCK_SET_XOM _IO(SOPLOCK_IOC, 1)
 #define SOPLOCK_SET_TAG  _IOWR(SOPLOCK_IOC, 2, struct sop_mem)
 #define SOPLOCK_MMAP_KERNEL _IOW(SOPLOCK_IOC, 3, struct sop_mem)
 
+static DEFINE_RWLOCK(sop_list_lock);
+static DEFINE_MUTEX(sop_mmap_lock);
+
 #define SOP_UNINITIALIZED 0
 #define SOP_TAGGED 1
 #define SOP_ALLOCATED 2
-#define PROT_MASK (PROT_EXEC | PROT_READ | PROT_WRITE)
 
-#ifdef HUAWEI_SOP_ENG
+#ifdef CONFIG_HUAWEI_SOP_ENG
 #define sop_debug(fmt, args...) pr_err(fmt, ##args)
 #else
 #define sop_debug(fmt, args...)
 #endif
+/* the number of share library sop has protect */
+int g_protected_count;
+
+/* Type of the tag privilege */
+enum tag_privilege_type {
+	PRIVILEGED,
+	UNPRIVILEGED,
+};
 
 struct sop_mem {
 	uint64_t len;
@@ -65,6 +86,7 @@ static int sop_open(struct inode *inode, struct file *file)
 {
 	struct sop_user *user = NULL;
 
+	(void)inode;
 	user = kzalloc(sizeof(*user), GFP_KERNEL);
 	if (unlikely(!user))
 		return -ENOMEM;
@@ -77,6 +99,7 @@ static int sop_open(struct inode *inode, struct file *file)
 
 static int sop_release(struct inode *inode, struct file *file)
 {
+	(void)inode;
 	kfree(file->private_data);
 	return 0;
 }
@@ -101,7 +124,6 @@ static int sop_set_xom(struct file *file)
 	void *kaddr = NULL;
 	int nr_pages;
 	int count;
-	int ret;
 
 	user = file->private_data;
 	if (user == NULL)
@@ -124,6 +146,10 @@ static int sop_set_xom(struct file *file)
 	count = nr_pages;
 	do {
 		p = vmalloc_to_page(kaddr);
+		if (p == NULL) {
+			pr_err("%s: vmalloc_to_page failed\n", __func__);
+			return -EFAULT;
+		}
 		get_page(p);
 		SetPageReserved(p);
 		sop_debug("%s: page No %u : page: %pK, refcount: %d\n",
@@ -134,71 +160,51 @@ static int sop_set_xom(struct file *file)
 	/*
 	 * set xom through hkip
 	 * if error, just print the error message and go on
-	 * 32bit share library need the compiler modification, else can not set xom
+	 * 32bit or MTK platform share library need the compiler modification,
+	 * else can not set xom
 	 */
+#ifndef CONFIG_ARCH_QCOM
 	if (strstr(node->tag, "lib64")) {
-		ret = hkip_register_xo((uintptr_t)node->base, nr_pages * PAGE_SIZE);
+		int ret = hkip_register_xo((uintptr_t)node->base, nr_pages * PAGE_SIZE);
 		if (ret)
 			pr_err("hkip_register_xo fails with %d\n", ret);
 	}
+#endif
+
 	node->protected = 1;
 	user->state = SOP_UNINITIALIZED;
 
 	return 0;
 }
 
-/*
- * After calling sop_mmap_unprivileged, caller gets the mapped memory that
- * is execution-only, protected by HKIP in stage 2 address translation.
- * In this context, we know the mapped memory should have EXEC permission
- * only, hence we check the prot argument passed when caller calls mmap,
- * and restrict the permission to be a subset of PROT_EXEC | PROT_READ.
- * Reading the protected memory region traps to HKIP, which returns 0.
- */
-static int sop_mmap_unprivileged(struct file *file, struct vm_area_struct *vma)
+static int remap_range_mem(struct vm_area_struct *vma, struct sop_list *node,
+	uint64_t size)
 {
-	struct sop_user *user = NULL;
-	struct sop_list *node = NULL;
 	int ret;
 
-	if ((file == NULL) || (vma == NULL)) {
-		pr_err("%s: input parameter is null\n", __func__);
-		return -EINVAL;
-	}
-
-	user = file->private_data;
-	if (user == NULL) {
-		pr_err("%s: file private data is null\n", __func__);
+	uint64_t *base = vmalloc_user(size);
+	if (base == NULL) {
+		pr_err("%s: malloc user memory failed\n", __func__);
 		return -EFAULT;
 	}
 
-	sop_debug("%s: user->state: %u\n", __func__, user->state);
-	if (user->state != SOP_TAGGED) {
-		pr_err("%s: state is not SOP_TAGGED\n", __func__);
-		return -EFAULT;
-	}
-
-	/* requested permission should be a subset of user->prot_mask */
-	if (unlikely((vma->vm_flags & ~calc_vm_prot_bits(user->prot_mask, 0)) &
-			calc_vm_prot_bits(PROT_MASK, 0))) {
-		pr_err("%s: permission request error\n", __func__);
-		return -EPERM;
-	}
-
-	node = user->current_node;
-	if (node == NULL) {
-		pr_err("%s: node error\n", __func__);
-		return -EFAULT;
-	}
-
-	/* remap memory for caller */
-	ret = remap_vmalloc_range(vma, node->base, 0);
+	sop_debug("%s: base = %pK\n", __func__, base);
+	// remap the memory to user space
+	ret = remap_vmalloc_range(vma, base, 0);
 	if (ret) {
-		pr_err("%s: remap error, ret %d", __func__, ret);
+		pr_err("%s: remap error, ret %d\n", __func__, ret);
+		vfree(base);
 		return ret;
 	}
 
-	user->state = SOP_UNINITIALIZED;
+	if (node->base != NULL) {
+		pr_info("%s: note->base is not null\n", __func__);
+		vfree(node->base);
+	}
+
+	node->base = base;
+	node->len = size;
+
 	return 0;
 }
 
@@ -235,42 +241,24 @@ static int sop_mmap_privileged(struct file *file, struct vm_area_struct *vma)
 	}
 
 	/* get vma size that kernel prepared */
+	mutex_lock(&sop_mmap_lock);
 	size = vma->vm_end - vma->vm_start;
 
-	if ((node->base == NULL) || (node->len == 0)) {
-		uint64_t *base = vmalloc_user(size);
-
-		if (base == NULL) {
-			pr_err("%s: malloc user memory failed\n", __func__);
-			return -EFAULT;
-		}
-
-		sop_debug("%s: base = %pK\n", __func__, base);
-		// remap the memory to user space
-		ret = remap_vmalloc_range(vma, base, 0);
-		if (ret) {
-			pr_err("%s: remap error, ret %d\n", __func__, ret);
-			vfree(base);
-			return ret;
-		}
-
-		if (node->base != NULL) {
-			pr_info("error: note->base is not null\n");
-			vfree(node->base);
-		}
-		node->base = base;
-		node->len = size;
-	} else if ((node->base != NULL) && (node->len == size)) {
-		ret = remap_vmalloc_range(vma, node->base, 0);
-		if (ret != 0) {
-			pr_err("%s: remap only error, ret %d\n", __func__, ret);
-			return ret;
-		}
-	} else {
-		pr_err("%s: base or length error (%pK, %d)\n",
-			__func__, node->base, node->len);
+	if (((node->base != NULL) && (node->len != 0)) || (size > SZ_1M)) {
+		pr_err("%s: base or length or size error (%pK, %ul, %ul)\n",
+			__func__, node->base, node->len, size);
+		mutex_unlock(&sop_mmap_lock);
 		return -EINVAL;
 	}
+
+	ret = remap_range_mem(vma, node, size);
+	if (ret != 0) {
+		pr_err("%s: remap range mem failed, ret %d\n", __func__, ret);
+		mutex_unlock(&sop_mmap_lock);
+		return ret;
+	}
+	mutex_unlock(&sop_mmap_lock);
+
 	user->state = SOP_ALLOCATED;
 	return 0;
 }
@@ -300,8 +288,9 @@ static int sop_set_tag_unprivileged(struct sop_user *user, struct sop_mem *mem)
 		return -EFAULT;
 
 	/* find tag in agent_tracked_list */
+	read_lock(&sop_list_lock);
 	list_for_each_entry(iter, &agent_tracked_list, agent_tracked) {
-		sop_debug("sop protected: %u\n", iter->protected);
+		sop_debug("%s: sop protected: %u\n", __func__, iter->protected);
 		if (iter->protected == 1 &&
 			(memcmp(iter->tag, mem->tag, iter->tag_size) == 0 ||
 			is_overlay_longer_path(mem->tag, iter->tag, iter->tag_size))) {
@@ -309,19 +298,48 @@ static int sop_set_tag_unprivileged(struct sop_user *user, struct sop_mem *mem)
 			user->state = SOP_TAGGED;
 			mem->state = SOP_TAGGED;
 			mem->len = iter->len;
+			read_unlock(&sop_list_lock);
 			return 0;
 		}
 	}
+	read_unlock(&sop_list_lock);
 
 	/* not found or protected */
 	return -EINVAL;
+}
+
+static struct sop_list *sop_list_add_node(struct sop_mem *mem)
+{
+	struct sop_list *turbo = NULL;
+	int ret;
+
+	turbo = kzalloc(sizeof(*turbo), GFP_KERNEL);
+	if (turbo == NULL)
+		return NULL;
+
+	ret = memcpy_s(turbo->tag, SOPLOCK_MAX_LEN, mem->tag, mem->tag_size);
+	if (ret != EOK) {
+		pr_err("%s: memcpy_s error!", __func__);
+		kfree(turbo);
+		return NULL;
+	}
+
+	turbo->tag_size = mem->tag_size;
+	turbo->base = NULL;
+	turbo->len = 0;
+	turbo->protected = 0;
+	write_lock(&sop_list_lock);
+	list_add(&turbo->agent_tracked, &agent_tracked_list);
+	g_protected_count++;
+	write_unlock(&sop_list_lock);
+
+	return turbo;
 }
 
 static int sop_set_tag_privileged(struct sop_user *user, struct sop_mem *mem)
 {
 	struct sop_list *iter = NULL;
 	struct sop_list *turbo = NULL;
-	int ret;
 
 	if ((user == NULL) || (mem == NULL))
 		return -EINVAL;
@@ -334,6 +352,7 @@ static int sop_set_tag_privileged(struct sop_user *user, struct sop_mem *mem)
 	 * check if tag is already protected;
 	 * agent may restart for error handling;
 	 */
+	read_lock(&sop_list_lock);
 	list_for_each_entry(iter, &agent_tracked_list, agent_tracked) {
 		if (memcmp(iter->tag, mem->tag, iter->tag_size) == 0) {
 			if (iter->protected == 0) {
@@ -343,37 +362,36 @@ static int sop_set_tag_privileged(struct sop_user *user, struct sop_mem *mem)
 			} else if (iter->protected == 1) {
 				mem->state = SOP_UNINITIALIZED;
 			}
+			read_unlock(&sop_list_lock);
 			return 0;
 		}
 	}
-
-	/* not found, make new tag */
-	turbo = kzalloc(sizeof(*turbo), GFP_KERNEL);
-	if (turbo == NULL)
-		return -ENOMEM;
-	ret = memcpy_s(turbo->tag, SOPLOCK_MAX_LEN, mem->tag, mem->tag_size);
-	if (ret != EOK) {
-		pr_err("memcpy_s error!");
-		kfree(turbo);
+	if (g_protected_count >= SO_PROTECT_MAX) {
+		pr_err("so protect number is exceed max = %d", SO_PROTECT_MAX);
+		read_unlock(&sop_list_lock);
 		return -EFAULT;
 	}
-	turbo->tag_size = mem->tag_size;
-	turbo->base = NULL;
-	turbo->len = 0;
-	turbo->protected = 0;
-	list_add(&turbo->agent_tracked, &agent_tracked_list);
+	read_unlock(&sop_list_lock);
+
+	/* not found tag in current list, make new decrypt node */
+	turbo = sop_list_add_node(mem);
+	if (turbo == NULL) {
+		pr_err("sop list add node error");
+		return -EFAULT;
+	}
+
 	user->state = SOP_TAGGED;
 	mem->state = SOP_TAGGED;
 	user->current_node = turbo;
 
-	sop_debug("%s: add track list, tag: %s, tagsize: %u, base: %pK, len: %lx\n",
-		__func__, turbo->tag, turbo->tag_size,
+	sop_debug("%s: sop add track list success, tag: %s, tagsize: %u, base: %pK,"
+		"len: %lx\n", __func__, turbo->tag, turbo->tag_size,
 		turbo->base, (unsigned long)turbo->len);
 	return 0;
 }
 
-static long sop_proc_set_tag_privileged(struct file *file,
-	unsigned long arg)
+static long sop_proc_set_tag(struct file *file,
+	unsigned long arg, int privilege_status)
 {
 	struct sop_user *user = NULL;
 	struct sop_mem mem = {0};
@@ -383,7 +401,8 @@ static long sop_proc_set_tag_privileged(struct file *file,
 	if (user == NULL)
 		return -EFAULT;
 
-	if (unlikely(copy_from_user(&mem, (void __user *)arg, sizeof(mem))))
+	if (unlikely(copy_from_user(&mem,
+		(void __user *)(uintptr_t)arg, sizeof(mem))))
 		return -EFAULT;
 
 	sop_debug("%s: tag: %s, tagsize: %u\n", __func__, mem.tag, mem.tag_size);
@@ -393,13 +412,27 @@ static long sop_proc_set_tag_privileged(struct file *file,
 		return -EINVAL;
 	}
 
-	ret = sop_set_tag_privileged(user, &mem);
-	if (ret != 0) {
-		pr_err("sop_set_tag_privileged returns %d", ret);
-		return ret;
+	switch (privilege_status) {
+	case PRIVILEGED:
+		ret = sop_set_tag_privileged(user, &mem);
+		if (ret != 0) {
+			pr_err("%s: sop_set_tag_privileged returns %d", __func__, ret);
+			return ret;
+		}
+		break;
+	case UNPRIVILEGED:
+		ret = sop_set_tag_unprivileged(user, &mem);
+		if (ret != 0) {
+			pr_err("%s: sop_set_tag_unprivileged returns %d", __func__, ret);
+			return ret;
+		}
+		break;
+	default:
+		pr_err("%s: invalid operation status", __func__);
+		return -EFAULT;
 	}
 
-	if (unlikely(copy_to_user((void __user *)arg, &mem, sizeof(mem))))
+	if (unlikely(copy_to_user((void __user *)(uintptr_t)arg, &mem, sizeof(mem))))
 		return -EFAULT;
 
 	return 0;
@@ -412,9 +445,9 @@ static long sop_ioctl_privileged(struct file *file,
 
 	switch (cmd) {
 	case SOPLOCK_SET_TAG: {
-		ret = sop_proc_set_tag_privileged(file, arg);
+		ret = sop_proc_set_tag(file, arg, PRIVILEGED);
 		if (ret != 0) {
-			pr_err("sop_proc_set_tag error %d", ret);
+			pr_err("%s: sop_proc_set_tag error %d", __func__, ret);
 			return ret;
 		}
 		break;
@@ -422,7 +455,7 @@ static long sop_ioctl_privileged(struct file *file,
 	case SOPLOCK_SET_XOM: {
 		ret = sop_set_xom(file);
 		if (ret != 0) {
-			pr_err("sop_set_xom error %d", ret);
+			pr_err("%s: sop_set_xom error %d", __func__, ret);
 			return ret;
 		}
 		break;
@@ -439,42 +472,10 @@ static long sop_ioctl_privileged(struct file *file,
 static long sop_compat_ioctl_privileged(struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
-	return sop_ioctl_privileged(file, cmd, (unsigned long)compat_ptr(arg));
+	return sop_ioctl_privileged(file, cmd, (uintptr_t)compat_ptr(arg));
 }
 #endif
 
-static long sop_proc_set_tag_unprivileged(struct file *file,
-	unsigned long arg)
-{
-	struct sop_user *user = NULL;
-	struct sop_mem mem = {0};
-	int ret;
-
-	user = file->private_data;
-	if (user == NULL)
-		return -EFAULT;
-
-	if (unlikely(copy_from_user(&mem, (void __user *)arg, sizeof(mem))))
-		return -EFAULT;
-
-	sop_debug("%s: tag: %s, tagsize: %u\n", __func__, mem.tag, mem.tag_size);
-
-	if (mem.tag_size > SOPLOCK_MAX_LEN) {
-		pr_err("%s: invalid tag size, %u\n", __func__, mem.tag_size);
-		return -EINVAL;
-	}
-
-	ret = sop_set_tag_unprivileged(user, &mem);
-	if (ret != 0) {
-		pr_err("sop_set_tag_privileged returns %d", ret);
-		return ret;
-	}
-
-	if (unlikely(copy_to_user((void __user *)arg, &mem, sizeof(mem))))
-		return -EFAULT;
-
-	return 0;
-}
 static long sop_mmap_in_kernel(struct file *file, unsigned long arg)
 {
 	struct sop_user *user = NULL;
@@ -488,8 +489,16 @@ static long sop_mmap_in_kernel(struct file *file, unsigned long arg)
 	if (user == NULL)
 		return -EFAULT;
 
-	if (unlikely(copy_from_user(&mem, (void __user *)arg, sizeof(mem))))
+	if (unlikely(copy_from_user(&mem,
+		(void __user *)(uintptr_t)arg, sizeof(mem))))
 		return -EFAULT;
+
+	node = user->current_node;
+	if ((node == NULL) || (node->len != mem.map_len) ||
+		(memcmp(node->tag, mem.tag, node->tag_size) != 0)) {
+		pr_err("%s: node is null or map len error\n", __func__);
+		return -EFAULT;
+	}
 
 	mm = get_task_mm(current);
 	if (!mm) {
@@ -506,13 +515,6 @@ static long sop_mmap_in_kernel(struct file *file, unsigned long arg)
 	}
 	sop_debug("%s: found the vma\n", __func__);
 	up_read(&mm->mmap_sem);
-	mmput(mm);
-
-	node = user->current_node;
-	if (node == NULL) {
-		pr_err("%s: node error\n", __func__);
-		return -EFAULT;
-	}
 
 	down_write(&mm->mmap_sem);
 	vma->vm_flags |= VM_MIXEDMAP | VM_SHARED | VM_MAYSHARE;
@@ -521,8 +523,11 @@ static long sop_mmap_in_kernel(struct file *file, unsigned long arg)
 	if (ret)
 		pr_err("%s: remap error, ret %d\n", __func__, ret);
 	sop_debug("%s: sop mmap in kernel success\n", __func__);
+
+	mmput(mm);
 	return ret;
 }
+
 static long sop_ioctl_unprivileged(struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
@@ -530,9 +535,9 @@ static long sop_ioctl_unprivileged(struct file *file,
 
 	switch (cmd) {
 	case SOPLOCK_SET_TAG: {
-		ret = sop_proc_set_tag_unprivileged(file, arg);
+		ret = sop_proc_set_tag(file, arg, UNPRIVILEGED);
 		if (ret != 0) {
-			pr_err("sop_proc_set_tag returns %d\n", ret);
+			pr_err("%s: sop_proc_set_tag returns %d\n", __func__, ret);
 			return ret;
 		}
 		break;
@@ -541,7 +546,7 @@ static long sop_ioctl_unprivileged(struct file *file,
 	case SOPLOCK_MMAP_KERNEL: {
 		ret = sop_mmap_in_kernel(file, arg);
 		if (ret != 0) {
-			pr_err("sop_mmap_in_kernel failed, ret: %d\n", ret);
+			pr_err("%s: sop_mmap_in_kernel failed, ret: %d\n", __func__, ret);
 			return ret;
 		}
 		break;
@@ -558,12 +563,11 @@ static long sop_ioctl_unprivileged(struct file *file,
 static long sop_compat_ioctl_unprivileged(struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
-	return sop_ioctl_unprivileged(file,
-		cmd, (unsigned long)compat_ptr(arg));
+	return sop_ioctl_unprivileged(file, cmd, (uintptr_t)compat_ptr(arg));
 }
 #endif
 
-static const struct file_operations fops_privileged = {
+static const struct file_operations g_fops_privileged = {
 	.owner          = THIS_MODULE,
 	.open           = sop_open,
 	.release        = sop_release,
@@ -574,12 +578,11 @@ static const struct file_operations fops_privileged = {
 #endif
 };
 
-static const struct file_operations fops_unprivileged = {
+static const struct file_operations g_fops_unprivileged = {
 	.owner          = THIS_MODULE,
 	.open           = sop_open,
 	.release        = sop_release,
 	.unlocked_ioctl = sop_ioctl_unprivileged,
-	.mmap           = sop_mmap_unprivileged,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl   = sop_compat_ioctl_unprivileged,
 #endif
@@ -588,15 +591,14 @@ static const struct file_operations fops_unprivileged = {
 static struct miscdevice soplock_privileged_misc = {
 	.minor = MISC_DYNAMIC_MINOR,
 	.name  = "sop_privileged",
-	.fops  = &fops_privileged,
+	.fops  = &g_fops_privileged,
 };
 
 static struct miscdevice soplock_unprivileged_misc = {
 	.minor = MISC_DYNAMIC_MINOR,
 	.name  = "sop_unprivileged",
-	.fops  = &fops_unprivileged,
+	.fops  = &g_fops_unprivileged,
 };
-
 
 static int __init soplock_init(void)
 {
@@ -619,4 +621,5 @@ static int __init soplock_init(void)
 
 	return ret;
 }
+
 device_initcall(soplock_init);

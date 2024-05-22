@@ -1,17 +1,8 @@
 /*
- * Copyright (C) Huawei Technologies Co., Ltd. 2013-2015. All rights reserved.
- *
- * mobile@huawei.com
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: This module use for himos report state.
+ * Author: fanxiaoyu3@huawei.com
+ * Create: 2018-07-19
  */
 
 #include <linux/module.h>
@@ -28,13 +19,15 @@
 #include "hw_himos_udp_stats.h"
 #include "hw_himos_aweme_detect.h"
 
-static int himos_stats_report_start(struct sk_buff *skb, struct genl_info *info);
-static int himos_stats_report_stop(struct sk_buff *skb, struct genl_info *info);
-static int himos_stats_report_keepalive(struct sk_buff *skb, struct genl_info *info);
+static int himos_stats_report_start(struct sk_buff *skb,
+	struct genl_info *info);
+static int himos_stats_report_stop(struct sk_buff *skb,
+	struct genl_info *info);
+static int himos_stats_report_keepalive(struct sk_buff *skb,
+	struct genl_info *info);
 
-//attr policy
-static const struct nla_policy himos_stats_report_policy[MAX_HIMOS_STATS_REPORT_ATTR + 1] =
-{
+/* attr policy */
+static const struct nla_policy himos_stats_report_policy[MAX_HIMOS_STATS_REPORT_ATTR + 1] = {
 	[HIMOS_STATS_ATTR_INTERVAL] = {.type = NLA_U32},
 	[HIMOS_STATS_ATTR_UID] = {.type = NLA_S32},
 	[HIMOS_STATS_ATTR_INPKTS] = {.type = NLA_U32},
@@ -46,13 +39,16 @@ static const struct nla_policy himos_stats_report_policy[MAX_HIMOS_STATS_REPORT_
 	[HIMOS_STATS_ATTR_AWEME_CUR_INDEX] = {.type = NLA_S32},
 	[HIMOS_STATS_ATTR_AWEME_VALID_NUM] = {.type = NLA_S32},
 	[HIMOS_STATS_ATTR_AWEME_DETECTING] = {.type = NLA_S32},
-	[HIMOS_STATS_ATTR_AWEME_SEARCH_KEY] = {.type = NLA_BINARY, .len = sizeof(struct himos_aweme_search_key)},
-	[HIMOS_STATS_ATTR_AWEME_STALL_INFO] = {.type = NLA_BINARY, .len = AWEME_STALL_WINDOW * sizeof(struct stall_info)},
+	[HIMOS_STATS_ATTR_AWEME_SEARCH_KEY] = {
+		.type = NLA_BINARY,
+		.len = sizeof(struct himos_aweme_search_key)},
+	[HIMOS_STATS_ATTR_AWEME_STALL_INFO] = {
+		.type = NLA_BINARY,
+		.len = AWEME_STALL_WINDOW * sizeof(struct stall_info)},
 };
 
-//operations
-static struct genl_ops himos_stats_report_ops[] =
-{
+/* operations */
+static struct genl_ops himos_stats_report_ops[] = {
 	{
 		.cmd = HIMOS_STATS_CMD_START,
 		.policy = himos_stats_report_policy,
@@ -75,38 +71,38 @@ static struct genl_ops himos_stats_report_ops[] =
 	},
 };
 
-// family
-static struct genl_family himos_stats_report_genl =
-{
+/* family */
+static struct genl_family himos_stats_report_genl = {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4,14,0))
 	.id = GENL_ID_GENERATE,
 #endif
 	.hdrsize = 0,
 	.name = HIMOS_STATS_REPORT_GENL_FAMILY,
-	.version = 1, // current version number
+	.version = 1, /* current version number */
 	.maxattr = MAX_HIMOS_STATS_REPORT_ATTR,
 	.ops = himos_stats_report_ops,
 	.n_ops = ARRAY_SIZE(himos_stats_report_ops),
 };
 
-static int himos_stats_report_start(struct sk_buff *skb, struct genl_info *info)
+static int himos_stats_report_start(struct sk_buff *skb,
+	struct genl_info *info)
 {
 	__s32 type;
-	struct nlattr *na;
+	struct nlattr *na = NULL;
 	int ret = 0;
 
 	if (info == NULL || info->attrs == NULL ||
 		info->attrs[HIMOS_STATS_ATTR_TYPE] == NULL) {
-		pr_err("In command START, we hope the UID and INTERVAL attr, but they are null");
+		pr_err("In command START, we hope the UID and INTERVAL attr,"
+			"but they are null");
 		return -ENOENT;
 	}
 
-	//get the type
+	/* get the type */
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
 
-	switch(type)
-	{
+	switch (type) {
 	case HIMOS_STATS_TYPE_UDP:
 		ret = himos_start_udp_stats(info);
 		break;
@@ -128,21 +124,20 @@ static int himos_stats_report_start(struct sk_buff *skb, struct genl_info *info)
 static int himos_stats_report_stop(struct sk_buff *skb, struct genl_info *info)
 {
 	__s32 type;
-	struct nlattr *na;
+	struct nlattr *na = NULL;
 	int ret = 0;
 
 	if (info == NULL || info->attrs == NULL ||
 		info->attrs[HIMOS_STATS_ATTR_TYPE] == NULL) {
-		pr_err("In command STOP, we hope the TYPE attr, but it is null");
+		pr_err("In command STOP,we hope the TYPE attr, but it is null");
 		return -ENOENT;
 	}
 
-	//get the type
+	/* get the type */
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
 
-	switch(type)
-	{
+	switch (type) {
 	case HIMOS_STATS_TYPE_UDP:
 		ret = himos_stop_udp_stats(info);
 		break;
@@ -169,23 +164,24 @@ static int himos_stats_report_stop(struct sk_buff *skb, struct genl_info *info)
  *    @uid: user ID
  * return: 0--success, 1--fail
  */
-static int himos_stats_report_keepalive(struct sk_buff *skb, struct genl_info *info)
+static int himos_stats_report_keepalive(struct sk_buff *skb,
+	struct genl_info *info)
 {
 	__s32 type;
-	struct nlattr *na;
+	struct nlattr *na = NULL;
 	int ret = 0;
 
 	if (info == NULL || info->attrs == NULL ||
 		info->attrs[HIMOS_STATS_ATTR_TYPE] == NULL) {
-		pr_err("In command KEEPALIVE, we hope the TYPE attr, but it is null");
+		pr_err("In command KEEPALIVE, we hope the TYPE attr,"
+			"but it is null");
 		return -ENOENT;
 	}
 
-	//get the uid
+	/* get the uid */
 	na = info->attrs[HIMOS_STATS_ATTR_TYPE];
 	type = nla_get_s32(na);
-	switch(type)
-	{
+	switch (type) {
 	case HIMOS_STATS_TYPE_UDP:
 		ret = himos_keepalive_udp_stats(info);
 		break;
@@ -206,7 +202,7 @@ static int himos_stats_report_keepalive(struct sk_buff *skb, struct genl_info *i
 
 struct sk_buff* himos_get_nlmsg(__u32 portid, int type, size_t size)
 {
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
 	void *reply = NULL;
 
 	skb = genlmsg_new(size, GFP_ATOMIC);
@@ -215,10 +211,11 @@ struct sk_buff* himos_get_nlmsg(__u32 portid, int type, size_t size)
 		return NULL;
 	}
 
-	//construct the reply message
+	/* construct the reply message */
 	reply = genlmsg_put(skb, portid, 0, &himos_stats_report_genl, 0, type);
 	if (reply == NULL) {
-		pr_err("himos_douyin_notify_result: Bug!!! contruct the reply message error");
+		pr_err("himos_douyin_notify_result: Bug!"
+			"contruct the reply message error");
 		nlmsg_free(skb);
 		return NULL;
 	}
@@ -228,9 +225,8 @@ struct sk_buff* himos_get_nlmsg(__u32 portid, int type, size_t size)
 
 void himos_notify_result(__u32 portid, possible_net_t net, struct sk_buff *skb)
 {
-	if (genlmsg_unicast(read_pnet(&net), skb, portid) < 0) {
+	if (genlmsg_unicast(read_pnet(&net), skb, portid) < 0)
 		pr_err("Bug, send the douyin detect result to user failed");
-	}
 }
 
 static int __init himos_stats_report_init(void)
@@ -241,7 +237,8 @@ static int __init himos_stats_report_init(void)
 
 	err = genl_register_family(&himos_stats_report_genl);
 	if (err < 0) {
-		pr_err("genl_register_family_with_ops fail with error code %d", err);
+		pr_err("genl_register_family_with_ops"
+			"fail with error code %d", err);
 		return err;
 	}
 
@@ -272,9 +269,8 @@ static void __exit himos_stats_report_exit(void)
 	int err = 0;
 
 	err = genl_unregister_family(&himos_stats_report_genl);
-	if (err < 0) {
+	if (err < 0)
 		pr_err("genl_unregister_family fail with error code %d", err);
-	}
 }
 
 module_init(himos_stats_report_init)

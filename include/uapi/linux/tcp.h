@@ -132,6 +132,12 @@ enum {
 #ifdef CONFIG_HUAWEI_BASTET
 #define TCP_RECONN		100
 #endif
+#ifdef CONFIG_HUAWEI_TCP_QUICK_START
+#define TCP_QUICK_START		121
+#endif
+
+#define TCP_SLOW_START_AFTER_IDLE	141	/* Slow start after transmission idle */
+
 
 struct tcp_repair_opt {
 	__u32	opt_code;
@@ -270,9 +276,10 @@ struct mptcp_meta_info {
 	__u32	mptcpi_last_ack_recv;
 
 	__u32	mptcpi_total_retrans;
-
-	__u64	mptcpi_bytes_acked;    /* RFC4898 tcpEStatsAppHCThruOctetsAcked */
-	__u64	mptcpi_bytes_received; /* RFC4898 tcpEStatsAppHCThruOctetsReceived */
+	/* RFC4898 tcpEStatsAppHCThruOctetsAcked */
+	__u64	mptcpi_bytes_acked;
+	/* RFC4898 tcpEStatsAppHCThruOctetsReceived */
+	__u64	mptcpi_bytes_received;
 };
 
 struct mptcp_sub_info {
@@ -290,15 +297,20 @@ struct mptcp_sub_info {
 };
 
 struct mptcp_info {
-	__u32	tcp_info_len;	/* Length of each struct tcp_info in subflows pointer */
-	__u32	sub_len;	/* Total length of memory pointed to by subflows pointer */
+	/* Length of each struct tcp_info in subflows pointer */
+	__u32	tcp_info_len;
+	/* Total length of memory pointed to by subflows pointer */
+	__u32	sub_len;
 	__u32	meta_len;	/* Length of memory pointed to by meta_info */
-	__u32	sub_info_len;	/* Length of each struct mptcp_sub_info in subflow_info pointer */
-	__u32	total_sub_info_len;	/* Total length of memory pointed to by subflow_info */
+	/* Length of each struct mptcp_sub_info in subflow_info pointer */
+	__u32	sub_info_len;
+	/* Total length of memory pointed to by subflow_info */
+	__u32	total_sub_info_len;
 
 	struct mptcp_meta_info	*meta_info;
 	struct tcp_info		*initial;
-	struct tcp_info		*subflows;	/* Pointer to array of tcp_info structs */
+	/* Pointer to array of tcp_info structs */
+	struct tcp_info		*subflows;
 	struct mptcp_sub_info	*subflow_info;
 };
 #endif

@@ -1,18 +1,8 @@
-/* bastet_utils.c
- *
- * Provide Bastet filter.
- *
- * Copyright (C) 2014 Huawei Device Co.,Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2015-2020. All rights reserved.
+ * Description: Provide bastet filter.
+ * Author: zhangkaige@huawei.com
+ * Create: 2015-12-01
  */
 
 #include <linux/fdtable.h>
@@ -22,8 +12,8 @@
 #include <uapi/linux/netfilter_ipv4.h>
 #include <uapi/linux/netfilter_ipv6.h>
 #include <huawei_platform/net/bastet/bastet_utils.h>
-#include <net/icmp.h> /*icmp_send*/
-#include <uapi/linux/icmp.h> /*ICMP_NET_ANO ICMP_DEST_UNREACH*/
+#include <net/icmp.h> /* icmp_send */
+#include <uapi/linux/icmp.h> /* ICMP_NET_ANO ICMP_DEST_UNREACH */
 
 extern int get_uid_by_pid(struct set_process_info *info);
 
@@ -35,129 +25,123 @@ struct st_proc_info_node {
 struct list_head g_white_list_head;
 static spinlock_t proc_info_lock;
 static int g_special_uid;
-/**
- * Function: get_process_info_by_skb
- * Description: get uid and pid by skb
- * Input:skb
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+
+/*
+ * get_process_info_by_skb() - get uid and pid by skb
+ * @skb: sock buffer
+ * @info: process info buffer.
+ *
+ * get uid and pid from sock buffer, then fill them into
+ * the set_process_info.
+ *
+ * Return:No
  */
 static void get_process_info_by_skb(struct sk_buff *skb,
 	struct set_process_info *info)
 {
-	if ((NULL == skb) || (NULL == info)) {
-		BASTET_LOGE("invalid parameter");
+	if ((skb == NULL) || (info == NULL)) {
+		bastet_loge("invalid parameter");
 		return;
 	}
 
-	if (NULL == skb->sk) {
-		BASTET_LOGE("skb->sk is NULL");
+	if (skb->sk == NULL) {
+		bastet_loge("skb->sk is NULL");
 		return;
 	}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
 	info->uid = (int32_t)sock_i_uid(skb->sk).val;
-#else
-	info->uid = (int32_t)sock_i_uid(skb->sk);
-#endif
 	info->pid = current->pid;
 }
-/*
- * Function: hook_ipv4_local_out_cb
- * Description: netfilter hook call back function on ipv4 LOCAL_OUT
- * Input:	@hooknum - hook position, here is NF_INET_LOCAL_OUT
- *			@in - net_device info, available on in hook
- *			@out - net_device info, available on out hook
- *			@okfn - netfilter call back function
- * Output:
- * Return:	NF_ACCEPT -- we should all return this to make sure that
- *			sk_buff continue to be transfered
-*/
 
+/*
+ * hook_local_out_cb() - hook local out cb.
+ * @*ops: point to the data.
+ * @*skb: sock buffer.
+ * @*state: hook state.
+ *
+ * netfilter hook call back function on ipv4 LOCAL_OUT
+ * hook position, here is NF_INET_LOCAL_OUT
+ * net_device info, available on in hook
+ * net_device info, available on out hook
+ * netfilter call back function
+ *
+ * Return:NF_ACCEPT -- we should all return this to make sure that
+ * sk_buff continue to be transfered
+ */
 static unsigned int hook_local_out_cb(void *ops, struct sk_buff *skb,
-		const struct nf_hook_state *state)
+	const struct nf_hook_state *state)
 {
 	struct set_process_info info;
-	struct list_head *pos;
-	struct st_proc_info_node *tmp_node;
+	struct list_head *pos = NULL;
+	struct st_proc_info_node *tmp_node = NULL;
 	bool found = false;
 
 	info.pid = -1;
 	info.uid = -1;
 	get_process_info_by_skb(skb, &info);
 
-	BASTET_LOGI("uid=%d,pid=%d", info.uid, info.pid);
+	bastet_logi("uid=%d,pid=%d", info.uid, info.pid);
 	spin_lock_bh(&proc_info_lock);
 	if (list_empty(&g_white_list_head)) {
 		spin_unlock_bh(&proc_info_lock);
-		BASTET_LOGE("ipv4 NF_DROP1");
+		bastet_loge("ipv4 NF_DROP1");
 		return NF_DROP;
 	}
 	list_for_each(pos, &g_white_list_head) {
 		tmp_node = list_entry(pos, struct st_proc_info_node, list);
-		BASTET_LOGI("uid=%d,pid=%d",
+		bastet_logi("uid=%d,pid=%d",
 			tmp_node->info.uid, tmp_node->info.pid);
 		if (tmp_node->info.uid != info.uid)
 			continue;
 		if (tmp_node->info.uid != g_special_uid) {
-			BASTET_LOGI("uid=%d not %d match success",
+			bastet_logi("uid=%d not %d match success",
 				info.uid, g_special_uid);
 			found = true;
 			break;
-		} else {
-			if (tmp_node->info.pid == info.pid) {
-				BASTET_LOGI("uid=%d,pid=%d match success",
-					info.uid, info.pid);
-				found = true;
-				break;
-			}
+		}
+		if (tmp_node->info.pid == info.pid) {
+			bastet_logi("uid=%d,pid=%d match success",
+				info.uid, info.pid);
+			found = true;
+			break;
 		}
 	}
 
 	if (found) {
-		BASTET_LOGE("ipv4 NF_ACCEPT");
+		bastet_loge("ipv4 NF_ACCEPT");
 		spin_unlock_bh(&proc_info_lock);
 		return NF_ACCEPT;
-	} else {
-		BASTET_LOGE("ipv4 NF_DROP2");
-		if (skb->sk) {
-			skb->sk->sk_err = icmp_err_convert[ICMP_NET_ANO].errno;
-			skb->sk->sk_error_report(skb->sk);
-		}
-		spin_unlock_bh(&proc_info_lock);
-		return NF_DROP;
 	}
+	bastet_loge("ipv4 NF_DROP2");
+	if (skb->sk) {
+		skb->sk->sk_err = icmp_err_convert[ICMP_NET_ANO].errno;
+		skb->sk->sk_error_report(skb->sk);
+	}
+	spin_unlock_bh(&proc_info_lock);
+	return NF_DROP;
 }
 
 static struct nf_hook_ops ipv4_local_out_ops = {
-	.hook		=	hook_local_out_cb,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-	.owner		=	THIS_MODULE,
-#endif
-	.pf			=	NFPROTO_IPV4,
-	.hooknum	=	NF_INET_LOCAL_OUT,
-	.priority	=	NF_IP_PRI_FIRST,
+	.hook = hook_local_out_cb,
+	.pf = NFPROTO_IPV4,
+	.hooknum = NF_INET_LOCAL_OUT,
+	.priority = NF_IP_PRI_FIRST,
 };
 
 static struct nf_hook_ops ipv6_local_out_ops = {
-	.hook		=	hook_local_out_cb,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-	.owner		=	THIS_MODULE,
-#endif
-	.pf			=	NFPROTO_IPV6,
-	.hooknum	=	NF_INET_LOCAL_OUT,
-	.priority	=	NF_IP6_PRI_FIRST,
+	.hook = hook_local_out_cb,
+	.pf = NFPROTO_IPV6,
+	.hooknum = NF_INET_LOCAL_OUT,
+	.priority = NF_IP6_PRI_FIRST,
 };
 
-/**
- * Function: add_proc_info_to_white_list
- * Description: add process_info to the white list
- * Input:set_process_info
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+/*
+ * add_proc_info_to_white_list() - add proc info to list.
+ * @info: set_process_info.
+ *
+ * add process_info to the white list
+ *
+ * Return:0 is success
+ * Otherwise is fail.
  */
 static int add_proc_info_to_white_list(struct set_process_info *info)
 {
@@ -167,7 +151,7 @@ static int add_proc_info_to_white_list(struct set_process_info *info)
 	struct list_head *n = NULL;
 
 	if (info == NULL) {
-		BASTET_LOGE("invalid parameter");
+		bastet_loge("invalid parameter");
 		return -EFAULT;
 	}
 	spin_lock_bh(&proc_info_lock);
@@ -176,24 +160,22 @@ static int add_proc_info_to_white_list(struct set_process_info *info)
 			tmp_node = list_entry(pos,
 				struct st_proc_info_node, list);
 			if (tmp_node->info.pid == info->pid) {
-				BASTET_LOGI("pid =%d has existed in white list",
+				bastet_logi("pid =%d has existed in white list",
 					info->pid);
 				spin_unlock_bh(&proc_info_lock);
 				return 0;
 			}
 		}
 	}
-	new_node = (struct st_proc_info_node *)kmalloc(
-		sizeof(*new_node), GFP_ATOMIC);
-
-	if (NULL == new_node) {
-		BASTET_LOGE("kzalloc proc_info_node failed");
+	new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+	if (new_node == NULL) {
+		bastet_loge("kzalloc proc_info_node failed");
 		spin_unlock_bh(&proc_info_lock);
 		return -EFAULT;
 	}
 
 	if (get_uid_by_pid(info) != 0) {
-		BASTET_LOGE("get_uid_by_pid fail");
+		bastet_loge("get_uid_by_pid fail");
 		kfree(new_node);
 		spin_unlock_bh(&proc_info_lock);
 		return -EFAULT;
@@ -201,30 +183,30 @@ static int add_proc_info_to_white_list(struct set_process_info *info)
 	new_node->info.uid = info->uid;
 	new_node->info.pid = info->pid;
 
-	BASTET_LOGI("uid=%d, pid=%d add to list",
+	bastet_logi("uid=%d, pid=%d add to list",
 		new_node->info.uid, new_node->info.pid);
 	list_add(&(new_node->list), &g_white_list_head);
 	spin_unlock_bh(&proc_info_lock);
 	return 0;
 }
 
-/**
- * Function: del_proc_info_from_white_list
- * Description: delete one process_info in the white list
- * Input:set_process_info
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+/*
+ * del_proc_info_from_white_list() - delete the info from list.
+ * @info: set_process_info.
+ *
+ * delete the process_info in the white list
+ *
+ * Return: 0 is success
+ * Otherwise is fail.
  */
 static int del_proc_info_from_white_list(struct set_process_info *info)
 {
-	struct st_proc_info_node *tmp_node;
+	struct st_proc_info_node *tmp_node = NULL;
 	struct list_head *pos = NULL;
 	struct list_head *n = NULL;
 
-	if (NULL == info) {
-		BASTET_LOGE("invalid parameter");
+	if (info == NULL) {
+		bastet_loge("invalid parameter");
 		return -EFAULT;
 	}
 	spin_lock_bh(&proc_info_lock);
@@ -233,7 +215,7 @@ static int del_proc_info_from_white_list(struct set_process_info *info)
 			tmp_node = list_entry(pos,
 				struct st_proc_info_node, list);
 			if (tmp_node->info.pid  == info->pid) {
-				BASTET_LOGI("uid=%d, pid=%d delete",
+				bastet_logi("uid=%d, pid=%d delete",
 					tmp_node->info.uid, tmp_node->info.pid);
 				list_del(pos);
 				kfree(tmp_node);
@@ -245,18 +227,17 @@ static int del_proc_info_from_white_list(struct set_process_info *info)
 	return 0;
 }
 
-/**
- * Function: del_all_proc_info_from_white_list
- * Description: delete all process_info in the white list
- * Input:set_process_info
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+/*
+ * del_all_proc_info_from_white_list() - delete all proc
+ *
+ * delete all process_info in the white list
+ *
+ * Return: 0 is success
+ * Otherwise is fail.
  */
 static int del_all_proc_info_from_white_list(void)
 {
-	struct st_proc_info_node *tmp_node;
+	struct st_proc_info_node *tmp_node = NULL;
 	struct list_head *pos = NULL;
 	struct list_head *n = NULL;
 
@@ -273,21 +254,22 @@ static int del_all_proc_info_from_white_list(void)
 	return 0;
 }
 
-/**
- * Function: set_proc_info
- * Description: set process_info
- * Input:set_process_info
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+/*
+ * set_proc_info() - set the info.
+ * @info: set_process_info.
+ *
+ * add/del/del all proc into/from the white list
+ * due to different cmd.
+ *
+ * Return: -EFAULT is invalid cmd.
+ * Otherwise is normal.
  */
 int set_proc_info(struct set_process_info *info)
 {
-	int rc = 0;
+	int rc;
 
-	if(IS_ERR_OR_NULL(info)) {
-		BASTET_LOGE("invalid parameter");
+	if (IS_ERR_OR_NULL(info)) {
+		bastet_loge("invalid parameter");
 		return -EFAULT;
 	}
 	switch (info->cmd) {
@@ -301,108 +283,99 @@ int set_proc_info(struct set_process_info *info)
 		rc = del_all_proc_info_from_white_list();
 		break;
 	default:
-		BASTET_LOGE("invalid cmd");
+		bastet_loge("invalid cmd");
 		rc = -EFAULT;
 		break;
 	}
 	return rc;
 }
 
-/**
- * Function: set_special_uid
- * Description: set netfilter
- * Input:the special uid
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
- */
 int set_special_uid(int32_t uid)
 {
 	g_special_uid = uid;
 	return 0;
 }
 
-/**
- * Function: set_netfilter
- * Description: set netfilter
- * Input:state true register,false unregister
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
+/*
+ * set_netfilter() - set the filter
+ * @state: bool value to set, state true register,false unregister
+ *
+ * to register or unregister the hook by the state.
+ *
+ * Return: 0 is success.
+ * Otherwise is fail.
  */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 int set_netfilter(bool state)
 {
-	static bool isRegistered;
+	static bool is_registered;
 
-	BASTET_LOGI("isRegister=%d", state);
+	bastet_logi("is_registered=%d", state);
 
 	if (!state) {
-		if (isRegistered) {
+		if (is_registered) {
 			nf_unregister_hook(&ipv4_local_out_ops);
 			nf_unregister_hook(&ipv6_local_out_ops);
-			isRegistered = false;
+			is_registered = false;
 		}
 		return 0;
 	}
 
 	if (nf_register_hook(&ipv4_local_out_ops) < 0) {
-		BASTET_LOGE("register ipv4 fail");
+		bastet_loge("register ipv4 fail");
 		nf_unregister_hook(&ipv4_local_out_ops);
 		return -EFAULT;
 	}
 	if (nf_register_hook(&ipv6_local_out_ops) < 0) {
-		BASTET_LOGE("register ipv6 fail");
+		bastet_loge("register ipv6 fail");
 		nf_unregister_hook(&ipv4_local_out_ops);
 		nf_unregister_hook(&ipv6_local_out_ops);
 		return -EFAULT;
 	}
-	isRegistered = true;
+	is_registered = true;
 	return 0;
 }
 #else
+/*
+ * set_netfilter() - set the filter
+ * @state: bool value to set, state true register,false unregister
+ *
+ * to register or unregister the hook by the state.
+ *
+ * Return: 0 is success.
+ * Otherwise is fail.
+ */
 int set_netfilter(bool state)
 {
-	static bool isRegistered;
+	static bool is_registered;
 
-	BASTET_LOGI("isRegister=%d", state);
+	bastet_logi("is_registered=%d", state);
 
 	if (!state) {
-		if (isRegistered) {
+		if (is_registered) {
 			nf_unregister_net_hook(&init_net, &ipv4_local_out_ops);
 			nf_unregister_net_hook(&init_net, &ipv6_local_out_ops);
-			isRegistered = false;
+			is_registered = false;
 		}
 		return 0;
 	}
 
 	if (nf_register_net_hook(&init_net, &ipv4_local_out_ops) < 0) {
-		BASTET_LOGE("register ipv4 fail");
+		bastet_loge("register ipv4 fail");
 		nf_unregister_net_hook(&init_net, &ipv4_local_out_ops);
 		return -EFAULT;
 	}
 	if (nf_register_net_hook(&init_net, &ipv6_local_out_ops) < 0) {
-		BASTET_LOGE("register ipv6 fail");
+		bastet_loge("register ipv6 fail");
 		nf_unregister_net_hook(&init_net, &ipv4_local_out_ops);
 		nf_unregister_net_hook(&init_net, &ipv6_local_out_ops);
 		return -EFAULT;
 	}
-	isRegistered = true;
+	is_registered = true;
 	return 0;
 }
 #endif
 
-/**
- * Function: bastet_filter_init
- * Description: init bastet filter info
- * Input:
- * Output:
- * Return:
- * Date: 2015.12.24
- * Author: Zhang Kaige ID: 00220931
- */
 void bastet_filter_init(void)
 {
 	spin_lock_init(&proc_info_lock);

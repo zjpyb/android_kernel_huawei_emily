@@ -25,6 +25,12 @@
 #include "common.h"
 #include <securec.h>
 
+#ifdef __LLT_UT__
+#define STATIC
+#else
+#define STATIC static
+#endif
+
 #define SHMEM_AP_RECV_PHY_ADDR            DDR_SHMEM_CH_SEND_ADDR_AP
 #define SHMEM_AP_RECV_PHY_SIZE            DDR_SHMEM_CH_SEND_SIZE
 #define SHMEM_AP_SEND_PHY_ADDR            DDR_SHMEM_AP_SEND_ADDR_AP
@@ -54,7 +60,7 @@ struct shmem_ipc_data {
 };
 
 struct shmem_ipc {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	struct shmem_ipc_data data;
 };
 
@@ -80,11 +86,10 @@ static struct wakeup_source g_shmem_lock;
 /*
  * IPC消息封装，调用inputhub的接口发送IPC消息
  */
-static int shmem_ipc_send(unsigned char cmd, obj_tag_t module_id,
-			  unsigned int size, bool is_lock)
+STATIC int shmem_ipc_send(unsigned char cmd, enum obj_tag module_id, unsigned int size, bool is_lock)
 {
 	struct shmem_ipc pkt;
-	write_info_t winfo;
+	struct write_info winfo;
 
 	if (memset_s(&pkt, sizeof(pkt), 0, sizeof(pkt)) != EOK) {
 		pr_err("%s memset_s fail\n", __func__);
@@ -122,7 +127,7 @@ static int shmem_ipc_send(unsigned char cmd, obj_tag_t module_id,
 /*
  * 计算数据包的checksum
  */
-static int shmem_get_checksum(void *buf_addr, unsigned int buf_size)
+STATIC int shmem_get_checksum(void *buf_addr, unsigned int buf_size)
 {
 	unsigned char *p = buf_addr;
 	unsigned int sum = 0;
@@ -150,7 +155,7 @@ static void receive_response_work_handler(struct work_struct *work)
 		pr_err("%s NULL pointer\n", __func__);
 		return;
 	}
-	shmem_ipc_send(CMD_SHMEM_AP_RECV_RESP, (obj_tag_t)p->data.module_id,
+	shmem_ipc_send(CMD_SHMEM_AP_RECV_RESP, (enum obj_tag)p->data.module_id,
 		       p->data.buf_size, false);
 	pr_info("[%s]\n", __func__);
 }
@@ -158,12 +163,12 @@ static void receive_response_work_handler(struct work_struct *work)
 /*
  * 将sharemem包中的数据从DDR中取出，如果是大数据包消息同时启动workqueue回复IPC确认
  */
-const pkt_header_t *shmempack(const char *buf, unsigned int length)
+const struct pkt_header *shmempack(const char *buf, unsigned int length)
 {
 	int ret;
 	struct shmem_ipc *msg = (struct shmem_ipc *)buf;
 	static char recv_buf[SHMEM_AP_RECV_PHY_SIZE] = { 0, };
-	const pkt_header_t *head = (const pkt_header_t *)recv_buf;
+	const struct pkt_header *head = (const struct pkt_header *)recv_buf;
 
 	if (NULL == buf)
 		return NULL;
@@ -222,7 +227,7 @@ const pkt_header_t *shmempack(const char *buf, unsigned int length)
 /*
  * sharemem接收模块初始化
  */
-static int shmem_recv_init(void)
+STATIC int shmem_recv_init(void)
 {
 	g_receive_response_wq = alloc_ordered_workqueue("sharemem_receive_response", __WQ_LEGACY | WQ_MEM_RECLAIM | WQ_FREEZABLE);
 	if (g_receive_response_wq == NULL) {
@@ -254,9 +259,9 @@ void shmem_recv_test(const void __iomem *buf_addr, unsigned int size)
 		pr_info("%s: shmem send fail\n", __func__);
 }
 
-int shmem_notify_test(const pkt_header_t *head)
+int shmem_notify_test(const struct pkt_header *head)
 {
-	shmem_recv_test((void __iomem *)head, (unsigned int)(head->length + sizeof(pkt_header_t)));
+	shmem_recv_test((void __iomem *)head, (unsigned int)(head->length + sizeof(struct pkt_header)));
 	return 0;
 }
 
@@ -275,7 +280,7 @@ int shmem_start_test(void)
 /*
  * sharemem消息发送接口，将数据复制到DDR中，并发送IPC通知contexthub处理
  */
-int shmem_send(obj_tag_t module_id, const void *usr_buf,
+int shmem_send(enum obj_tag module_id, const void *usr_buf,
 	       unsigned int usr_buf_size)
 {
 	int ret;
@@ -307,7 +312,7 @@ unsigned int shmem_get_capacity(void)
 /*
  * sharemem消息发送后，收到contexthub的回复确认后up信号量
  */
-int shmem_send_resp(const pkt_header_t *head)
+int shmem_send_resp(const struct pkt_header *head)
 {
 	if (!g_shmem_gov.send_sem.count) {
 		up(&g_shmem_gov.send_sem);
@@ -320,7 +325,7 @@ int shmem_send_resp(const pkt_header_t *head)
 /*
  * sharemem发送模块初始化
  */
-static int shmem_send_init(void)
+STATIC int shmem_send_init(void)
 {
 	g_shmem_gov.send_addr_base =
 	    ioremap_wc((ssize_t)SHMEM_AP_SEND_PHY_ADDR, (unsigned long)SHMEM_AP_SEND_PHY_SIZE);

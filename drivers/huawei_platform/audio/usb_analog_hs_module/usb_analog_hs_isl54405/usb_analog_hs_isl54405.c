@@ -27,7 +27,7 @@
 #include <linux/of_gpio.h>
 #include <linux/miscdevice.h>
 #include <linux/workqueue.h>
-#include <linux/hisi/hi64xx/hi64xx_mbhc.h>
+#include <linux/hisi/da_combine/da_combine_mbhc.h>
 #include <huawei_platform/log/hw_log.h>
 #include "huawei_platform/audio/usb_analog_hs_isl54405.h"
 
@@ -57,7 +57,7 @@ struct usb_ana_hs_isl54405_data {
 	struct workqueue_struct *analog_hs_plugout_delay_wq;
 	struct delayed_work analog_hs_plugout_delay_work;
 
-	struct usb_analog_hs_dev *codec_ops_dev;
+	struct ana_hs_codec_dev *codec_ops_dev;
 	/* store codec description data */
 	void *private_data;
 	int usb_analog_hs_in;
@@ -82,7 +82,7 @@ static inline void usb_analog_hs_gpio_set_value(int gpio, int value)
 
 static void usb_analog_hs_plugin_work(struct work_struct *work)
 {
-	enum hisi_jack_states hs_type = HISI_JACK_NONE;
+	enum audio_jack_states hs_type = AUDIO_JACK_NONE;
 
 	IN_FUNCTION;
 
@@ -90,13 +90,13 @@ static void usb_analog_hs_plugin_work(struct work_struct *work)
 	isl54405_pdata->codec_ops_dev->ops.plug_in_detect(
 		isl54405_pdata->private_data);
 	mutex_lock(&isl54405_pdata->mutex);
-	isl54405_pdata->usb_analog_hs_in = USB_ANA_HS_PLUG_IN;
+	isl54405_pdata->usb_analog_hs_in = ANA_HS_PLUG_IN;
 	hs_type = isl54405_pdata->codec_ops_dev->ops.get_headset_type(
 		isl54405_pdata->private_data);
 
 	hwlog_info("%s hs_type =%d\n", __func__, hs_type);
-	if (hs_type == HISI_JACK_HEADSET || hs_type == HISI_JACK_HEADPHONE ||
-		hs_type == HISI_JACK_INVERT)
+	if (hs_type == AUDIO_JACK_HEADSET || hs_type == AUDIO_JACK_HEADPHONE ||
+		hs_type == AUDIO_JACK_INVERT)
 		usb_analog_hs_gpio_set_value(
 			isl54405_pdata->gpio_usb_hs_switch, 0);
 
@@ -111,12 +111,12 @@ static void usb_analog_hs_plugout_work(struct work_struct *work)
 	IN_FUNCTION;
 
 	__pm_stay_awake(&isl54405_pdata->wake_lock);
-	if (isl54405_pdata->usb_analog_hs_in == USB_ANA_HS_PLUG_IN) {
+	if (isl54405_pdata->usb_analog_hs_in == ANA_HS_PLUG_IN) {
 		hwlog_info("%s usb analog hs plug out act\n", __func__);
 		isl54405_pdata->codec_ops_dev->ops.plug_out_detect(
 			isl54405_pdata->private_data);
 		mutex_lock(&isl54405_pdata->mutex);
-		isl54405_pdata->usb_analog_hs_in = USB_ANA_HS_PLUG_OUT;
+		isl54405_pdata->usb_analog_hs_in = ANA_HS_PLUG_OUT;
 		usb_analog_hs_gpio_set_value(
 			isl54405_pdata->gpio_usb_hs_switch, 1);
 		mutex_unlock(&isl54405_pdata->mutex);
@@ -126,7 +126,7 @@ static void usb_analog_hs_plugout_work(struct work_struct *work)
 	OUT_FUNCTION;
 }
 
-int usb_ana_hs_isl54405_dev_register(struct usb_analog_hs_dev *dev,
+int usb_ana_hs_isl54405_dev_register(struct ana_hs_codec_dev *dev,
 					void *codec_data)
 {
 	/* usb analog headset driver not be probed, just return */
@@ -167,8 +167,8 @@ int usb_ana_hs_isl54405_check_hs_pluged_in(void)
 	hwlog_info("%s typec_detach =%d\n", __func__, typec_detach);
 
 	if (typec_detach == PD_DPM_USB_TYPEC_AUDIO_ATTACHED)
-		return USB_ANA_HS_PLUG_IN;
-	return USB_ANA_HS_PLUG_OUT;
+		return ANA_HS_PLUG_IN;
+	return ANA_HS_PLUG_OUT;
 }
 
 void usb_ana_hs_isl54405_mic_switch_change_state(void)
@@ -218,12 +218,12 @@ void usb_ana_hs_isl54405_plug_in_out_handle(int hs_state)
 	IN_FUNCTION;
 
 	hwlog_info("%s hs_state is %d[%s]\n", __func__, hs_state,
-		(hs_state == USB_ANA_HS_PLUG_IN) ? "PLUG_IN" : "PLUG_OUT");
+		(hs_state == ANA_HS_PLUG_IN) ? "PLUG_IN" : "PLUG_OUT");
 
 	__pm_wakeup_event(&isl54405_pdata->wake_lock,
 		WAKE_LOCK_TIMEOUT);
 
-	if (hs_state == USB_ANA_HS_PLUG_IN)
+	if (hs_state == ANA_HS_PLUG_IN)
 		queue_delayed_work(isl54405_pdata->analog_hs_plugin_delay_wq,
 			&isl54405_pdata->analog_hs_plugin_delay_work,
 			msecs_to_jiffies(800)); /* delay for status stable */
@@ -407,7 +407,7 @@ static long usb_ana_hs_isl54405_ioctl(struct file *file, unsigned int cmd,
 		return -EBUSY;
 
 	switch (cmd) {
-	case IOCTL_USB_ANA_HS_GET_MIC_SWITCH_STATE:
+	case IOCTL_ANA_HS_GET_MIC_SWITCH_STATE:
 		gpio_mic_sel_val = usb_analog_hs_gpio_get_value(
 			isl54405_pdata->gpio_mic_switch);
 		hwlog_info("%s gpio_mic_sel_val = %d\n",
@@ -479,7 +479,7 @@ static const struct file_operations usb_ana_hs_isl54405_fops = {
 
 static struct miscdevice usb_ana_hs_isl54405_device = {
 	.minor  = MISC_DYNAMIC_MINOR,
-	.name   = "usb_analog_hs",
+	.name   = "ana_hs_core",
 	.fops   = &usb_ana_hs_isl54405_fops,
 };
 
@@ -519,7 +519,7 @@ static int usb_ana_hs_isl54405_probe(struct platform_device *pdev)
 	/* load dts config for board difference */
 	load_gpio_type_config(node);
 	isl54405_pdata->registed = USB_ANALOG_HS_NOT_REGISTER;
-	isl54405_pdata->usb_analog_hs_in = USB_ANA_HS_PLUG_OUT;
+	isl54405_pdata->usb_analog_hs_in = ANA_HS_PLUG_OUT;
 	usb_analog_hs_gpio_set_value(isl54405_pdata->gpio_switch_1v8_en, 1);
 	usb_analog_hs_gpio_set_value(isl54405_pdata->gpio_usb_hs_switch, 1);
 

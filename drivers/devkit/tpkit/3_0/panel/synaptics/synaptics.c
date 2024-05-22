@@ -10,16 +10,16 @@
 
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_api.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define SYNAPTICS_CHIP_INFO  "synaptics-"
 #define SYNAPTICS_VENDER_NAME  "synaptics"
@@ -546,28 +546,6 @@ static int rmi_f11_read_finger_state(struct ts_fingers *info)
 	return 0;
 }
 #endif
-
-static void synaptics_ghost_detect(int value){
-	if (GHOST_OPERATE_TOO_FAST & value){
-		TS_LOG_INFO("%s operate too fast\n", __func__);
-	}else if (GHOST_OPERATE_IN_XY_AXIS & value){
-		TS_LOG_INFO("%s operate in same xy asix\n", __func__);
-	}else if (GHOST_OPERATE_IN_SAME_POSITION & value){
-		TS_LOG_INFO("%s operate in same position\n", __func__);
-	}
-	//DMD report
-
-	if(rmi4_data->synaptics_chip_data->enable_ghost_dmd_report == 0) {
-#if defined (CONFIG_HUAWEI_DSM)
-		ts_dmd_report(DSM_TP_GHOST_TOUCH_ERROR_NO, "noise record number: %d.noise_record_num is %d.frequency_selection is %d\n",
-			value,rmi4_data->synaptics_chip_data->noise_record_num,
-			rmi4_data->synaptics_chip_data->frequency_selection_reg);
-#endif
-		rmi4_data->synaptics_chip_data->enable_ghost_dmd_report++;
-	}
-
-	rmi4_data->synaptics_chip_data->noise_record_num = 0;
-}
 
 static bool synaptics_read_crc_value(struct synaptics_rmi4_f01_device_status *status, unsigned short ic_status_reg)
 {
@@ -1369,7 +1347,6 @@ struct ts_device_ops ts_kit_synaptics_ops = {
 #endif
 	.chip_wrong_touch = synaptics_wrong_touch,
 	.chip_work_after_input = synaptics_work_after_input_kit,
-	.chip_ghost_detect = synaptics_ghost_detect,
 	.chip_check_status = synaptics_chip_check_status,
 	.chip_touch_switch = synaptics_chip_touch_switch,
 	.chip_set_sensibility_cfg = synaptics_chip_send_sensibility,
@@ -2621,6 +2598,13 @@ static int synaptics_private_config_parse(struct device_node *device,
 	if (retval) {
 		rmi4_data->distinguish_ic_type = 0;
 		TS_LOG_INFO("device distinguish_ic_type not found,use default value.\n");
+	}
+	retval = of_property_read_u32(device,
+		"aod_display_no_power_off",
+		&rmi4_data->aod_display_no_power_off);
+	if (retval) {
+		TS_LOG_ERR(" aod_display_no_power_off is not valid\n");
+		rmi4_data->aod_display_no_power_off = 0;
 	}
 
 	return 0;
@@ -4478,11 +4462,15 @@ static int synaptics_suspend(void)
 	int retval = NO_ERR;
 	int tskit_pt_station_flag = 0;
 	struct ts_kit_device_data *cd = rmi4_data->synaptics_chip_data;
+	int aod_ts_enable = 0;
 
 	TS_LOG_INFO("in last time wake mode synaptics_interrupt_num = %d interrupts tskit_pt_station_flag = %d\n",
 	     synaptics_interrupt_num,tskit_pt_station_flag);
 
 	rmi4_data->ud_finger_status = rmi4_data->synaptics_chip_data->ts_platform_data->udfp_enable_flag;
+	if (rmi4_data->aod_display_no_power_off)
+			rmi4_data->aod_touch_enable = rmi4_data->synaptics_chip_data->easy_wakeup_info.aod_touch_switch_ctrl;
+	aod_ts_enable = rmi4_data->aod_touch_enable;
 	ts_kit_get_pt_station_status(&tskit_pt_station_flag);
 	synaptics_interrupt_num = 0;
 	TS_LOG_INFO("suspend +\n");
@@ -4498,14 +4486,15 @@ static int synaptics_suspend(void)
 		}
 		/* for in_cell, tp will power off in suspend. */
 		// udfp_enable_flag may be changed when TP have suspended
-		if (!rmi4_data->ud_finger_status) {
+		TS_LOG_INFO("aod_touch_enable %d\n", aod_ts_enable);
+		if (!rmi4_data->ud_finger_status && !aod_ts_enable) {
 			if (!tskit_pt_station_flag)
 				synaptics_power_off();
 			else
 				synatpics_sleep_mode_in(rmi4_data);
 		} else {
 			synaptics_set_screenoff_status_reg();
-			TS_LOG_INFO("synaptics_suspend:udfp_enable_flag == 1.\n");
+			TS_LOG_INFO("synaptics suspend: no power off.\n");
 		}
 		break;
 		/* for gesture wake up mode suspend. */
@@ -4533,6 +4522,7 @@ static int synaptics_resume(void)
 {
 	int retval = NO_ERR;
 	int tskit_pt_station_flag = 0;
+	int aod_ts_enable = rmi4_data->aod_touch_enable;
 	struct ts_kit_device_data *cd = rmi4_data->synaptics_chip_data;
 
 	ts_kit_get_pt_station_status(&tskit_pt_station_flag);
@@ -4553,13 +4543,13 @@ static int synaptics_resume(void)
 		}
 
 		/*for in_cell, tp should power on in resume. */
-		if (!rmi4_data->ud_finger_status) {
+		if (!rmi4_data->ud_finger_status && !aod_ts_enable) {
 			if (!tskit_pt_station_flag)
 				synaptics_power_on();
 			else
 				synaptics_sleep_mode_out(rmi4_data);	/*exit sleep mode*/
 		} else {
-			TS_LOG_INFO("synaptics_suspend:udfp_enable_flag == 1.\n");
+			TS_LOG_INFO("synaptics resume: no power on.\n");
 		}
 		if (cd->ic_type != SYNAPTICS_TD4322 &&
 				cd->ic_type != SYNAPTICS_TD4310)
@@ -6178,10 +6168,10 @@ static int synaptics_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);
@@ -6409,38 +6399,38 @@ static int synaptics_rmi4_key_gesture_report(struct synaptics_rmi4_data
 		TS_LOG_INFO("@@@SPECIFIC_LETTER_DETECTED detected!@@@\n");
 		switch (get_gesture_wakeup_data[2]) {
 		case SPECIFIC_LETTER_c:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &
 				easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_c detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_c;
+				reprot_gesture_key_value = TS_LETTER_C;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_e:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &
 				easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_e detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_e;
+				reprot_gesture_key_value = TS_LETTER_E;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_m:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &
 				easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_m detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_m;
+				reprot_gesture_key_value = TS_LETTER_M;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_w:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &
 				easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_w detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_w;
+				reprot_gesture_key_value = TS_LETTER_W;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;

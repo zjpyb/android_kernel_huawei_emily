@@ -56,7 +56,6 @@ typedef struct {
     char *cur;
 } SecPrintfStream;
 
-
 #ifndef SECUREC_BUFFER_SIZE
 #if SECUREC_IN_KERNEL
 #define SECUREC_BUFFER_SIZE    32
@@ -75,7 +74,6 @@ typedef struct {
 #endif
 /* Buffer size for wchar, use 4 to make the compiler aligns as 8 bytes as possible */
 #define SECUREC_WCHAR_BUFFER_SIZE 4
-
 
 #define SECUREC_MAX_PRECISION  SECUREC_BUFFER_SIZE
 /* Max. # bytes in multibyte char  ,see MB_LEN_MAX */
@@ -103,18 +101,16 @@ typedef struct {
     ((count) > (SECUREC_STRING_MAX_LEN - 1)))
 #endif
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-    extern int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list argList);
-#if SECUREC_IN_KERNEL == 0
-    extern int SecVswprintfImpl(wchar_t *string, size_t sizeInWchar, const wchar_t *format, va_list argList);
+    int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list argList);
+#ifdef SECUREC_FOR_WCHAR
+    int SecVswprintfImpl(wchar_t *string, size_t sizeInWchar, const wchar_t *format, va_list argList);
 #endif
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-
 

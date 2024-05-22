@@ -1,9 +1,8 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: vendor/hisi/ap/kernel/drivers/mtd/hisi_nve_whitelist.h
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2012-2019. All rights reserved.
  * Description: define nve whitelist
- * Author: jinguojun
- * Create: 2019-06-20
- * Revision history:2019-06-20 zhanghugang NVE CSEC
+ * Author: hisilicon
+ * Create: 2012-06-20
+ * Revision history:2019-06-20 NVE CSEC
  */
 #ifndef __HISI_NVE_WHITELIST__
 #define __HISI_NVE_WHITELIST__

@@ -16,7 +16,7 @@
 static struct inputhub_ext_log_notifier inputhub_ext_log_mag;
 static bool inited = false;
 
-int inputhub_ext_log_register_handler(int tag, int (*notify)(const pkt_header_t* head))
+int inputhub_ext_log_register_handler(int tag, int (*notify)(const struct pkt_header* head))
 {
 	struct inputhub_ext_notifier_node* pnode, *n;
 	int ret = 0;
@@ -60,13 +60,13 @@ out:
 	return ret;
 }
 
-int is_inputhub_ext_log_notify(const pkt_header_t* head)
+int is_inputhub_ext_log_notify(const struct pkt_header* head)
 {
 	return (head->tag == TAG_LOG_BUFF)
 		   && (CMD_EXT_LOG_FLUSH == head->cmd);
 }
 
-static int inputhub_ext_log_process(const pkt_header_t* head)
+static int inputhub_ext_log_process(const struct pkt_header* head)
 {
 	int found = 0;
 	ext_logger_req_t* pkt_ext = (ext_logger_req_t*)head;

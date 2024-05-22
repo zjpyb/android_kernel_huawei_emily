@@ -7,7 +7,8 @@ menuconfig HUAWEI_SENSORS_INPUT_INFO
 
 source "drivers/huawei_platform/sensor/fingerprint/Kconfig"
 source "drivers/huawei_platform/sensor/hall/Kconfig"
-source "drivers/huawei_platform/sensor/touch_key/Kconfig"
 source "drivers/huawei_platform/sensor/color_sensor/Kconfig"
 source "drivers/huawei_platform/sensor/step_motor/Kconfig"
 source "drivers/huawei_platform/sensor/pos_hall/Kconfig"
+source "drivers/huawei_platform/sensor/ext_inputhub/Kconfig"
+source "drivers/huawei_platform/sensor/pos_optocoupler/Kconfig"

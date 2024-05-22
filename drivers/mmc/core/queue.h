@@ -60,6 +60,8 @@ struct mmc_queue_req {
 
 struct mmc_queue {
 	struct mmc_card		*card;
+	struct mmc_ctx		ctx;
+	struct blk_mq_tag_set	tag_set;
 	struct task_struct	*thread;
 	struct semaphore	thread_sem;
 	bool			suspended;
@@ -104,4 +106,14 @@ extern int mmc_cmdq_init(struct mmc_queue *mq, struct mmc_card *card);
 extern void mmc_cmdq_clean(struct mmc_queue *mq, struct mmc_card *card);
 extern int mmc_cmdq_init_queue(struct mmc_queue *mq, struct mmc_card * card,
 			spinlock_t *lock, const char *subname);
+extern int mmc_cmdq_mq_init_queue(struct mmc_queue *mq, struct mmc_card * card,
+			spinlock_t *lock);
+extern int mmc_mq_init_queue(struct mmc_queue *mq, int q_depth,
+			     const struct blk_mq_ops *mq_ops, spinlock_t *lock);
+
+extern int mmc_mq_init_request(struct blk_mq_tag_set *set, struct request *req,
+			       unsigned int hctx_idx, unsigned int numa_node);
+extern void mmc_mq_exit_request(struct blk_mq_tag_set *set, struct request *req,
+				unsigned int hctx_idx);
+
 #endif

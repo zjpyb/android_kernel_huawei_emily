@@ -3,7 +3,7 @@
  *
  * gpio switch for otgid driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,20 +16,19 @@
  *
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
+#include <linux/gpio.h>
+#include <linux/hisi/usb/hisi_usb.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/switch.h>
-#include <linux/workqueue.h>
-#include <linux/gpio.h>
 #include <linux/timer.h>
-#include <linux/jiffies.h>
-
-#include <linux/of_gpio.h>
-#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/workqueue.h>
 #include <huawei_platform/log/hw_log.h>
 
 #define HWLOG_TAG otgid_gpio_switch
@@ -64,14 +63,14 @@ static void gpio_switch_timer_work_func(struct work_struct *work)
 
 	if (di->last_state == GPIO_HIGH && state == GPIO_LOW) {
 		hwlog_err("otgid fall event\n");
-		hisi_usb_id_change(ID_FALL_EVENT);
+		chip_usb_id_change(ID_FALL_EVENT);
 		di->last_state = state;
 		return;
 	}
 
 	if (di->last_state == GPIO_LOW && state == GPIO_HIGH) {
 		hwlog_err("otgid rise event\n");
-		hisi_usb_id_change(ID_RISE_EVENT);
+		chip_usb_id_change(ID_RISE_EVENT);
 		di->last_state = state;
 		return;
 	}
@@ -112,8 +111,6 @@ static int gpio_switch_probe(struct platform_device *pdev)
 	int ret;
 	struct gpio_switch_device_info *di = NULL;
 	struct device_node *np = NULL;
-
-	hwlog_info("probe begin\n");
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -171,7 +168,6 @@ static int gpio_switch_probe(struct platform_device *pdev)
 		mod_timer(&di->timer, jiffies + msecs_to_jiffies(DEBOUNCE));
 	}
 
-	hwlog_info("probe end\n");
 	return 0;
 
 fail_free_gpio_int:
@@ -179,15 +175,12 @@ fail_free_gpio_int:
 fail_free_mem:
 	kfree(di);
 	g_gpio_switch_dev = NULL;
-
 	return ret;
 }
 
 static int gpio_switch_remove(struct platform_device *pdev)
 {
 	struct gpio_switch_device_info *di = g_gpio_switch_dev;
-
-	hwlog_info("remove begin\n");
 
 	if (!di)
 		return -ENODEV;
@@ -198,7 +191,6 @@ static int gpio_switch_remove(struct platform_device *pdev)
 	kfree(di);
 	g_gpio_switch_dev = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

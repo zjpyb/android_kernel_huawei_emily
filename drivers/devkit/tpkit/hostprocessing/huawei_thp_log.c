@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -28,7 +28,7 @@ static char g_thplog_dir[SH_THP_PATH_MAXLEN] = SH_THP_LOG_DIR;
 static char *g_raw_data_buff = NULL;
 static char *g_dif_data_buff = NULL;
 
-static void thp_wait_fs(char *path)
+static void thp_wait_fs(const char *path)
 {
 	int fd;
 	mm_segment_t old_fs;
@@ -39,7 +39,7 @@ static void thp_wait_fs(char *path)
 		fd = sys_access(path, 0);
 		if (fd) {
 			msleep(THP_FS_WAIT_TIME);
-			THP_LOG_INFO("%s wait ...\n", __func__);
+			thp_log_info("%s wait ...\n", __func__);
 		}
 	} while (fd);
 	set_fs(old_fs);
@@ -55,7 +55,7 @@ static void thp_log_to_file(const char *content, unsigned int len)
 	oldfs = get_fs();
 	set_fs(KERNEL_DS); /* lint !e501 */
 	if (sys_access(g_thplog_dir, 0)) {
-		THP_LOG_ERR("[%s]failed to access dir:\n", __func__,
+		thp_log_err("[%s]failed to access dir:%s\n", __func__,
 			g_thplog_dir);
 		set_fs(oldfs);
 		return;
@@ -63,12 +63,12 @@ static void thp_log_to_file(const char *content, unsigned int len)
 	fp = filp_open(path, O_CREAT | O_RDWR | O_APPEND,
 		SH_THP_FILE_AUTHORITY);
 	if (IS_ERR(fp)) {
-		THP_LOG_ERR("[%s]filp_open failed:%s\n", __func__, path);
+		thp_log_err("[%s]filp_open failed:%s\n", __func__, path);
 	} else {
 		vfs_llseek(fp, 0L, SEEK_END);
 		ret = vfs_write(fp, content, len, &(fp->f_pos));
 		if (ret != len)
-			THP_LOG_ERR("vfs_write %s error\n", path);
+			thp_log_err("vfs_write %s error\n", path);
 		filp_close(fp, NULL);
 	}
 
@@ -84,8 +84,8 @@ static int thp_write_raw_data(void *buff)
 	unsigned short offset = 0;
 	unsigned short pos;
 	unsigned short *raw_data = NULL;
-	pkt_thplog_report_data_t *touchpanel_log_data =
-		(pkt_thplog_report_data_t *)buff;
+	struct pkt_thplog_report_data_t *touchpanel_log_data =
+		(struct pkt_thplog_report_data_t *)buff;
 
 	raw_data = (unsigned short *)touchpanel_log_data->raw_data.data;
 	num_col = touchpanel_log_data->raw_data.col;
@@ -93,7 +93,7 @@ static int thp_write_raw_data(void *buff)
 
 	if (num_col * num_row * sizeof(unsigned short) >
 			THP_LOG_RAW_DATA_LENGTH_MAX) {
-		THP_LOG_ERR("%s col or row is too large\n", __func__);
+		thp_log_err("%s col or row is too large\n", __func__);
 		return -1;
 	}
 
@@ -128,8 +128,8 @@ static int thp_write_dif_data(void *buff)
 	unsigned short offset = 0;
 	unsigned short pos;
 	short *dif_data = NULL;
-	pkt_thplog_report_data_t *touchpanel_log_data =
-		(pkt_thplog_report_data_t *)buff;
+	struct pkt_thplog_report_data_t *touchpanel_log_data =
+		(struct pkt_thplog_report_data_t *)buff;
 
 	dif_data = (unsigned short *)touchpanel_log_data->dif_data.data;
 	num_col = touchpanel_log_data->dif_data.col;
@@ -137,7 +137,7 @@ static int thp_write_dif_data(void *buff)
 
 	if (num_col * num_row * sizeof(short) >
 			THP_LOG_DIF_DATA_LENGTH_MAX) {
-		THP_LOG_ERR("%s col or row is too large\n", __func__);
+		thp_log_err("%s col or row is too large\n", __func__);
 		return -1;
 	}
 
@@ -167,11 +167,11 @@ static void thp_write_logbuf2file(void *buff)
 {
 	unsigned short offset;
 	char log_head[THP_LOG_AVAILABLE_DATA_LENGTH] = {0};
-	pkt_thplog_report_data_t *touchpanel_log_data =
-		(pkt_thplog_report_data_t *)buff;
+	struct pkt_thplog_report_data_t *touchpanel_log_data =
+		(struct pkt_thplog_report_data_t *)buff;
 
 	if (touchpanel_log_data == NULL) {
-		THP_LOG_ERR("[%s], touchpanel_log_data is null\n", __func__);
+		thp_log_err("[%s], touchpanel_log_data is null\n", __func__);
 		return;
 	}
 
@@ -185,11 +185,11 @@ static void thp_write_logbuf2file(void *buff)
 
 	/* raw */
 	if (thp_write_raw_data((void *)touchpanel_log_data))
-		THP_LOG_ERR("[%s]raw data format is wrong\n", __func__);
+		thp_log_err("[%s]raw data format is wrong\n", __func__);
 
 	/* diff */
 	if (thp_write_dif_data((void *)touchpanel_log_data))
-		THP_LOG_ERR("[%s]dif data format is wrong\n", __func__);
+		thp_log_err("[%s]dif data format is wrong\n", __func__);
 
 	/* tsa */
 	offset = 0;
@@ -200,16 +200,15 @@ static void thp_write_logbuf2file(void *buff)
 		thp_log_to_file(touchpanel_log_data->tsa_log,
 			touchpanel_log_data->tsa_logbuff_len);
 	}
-	return;
 }
 
 static void thp_log_work_fn(struct work_struct *work)
 {
-	THP_LOG_INFO("%s save thp log start\n", __func__);
+	thp_log_info("%s save thp log start\n", __func__);
 	thp_wait_fs("/data/lost+found");
-	mutex_lock(&g_thplog_save.lock_mutex);
+	down(&g_thplog_save.sem);
 	thp_write_logbuf2file((void *)(g_thplog_save.data));
-	mutex_unlock(&g_thplog_save.lock_mutex);
+	up(&g_thplog_save.sem);
 }
 
 static DECLARE_WORK(thp_log_work, thp_log_work_fn);
@@ -217,27 +216,33 @@ int thp_log_init(void)
 {
 	int ret = 0;
 
-	THP_LOG_INFO("%s thp log is enabled\n", __func__);
-	mutex_init(&g_thplog_save.lock_mutex);
+	thp_log_info("%s thp log is enabled\n", __func__);
+	sema_init(&g_thplog_save.sem, 1);
 	return ret;
 }
 
 int thp_log_save(const char *head)
 {
 	int ret = 0;
-	pkt_thplog_report_data_t *touchpanel_log_data =
-		(pkt_thplog_report_data_t *)(head);
+	struct pkt_thplog_report_data_t *touchpanel_log_data =
+		(struct pkt_thplog_report_data_t *)(head);
 
-	mutex_lock(&g_thplog_save.lock_mutex);
+	if (down_trylock(&g_thplog_save.sem)) {
+		thp_log_err("[%s]work is busy\n", __func__);
+		return -1;
+	}
 	if (g_thplog_save.data == NULL)
-		g_thplog_save.data = (pkt_thplog_report_data_t *)
-			kzalloc(sizeof(pkt_thplog_report_data_t), GFP_KERNEL);
+		g_thplog_save.data = (struct pkt_thplog_report_data_t *)
+			kzalloc(sizeof(struct pkt_thplog_report_data_t),
+				GFP_ATOMIC);
 	if (g_raw_data_buff == NULL)
 		g_raw_data_buff = (char *)
-			kzalloc((size_t)THP_LOG_RAW_DATA_LENGTH_MAX, GFP_KERNEL);
+			kzalloc((size_t)THP_LOG_RAW_DATA_LENGTH_MAX,
+				GFP_ATOMIC);
 	if (g_dif_data_buff == NULL)
 		g_dif_data_buff = (char *)
-			kzalloc((size_t)THP_LOG_DIF_DATA_LENGTH_MAX, GFP_KERNEL);
+			kzalloc((size_t)THP_LOG_DIF_DATA_LENGTH_MAX,
+				GFP_ATOMIC);
 	if ((g_thplog_save.data == NULL) ||
 		(g_raw_data_buff == NULL) ||
 		(g_dif_data_buff == NULL)) {
@@ -247,13 +252,14 @@ int thp_log_save(const char *head)
 		g_thplog_save.data = NULL;
 		g_raw_data_buff = NULL;
 		g_dif_data_buff = NULL;
-		THP_LOG_ERR("[%s]buff malloc failed\n", __func__);
+		thp_log_err("[%s]buff malloc failed\n", __func__);
+		up(&g_thplog_save.sem);
 		return -1;
 	}
 	memcpy((void *)(g_thplog_save.data), (void *)touchpanel_log_data,
-		sizeof(pkt_thplog_report_data_t));
+		sizeof(struct pkt_thplog_report_data_t));
+	up(&g_thplog_save.sem);
 	schedule_work(&thp_log_work);
-	mutex_unlock(&g_thplog_save.lock_mutex);
 	return ret;
 }
 

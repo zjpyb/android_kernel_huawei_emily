@@ -9,7 +9,6 @@
 
 #include "hwsensor.h"
 #include "sensor_commom.h"
-#include "hw_csi.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)
 #define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)

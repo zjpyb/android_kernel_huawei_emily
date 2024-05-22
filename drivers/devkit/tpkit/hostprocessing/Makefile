@@ -1,4 +1,5 @@
 EXTRA_CFLAGS += -Idrivers/hwspinlock
+EXTRA_CFLAGS += -Idrivers/video/fbdev/hisi/dss
 
 obj-$(CONFIG_HUAWEI_THP) += thp.o
 thp-objs += huawei_thp_attr.o huawei_thp_core.o huawei_thp_mt_wrapper.o
@@ -10,6 +11,9 @@ obj-$(CONFIG_HUAWEI_THP_HIMAX) += himax_thp.o
 obj-$(CONFIG_HUAWEI_THP_GOODIX) += goodix_thp.o
 obj-$(CONFIG_HUAWEI_THP_SOLOMON) += ssl_thp.o
 obj-$(CONFIG_HUAWEI_SHB_THP) += huawei_thp_log.o
+obj-$(CONFIG_HUAWEI_THP_ILITEK) += ilitek_thp.o
+obj-$(CONFIG_HUAWEI_THP_ST) += stmicro_thp.o
+
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
 EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit1.0/core/common
@@ -25,3 +29,8 @@ EXTRA_CFLAGS += -Idrivers/gpu/drm/msm
 EXTRA_CFLAGS += -Idrivers/gpu/drm/msm/dsi-staging
 EXTRA_CFLAGS += -Idrivers/hwsensor/pssensor
 endif
+
+EXTRA_CFLAGS += -Idrivers/huawei_platform/sensor2_0/
+EXTRA_CFLAGS += -I$(srctree)/drivers/misc/mediatek/sensor/2.0/core
+
+EXTRA_CFLAGS += -I$(srctree)/drivers/misc/mediatek/sensors-1.0/alsps/alspshub

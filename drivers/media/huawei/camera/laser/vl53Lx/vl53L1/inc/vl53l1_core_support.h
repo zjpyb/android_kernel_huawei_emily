@@ -189,7 +189,7 @@ uint32_t VL53L1_isqrt(
 
 
 void VL53L1_hist_calc_zero_distance_phase(
-	VL53L1_histogram_bin_data_t    *pdata);
+	struct VL53L1_histogram_bin_data_t    *pdata);
 
 
 
@@ -210,8 +210,8 @@ void VL53L1_hist_calc_zero_distance_phase(
 
 
 void VL53L1_hist_estimate_ambient_from_thresholded_bins(
-	int32_t                      ambient_threshold_sigma,
-	VL53L1_histogram_bin_data_t *pdata);
+	int32_t                            ambient_threshold_sigma,
+	struct VL53L1_histogram_bin_data_t *pdata);
 
 
 
@@ -226,7 +226,7 @@ void VL53L1_hist_estimate_ambient_from_thresholded_bins(
 
 
 void VL53L1_hist_remove_ambient_bins(
-	VL53L1_histogram_bin_data_t    *pdata);
+	struct VL53L1_histogram_bin_data_t    *pdata);
 
 
 
@@ -336,8 +336,8 @@ uint8_t VL53L1_decode_vcsel_period(
 
 
 void VL53L1_copy_xtalk_bin_data_to_histogram_data_struct(
-		VL53L1_xtalk_histogram_shape_t *pxtalk,
-		VL53L1_histogram_bin_data_t    *phist);
+	struct VL53L1_xtalk_histogram_shape_t *pxtalk,
+	struct VL53L1_histogram_bin_data_t    *phist);
 
 
 
@@ -350,9 +350,9 @@ void VL53L1_copy_xtalk_bin_data_to_histogram_data_struct(
 
 
 void VL53L1_init_histogram_bin_data_struct(
-	int32_t                      bin_value,
-	uint16_t                     VL53L1_PRM_00021,
-	VL53L1_histogram_bin_data_t *pdata);
+	int32_t                            bin_value,
+	uint16_t                           VL53L1_PRM_00021,
+	struct VL53L1_histogram_bin_data_t *pdata);
 
 
 
@@ -385,7 +385,7 @@ void VL53L1_decode_row_col(
 
 
 void VL53L1_hist_find_min_max_bin_values(
-	VL53L1_histogram_bin_data_t   *pdata);
+	struct VL53L1_histogram_bin_data_t   *pdata);
 
 
 
@@ -402,7 +402,7 @@ void VL53L1_hist_find_min_max_bin_values(
 
 
 void VL53L1_hist_estimate_ambient_from_ambient_bins(
-	VL53L1_histogram_bin_data_t    *pdata);
+	struct VL53L1_histogram_bin_data_t    *pdata);
 
 
 #ifdef __cplusplus

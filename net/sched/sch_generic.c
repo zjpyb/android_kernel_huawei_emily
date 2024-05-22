@@ -496,13 +496,14 @@ static int pfifo_fast_enqueue(struct sk_buff *skb, struct Qdisc *qdisc,
 {
 	if (qdisc->q.qlen < qdisc_dev(qdisc)->tx_queue_len) {
 		int band = prio2band[skb->priority & TC_PRIO_MAX];
+		struct pfifo_fast_priv *priv = qdisc_priv(qdisc);
+		struct qdisc_skb_head *list = NULL;
 
 #ifdef CONFIG_HW_NETQOS_SCHED
-	if (band > 0)
-		band = netqos_qdisc_band(skb, band);
+		if (band > 0)
+			band = netqos_qdisc_band(skb, band);
 #endif
-		struct pfifo_fast_priv *priv = qdisc_priv(qdisc);
-		struct qdisc_skb_head *list = band2list(priv, band);
+		list = band2list(priv, band);
 
 		priv->bitmap |= (1 << band);
 		qdisc->q.qlen++;
@@ -712,7 +713,11 @@ static void qdisc_rcu_free(struct rcu_head *head)
 
 void qdisc_destroy(struct Qdisc *qdisc)
 {
-	const struct Qdisc_ops  *ops = qdisc->ops;
+	const struct Qdisc_ops *ops;
+
+	if (!qdisc)
+		return;
+	ops = qdisc->ops;
 
 	if (qdisc->flags & TCQ_F_BUILTIN ||
 	    !refcount_dec_and_test(&qdisc->refcnt))

@@ -158,6 +158,9 @@ enum zone_stat_item {
 	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */
 	NR_PAGETABLE,		/* used for pagetables */
 	NR_KERNEL_STACK_KB,	/* measured in KiB */
+#if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)
+	NR_KERNEL_SCS_BYTES,	/* measured in bytes */
+#endif
 	/* Second 128 byte cacheline */
 	NR_BOUNCE,
 #if IS_ENABLED(CONFIG_ZSMALLOC) /*lint !e553*/
@@ -186,9 +189,25 @@ enum node_stat_item {
 	NR_SLAB_UNRECLAIMABLE,
 	NR_ISOLATED_ANON,	/* Temporary isolated pages from anon lru */
 	NR_ISOLATED_FILE,	/* Temporary isolated pages from file lru */
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 	WORKINGSET_REFAULT,
 	WORKINGSET_ACTIVATE,
 	WORKINGSET_RESTORE,
+#else
+	WORKINGSET_REFAULT_BASE,
+	WORKINGSET_REFAULT_ANON = WORKINGSET_REFAULT_BASE,
+	WORKINGSET_REFAULT_FILE,
+	WORKINGSET_ACTIVATE_BASE,
+	WORKINGSET_ACTIVATE_ANON = WORKINGSET_ACTIVATE_BASE,
+	WORKINGSET_ACTIVATE_FILE,
+	WORKINGSET_RESTORE_BASE,
+	WORKINGSET_RESTORE_ANON = WORKINGSET_RESTORE_BASE,
+	WORKINGSET_RESTORE_FILE,
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	WORKINGSET_ANON_COST,
+	WORKINGSET_FILE_COST,
+#endif
+#endif
 	WORKINGSET_NODERECLAIM,
 	NR_ANON_MAPPED,	/* Mapped anonymous pages */
 	NR_FILE_MAPPED,	/* pagecache pages mapped into pagetables.
@@ -206,6 +225,10 @@ enum node_stat_item {
 	NR_VMSCAN_IMMEDIATE,	/* Prioritise for reclaim when writeback ends */
 	NR_DIRTIED,		/* page dirtyings since bootup */
 	NR_WRITTEN,		/* page writings since bootup */
+#ifdef CONFIG_KZEROD
+	NR_ZERO_PAGE_ALLOC_TOTAL,
+	NR_ZERO_PAGE_ALLOC_PREZERO,
+#endif
 	NR_INDIRECTLY_RECLAIMABLE_BYTES, /* measured in bytes */
 	NR_VM_NODE_STAT_ITEMS
 };
@@ -246,6 +269,7 @@ static inline int is_active_lru(enum lru_list lru)
 	return (lru == LRU_ACTIVE_ANON || lru == LRU_ACTIVE_FILE);
 }
 
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 struct zone_reclaim_stat {
 	/*
 	 * The pageout code in vmscan.c keeps track of how many of the
@@ -258,11 +282,15 @@ struct zone_reclaim_stat {
 	unsigned long		recent_rotated[2];
 	unsigned long		recent_scanned[2];
 };
+#endif
 
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+#define PROTECT_LEVELS_MAX	3
+#endif
 #ifdef CONFIG_TASK_PROTECT_LRU
 /* 4 comes from PROTECT_LRU_WIDTH, 3 protect heads and 1 normal head */
-#define PROTECT_HEAD_MAX 4
-#define PROTECT_HEAD_END (PROTECT_HEAD_MAX - 1)
+#define PROTECT_HEAD_MAX (PROTECT_LEVELS_MAX + 1)
+#define PROTECT_HEAD_END PROTECT_LEVELS_MAX
 
 struct protect_head {
 	struct page protect_page[NR_LRU_LISTS - 1];
@@ -270,13 +298,30 @@ struct protect_head {
 	unsigned long pages;
 };
 #endif
+
 struct lruvec {
 	struct list_head		lists[NR_LRU_LISTS];
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 	struct zone_reclaim_stat	reclaim_stat;
 	/* Evictions & activations on the inactive file list */
 	atomic_long_t			inactive_age;
 	/* Refaults at the time of last reclaim cycle */
 	unsigned long			refaults;
+#else
+	/*
+	 * These track the cost of reclaiming one LRU - file or anon -
+	 * over the other. As the observed cost of reclaiming one LRU
+	 * increases, the reclaim scan balance tips toward the other.
+	 */
+#ifndef CONFIG_HYPERHOLD_FILE_LRU
+	unsigned long			anon_cost;
+	unsigned long			file_cost;
+#endif
+	/* Evictions & activations on the inactive file list */
+	atomic_long_t			nonresident_age;
+	/* Refaults at the time of last reclaim cycle, anon=0, file=1 */
+	unsigned long			refaults[2];
+#endif
 #ifdef CONFIG_TASK_PROTECT_LRU
 	struct protect_head heads[PROTECT_HEAD_MAX];
 #endif
@@ -389,6 +434,9 @@ enum zone_type {
 	ZONE_MOVABLE,
 #ifdef CONFIG_ZONE_DEVICE
 	ZONE_DEVICE,
+#endif
+#ifdef CONFIG_ZONE_MEDIA
+	ZONE_MEDIA,
 #endif
 	__MAX_NR_ZONES
 
@@ -610,6 +658,9 @@ static inline bool zone_intersects(struct zone *zone,
 
 enum {
 	ZONELIST_FALLBACK,	/* zonelist with fallback */
+#ifdef CONFIG_MEMORY_AFFINITY
+	ZONELIST_AFFINITY,	/* zonelist with memory affinity */
+#endif
 #ifdef CONFIG_NUMA
 	/*
 	 * The NUMA zonelists are doubled because we need zonelists that
@@ -705,6 +756,11 @@ typedef struct pglist_data {
 
 	int kswapd_failures;		/* Number of 'reclaimed == 0' runs */
 
+#ifdef CONFIG_HYPERHOLD_ZSWAPD
+	wait_queue_head_t zswapd_wait;
+	atomic_t zswapd_wait_flag;
+	struct task_struct *zswapd;
+#endif
 #ifdef CONFIG_COMPACTION
 	int kcompactd_max_order;
 	enum zone_type kcompactd_classzone_idx;
@@ -791,7 +847,12 @@ static inline spinlock_t *zone_lru_lock(struct zone *zone)
 
 static inline struct lruvec *node_lruvec(struct pglist_data *pgdat)
 {
-	return &pgdat->lruvec;
+	struct lruvec *lruvec = &pgdat->lruvec;
+#ifdef CONFIG_MEMCG
+	if (unlikely(lruvec->pgdat != pgdat))
+		lruvec->pgdat = pgdat;
+#endif
+	return lruvec;
 }
 
 static inline unsigned long pgdat_end_pfn(pg_data_t *pgdat)
@@ -852,6 +913,18 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 	return container_of(lruvec, struct pglist_data, lruvec);
 #endif
 }
+
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+static inline struct lruvec *lruvec_node_lruvec(struct lruvec *lruvec)
+{
+	return &lruvec_pgdat(lruvec)->lruvec;
+}
+
+static inline int is_node_lruvec(struct lruvec *lruvec)
+{
+	return lruvec_node_lruvec(lruvec) == lruvec;
+}
+#endif
 
 extern unsigned long lruvec_lru_size(struct lruvec *lruvec, enum lru_list lru, int zone_idx);
 
@@ -917,7 +990,7 @@ static inline int is_highmem_idx(enum zone_type idx)
 }
 
 /**
- * is_highmem - helper function to quickly check if a struct zone is a 
+ * is_highmem - helper function to quickly check if a struct zone is a
  *              highmem zone or not.  This is an attempt to keep references
  *              to ZONE_{DMA/NORMAL/HIGHMEM/etc} in general code to a minimum.
  * @zone - pointer to struct zone variable

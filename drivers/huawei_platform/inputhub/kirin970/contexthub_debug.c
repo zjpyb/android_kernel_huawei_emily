@@ -26,7 +26,7 @@ iomcu_power_status i_power_status;
 
 static DEFINE_MUTEX(mutex_pstatus);
 
-extern int iom3_need_recovery(int modid, exp_source_t f);
+extern int iom3_need_recovery(int modid, enum exp_source f);
 
 extern struct als_platform_data als_data;
 extern struct ps_platform_data ps_data;
@@ -202,10 +202,10 @@ static int close_sensor(int tag, int argv[], int argc)
 **********************************************/
 static int set_sensor_slave_addr(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	unsigned int i2c_address = 0;
 	int ret = -1;
 
@@ -242,9 +242,9 @@ static int set_sensor_slave_addr(int tag, int argv[], int argc)
 
 static int set_sensor_softiron(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	int gyro_args_to_mcu[SOFTIRON_ARGS_NUM*2] = {0};
 	int ret = -1, i = 0;
 
@@ -279,7 +279,7 @@ static int set_sensor_softiron(int tag, int argv[], int argc)
 
 static void iomcu_big_data_flush(uint32_t event_id)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	int ret= -1;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -294,7 +294,7 @@ static void iomcu_big_data_flush(uint32_t event_id)
 
 static int big_data_test(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	uint32_t def, sel;
 	uint64_t fetch_data = 0;
 	int ret = -1;
@@ -317,9 +317,9 @@ static int big_data_test(int tag, int argv[], int argc)
 
 static int set_sensor_data_mode(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	int ret = -1;
 	if (argc != 1)
 	{
@@ -344,7 +344,7 @@ static int set_sensor_data_mode(int tag, int argv[], int argc)
 
 int set_log_level(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	uint32_t log_level;
 	int ret = -1;
 
@@ -376,7 +376,7 @@ int set_log_level(int tag, int argv[], int argc)
 
 static int set_fault_type(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	uint8_t fault_type = 0;
 	int ret = -1;
 
@@ -408,10 +408,10 @@ static int set_fault_type(int tag, int argv[], int argc)
 
 static int set_fault_addr(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	int ret = -1;
 	pkt_fault_addr_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 
 	if (argc == 0)
 		return -1;
@@ -436,13 +436,11 @@ static int set_fault_addr(int tag, int argv[], int argc)
 
 static int aod_test(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	int ret = -1, i;
 	aod_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
-	//uint8_t *framebuffer;
-	//u64 phy_framebuffer;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	aod_display_pos_t *aod_pos;
 	struct timespec now;
 
@@ -473,15 +471,9 @@ static int aod_test(int tag, int argv[], int argc)
 			cpkt.display_param.display_spaces[i].y_size = AOD_SINGLE_CLOCK_DIGITS_RES_Y;
 		}
 		hwlog_info("@@@@@%ld %ld\n", sizeof(cpkt.display_param) + sizeof(cpkt.sub_cmd), sizeof(cpkt) - sizeof(cpkt.hd));
-		pkg_ap.wr_len = sizeof(cpkt) - sizeof(cpkt.hd);//sizeof(cpkt.display_param) + sizeof(cpkt.sub_cmd);
+		pkg_ap.wr_len = sizeof(cpkt) - sizeof(cpkt.hd);
 	} else if (argv[0] == 2) {
 		cpkt.sub_cmd = SUB_CMD_AOD_SETUP_REQ;
-		//framebuffer = kmalloc(DDR_MEMORY_SIZE, GFP_KERNEL);
-		//if (!framebuffer)
-		//	hwlog_err("CMD_AOD_SETUP_REQ framebuffer alloc failed.\n");
-		//else
-		//	phy_framebuffer = virt_to_phys(framebuffer);
-		//hwlog_info("framebuffer is 0x%x, phy_framebuffer high is 0x%x, low is 0x%x.\n", (uint32_t)framebuffer, (uint32_t)(phy_framebuffer >> 32), (uint32_t)phy_framebuffer);
 		cpkt.config_param.aod_fb = 0;
 		cpkt.config_param.screen_info.xres = SCREEN_RES_X;
 		cpkt.config_param.screen_info.yres = SCREEN_RES_Y;
@@ -549,8 +541,8 @@ static int aod_test(int tag, int argv[], int argc)
 
 static int activity_common_test(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	ar_start_cmd_t *ar_start = NULL;
 	ar_config_event_t *activity_list = NULL;
 	ar_stop_cmd_t ar_stop;
@@ -664,10 +656,10 @@ static int ar_test(int tag, int argv[], int argc)
 
 static int set_ps_type(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	unsigned int type = argv[0];
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -694,10 +686,10 @@ static int set_ps_type(int tag, int argv[], int argc)
 
 static int set_als_type(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	unsigned int type = argv[0];
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -724,10 +716,10 @@ static int set_als_type(int tag, int argv[], int argc)
 static int als_param_write(int tag, int argv[], int argc)
 {
 	s16 als_para[30];//bh is 25 ,apds is 21, tmd is 29
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	int i = 0;
 	int param_num = argv[0];
@@ -769,26 +761,23 @@ static int als_param_write(int tag, int argv[], int argc)
 		ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	}
 
-	if (ret)
-	{
-	    hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
-	}else{
-	    if (pkg_mcu.errno != 0)
-	    {
-	        hwlog_err("send ALS param to mcu fail\n");
-	    }else{
-	        hwlog_info("send ALS param to mcu succes\n");
-	    }
+	if (ret) {
+		hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	} else {
+		if (pkg_mcu.errno != 0)
+			hwlog_err("send ALS param to mcu fail\n");
+		else
+			hwlog_info("send ALS param to mcu succes\n");
 	}
 	return ret;
 }
 
 static int ps_param_write(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	int i = 0;
 	int pwindows_value = argv[0];
@@ -798,9 +787,9 @@ static int ps_param_write(int tag, int argv[], int argc)
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	memset(&spkt, 0, sizeof(spkt));
 
-	if(pwindows_value < 0 || pwave_value < 0 || threshold_value < 0
-         || pwindows_value > MAX_SINGNED_SHORT || pwave_value > MAX_SINGNED_SHORT
-         ||threshold_value > MAX_SINGNED_SHORT ){
+	if (pwindows_value < 0 || pwave_value < 0 || threshold_value < 0 ||
+		pwindows_value > MAX_SINGNED_SHORT || pwave_value > MAX_SINGNED_SHORT ||
+		threshold_value > MAX_SINGNED_SHORT) {
 		hwlog_err("%s:ps_param_write is fail %d %d %d\n", __FUNCTION__,pwindows_value,pwave_value,threshold_value);
 		return -1;
 	}
@@ -825,26 +814,23 @@ static int ps_param_write(int tag, int argv[], int argc)
 		ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	}
 
-	if (ret)
-	{
-	    hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
-	}else{
-	    if (pkg_mcu.errno != 0)
-	    {
-	        hwlog_err("send PS param to mcu fail\n");
-	    }else{
-	        hwlog_info("send PS param to mcu succes\n");
-	    }
+	if (ret) {
+		hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	} else {
+		if (pkg_mcu.errno != 0)
+			hwlog_err("send PS param to mcu fail\n");
+		else
+			hwlog_info("send PS param to mcu succes\n");
 	}
 	return ret;
 }
 
 static int sar_param_set(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	int i = 0;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -902,10 +888,10 @@ static int sar_param_set(int tag, int argv[], int argc)
 
 static int sar_param_write(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	int i = 0;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -960,26 +946,23 @@ static int sar_param_write(int tag, int argv[], int argc)
 		ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	}
 
-	if (ret)
-	{
-	    hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
-	}else{
-	    if (pkg_mcu.errno != 0)
-	    {
-	        hwlog_err("send sar param to mcu fail\n");
-	    }else{
-	        hwlog_info("send sar param to mcu succes\n");
-	    }
+	if (ret) {
+		hwlog_err("send tag %d cfg data to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	} else {
+		if (pkg_mcu.errno != 0)
+			hwlog_err("send sar param to mcu fail\n");
+		else
+			hwlog_info("send sar param to mcu succes\n");
 	}
 	return ret;
 }
 
 static int change_sar_mode(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -1011,42 +994,38 @@ static int change_sar_mode(int tag, int argv[], int argc)
 		ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	}
 
-	if (ret)
-	{
-	    hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n", pkg_ap.tag, ret);
-	}else{
-	    if (pkg_mcu.errno != 0)
-	    {
-	        hwlog_err("send sar mode to mcu fail\n");
-	    }else{
-	        hwlog_info("send sar mode to mcu succes\n");
-	    }
+	if (ret) {
+		hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	} else {
+		if (pkg_mcu.errno != 0)
+			hwlog_err("send sar mode to mcu fail\n");
+		else
+			hwlog_info("send sar mode to mcu succes\n");
 	}
 	return ret;
 }
 
 static int rpc_test(int tag, int argv[], int argc)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	rpc_test_ioctl_t pkg_ioctl;
 
 	int ret = -1;
 	unsigned char cmd = argv[0];
 	unsigned int stat = argv[1];
-        memset(&pkg_ap, 0, sizeof(pkg_ap));
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	pkg_ap.tag = TAG_RPC;
 
-	if (cmd == SUB_CMD_RPC_UPDATE_REQ)
-	 {
+	if (cmd == SUB_CMD_RPC_UPDATE_REQ) {
 		pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
 		pkg_ioctl.sub_cmd = cmd;
 		pkg_ioctl.test_sarinfo = stat;
 		pkg_ap.wr_buf = &pkg_ioctl;
 		pkg_ap.wr_len = sizeof(pkg_ioctl);
 		hwlog_info("command in rpc_test, cmd=%d\n", cmd);
-	} else if (cmd == SUB_CMD_RPC_LIBHAND_REQ){
+	} else if (cmd == SUB_CMD_RPC_LIBHAND_REQ) {
 		pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
 		pkg_ioctl.sub_cmd = cmd;
 		pkg_ioctl.test_sarinfo = stat;
@@ -1057,19 +1036,19 @@ static int rpc_test(int tag, int argv[], int argc)
 		hwlog_err("error command in rpc_test, cmd=%d\n", cmd);
 		return -1;
 	}
-    ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-    if (ret) {
-            hwlog_err("send rpc cmd to mcu fail,ret=%d\n", ret);
-            return ret;
-    }
-    if (pkg_mcu.errno != 0) {
-            hwlog_err("set rpc cmd fail cmd=%d\n", cmd);
-     } else {
-            hwlog_info("set rpc cmd success cmd=%d\n",cmd);
-     }
-     hwlog_info("tag=%d argc=%d\n", pkg_ap.tag, argc);
+	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
+	if (ret) {
+		hwlog_err("send rpc cmd to mcu fail,ret=%d\n", ret);
+		return ret;
+	}
+	if (pkg_mcu.errno != 0)
+		hwlog_err("set rpc cmd fail cmd=%d\n", cmd);
+	else
+		hwlog_info("set rpc cmd success cmd=%d\n",cmd);
 
-     return ret;
+	hwlog_info("tag=%d argc=%d\n", pkg_ap.tag, argc);
+
+	return ret;
 }
 static int register_sensorhub_debug_operation(const char *func_name, sensor_debug_pfunc op)
 {
@@ -1420,7 +1399,6 @@ static const char * get_iomcu_power_status(void)
 			snprintf(show_str, MAX_STR_SIZE, "%s", "unknown status");
 			break;
 	}
-	//hwlog_info("get_iomcu_power_status %s\n",show_str);
 	return show_str;
 }
 
@@ -1438,7 +1416,6 @@ static const char *get_iomcu_current_opened_app(void)
 	{
 		memset(buf,0,SINGLE_STR_LENGTH_MAX);
 		if(i_power_status.app_status[i]){
-			//hwlog_info("tag %d, opend %d\n",i,i_power_status.app_status[i]);
 			if(obj_tag_str[i] != NULL){
 				copy_length = (strlen(obj_tag_str[i]) > (SINGLE_STR_LENGTH_MAX - 1) ) ? (SINGLE_STR_LENGTH_MAX - 1) : strlen(obj_tag_str[i]);
 				strncpy(buf,obj_tag_str[i],copy_length);
@@ -1459,7 +1436,6 @@ static const char *get_iomcu_current_opened_app(void)
 		}
 	}
 	mutex_unlock(&mutex_pstatus);
-	//hwlog_info("get_iomcu_current_opened_app %s\n",show_str);
 	return show_str;
 }
 
@@ -1508,12 +1484,11 @@ static const char *get_iomcu_active_app_during_suspend(void)
 
 		}
 	}
-	//hwlog_info("get_iomcu_active_app_during_suspend %s\n",show_str);
 	return show_str;
 }
 
 
-static int mcu_power_log_process(const pkt_header_t *head)
+static int mcu_power_log_process(const struct pkt_header *head)
 {
 	hwlog_info("mcu_power_log_process in\n");
 

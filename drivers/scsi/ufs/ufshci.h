@@ -48,8 +48,8 @@ enum {
 	REG_UFS_VERSION				= 0x08,
 	REG_CONTROLLER_DEV_ID			= 0x10,
 	REG_CONTROLLER_PROD_ID			= 0x14,
-    REG_CONTROLLER_AHIT         = 0x18,
-    REG_INTERRUPT_STATUS            = 0x20,
+	REG_CONTROLLER_AHIT			= 0x18,
+	REG_INTERRUPT_STATUS			= 0x20,
 	REG_INTERRUPT_ENABLE			= 0x24,
 	REG_CONTROLLER_STATUS			= 0x30,
 	REG_CONTROLLER_ENABLE			= 0x34,
@@ -73,12 +73,9 @@ enum {
 	REG_UIC_COMMAND_ARG_1			= 0x94,
 	REG_UIC_COMMAND_ARG_2			= 0x98,
 	REG_UIC_COMMAND_ARG_3			= 0x9C,
-
 	UFSHCI_REG_SPACE_SIZE			= 0xA0,
-
 	REG_UFS_CCAP				= 0x100,
 	REG_UFS_CRYPTOCAP			= 0x104,
-
 	UFSHCI_CRYPTO_REG_SPACE_SIZE		= 0x400,
 };
 
@@ -100,11 +97,11 @@ enum {
 
 /* Controller UFSHCI version */
 enum {
-	UFSHCI_VERSION_10 = 0x00010000, /* 1.0 */
-	UFSHCI_VERSION_11 = 0x00010100, /* 1.1 */
-	UFSHCI_VERSION_20 = 0x00000200, /* 2.0 */
-	UFSHCI_VERSION_21 = 0x00000210, /* 2.1 */
-	UFSHCI_VERSION_30 = 0x00000300, /* 3.0 */
+	UFSHCI_VERSION_10	= 0x00010000, /* 1.0 */
+	UFSHCI_VERSION_11	= 0x00010100, /* 1.1 */
+	UFSHCI_VERSION_20	= 0x00000200, /* 2.0 */
+	UFSHCI_VERSION_21	= 0x00000210, /* 2.1 */
+	UFSHCI_VERSION_30	= 0x00000300, /* 3.0 */
 };
 
 /*
@@ -135,12 +132,10 @@ enum {
 #define UTP_TASK_REQ_COMPL			UFS_BIT(9)
 #define UIC_COMMAND_COMPL			UFS_BIT(10)
 #define DEVICE_FATAL_ERROR			UFS_BIT(11)
-#define UTP_ERROR			 	UFS_BIT(12)
+#define UTP_ERROR				UFS_BIT(12)
 #define CONTROLLER_FATAL_ERROR			UFS_BIT(16)
 #define SYSTEM_BUS_FATAL_ERROR			UFS_BIT(17)
 #define CRYPTO_ENGINE_FATAL_ERROR		UFS_BIT(18)
-
-#define HISI_DME_LINKUP_FAIL    UFS_BIT(19)
 
 #define UFSHCD_UIC_PWR_MASK	(UIC_HIBERNATE_ENTER |\
 				UIC_HIBERNATE_EXIT |\
@@ -151,16 +146,16 @@ enum {
 #define UFSHCD_ERROR_MASK	(UIC_ERROR |\
 				DEVICE_FATAL_ERROR |\
 				CONTROLLER_FATAL_ERROR |\
-				SYSTEM_BUS_FATAL_ERROR|\
+				SYSTEM_BUS_FATAL_ERROR |\
 				UIC_LINK_LOST)
 
 #define INT_FATAL_ERRORS	(DEVICE_FATAL_ERROR |\
 				CONTROLLER_FATAL_ERROR |\
 				CRYPTO_ENGINE_FATAL_ERROR |\
-				SYSTEM_BUS_FATAL_ERROR|\
+				SYSTEM_BUS_FATAL_ERROR |\
 				UIC_LINK_LOST)
 
-#define UFS_AHIT_AH8ITV_MASK			(0x3FF)
+#define UFS_AHIT_AH8ITV_MASK	0x3FF
 
 /* HCS - Host Controller Status 30h */
 #define DEVICE_PRESENT				UFS_BIT(0)
@@ -224,6 +219,9 @@ enum {
 
 /* UTRLRSR - UTP Transfer Request Run-Stop Register 60h */
 #define UTP_TRANSFER_REQ_LIST_RUN_STOP_BIT	UFS_BIT(0)
+#ifdef CONFIG_HISI_UFS_HC_CORE_UTR
+#define CORE_UTP_TRANSFER_REQ_LIST_RUN_STOP_BIT UFS_BIT(0)
+#endif
 
 /* UTMRLRSR - UTP Task Management Request Run-Stop Register 80h */
 #define UTP_TASK_REQ_LIST_RUN_STOP_BIT		UFS_BIT(0)
@@ -249,7 +247,7 @@ enum {
 #define UIC_ARG_ATTR_TYPE(t)		(((t) & 0xFF) << 16)
 #define UIC_GET_ATTR_ID(v)		(((v) >> 16) & 0xFFFF)
 
-/* Link Status*/
+/* Link Status */
 enum link_status {
 	UFSHCD_LINK_IS_DOWN	= 1,
 	UFSHCD_LINK_IS_UP	= 2,
@@ -360,7 +358,7 @@ enum {
 /* The granularity of the data byte count field in the PRDT is 32-bit */
 #define PRDT_DATA_BYTE_COUNT_PAD	4
 
-/**
+/*
  * struct ufshcd_sg_entry - UFSHCI PRD Entry
  * @base_addr: Lower 32bit physical address DW-0
  * @upper_addr: Upper 32bit physical address DW-1
@@ -368,23 +366,23 @@ enum {
  * @size: size of physical segment DW-3
  */
 struct ufshcd_sg_entry {
-	__le32    base_addr;
-	__le32    upper_addr;
-	__le32    reserved;
-	__le32    size;
+	__le32 base_addr;
+	__le32 upper_addr;
+	__le32 reserved;
+	__le32 size;
 };
 
 #ifdef CONFIG_SCSI_UFS_CUST_MAX_SECTORS
 #define UFS_SG_MAX_COUNT        256
 #endif
 
-#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
-#define MAX_DATA_USED_SPACE (124 + 1) /* 1861 REMAP 62K*/
+#if defined(CONFIG_SCSI_UFS_HI1861_VCMD) && !defined(CONFIG_HISI_UFS_HC)
+#define MAX_DATA_USED_SPACE (124 + 1) /* 1861 REMAP 62K */
 #else
-#define MAX_DATA_USED_SPACE (8 + 1) /* 1861 FSR 4K*/
+#define MAX_DATA_USED_SPACE	(8 + 1) /* 1861 FSR 4K */
 #endif
 
-/**
+/*
  * struct utp_transfer_cmd_desc - UFS Command Descriptor structure
  * @command_upiu: Command UPIU Frame address
  * @response_upiu: Response UPIU Frame address
@@ -404,7 +402,29 @@ struct utp_transfer_cmd_desc {
 #endif
 };
 
-/**
+#ifdef CONFIG_SCSI_UFS_HI1861_VCMD
+/*
+ * HI1861 VCMD need at most 16K responce upiu, highest fixed
+ * tag is needed to ensure 16K responce size.
+ */
+#define VCMD_RESP_UPIU_SIZE (ALIGNED_UPIU_SIZE + 16 * 1024)
+#ifdef CONFIG_HISI_UFS_HC_CORE_UTR
+#define HI1861_VCMD_QUERY_TAG (CORE_SLOT_NUM - 1)
+#else
+#define HI1861_VCMD_QUERY_TAG (32 - 1)
+#endif
+struct vcmd_utp_transfer_cmd_desc {
+	u8 command_upiu[ALIGNED_UPIU_SIZE];
+	u8 response_upiu[VCMD_RESP_UPIU_SIZE];
+#ifdef CONFIG_SCSI_UFS_CUST_MAX_SECTORS
+	struct ufshcd_sg_entry prd_table[UFS_SG_MAX_COUNT];
+#else
+	struct ufshcd_sg_entry prd_table[SG_ALL];
+#endif
+};
+#endif
+
+/*
  * struct request_desc_header - Descriptor Header common to both UTRD and UTMRD
  * @dword0: Descriptor Header DW0
  * @dword1: Descriptor Header DW1
@@ -418,7 +438,7 @@ struct request_desc_header {
 	__le32 dword_3;
 };
 
-/**
+/*
  * struct utp_transfer_req_desc - UTRD structure
  * @header: UTRD header DW-0 to DW-3
  * @command_desc_base_addr_lo: UCD base address low DW-4
@@ -428,12 +448,11 @@ struct request_desc_header {
  * @prd_table_length: Physical region descriptor length DW-7
  * @prd_table_offset: Physical region descriptor offset DW-7
  */
-struct hisi_utp_transfer_req_desc {
-
+struct hufs_utp_transfer_req_desc {
 	/* DW 0-3 */
 	struct request_desc_header header;
 
-	/* DW 4-5*/
+	/* DW 4-5 */
 	__le32  command_desc_base_addr_lo;
 	__le32  command_desc_base_addr_hi;
 
@@ -452,11 +471,10 @@ struct hisi_utp_transfer_req_desc {
 };
 
 struct utp_transfer_req_desc {
-
 	/* DW 0-3 */
 	struct request_desc_header header;
 
-	/* DW 4-5*/
+	/* DW 4-5 */
 	__le32  command_desc_base_addr_lo;
 	__le32  command_desc_base_addr_hi;
 
@@ -469,14 +487,13 @@ struct utp_transfer_req_desc {
 	__le16  prd_table_offset;
 };
 
-/**
+/*
  * struct utp_task_req_desc - UTMRD structure
  * @header: UTMRD header DW-0 to DW-3
  * @task_req_upiu: Pointer to task request UPIU DW-4 to DW-11
  * @task_rsp_upiu: Pointer to task response UPIU DW12 to DW-19
  */
 struct utp_task_req_desc {
-
 	/* DW 0-3 */
 	struct request_desc_header header;
 

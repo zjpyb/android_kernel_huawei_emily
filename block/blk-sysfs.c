@@ -16,8 +16,11 @@
 #include "blk-mq.h"
 #include "blk-mq-debugfs.h"
 #include "blk-wbt.h"
-#include "hisi-blk-busy-idle-interface.h"
-#include "hisi-blk-latency-interface.h"
+#ifdef CONFIG_MAS_BLK
+#include "mas_blk_busy_idle_interface.h"
+#include "mas_blk_latency_interface.h"
+#include "mas_blk_core_interface.h"
+#endif
 
 struct queue_sysfs_entry {
 	struct attribute attr;
@@ -31,7 +34,7 @@ queue_var_show(unsigned long var, char *page)
 	return sprintf(page, "%lu\n", var);
 }
 
-#ifndef CONFIG_HISI_BLK
+#ifndef CONFIG_MAS_BLK
 static ssize_t
 #else
 ssize_t
@@ -334,14 +337,14 @@ static ssize_t queue_nomerges_store(struct request_queue *q, const char *page,
 
 	return ret;
 }
-#if defined(CONFIG_HUAWEI_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
+#if defined(CONFIG_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
 static ssize_t queue_qos_show(struct request_queue *q, char *page)
 {
-	return queue_var_show(blk_queue_qos_on(q),page);
+	return queue_var_show(blk_queue_qos_on(q), page);
 }
 
 static ssize_t queue_qos_store(struct request_queue *q, const char *page,
-				    size_t count)
+	size_t count)
 {
 	unsigned long qos;
 	ssize_t ret = queue_var_store(&qos, page, count);
@@ -752,7 +755,7 @@ static struct queue_sysfs_entry queue_nomerges_entry = {
 	.store = queue_nomerges_store,
 };
 
-#if defined(CONFIG_HUAWEI_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
+#if defined(CONFIG_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
 static struct queue_sysfs_entry queue_qos_entry = {
 	.attr = {.name = "qos_on", .mode = S_IRUGO | S_IWUSR },
 	.show = queue_qos_show,
@@ -790,151 +793,248 @@ static struct queue_sysfs_entry queue_poll_delay_entry = {
 	.store = queue_poll_delay_store,
 };
 
-#ifdef CONFIG_HISI_BLK
-#ifdef CONFIG_HISI_BLK_DEBUG
-static struct queue_sysfs_entry queue_hisi_io_timeout_tst_entry = {
-	.attr = {.name = "hisi_queue_tst_io_timeout", .mode = S_IWUSR },
+#ifdef CONFIG_MAS_BLK
+#ifdef CONFIG_MAS_BLK_DEBUG
+static struct queue_sysfs_entry queue_mas_io_timeout_tst_entry = {
+	.attr = {.name = "mas_queue_tst_io_timeout", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_timeout_tst_enable_store,
+	.store = mas_queue_timeout_tst_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_io_latency_tst_entry = {
-	.attr = {.name = "hisi_queue_tst_io_latency", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_io_latency_tst_entry = {
+	.attr = {.name = "mas_queue_tst_io_latency", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_io_latency_tst_enable_store,
+	.store = mas_queue_io_latency_tst_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_tst_entry = {
-	.attr = {.name = "hisi_queue_tst_busy_idle_enable", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_busyidle_tst_entry = {
+	.attr = {.name = "mas_queue_tst_busy_idle_enable", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_busy_idle_tst_enable_store,
+	.store = mas_queue_busyidle_tst_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_multi_nb_tst_entry = {
-	.attr = {.name = "hisi_queue_tst_busy_idle_multi_nb_enable", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_busyidle_multi_nb_tst_entry = {
+	.attr = {.name = "mas_queue_tst_busy_idle_multi_nb_enable", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_busy_idle_multi_nb_tst_enable_store,
+	.store = mas_queue_busyidle_multi_nb_tst_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_tst_proc_result_simulate_entry = {
-	.attr = {.name = "hisi_queue_tst_busy_idle_proc_result_simulate", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_busyidle_tst_proc_result_simulate_entry = {
+	.attr = {.name = "mas_queue_tst_busy_idle_proc_result_simulate", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_busy_idle_tst_proc_result_simulate_store,
+	.store = mas_queue_busyidle_tst_proc_result_simulate_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_tst_proc_latency_simulate_entry = {
-	.attr = {.name = "hisi_queue_tst_busy_idle_proc_latency_simulate", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_busyidle_tst_proc_latency_simulate_entry = {
+	.attr = {.name = "mas_queue_tst_busy_idle_proc_latency_simulate", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_busy_idle_tst_proc_latency_simulate_store,
+	.store = mas_queue_busyidle_tst_proc_latency_simulate_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_apd_tst_entry = {
-	.attr = {.name = "hisi_queue_tst_apd", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_apd_tst_entry = {
+	.attr = {.name = "mas_queue_tst_apd", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_apd_tst_enable_store,
+	.store = mas_queue_apd_tst_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_sr_tst_entry = {
-	.attr = {.name = "hisi_queue_sr_tst", .mode = S_IWUSR },
+static struct queue_sysfs_entry queue_mas_sr_tst_entry = {
+	.attr = {.name = "mas_queue_sr_tst", .mode = S_IWUSR },
 	.show = NULL,
-	.store = hisi_queue_suspend_tst_store,
+	.store = mas_queue_suspend_tst_store,
 };
 #endif
 
-#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
-static struct queue_sysfs_entry queue_hisi_feature_status_entry = {
-	.attr = {.name = "hisi_queue_feature_status", .mode = S_IRUGO },
-	.show = hisi_queue_status_show,
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+static struct queue_sysfs_entry queue_mas_feature_status_entry = {
+	.attr = {.name = "mas_queue_feature_status", .mode = S_IRUGO },
+	.show = __cfi_mas_queue_status_show,
 	.store = NULL,
 };
 
-static struct queue_sysfs_entry queue_hisi_io_latency_warning_threshold_entry = {
+static struct queue_sysfs_entry queue_mas_io_latency_warning_threshold_entry = {
 	.attr = {.name = "io_latency_warning_threshold", .mode = S_IWUSR },
 	.show = NULL,
-	.store = __hisi_queue_io_latency_warning_threshold_store,
+	.store = __mas_queue_io_latency_warning_threshold_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_io_latency_statistic_enable_entry = {
-	.attr = {.name = "io_latency_statistic_enable", .mode = S_IWUSR },
-	.show = NULL,
-	.store = __hisi_queue_io_latency_statistic_enable_store,
-};
-
-static struct queue_sysfs_entry queue_hisi_io_latency_statistic_entry = {
-	.attr = {.name = "io_latency_statistic", .mode = S_IRUGO },
-	.show = __hisi_queue_io_latency_statistic_show,
-	.store = NULL,
-};
-
-static struct queue_sysfs_entry queue_hisi_io_hw_latency_statistic_entry = {
-	.attr = {.name = "io_hw_latency_statistic", .mode = S_IRUGO },
-	.show = __hisi_queue_io_hw_latency_statistic_show,
-	.store = NULL,
-};
-
-static struct queue_sysfs_entry queue_hisi_io_sw_latency_statistic_entry = {
-	.attr = {.name = "io_sw_latency_statistic", .mode = S_IRUGO },
-	.show = __hisi_queue_io_sw_latency_statistic_show,
-	.store = NULL,
-};
-
-static struct queue_sysfs_entry queue_hisi_busy_idle_enable_entry = {
+static struct queue_sysfs_entry queue_mas_busyidle_enable_entry = {
 	.attr = {.name = "busy_idle_enable", .mode = S_IWUSR },
 	.show = NULL,
-	.store = __cfi_hisi_queue_busy_idle_enable_store,
+	.store = __cfi_mas_queue_busyidle_enable_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_statistic_entry = {
+static struct queue_sysfs_entry queue_mas_busyidle_statistic_entry = {
 	.attr = {.name = "busy_idle_statistic_reset", .mode = S_IWUSR },
 	.show = NULL,
-	.store = __cfi_hisi_queue_busy_idle_statistic_reset_store,
+	.store = __cfi_mas_queue_busyidle_statistic_reset_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_busy_idle_entry = {
+static struct queue_sysfs_entry queue_mas_busyidle_entry = {
 	.attr = {.name = "busy_idle_statistic", .mode = S_IRUGO },
-	.show = __cfi_hisi_queue_busy_idle_statistic_show,
+	.show = __cfi_mas_queue_busyidle_statistic_show,
 	.store = NULL,
 };
 
 static struct queue_sysfs_entry queue_hw_idle_enable_entry = {
 	.attr = {.name = "hw_idle_enable", .mode = S_IRUGO },
-	.show = __cfi_hisi_queue_hw_idle_enable_show,
+	.show = __cfi_mas_queue_hw_idle_enable_show,
+};
+
+static struct queue_sysfs_entry queue_io_prio_sim_entry = {
+	.attr = {.name = "io_prio_sim", .mode = S_IWUSR | S_IRUSR },
+	.show = __cfi_mas_queue_io_prio_sim_show,
+	.store = __cfi_mas_queue_io_prio_sim_store,
 };
 
 static struct queue_sysfs_entry queue_idle_state_entry = {
 	.attr = {.name = "idle_state", .mode = S_IRUGO },
-	.show = __cfi_hisi_queue_idle_state_show,
+	.show = __cfi_mas_queue_idle_state_show,
 };
 
-#ifdef CONFIG_HISI_MQ_USING_CP
-static struct queue_sysfs_entry queue_hisi_cp_enabled_entry = {
+static struct queue_sysfs_entry queue_tz_write_bytes_entry = {
+	.attr = {.name = "tz_write_bytes", .mode = S_IRUGO },
+	.show = mas_queue_tz_write_bytes_show,
+};
+
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static struct queue_sysfs_entry queue_device_pwron_info_entry = {
+	.attr = {.name = "device_pwron_info", .mode = S_IRUGO },
+	.show = mas_queue_device_pwron_info_show,
+};
+
+static struct queue_sysfs_entry queue_stream_oob_info_entry = {
+	.attr = {.name = "stream_oob_info", .mode = S_IRUGO },
+	.show = mas_queue_stream_oob_info_show,
+};
+
+static struct queue_sysfs_entry queue_device_reset_ftl_entry = {
+	.attr = {.name = "device_reset_ftl", .mode = S_IWUSR },
+	.store = mas_queue_device_reset_ftl_store,
+};
+
+static struct queue_sysfs_entry queue_device_read_section = {
+	.attr = {.name = "device_read_section", .mode = S_IRUGO },
+	.show = mas_queue_device_read_section_show,
+};
+
+static struct queue_sysfs_entry queue_device_config_mapping_partition = {
+	.attr = {.name = "device_config_mapping_partition", .mode = S_IRUGO | S_IWUSR},
+	.show = mas_queue_device_config_mapping_partition_show,
+	.store = mas_queue_device_config_mapping_partition_store,
+};
+
+static struct queue_sysfs_entry queue_device_fs_sync_done = {
+	.attr = {.name = "fs_sync_done", .mode = S_IWUSR },
+	.store = mas_queue_device_fs_sync_done_store,
+};
+
+static struct queue_sysfs_entry queue_device_rescue_block_inject_data = {
+	.attr = {.name = "rescue_block_inject_data", .mode = S_IWUSR },
+	.store = mas_queue_device_rescue_block_inject_data_store,
+};
+
+static struct queue_sysfs_entry queue_device_data_move = {
+	.attr = {.name = "data_move", .mode = S_IWUSR },
+	.store = mas_queue_device_data_move_store,
+};
+
+static struct queue_sysfs_entry queue_device_data_move_number  = {
+	.attr = {.name = "data_move_num", .mode = S_IWUSR },
+	.store = mas_queue_device_data_move_num_store,
+};
+
+static struct queue_sysfs_entry queue_device_slc_mode_configuration = {
+	.attr = {.name = "slc_mode_configuration", .mode = S_IRUGO | S_IWUSR },
+	.show = mas_queue_device_slc_mode_configuration_show,
+};
+
+static struct queue_sysfs_entry queue_device_sync_read_verify = {
+	.attr = {.name = "sync_read_verify", .mode = S_IRUGO },
+	.show = mas_queue_device_sync_read_verify_show,
+};
+
+static struct queue_sysfs_entry queue_device_sync_read_verify_cp_verify = {
+	.attr = {.name = "sync_read_verify_cp_verify", .mode = S_IWUSR },
+	.store = mas_queue_device_sync_read_verify_cp_verify_l4k_store,
+};
+
+static struct queue_sysfs_entry queue_device_sync_read_verify_cp_open = {
+	.attr = {.name = "sync_read_verify_cp_open", .mode = S_IWUSR },
+	.store = mas_queue_device_sync_read_verify_cp_open_l4k_store,
+};
+
+static struct queue_sysfs_entry queue_device_bad_block_notify_regist = {
+	.attr = {.name = "bad_block_notify_regist", .mode = S_IWUSR },
+	.store = mas_queue_device_bad_block_notify_regist_store,
+};
+
+static struct queue_sysfs_entry queue_device_bad_block_total_num = {
+	.attr = {.name = "bad_block_total_num", .mode = S_IWUSR },
+	.store = mas_queue_device_bad_block_total_num_store,
+};
+
+static struct queue_sysfs_entry queue_device_bad_block_bad_num = {
+	.attr = {.name = "bad_block_bad_num", .mode = S_IWUSR },
+	.store = mas_queue_device_bad_block_bad_num_store,
+};
+static struct queue_sysfs_entry queue_mas_unistore_debug_en_entry = {
+	.attr = {.name = "unistore_debug_en", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_unistore_debug_en_show,
+	.store = mas_queue_unistore_debug_en_store,
+};
+static struct queue_sysfs_entry queue_mas_recovery_debug_on_entry = {
+	.attr = {.name = "recovery_debug_on", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_recovery_debug_on_show,
+	.store = mas_queue_recovery_debug_on_store,
+};
+static struct queue_sysfs_entry queue_mas_unistore_en_entry = {
+	.attr = {.name = "unistore_enabled", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_unistore_en_show,
+};
+#endif /* CONFIG_MAS_UNISTORE_PRESERVE */
+#ifdef CONFIG_MAS_MQ_USING_CP
+static struct queue_sysfs_entry queue_mas_cp_enabled_entry = {
 	.attr = {.name = "cp_enabled", .mode =  S_IWUSR | S_IRUSR },
-	.show = hisi_queue_cp_enabled_show,
-	.store = hisi_queue_cp_enabled_store,
+	.show = mas_queue_cp_enabled_show,
+	.store = mas_queue_cp_enabled_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_cp_debug_en_entry = {
+static struct queue_sysfs_entry queue_mas_cp_debug_en_entry = {
 	.attr = {.name = "cp_debug_en", .mode =  S_IWUSR | S_IRUSR },
-	.show = hisi_queue_cp_debug_en_show,
-	.store = hisi_queue_cp_debug_en_store,
+	.show = mas_queue_cp_debug_en_show,
+	.store = mas_queue_cp_debug_en_store,
 };
 
-static struct queue_sysfs_entry queue_hisi_cp_io_limit_entry = {
+static struct queue_sysfs_entry queue_mas_cp_io_limit_entry = {
 	.attr = {.name = "cp_limit", .mode = S_IWUSR | S_IRUSR },
-	.show = hisi_queue_cp_limit_show,
-	.store = hisi_queue_cp_limit_store,
+	.show = mas_queue_cp_limit_show,
+	.store = mas_queue_cp_limit_store,
 };
-#endif /* CONFIG_HISI_MQ_USING_CP */
-#endif /* CONFIG_HISI_DEBUG_FS */
+#endif /* CONFIG_MAS_MQ_USING_CP */
+
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+static struct queue_sysfs_entry queue_mas_order_enabled_entry = {
+	.attr = {.name = "order_enabled", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_order_enabled_show,
+	.store = mas_queue_order_enabled_store,
+};
+
+static struct queue_sysfs_entry queue_mas_order_debug_en_entry = {
+	.attr = {.name = "order_debug_en", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_order_debug_en_show,
+	.store = mas_queue_order_debug_en_store,
+};
+#endif /* CONFIG_MAS_ORDER_PRESERVE */
+#endif /* CONFIG_MAS_DEBUG_FS */
 
 static ssize_t queue_usr_ctrl_store(struct request_queue *q, const char *page, size_t count)
 {
 	int ret;
 
-	ret = queue_var_store(&q->hisi_queue.usr_ctrl_n, page, count);
+	ret = queue_var_store(&q->mas_queue.usr_ctrl_n, page, count);
 	if (ret < 0)
-		q->hisi_queue.usr_ctrl_n = 0;
-	hisi_blk_queue_usr_ctrl_set(q);
+		q->mas_queue.usr_ctrl_n = 0;
+	mas_blk_queue_usr_ctrl_set(q);
 	return ret;
 }
 
@@ -943,7 +1043,7 @@ static struct queue_sysfs_entry queue_usr_ctrl_entry = {
 	.show = NULL,
 	.store = queue_usr_ctrl_store,
 };
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 
 static struct queue_sysfs_entry queue_wc_entry = {
 	.attr = {.name = "write_cache", .mode = S_IRUGO | S_IWUSR },
@@ -1021,40 +1121,63 @@ static struct attribute *default_attrs[] = {
 	&queue_iostats_entry.attr,
 	&queue_random_entry.attr,
 	&queue_poll_entry.attr,
-#if defined(CONFIG_HUAWEI_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
+#if defined(CONFIG_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
 	&queue_qos_entry.attr,
 #endif
-#ifdef CONFIG_HISI_BLK
-#ifdef CONFIG_HISI_BLK_DEBUG
-	&queue_hisi_io_timeout_tst_entry.attr,
-	&queue_hisi_io_latency_tst_entry.attr,
-	&queue_hisi_busy_idle_tst_entry.attr,
-	&queue_hisi_busy_idle_multi_nb_tst_entry.attr,
-	&queue_hisi_busy_idle_tst_proc_result_simulate_entry.attr,
-	&queue_hisi_busy_idle_tst_proc_latency_simulate_entry.attr,
-	&queue_hisi_apd_tst_entry.attr,
-	&queue_hisi_sr_tst_entry.attr,
+#ifdef CONFIG_MAS_BLK
+#ifdef CONFIG_MAS_BLK_DEBUG
+	&queue_mas_io_timeout_tst_entry.attr,
+	&queue_mas_io_latency_tst_entry.attr,
+	&queue_mas_busyidle_tst_entry.attr,
+	&queue_mas_busyidle_multi_nb_tst_entry.attr,
+	&queue_mas_busyidle_tst_proc_result_simulate_entry.attr,
+	&queue_mas_busyidle_tst_proc_latency_simulate_entry.attr,
+	&queue_mas_apd_tst_entry.attr,
+	&queue_mas_sr_tst_entry.attr,
 #endif
-#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
-	&queue_hisi_feature_status_entry.attr,
-	&queue_hisi_io_latency_warning_threshold_entry.attr,
-	&queue_hisi_io_latency_statistic_enable_entry.attr,
-	&queue_hisi_io_latency_statistic_entry.attr,
-	&queue_hisi_io_hw_latency_statistic_entry.attr,
-	&queue_hisi_io_sw_latency_statistic_entry.attr,
-	&queue_hisi_busy_idle_enable_entry.attr,
-	&queue_hisi_busy_idle_statistic_entry.attr,
-	&queue_hisi_busy_idle_entry.attr,
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+	&queue_mas_feature_status_entry.attr,
+	&queue_mas_io_latency_warning_threshold_entry.attr,
+	&queue_mas_busyidle_enable_entry.attr,
+	&queue_mas_busyidle_statistic_entry.attr,
+	&queue_mas_busyidle_entry.attr,
 	&queue_hw_idle_enable_entry.attr,
+	&queue_io_prio_sim_entry.attr,
 	&queue_idle_state_entry.attr,
-#ifdef CONFIG_HISI_MQ_USING_CP
-	&queue_hisi_cp_enabled_entry.attr,
-	&queue_hisi_cp_debug_en_entry.attr,
-	&queue_hisi_cp_io_limit_entry.attr,
+	&queue_tz_write_bytes_entry.attr,
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	&queue_device_pwron_info_entry.attr,
+	&queue_stream_oob_info_entry.attr,
+	&queue_device_reset_ftl_entry.attr,
+	&queue_device_read_section.attr,
+	&queue_device_config_mapping_partition.attr,
+	&queue_device_fs_sync_done.attr,
+	&queue_device_rescue_block_inject_data.attr,
+	&queue_device_data_move.attr,
+	&queue_device_data_move_number.attr,
+	&queue_device_slc_mode_configuration.attr,
+	&queue_device_sync_read_verify.attr,
+	&queue_device_sync_read_verify_cp_verify.attr,
+	&queue_device_sync_read_verify_cp_open.attr,
+	&queue_device_bad_block_notify_regist.attr,
+	&queue_device_bad_block_total_num.attr,
+	&queue_device_bad_block_bad_num.attr,
+	&queue_mas_unistore_debug_en_entry.attr,
+	&queue_mas_recovery_debug_on_entry.attr,
+	&queue_mas_unistore_en_entry.attr,
 #endif
-#endif /* CONFIG_HISI_DEBUG_FS */
+#ifdef CONFIG_MAS_MQ_USING_CP
+	&queue_mas_cp_enabled_entry.attr,
+	&queue_mas_cp_debug_en_entry.attr,
+	&queue_mas_cp_io_limit_entry.attr,
+#endif
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+	&queue_mas_order_enabled_entry.attr,
+	&queue_mas_order_debug_en_entry.attr,
+#endif
+#endif /* CONFIG_MAS_DEBUG_FS */
 	&queue_usr_ctrl_entry.attr,
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 
 	&queue_wc_entry.attr,
 	&queue_dax_entry.attr,
@@ -1150,10 +1273,13 @@ static void __blk_release_queue(struct work_struct *work)
 
 	if (q->elevator) {
 		ioc_clear_queue(q);
-		elevator_exit(q, q->elevator);
+		__elevator_exit(q, q->elevator);
 	}
 
 	blk_free_queue_stats(q->stats);
+
+	if (q->mq_ops)
+		cancel_delayed_work_sync(&q->requeue_work);
 
 	blk_exit_rl(q, &q->root_rl);
 
@@ -1208,8 +1334,8 @@ int blk_register_queue(struct gendisk *disk)
 
 	if (WARN_ON(!q))
 		return -ENXIO;
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_queue_register(q, disk);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_queue_register(q, disk);
 #endif
 
 	WARN_ONCE(test_bit(QUEUE_FLAG_REGISTERED, &q->queue_flags),
@@ -1228,7 +1354,7 @@ int blk_register_queue(struct gendisk *disk)
 	 */
 	if (!blk_queue_init_done(q)) {
 		queue_flag_set_unlocked(QUEUE_FLAG_INIT_DONE, q);
-#ifndef CONFIG_HISI_BLK /* RCU mode is slow and will result in longer CPU hotplug latency */
+#ifndef CONFIG_MAS_BLK /* RCU mode is slow and will result in longer CPU hotplug latency */
 		percpu_ref_switch_to_percpu(&q->q_usage_counter);
 #endif
 		blk_queue_bypass_end(q);

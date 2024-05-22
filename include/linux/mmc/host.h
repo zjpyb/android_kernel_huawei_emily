@@ -338,6 +338,9 @@ struct mmc_cmdq_context_info {
 	/* no free tag available */
 	unsigned long	req_starved;
 	spinlock_t	cmdq_ctx_lock;
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+	struct mutex	cmdq_queue_rq_mutex;
+#endif
 	/* recoving, give up dcmd transfer*/
 	bool in_recovery;
 	int reset_fail_count;
@@ -361,6 +364,10 @@ struct mmc_supply {
 	struct regulator *vqmmc;	/* Optional Vccq supply */
 };
 
+struct mmc_ctx {
+	struct task_struct *task;
+};
+
 struct mmc_host {
 	struct device		*parent;
 	struct device		class_dev;
@@ -376,6 +383,7 @@ struct mmc_host {
 	unsigned int		f_max;
 	unsigned int		f_init;
 	int                     sdio_present;
+	int                     sdio_1135_present;
 	u32			ocr_avail;
 	u32			ocr_avail_sdio;	/* SDIO-specific OCR */
 	u32			ocr_avail_sd;	/* SD-specific OCR */
@@ -488,7 +496,8 @@ struct mmc_host {
 #define MMC_CAP2_SUPPORT_WIFI        		(1 << 27)	/* host is connected by wifi through sdio */
 #define MMC_CAP2_SUPPORT_WIFI_CMD11		(1 << 28)	/* host is connected to 1102 wifi */
 #define MMC_CAP2_WIFI_NO_LOWPWR			(1 << 29)	/* host do not support low power for wifi*/
-#define MMC_CAP2_NO_WRITE_PROTECT (1 << 30)	/* No physical write protect pin, assume that card is always read-write */
+#define MMC_CAP2_NO_WRITE_PROTECT	(1 << 30)	/* No physical write protect pin, assume that card is always read-write */
+#define MMC_CAP2_END_IO_ERR	(1U << 31)	/* then device state err ,end request by io err */
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 	/* host specific block data */
@@ -618,6 +627,7 @@ struct mmc_host {
 	unsigned int		init_cnt;
 #ifdef CONFIG_HISI_DEBUG_FS
 	u64 sim_remove_sd;
+	u64 sim_remove_nano;
 #endif
 	unsigned long		private[0] ____cacheline_aligned;
 };
@@ -632,7 +642,7 @@ int mmc_of_parse(struct mmc_host *host);
 int mmc_of_parse_voltage(struct device_node *np, u32 *mask);
 
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 static inline void *mmc_cmdq_private(struct mmc_host *host)
 {
 	return host->cmdq_private;
@@ -658,7 +668,7 @@ void mmc_request_done(struct mmc_host *, struct mmc_request *);
 void mmc_command_done(struct mmc_host *host, struct mmc_request *mrq);
 
 /* SD&SDIO for HISI */
-#if defined(CONFIG_HISI_MMC) && defined(CONFIG_BCMDHD)
+#if defined(CONFIG_ZODIAC_MMC) && defined(CONFIG_BCMDHD)
 int mmc_power_save_host_for_wifi(struct mmc_host *host);
 int mmc_power_restore_host_for_wifi(struct mmc_host *host);
 #endif
@@ -688,9 +698,8 @@ extern int mmc_resume_bus(struct mmc_host *host);
 /* SD&SDIO for HISI  END*/
 
 /* eMMC for HISI */
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 void mmc_error_handle_timeout_timer(unsigned long data);
-void mmc_set_cold_reset(struct mmc_host *host);
 int mmc_cache_ctrl(struct mmc_host *, u8);
 int mmc_suspend_host(struct mmc_host *);
 int mmc_resume_host(struct mmc_host *);
@@ -699,7 +708,6 @@ int mmc_card_sleep(struct mmc_host *host);
 int mmc_card_can_sleep(struct mmc_host *host);
 
 void mmc_error_handle_timeout_timer(unsigned long data);
-void mmc_set_cold_reset(struct mmc_host *host);
 
 static inline void mmc_host_clr_halt(struct mmc_host *host)
 {

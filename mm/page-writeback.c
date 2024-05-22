@@ -203,11 +203,11 @@ static void wb_min_max_ratio(struct bdi_writeback *wb,
 	if (this_bw < tot_bw) {
 		if (min) {
 			min *= this_bw;
-			do_div(min, tot_bw);
+			min = div64_ul(min, tot_bw);
 		}
 		if (max < 100) {
 			max *= this_bw;
-			do_div(max, tot_bw);
+			max = div64_ul(max, tot_bw);
 		}
 	}
 
@@ -287,6 +287,11 @@ static unsigned long node_dirtyable_memory(struct pglist_data *pgdat)
 		if (!populated_zone(zone))
 			continue;
 
+#ifdef CONFIG_ZONE_MEDIA
+		if (IS_MEIDA_ZONE_IDX(zone_idx(zone)))
+			continue;
+#endif
+
 		nr_pages += zone_page_state(zone, NR_FREE_PAGES);
 	}
 
@@ -314,6 +319,11 @@ static unsigned long highmem_dirtyable_memory(unsigned long total)
 		for (i = ZONE_NORMAL + 1; i < MAX_NR_ZONES; i++) {
 			struct zone *z;
 			unsigned long nr_pages;
+
+#ifdef CONFIG_ZONE_MEDIA
+			if (IS_MEIDA_ZONE_IDX(i))
+				continue;
+#endif
 
 			if (!is_highmem_idx(i))
 				continue;
@@ -1680,6 +1690,10 @@ static void balance_dirty_pages(struct address_space *mapping,
 			break;
 		}
 
+#ifdef CONFIG_MAS_BLK_BW_OPTIMIZE
+		blk_write_throttle(bdi->queue, ASYNC_LIMIT_STAGE_ONE);
+#endif
+
 		if (unlikely(!writeback_in_progress(wb)))
 			wb_start_background_writeback(wb);
 
@@ -1803,6 +1817,10 @@ pause:
 					  period,
 					  pause,
 					  start_time);
+
+#ifdef CONFIG_MAS_BLK_BW_OPTIMIZE
+		blk_write_throttle(bdi->queue, ASYNC_LIMIT_STAGE_TWO);
+#endif
 		__set_current_state(TASK_KILLABLE);
 		wb->dirty_sleep = now;
 		io_schedule_timeout(pause);
@@ -2180,6 +2198,13 @@ EXPORT_SYMBOL(tag_pages_for_writeback);
  * not miss some pages (e.g., because some other process has cleared TOWRITE
  * tag we set). The rule we follow is that TOWRITE tag can be cleared only
  * by the process clearing the DIRTY tag (and submitting the page for IO).
+ *
+ * To avoid deadlocks between range_cyclic writeback and callers that hold
+ * pages in PageWriteback to aggregate IO until write_cache_pages() returns,
+ * we do not loop back to the start of the file. Doing so causes a page
+ * lock/page writeback access order inversion - we should only ever lock
+ * multiple pages in ascending page->index order, and looping back to the start
+ * of the file violates that rule and causes deadlocks.
  */
 int write_cache_pages(struct address_space *mapping,
 		      struct writeback_control *wbc, writepage_t writepage,
@@ -2201,7 +2226,6 @@ int __write_cache_pages(struct address_space *mapping,
 	pgoff_t index;
 	pgoff_t end;		/* Inclusive */
 	pgoff_t done_index;
-	int cycled;
 	int range_whole = 0;
 	int tag;
 
@@ -2209,23 +2233,17 @@ int __write_cache_pages(struct address_space *mapping,
 	if (wbc->range_cyclic) {
 		writeback_index = mapping->writeback_index; /* prev offset */
 		index = writeback_index;
-		if (index == 0)
-			cycled = 1;
-		else
-			cycled = 0;
 		end = -1;
 	} else {
 		index = wbc->range_start >> PAGE_SHIFT;
 		end = wbc->range_end >> PAGE_SHIFT;
 		if (wbc->range_start == 0 && wbc->range_end == LLONG_MAX)
 			range_whole = 1;
-		cycled = 1; /* ignore range_cyclic tests */
 	}
 	if (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages)
 		tag = PAGECACHE_TAG_TOWRITE;
 	else
 		tag = PAGECACHE_TAG_DIRTY;
-retry:
 	if (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages)
 		tag_pages_for_writeback(mapping, index, end);
 	done_index = index;
@@ -2242,7 +2260,7 @@ retry:
 
 			done_index = page->index;
 
-#ifdef CONFIG_HISI_STORAGE
+#ifdef CONFIG_MAS_STORAGE
 			might_sleep();
 			if (!trylock_page(page)) {
 				if (submit_bio_first)
@@ -2274,7 +2292,7 @@ continue_unlock:
 
 			if (PageWriteback(page)) {
 				if (wbc->sync_mode != WB_SYNC_NONE) {
-#ifdef CONFIG_HISI_STORAGE
+#ifdef CONFIG_MAS_STORAGE
 					/*
 					 * submit bio before wait_on_page_writeback to avoid deadlock,
 					 * caused by two processes sync different pages of the same file.
@@ -2335,17 +2353,14 @@ continue_unlock:
 		pagevec_release(&pvec);
 		cond_resched();
 	}
-	if (!cycled && !done) {
-		/*
-		 * range_cyclic:
-		 * We hit the last page and there is more work to be done: wrap
-		 * back to the start of the file
-		 */
-		cycled = 1;
-		index = 0;
-		end = writeback_index - 1;
-		goto retry;
-	}
+
+	/*
+	 * If we hit the last page and there is more work to be done: wrap
+	 * back the index back to the start of the file for the next
+	 * time we are called.
+	 */
+	if (wbc->range_cyclic && !done)
+		done_index = 0;
 	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
 		mapping->writeback_index = done_index;
 

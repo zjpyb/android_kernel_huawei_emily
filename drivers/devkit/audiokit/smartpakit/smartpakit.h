@@ -22,6 +22,8 @@
 #include <linux/of.h>
 #include <linux/irq.h>
 #include <linux/regmap.h>
+#include <linux/time.h>
+#include <linux/timer.h>
 #include "smartpakit_defs.h"
 
 #ifndef unused
@@ -170,6 +172,9 @@ struct smartpakit_i2c_priv {
 	/* irq */
 	struct smartpakit_gpio_irq *irq_handler;
 	struct work_struct irq_handle_work;
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	struct work_struct pm_s4_work;
+#endif
 	unsigned long irq_debounce_jiffies;
 	struct delayed_work irq_debounce_work;
 
@@ -184,6 +189,9 @@ struct smartpakit_i2c_priv {
 
 	/* reg map config */
 	struct smartpakit_regmap_cfg *regmap_cfg;
+
+	/* i2c_addr_state for hismartpa */
+	unsigned int i2c_addr_state;
 
 	unsigned int i2c_pseudo_addr;
 	void *priv_data;
@@ -231,7 +239,14 @@ struct smartpakit_pa_ctl_sequence {
 struct smartpakit_switch_node {
 	int gpio;
 	int state;
+	int delay;
 	char name[SMARTPAKIT_NAME_MAX];
+};
+
+struct smartpa_regulator_reg_ops {
+	int (*spmi_regulator_reg_read)(int i2c_addr, int reg_addr, int *value);
+	int (*spmi_regulator_reg_write)(int i2c_addr, int reg_addr, int mask,
+		int value);
 };
 
 struct smartpakit_reg_info {
@@ -240,6 +255,14 @@ struct smartpakit_reg_info {
 	unsigned int mask;
 	/* reg value or config value in config xml */
 	unsigned int info;
+	struct list_head list;
+};
+
+struct i2c_dev_info {
+	unsigned int chip_id;
+	unsigned int addr;
+	unsigned int status;
+	char chip_model[SMARTPAKIT_NAME_MAX];
 	struct list_head list;
 };
 
@@ -264,6 +287,8 @@ struct smartpakit_i2c_ctl_ops {
  * 5 read node:       r-reg-addr | 0    | 0         | 0     | 5
  * 6 irq filter node: i-reg-addr | mask | filter-val| 0     | 6
  *   this mask is filter mask
+ * 7 set aw correct   reg_addr |isn_addr| vsn_addr  | 0     | 7
+ * 8 irq_debounce     0          | 0    | 0         | 0     | 8
  */
 enum smartpakit_param_node_type {
 	SMARTPAKIT_PARAM_NODE_TYPE_REG_WRITE,
@@ -280,6 +305,7 @@ enum smartpakit_param_node_type {
 	SMARTPAKIT_PARAM_NODE_TYPE_REG_READ,
 	SMARTPAKIT_PARAM_NODE_TYPE_IRQ_FILTER, /* irq filter reg cfg */
 	SMARTPAKIT_PARAM_NODE_TYPE_AW_CORRECT, /* set aw smartpa correction */
+	SMARTPAKIT_PARAM_NODE_TYPE_IRQ_DEBOUNCE, /* reset irq debounce time */
 
 	SMARTPAKIT_PARAM_NODE_TYPE_MAX,
 };
@@ -289,6 +315,7 @@ struct smartpakit_priv {
 	unsigned int algo_in;
 	unsigned int algo_delay_time;
 	unsigned int out_device;
+	unsigned int param_version;
 	/* support pa number(now, max == SMARTPAKIT_PA_ID_MAX) */
 	unsigned int pa_num;
 	unsigned int i2c_num; /* load successful i2c module */
@@ -300,6 +327,7 @@ struct smartpakit_priv {
 	unsigned int chip_vendor;
 	const char *chip_model;
 	const char *cust;
+	const char *product_name;
 	char chip_model_list[SMARTPAKIT_PA_ID_MAX][SMARTPAKIT_NAME_MAX];
 	unsigned int switch_num;
 	struct smartpakit_switch_node *switch_ctl;
@@ -320,7 +348,8 @@ struct smartpakit_priv {
 	 */
 	unsigned char i2c_addr_to_pa_index[SMARTPAKIT_I2C_ADDR_ARRAY_MAX];
 	struct i2c_client *current_i2c_client;
-
+	struct list_head i2c_dev_list;
+	bool chip_register_failed;
 	/* for i2c ops */
 	struct smartpakit_i2c_priv *i2c_priv[SMARTPAKIT_PA_ID_MAX];
 	struct smartpakit_i2c_ctl_ops *ioctl_ops;
@@ -329,6 +358,19 @@ struct smartpakit_priv {
 	struct mutex hw_reset_lock;
 	struct mutex dump_regs_lock;
 	struct mutex i2c_ops_lock; /* regmap or i2c_transfer r/w ops lock */
+	struct mutex do_ioctl_lock;
+	struct mutex resume_sequence_lock;
+	bool need_reset_resume_chip;
+	int i2c_errno;
+	unsigned int cali_data_update_mode;
+
+	/* pa check loop */
+	unsigned int need_pa_check;
+	bool timer_state;
+	bool loop_state;
+	struct workqueue_struct *pa_check_delay_wq;
+	struct delayed_work pa_check_delay_work;
+	struct timer_list *timer;
 };
 
 struct smartpakit_priv *smartpakit_get_misc_priv(void);
@@ -361,7 +403,15 @@ void smartpakit_reg_info_add_list(
 void smartpakit_reg_info_del_list_all(struct list_head *head);
 
 int smartpakit_i2c_get_hismartpa_info(struct smartpakit_i2c_priv *i2c_priv,
-	struct hismartpa_cfg *cfg);
+	struct hismartpa_coeff *cfg);
+void smartpakit_handle_i2c_probe_dsm_report(
+	struct smartpakit_priv *pakit_priv);
+
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	void smartpakit_restore_process(struct work_struct *work);
+	int smartpakit_i2c_freeze(struct device *dev);
+	int smartpakit_i2c_restore(struct device *dev);
+#endif
 
 #endif /* __SMARTPAKIT_H__ */
 

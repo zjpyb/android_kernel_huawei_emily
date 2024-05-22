@@ -30,6 +30,7 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/irq.h>
+#include <chipset_common/hwsensor/hall/hall_interface.h>
 
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
@@ -74,6 +75,7 @@
 #define SOUTH_POLE_NAME          "hall_south_pole"
 #define X_COR                    "x_coordinate"
 #define Y_COR                    "y_coordinate"
+#define HALL_HI6502_GPIO         "huawei,hi6502-gpio"
 
 #define HALL_MAX_STRING_LEN      16
 #define HALL_MXA_INFO_LEN        256
@@ -81,6 +83,7 @@
 #define GPIO_HIGH_VOLTAGE        1
 #define GPIO_LOW_VOLTAGE         0
 #define HALL_DEFAULT_INT_DELAY   50
+#define HI6502_GPIO_DEFAULT      0x00
 
 #define HALL_IRQ_ABNORMAL_TIME   50000L
 
@@ -91,6 +94,7 @@
 struct hall_info {
 	unsigned int h_type;
 	unsigned int gpio[MAX_TYPE_NUM];
+	unsigned int hi6502_gpio[MAX_TYPE_NUM];
 	int irq[MAX_TYPE_NUM];
 	int trigger_style[MAX_TYPE_NUM];
 	unsigned int auxiliary_io[MAX_TYPE_NUM];
@@ -109,6 +113,7 @@ struct hall_device {
 	unsigned int hall_id;
 	unsigned int hall_type;
 	unsigned int hall_wakeup_flag;
+	unsigned int hi6502_gpio_flag;
 	int hall_x_coordinate;
 	int hall_y_coordinate;
 	int hall_auxiliary_flag;

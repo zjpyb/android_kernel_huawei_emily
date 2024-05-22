@@ -1,3 +1,20 @@
+/*
+ * dsu_pctrl.h
+ *
+ * ARM DynamIQ Shared Unit (DSU)
+ *
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM dsu_pctrl
 
@@ -6,7 +23,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(dsu_pctrl_dev_status, /* [false alarm]:TRACE_EVENT是原生宏定义 */
+TRACE_EVENT(dsu_pctrl_dev_status,
 	TP_PROTO(int dsu_id, unsigned long hits, unsigned long misses,
 		 unsigned long freq, unsigned long busy_time,
 		 unsigned long total_time),
@@ -33,8 +50,7 @@ TRACE_EVENT(dsu_pctrl_dev_status, /* [false alarm]:TRACE_EVENT是原生宏定义
 		  __entry->freq, __entry->busy_time, __entry->total_time)
 );
 
-
-TRACE_EVENT(dsu_pctrl_set_active_portions, /* [false alarm]:TRACE_EVENT是原生宏定义 */
+TRACE_EVENT(dsu_pctrl_set_active_portions,
 	TP_PROTO(unsigned long portions, unsigned long portion_active),
 	TP_ARGS(portions, portion_active),
 	TP_STRUCT__entry(
@@ -50,7 +66,7 @@ TRACE_EVENT(dsu_pctrl_set_active_portions, /* [false alarm]:TRACE_EVENT是原生
 		  __entry->portions, __entry->portion_active)
 );
 
-TRACE_EVENT(dsu_pctrl_read_perf_counters, /* [false alarm]:TRACE_EVENT是原生宏定义 */
+TRACE_EVENT(dsu_pctrl_read_perf_counters,
 	TP_PROTO(int cpu, unsigned long l3d_refill_cnt, unsigned long l3d_cnt),
 	TP_ARGS(cpu, l3d_refill_cnt, l3d_cnt),
 	TP_STRUCT__entry(
@@ -68,7 +84,7 @@ TRACE_EVENT(dsu_pctrl_read_perf_counters, /* [false alarm]:TRACE_EVENT是原生�
 		  __entry->cpu, __entry->l3d_refill_cnt, __entry->l3d_cnt)
 );
 
-TRACE_EVENT(dsu_pctrl_get_cnt, /* [false alarm]:TRACE_EVENT是原生宏定义 */
+TRACE_EVENT(dsu_pctrl_get_cnt,
 	TP_PROTO(unsigned long total_refill, unsigned long total_access),
 	TP_ARGS(total_refill, total_access),
 	TP_STRUCT__entry(
@@ -84,8 +100,7 @@ TRACE_EVENT(dsu_pctrl_get_cnt, /* [false alarm]:TRACE_EVENT是原生宏定义 */
 		  __entry->total_refill, __entry->total_access)
 );
 
-
-TRACE_EVENT(dsu_pctrl_target_acp, /* [false alarm]:TRACE_EVENT是原生宏定义 */
+TRACE_EVENT(dsu_pctrl_target_acp,
 	TP_PROTO(const char *acp, int id),
 	TP_ARGS(acp, id),
 	TP_STRUCT__entry(

@@ -318,6 +318,9 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->q = data->q;
 	rq->mq_ctx = data->ctx;
 	rq->cmd_flags = op;
+#ifdef CONFIG_MAS_BLK
+	rq->mas_cmd_flags = 0;
+#endif
 	if (blk_queue_io_stat(data->q))
 		rq->rq_flags |= RQF_IO_STAT;
 	/* do not touch atomic flags, it needs atomic ops against the timer */
@@ -348,8 +351,8 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->next_rq = NULL;
 
 	data->ctx->rq_dispatched[op_is_sync(op)]++;
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_rq_ctx_init(data->q, data->ctx, rq);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_rq_ctx_init(data->q, data->ctx, rq);
 #endif
 
 	return rq;
@@ -384,10 +387,11 @@ struct request *blk_mq_get_request(struct request_queue *q,
 			e->type->ops.mq.limit_depth(op, data);
 	}
 
-#ifdef CONFIG_HISI_BLK
-	data->io_flag = op;
-	if (data->q->hisi_queue_ops && data->q->hisi_queue_ops->mq_tag_get_fn)
-		tag = data->q->hisi_queue_ops->mq_tag_get_fn(data);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_set_data_flag(q, data, bio, op);
+
+	if (data->q->mas_queue_ops && data->q->mas_queue_ops->mq_tag_get_fn)
+		tag = data->q->mas_queue_ops->mq_tag_get_fn(data);
 	else
 #endif
 		tag = blk_mq_get_tag(data);
@@ -427,9 +431,10 @@ struct request *blk_mq_alloc_request(struct request_queue *q, unsigned int op,
 	if (ret)
 		return ERR_PTR(ret);
 
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_alloc_prep_fn)
-		q->hisi_queue_ops->mq_req_alloc_prep_fn(&alloc_data, op, false);
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_req_alloc_prep_fn)
+		q->mas_queue_ops->mq_req_alloc_prep_fn(&alloc_data, op, false);
+	op |= (REQ_SYNC | REQ_FG);
 #endif
 
 	rq = blk_mq_get_request(q, NULL, op, &alloc_data);
@@ -483,9 +488,9 @@ struct request *blk_mq_alloc_request_hctx(struct request_queue *q,
 	cpu = cpumask_first(alloc_data.hctx->cpumask);
 	alloc_data.ctx = __blk_mq_get_ctx(q, cpu);
 
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_alloc_prep_fn)
-		q->hisi_queue_ops->mq_req_alloc_prep_fn(&alloc_data, op, false);
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_req_alloc_prep_fn)
+		q->mas_queue_ops->mq_req_alloc_prep_fn(&alloc_data, op, false);
 #endif
 
 	rq = blk_mq_get_request(q, NULL, op, &alloc_data);
@@ -498,6 +503,17 @@ struct request *blk_mq_alloc_request_hctx(struct request_queue *q,
 }
 EXPORT_SYMBOL_GPL(blk_mq_alloc_request_hctx);
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static void blk_mq_stat_handle_unistore(struct request *rq)
+{
+	if ((rq->rq_flags & RQF_STATS) &&
+		blk_queue_query_unistore_enable(rq->q)) {
+		blk_mq_poll_stats_start(rq->q);
+		blk_stat_add(rq);
+	}
+}
+#endif
+
 void blk_mq_free_request(struct request *rq)
 {
 	struct request_queue *q = rq->q;
@@ -506,10 +522,10 @@ void blk_mq_free_request(struct request *rq)
 	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
 	const int sched_tag = rq->internal_tag;
 
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_hctx_get_by_req_fn)
-		q->hisi_queue_ops->mq_hctx_get_by_req_fn(rq, &hctx);
-#endif /* CONFIG_HISI_BLK */
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_hctx_get_by_req_fn)
+		q->mas_queue_ops->mq_hctx_get_by_req_fn(rq, &hctx);
+#endif /* CONFIG_MAS_BLK */
 
 	if (rq->rq_flags & RQF_ELVPRIV) {
 		if (e && e->type->ops.mq.finish_request)
@@ -526,22 +542,25 @@ void blk_mq_free_request(struct request *rq)
 
 	wbt_done(q->rq_wb, &rq->issue_stat,
 		(bool)(rq->cmd_flags & REQ_FG));
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_request_free(q, rq);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_request_free(rq);
 #endif
 
 	clear_bit(REQ_ATOM_STARTED, &rq->atomic_flags);
 	clear_bit(REQ_ATOM_POLL_SLEPT, &rq->atomic_flags);
 	if (rq->tag != -1) {
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_deinit_fn)
-		q->hisi_queue_ops->mq_req_deinit_fn(q, rq);
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_req_deinit_fn)
+		q->mas_queue_ops->mq_req_deinit_fn(rq);
 
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+	mb();
+#endif
 
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_tag_put_fn)
-		q->hisi_queue_ops->mq_tag_put_fn(hctx, ctx, rq->tag, rq);
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_tag_put_fn)
+		q->mas_queue_ops->mq_tag_put_fn(hctx, rq->tag, rq);
 	else
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 		blk_mq_put_tag(hctx, hctx->tags, ctx, rq->tag);
 
 	}
@@ -556,6 +575,9 @@ inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
 {
 	blk_account_io_done(rq);
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	blk_mq_stat_handle_unistore(rq);
+#endif
 	if (rq->end_io) {
 		wbt_done(rq->q->rq_wb, &rq->issue_stat,
 			 (bool)(rq->cmd_flags & REQ_FG));
@@ -631,11 +653,11 @@ void blk_mq_complete_request(struct request *rq)
 	if (unlikely(blk_should_fake_timeout(q)))
 		return;
 	if (!blk_mark_rq_complete(rq)) {
-#ifdef CONFIG_HISI_BLK
-		if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_complete_fn)
-			q->hisi_queue_ops->mq_req_complete_fn(rq, q, true);
+#ifdef CONFIG_MAS_BLK
+		if (q->mas_queue_ops && q->mas_queue_ops->mq_req_complete_fn)
+			q->mas_queue_ops->mq_req_complete_fn(rq, q, true);
 		else
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 			__blk_mq_complete_request(rq);
 
 	}
@@ -648,6 +670,18 @@ int blk_mq_request_started(struct request *rq)
 }
 EXPORT_SYMBOL_GPL(blk_mq_request_started);
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static void wbt_issue_unistore(struct request *rq)
+{
+	if (blk_queue_query_unistore_enable(rq->q))
+		wbt_issue(rq->q->rq_wb, &rq->issue_stat,
+			(bool)(rq->issue_stat.bi_opf & REQ_FG));
+	else
+		wbt_issue(rq->q->rq_wb, &rq->issue_stat,
+			(bool)(rq->cmd_flags & REQ_FG));
+}
+#endif
+
 void blk_mq_start_request(struct request *rq)
 {
 	struct request_queue *q = rq->q;
@@ -655,15 +689,20 @@ void blk_mq_start_request(struct request *rq)
 	blk_mq_sched_started_request(rq);
 
 	trace_block_rq_issue(q, rq);
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_request_start(rq);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_request_start(rq);
 #endif
 
 	if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
 		blk_stat_set_issue(&rq->issue_stat, blk_rq_sectors(rq));
 		rq->rq_flags |= RQF_STATS;
+
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		wbt_issue_unistore(rq);
+#else
 		wbt_issue(q->rq_wb, &rq->issue_stat,
-			  (bool)(rq->cmd_flags & REQ_FG));
+			 (bool)(rq->cmd_flags & REQ_FG));
+#endif
 	}
 
 	blk_add_timer(rq);
@@ -764,9 +803,9 @@ void blk_mq_add_to_requeue_list(struct request *rq, bool at_head,
 {
 	struct request_queue *q = rq->q;
 	unsigned long flags;
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_req_requeue_fn) {
-		q->hisi_queue_ops->mq_req_requeue_fn(rq, q);
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_req_requeue_fn) {
+		q->mas_queue_ops->mq_req_requeue_fn(rq, q);
 	} else
 #endif
 	{
@@ -793,9 +832,9 @@ EXPORT_SYMBOL(blk_mq_add_to_requeue_list);
 
 void blk_mq_kick_requeue_list(struct request_queue *q)
 {
-#ifdef CONFIG_HISI_BLK
-	if (q->hisi_queue_ops && q->hisi_queue_ops->mq_run_requeue_fn)
-		q->hisi_queue_ops->mq_run_requeue_fn(q);
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_run_requeue_fn)
+		q->mas_queue_ops->mq_run_requeue_fn(q);
 	else
 #endif
 		kblockd_schedule_delayed_work(&q->requeue_work, 0);
@@ -885,13 +924,12 @@ static void blk_mq_check_expired(struct blk_mq_hw_ctx *hctx,
 	 */
 	if (time_after_eq(jiffies, rq->deadline)) {
 		if (!blk_mark_rq_complete(rq)) {
-#ifdef CONFIG_HISI_BLK
-			if (rq->q->hisi_queue_ops &&
-				rq->q->hisi_queue_ops->mq_req_timeout_fn)
-				rq->q->hisi_queue_ops->mq_req_timeout_fn(
-					rq, reserved);
+#ifdef CONFIG_MAS_BLK
+			if (rq->q->mas_queue_ops &&
+				rq->q->mas_queue_ops->mq_req_timeout_fn)
+				rq->q->mas_queue_ops->mq_req_timeout_fn(rq);
 			else
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 				blk_mq_rq_timed_out(rq, reserved);
 
 		}
@@ -1002,8 +1040,8 @@ bool blk_mq_get_driver_tag(struct request *rq, struct blk_mq_hw_ctx **hctx,
 	if (blk_mq_tag_is_reserved(data.hctx->sched_tags, rq->internal_tag))
 		data.flags |= BLK_MQ_REQ_RESERVED;
 
-#ifdef CONFIG_HISI_BLK
-	if (data.q->hisi_queue_ops && data.q->hisi_queue_ops->mq_tag_get_fn)
+#ifdef CONFIG_MAS_BLK
+	if (data.q->mas_queue_ops && data.q->mas_queue_ops->mq_tag_get_fn)
 		rdr_syserr_process_for_ap(
 					(u32)MODID_AP_S_PANIC_STORAGE, 0ull,
 					0ull);
@@ -1320,11 +1358,12 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 		return;
 
 	if (!async && !(hctx->flags & BLK_MQ_F_BLOCKING)) {
-#ifdef CONFIG_HISI_BLK
-		if (hctx->queue->hisi_queue_ops &&
-			hctx->queue->hisi_queue_ops->mq_exec_queue_fn) {
-			hctx->queue->hisi_queue_ops->mq_exec_queue_fn(
+#ifdef CONFIG_MAS_BLK
+		if (hctx->queue->mas_queue_ops &&
+			hctx->queue->mas_queue_ops->mq_exec_queue_fn) {
+			hctx->queue->mas_queue_ops->mq_exec_queue_fn(
 				hctx->queue);
+			return ;
 		} else
 #endif
 		{
@@ -1339,10 +1378,10 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 		}
 	}
 
-#ifdef CONFIG_HISI_BLK
-	if (hctx->queue->hisi_queue_ops &&
-		hctx->queue->hisi_queue_ops->mq_run_hw_queue_fn)
-		hctx->queue->hisi_queue_ops->mq_run_hw_queue_fn(hctx->queue);
+#ifdef CONFIG_MAS_BLK
+	if (hctx->queue->mas_queue_ops &&
+		hctx->queue->mas_queue_ops->mq_run_hw_queue_fn)
+		hctx->queue->mas_queue_ops->mq_run_hw_queue_fn(hctx->queue);
 	else
 #endif
 		kblockd_schedule_delayed_work_on(blk_mq_hctx_next_cpu(hctx),
@@ -1535,11 +1574,10 @@ void __blk_mq_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 
 	lockdep_assert_held(&ctx->lock);
 
-#ifdef CONFIG_HISI_BLK
-	if (hctx->queue->hisi_queue_ops &&
-		hctx->queue->hisi_queue_ops->mq_req_insert_fn) {
-		hctx->queue->hisi_queue_ops->mq_req_insert_fn(
-			rq, hctx->queue, false);
+#ifdef CONFIG_MAS_BLK
+	if (hctx->queue->mas_queue_ops &&
+		hctx->queue->mas_queue_ops->mq_req_insert_fn) {
+		hctx->queue->mas_queue_ops->mq_req_insert_fn(rq, hctx->queue);
 	} else
 #endif
 	{
@@ -1901,10 +1939,10 @@ void blk_mq_free_rq_map(struct blk_mq_tags *tags)
 	kfree(tags->static_rqs);
 	tags->static_rqs = NULL;
 
-#ifdef CONFIG_HISI_BLK
-	if (tags->set && tags->set->hisi_tagset_ops &&
-		tags->set->hisi_tagset_ops->tagset_free_tags_fn)
-		tags->set->hisi_tagset_ops->tagset_free_tags_fn(tags);
+#ifdef CONFIG_MAS_BLK
+	if (tags->set && tags->set->mas_tagset_ops &&
+		tags->set->mas_tagset_ops->tagset_free_tags_fn)
+		tags->set->mas_tagset_ops->tagset_free_tags_fn(tags);
 	else
 #endif
 		blk_mq_free_tags(tags);
@@ -1922,9 +1960,9 @@ struct blk_mq_tags *blk_mq_alloc_rq_map(struct blk_mq_tag_set *set,
 	if (node == NUMA_NO_NODE)
 		node = set->numa_node;
 
-#ifdef CONFIG_HISI_BLK
-	if (set->hisi_tagset_ops && set->hisi_tagset_ops->tagset_init_tags_fn)
-		tags = set->hisi_tagset_ops->tagset_init_tags_fn(
+#ifdef CONFIG_MAS_BLK
+	if (set->mas_tagset_ops && set->mas_tagset_ops->tagset_init_tags_fn)
+		tags = set->mas_tagset_ops->tagset_init_tags_fn(
 			set->queue_depth, set->reserved_tags,
 			set->high_prio_tags, node,
 			BLK_MQ_FLAG_TO_ALLOC_POLICY(set->flags));
@@ -1940,9 +1978,9 @@ struct blk_mq_tags *blk_mq_alloc_rq_map(struct blk_mq_tag_set *set,
 				 GFP_NOIO | __GFP_NOWARN | __GFP_NORETRY,
 				 node);
 	if (!tags->rqs) {
-#ifdef CONFIG_HISI_BLK
-		if (set->hisi_tagset_ops && set->hisi_tagset_ops->tagset_free_tags_fn)
-			set->hisi_tagset_ops->tagset_free_tags_fn(tags);
+#ifdef CONFIG_MAS_BLK
+		if (set->mas_tagset_ops && set->mas_tagset_ops->tagset_free_tags_fn)
+			set->mas_tagset_ops->tagset_free_tags_fn(tags);
 		else
 #endif
 			blk_mq_free_tags(tags);
@@ -1955,9 +1993,9 @@ struct blk_mq_tags *blk_mq_alloc_rq_map(struct blk_mq_tag_set *set,
 				 node);
 	if (!tags->static_rqs) {
 		kfree(tags->rqs);
-#ifdef CONFIG_HISI_BLK
-		if (set->hisi_tagset_ops && set->hisi_tagset_ops->tagset_free_tags_fn)
-			set->hisi_tagset_ops->tagset_free_tags_fn(tags);
+#ifdef CONFIG_MAS_BLK
+		if (set->mas_tagset_ops && set->mas_tagset_ops->tagset_free_tags_fn)
+			set->mas_tagset_ops->tagset_free_tags_fn(tags);
 		else
 #endif
 			blk_mq_free_tags(tags);
@@ -2065,10 +2103,12 @@ static int blk_mq_hctx_notify_dead(unsigned int cpu, struct hlist_node *node)
 	LIST_HEAD(tmp);
 
 	hctx = hlist_entry_safe(node, struct blk_mq_hw_ctx, cpuhp_dead);
+#ifdef CONFIG_MAS_BLK
 	if (!hctx) {
 		pr_err("%s: hctx is NULL\n", __func__);
 		return -EINVAL;
 	}
+#endif
 	ctx = __blk_mq_get_ctx(hctx->queue, cpu); /*lint !e613*/
 
 	spin_lock(&ctx->lock);
@@ -2256,8 +2296,13 @@ static bool __blk_mq_alloc_rq_map(struct blk_mq_tag_set *set, int hctx_idx)
 	return false;
 }
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+void blk_mq_free_map_and_requests(struct blk_mq_tag_set *set,
+					 unsigned int hctx_idx)
+#else
 static void blk_mq_free_map_and_requests(struct blk_mq_tag_set *set,
 					 unsigned int hctx_idx)
+#endif
 {
 	if (set->tags[hctx_idx]) {
 		blk_mq_free_rqs(set, set->tags[hctx_idx], hctx_idx);
@@ -2604,8 +2649,8 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	blk_mq_add_queue_tag_set(set, q);
 	blk_mq_map_swqueue(q);
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_init_allocated_queue(q);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_init_allocated_queue(q);
 #endif
 
 	if (!(set->flags & BLK_MQ_F_NO_SCHED)) {
@@ -2632,8 +2677,8 @@ void blk_mq_free_queue(struct request_queue *q)
 {
 	struct blk_mq_tag_set	*set = q->tag_set;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_free_queue(q);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_free_queue(q);
 #endif
 	blk_mq_del_queue_tag_set(q);
 	blk_mq_exit_hw_queues(q, set, set->nr_hw_queues);
@@ -2681,7 +2726,11 @@ out_unwind:
  * may reduce the depth asked for, if memory is tight. set->queue_depth
  * will be updated to reflect the allocated depth.
  */
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+int blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
+#else
 static int blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
+#endif
 {
 	unsigned int depth;
 	int err;
@@ -2795,8 +2844,8 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 	if (ret)
 		goto out_free_mq_map;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_mq_allocated_tagset_init(set);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_mq_allocated_tagset_init(set);
 #endif
 	ret = blk_mq_alloc_rq_maps(set);
 	if (ret)
@@ -2885,6 +2934,10 @@ static void __blk_mq_update_nr_hw_queues(struct blk_mq_tag_set *set,
 
 	list_for_each_entry(q, &set->tag_list, tag_set_list)
 		blk_mq_freeze_queue(q);
+	/*
+	 * Sync with blk_mq_queue_tag_busy_iter.
+	 */
+	synchronize_rcu();
 
 	set->nr_hw_queues = nr_hw_queues;
 	blk_mq_update_queue_map(set);
@@ -3078,28 +3131,20 @@ bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie)
 	struct blk_mq_hw_ctx *hctx;
 	struct blk_plug *plug;
 	struct request *rq;
+#ifdef CONFIG_MAS_BLK /* TODO: use hybrid polling */
+	bool poll = false;
 
-#ifdef CONFIG_HISI_BLK /* TODO: use hybrid polling */
-	int ret = -EPERM;
-	bool enable = false;
-
-	if (q->hisi_queue_ops && q->hisi_queue_ops->blk_poll_enable_fn)
-		ret = q->hisi_queue_ops->blk_poll_enable_fn(q, cookie, &enable);
-
-	if (!ret) {
-		if (enable)
+	if (q->mas_queue_ops && q->mas_queue_ops->blk_poll_enable_fn) {
+		q->mas_queue_ops->blk_poll_enable_fn(&poll);
+		if (poll) {
+			plug = current->plug;
+			if (plug)
+				blk_flush_plug_list(plug, false);
 			set_current_state(TASK_RUNNING); /*lint !e446  !e666*/
-		return enable;
-	} else {
-		if (unlikely(ret != -EPERM)) {
-			pr_err("%s: blk_poll_enable_fn failed. err = %d \r\n",
-				__func__, ret);
-#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_HISI_BLK_DEBUG)
-			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
-#endif
 		}
+		return poll;
 	}
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 
 	if (!q->mq_ops || !q->mq_ops->poll || !blk_qc_t_valid(cookie) ||
 	    !test_bit(QUEUE_FLAG_POLL, &q->queue_flags))

@@ -51,8 +51,8 @@ ecdh_gen_filepubkey_secret(struct crypto_kpp *tfm, int curve_id,
 						   const u8 *dev_pub_key, u8 *file_pub_key,
 						   u8 *shared_secret)
 {
-	struct kpp_request   *req;
-	struct ecdh          *ecdh_param;
+	struct kpp_request   *req = NULL;
+	struct ecdh          *ecdh_param = NULL;
 	void                 *ecdh_buf   = NULL;
 	void                 *output_buf = NULL;
 	void                 *input_buf  = NULL;
@@ -172,8 +172,8 @@ ecdh_gen_secret(struct crypto_kpp *tfm, unsigned int curve_id,
 				const u8 *dev_privkey, const u8 *file_pub_key,
 				u8 *shared_secret)
 {
-	struct kpp_request   *req;
-	struct ecdh          *ecdh_param;
+	struct kpp_request   *req = NULL;
+	struct ecdh          *ecdh_param = NULL;
 	void                 *ecdh_buf   = NULL;
 	void                 *output_buf = NULL;
 	void                 *input_buf  = NULL;
@@ -273,7 +273,7 @@ int get_file_pubkey_shared_secret(unsigned int curve_id,
 								  unsigned int shared_secret_len)
 {
 	const char        *alg_name = "ecdh";
-	struct crypto_kpp *tfm;
+	struct crypto_kpp *tfm = NULL;
 	int               err       = -ENOMEM;
 
 	if ((curve_id != ECC_CURVE_NIST_P256)
@@ -305,7 +305,7 @@ int get_shared_secret(unsigned int curve_id, const u8 *dev_privkey,
 					  unsigned int shared_secret_len)
 {
 	const char        *alg_name = "ecdh";
-	struct crypto_kpp *tfm;
+	struct crypto_kpp *tfm = NULL;
 	int               err       = -ENOMEM;
 
 	if ((curve_id != ECC_CURVE_NIST_P256)

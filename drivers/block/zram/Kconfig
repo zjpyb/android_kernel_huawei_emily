@@ -53,3 +53,5 @@ config ZRAM_NON_COMPRESS
 	help
 	  With this feature, zram will not compress page that with NonCompress
 	  flag.
+
+source "drivers/block/zram/hp/Kconfig"

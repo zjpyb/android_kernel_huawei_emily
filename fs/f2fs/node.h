@@ -153,6 +153,7 @@ struct nat_entry_set {
 	nid_t set;			/* set number*/
 	unsigned int entry_cnt;		/* the # of nat entries in set */
 #ifdef CONFIG_F2FS_JOURNAL_APPEND
+	unsigned long mtime;
 	bool can_merge;
 #endif
 };

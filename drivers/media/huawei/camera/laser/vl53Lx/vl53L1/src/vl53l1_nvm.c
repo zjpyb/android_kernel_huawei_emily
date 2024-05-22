@@ -366,9 +366,9 @@ VL53L1_Error VL53L1_nvm_disable(
 
 
 VL53L1_Error VL53L1_nvm_format_decode(
-	uint16_t                   buf_size,
-	uint8_t                   *pbuffer,
-	VL53L1_decoded_nvm_data_t *pdata)
+	uint16_t                         buf_size,
+	uint8_t                          *pbuffer,
+	struct VL53L1_decoded_nvm_data_t *pdata)
 {
 
 
@@ -934,9 +934,9 @@ VL53L1_Error VL53L1_nvm_format_decode(
 
 
 VL53L1_Error VL53L1_nvm_decode_optical_centre(
-	uint16_t                    buf_size,
-	uint8_t                    *pbuffer,
-	VL53L1_optical_centre_t    *pdata)
+	uint16_t                          buf_size,
+	uint8_t                           *pbuffer,
+	struct VL53L1_optical_centre_t    *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -963,9 +963,9 @@ VL53L1_Error VL53L1_nvm_decode_optical_centre(
 
 
 VL53L1_Error VL53L1_nvm_decode_cal_peak_rate_map(
-	uint16_t                    buf_size,
-	uint8_t                    *pbuffer,
-	VL53L1_cal_peak_rate_map_t *pdata)
+	uint16_t                          buf_size,
+	uint8_t                           *pbuffer,
+	struct VL53L1_cal_peak_rate_map_t *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -1000,9 +1000,9 @@ VL53L1_Error VL53L1_nvm_decode_cal_peak_rate_map(
 
 
 VL53L1_Error VL53L1_nvm_decode_additional_offset_cal_data(
-	uint16_t                             buf_size,
-	uint8_t                             *pbuffer,
-	VL53L1_additional_offset_cal_data_t *pdata)
+	uint16_t                                   buf_size,
+	uint8_t                                    *pbuffer,
+	struct VL53L1_additional_offset_cal_data_t *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -1027,9 +1027,9 @@ VL53L1_Error VL53L1_nvm_decode_additional_offset_cal_data(
 
 
 VL53L1_Error VL53L1_nvm_decode_fmt_range_results_data(
-	uint16_t                             buf_size,
-	uint8_t                             *pbuffer,
-	VL53L1_decoded_nvm_fmt_range_data_t *pdata)
+	uint16_t                                   buf_size,
+	uint8_t                                    *pbuffer,
+	struct VL53L1_decoded_nvm_fmt_range_data_t *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -1069,9 +1069,9 @@ VL53L1_Error VL53L1_nvm_decode_fmt_range_results_data(
 
 
 VL53L1_Error VL53L1_nvm_decode_fmt_info(
-	uint16_t                       buf_size,
-	uint8_t                       *pbuffer,
-	VL53L1_decoded_nvm_fmt_info_t *pdata)
+	uint16_t                             buf_size,
+	uint8_t                              *pbuffer,
+	struct VL53L1_decoded_nvm_fmt_info_t *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -1290,9 +1290,9 @@ VL53L1_Error VL53L1_nvm_decode_fmt_info(
 
 
 VL53L1_Error VL53L1_nvm_decode_ews_info(
-	uint16_t                       buf_size,
-	uint8_t                       *pbuffer,
-	VL53L1_decoded_nvm_ews_info_t *pdata)
+	uint16_t                             buf_size,
+	uint8_t                              *pbuffer,
+	struct VL53L1_decoded_nvm_ews_info_t *pdata)
 {
 
 	VL53L1_Error status   = VL53L1_ERROR_NONE;
@@ -1415,8 +1415,8 @@ VL53L1_Error VL53L1_nvm_decode_ews_info(
 
 
 void VL53L1_nvm_format_encode(
-	VL53L1_decoded_nvm_data_t *pnvm_info,
-	uint8_t                   *pnvm_data)
+	struct VL53L1_decoded_nvm_data_t *pnvm_info,
+	uint8_t                          *pnvm_data)
 {
 	SUPPRESS_UNUSED_WARNING(pnvm_info);
 	SUPPRESS_UNUSED_WARNING(pnvm_data);
@@ -1480,9 +1480,9 @@ VL53L1_Error VL53L1_read_nvm_raw_data(
 
 
 VL53L1_Error VL53L1_read_nvm(
-	VL53L1_DEV                 Dev,
-	uint8_t                    nvm_format,
-	VL53L1_decoded_nvm_data_t *pnvm_info)
+	VL53L1_DEV                       Dev,
+	uint8_t                          nvm_format,
+	struct VL53L1_decoded_nvm_data_t *pnvm_info)
 {
 
 
@@ -1537,7 +1537,7 @@ VL53L1_Error VL53L1_read_nvm(
 
 VL53L1_Error VL53L1_read_nvm_optical_centre(
 	VL53L1_DEV                        Dev,
-	VL53L1_optical_centre_t          *pcentre)
+	struct VL53L1_optical_centre_t    *pcentre)
 {
 
 
@@ -1581,7 +1581,7 @@ VL53L1_Error VL53L1_read_nvm_optical_centre(
 
 VL53L1_Error VL53L1_read_nvm_cal_peak_rate_map(
 	VL53L1_DEV                           Dev,
-	VL53L1_cal_peak_rate_map_t          *pcal_data)
+	struct VL53L1_cal_peak_rate_map_t    *pcal_data)
 {
 
 
@@ -1624,8 +1624,8 @@ VL53L1_Error VL53L1_read_nvm_cal_peak_rate_map(
 
 
 VL53L1_Error VL53L1_read_nvm_additional_offset_cal_data(
-	VL53L1_DEV                           Dev,
-	VL53L1_additional_offset_cal_data_t *pcal_data)
+	VL53L1_DEV                                 Dev,
+	struct VL53L1_additional_offset_cal_data_t *pcal_data)
 {
 
 
@@ -1673,9 +1673,9 @@ VL53L1_Error VL53L1_read_nvm_additional_offset_cal_data(
 
 
 VL53L1_Error VL53L1_read_nvm_fmt_range_results_data(
-	VL53L1_DEV                           Dev,
-	uint16_t                             range_results_select,
-	VL53L1_decoded_nvm_fmt_range_data_t *prange_data)
+	VL53L1_DEV                                 Dev,
+	uint16_t                                   range_results_select,
+	struct VL53L1_decoded_nvm_fmt_range_data_t *prange_data)
 {
 
 

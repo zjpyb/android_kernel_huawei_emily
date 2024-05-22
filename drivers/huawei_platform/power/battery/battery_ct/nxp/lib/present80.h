@@ -8,7 +8,7 @@
  * note: following implementation is only for
  * little-endian architectures supporting 64 bit unsigned integers
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -64,7 +64,8 @@ void present80_setkey(present80_t context, const uint8_t *key);
  * ptext		Plain text input to encrypt
  * ctext		Encrypted data output
  */
-void present80(const present80_t context, const uint8_t *ptext, uint8_t *ctext);
+void present80(const present80_t context, const uint8_t *ptext, uint32_t ptext_len,
+	uint8_t *ctext, uint32_t ctext_len);
 
 /*
  * Compute PRESENT80-CBCMAC tag. If length is not 64-bit block aligned,
@@ -78,7 +79,7 @@ void present80(const present80_t context, const uint8_t *ptext, uint8_t *ctext);
  *				with non-zero tag buffer
  * tag			Pointer where to store the tag
  */
-void present80_cbcmac(const present80_t context, const uint8_t *data,
-	const uint32_t datalen, const bool clrtag, uint8_t *tag);
+void present80_cbcmac(const present80_t context, const uint8_t *data, const uint32_t datalen,
+	const bool clrtag, uint8_t *tag, uint32_t tag_len);
 
 #endif /* _PRESENT80_H_ */

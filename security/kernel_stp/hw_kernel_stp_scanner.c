@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2021. All rights reserved.
  * Description: the hw_kernel_stp_proc.c for proc file create and destroy
  * Author: sunhongqing <sunhongqing@huawei.com>
  * Create: 2018-03-31
@@ -28,7 +28,7 @@ int kernel_stp_scanner_init(void)
 	if (g_scanner_list_init == KSTP_SCAN_LIST_UNINIT) {
 		INIT_LIST_HEAD(&g_stp_scanner_node.stp_scanner_list);
 		g_scanner_list_init = KSTP_SCAN_LIST_INIT;
-		KSTPLogTrace(TAG, "kernel stp scanner init success.");
+		KSTPLogTrace(TAG, "kernel stp scanner init success");
 		return 0;
 	} else {
 		KSTPLogTrace(TAG, "kernel stp scanner has init success at register");
@@ -45,7 +45,7 @@ int kernel_stp_scanner_register(stp_cb callbackfunc)
 	if (g_scanner_list_init == KSTP_SCAN_LIST_UNINIT) {
 		INIT_LIST_HEAD(&g_stp_scanner_node.stp_scanner_list);
 		g_scanner_list_init = KSTP_SCAN_LIST_INIT;
-		KSTPLogTrace(TAG, "kernel stp scanner init success at register.");
+		KSTPLogTrace(TAG, "kernel stp scanner init success at register");
 	}
 
 	listnode = kzalloc(sizeof(struct kernel_stp_scanner_node),
@@ -73,7 +73,7 @@ int kernel_stp_scanner_register(stp_cb callbackfunc)
 			&g_stp_scanner_node.stp_scanner_list);
 		mutex_unlock(&stp_scanner_list_lock);
 
-		KSTPLogTrace(TAG, "kernel stp scanner list add node success.");
+		KSTPLogTrace(TAG, "kernel stp scanner list add node success");
 	}
 
 	return 0;

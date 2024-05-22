@@ -48,7 +48,10 @@
 #define FTS_ROI_SUPPORTED			"roi_supported"
 #define FTS_ROI_SWITCH_ADDR		"roi_switch_addr"
 #define FTS_ROI_PKG_NUM_ADDR	"roi_pkg_num_addr"
+#define FTS_8201_GESTURE_SUPPORTED "fts_8201_gesture_supported"
+#define FTS_CONTROL_CS_GPIO "fts_control_cs_gpio"
 #define FTS_PALM_IRON_SUPPORT	"palm_iron_support"
+#define FTS_PALM_ESD_SUPPORT "palm_esd_support"
 #define FTS_SUPPORT_GET_DEBUG_INFO_FROM_IC    "support_get_debug_info_from_ic"
 #define FTS_GET_DEBUG_INFO_REG_ADDR    "get_debug_info_reg_addr"
 
@@ -106,6 +109,7 @@
 #define DTS_OPEN_TEST_CB_MAX_ARRAY	"threshold,open_test_cb_max_array"
 #define DTS_SHORT_CIRCUIT_RES_MIN_ARRAY	"threshold,short_circuit_min_array"
 #define DTS_ROW_COLUMN_DELTA_MAX_ARRAY		"threshold,row_column_delta_max_array"
+#define CAPACITANCE_TEST_SEQUENCE "capa_test_sequence"
 
 #define FTS_CB_TEST_CSV			"cb_test_threshold"
 #define FTS_SCAP_RAW_FATA_CSV		"scap_raw_data_threshold"

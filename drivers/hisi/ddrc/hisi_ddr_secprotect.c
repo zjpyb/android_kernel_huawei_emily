@@ -1,14 +1,18 @@
 /*
- * Hisilicon DDR TEST driver (master only).
  *
- * Copyright (c) 2012-2013 Linaro Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
-
+#include "hisi_ddr_secprotect.h"
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -26,8 +30,6 @@
 #include <linux/mutex.h>
 #include <linux/kthread.h>
 #include "securec.h"
-
-#include <hisi_ddr_secprotect.h>
 #include <global_ddr_map.h>
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
@@ -38,11 +40,31 @@
 #endif
 
 #define DMR_SHARE_MEM_PHY_BASE (HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE + DRM_SHARE_MEM_OFFSET)
-#define DMSS_OPTI_SHARE_MEM_SIZE     (0x8)
-#define INTRSRC_MASK                 (0xFF)
+#define DMSS_OPTI_SHARE_MEM_SIZE 0x8
+#define INTRSRC_MASK 0xFFFF
 
 u64 *g_dmss_intr_fiq = NULL;
 u64 *g_dmss_intr = NULL;
+u64 *g_dmss_subreason = NULL;
+
+struct dmss_subreason_mem {
+	unsigned master_reason:8;
+	unsigned sub_reason:8;
+	unsigned init_flag:4;
+};
+
+#define DMSS_SUBREASON_OFFSET 28
+#define DMSS_SUBREASON_ADDR (HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE + DMSS_SUBREASON_OFFSET)
+#define DMSS_SUBREASON_SIZE 0x4
+#define DMSS_SUBREASON_FAIL (-1)
+#define DMSS_SUBREASON_SUCCESS 0
+#define DMSS_MODID_FAIL 1
+#define SUBREASON_MODID_FIND_FAIL 0
+
+static u32 dmss_subreason_modid_find(void)
+{
+	return SUBREASON_MODID_FIND_FAIL;
+}
 
 
 struct semaphore modemddrc_happen_sem;
@@ -53,62 +75,68 @@ void dmss_ipi_handler(void)
 	up(&modemddrc_happen_sem);
 }
 
-int modemddrc_happen(void *arg)
+static int modemddrc_happen(void *arg)
 {
-	printk(KERN_ERR "modemddrc_happen start\n");
+	pr_err("modemddrc happen start\n");
 	down(&modemddrc_happen_sem);
-	printk(KERN_ERR "modemddrc_happen goto rdr_system_error\n");
+	pr_err("modemddrc happen goto rdr_system_error\n");
 	rdr_system_error(RDR_MODEM_DMSS_MOD_ID, 0, 0);
 	return 0;
 }
 
-void fiq_print_src(u64 intrsrc)
+static void fiq_print_src(u64 intrsrc)
 {
 	unsigned int intr = intrsrc & INTRSRC_MASK;
 
 	/* check with FIQ number */
-	if (IRQ_WDT_INTR_FIQ == intr) {
-		printk(KERN_ERR "fiq triggered by: Watchdog\n");
-	} else if (IRQ_DMSS_INTR_FIQ == intr) {
+	if (intr == IRQ_WDT_INTR_FIQ) {
+		pr_err("fiq triggered by: Watchdog\n");
+	} else if (intr == IRQ_DMSS_INTR_FIQ) {
 		smp_send_stop();
-		printk(KERN_ERR "fiq triggered by: DMSS\n");
+		pr_err("fiq triggered by: DMSS\n");
 	} else {
-		printk(KERN_ERR "fiq triggered by: Unknown, intr=0x%x\n", (unsigned int)intrsrc);
+		pr_err("fiq triggered by: Unknown, intr=0x%x\n", (unsigned int)intrsrc);
 	}
-
 }
 
 void dmss_fiq_handler(void)
 {
-	if (NULL == g_dmss_intr_fiq) {
-		printk(KERN_ERR "fiq_handler intr ptr is null.\n");
-		g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, DMSS_OPTI_SHARE_MEM_SIZE);
-		if (NULL == g_dmss_intr_fiq) {
-			printk(KERN_ERR "fiq_handler ioremap_nocache fail\n");
+	u32 ret;
+
+	if (g_dmss_intr_fiq == NULL) {
+		pr_err("fiq_handler intr ptr is null\n");
+		g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE,
+			DMSS_OPTI_SHARE_MEM_SIZE);
+		if (g_dmss_intr_fiq == NULL) {
+			pr_err("fiq_handler ioremap_nocache fail\n");
 			return;
 		}
 	}
 	fiq_print_src(*g_dmss_intr_fiq);
+	if ((g_dmss_intr_fiq != NULL) && ((u64)(DMSS_INTR_FIQ_FLAG | IRQ_DMSS_INTR_FIQ) == (*g_dmss_intr_fiq))) {
+		pr_err("dmss fiq handler\n");
+		pr_err("dmss intr happened. please see bl31 log\n");
 
-	if ((NULL != g_dmss_intr_fiq )&&((u64)(DMSS_INTR_FIQ_FLAG|IRQ_DMSS_INTR_FIQ) == (*g_dmss_intr_fiq))) {
-		printk(KERN_ERR "dmss_fiq_handler\n");
-		printk(KERN_ERR "dmss intr happened. please see bl31 log.\n");
-
-		/*rdr reboot  because of DDR_SEC*/
-		rdr_syserr_process_for_ap(MODID_AP_S_DDRC_SEC, 0ULL, 0ULL);
+		ret = dmss_subreason_modid_find();
+		if (ret == 0) {
+			pr_err("%s get suberason modid fail\n", __func__);
+			rdr_syserr_process_for_ap(MODID_AP_S_DDRC_SEC, 0ULL, 0ULL);
+		} else {
+			rdr_syserr_process_for_ap(ret, 0ULL, 0ULL);
+		}
 	}
 }
 
 
 #ifdef CONFIG_DRMDRIVER
-int hisi_sec_ddr_set(DRM_SEC_CFG *sec_cfg, DYNAMIC_DDR_SEC_TYPE type)
+int hisi_sec_ddr_set(drm_sec_cfg *sec_cfg, dynamic_ddr_sec_type type)
 {
 	int ret;
-	DRM_SEC_CFG *p_sec_cfg = NULL;
-	p_sec_cfg = (DRM_SEC_CFG*)ioremap_nocache(DMR_SHARE_MEM_PHY_BASE, sizeof(DRM_SEC_CFG));
-	if (NULL == p_sec_cfg || NULL == sec_cfg) {
+	drm_sec_cfg *p_sec_cfg = NULL;
+
+	p_sec_cfg = (drm_sec_cfg *)ioremap_nocache(DMR_SHARE_MEM_PHY_BASE, sizeof(*sec_cfg));
+	if (p_sec_cfg == NULL || sec_cfg == NULL)
 		return -1;
-	}
 	p_sec_cfg->start_addr = sec_cfg->start_addr;
 	p_sec_cfg->sub_rgn_size = sec_cfg->sub_rgn_size;
 	p_sec_cfg->bit_map = sec_cfg->bit_map;
@@ -120,7 +148,7 @@ int hisi_sec_ddr_set(DRM_SEC_CFG *sec_cfg, DYNAMIC_DDR_SEC_TYPE type)
 	return ret;
 }
 
-int hisi_sec_ddr_clr(DYNAMIC_DDR_SEC_TYPE type)
+int hisi_sec_ddr_clr(dynamic_ddr_sec_type type)
 {
 	return atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
 		(u64)DMR_SHARE_MEM_PHY_BASE, (u64)type, ACCESS_REGISTER_FN_SUB_ID_DDR_DRM_CLR);
@@ -130,34 +158,38 @@ int hisi_sec_ddr_clr(DYNAMIC_DDR_SEC_TYPE type)
 static int hisi_ddr_secprotect_probe(struct platform_device *pdev)
 {
 
-    g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, DMSS_OPTI_SHARE_MEM_SIZE);
-    if (g_dmss_intr_fiq == NULL) {
-        printk(" ddr ioremap_nocache fail\n");
-        return -ENOMEM;
-    }
+
+	g_dmss_intr_fiq = ioremap_nocache(HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE, DMSS_OPTI_SHARE_MEM_SIZE);
+	if (g_dmss_intr_fiq == NULL) {
+		pr_err(" ddr ioremap_nocache fail\n");
+		return -ENOMEM;
+	}
+
+	g_dmss_subreason = ioremap_nocache(DMSS_SUBREASON_ADDR, DMSS_SUBREASON_SIZE);
+	if (g_dmss_subreason == NULL) {
+		pr_err(" ddr subreason ioremap_nocache fail\n");
+		return -ENOMEM;
+	}
 
 
-    sema_init(&modemddrc_happen_sem, 0);
+	sema_init(&modemddrc_happen_sem, 0);
 
 
-
-    if (!kthread_run(modemddrc_happen, NULL, "modemddrc_emit"))
-        pr_err("create thread modemddrc_happen faild.\n");
-    return 0;
+	if (!kthread_run(modemddrc_happen, NULL, "modemddrc_emit"))
+		pr_err("create thread modemddrc_happen faild\n");
+	return 0;
 }
 
 static int hisi_ddr_secprotect_remove(struct platform_device *pdev)
 {
-	if (g_dmss_intr_fiq)
-	{
+	if (g_dmss_intr_fiq != NULL)
 		iounmap(g_dmss_intr_fiq);
-	}
+
 	g_dmss_intr_fiq = NULL;
 
-	if (g_dmss_intr)
-	{
+	if (g_dmss_intr != NULL)
 		iounmap(g_dmss_intr);
-	}
+
 	g_dmss_intr = NULL;
 
 	return 0;
@@ -172,16 +204,17 @@ MODULE_DEVICE_TABLE(of, hs_ddr_of_match);
 #endif
 
 static struct platform_driver hisi_ddr_secprotect_driver = {
-	.probe		= hisi_ddr_secprotect_probe,
-	.remove		= hisi_ddr_secprotect_remove,
-	.driver		= {
-		.name	= "ddr_secprotect",
-		.owner	= THIS_MODULE,
+	.probe        = hisi_ddr_secprotect_probe,
+	.remove       = hisi_ddr_secprotect_remove,
+	.driver       = {
+		.name           = "ddr_secprotect",
+		.owner          = THIS_MODULE,
 		.of_match_table = of_match_ptr(hs_ddr_of_match),
 	},
 };
 module_platform_driver(hisi_ddr_secprotect_driver);
 
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("hisi ddr secprotect driver");
 MODULE_ALIAS("hisi ddr_secprotect module");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

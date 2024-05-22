@@ -1,32 +1,21 @@
-/****************************************************************************
- * Company:         Fairchild Semiconductor
+/*
+ * fsc_vdm_defs.h
  *
- * Author           Date          Comment
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * G. Noblesmith
+ * fsc_vdm_defs driver
  *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * Software License Agreement:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * The software supplied herewith by Fairchild Semiconductor (the “Company”)
- * is supplied to you, the Company's customer, for exclusive use with its
- * USB Type C / USB PD products.  The software is owned by the Company and/or
- * its supplier, and is protected under applicable copyright laws.
- * All rights are reserved. Any use in violation of the foregoing restrictions
- * may subject the user to criminal sanctions under applicable laws, as well
- * as to civil liability for the breach of the terms and conditions of this
- * license.
- *
- * THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
- * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
- * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
- * IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
- * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
- *
- *****************************************************************************/
+ */
+
 #ifdef FSC_HAVE_VDM
 
 #ifndef __FSC_VDM_DEFS_H__

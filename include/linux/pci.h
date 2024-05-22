@@ -2306,10 +2306,12 @@ static inline bool pci_is_thunderbolt_attached(struct pci_dev *pdev)
 #define pci_info(pdev, fmt, arg...)	dev_info(&(pdev)->dev, fmt, ##arg)
 #define pci_dbg(pdev, fmt, arg...)	dev_dbg(&(pdev)->dev, fmt, ##arg)
 
-#ifdef CONFIG_PCIE_KIRIN
-bool kirin_pcie_bypass_pm(struct pci_dev *dev);
+#ifdef CONFIG_PCIE_KPORT
+bool kport_pcie_bypass_pm(struct pci_dev *dev);
+bool kport_pcie_bypass_s4(struct pci_dev *dev);
 #else
-static inline bool kirin_pcie_bypass_pm(struct pci_dev * dev) {return false;}
+static inline bool kport_pcie_bypass_pm(struct pci_dev * dev) {return false;}
+static inline bool kport_pcie_bypass_s4(struct pci_dev * dev) {return false;}
 #endif
 
 #endif /* LINUX_PCI_H */

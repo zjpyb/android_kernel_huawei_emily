@@ -29,6 +29,7 @@
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
 #include <linux/reboot.h>
+#include <linux/version.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_device.h>
@@ -39,7 +40,7 @@
 #include <linux/mmc/core.h>
 #include <linux/mmc/host.h>
 
-#include <chipset_common/bfmr/bfm/core/bfm_core.h>
+#include <hwbootfail/chipsets/common/bootfail_common.h>
 #include <chipset_common/storage_rofa/storage_rofa.h>
 #include "storage_rochk.h"
 #include "crbroi.h"
@@ -90,10 +91,9 @@
 
 #define MMC_RSP_R1_RO_ERROR_MASK (R1_WP_VIOLATION | R1_ILLEGAL_COMMAND)
 
-#define BOOTDEVICE_DISK_NAME BFMR_SIZE_DISK_NAME
+#define BOOTDEVICE_DISK_NAME DISK_NAME_MAX_SIZE
 
 #define BOOTDEVICE_MODEL_SIZE   32
-#define BOOTDEVICE_FWREV_SIZE   32
 
 #define PARTITION_WRTRY_PATH    "/dev/block/by-name/rrecord"
 #define PARTITION_WRTRY_LEN     512
@@ -119,7 +119,7 @@ struct bootdevice_info {
 
 struct bootdevice_disk_info {
 	struct list_head disk_list;
-	struct bfmr_disk_info disk_info;
+	struct disk_info disk_info;
 };
 
 struct storage_rochk_completion {
@@ -316,8 +316,6 @@ void storage_rochk_record_bootdevice_manfid(unsigned int manfid)
 void storage_rochk_record_bootdevice_model(const char *model)
 {
 	if (model != NULL && strlen(model) < BOOTDEVICE_MODEL_SIZE) {
-		PRINT_INFO("%s: record the device model %c***\n",
-			__func__, model[0]);
 		strncpy(g_bootdev_info.model, model, BOOTDEVICE_MODEL_SIZE - 1);
 	}
 }
@@ -353,7 +351,13 @@ bool storage_rochk_is_mmc_card(const struct mmc_card *card)
 	if (card == NULL)
 		return false;
 
-	return mmc_card_mmc(card);
+	if (g_bootdev_info.type != 0)
+		return false;
+
+	if (mmc_card_mmc(card))
+		return strcmp(mmc_hostname(card->host), "mmc0") == 0;
+
+	return false;
 }
 
 /*
@@ -687,6 +691,91 @@ void storage_rochk_monitor_mmc_readonly(const struct mmc_card *card,
 		storage_rochk_action_rofault(method, action);
 }
 
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK
+static bool cmd_is_read_opcode(const struct mmc_command *cmd)
+{
+	return cmd->opcode == MMC_SEND_OP_COND ||
+		cmd->opcode == MMC_ALL_SEND_CID ||
+		cmd->opcode == MMC_SEND_EXT_CSD ||
+		cmd->opcode == MMC_SEND_CSD ||
+		cmd->opcode == MMC_SEND_CID ||
+		((cmd->opcode == MMC_SEND_STATUS) &&
+		(cmd->arg & (1 << 15))) ||
+		cmd->opcode == MMC_EXECUTE_READ_TASK ||
+		cmd->opcode == MMC_READ_SINGLE_BLOCK ||
+		cmd->opcode == MMC_READ_MULTIPLE_BLOCK ||
+		cmd->opcode == MMC_READ_DAT_UNTIL_STOP;
+}
+
+static inline bool cmd_has_ro_type_resp(const struct mmc_command *cmd)
+{
+	return (mmc_resp_type(cmd) == MMC_RSP_R1 ||
+		mmc_resp_type(cmd) == MMC_RSP_R1B) &&
+		((cmd->resp[0] & MMC_RSP_R1_RO_ERROR_MASK) != 0);
+}
+
+static bool cmd_is_out_dir(const struct mmc_command *cmd)
+{
+	if (cmd != NULL && cmd_is_read_opcode(cmd) == false)
+		return true;
+	return false;
+}
+
+void storage_rochk_monitor_mmc_cmd_readonly(
+	const struct mmc_card *card,
+	const struct mmc_command *cmd)
+{
+	unsigned int eol = g_bootdev_info.pre_eol_info;
+	bool matched = false;
+	unsigned int method;
+	unsigned int action;
+	bool do_action = false;
+	bool decrease_monitor_times;
+
+	if (atomic_read(&g_monitor_enabled) == 0)
+		return;
+
+	if (card == NULL || storage_rochk_is_mmc_card(card) == false)
+		return;
+
+	if (cmd == NULL)
+		return;
+
+	/* pass the write cmd and data request */
+	if (cmd_is_out_dir(cmd) == false)
+		return;
+
+	decrease_monitor_times =
+		(cmd->opcode == MMC_EXECUTE_WRITE_TASK) ||
+		(cmd->opcode == MMC_WRITE_BLOCK) ||
+		(cmd->opcode == MMC_WRITE_MULTIPLE_BLOCK);
+	if (decrease_monitor_times &&
+	    (atomic_add_unless(&g_monitor_times, -1, 0) == 0)) {
+		atomic_set(&g_monitor_enabled, 0);
+		return;
+	}
+
+	if (cmd_has_ro_type_resp(cmd)) {
+		matched = match_mmc_rofault(eol, cmd->resp[0]);
+		do_action = true;
+	}
+
+	if (do_action == false)
+		return;
+
+	if (matched) {
+		method = STORAGE_ROINFO_KNL_WRMON_DRIVER;
+		action = STORAGE_ROCHK_ACTION_REBOOT;
+	} else {
+		method = STORAGE_ROINFO_KNL_WRMON_SUSPICIOUS;
+		action = STORAGE_ROCHK_ACTION_NONE;
+	}
+
+	if (atomic_cmpxchg(&g_action_once, 0, 1) == 0)
+		storage_rochk_action_rofault(method, action);
+}
+#endif
+
 /*
  * Internal routines to implement storage readonly detect by writing test
  */
@@ -695,7 +784,11 @@ static int write_buffer(int fd, const char *buffer, int size)
 	int bytes = -EINTR;
 
 	while (bytes != 0) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+		bytes = ksys_write(fd, buffer, size);
+#else
 		bytes = sys_write(fd, buffer, size);
+#endif
 		if ((bytes < 0) && (bytes != -EINTR)) {
 			return bytes;
 		} else if (bytes == size) {
@@ -725,8 +818,11 @@ static unsigned int storage_ro_write_try(void)
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	fd_wr = ksys_open(PARTITION_WRTRY_PATH, O_RDWR, 0);
+#else
 	fd_wr = sys_open(PARTITION_WRTRY_PATH, O_RDWR, 0);
+#endif
 	if (fd_wr < 0) {
 		PRINT_ERR("%s: open partition failed\n", __func__);
 		goto out;
@@ -739,7 +835,11 @@ static unsigned int storage_ro_write_try(void)
 	}
 
 	/* write try */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	res = ksys_lseek(fd_wr, -1024, SEEK_END);
+#else
 	res = sys_lseek(fd_wr, -1024, SEEK_END);
+#endif
 	if (res < 0) {
 		PRINT_ERR("%s: seek file failed : %d\n", __func__, res);
 		goto out;
@@ -750,8 +850,11 @@ static unsigned int storage_ro_write_try(void)
 		PRINT_ERR("%s: write returns error : %d\n", __func__, res);
 		goto err_out;
 	}
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	res = ksys_fdatasync(fd_wr);
+#else
 	res = sys_fdatasync(fd_wr);
+#endif
 	if (res < 0) {
 		PRINT_ERR("%s: fdatasync file failed : %d\n", __func__, res);
 		goto err_out;
@@ -766,7 +869,11 @@ err_out:
 
 out:
 	if (fd_wr >= 0)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+		ksys_close(fd_wr);
+#else
 		sys_close(fd_wr);
+#endif
 	kfree(buffer);
 
 	set_fs(old_fs);
@@ -790,9 +897,9 @@ static int storage_ro_write_try_thread(void *param)
  * ioctl implementation routines.
  */
 int storage_rochk_ioctl_check_bootdisk_wp(
-	struct bfmr_bootdisk_wp_status_iocb *arg_u)
+	struct bootdisk_wp_status_iocb *arg_u)
 {
-	struct bfmr_bootdisk_wp_status_iocb ioc;
+	struct bootdisk_wp_status_iocb ioc;
 	char *disk_name = NULL;
 	int wp;
 	unsigned int method;
@@ -824,9 +931,9 @@ int storage_rochk_ioctl_check_bootdisk_wp(
 	return 0;
 }
 
-int storage_rochk_ioctl_enable_monitor(struct bfmr_storage_rochk_iocb *arg_u)
+int storage_rochk_ioctl_enable_monitor(struct storage_rochk_iocb *arg_u)
 {
-	struct bfmr_storage_rochk_iocb ioc;
+	struct storage_rochk_iocb ioc;
 	int value;
 
 	if (copy_from_user(&ioc, arg_u, sizeof(ioc)))
@@ -839,9 +946,9 @@ int storage_rochk_ioctl_enable_monitor(struct bfmr_storage_rochk_iocb *arg_u)
 }
 
 int storage_rochk_ioctl_run_storage_wrtry_sync(
-	struct bfmr_storage_rochk_iocb *arg_u)
+	struct storage_rochk_iocb *arg_u)
 {
-	struct bfmr_storage_rochk_iocb ioc;
+	struct storage_rochk_iocb ioc;
 	struct storage_rochk_completion wrtry_comp;
 	unsigned long complete_intime;
 	unsigned int wr_res;
@@ -897,9 +1004,9 @@ int storage_rochk_ioctl_run_storage_wrtry_sync(
 	return storage_rochk_action_rofault(method, action);
 }
 
-int storage_rofa_ioctl_get_rofa_info(struct bfmr_storage_rofa_info_iocb *arg_u)
+int storage_rofa_ioctl_get_rofa_info(struct storage_rofa_info_iocb *arg_u)
 {
-	struct bfmr_storage_rofa_info_iocb ioc;
+	struct storage_rofa_info_iocb ioc;
 	int res;
 
 	ioc.mode = get_storage_rofa_bootopt();
@@ -925,9 +1032,9 @@ int storage_rofa_ioctl_get_rofa_info(struct bfmr_storage_rofa_info_iocb *arg_u)
 }
 
 int storage_rochk_ioctl_get_bootdevice_disk_count(
-	struct bfmr_storage_rochk_iocb *arg_u)
+	struct storage_rochk_iocb *arg_u)
 {
-	struct bfmr_storage_rochk_iocb ioc;
+	struct storage_rochk_iocb ioc;
 	struct bootdevice_disk_info *dinfo = NULL;
 	struct bootdevice_disk_info *next = NULL;
 
@@ -947,9 +1054,9 @@ int storage_rochk_ioctl_get_bootdevice_disk_count(
 }
 
 int storage_rochk_ioctl_get_bootdevice_disk_info(
-	struct bfmr_bootdevice_disk_info_iocb *arg_u)
+	struct bootdevice_disk_info_iocb *arg_u)
 {
-	struct bfmr_bootdevice_disk_info_iocb iocb;
+	struct bootdevice_disk_info_iocb iocb;
 	struct bootdevice_disk_info *dinfo = NULL;
 	struct bootdevice_disk_info *next = NULL;
 	unsigned int disk_count;
@@ -988,9 +1095,9 @@ int storage_rochk_ioctl_get_bootdevice_disk_info(
 }
 
 int storage_rochk_ioctl_get_bootdevice_prod_info(
-	struct bfmr_bootdevice_prod_info_iocb *arg_u)
+	struct bootdevice_prod_info_iocb *arg_u)
 {
-	struct bfmr_bootdevice_prod_info_iocb info;
+	struct bootdevice_prod_info_iocb info;
 
 	memset(&info, 0, sizeof(info));
 	snprintf(info.prod_info, sizeof(info.prod_info), "%s,%s",
@@ -1039,14 +1146,27 @@ MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 /*
  * Storage Read Only Fault Injection module
  */
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK
+#include <soc/mediatek/log_store_kernel.h>
+#else
 #include <linux/hisi/rdr_hisi_platform.h>
+#endif
 #include <linux/scatterlist.h>
 #include <linux/sched.h>
 #include <linux/crc7.h>
-
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK
+#ifdef CONFIG_BOOT_DETECTOR
+#define STORAGE_ROCHK_RO_INJECT_OFFSET         16
+#define STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR \
+	(get_rofa_mem_base() + STORAGE_ROCHK_RO_INJECT_OFFSET)
+#else
+#define STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR  \
+	(&(((struct sram_log_header *)CONFIG_MTK_DRAM_LOG_STORE_ADDR)->ro_inject))
+#endif
+#else
 #define STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR  \
 	(HISI_SUB_RESERVED_UNUSED_PHYMEM_BASE + 16)
-
+#endif
 #define EMMC_CSD_CMD_BLKSZ_LEN        16
 
 #define FASTBOOT_STORAGE_ROCHK_ROFAULT_SAMSUNG_UFS      0x46490001
@@ -1222,8 +1342,12 @@ unsigned int storage_rofi_should_inject_write_prot_status(void)
 	unsigned char *la = NULL;
 	unsigned int rofi = 0;
 
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && defined(CONFIG_BOOT_DETECTOR)
+	la = (unsigned char *)(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR);
+#else
 	la = ioremap_nocache(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR,
 		sizeof(unsigned int));
+#endif
 	if (la != NULL) {
 		rofi = readl(la);
 		iounmap(la);
@@ -1290,8 +1414,12 @@ int storage_rofi_switch_mmc_card_pwronwp(const struct mmc_card *card)
 	if (card == NULL)
 		return -EINVAL;
 
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && defined(CONFIG_BOOT_DETECTOR)
+	la = (unsigned char *)(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR);
+#else
 	la = ioremap_nocache(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR,
 		sizeof(unsigned int));
+#endif
 	if (la == NULL) {
 		PRINT_ERR("%s: ioremap failed\n", __func__);
 		return -EINVAL;
@@ -1344,8 +1472,12 @@ static int __init storage_rofi_init(void)
 {
 	unsigned char *la = NULL;
 
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && defined(CONFIG_BOOT_DETECTOR)
+	la = (unsigned char *)(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR);
+#else
 	la = ioremap_nocache(STORAGE_ROCHK_FAULT_INJECT_PHYMEM_ADDR,
 		sizeof(unsigned int));
+#endif
 	if (la != NULL) {
 		g_rofi_value = readl(la);
 		iounmap(la);

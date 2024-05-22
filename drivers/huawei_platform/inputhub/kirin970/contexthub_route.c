@@ -18,7 +18,6 @@
 #include <linux/hisi/hisi_syscounter.h>
 #include <linux/time64.h>
 #include <linux/delay.h>
-#include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
@@ -533,15 +532,15 @@ ssize_t inputhub_route_write(unsigned short port, char *buf, size_t count)
 }
 EXPORT_SYMBOL_GPL(inputhub_route_write);
 
-static const pkt_header_t *normalpack(const char *buf, unsigned int length)
+static const struct pkt_header *normalpack(const char *buf, unsigned int length)
 {
-	const pkt_header_t *head = (const pkt_header_t *)buf;
+	const struct pkt_header *head = (const struct pkt_header *)buf;
 	static struct link_package linker = { -1 };	/*init partial_order to -1 to aviod lost first pkt*/
 
 	/*try to judge which pkt it is*/
-	if ((TAG_BEGIN <= head->tag && head->tag < TAG_END)
-	    && (head->length <= (MAX_PKT_LENGTH_AP - sizeof(pkt_header_t)))) {
-		linker.total_pkg_len = head->length + OFFSET_OF_END_MEM(pkt_header_t, length);
+	if ((head->tag >= TAG_BEGIN && head->tag < TAG_END) &&
+		(head->length <= (MAX_PKT_LENGTH_AP - sizeof(struct pkt_header)))) {
+		linker.total_pkg_len = head->length + OFFSET_OF_END_MEM(struct pkt_header, length);
 		if (linker.total_pkg_len > (int)length) {	/*need link other partial packages*/
 			linker.partial_order = head->partial_order;	/*init partial_order*/
 			if (length <= sizeof(linker.link_buffer)) {
@@ -563,7 +562,7 @@ static const pkt_header_t *normalpack(const char *buf, unsigned int length)
 				memcpy(linker.link_buffer + linker.offset, buf + sizeof(pkt_part_header_t), partial_pkt_data_length);
 				linker.offset += partial_pkt_data_length;
 				if (linker.offset >= linker.total_pkg_len) {	/*link finished*/
-					return (pkt_header_t *) linker.link_buffer;
+					return (struct pkt_header *) linker.link_buffer;
 				} else {
 					goto receive_next;	/*receive next partial package*/
 				}
@@ -589,16 +588,16 @@ static int inputhub_mcu_send(const char* buf, unsigned int length)
 	len = (length + sizeof(mbox_msg_t) - 1) / (sizeof(mbox_msg_t));
 	ret = RPROC_SYNC_SEND(ipc_ap_to_iom_mbx, (mbox_msg_t*) buf, len, NULL, 0);
 	if (ret) {
-	    hwlog_err("RPROC_SYNC_SEND return %d.\n", ret);
-	    return -1;
+		hwlog_err("RPROC_SYNC_SEND return %d\n", ret);
+		return -1;
 	}
 	peri_used_release();
 	return ret;
 }
 
-static const pkt_header_t *pack(const char *buf, unsigned int length, bool *is_notifier)
+static const struct pkt_header *pack(const char *buf, unsigned int length, bool *is_notifier)
 {
-	const pkt_header_t *head = normalpack(buf, length);
+	const struct pkt_header *head = normalpack(buf, length);
 #ifdef CONFIG_CONTEXTHUB_SHMEM
 	if(head && (head->tag == TAG_SHAREMEM))
 	{
@@ -619,7 +618,7 @@ static int unpack(const void *buf, unsigned int length)
 	static int partial_order;
 
 	mutex_lock(&mutex_unpack);
-	((pkt_header_t *) buf)->partial_order = partial_order++;	/*inc partial_order in header*/
+	((struct pkt_header *) buf)->partial_order = partial_order++;	/*inc partial_order in header*/
 	if (length <= MAX_SEND_LEN) {
 		ret = inputhub_mcu_send((const char *)buf, length);
 		goto out;
@@ -634,10 +633,10 @@ static int unpack(const void *buf, unsigned int length)
 
 		((pkt_part_header_t *) send_partial_buf)->tag = TAG_END;
 		for (send_cnt = MAX_SEND_LEN; send_cnt < (int)length;
-		     send_cnt += (MAX_SEND_LEN - sizeof(pkt_part_header_t))) {
-			((pkt_part_header_t *) send_partial_buf)->partial_order = partial_order++;	/*inc partial_order in partial pkt*/
-			memcpy(send_partial_buf + sizeof(pkt_part_header_t),
-			       (const char *)buf + send_cnt, min(MAX_SEND_LEN - sizeof(pkt_part_header_t), (int)length - send_cnt));
+			send_cnt += (MAX_SEND_LEN - sizeof(pkt_part_header_t))) {
+			((pkt_part_header_t *)send_partial_buf)->partial_order = partial_order++;
+			memcpy(send_partial_buf + sizeof(pkt_part_header_t), (const char *)buf + send_cnt,
+				min(MAX_SEND_LEN - sizeof(pkt_part_header_t), (int)length - send_cnt));
 			ret = inputhub_mcu_send(send_partial_buf, MAX_SEND_LEN);
 			if (ret != 0)
 				goto out;
@@ -655,7 +654,7 @@ static struct mcu_event_wait_list {
 } mcu_event_wait_list;
 
 void init_wait_node_add_list(struct mcu_event_waiter *waiter, t_match match,
-			     void *out_data, int out_data_len, void *priv)
+	void *out_data, int out_data_len, void *priv)
 {
 	unsigned long flags = 0;
 
@@ -678,7 +677,7 @@ void list_del_mcu_event_waiter(struct mcu_event_waiter *self)
 	spin_unlock_irqrestore(&mcu_event_wait_list.slock, flags);
 }
 
-static void wake_up_mcu_event_waiter(const pkt_header_t *head)
+static void wake_up_mcu_event_waiter(const struct pkt_header *head)
 {
 	unsigned long flags = 0;
 	struct mcu_event_waiter *pos, *n;
@@ -690,7 +689,6 @@ static void wake_up_mcu_event_waiter(const pkt_header_t *head)
 				memcpy(pos->out_data, head, pos->out_data_len);
 			}
 			complete(&pos->complete);
-			/*to support diffrent task wait for same event, here we don't break;*/
 		}
 	}
 	spin_unlock_irqrestore(&mcu_event_wait_list.slock, flags);
@@ -699,8 +697,8 @@ static void wake_up_mcu_event_waiter(const pkt_header_t *head)
 static int inputhub_mcu_write_cmd_nolock(const void *buf, unsigned int length)
 {
 	int ret = 0;
-	pkt_header_t *pkt = (pkt_header_t *) buf;
-	((pkt_header_t *) buf)->resp = RESP;
+	struct pkt_header *pkt = (struct pkt_header *) buf;
+	((struct pkt_header *) buf)->resp = RESP;
 	if (!WAIT_FOR_MCU_RESP_AFTER_SEND(buf, unpack(buf, length), 2000)) {
 		hwlog_err("wait for tag:%s:%d\tcmd:%d resp timeout in %s\n", obj_tag_str[pkt->tag], pkt->tag, pkt->cmd, __func__);
 		ret = -1;
@@ -762,7 +760,7 @@ char *obj_tag_str[] = {
 	[TAG_END] = "TAG_END",
 };
 
-static bool is_extend_step_counter_cmd(const pkt_header_t *pkt)
+static bool is_extend_step_counter_cmd(const struct pkt_header *pkt)
 {
 	bool ret = false;
 
@@ -790,7 +788,7 @@ static bool is_extend_step_counter_cmd(const pkt_header_t *pkt)
 }
 
 /*To keep same with mcu, to activate sensor need open first and then setdelay*/
-static void update_sensor_info(const pkt_header_t *pkt)
+static void update_sensor_info(const struct pkt_header *pkt)
 {
 	if (TAG_SENSOR_BEGIN <= pkt->tag && pkt->tag < TAG_SENSOR_END) {
 		mutex_lock(&mutex_update);
@@ -818,8 +816,8 @@ int inputhub_mcu_write_cmd(const void *buf, unsigned int length)
 		hwlog_err("length = %d is too large in %s\n", (int)length, __func__);
 		return -EINVAL;
 	}
-	if (TAG_SENSOR_BEGIN > ((pkt_header_t *) buf)->tag || ((pkt_header_t *) buf)->tag >=TAG_END) {
-		hwlog_err("tag = %d is wrong in %s\n", ((pkt_header_t *) buf)->tag, __func__);
+	if (TAG_SENSOR_BEGIN > ((struct pkt_header *) buf)->tag || ((struct pkt_header *) buf)->tag >=TAG_END) {
+		hwlog_err("tag = %d is wrong in %s\n", ((struct pkt_header *) buf)->tag, __func__);
 		return -EINVAL;
 	}
 	mutex_lock(&mutex_write_cmd);
@@ -827,7 +825,7 @@ int inputhub_mcu_write_cmd(const void *buf, unsigned int length)
 	} else if (g_iom3_state == IOM3_ST_RECOVERY) {	/*true - only update*/
 		is_in_recovery = true;
 	} else if (g_iom3_state == IOM3_ST_REPEAT) {	/*IOM3_ST_REPEAT...BLOCK IN HERE, WAIT FOR REPEAT COMPLETE*/
-		hwlog_err("wait for iom3 recovery complete. tag %d cmd %d.\n", ((pkt_header_t *)buf)->tag, ((pkt_header_t *)buf)->cmd);
+		hwlog_err("wait for iom3 recovery complete. tag %d cmd %d.\n", ((struct pkt_header *)buf)->tag, ((struct pkt_header *)buf)->cmd);
 		mutex_unlock(&mutex_write_cmd);
 		wait_event(iom3_rec_waitq, (g_iom3_state == IOM3_ST_NORMAL));
 		hwlog_err("wakeup for iom3 recovery complete\n");
@@ -839,15 +837,14 @@ int inputhub_mcu_write_cmd(const void *buf, unsigned int length)
 		mutex_unlock(&mutex_write_cmd);
 		goto update_info;
 	}
-	((pkt_header_t *) buf)->tranid = tranid++;
+	((struct pkt_header *) buf)->tranid = tranid++;
 	ret = unpack(buf, length);
 	mutex_unlock(&mutex_write_cmd);
 
 update_info:
-	update_current_app_status(((pkt_header_t *) buf)->tag, ((pkt_header_t *) buf)->cmd);
-	if (!is_extend_step_counter_cmd(((const pkt_header_t *)buf))) {
-		update_sensor_info(((const pkt_header_t *)buf));
-	}
+	update_current_app_status(((struct pkt_header *) buf)->tag, ((struct pkt_header *) buf)->cmd);
+	if (!is_extend_step_counter_cmd(((const struct pkt_header *)buf)))
+		update_sensor_info(((const struct pkt_header *)buf));
 	if (ret && (false == is_in_recovery)) {
 		iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_IPC_TX_TIMEOUT);
 	}
@@ -868,7 +865,7 @@ static int inputhub_mcu_write_cmd_adapter(const void *buf, unsigned int length, 
 	} else {
 		mutex_lock(&type_record.lock_mutex);
 		spin_lock_irqsave(&type_record.lock_spin, flags);
-		type_record.pkt_info = ((pkt_header_t *) buf);
+		type_record.pkt_info = ((struct pkt_header *) buf);
 		type_record.rd = rd;
 		spin_unlock_irqrestore(&type_record.lock_spin, flags);
 		while (retry_count--) {	/*send retry 3 times*/
@@ -879,7 +876,7 @@ static int inputhub_mcu_write_cmd_adapter(const void *buf, unsigned int length, 
 				ret = -1;
 			} else if (!wait_for_completion_timeout(&type_record.resp_complete, msecs_to_jiffies(iom3_timeout))) {
 				hwlog_err("wait for response timeout in %s, retry %d. tag %d cmd %d. g_iom3_state %d.\n",
-				     __func__, retry_count, ((pkt_header_t *) buf)->tag, ((pkt_header_t *) buf)->cmd, g_iom3_state);
+					__func__, retry_count, ((struct pkt_header *)buf)->tag, ((struct pkt_header *)buf)->cmd, g_iom3_state);
 				if (retry_count == 0) {
 					iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_IPC_RX_TIMEOUT);
 				}
@@ -953,7 +950,7 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 	}
 
 	if (enable) {
-		pkt_header_t pkt = (pkt_header_t) {
+		struct pkt_header pkt = (struct pkt_header) {
 			.tag = tag,
 			.cmd = CMD_CMN_OPEN_REQ,
 			.resp = NO_RESP,
@@ -965,7 +962,7 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 		else
 			return inputhub_mcu_write_cmd_nolock(&pkt, sizeof(pkt));
 	} else {
-		pkt_header_t pkt = (pkt_header_t) {
+		struct pkt_header pkt = (struct pkt_header) {
 			.tag = tag,
 			.cmd = CMD_CMN_CLOSE_REQ,
 			.resp = NO_RESP,
@@ -998,7 +995,7 @@ static int inputhub_sensor_setdelay_internal(int tag, interval_param_t *param, b
 	pkt.hd.length = sizeof(pkt.param);
 	memcpy(&pkt.param, param, sizeof(pkt.param));
 	hwlog_info("set sensor %s (tag:%d) delay %d ms!\n",
-		   obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag, param->period);
+		obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag, param->period);
 	if (use_lock) {
 		return inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);
 	} else {
@@ -1054,40 +1051,40 @@ int write_customize_cmd(const struct write_info *wr, struct read_info *rd, bool 
 		hwlog_err("tag = %d error in %s\n", wr->tag, __func__);
 		return -EINVAL;
 	}
-	if (wr->wr_len + sizeof(pkt_header_t) > MAX_PKT_LENGTH) {
+	if (wr->wr_len + sizeof(struct pkt_header) > MAX_PKT_LENGTH) {
 		hwlog_err("-----------> wr_len = %d is too large in %s\n", wr->wr_len, __func__);
 		return -EINVAL;
 	}
 	memset(&buf, 0, sizeof(buf));
-	((pkt_header_t *) buf)->tag = wr->tag;
-	((pkt_header_t *) buf)->cmd = wr->cmd;
-	((pkt_header_t *) buf)->resp = ((rd != NULL) ? (RESP) : (NO_RESP));
-	((pkt_header_t *) buf)->length = wr->wr_len;
+	((struct pkt_header *) buf)->tag = wr->tag;
+	((struct pkt_header *) buf)->cmd = wr->cmd;
+	((struct pkt_header *) buf)->resp = ((rd != NULL) ? (RESP) : (NO_RESP));
+	((struct pkt_header *) buf)->length = wr->wr_len;
 	if (wr->wr_buf != NULL) {
-		memcpy(buf + sizeof(pkt_header_t), wr->wr_buf, wr->wr_len);
+		memcpy(buf + sizeof(struct pkt_header), wr->wr_buf, wr->wr_len);
 	}
 	if ((wr->tag == TAG_SHAREMEM) && (g_iom3_state == IOM3_ST_REPEAT || g_iom3_state == IOM3_ST_RECOVERY || iom3_power_state == ST_SLEEP))
 	{
-		return inputhub_mcu_write_cmd_nolock(buf, sizeof(pkt_header_t) + wr->wr_len);
+		return inputhub_mcu_write_cmd_nolock(buf, sizeof(struct pkt_header) + wr->wr_len);
 	}
 	if (is_lock)
-		return inputhub_mcu_write_cmd_adapter(buf, sizeof(pkt_header_t) + wr->wr_len, rd);
+		return inputhub_mcu_write_cmd_adapter(buf, sizeof(struct pkt_header) + wr->wr_len, rd);
 	else
-		return inputhub_mcu_write_cmd_nolock(buf, sizeof(pkt_header_t) + wr->wr_len);
+		return inputhub_mcu_write_cmd_nolock(buf, sizeof(struct pkt_header) + wr->wr_len);
 }
 
-static bool is_fingerprint_data_report(const pkt_header_t* head)
+static bool is_fingerprint_data_report(const struct pkt_header* head)
 {
-    return ((head->tag == TAG_FP) || (head->tag == TAG_FP_UD)) && (CMD_DATA_REQ == head->cmd);
+	return ((head->tag == TAG_FP) || (head->tag == TAG_FP_UD)) && (head->cmd == CMD_DATA_REQ);
 }
 
-static bool is_motion_data_report(const pkt_header_t *head)
+static bool is_motion_data_report(const struct pkt_header *head)
 {
 	/*all sensors report data with command CMD_PRIVATE*/
 	return (head->tag == TAG_MOTION) && (CMD_DATA_REQ == head->cmd);
 }
 
-static bool is_ca_data_report(const pkt_header_t *head)
+static bool is_ca_data_report(const struct pkt_header *head)
 {
 	/*all sensors report data with command CMD_PRIVATE*/
 	return (head->tag == TAG_CA) && (CMD_DATA_REQ == head->cmd);
@@ -1098,36 +1095,36 @@ static bool cmd_match(int req, int resp)
 	return (req + 1) == resp;
 }
 
-static bool is_sensor_data_report(const pkt_header_t *head)
+static bool is_sensor_data_report(const struct pkt_header *head)
 {
 	/*all sensors report data with command CMD_PRIVATE*/
 	return (TAG_SENSOR_BEGIN <= head->tag && head->tag < TAG_SENSOR_END)
 	    && (CMD_DATA_REQ == head->cmd);
 }
 
-static bool is_fingersense_zaxis_data_report(const pkt_header_t *head)
+static bool is_fingersense_zaxis_data_report(const struct pkt_header *head)
 {
 	return (TAG_FINGERSENSE == head->tag) && (CMD_DATA_REQ == head->cmd);
 }
 
-static bool is_requirement_resp(const pkt_header_t *head)
+static bool is_requirement_resp(const struct pkt_header *head)
 {
 	return (0 == (head->cmd & 1));	/*even cmds are resp cmd*/
 }
 
-static int report_resp_data(const pkt_subcmd_resp_t *head)
+static int report_resp_data(const struct pkt_subcmd_resp *head)
 {
 	int ret = 0;
 	unsigned long flags = 0;
 
 	spin_lock_irqsave(&type_record.lock_spin, flags);
-	if (type_record.rd != NULL && type_record.pkt_info != NULL	/*check record info*/
-	    && (cmd_match(type_record.pkt_info->cmd, head->hd.cmd))
-	    && (type_record.pkt_info->tranid == head->hd.tranid)) {	/*rcv resp from mcu*/
+	if (type_record.rd != NULL && type_record.pkt_info != NULL &&
+		(cmd_match(type_record.pkt_info->cmd, head->hd.cmd)) &&
+		(type_record.pkt_info->tranid == head->hd.tranid)) {
 		if (head->hd.length <= (MAX_PKT_LENGTH + sizeof(head->hd.errno) + sizeof(head->subcmd))) {	/*data length ok*/
 			type_record.rd->errno = head->hd.errno;	/*fill errno to app*/
 			type_record.rd->data_length = (head->hd.length - sizeof(head->hd.errno) - sizeof(head->subcmd));	/*fill data_length to app, data_length means data lenght below*/
-			memcpy(type_record.rd->data, (char *)head + sizeof(pkt_subcmd_resp_t), type_record.rd->data_length);	/*fill resp data to app*/
+			memcpy(type_record.rd->data, (char *)head + sizeof(struct pkt_subcmd_resp), type_record.rd->data_length);	/*fill resp data to app*/
 		} else {	/*resp data too large*/
 			type_record.rd->errno = -EINVAL;
 			type_record.rd->data_length = 0;
@@ -1145,7 +1142,7 @@ static void init_aod_workqueue(void)
 	mcu_aod_wq = create_singlethread_workqueue("mcu_aod_workqueue");
 }
 
-int __weak dss_sr_of_sh_callback(const pkt_header_t *head)
+int __weak dss_sr_of_sh_callback(const struct pkt_header *head)
 {
 	if (head)
 		hwlog_debug("weak dss_sr_of_sh_callback:%d\n", head->cmd);
@@ -1171,7 +1168,7 @@ static void mcu_aod_notifier_handler(struct work_struct *work)
 	kfree(p);
 }
 
-static bool is_aod_notifier(const pkt_header_t *head)
+static bool is_aod_notifier(const struct pkt_header *head)
 {
 	uint32_t *sub_cmd;
 	struct mcu_notifier_work *notifier_work;
@@ -1198,13 +1195,13 @@ static bool is_aod_notifier(const pkt_header_t *head)
 			if (NULL == notifier_work)
 				return true;
 
-			notifier_work->data = kzalloc(head->length + sizeof(pkt_header_t), GFP_ATOMIC);
+			notifier_work->data = kzalloc(head->length + sizeof(struct pkt_header), GFP_ATOMIC);
 			if (NULL == notifier_work->data) {
 				kfree(notifier_work);
 				return true;
 			}
 
-			memcpy(notifier_work->data, head, sizeof(pkt_header_t) + head->length);
+			memcpy(notifier_work->data, head, sizeof(struct pkt_header) + head->length);
 			INIT_WORK(&notifier_work->worker, mcu_aod_notifier_handler);
 			queue_work(mcu_aod_wq, &notifier_work->worker);
 		}
@@ -1234,10 +1231,10 @@ static void mcu_notifier_handler(struct work_struct *work)
 	/*search mcu_notifier, call all call_backs*/
 	struct mcu_notifier_node *pos, *n;
 	list_for_each_entry_safe(pos, n, &mcu_notifier.head, entry) {
-		if ((pos->tag == ((const pkt_header_t *)p->data)->tag)
-		    && (pos->cmd == ((const pkt_header_t *)p->data)->cmd)) {
+		if ((pos->tag == ((const struct pkt_header *)p->data)->tag) &&
+			(pos->cmd == ((const struct pkt_header *)p->data)->cmd)) {
 			if (pos->notify != NULL) {
-				pos->notify((const pkt_header_t *)p->data);
+				pos->notify((const struct pkt_header *)p->data);
 			}
 		}
 	}
@@ -1246,24 +1243,24 @@ static void mcu_notifier_handler(struct work_struct *work)
 	kfree(p);
 }
 
-static void mcu_notifier_queue_work(const pkt_header_t *head, void (*fn)(struct work_struct *work))
+static void mcu_notifier_queue_work(const struct pkt_header *head, void (*fn)(struct work_struct *work))
 {
 	struct mcu_notifier_work *notifier_work = kmalloc(sizeof(struct mcu_notifier_work), GFP_ATOMIC);
 	if (NULL == notifier_work)
 		return;
 	memset(notifier_work, 0, sizeof(struct mcu_notifier_work));
-	notifier_work->data = kmalloc(head->length + sizeof(pkt_header_t), GFP_ATOMIC);
+	notifier_work->data = kmalloc(head->length + sizeof(struct pkt_header), GFP_ATOMIC);
 	if (NULL == notifier_work->data) {
 		kfree(notifier_work);
 		return;
 	}
-	memset(notifier_work->data, 0, head->length + sizeof(pkt_header_t));
-	memcpy(notifier_work->data, head, sizeof(pkt_header_t) + head->length);
+	memset(notifier_work->data, 0, head->length + sizeof(struct pkt_header));
+	memcpy(notifier_work->data, head, sizeof(struct pkt_header) + head->length);
 	INIT_WORK(&notifier_work->worker, fn);
 	queue_work(mcu_notifier.mcu_notifier_wq, &notifier_work->worker);
 }
 
-static bool is_mcu_notifier(const pkt_header_t *head)
+static bool is_mcu_notifier(const struct pkt_header *head)
 {
 	struct mcu_notifier_node *pos, *n;
 	unsigned long flags = 0;
@@ -1279,36 +1276,36 @@ static bool is_mcu_notifier(const pkt_header_t *head)
 	return false;
 }
 
-static bool is_mcu_wakeup(const pkt_header_t *head)
+static bool is_mcu_wakeup(const struct pkt_header *head)
 {
-	if ((TAG_SYS == head->tag) && (CMD_SYS_STATUSCHANGE_REQ == head->cmd)
-	    && (ST_WAKEUP == ((pkt_sys_statuschange_req_t *) head)->status)) {
+	if ((head->tag == TAG_SYS) && (head->cmd == CMD_SYS_STATUSCHANGE_REQ) &&
+		(((pkt_sys_statuschange_req_t *)head)->status == ST_WAKEUP))
 		return true;
-	}
+
 	return false;
 }
 
-static bool is_mcu_resume_mini(const pkt_header_t *head)
+static bool is_mcu_resume_mini(const struct pkt_header *head)
 {
-	if ((TAG_SYS == head->tag) && (CMD_SYS_STATUSCHANGE_REQ == head->cmd)
-	    	&& ST_MINSYSREADY == ((pkt_sys_statuschange_req_t *) head)->status
-	    	&& IOM3_RECOVERY_MINISYS != atomic_read(&iom3_rec_state)) {
+	if ((head->tag == TAG_SYS) && (head->cmd == CMD_SYS_STATUSCHANGE_REQ) &&
+		((pkt_sys_statuschange_req_t *)head)->status == ST_MINSYSREADY &&
+		atomic_read(&iom3_rec_state) != IOM3_RECOVERY_MINISYS)
 		return true;
-	}
+
 	return false;
 }
 
-static bool is_mcu_resume_all(const pkt_header_t *head)
+static bool is_mcu_resume_all(const struct pkt_header *head)
 {
-	if ((TAG_SYS == head->tag) && (CMD_SYS_STATUSCHANGE_REQ == head->cmd)
-	    	&& ST_MCUREADY == ((pkt_sys_statuschange_req_t *) head)->status
-	    	&& IOM3_RECOVERY_MINISYS != atomic_read(&iom3_rec_state)) {
+	if ((head->tag == TAG_SYS) && (head->cmd == CMD_SYS_STATUSCHANGE_REQ) &&
+		((pkt_sys_statuschange_req_t*)head)->status == ST_MCUREADY &&
+		atomic_read(&iom3_rec_state) != IOM3_RECOVERY_MINISYS)
 		return true;
-	}
+
 	return false;
 }
 
-int register_mcu_event_notifier(int tag, int cmd, int (*notify) (const pkt_header_t *head))
+int register_mcu_event_notifier(int tag, int cmd, int (*notify) (const struct pkt_header *head))
 {
 	struct mcu_notifier_node *pnode, *n;
 	int ret = 0;
@@ -1344,7 +1341,7 @@ out:
 	return ret;
 }
 
-int unregister_mcu_event_notifier(int tag, int cmd, int (*notify) (const pkt_header_t *head))
+int unregister_mcu_event_notifier(int tag, int cmd, int (*notify) (const struct pkt_header *head))
 {
 	struct mcu_notifier_node *pos, *n;
 	unsigned long flags = 0;
@@ -1373,7 +1370,7 @@ static void step_counter_data_process(pkt_step_counter_data_req_t *head)
 	head->total_floor_ascend = valid_floor_count;
 
 	if ((head->record_count > 0) && (head->record_count != EXT_PEDO_VERSION_2) ) {//extend step counter data structure changed
-		int extend_effect_len = head->hd.length + sizeof(pkt_header_t) - OFFSET(pkt_step_counter_data_req_t, begin_time); /*skip offset of begin_time*/
+		int extend_effect_len = head->hd.length + sizeof(struct pkt_header) - OFFSET(pkt_step_counter_data_req_t, begin_time); /*skip offset of begin_time*/
 		char motion_data[extend_effect_len + 1];	/*reserve 1 byte for motion type*/
 		motion_data[0] = MOTIONHUB_TYPE_HW_STEP_COUNTER;	/*add motion type*/
 		memcpy(motion_data + 1, &head->begin_time, extend_effect_len);	/*the offset rely on sizeof enum motion_type_t of mcu, now it is 1, we suggest motion_type_t use uint8_t, because sizeof(enum) may diffrernt between AP and mcu;*/
@@ -1391,68 +1388,58 @@ void save_step_count(void)
 	recovery_floor_count = valid_floor_count;
 }
 
-static bool is_dmd_log_data_report(const pkt_header_t *head)
+static bool is_dmd_log_data_report(const struct pkt_header *head)
 {
 	/*all sensors report data with command CMD_PRIVATE*/
 	pkt_dmd_log_report_req_t *buf = (pkt_dmd_log_report_req_t *) head;
 	return (TAG_LOG == head->tag) && (CMD_LOG_REPORT_REQ == head->cmd) && (buf->level == LOG_LEVEL_FATAL);
 }
 
-static bool is_additional_info_report(const pkt_header_t *head)
+static bool is_additional_info_report(const struct pkt_header *head)
 {
 	return (CMD_CMN_CONFIG_REQ == head->cmd) && (SUB_CMD_ADDITIONAL_INFO == ((pkt_subcmd_req_t *)head)->subcmd);
 }
 static int sensor_need_reset_power(pkt_dmd_log_report_req_t* pkt)
 {
-    struct timespec ts;
-    int ret = 0;
+	struct timespec ts;
+	int ret = 0;
 
-    if (!need_reset_io_power)
-    { goto OUT; }
+	if (!need_reset_io_power)
+		goto OUT;
 
-    get_monotonic_boottime(&ts);
+	get_monotonic_boottime(&ts);
 
-    if ((pkt->dmd_id == DSM_SHB_ERR_MCU_ALS ) && (pkt->dmd_case == DMD_CASE_ALS_NEED_RESET_POWER ))
-    {
-        pkt->hd.tag = TAG_ALS;
-        if ((ts.tv_sec - als_last_reset_period) > RESET_REFRESH_PERIOD)
-        {
-            als_last_reset_period = ts.tv_sec;
-            als_retry_cnt = ALS_RESET_COUNT;
-        }
+	if ((pkt->dmd_id == DSM_SHB_ERR_MCU_ALS) && (pkt->dmd_case == DMD_CASE_ALS_NEED_RESET_POWER)) {
+		pkt->hd.tag = TAG_ALS;
+		if ((ts.tv_sec - als_last_reset_period) > RESET_REFRESH_PERIOD) {
+			als_last_reset_period = ts.tv_sec;
+			als_retry_cnt = ALS_RESET_COUNT;
+		}
 
-        if (als_retry_cnt)
-        {
-            als_retry_cnt--;
-            ret = 1;
-        }
-        else
-        {
-            hwlog_err("als abnormal exceed reset limit\n");
-        }
-    }
-    if ((pkt->dmd_id == DSM_SHB_ERR_MCU_PS ) && (pkt->dmd_case == DMD_CASE_PS_NEED_RESET_POWER ))
-    {
-        pkt->hd.tag = TAG_PS;
-        if ((ts.tv_sec - ps_last_reset_period) > RESET_REFRESH_PERIOD)
-        {
-            ps_last_reset_period = ts.tv_sec;
-            ps_retry_cnt = PS_RESET_COUNT;
-        }
+		if (als_retry_cnt) {
+			als_retry_cnt--;
+			ret = 1;
+		} else {
+			hwlog_err("als abnormal exceed reset limit\n");
+		}
+	}
 
-        if (ps_retry_cnt)
-        {
-            ps_retry_cnt--;
-            ret = 1;
-        }
-        else
-        {
-            hwlog_err("ps abnormal exceed reset limit\n");
-        }
-    }
+	if ((pkt->dmd_id == DSM_SHB_ERR_MCU_PS) && (pkt->dmd_case == DMD_CASE_PS_NEED_RESET_POWER)) {
+		pkt->hd.tag = TAG_PS;
+		if ((ts.tv_sec - ps_last_reset_period) > RESET_REFRESH_PERIOD) {
+			ps_last_reset_period = ts.tv_sec;
+			ps_retry_cnt = PS_RESET_COUNT;
+		}
 
+		if (ps_retry_cnt) {
+			ps_retry_cnt--;
+			ret = 1;
+		} else {
+			hwlog_err("ps abnormal exceed reset limit\n");
+		}
+	}
 OUT:
-     return ret;
+	return ret;
 }
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -1460,58 +1447,58 @@ extern struct dsm_dev dsm_sensorhub;
 static void update_client_info(uint8_t dmd_case)
 {
 	switch(dmd_case) {
-		case 0x68:
-		case 0x69:
-			dsm_sensorhub.ic_name = "AG_BOSCH_INV";
-			break;
-		case 0x6A:
-		case 0x6B:
-			dsm_sensorhub.ic_name = "AG_LSM6DS";
-			break;
-		case 0x0C:
-			dsm_sensorhub.ic_name = "MAG_AKM";
-			break;
-		case 0x0D:
-			dsm_sensorhub.ic_name = "MAG_AKM09911";
-			break;
-		case 0x2E:
-			dsm_sensorhub.ic_name = "MAG_YAS537";
-			break;
-		case 0x38:
-		case 0x39:
-			dsm_sensorhub.ic_name = "ALS_BH1745";
-			break;
-		case 0x52:
-			dsm_sensorhub.ic_name = "ALS_APDS9251";
-			break;
-		case 0x53:
-			dsm_sensorhub.ic_name = "PS_APDS9110";
-			break;
-		case 0x1E:
-			dsm_sensorhub.ic_name = "PS_PA224";
-			break;
-		case 0x5C:
-			dsm_sensorhub.ic_name = "AIR_LPS22BH";
-			break;
-		case 0x5D:
-			dsm_sensorhub.ic_name = "AIR_LPS_BM";
-			break;
-		case 0x76:
-		case 0x77:
-			dsm_sensorhub.ic_name = "AIR_BMP380";
-			break;
-		case 0x28:
-			dsm_sensorhub.ic_name = "SAR_SX9323";
-			break;
-		case 0x2C:
-			dsm_sensorhub.ic_name = "SAR_ADUX1050";
-			break;
-		case 0x49:
-			dsm_sensorhub.ic_name = "TP_FTM4CD56D";
-			break;
-		default:
-			hwlog_err("update_client_info uncorrect dmd case %x.\n", dmd_case);
-			return;
+	case 0x68:
+	case 0x69:
+		dsm_sensorhub.ic_name = "AG_BOSCH_INV";
+		break;
+	case 0x6A:
+	case 0x6B:
+		dsm_sensorhub.ic_name = "AG_LSM6DS";
+		break;
+	case 0x0C:
+		dsm_sensorhub.ic_name = "MAG_AKM";
+		break;
+	case 0x0D:
+		dsm_sensorhub.ic_name = "MAG_AKM09911";
+		break;
+	case 0x2E:
+		dsm_sensorhub.ic_name = "MAG_YAS537";
+		break;
+	case 0x38:
+	case 0x39:
+		dsm_sensorhub.ic_name = "ALS_BH1745";
+		break;
+	case 0x52:
+		dsm_sensorhub.ic_name = "ALS_APDS9251";
+		break;
+	case 0x53:
+		dsm_sensorhub.ic_name = "PS_APDS9110";
+		break;
+	case 0x1E:
+		dsm_sensorhub.ic_name = "PS_PA224";
+		break;
+	case 0x5C:
+		dsm_sensorhub.ic_name = "AIR_LPS22BH";
+		break;
+	case 0x5D:
+		dsm_sensorhub.ic_name = "AIR_LPS_BM";
+		break;
+	case 0x76:
+	case 0x77:
+		dsm_sensorhub.ic_name = "AIR_BMP380";
+		break;
+	case 0x28:
+		dsm_sensorhub.ic_name = "SAR_SX9323";
+		break;
+	case 0x2C:
+		dsm_sensorhub.ic_name = "SAR_ADUX1050";
+		break;
+	case 0x49:
+		dsm_sensorhub.ic_name = "TP_FTM4CD56D";
+		break;
+	default:
+		hwlog_err("update_client_info uncorrect dmd case %x.\n", dmd_case);
+		return;
 	}
 	hwlog_info("update_client_info ic name is %s.\n", dsm_sensorhub.ic_name);
 	dsm_update_client_vendor_info(&dsm_sensorhub);
@@ -1533,10 +1520,9 @@ static void iom7_dmd_log_handle(struct work_struct *work)
 	}
 #endif
 
-	if(sensor_need_reset_power(pkt))
-	{
-	    hwlog_err(" %s reset sensorhub\n",obj_tag_str[pkt->hd.tag]);
-	    iom3_need_recovery(SENSORHUB_USER_MODID, SH_FAULT_RESET);
+	if (sensor_need_reset_power(pkt)) {
+		hwlog_err(" %s reset sensorhub\n",obj_tag_str[pkt->hd.tag]);
+		iom3_need_recovery(SENSORHUB_USER_MODID, SH_FAULT_RESET);
 	}
 
 	kfree(iom7_log->log_p);
@@ -1562,10 +1548,10 @@ static int report_sensor_event_batch(int tag, int value[], int length, uint64_t 
 		ltimestamp = 0;
 		event.type = tag_to_hal_sensor_type[tag];
 		event.length = 4;
-		event.value[0] = tag_to_hal_sensor_type[((pkt_header_t *) value)->tag];
+		event.value[0] = tag_to_hal_sensor_type[((struct pkt_header *) value)->tag];
 	}
 	return inputhub_route_write_batch(ROUTE_SHB_PORT, (char *)&event,
-					  event.length + OFFSET_OF_END_MEM(struct sensor_data, length), ltimestamp);
+		event.length + OFFSET_OF_END_MEM(struct sensor_data, length), ltimestamp);
 }
 
 #ifdef CONFIG_HW_TOUCH_KEY
@@ -1576,7 +1562,7 @@ int touch_key_report_from_sensorhub(int key, int value)
 	return 0;
 }
 #endif
-#ifndef CONFIG_HISI_SYSCOUNTER
+#ifndef CONFIG_BSP_SYSCOUNTER
 int syscounter_to_timespec64(u64 syscnt, struct timespec64 *ts)
 {
 	return -1;
@@ -1584,44 +1570,41 @@ int syscounter_to_timespec64(u64 syscnt, struct timespec64 *ts)
 #endif
 static int64_t get_sensor_syscounter_timestamp(pkt_batch_data_req_t* sensor_event)
 {
-    int64_t timestamp;
+	int64_t timestamp;
 
-    timestamp = getTimestamp();
+	timestamp = getTimestamp();
 
-    if (sensor_event->data_hd.data_flag & DATA_FLAG_VALID_TIMESTAMP)
-    {
-        timestamp = sensor_event->data_hd.timestamp;
-    }
+	if (sensor_event->data_hd.data_flag & DATA_FLAG_VALID_TIMESTAMP)
+		timestamp = sensor_event->data_hd.timestamp;
 
-    hwlog_debug("sensor %d origin tick %lld transfer timestamp %lld.\n", sensor_event->data_hd.hd.tag, sensor_event->data_hd.timestamp, timestamp);
-    return timestamp;
+	hwlog_debug("sensor %d origin tick %lld transfer timestamp %lld.\n", sensor_event->data_hd.hd.tag, sensor_event->data_hd.timestamp, timestamp);
+	return timestamp;
 }
 
-static void process_ps_report(const pkt_header_t* head)
+static void process_ps_report(const struct pkt_header* head)
 {
 	pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
 
 	ps_value = sensor_event->xyz[0].x;
-	if(sensor_event->xyz[0].x != 0) {
+	if (sensor_event->xyz[0].x != 0) {
 		__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
-    		hwlog_info("Kernel get far event!pdata=%d\n", sensor_event->xyz[0].y);
-	} else
+		hwlog_info("Kernel get far event!pdata=%d\n", sensor_event->xyz[0].y);
+	} else {
 		hwlog_info("Kernel get near event!!!!pdata=%d\n", sensor_event->xyz[0].y);
+	}
 }
 
-static void process_phonecall_report(const pkt_header_t* head)
+static void process_phonecall_report(const struct pkt_header* head)
 {
 	pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
 
 	__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
 	hwlog_info("Kernel get phonecall event! %d %d %d\n", sensor_event->xyz[0].x, sensor_event->xyz[0].y, sensor_event->xyz[0].z);
 	if (sensor_event->xyz[0].y == 1 && ps_value != 0)
-	{
-	    hwlog_info("ps don't get the point!\n");
-	}
+		hwlog_info("ps don't get the point\n");
 }
 
-static void process_step_counter_report(const pkt_header_t* head)
+static void process_step_counter_report(const struct pkt_header* head)
 {
 	__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
 	hwlog_info("Kernel get pedometer event!\n");
@@ -1640,7 +1623,7 @@ static int process_drop_report(const pkt_drop_data_req_t* head)
 	}
 
 	hwlog_info("Kernel get drop type %d, initial_speed %d, height %d, angle_pitch %d, angle_roll %d, impact %d\n",
-			   head->data.type, head->data.initial_speed, head->data.height, head->data.angle_pitch, head->data.angle_roll, head->data.material);
+		head->data.type, head->data.initial_speed, head->data.height, head->data.angle_pitch, head->data.angle_roll, head->data.material);
 
 	obj = imonitor_create_eventobj(SENSOR_DROP_IMONITOR_ID);
 
@@ -1676,95 +1659,94 @@ static int process_drop_report(const pkt_drop_data_req_t* head)
 	return ret;
 }
 
-static int process_sensors_report(const pkt_header_t* head)
+static int process_sensors_report(const struct pkt_header* head)
 {
 	pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
 
 	switch(head->tag) {
-		case TAG_TILT_DETECTOR:
-				__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
-            		hwlog_info("Kernel get TILT_DETECTOR event!=%d\n", sensor_event->xyz[0].x);
-			break;
-		case TAG_PS:
-			process_ps_report(head);
-			if (unlikely(stop_auto_ps)) {
-				hwlog_info("%s not report ps_data for dt\n", __func__);
-				return -1;
-			}
-			break;
-		case TAG_CAP_PROX:
-			hwlog_debug("TAG_CAP_PROX!!!!data[0]=%d,data[1]=%d,data[2]=%d.\n",
-				sensor_event->xyz[0].x,sensor_event->xyz[0].y,sensor_event->xyz[0].z);
-			break;
-		case TAG_ACCEL:
-			if (unlikely(stop_auto_accel)) {
-				hwlog_info("%s not report accel_data for dt\n", __func__);
-            			return -1;
-			}
-			break;
-		case TAG_ALS:
-			if (unlikely(stop_auto_als)) {
-				hwlog_info("%s not report als_data for dt\n", __func__);
-            			return -1;
-			}
-			break;
-		case TAG_PRESSURE:
-			hwlog_debug("pressure x %x y %x z %x.\n", sensor_event->xyz[0].x, sensor_event->xyz[0].y, sensor_event->xyz[0].z);
-            		get_airpress_data = sensor_event->xyz[0].x;
-            		get_temperature_data = sensor_event->xyz[0].y;
-			break;
-		case TAG_CA:
-			hwlog_info("ca tag=%d:data length:%d, [data0:%d][data1:%d][data2:%d]",
-                       			head->tag, head->length, sensor_event->xyz[0].x, sensor_event->xyz[0].y, sensor_event->xyz[0].y);
-			break;
-		case TAG_PHONECALL:
-			process_phonecall_report(head);
-			break;
-		case TAG_MAGN_BRACKET:
-			hwlog_info("Kernel get magn bracket event %d\n", ((pkt_magn_bracket_data_req_t *)head)->status);
-			break;
-		case TAG_RPC:
-			hwlog_debug("TAG_RPC!data[0]=%d,data[1]=%d,data[2]=%d.\n",
-				sensor_event->xyz[0].x,sensor_event->xyz[0].y,sensor_event->xyz[0].z);
-			break;
-		case TAG_DROP:
-			process_drop_report(head);
-			break;
-		default:
-			break;
+	case TAG_TILT_DETECTOR:
+		__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
+		hwlog_info("Kernel get TILT_DETECTOR event!=%d\n", sensor_event->xyz[0].x);
+		break;
+	case TAG_PS:
+		process_ps_report(head);
+		if (unlikely(stop_auto_ps)) {
+			hwlog_info("%s not report ps_data for dt\n", __func__);
+			return -1;
+		}
+		break;
+	case TAG_CAP_PROX:
+		hwlog_debug("TAG_CAP_PROX!!!!data[0]=%d,data[1]=%d,data[2]=%d.\n",
+			sensor_event->xyz[0].x,sensor_event->xyz[0].y,sensor_event->xyz[0].z);
+		break;
+	case TAG_ACCEL:
+		if (unlikely(stop_auto_accel)) {
+			hwlog_info("%s not report accel_data for dt\n", __func__);
+			return -1;
+		}
+		break;
+	case TAG_ALS:
+		if (unlikely(stop_auto_als)) {
+			hwlog_info("%s not report als_data for dt\n", __func__);
+			return -1;
+		}
+		break;
+	case TAG_PRESSURE:
+		hwlog_debug("pressure x %x y %x z %x.\n", sensor_event->xyz[0].x, sensor_event->xyz[0].y, sensor_event->xyz[0].z);
+		get_airpress_data = sensor_event->xyz[0].x;
+		get_temperature_data = sensor_event->xyz[0].y;
+		break;
+	case TAG_CA:
+		hwlog_info("ca tag=%d:data length:%d, [data0:%d][data1:%d][data2:%d]",
+			head->tag, head->length, sensor_event->xyz[0].x, sensor_event->xyz[0].y, sensor_event->xyz[0].y);
+		break;
+	case TAG_PHONECALL:
+		process_phonecall_report(head);
+		break;
+	case TAG_MAGN_BRACKET:
+		hwlog_info("Kernel get magn bracket event %d\n", ((pkt_magn_bracket_data_req_t *)head)->status);
+		break;
+	case TAG_RPC:
+		hwlog_debug("TAG_RPC!data[0]=%d,data[1]=%d,data[2]=%d.\n",
+			sensor_event->xyz[0].x,sensor_event->xyz[0].y,sensor_event->xyz[0].z);
+		break;
+	case TAG_DROP:
+		process_drop_report(head);
+		break;
+	default:
+		break;
 	}
 	return 0;
 }
 
-static void inputhub_process_sensor_report(const pkt_header_t* head)
+static void inputhub_process_sensor_report(const struct pkt_header* head)
 {
-        uint64_t delta = 0, i = 0;
-        int64_t timestamp = 0;
-        int64_t head_timestamp = 0;
-        int16_t flush_flag = 0;
-        pkt_batch_data_req_t* sensor_event = (pkt_batch_data_req_t*) head;
+	uint64_t delta = 0, i = 0;
+	int64_t timestamp = 0;
+	int64_t head_timestamp = 0;
+	int16_t flush_flag = 0;
+	pkt_batch_data_req_t *sensor_event = (pkt_batch_data_req_t *) head;
 
-        if (TAG_STEP_COUNTER == head->tag) {  	/*extend step counter date*/
+	if (head->tag == TAG_STEP_COUNTER) {  	/*extend step counter date*/
 		process_step_counter_report(head);
 		flush_flag = ((pkt_step_counter_data_req_t*) head)->data_flag & FLUSH_END;
 		if (flush_flag == 1)
 			goto flush_event;
 		else
 			return;
-        }
+	}
 
-        sensor_read_number[head->tag] += sensor_event->data_hd.cnt;
+	sensor_read_number[head->tag] += sensor_event->data_hd.cnt;
 	timestamp = get_sensor_syscounter_timestamp(sensor_event);
 	if ((sensor_event->data_hd.hd.tag == 1) || (sensor_event->data_hd.hd.tag == 2))
 		hwlog_debug("sensor %d origin tick %lld transfer timestamp %lld.\n", sensor_event->data_hd.hd.tag, sensor_event->data_hd.timestamp, timestamp);
 
-        if(timestamp <= sensors_tm[head->tag]) {
-            timestamp = sensors_tm[head->tag] + 1;
-        }
+	if (timestamp <= sensors_tm[head->tag])
+		timestamp = sensors_tm[head->tag] + 1;
 
-        if (sensor_event->data_hd.cnt < 1) {
+	if (sensor_event->data_hd.cnt < 1) {
 		goto flush_event;
-        } else if (sensor_event->data_hd.cnt > 1) {
+	} else if (sensor_event->data_hd.cnt > 1) {
 		delta = (uint64_t)(sensor_event->data_hd.sample_rate) * 1000000;
 		head_timestamp = timestamp - (sensor_event->data_hd.cnt - 1) * (int64_t)delta;
 		if (head_timestamp <= sensors_tm[head->tag]) {
@@ -1774,35 +1756,35 @@ static void inputhub_process_sensor_report(const pkt_header_t* head)
 			timestamp = head_timestamp;
 		}
 		for (i = 0; i < sensor_event->data_hd.cnt; i++) {
-			report_sensor_event_batch(head->tag, (int*)((char*)head + OFFSET(pkt_batch_data_req_t, xyz)
-		                                     +  i *  sensor_event->data_hd.len_element), sensor_event->data_hd.len_element, timestamp);
+			report_sensor_event_batch(head->tag,
+				(int*)((char*)head + OFFSET(pkt_batch_data_req_t, xyz) +  i * sensor_event->data_hd.len_element),
+				sensor_event->data_hd.len_element, timestamp);
 			timestamp += delta;
 		}
 		timestamp -= delta;
 		sensors_tm[head->tag] = timestamp;
 		goto flush_event;
-        }
+	}
 
 	if (process_sensors_report(head) < 0)
 		return;
-        report_sensor_event_batch(head->tag, (int*)(sensor_event->xyz), sensor_event->data_hd.len_element, timestamp);
+	report_sensor_event_batch(head->tag, (int*)(sensor_event->xyz), sensor_event->data_hd.len_element, timestamp);
 	sensors_tm[head->tag] = timestamp;
 flush_event:
-	if ((sensor_event->data_hd.data_flag & FLUSH_END) || flush_flag == 1) {
-		report_sensor_event_batch(TAG_FLUSH_META, (int*)head, sizeof(pkt_header_t), 0);
-        }
+	if ((sensor_event->data_hd.data_flag & FLUSH_END) || flush_flag == 1)
+		report_sensor_event_batch(TAG_FLUSH_META, (int*)head, sizeof(struct pkt_header), 0);
 }
 
 static void inputhub_process_sensor_report_notifier_handler(struct work_struct *work)
 {
 	/*find data according work*/
 	struct mcu_notifier_work *p = container_of(work, struct mcu_notifier_work, worker);
-	inputhub_process_sensor_report((const pkt_header_t *)p->data);
+	inputhub_process_sensor_report((const struct pkt_header *)p->data);
 	kfree(p->data);
 	kfree(p);
 }
 
-static int mcu_reboot_callback(const pkt_header_t *head)
+static int mcu_reboot_callback(const struct pkt_header *head)
 {
 	hwlog_err("%s\n", __func__);
 	complete(&iom3_reboot);
@@ -1824,7 +1806,7 @@ static void update_fingersense_zaxis_data(s16 *buffer, int nsamples)
 	spin_unlock_irqrestore(&fsdata_lock, flags);
 }
 
-static void inputhub_process_additional_info_report(const pkt_header_t* head)
+static void inputhub_process_additional_info_report(const struct pkt_header* head)
 {
 	int64_t timestamp = 0;
 	pkt_additional_info_req_t* addi_info = NULL;
@@ -1832,68 +1814,68 @@ static void inputhub_process_additional_info_report(const pkt_header_t* head)
 	int info_len = 0;
 
 	addi_info = (pkt_additional_info_req_t*)head;
-        timestamp = getTimestamp();
-        if (head->tag >= TAG_SENSOR_END) {
-            hwlog_err("%s head->tag = %d\n", __func__, head->tag);
-            return;
-        }
-        if (addi_info->serial == 1) {//create a begin event
-            event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
-            event.serial = 0;
-            event.sensor_type = tag_to_hal_sensor_type[head->tag];
-            event.data_type = AINFO_BEGIN;
-            event.length = 12;
-            inputhub_route_write_batch(ROUTE_SHB_PORT, (char*)&event,
-				event.length + OFFSET_OF_END_MEM(struct sensor_data, length), timestamp);
-            hwlog_info("###report sensor type %d first addition info event!\n", event.sensor_type);
-        }
-
-        info_len = head->length - 8;
-        event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
-        event.serial = addi_info->serial;
-        event.sensor_type = tag_to_hal_sensor_type[head->tag];
-        event.data_type = addi_info->type;
-        event.length = info_len + 12;
-        memcpy(event.info, addi_info->data_int32, info_len);
-        inputhub_route_write_batch(ROUTE_SHB_PORT, (char*)&event,
+	timestamp = getTimestamp();
+	if (head->tag >= TAG_SENSOR_END) {
+		hwlog_err("%s head->tag = %d\n", __func__, head->tag);
+		return;
+	}
+	if (addi_info->serial == 1) {
+		event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
+		event.serial = 0;
+		event.sensor_type = tag_to_hal_sensor_type[head->tag];
+		event.data_type = AINFO_BEGIN;
+		event.length = 12;
+		inputhub_route_write_batch(ROUTE_SHB_PORT, (char *)&event,
 			event.length + OFFSET_OF_END_MEM(struct sensor_data, length), timestamp);
-        hwlog_info("report sensor type %d addition info: %d !\n", event.sensor_type, event.info[0]);
+		hwlog_info("###report sensor type %d first addition info event\n", event.sensor_type);
+	}
 
-        if (addi_info->end == 1) {
-            event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
-            event.serial = ++addi_info->serial;
-            event.sensor_type = tag_to_hal_sensor_type[head->tag];
-            event.data_type = AINFO_END;
-            event.length = 12;
-            inputhub_route_write_batch(ROUTE_SHB_PORT, (char*)&event,
-				event.length + OFFSET_OF_END_MEM(struct sensor_data, length), timestamp);
-            hwlog_info("***report sensor_type %d end addition info event!***\n", event.sensor_type);
-        }
+	info_len = head->length - 8;
+	event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
+	event.serial = addi_info->serial;
+	event.sensor_type = tag_to_hal_sensor_type[head->tag];
+	event.data_type = addi_info->type;
+	event.length = info_len + 12;
+	memcpy(event.info, addi_info->data_int32, info_len);
+	inputhub_route_write_batch(ROUTE_SHB_PORT, (char *)&event,
+		event.length + OFFSET_OF_END_MEM(struct sensor_data, length), timestamp);
+	hwlog_info("report sensor type %d addition info: %d\n", event.sensor_type, event.info[0]);
+
+	if (addi_info->end == 1) {
+		event.type = SENSORHUB_TYPE_ADDITIONAL_INFO;
+		event.serial = ++addi_info->serial;
+		event.sensor_type = tag_to_hal_sensor_type[head->tag];
+		event.data_type = AINFO_END;
+		event.length = 12;
+		inputhub_route_write_batch(ROUTE_SHB_PORT, (char *)&event,
+			event.length + OFFSET_OF_END_MEM(struct sensor_data, length), timestamp);
+		hwlog_info("***report sensor_type %d end addition info event***\n", event.sensor_type);
+	}
 }
 
-static int inputhub_process_dmd_log_report(const pkt_header_t* head)
+static int inputhub_process_dmd_log_report(const struct pkt_header* head)
 {
 	struct iom7_log_work* work;
 
 	hwlog_info("[iom7]dmd_log_data_report");
-        work = kmalloc(sizeof(struct iom7_log_work), GFP_ATOMIC);
-        if (!work)
-        { return -ENOMEM; }
+	work = kmalloc(sizeof(struct iom7_log_work), GFP_ATOMIC);
+	if (!work)
+		return -ENOMEM;
 
-        memset(work, 0, sizeof(struct iom7_log_work));
-        work->log_p = kmalloc(head->length + sizeof(pkt_header_t), GFP_ATOMIC);
-        if (!work->log_p) {
-            kfree(work);
-            return -ENOMEM;
-        }
-        memset(work->log_p, 0, head->length + sizeof(pkt_header_t));
-        memcpy(work->log_p, head, head->length + sizeof(pkt_header_t));
-        INIT_DELAYED_WORK(&(work->log_work), iom7_dmd_log_handle);
-        queue_delayed_work(system_power_efficient_wq, &(work->log_work), msecs_to_jiffies(250));
+	memset(work, 0, sizeof(struct iom7_log_work));
+	work->log_p = kmalloc(head->length + sizeof(struct pkt_header), GFP_ATOMIC);
+	if (!work->log_p) {
+		kfree(work);
+		return -ENOMEM;
+	}
+	memset(work->log_p, 0, head->length + sizeof(struct pkt_header));
+	memcpy(work->log_p, head, head->length + sizeof(struct pkt_header));
+	INIT_DELAYED_WORK(&(work->log_work), iom7_dmd_log_handle);
+	queue_delayed_work(system_power_efficient_wq, &(work->log_work), msecs_to_jiffies(250));
 	return 0;
 }
 
-static int inputhub_process_fingerprint_report(const pkt_header_t* head)
+static int inputhub_process_fingerprint_report(const struct pkt_header* head)
 {
 	char* fingerprint_data = NULL;
 	const fingerprint_upload_pkt_t* fingerprint_data_upload = (const fingerprint_upload_pkt_t*)head;
@@ -1913,23 +1895,23 @@ static int inputhub_process_fingerprint_report(const pkt_header_t* head)
 	}
 }
 
-static int inputhub_process_motion_report(const pkt_header_t* head)
+static int inputhub_process_motion_report(const struct pkt_header* head)
 {
 	char* motion_data = (char*)head + sizeof(pkt_common_data_t);
 
-	if ((((int)motion_data[0]) == MOTIONHUB_TYPE_TAKE_OFF) || (((int)motion_data[0]) == MOTIONHUB_TYPE_PICKUP))
-        {
-            __pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
-            hwlog_err("%s weaklock HZ motiontype = %d \n", __func__, motion_data[0]);
-        }
+	if ((((int)motion_data[0]) == MOTIONHUB_TYPE_TAKE_OFF) ||
+		(((int)motion_data[0]) == MOTIONHUB_TYPE_PICKUP)) {
+		__pm_wakeup_event(&wlock, jiffies_to_msecs(HZ));
+		hwlog_err("%s weaklock HZ motiontype = %d \n", __func__, motion_data[0]);
+	}
 
 	hwlog_info("%s : motiontype = %d motion_result = %d, motion_status = %d\n", __func__, motion_data[0],motion_data[1],motion_data[2]);
-	return inputhub_route_write(ROUTE_MOTION_PORT, motion_data, head->length-(sizeof(pkt_common_data_t) - sizeof(pkt_header_t)));
+	return inputhub_route_write(ROUTE_MOTION_PORT, motion_data, head->length-(sizeof(pkt_common_data_t) - sizeof(struct pkt_header)));
 }
 
 int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 {
-	const pkt_header_t* head = (const pkt_header_t*)buf;
+	const struct pkt_header* head = (const struct pkt_header*)buf;
 	bool is_notifier = false;
 
 	head = pack(buf, length, &is_notifier);
@@ -1996,7 +1978,7 @@ int inputhub_route_recv_mcu_data(const char *buf, unsigned int length)
 	} else if (is_dmd_log_data_report(head)) {
 		inputhub_process_dmd_log_report(head);
 	} else if (is_requirement_resp(head)) {
-		return report_resp_data((const pkt_subcmd_resp_t*)head);
+		return report_resp_data((const struct pkt_subcmd_resp*)head);
 	} else if (is_motion_data_report(head)) {
 		return inputhub_process_motion_report(head);
 	} else if (is_ca_data_report(head)) {

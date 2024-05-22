@@ -1,80 +1,88 @@
 /*
- * record the data to rdr. (RDR: kernel run data recorder.)
- * This file wraps the ring buffer.
  *
- * Copyright (c) 2013 Hisilicon Technologies CO., Ltd.
+ * record the data to rdr. (RDR: kernel run data recorder.) This file wraps the ring buffer.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2013-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+#include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/err.h>
-#include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
 #include <securec.h>
 #include "../rdr_print.h"
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BLACKBOX_TAG
+#include <pr_log.h>
+#define PR_LOG_TAG BLACKBOX_TAG
 
-int hisiap_ringbuffer_init(struct hisiap_ringbuffer_s *q, u32 bytes,
-			   u32 fieldcnt, const char *keys)
+int hisiap_ringbuffer_init(struct hisiap_ringbuffer_s *q, u32 bytes, u32 fieldcnt, const char *keys)
 {
-	if (NULL == q) {
+	if (IS_ERR_OR_NULL(q)) {
 		BB_PRINT_ERR("[%s], buffer head is null!\n", __func__);
 		return -EINVAL;
 	}
 
-	if (bytes <
-	    (sizeof(struct hisiap_ringbuffer_s) + sizeof(u8) * fieldcnt)) {
+	if (bytes < (sizeof(*q) + sizeof(u8) * fieldcnt)) {
 		BB_PRINT_ERR("[%s], ringbuffer size [0x%x] is too short!\n",
 		       __func__, bytes);
 		return -EINVAL;
 	}
 
-	/* max_num: records count. */
-	q->max_num = (bytes - sizeof(struct hisiap_ringbuffer_s)) /
-	    (sizeof(u8) * fieldcnt);
-	atomic_set((atomic_t *)&(q->rear), 0);/*lint !e1058*//* point to the last NULL record. UNIT is record. */
-	q->r_idx = 0;		/* point to the last read record. */
+	/* max_num: records count */
+	q->max_num = (bytes - sizeof(*q)) / (sizeof(u8) * fieldcnt);
+	atomic_set((atomic_t *)&(q->rear), 0); /* point to the last NULL record. UNIT is record */
+	q->r_idx = 0; /* point to the last read record */
 	q->count = 0;
 	q->is_full = 0;
-	q->field_count = fieldcnt;	/* How many u8 in ONE record. */
+	q->field_count = fieldcnt; /* How many u8 in ONE record */
 
-	if (EOK != memset_s(q->keys, HISIAP_KEYS_MAX + 1, 0, HISIAP_KEYS_MAX + 1)) {
+	if (memset_s(q->keys, HISIAP_KEYS_MAX + 1, 0, HISIAP_KEYS_MAX + 1) != EOK) {
 		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+		return -EINVAL;
 	}
+
 	if (keys)
-		strncpy(q->keys, keys, HISIAP_KEYS_MAX);/*lint !e747 */
+		strncpy(q->keys, keys, HISIAP_KEYS_MAX);
 	return 0;
 }
 
-/*lint -e818 */
 void hisiap_ringbuffer_write(struct hisiap_ringbuffer_s *q, u8 *element)
 {
+	if (IS_ERR_OR_NULL(q) || IS_ERR_OR_NULL(element)) {
+		BB_PRINT_ERR("[%s], parameter q or element is null\n", __func__);
+		return;
+	}
+
 	atomic_add(1, (atomic_t *)&(q->rear));
 	if (q->rear >= q->max_num) {
 		q->rear = 1;
 		q->is_full = 1;
 	}
 
-/*lint -e737 -e679*/
-	if (EOK != memcpy_s((void *)&q->data[(q->rear - 1) * q->field_count],
-		q->field_count * sizeof(u8), (void *)element, q->field_count * sizeof(u8))) {
+	if (memcpy_s((void *)&q->data[(q->rear - 1) * q->field_count],
+		   (q->max_num - q->rear) * q->field_count, (void *)element, q->field_count * sizeof(*element)) != EOK) {
 		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
 	}
-/*lint +e737 +e679*/
 
-	q->count ++;
-	if (q->count >= q->max_num){
+	q->count++;
+	if (q->count >= q->max_num)
 		q->count = q->max_num;
-	}
-
-	return;
 }
 
-/* Return:  success: = 0 ;  fail: other  */
+/* 
+ * Output: success = 0;
+ *         fail = other
+ */
 int hisiap_ringbuffer_read(struct hisiap_ringbuffer_s *q, u8 *element, u32 len)
 {
 	u32 ridx;
@@ -89,44 +97,40 @@ int hisiap_ringbuffer_read(struct hisiap_ringbuffer_s *q, u8 *element, u32 len)
 		return -1;
 	}
 
-	if (0 == q->count){
+	if (q->count == 0)
 		return -1;
-	}
-	q->count --;
+	q->count--;
 
-	if (q->count >= q->max_num){
+	if (q->count >= q->max_num)
 		q->r_idx = q->rear;
-	}
 
-	if (q->r_idx >= q->max_num){
-		 q->r_idx = 0;
-	}
+	if (q->r_idx >= q->max_num)
+		q->r_idx = 0;
 
 	ridx = q->r_idx++;
 
-	if(EOK !=memcpy_s((void *)element, len, (void *)&q->data[(long)ridx * q->field_count],
-		q->field_count * sizeof(u8))){
-		 BB_PRINT_ERR("[%s], memcpy_s fail!\n", __func__);
+	if (memcpy_s((void *)element, len, (void *)&q->data[(long)ridx * q->field_count],
+		   q->field_count * sizeof(*element)) != EOK) {
+		BB_PRINT_ERR("[%s], memcpy_s fail!\n", __func__);
+		return -1;
 	}
 
 	return 0;
 }
 
-/*************************************************************************
-Function:		hisiap_is_ringbuffer_full
-Description:	判断ringbuffer是否已经写满；
-Input:		buffer_addr: buffer首地址；
-Return:		0：buffer未满；1：buffer已满；-1: 查询无效；
-*************************************************************************/
+/*
+ * Description: Determine if the ringbuffer is full
+ * Input:       buffer_addr: buffer head address
+ * Return:      0: buffer is not full; 1: buffer is full; -1: the query is invalid
+ */
 int hisiap_is_ringbuffer_full(const void *buffer_addr)
 {
-	if (NULL == buffer_addr)
+	if (!buffer_addr)
 		return -1;
 
 	return (int)(((struct hisiap_ringbuffer_s *)buffer_addr)->is_full);
-}/*lint !e818*/
+}
 
-/*lint -e818*/
 void get_ringbuffer_start_end(struct hisiap_ringbuffer_s *q, u32 *start, u32 *end)
 {
 	if (IS_ERR_OR_NULL(q) || IS_ERR_OR_NULL(start) || IS_ERR_OR_NULL(end)) {
@@ -148,9 +152,7 @@ void get_ringbuffer_start_end(struct hisiap_ringbuffer_s *q, u32 *start, u32 *en
 		*end = q->rear - 1;
 	}
 }
-/*lint +e818*/
 
-/*lint -e818*/
 bool is_ringbuffer_empty(struct hisiap_ringbuffer_s *q)
 {
 	if (IS_ERR_OR_NULL(q)) {
@@ -158,15 +160,12 @@ bool is_ringbuffer_empty(struct hisiap_ringbuffer_s *q)
 		return true;
 	}
 
-	if ((0 == q->is_full) && (0 == q->rear)) {
+	if ((q->is_full == 0) && (q->rear == 0))
 		return true;
-	}
 
 	return false;
 }
-/*lint +e818*/
 
-/*lint -e818*/
 bool is_ringbuffer_invalid(u32 field_count, u32 len, struct hisiap_ringbuffer_s *q)
 {
 	if (IS_ERR_OR_NULL(q)) {
@@ -175,29 +174,24 @@ bool is_ringbuffer_invalid(u32 field_count, u32 len, struct hisiap_ringbuffer_s 
 	}
 
 	if (unlikely(q->field_count != field_count)) {
-		BB_PRINT_ERR("%s() fail:hisiap_ringbuffer_s field_count %u != %u.\n", 
+		BB_PRINT_ERR("%s() fail:hisiap_ringbuffer_s field_count %u != %u\n",
 			__func__, q->field_count, field_count);
 		return true;
 	}
 
 	if (unlikely(q->rear > q->max_num)) {
-		BB_PRINT_ERR("%s() fail:q->rear %u > q->max_num %u.\n", 
+		BB_PRINT_ERR("%s() fail:q->rear %u > q->max_num %u\n",
 			__func__, q->rear, q->max_num);
 		return true;
 	}
 
-	if ( unlikely(
-		(q->max_num <= 0)
-		|| (field_count <= 0)
-		|| (len <= sizeof(struct hisiap_ringbuffer_s)
-		|| ( q->max_num  > ((len - sizeof(struct hisiap_ringbuffer_s))/field_count)) )
-		)
-	) {
-		BB_PRINT_ERR("%s() fail:hisiap_ringbuffer_s max_num %u field_count %u len %u.\n", 
+	if (unlikely(
+		(q->max_num <= 0) || (field_count <= 0) || (len <= sizeof(*q) ||
+		(q->max_num > ((len - sizeof(*q)) / field_count))))) {
+		BB_PRINT_ERR("%s() fail:hisiap_ringbuffer_s max_num %u field_count %u len %u\n",
 			__func__, q->max_num, field_count, len);
 		return true;
 	}
 
 	return false;
 }
-/*lint +e818*/

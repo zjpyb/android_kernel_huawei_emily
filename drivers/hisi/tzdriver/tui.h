@@ -1,5 +1,21 @@
-#ifndef __TUI_H
-#define __TUI_H
+/*
+ * tui.h
+ *
+ * tui agent for tui display and interact
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+#ifndef TUI_H
+#define TUI_H
 
 #include "tc_ns_client.h"
 #include "teek_client_type.h"
@@ -23,10 +39,9 @@
 #define TUI_CMD_DO_SYNC		6
 #define TUI_CMD_START_DELAY_WORK	7
 #define TUI_CMD_CANCEL_DELAY_WORK	8
-#define TUI_CMD_SEND_INPUT_WORK 9
-#define TUI_CMD_LOAD_UNUSUAL_TTF 10
-#define TUI_CMD_FREE_UNUSUAL_TTF_MEM	11
-#define TUI_CMD_FREE_UNUSUAL_TTF_MEM_AND_DISABLE	12
+#define TUI_CMD_LOAD_TTF	9
+#define TUI_CMD_FREE_TTF_MEM	11
+#define TUI_CMD_EXIT		12
 
 
 #define TUI_DRV_NAME_MAX	32
@@ -38,7 +53,7 @@ enum tui_poll_type {
 	TUI_POLL_TP,
 	TUI_POLL_TICK,
 	TUI_POLL_DELAYED_WORK,
-	TUI_POLL_PAUSE_TUI,
+	TUI_POLL_TIMEOUT,
 	TUI_POLL_RESUME_TUI,
 /* For some reasons, we need a method to terminate TUI from no-secure
  * OS, for example the TUI CA maybe killed.
@@ -144,21 +159,12 @@ struct tui_drv_node {
 	struct list_head list;
 };
 
-enum Ttf_File_Type {
-	/* The unusual ttf file */
-	unusual = 0x0,
-	/* The normal ttf file */
-	normal = 0x1
-};
-typedef enum Ttf_File_Type ttf_type;
-
-
 #ifdef CONFIG_TEE_TUI
 extern int ts_tui_report_input(void *finger_data);
 extern int tui_fp_notify(void);
 int __init init_tui(const struct device *dev);
 void tui_exit(void);
-int tui_send_event(int event, teec_tui_parameter *tui_param);
+int tui_send_event(int event, struct teec_tui_parameter *tui_param);
 int register_tui_driver(tui_drv_init fun, const char *name,
 					 void *pdata);
 void unregister_tui_driver(const char *name);
@@ -174,7 +180,6 @@ void set_tui_caller_info(unsigned int devid, int pid);
 void free_tui_caller_info(void);
 
 unsigned int tui_attach_device(void);
-int load_tui_font_file(ttf_type type, unsigned int arg);
 void do_ns_tui_release(void);
 int is_tui_in_use(int pid_value);
 #else
@@ -215,14 +220,6 @@ static inline unsigned int tui_attach_device(void)
 	return 0;
 }
 static inline int is_tui_in_use(int pid_value)
-{
-	return 0;
-}
-#ifdef CONFIG_TEE_SMP
-static inline int load_tui_font_file(unsigned int ttf_file_size, unsigned int arg)
-#else
-static inline int load_tui_font_file(unsigned int ttf_file_size)
-#endif
 {
 	return 0;
 }

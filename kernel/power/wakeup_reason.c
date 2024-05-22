@@ -27,6 +27,9 @@
 #include <linux/notifier.h>
 #include <linux/suspend.h>
 
+#ifdef CONFIG_HUAWEI_DUBAI
+#include <chipset_common/dubai/dubai.h>
+#endif
 
 #define MAX_WAKEUP_REASON_IRQS 32
 static int irq_list[MAX_WAKEUP_REASON_IRQS];
@@ -41,7 +44,7 @@ static ktime_t curr_monotime; /* monotonic time after last suspend */
 static ktime_t last_stime; /* monotonic boottime offset before last suspend */
 static ktime_t curr_stime; /* monotonic boottime offset after last suspend */
 
-#ifdef CONFIG_HISI_SR
+#ifdef CONFIG_SR
 #define IRQ_NAME_LEN	(128UL)
 extern const char **g_ap_irq_name;
 
@@ -192,6 +195,9 @@ void log_suspend_abort_reason(const char *fmt, ...)
 	vsnprintf(abort_reason, MAX_SUSPEND_ABORT_LEN, fmt, args);
 	va_end(args);
 	spin_unlock(&resume_reason_lock);
+#ifdef CONFIG_HUAWEI_DUBAI
+	dubai_update_suspend_abort_reason(abort_reason);
+#endif
 }
 
 /* Detects a suspend and clears all the previous wake up reasons*/

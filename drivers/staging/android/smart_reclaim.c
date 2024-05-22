@@ -52,8 +52,8 @@ const char *get_path_ext(const char *path) {
 }
 
 static bool is_soft_vma(struct vm_area_struct *vma) {
-	const char *path;
-	const char* suffix;
+	const char *path = NULL;
+	const char* suffix = NULL;
 	bool ret = false;
 	if (!vma->vm_file) {
 		goto out;
@@ -78,7 +78,7 @@ out:
 
 void smart_soft_shrink(struct mm_struct *mm)
 {
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma = NULL;
 
 	down_read(&mm->mmap_sem);
 	for (vma = mm->mmap ; vma; vma = vma->vm_next) {

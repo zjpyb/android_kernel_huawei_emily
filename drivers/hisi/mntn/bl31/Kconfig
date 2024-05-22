@@ -3,3 +3,9 @@ config HISI_BL31_MNTN
     default n
     help
       Say yes here to support the bl31 mntn module.
+config DISABLE_DMSS_INT
+    bool "DISABLE DMSS INT when acpu reset"
+    default n
+    help
+      Support disable dmss int when acpu reset
+

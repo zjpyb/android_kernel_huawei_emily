@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the hw_rscan_interface.h for TEE root scan using
  * Author: likun <quentin.lee@huawei.com>
  * Create: 2016-06-18
@@ -15,7 +15,7 @@
 #define MAX_RPROC_SIZE 10240 /* 10k */
 
 /* check all items */
-#define RSOPID_ALL (0xFFFFFFFF)
+#define RSOPID_ALL 0xFFFFFFFF
 
 enum skip_value {
 	NOT_SKIP = 0,
@@ -86,7 +86,7 @@ int get_ro_secure(void);
  *         30th bit for system call verify, and so on.
  * @result, used for return results for each scanner item
  *          that correspond to ops_mask. In this function, result keep its
- *          original statu. For example, rproc contains whitelist.
+ *          original statu. For example, rproc contains trustlist.
  */
 uint rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result);
 
@@ -99,7 +99,7 @@ uint rscan_dynamic_raw(uint op_mask, struct rscan_result_dynamic *result);
  *         30th bit for system call verify, and so on.
  * @result, used for return results for each scanner item
  *          that correspond to ops_mask. In this function, result keep its
- *          original statu. For example, rproc contains whitelist.
+ *          original statu. For example, rproc contains trustlist.
  */
 int rscan_dynamic_raw_and_upload(uint op_mask, struct rscan_result_dynamic *result);
 
@@ -116,17 +116,17 @@ int rscan_dynamic_raw_and_upload(uint op_mask, struct rscan_result_dynamic *resu
 int rscan_get_status(struct rscan_status *status);
 
 /*
- * load_rproc_whitelist - for both TEE and kernel to load rproc whitelist
+ * load_rproc_trustlist - for both TEE and kernel to load rproc trustlist
  * Description: read running root procs from kernel
- * @whitelist, buffer for loading whitelist in
- * @len, length of buffer whitelist. This parameter must be precise,
+ * @trustlist, buffer for loading trustlist in
+ * @len, length of buffer trustlist. This parameter must be precise,
  *          otherwise this function will be failed.
  * @return:
  *     Result of loading.
- *     0, load whitelist correctly.
+ *     0, load trustlist correctly.
  *     -1, generic error
  */
-int load_rproc_whitelist(char *whitelist, size_t len);
+int load_rproc_trustlist(char *trustlist, size_t len);
 
 #endif
 

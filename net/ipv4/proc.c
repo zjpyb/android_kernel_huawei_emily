@@ -310,6 +310,8 @@ static const struct snmp_mib snmp4_net_list[] = {
 	SNMP_MIB_ITEM("TCPKeepAlive", LINUX_MIB_TCPKEEPALIVE),
 	SNMP_MIB_ITEM("TCPMTUPFail", LINUX_MIB_TCPMTUPFAIL),
 	SNMP_MIB_ITEM("TCPMTUPSuccess", LINUX_MIB_TCPMTUPSUCCESS),
+	SNMP_MIB_ITEM("TCPWqueueTooBig", LINUX_MIB_TCPWQUEUETOOBIG),
+	SNMP_MIB_ITEM("TCPAckCompressed", LINUX_MIB_TCPACKCOMPRESSED),
 	SNMP_MIB_SENTINEL
 };
 
@@ -545,14 +547,13 @@ static __net_init int ip_proc_init_net(struct net *net)
 	if (!proc_create("snmp", S_IRUGO, net->proc_net, &snmp_seq_fops))
 		goto out_snmp;
 #ifdef CONFIG_HW_WIFIPRO_PROC
-	if (wifipro_init_proc(net)) {
+	if (wifipro_init_proc(net))
 		WIFIPRO_WARNING("wifipro_init_proc fail!");
-	}
 #endif
 
 #ifdef CONFIG_HW_CHR_TCP_SMALL_WIN_PROC
 	if (tcp_small_win_init_proc(net))
-		HW_CHR_ERR("tcp_small_win_init_proc fail!");
+		hw_chr_err("tcp_small_win_init_proc fail!");
 #endif
 
 	return 0;

@@ -1,20 +1,25 @@
 /*
- * hisi_smmu_lpae.c -- 3 layer pagetable
+ * Copyright(C) 2019-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
  *
- * Copyright (C) 2019 Hisilicon. All rights reserved.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
-#include <asm/pgalloc.h>
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-iommu.h>
 #include <linux/err.h>
+#include <linux/hisi-iommu.h>
+#include <linux/hisi/rdr_hisi_ap_hook.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/iommu.h>
@@ -31,24 +36,24 @@
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
-#include <linux/hisi-iommu.h>
-#include <linux/hisi/rdr_hisi_ap_hook.h>
-#include "hisi_smmu.h"
 
+#include <asm/pgalloc.h>
+
+#include "hisi_smmu.h"
 #ifdef CONFIG_HISI_LB
 #include <linux/hisi/hisi_lb.h>
 #endif
 
 LIST_HEAD(domain_list);
-static struct iommu_ops hisi_smmu_ops;
+static struct iommu_ops mm_smmu_ops;
 
-struct hisi_domain *to_hisi_domain(struct iommu_domain *dom)
+struct mm_domain *to_mm_domain(struct iommu_domain *dom)
 {
 	if (!dom) {
 		pr_err("the iommu domain is invalid\n");
 		return NULL;
 	}
-	return container_of(dom, struct hisi_domain, domain);
+	return container_of(dom, struct mm_domain, domain);
 }
 
 /* transfer 64bit pte table pointer to struct page */
@@ -111,57 +116,76 @@ int of_get_iova_info(struct device_node *np, unsigned long *iova_start,
 	return 0;
 }
 
-static struct iommu_domain *
-hisi_smmu_domain_alloc_lpae(unsigned int iommu_domain_type)
+static int mm_smmu_domain_get_cookie(struct iommu_domain *domain)
 {
-	struct hisi_domain *hisi_domain = NULL;
+	struct mm_dom_cookie *cookie = NULL;
+
+	if (domain->iova_cookie)
+		return -EEXIST;
+
+	domain->iova_cookie = kzalloc(sizeof(struct mm_dom_cookie), GFP_KERNEL);
+	if (!domain->iova_cookie)
+		return -ENOMEM;
+
+	cookie = domain->iova_cookie;
+	spin_lock_init(&cookie->iova_lock);
+	cookie->iova_root = RB_ROOT;
+	cookie->domain = domain;
+
+	return 0;
+}
+
+static struct iommu_domain *
+smmu_domain_alloc_lpae(unsigned int iommu_domain_type)
+{
+	struct mm_domain *mm_domain = NULL;
 
 	if (iommu_domain_type != IOMMU_DOMAIN_UNMANAGED &&
 	    iommu_domain_type != IOMMU_DOMAIN_DMA)
 		return NULL;
 
-	hisi_domain = kzalloc(sizeof(*hisi_domain), GFP_KERNEL);
-	if (!hisi_domain)
+	mm_domain = kzalloc(sizeof(*mm_domain), GFP_KERNEL);
+	if (!mm_domain)
 		return NULL;
 
 #ifdef CONFIG_IOMMU_DMA
 	if (iommu_domain_type == IOMMU_DOMAIN_DMA &&
-	    iommu_get_dma_cookie(&hisi_domain->domain)) {
+	    iommu_get_dma_cookie(&mm_domain->domain)) {
 		goto err_smmu_pgd;
 	}
+#else
+	if (mm_smmu_domain_get_cookie(&mm_domain->domain))
+		goto err_smmu_pgd;
 #endif
 
-	hisi_domain->va_pgtable_addr_orig =
+	mm_domain->va_pgtable_addr_orig =
 		kzalloc(SZ_4K, GFP_KERNEL | __GFP_DMA);
-	if (!hisi_domain->va_pgtable_addr_orig)
+	if (!mm_domain->va_pgtable_addr_orig)
 		goto err_smmu_pgd;
 
-	hisi_domain->va_pgtable_addr = (smmu_pgd_t *)(ALIGN(
-		(unsigned long)(hisi_domain->va_pgtable_addr_orig), SZ_512));
+	mm_domain->va_pgtable_addr = (smmu_pgd_t *)(ALIGN(
+		(uintptr_t)(mm_domain->va_pgtable_addr_orig), SZ_512));
 
-	hisi_domain->pa_pgtable_addr =
-		virt_to_phys(hisi_domain->va_pgtable_addr);
-	spin_lock_init(&hisi_domain->lock);
-	spin_lock_init(&hisi_domain->iova_lock);
-	hisi_domain->iova_root = RB_ROOT;
-	list_add_tail(&hisi_domain->list, &domain_list);
+	mm_domain->pa_pgtable_addr =
+		virt_to_phys(mm_domain->va_pgtable_addr);
+	spin_lock_init(&mm_domain->lock);
+	list_add_tail(&mm_domain->list, &domain_list);
 
-	return &hisi_domain->domain; /*lint !e429 */
+	return &mm_domain->domain; /*lint !e429 */
 
 err_smmu_pgd:
-	kfree(hisi_domain);
+	kfree(mm_domain);
 	return NULL;
 }
 
-static void hisi_smmu_flush_pgtable_lpae(void *addr, size_t size)
+static void mm_smmu_flush_pgtable_lpae(void *addr, size_t size)
 {
 	__flush_dcache_area(addr, size);
 }
 
-static void hisi_smmu_free_ptes_lpae(smmu_pgd_t pmd)
+static void mm_smmu_free_ptes_lpae(smmu_pgd_t pmd)
 {
 	pgtable_t table = smmu_pgd_to_pte_lpae(pmd);
-
 	if (!table) {
 		smmu_err("pte table is null\n");
 		return;
@@ -170,10 +194,9 @@ static void hisi_smmu_free_ptes_lpae(smmu_pgd_t pmd)
 	smmu_set_pmd_lpae(&pmd, 0);
 }
 
-static void hisi_smmu_free_pmds_lpae(smmu_pgd_t pgd)
+static void mm_smmu_free_pmds_lpae(smmu_pgd_t pgd)
 {
 	pgtable_t table = smmu_pmd_to_pte_lpae(pgd);
-
 	if (!table) {
 		smmu_err("pte table is null\n");
 		return;
@@ -182,51 +205,51 @@ static void hisi_smmu_free_pmds_lpae(smmu_pgd_t pgd)
 	smmu_set_pgd_lpae(&pgd, 0);
 }
 
-static void hisi_smmu_free_pgtables_lpae(struct iommu_domain *domain,
+static void mm_smmu_free_pgtables_lpae(struct iommu_domain *domain,
 					 unsigned long *page_table_addr)
 {
 	int i, j;
 	smmu_pgd_t *pgd = NULL;
 	smmu_pmd_t *pmd = NULL;
 	unsigned long flags;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
 	pgd = (smmu_pgd_t *)page_table_addr;
 	pmd = (smmu_pmd_t *)page_table_addr;
 
-	spin_lock_irqsave(&hisi_domain->lock, flags);
+	spin_lock_irqsave(&mm_domain->lock, flags);
 	for (i = 0; i < SMMU_PTRS_PER_PGD; ++i) {
 		if ((smmu_pgd_none_lpae(*pgd)) & (smmu_pmd_none_lpae(*pmd)))
 			continue;
 		for (j = 0; j < SMMU_PTRS_PER_PMD; ++j) {
-			hisi_smmu_free_pmds_lpae(*pgd);
+			mm_smmu_free_pmds_lpae(*pgd);
 			pmd++;
 		}
-		hisi_smmu_free_ptes_lpae(*pmd);
+		mm_smmu_free_ptes_lpae(*pmd);
 		pgd++;
 	}
 	memset((void *)page_table_addr, 0, PAGE_SIZE);
 	/* unsafe_function_ignore: memset */
-	spin_unlock_irqrestore(&hisi_domain->lock, flags);
+	spin_unlock_irqrestore(&mm_domain->lock, flags);
 }
 
-static void hisi_smmu_domain_free_lpae(struct iommu_domain *domain)
+static void mm_smmu_domain_free_lpae(struct iommu_domain *domain)
 {
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
-	if (!hisi_domain) {
-		pr_err("the hisi_domain is invalid!\n");
+	if (!mm_domain) {
+		pr_err("the mm_domain is invalid!\n");
 		return;
 	}
 
-	hisi_smmu_free_pgtables_lpae(
-		domain, (unsigned long *)hisi_domain->va_pgtable_addr);
-	list_del(&hisi_domain->list);
-	kfree(hisi_domain->va_pgtable_addr_orig);
-	kfree(hisi_domain);
+	mm_smmu_free_pgtables_lpae(
+		domain, (unsigned long *)mm_domain->va_pgtable_addr);
+	list_del(&mm_domain->list);
+	kfree(mm_domain->va_pgtable_addr_orig);
+	kfree(mm_domain);
 }
 
-static u64 hisi_smmu_pte_ready(u64 prot)
+static u64 mm_smmu_pte_ready(u64 prot)
 {
 	u64 pteval = SMMU_PTE_TYPE;
 
@@ -262,7 +285,7 @@ static u64 hisi_smmu_pte_ready(u64 prot)
 	return pteval;
 }
 
-static int hisi_smmu_alloc_init_pte_lpae(struct iommu_domain *domain,
+static int mm_smmu_alloc_init_pte_lpae(struct iommu_domain *domain,
 					 smmu_pmd_t *ppmd, unsigned long addr,
 					 unsigned long end, unsigned long pfn,
 					 u64 prot, unsigned long *flags)
@@ -274,7 +297,7 @@ static int hisi_smmu_alloc_init_pte_lpae(struct iommu_domain *domain,
 	smmu_pte_t *start = NULL;
 	pgtable_t table;
 	u64 pteval;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
 	if (!smmu_pmd_none_lpae(*ppmd))
 		goto pte_ready;
@@ -285,18 +308,18 @@ static int hisi_smmu_alloc_init_pte_lpae(struct iommu_domain *domain,
 		smmu_err("%s: alloc page fail\n", __func__);
 		return -ENOMEM;
 	}
-	spin_lock_irqsave(&hisi_domain->lock, *flags);
+	spin_lock_irqsave(&mm_domain->lock, *flags);
 
 	if (smmu_pmd_none_lpae(*ppmd)) {
-		hisi_smmu_flush_pgtable_lpae(page_address(table),
+		mm_smmu_flush_pgtable_lpae(page_address(table),
 					     SMMU_PAGE_SIZE);
 		smmu_pmd_populate_lpae(ppmd, table,
 				       SMMU_PMD_TYPE | SMMU_PMD_NS);
-		hisi_smmu_flush_pgtable_lpae(ppmd, sizeof(*ppmd));
+		mm_smmu_flush_pgtable_lpae(ppmd, sizeof(*ppmd));
 	} else {
 		__free_page(table);
 	}
-	spin_unlock_irqrestore(&hisi_domain->lock, *flags);
+	spin_unlock_irqrestore(&mm_domain->lock, *flags);
 
 pte_ready:
 	if (prot & IOMMU_SEC)
@@ -305,7 +328,7 @@ pte_ready:
 	start = (smmu_pte_t *)smmu_pte_page_vaddr_lpae(ppmd) +
 		smmu_pte_index(addr);
 	pte = start;
-	pteval = hisi_smmu_pte_ready(prot);
+	pteval = mm_smmu_pte_ready(prot);
 
 #ifdef CONFIG_HISI_LB
 	pid = (prot & IOMMU_PORT_MASK) >> IOMMU_PORT_SHIFT;
@@ -315,17 +338,17 @@ pte_ready:
 		if (!pte_is_valid_lpae(pte))
 			*pte = (u64)(__pfn_to_phys(pfn) | pteval);
 		else
-			WARN_ONCE(1, "map to same VA more times!\n"); /*lint !e146 !e665*/
+			WARN_ONCE(1, "map to same VA more times!\n"); /*lint !e146 !e665 */
 		pte++;
 		pfn++;
 		addr += SMMU_PAGE_SIZE;
 	} while (addr < end);
 
-	hisi_smmu_flush_pgtable_lpae(start, sizeof(*pte) * (pte - start));
+	mm_smmu_flush_pgtable_lpae(start, sizeof(*pte) * (pte - start));
 	return 0;
 }
 
-static int hisi_smmu_alloc_init_pmd_lpae(struct iommu_domain *domain,
+static int mm_smmu_alloc_init_pmd_lpae(struct iommu_domain *domain,
 					 smmu_pgd_t *ppgd, unsigned long addr,
 					 unsigned long end, unsigned long paddr,
 					 int prot, unsigned long *flags)
@@ -335,7 +358,7 @@ static int hisi_smmu_alloc_init_pmd_lpae(struct iommu_domain *domain,
 	smmu_pmd_t *start = NULL;
 	u64 next;
 	pgtable_t table;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
 	if (!smmu_pgd_none_lpae(*ppgd))
 		goto pmd_ready;
@@ -346,17 +369,17 @@ static int hisi_smmu_alloc_init_pmd_lpae(struct iommu_domain *domain,
 		smmu_err("%s: alloc page fail\n", __func__);
 		return -ENOMEM;
 	}
-	spin_lock_irqsave(&hisi_domain->lock, *flags);
+	spin_lock_irqsave(&mm_domain->lock, *flags);
 	if (smmu_pgd_none_lpae(*ppgd)) {
-		hisi_smmu_flush_pgtable_lpae(page_address(table),
+		mm_smmu_flush_pgtable_lpae(page_address(table),
 					     SMMU_PAGE_SIZE);
 		smmu_pgd_populate_lpae(ppgd, table,
 				       SMMU_PGD_TYPE | SMMU_PGD_NS);
-		hisi_smmu_flush_pgtable_lpae(ppgd, sizeof(*ppgd));
+		mm_smmu_flush_pgtable_lpae(ppgd, sizeof(*ppgd));
 	} else {
 		__free_page(table);
 	}
-	spin_unlock_irqrestore(&hisi_domain->lock, *flags);
+	spin_unlock_irqrestore(&mm_domain->lock, *flags);
 
 pmd_ready:
 	if ((unsigned int)prot & IOMMU_SEC)
@@ -367,7 +390,7 @@ pmd_ready:
 
 	do {
 		next = smmu_pmd_addr_end_lpae(addr, end);
-		ret = hisi_smmu_alloc_init_pte_lpae(domain, ppmd, addr, next,
+		ret = mm_smmu_alloc_init_pte_lpae(domain, ppmd, addr, next,
 						    __phys_to_pfn(paddr), prot,
 						    flags);
 		if (ret)
@@ -379,7 +402,7 @@ error:
 	return ret;
 }
 
-int hisi_smmu_handle_mapping_lpae(struct iommu_domain *domain,
+int mm_smmu_handle_mapping_lpae(struct iommu_domain *domain,
 				  unsigned long iova, phys_addr_t paddr,
 				  size_t size, int prot)
 {
@@ -388,8 +411,8 @@ int hisi_smmu_handle_mapping_lpae(struct iommu_domain *domain,
 	unsigned long next;
 	unsigned long flags;
 
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
-	smmu_pgd_t *pgd = (smmu_pgd_t *)hisi_domain->va_pgtable_addr;
+	struct mm_domain *mm_domain = to_mm_domain(domain);
+	smmu_pgd_t *pgd = (smmu_pgd_t *)mm_domain->va_pgtable_addr;
 
 	if (!pgd) {
 		smmu_err("pgd is null\n");
@@ -401,7 +424,7 @@ int hisi_smmu_handle_mapping_lpae(struct iommu_domain *domain,
 	end = iova + size;
 	do {
 		next = smmu_pgd_addr_end_lpae(iova, end);
-		ret = hisi_smmu_alloc_init_pmd_lpae(domain, pgd, iova, next,
+		ret = mm_smmu_alloc_init_pmd_lpae(domain, pgd, iova, next,
 						    paddr, prot, &flags);
 		if (ret)
 			goto out_unlock;
@@ -413,17 +436,17 @@ out_unlock:
 	return ret;
 }
 
-static int hisi_smmu_map_lpae(struct iommu_domain *domain, unsigned long iova,
+static int mm_smmu_map_lpae(struct iommu_domain *domain, unsigned long iova,
 			      phys_addr_t paddr, size_t size, int prot)
 {
 	if (!domain) {
 		smmu_err("domain is null\n");
 		return -ENODEV;
 	}
-	return hisi_smmu_handle_mapping_lpae(domain, iova, paddr, size, prot);
+	return mm_smmu_handle_mapping_lpae(domain, iova, paddr, size, prot);
 }
 
-static unsigned long hisi_smmu_clear_pte_lpae(smmu_pgd_t *pmdp,
+static unsigned long mm_smmu_clear_pte_lpae(smmu_pgd_t *pmdp,
 					      unsigned long iova,
 					      unsigned long end)
 {
@@ -442,7 +465,7 @@ static unsigned long hisi_smmu_clear_pte_lpae(smmu_pgd_t *pmdp,
 	return size;
 }
 
-static unsigned long hisi_smmu_clear_pmd_lpae(smmu_pgd_t *pgdp,
+static unsigned long mm_smmu_clear_pmd_lpae(smmu_pgd_t *pgdp,
 					      unsigned long iova,
 					      unsigned long end)
 {
@@ -455,7 +478,7 @@ static unsigned long hisi_smmu_clear_pmd_lpae(smmu_pgd_t *pgdp,
 	ppmd = pmdp + smmu_pmd_index(iova);
 	do {
 		next = smmu_pmd_addr_end_lpae(iova, end);
-		hisi_smmu_clear_pte_lpae(ppmd, iova, next);
+		mm_smmu_clear_pte_lpae(ppmd, iova, next);
 		iova = next;
 		smmu_err("%s: iova=0x%lx, end=0x%lx\n", __func__, iova, end);
 	} while (ppmd++, iova < end);
@@ -463,23 +486,23 @@ static unsigned long hisi_smmu_clear_pmd_lpae(smmu_pgd_t *pgdp,
 	return size;
 }
 
-size_t hisi_smmu_handle_unmapping_lpae(struct iommu_domain *domain,
+size_t mm_smmu_handle_unmapping_lpae(struct iommu_domain *domain,
 				       unsigned long iova, size_t size)
 {
 	smmu_pgd_t *pgdp = NULL;
 	unsigned long end = 0;
 	unsigned long next = 0;
 	unsigned long unmap_size = 0;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
 	iova = SMMU_PAGE_ALIGN(iova);
 	size = SMMU_PAGE_ALIGN(size);
-	pgdp = (smmu_pgd_t *)hisi_domain->va_pgtable_addr;
+	pgdp = (smmu_pgd_t *)mm_domain->va_pgtable_addr;
 	end = iova + size;
 	pgdp += smmu_pgd_index(iova);
 	do {
 		next = smmu_pgd_addr_end_lpae(iova, end);
-		unmap_size += hisi_smmu_clear_pmd_lpae(pgdp, iova, next);
+		unmap_size += mm_smmu_clear_pmd_lpae(pgdp, iova, next);
 		iova = next;
 		smmu_err("%s: pgdp=%pK, iova=0x%lx\n", __func__, pgdp, iova);
 	} while (pgdp++, iova < end);
@@ -488,7 +511,7 @@ size_t hisi_smmu_handle_unmapping_lpae(struct iommu_domain *domain,
 	return (size_t)unmap_size;
 }
 
-static size_t hisi_smmu_unmap_lpae(struct iommu_domain *domain,
+static size_t mm_smmu_unmap_lpae(struct iommu_domain *domain,
 				   unsigned long iova, size_t size)
 {
 	size_t unmap_size = 0;
@@ -499,16 +522,18 @@ static size_t hisi_smmu_unmap_lpae(struct iommu_domain *domain,
 	}
 	/* caculate the max io virtual address */
 	/* unmapping the range of iova */
-	unmap_size = hisi_smmu_handle_unmapping_lpae(domain, iova, size);
+	unmap_size = mm_smmu_handle_unmapping_lpae(domain, iova, size);
 	if (unmap_size == size) {
 		smmu_err("%s:unmap size:0x%x\n", __func__, (unsigned int)size);
 		return size;
 	}
 
+	pr_err("%s:unmap fail: iova:0x%lx, size:0x%lx, unmapped:0x%lx\n",
+		__func__, iova, size, unmap_size);
 	return 0;
 }
 
-static phys_addr_t hisi_smmu_iova_to_phys_lpae(struct iommu_domain *domain,
+static phys_addr_t mm_smmu_iova_to_phys_lpae(struct iommu_domain *domain,
 					       dma_addr_t iova)
 {
 	smmu_pgd_t *pgdp = NULL;
@@ -516,9 +541,9 @@ static phys_addr_t hisi_smmu_iova_to_phys_lpae(struct iommu_domain *domain,
 
 	smmu_pmd_t pmd;
 	pte_t smmu_pte;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 
-	pgdp = (smmu_pgd_t *)hisi_domain->va_pgtable_addr;
+	pgdp = (smmu_pgd_t *)mm_domain->va_pgtable_addr;
 	if (!pgdp)
 		return 0;
 
@@ -539,74 +564,68 @@ static phys_addr_t hisi_smmu_iova_to_phys_lpae(struct iommu_domain *domain,
 	return __pfn_to_phys(pte_pfn(smmu_pte)) | (iova & ~SMMU_PAGE_MASK);
 }
 
-static int hisi_attach_dev_lpae(struct iommu_domain *domain, struct device *dev)
+static int mm_attach_dev_lpae(struct iommu_domain *domain, struct device *dev)
 {
 	struct device_node *np = NULL;
-	struct iommu_domain_data *domain_data = NULL;
-	struct hisi_smmu_device_lpae *hisi_smmu = NULL;
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
+	struct mm_smmu_device_lpae *mm_smmu = NULL;
+	struct mm_domain *mm_domain = to_mm_domain(domain);
 	int ret = 0;
+	struct mm_dom_cookie *cookie = NULL;
 
-	if (!dev->iommu_fwspec || dev->iommu_fwspec->ops != &hisi_smmu_ops)
+	if (!dev->iommu_fwspec || dev->iommu_fwspec->ops != &mm_smmu_ops)
 		return -ENODEV; /* Not a iommu client device */
 
-	hisi_smmu = dev->iommu_fwspec->iommu_priv;
-	if (!hisi_smmu) {
-		pr_err("Device (%pK %s) have no hisi smmu for add to\n", dev,
+	mm_smmu = dev->iommu_fwspec->iommu_priv;
+	if (!mm_smmu) {
+		pr_err("Device (%pK %s) have no mm smmu for add to\n", dev,
 		       dev_name(dev));
 		return -ENODEV;
 	}
 
-	if (hisi_domain->domain_data)
+	if (mm_domain->dev)
 		return 0;
 
-	domain_data = kzalloc(sizeof(*domain_data), GFP_KERNEL);
-	if (!domain_data)
-		return -ENOMEM;
-
-	np = hisi_smmu->dev->of_node;
-	ret = of_get_iova_info(np, &domain_data->iova_start,
-			       &domain_data->iova_size,
-			       &domain_data->iova_align);
+	cookie = domain->iova_cookie;
+	np = mm_smmu->dev->of_node;
+	ret = of_get_iova_info(np, &cookie->iova.iova_start,
+			       &cookie->iova.iova_size,
+			       &cookie->iova.iova_align);
 	if (ret) {
 		pr_err("get dev(%s) iova info fail\n", dev_name(dev));
-		kfree(domain_data);
 		return ret;
 	}
 
-	hisi_domain->iova_pool =
-		iova_pool_setup(domain_data->iova_start, domain_data->iova_size,
-				domain_data->iova_align);
-	if (!hisi_domain->iova_pool) {
+	cookie->iova_pool =
+		iova_pool_setup(cookie->iova.iova_start, cookie->iova.iova_size,
+				cookie->iova.iova_align);
+	if (!cookie->iova_pool) {
 		pr_err("setup dev(%s) iova pool fail\n", dev_name(dev));
-		kfree(domain_data);
 		return -ENOMEM;
 	}
 
-	hisi_domain->domain_data = domain_data;
-	hisi_domain->dev = hisi_smmu->dev;
+	mm_domain->dev = mm_smmu->dev;
 
 	return 0;
 }
 
-static void hisi_detach_dev_lpae(struct iommu_domain *domain,
+static void mm_detach_dev_lpae(struct iommu_domain *domain,
 				 struct device *dev)
 {
-	struct hisi_domain *hisi_domain = to_hisi_domain(domain);
-	struct iommu_domain_data *data = hisi_domain->domain_data;
+	struct mm_dom_cookie *cookie = domain->iova_cookie;
 
-	if (hisi_domain->iova_pool)
-		iova_pool_destroy(hisi_domain->iova_pool);
-
-	if (!data)
+	if (!cookie) {
 		smmu_err("%s:error! data entry has been delected\n", __func__);
-	else
-		kfree(data);
+		return;
+	}
 
-	hisi_domain->domain_data = NULL;
+	if (cookie->iova_pool)
+		iova_pool_destroy(cookie->iova_pool);
+
+	kfree(cookie);
 }
 
-static size_t hisi_iommu_map_sg_lpae(struct iommu_domain *domain,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
+static size_t mm_iommu_map_sg_lpae(struct iommu_domain *domain,
 				     unsigned long iova, struct scatterlist *sg,
 				     unsigned int nents, int prot)
 {
@@ -632,7 +651,7 @@ static size_t hisi_iommu_map_sg_lpae(struct iommu_domain *domain,
 		if (!IS_ALIGNED(s->offset, min_pagesz))
 			goto out_err;
 
-		ret = hisi_smmu_map_lpae(domain, iova + mapped, phys,
+		ret = mm_smmu_map_lpae(domain, iova + mapped, phys,
 					 (size_t)s->length, prot);
 		if (ret)
 			goto out_err;
@@ -643,22 +662,25 @@ static size_t hisi_iommu_map_sg_lpae(struct iommu_domain *domain,
 
 out_err:
 	/* undo mappings already done */
-	hisi_smmu_unmap_lpae(domain, iova, mapped);
+	mm_smmu_unmap_lpae(domain, iova, mapped);
 
 	return 0;
 }
+#endif
 
-static int hisi_smmu_add_device(struct device *dev)
+static int mm_smmu_add_device(struct device *dev)
 {
 	struct iommu_group *group = NULL;
-	struct hisi_smmu_device_lpae *hisi_smmu = NULL;
+	struct mm_smmu_device_lpae *mm_smmu = NULL;
 
-	if (!dev->iommu_fwspec || dev->iommu_fwspec->ops != &hisi_smmu_ops)
+	if (!dev->iommu_fwspec || dev->iommu_fwspec->ops != &mm_smmu_ops)
 		return -ENODEV; /* Not a iommu client device */
 
-	hisi_smmu = dev->iommu_fwspec->iommu_priv;
-	if (!hisi_smmu) {
-		pr_err("Device (%pK %s) have no hisi smmu for add to\n", dev,
+	pr_info("enter %s, dev %s\n", __func__, dev_name(dev));
+
+	mm_smmu = dev->iommu_fwspec->iommu_priv;
+	if (!mm_smmu) {
+		pr_err("Device (%pK %s) have no mm smmu for add to\n", dev,
 		       dev_name(dev));
 		return -ENODEV;
 	}
@@ -670,154 +692,175 @@ static int hisi_smmu_add_device(struct device *dev)
 	}
 
 	iommu_group_put(group);
-	iommu_device_link(&hisi_smmu->iommu, dev);
+	iommu_device_link(&mm_smmu->iommu, dev);
 
 	return 0;
 }
 
-static void hisi_smmu_remove_device(struct device *dev)
+static void mm_smmu_remove_device(struct device *dev)
 {
-	struct hisi_smmu_device_lpae *hisi_smmu = dev->iommu_fwspec->iommu_priv;
+	struct mm_smmu_device_lpae *mm_smmu = dev->iommu_fwspec->iommu_priv;
 
-	if (!hisi_smmu)
+	if (!mm_smmu)
 		return;
 
 	iommu_group_remove_device(dev);
-	iommu_device_unlink(&hisi_smmu->iommu, dev);
+	iommu_device_unlink(&mm_smmu->iommu, dev);
 	iommu_fwspec_free(dev);
 }
 
-static struct iommu_group *hisi_smmu_device_group(struct device *dev)
+static struct iommu_group *mm_smmu_device_group(struct device *dev)
 {
 	struct iommu_group *group = NULL;
-	struct hisi_smmu_device_lpae *hisi_smmu = dev->iommu_fwspec->iommu_priv;
+	struct mm_smmu_device_lpae *mm_smmu = dev->iommu_fwspec->iommu_priv;
 
-	if (!hisi_smmu)
+	if (!mm_smmu)
 		return ERR_PTR(-ENODEV); /* Not a iommu client device */
 
-	if (!hisi_smmu->group) {
+	if (!mm_smmu->group) {
 		group = iommu_group_alloc();
 		if (IS_ERR(group)) {
 			dev_err(dev, "Failed to allocate SMMU group\n");
 			return group;
 		}
-		hisi_smmu->group = group;
+		mm_smmu->group = group;
 	}
 
-	return hisi_smmu->group;
+	return mm_smmu->group;
 }
 
-static int hisi_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
+static int mm_smmu_of_xlate(struct device *dev, struct of_phandle_args *args)
 {
 	struct platform_device *pdev = NULL;
-	struct hisi_smmu_device_lpae *hisi_smmu = NULL;
+	struct mm_smmu_device_lpae *mm_smmu = NULL;
 
 	pdev = of_find_device_by_node(args->np);
 	if (WARN_ON(!pdev)) /*lint !e146 !e665 */
 		return -EINVAL;
 
-	hisi_smmu = platform_get_drvdata(pdev);
+	mm_smmu = platform_get_drvdata(pdev);
 	if (!dev->iommu_fwspec->iommu_priv)
-		dev->iommu_fwspec->iommu_priv = hisi_smmu;
-	else if (WARN_ON(hisi_smmu !=
+		dev->iommu_fwspec->iommu_priv = mm_smmu;
+	else if (WARN_ON(mm_smmu !=
 			dev->iommu_fwspec->iommu_priv)) /*lint !e146 !e665 */
 		return -EINVAL;
 
 	return 0;
 }
 
-static struct iommu_ops hisi_smmu_ops = { /*lint !e31 */
-	.domain_alloc = hisi_smmu_domain_alloc_lpae,
-	.domain_free = hisi_smmu_domain_free_lpae,
-	.map = hisi_smmu_map_lpae,
-	.unmap = hisi_smmu_unmap_lpae,
-	.map_sg = hisi_iommu_map_sg_lpae,
-	.attach_dev = hisi_attach_dev_lpae,
-	.detach_dev = hisi_detach_dev_lpae,
-	.add_device = hisi_smmu_add_device,
-	.remove_device = hisi_smmu_remove_device,
-	.device_group = hisi_smmu_device_group,
-	.of_xlate = hisi_smmu_of_xlate,
-	.iova_to_phys = hisi_smmu_iova_to_phys_lpae,
+static int mm_smmu_domain_get_attr(struct iommu_domain *domain,
+				enum iommu_attr attr, void *data)
+{
+	struct mm_domain *mm_domain = NULL;
+
+	mm_domain = to_mm_domain(domain);
+	switch (attr) {
+	case DOMAIN_ATTR_TTBR:
+		*(phys_addr_t *)data = mm_domain->pa_pgtable_addr;
+		return 0;
+	default:
+		pr_err("%s: attr not support, attr = %d", __func__, (int)attr);
+		return -ENODEV;
+	}
+}
+
+static struct iommu_ops mm_smmu_ops = { /*lint !e31 */
+	.domain_alloc = smmu_domain_alloc_lpae,
+	.domain_free = mm_smmu_domain_free_lpae,
+	.map = mm_smmu_map_lpae,
+	.unmap = mm_smmu_unmap_lpae,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
+	.map_sg = mm_iommu_map_sg_lpae,
+#endif
+	.attach_dev = mm_attach_dev_lpae,
+	.detach_dev = mm_detach_dev_lpae,
+	.add_device = mm_smmu_add_device,
+	.remove_device = mm_smmu_remove_device,
+	.device_group = mm_smmu_device_group,
+	.domain_get_attr = mm_smmu_domain_get_attr,
+	.of_xlate = mm_smmu_of_xlate,
+	.iova_to_phys = mm_smmu_iova_to_phys_lpae,
 	.pgsize_bitmap = SMMU_PAGE_SIZE,
 };
 
-static int hisi_smmu_probe_lpae(struct platform_device *pdev)
+static int mm_smmu_probe_lpae(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct hisi_smmu_device_lpae *hisi_smmu = NULL;
+	struct mm_smmu_device_lpae *mm_smmu = NULL;
 	int ret = 0;
 
-	smmu_err("enter %s\n", __func__);
+	smmu_err("enter %s: devname = [%s]\n", __func__, dev_name(dev));
 
-	hisi_smmu = devm_kzalloc(dev, sizeof(*hisi_smmu), GFP_KERNEL);
-	if (!hisi_smmu)
+	mm_smmu = devm_kzalloc(dev, sizeof(*mm_smmu), GFP_KERNEL);
+	if (!mm_smmu)
 		return -ENOMEM;
 
-	hisi_smmu->dev = dev;
-	platform_set_drvdata(pdev, hisi_smmu);
+	mm_smmu->dev = dev;
+	platform_set_drvdata(pdev, mm_smmu);
 
-	ret = iommu_device_sysfs_add(&hisi_smmu->iommu, dev, NULL,
+	ret = iommu_device_sysfs_add(&mm_smmu->iommu, dev, NULL,
 				     dev_name(dev));
 	if (ret) {
 		pr_err("Failed to register iommu in sysfs\n");
 		return ret; /*lint !e429 */
 	}
 
-	iommu_device_set_ops(&hisi_smmu->iommu, &hisi_smmu_ops);
-	iommu_device_set_fwnode(&hisi_smmu->iommu, dev->fwnode);
+	iommu_device_set_ops(&mm_smmu->iommu, &mm_smmu_ops);
+	iommu_device_set_fwnode(&mm_smmu->iommu, dev->fwnode);
 
-	ret = iommu_device_register(&hisi_smmu->iommu);
+	ret = iommu_device_register(&mm_smmu->iommu);
 	if (ret) {
 		pr_err("Failed to register iommu device\n");
 		return ret; /*lint !e429 */
 	}
 
-	bus_set_iommu(&platform_bus_type, &hisi_smmu_ops);
+	(void)bus_set_iommu(&platform_bus_type, &mm_smmu_ops);
 
 	return 0; /*lint !e429 */
 }
 
-static int hisi_smmu_remove_lpae(struct platform_device *pdev)
+static int mm_smmu_remove_lpae(struct platform_device *pdev)
 {
 	return 0;
 }
 
-static const struct of_device_id hisi_smmu_of_match_lpae[] = {
+static const struct of_device_id mm_smmu_of_match_lpae[] = {
 	{.compatible = "hisi,hisi-smmu-lpae" },
 	{},
 };
-MODULE_DEVICE_TABLE(of, hisi_smmu_of_match_lpae);
+MODULE_DEVICE_TABLE(of, mm_smmu_of_match_lpae);
 
-static struct platform_driver hisi_smmu_driver_lpae = {
+static struct platform_driver mm_smmu_driver_lpae = {
 	.driver = {
 			.owner = THIS_MODULE,
 			.name = "hisi-smmu-lpae",
-			.of_match_table = of_match_ptr(hisi_smmu_of_match_lpae),
+			.of_match_table = of_match_ptr(mm_smmu_of_match_lpae),
 		},
-	.probe = hisi_smmu_probe_lpae,
-	.remove = hisi_smmu_remove_lpae,
+	.probe = mm_smmu_probe_lpae,
+	.remove = mm_smmu_remove_lpae,
 };
 
-static int __init hisi_smmu_init_lpae(void)
+static int __init mm_smmu_init_lpae(void)
 {
 	int ret = 0;
 
-	ret = platform_driver_register(&hisi_smmu_driver_lpae);
+	ret = platform_driver_register(&mm_smmu_driver_lpae);
 
 	return ret;
 }
 
-static void __exit hisi_smmu_exit_lpae(void)
+static void __exit mm_smmu_exit_lpae(void)
 {
-	platform_driver_unregister(&hisi_smmu_driver_lpae);
+	platform_driver_unregister(&mm_smmu_driver_lpae);
 }
 
-subsys_initcall(hisi_smmu_init_lpae);
-module_exit(hisi_smmu_exit_lpae);
+subsys_initcall(mm_smmu_init_lpae);
+module_exit(mm_smmu_exit_lpae);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 IOMMU_OF_DECLARE(hisi_smmu, "hisi,hisi-smmu-lpae", NULL);
+#endif
 
-MODULE_DESCRIPTION("IOMMU API for Hisi SMMU implementations");
-MODULE_AUTHOR("Huawei Hisilicon Company");
+MODULE_DESCRIPTION("IOMMU API for SMMU implementations");
+MODULE_AUTHOR("Hisilicon Company");
 MODULE_LICENSE("GPL v2");

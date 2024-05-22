@@ -1,9 +1,28 @@
+/*
+ * board_cooling.c
+ *
+ * board cooling for thermal
+ *
+ * Copyright (c) 2017-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/module.h>
 #include <linux/thermal.h>
 #include <linux/err.h>
 #include <linux/cpu.h>
 #include <linux/slab.h>
 #include <trace/events/thermal.h>
+#include <securec.h>
 
 typedef u32 (*get_power_t)(void);
 
@@ -16,6 +35,7 @@ struct board_cooling_device {
 	struct list_head node;
 	get_power_t get_power;
 };
+
 /*lint -e708 -e570 -e64 -e785 -esym(708,570,64,785,*)*/
 static DEFINE_IDR(board_cdev_idr);
 /*lint -e708 -e570 -e64 -e785 +esym(708,570,64,785,*)*/
@@ -33,7 +53,7 @@ static int get_idr(struct idr *idr, int *id)
 	mutex_lock(&board_cdev_lock);
 	ret = idr_alloc(idr, NULL, 0, 0, GFP_KERNEL);
 	mutex_unlock(&board_cdev_lock);
-	if (unlikely(ret < 0)) //lint !e730
+	if (unlikely(ret < 0)) /*lint !e730*/
 		return ret;
 	*id = ret;
 
@@ -49,15 +69,11 @@ static int release_idr(struct idr *idr, int id)
 	return 0;
 }
 
-
 static int board_state2power(struct thermal_cooling_device *cdev,
-			       struct thermal_zone_device *tz,
-			       unsigned long state, u32 *power)
+			     struct thermal_zone_device *tz,
+			     unsigned long state, u32 *power)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
-
-	if (tz == NULL)
-		return -EINVAL;
 
 	if (state > board_cdev->max_level)
 		return -EINVAL;
@@ -68,15 +84,12 @@ static int board_state2power(struct thermal_cooling_device *cdev,
 }
 
 static int board_power2state(struct thermal_cooling_device *cdev,
-			       struct thermal_zone_device *tz, u32 power,
-			       unsigned long *state)
+			     struct thermal_zone_device *tz,
+			     u32 power, unsigned long *state)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
 	u32 *power_table = board_cdev->power_table;
 	unsigned long i;
-
-	if (tz == NULL)
-		return -EINVAL;
 
 	for (i = 0; i < board_cdev->max_level; i++)
 		if (power >= power_table[i])
@@ -88,7 +101,7 @@ static int board_power2state(struct thermal_cooling_device *cdev,
 }
 
 static int board_get_max_state(struct thermal_cooling_device *cdev,
-				 unsigned long *state)
+			       unsigned long *state)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
 
@@ -98,7 +111,7 @@ static int board_get_max_state(struct thermal_cooling_device *cdev,
 }
 
 static int board_get_cur_state(struct thermal_cooling_device *cdev,
-				 unsigned long *state)
+			       unsigned long *state)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
 
@@ -108,7 +121,7 @@ static int board_get_cur_state(struct thermal_cooling_device *cdev,
 }
 
 static int board_set_cur_state(struct thermal_cooling_device *cdev,
-				 unsigned long state)
+			       unsigned long state)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
 
@@ -132,13 +145,9 @@ static struct thermal_cooling_device_ops board_cooling_ops = {
 };
 
 static int board_get_requested_power(struct thermal_cooling_device *cdev,
-				       struct thermal_zone_device *tz,
-				       u32 *power)
+				     struct thermal_zone_device *tz, u32 *power)
 {
 	struct board_cooling_device *board_cdev = cdev->devdata;
-
-	if (tz == NULL)
-		return -EINVAL;
 
 	*power = board_cdev->get_power();
 
@@ -146,7 +155,7 @@ static int board_get_requested_power(struct thermal_cooling_device *cdev,
 }
 
 struct thermal_cooling_device *
-board_power_cooling_register (struct device_node *np, get_power_t get_power)
+board_power_cooling_register(struct device_node *np, get_power_t get_power)
 {
 	int ret;
 	struct board_cooling_device *board_cdev = NULL;
@@ -154,7 +163,6 @@ board_power_cooling_register (struct device_node *np, get_power_t get_power)
 	char name[THERMAL_NAME_LENGTH];
 
 	ret = of_property_count_elems_of_size(np, "power", (int)sizeof(u32));
-
 	if (ret < 0) {
 		pr_err("missing power property\n");
 		return ERR_PTR((long)ret);
@@ -172,8 +180,9 @@ board_power_cooling_register (struct device_node *np, get_power_t get_power)
 		goto free_board_cdev;
 	}
 
-	ret = of_property_read_u32_array(np, "power", board_cdev->power_table, (size_t)board_cdev->max_level);
-	if (ret) {
+	ret = of_property_read_u32_array(np, "power", board_cdev->power_table,
+					 (size_t)board_cdev->max_level);
+	if (ret < 0) {
 		pr_err("%s actor power read err\n", __func__);
 		cool_dev = ERR_PTR((long)ret);
 		goto free_power_table;
@@ -185,13 +194,18 @@ board_power_cooling_register (struct device_node *np, get_power_t get_power)
 	board_cooling_ops.get_requested_power = board_get_requested_power;
 
 	ret = get_idr(&board_cdev_idr, &board_cdev->id);
-	if (ret) {
+	if (ret < 0) {
 		cool_dev = ERR_PTR((long)ret);
 		goto free_power_table;
 	}
 
-	snprintf(name, sizeof(name), "thermal-board-%d",
-		 board_cdev->id);
+	ret = snprintf_s(name, sizeof(name), (sizeof(name) - 1),
+			 "thermal-board-%d", board_cdev->id);
+	if (ret < 0) {
+		pr_err("%s snprintf_s err\n", __func__);
+		cool_dev = ERR_PTR((long)ret);
+		goto remove_idr;
+	}
 
 	cool_dev = thermal_of_cooling_device_register(np, name, board_cdev,
 						      &board_cooling_ops);
@@ -213,7 +227,6 @@ free_board_cdev:
 
 	return cool_dev;
 }
-
 EXPORT_SYMBOL(board_power_cooling_register);
 
 void board_cooling_unregister(struct thermal_cooling_device *cdev)
@@ -224,11 +237,9 @@ void board_cooling_unregister(struct thermal_cooling_device *cdev)
 		return;
 
 	board_cdev = cdev->devdata;
-
 	mutex_lock(&board_cdev_lock);
 	list_del(&board_cdev->node);
 	mutex_unlock(&board_cdev_lock);
-
 	thermal_cooling_device_unregister(board_cdev->cdev);
 	release_idr(&board_cdev_idr, board_cdev->id);
 	kfree(board_cdev->power_table);

@@ -25,6 +25,7 @@
 
 #include "drv_mailbox_msg.h"
 #include "bsp_drv_ipc.h"
+#include "voice_proxy_fusion.h"
 
 /*lint -e528 -e753 -e754*/
 #define LOG_TAG "voice_proxy"
@@ -33,7 +34,7 @@
 #define COMMAND_CALLBACKS_SIZE 20
 #define SIGN_INIT_CALLBACKS_SIZE 20
 
-/* receive message from hifi£¬the size of msg_id (bytes ) */
+/* receive message from hifi the size of msg_id (bytes) */
 #define VOICE_PROXY_MSG_ID_SIZE (4)
 
 #define DTS_COMP_VOICE_PROXY_NAME "hisilicon,voice_proxy"
@@ -470,7 +471,6 @@ static int32_t write_thread_get_data(int8_t *data, uint32_t *size, uint16_t *msg
 
 	list_del_init(&command->list_node);
 	kfree(command);
-	command = NULL;
 
 	return ret; /* lint !e438 */
 }
@@ -485,6 +485,7 @@ static int voice_proxy_write_thread(void *arg)
 	uint32_t mailcode = 0;
 	uint32_t size = VOICE_PROXY_LIMIT_PARAM_SIZE;
 	int8_t *data = NULL;
+	bool is_normal_id = false;
 
 	UNUSED_PARAMETER(arg);
 
@@ -521,10 +522,9 @@ static int voice_proxy_write_thread(void *arg)
 				continue;
 			}
 
-			mailcode = (msg_id == ID_PROXY_VOICE_LTE_TX_NTF) ?
-				MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE :
-				MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE_RT;
-
+			is_normal_id = (msg_id == ID_PROXY_VOICE_LTE_TX_NTF || msg_id == ID_PROXY_VOICE_FUSIONCALL_CTRL_IND ||
+				msg_id == ID_PROXY_VOICE_VPEER_CTRL_NTF);
+			mailcode = is_normal_id ? MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE : MAILBOX_MAILCODE_ACPU_TO_HIFI_VOICE_RT;
 			if (priv.send_mailbox_msg)
 				ret = priv.send_mailbox_msg(mailcode, msg_id, data, size);
 			else
@@ -600,7 +600,7 @@ static void handle_mail(const void *usr_para, struct mb_queue *mail_handle, uint
 		goto EXIT;
 	}
 
-	if (ret_mail != MAILBOX_OK) {
+	if (ret_mail != 0) {
 		AUDIO_LOGE("read mailbox msg fail! ret=0x%x", (unsigned int)ret_mail);
 		goto EXIT;
 	}
@@ -625,7 +625,6 @@ EXIT:
 			rev_msg->mail_buf = NULL;
 		}
 		kfree(rev_msg);
-		rev_msg = NULL;
 	}
 }
 
@@ -801,5 +800,4 @@ module_init(voice_proxy_init);
 module_exit(voice_proxy_exit);
 
 MODULE_DESCRIPTION("voice_proxy driver");
-MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 MODULE_LICENSE("GPL");

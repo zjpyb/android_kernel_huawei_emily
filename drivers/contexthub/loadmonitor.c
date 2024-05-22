@@ -22,19 +22,20 @@
 #include <iomcu_ddr_map.h>
 #include <securec.h>
 #include "protocol.h"
-#ifdef CONFIG_INPUTHUB_20
 #include "contexthub_route.h"
-#else
-#include "inputhub_route.h"
-#endif
 #include "common.h"
 #include "shmem.h"
 
 #define MODULE_NAME "loadmonitor"
+#ifdef __LLT_UT__
+#define STATIC
+#else
+#define STATIC static
+#endif
 
 /* STRUCT DEFINITIONS */
 typedef struct {
-	pkt_header_t         hd;
+	struct pkt_header         hd;
 } loadmonitor_sig_data_req_t;
 
 struct aold_open_param{
@@ -48,7 +49,7 @@ struct LOADMONITOR_RESP_DATA {
 };
 
 typedef struct {
-	pkt_subcmd_resp_t    comm_resp;
+	struct pkt_subcmd_resp    comm_resp;
 	struct LOADMONITOR_RESP_DATA data;
 } loadmonitor_sig_data_resp_t;
 
@@ -58,9 +59,8 @@ struct ao_loadmonitor_info {
 	loadmonitor_sig_data_resp_t resp;
 };
 
-/* EXTERN VARIABLES */
-extern sys_status_t iom3_sr_status;
-extern int g_iom3_state;
+sys_status_t __weak iom3_sr_status = ST_WAKEUP;
+int __weak g_iom3_state = IOM3_ST_NORMAL;
 static int g_ao_loadmonitor_init = 0;
 static struct ao_loadmonitor_info g_ao_loadmonitor_info;
 
@@ -68,7 +68,7 @@ static struct ao_loadmonitor_info g_ao_loadmonitor_info;
 /*
  * bool函数，判断inputbhub IPC通信正常，返回一个ｂｏｏｌ值
  */
-static bool is_inputhub_ipc_available(void)
+STATIC bool is_inputhub_ipc_available(void)
 {
 	if (ST_SLEEP == iom3_sr_status) {
 		pr_warn("%s: sensorhub is sleep.\n", __func__);
@@ -88,7 +88,7 @@ static bool is_inputhub_ipc_available(void)
 	return true;
 }
 
-static int ao_loadmonitor_data_from_mcu(const pkt_header_t *head)
+STATIC int ao_loadmonitor_data_from_mcu(const struct pkt_header *head)
 {
 	loadmonitor_sig_data_resp_t *p = (loadmonitor_sig_data_resp_t *)head;
 	int ret;
@@ -121,8 +121,8 @@ static int ao_loadmonitor_data_from_mcu(const pkt_header_t *head)
 
 	return 0;
 }
-
-static int ao_loadmonitor_init(void)
+/* lint -e86 */
+STATIC int ao_loadmonitor_init(void)
 {
 	int ret;
 
@@ -137,7 +137,7 @@ static int ao_loadmonitor_init(void)
 
 	return 0;
 }
-
+/* lint +e86 */
 /*
  * 发送IPC通知contexthub使能loadmonitor
  */
@@ -147,9 +147,10 @@ int ao_loadmonitor_enable(unsigned int delay_value, unsigned int freq)
 	struct read_info rd;
 	int ret;
 	pkt_cmn_interval_req_t pkt;
-#ifdef CONFIG_INPUTHUB_20
-	write_info_t winfo;
-#endif
+	struct write_info winfo;
+
+	if (get_contexthub_dts_status() != 0)
+		return -EINVAL;
 
 	if (g_ao_loadmonitor_init == 0) {
 		ret = ao_loadmonitor_init();
@@ -168,19 +169,11 @@ int ao_loadmonitor_enable(unsigned int delay_value, unsigned int freq)
 	open = (struct aold_open_param *)&pkt.param;
 	open->period = delay_value;
 	open->freq = freq;
-#ifdef CONFIG_INPUTHUB_20
 	winfo.tag = TAG_LOADMONITOR;
 	winfo.cmd = CMD_CMN_OPEN_REQ;
 	winfo.wr_buf = &pkt.param;
 	winfo.wr_len = sizeof(pkt) - sizeof(pkt.hd);
 	ret = write_customize_cmd(&winfo, &rd, true);
-#else
-	pkt.hd.tag       = TAG_LOADMONITOR;
-	pkt.hd.cmd       = CMD_CMN_OPEN_REQ;
-	pkt.hd.resp      = 1;
-	pkt.hd.length    = sizeof(pkt) - sizeof(pkt.hd);
-	ret = inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), &rd);
-#endif
 	if (ret < 0) {
 		pr_err("inputhub_mcu_write_cmd_adapter error, ret is %d!\r\n", ret);
 		return ret;
@@ -197,30 +190,20 @@ int ao_loadmonitor_disable(void)
 {
 	struct read_info rd;
 	int ret;
-#ifdef CONFIG_INPUTHUB_20
-	write_info_t winfo;
-#else
-	pkt_cmn_close_req_t pkt;
-#endif
+	struct write_info winfo;
+
+	if (get_contexthub_dts_status() != 0)
+		return -EINVAL;
 
 	if (false == is_inputhub_ipc_available()) {
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_INPUTHUB_20
 	winfo.tag = TAG_LOADMONITOR;
 	winfo.cmd = CMD_CMN_CLOSE_REQ;
 	winfo.wr_buf = NULL;
 	winfo.wr_len = 0;
 	ret = write_customize_cmd(&winfo, &rd, true);
-#else
-	pkt.hd.tag       = TAG_LOADMONITOR;
-	pkt.hd.cmd       = CMD_CMN_CLOSE_REQ;
-	pkt.hd.resp      = 1;
-	pkt.hd.length    = sizeof(pkt) - sizeof(pkt.hd);
-	(void)memset_s(&pkt.close_param, sizeof(pkt.close_param), 0, sizeof(pkt.close_param));
-	ret = inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), &rd);
-#endif
 	if (ret < 0) {
 		pr_err("inputhub_mcu_write_cmd_adapter error, ret is %d!\r\n", ret);
 		return ret;
@@ -233,22 +216,28 @@ int ao_loadmonitor_disable(void)
 /*
  * 发送IPC通知contexthub读取loadmonitor数据
  */
+ /* lint -e446 */
 int32_t _ao_loadmonitor_read(void *data, uint32_t len)
 {
-	int ret;
+	int ret, i;
+	struct LOADMONITOR_SIGS *blank_data = NULL;
 	struct LOADMONITOR_RESP_DATA *resp_dt = NULL;
 	static void __iomem *p_data;
 	size_t dt_len;
 	unsigned long left;
-#ifdef CONFIG_INPUTHUB_20
-	write_info_t winfo;
-#else
-	pkt_header_t pkt;
-#endif
+	struct write_info winfo;
 
 	if (data == NULL) {
 		pr_err("[%s] data is err.\n", __func__);
 		return -EINVAL;
+	}
+
+	if (get_contexthub_dts_status() != 0) {
+		blank_data  = (struct LOADMONITOR_SIGS *)data;
+		(void)memset_s(blank_data, sizeof(*blank_data), 0, sizeof(*blank_data));
+		for (i = 0; i < MAX_SIG_CNT_PER_IP; i++)
+			blank_data->sig[i].samples = 1;
+		return -ENODEV;
 	}
 
 	if (false == is_inputhub_ipc_available()) {
@@ -257,19 +246,11 @@ int32_t _ao_loadmonitor_read(void *data, uint32_t len)
 
 	reinit_completion(&g_ao_loadmonitor_info.complete);
 
-#ifdef CONFIG_INPUTHUB_20
 	winfo.tag = TAG_LOADMONITOR;
 	winfo.cmd = CMD_READ_AO_MONITOR_SENSOR;
 	winfo.wr_buf = NULL;
 	winfo.wr_len = 0;
 	ret = write_customize_cmd(&winfo, NULL, true);
-#else
-	pkt.tag      = TAG_LOADMONITOR;
-	pkt.cmd      = CMD_READ_AO_MONITOR_SENSOR;
-	pkt.resp     = 1;
-	pkt.length   = 0;
-	ret = inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);
-#endif
 	if (ret) {
 		pr_err("%s: error, ret is %d!\r\n", __func__, ret);
 		return ret;
@@ -303,7 +284,7 @@ int32_t _ao_loadmonitor_read(void *data, uint32_t len)
 	}
 	return 0;
 }
-
+/* lint +e446 */
 /*lint -e528 -e753*/
 MODULE_ALIAS("platform:contexthub"MODULE_NAME);
 MODULE_LICENSE("GPL v2");

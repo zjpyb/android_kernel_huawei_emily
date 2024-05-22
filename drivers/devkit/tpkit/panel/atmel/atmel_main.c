@@ -6,8 +6,8 @@
 #include <linux/of_gpio.h>
 #include <linux/interrupt.h>
 #include <linux/regulator/consumer.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_api.h"
 #include "atmel.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -2603,10 +2603,10 @@ static int atmel_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);

@@ -20,7 +20,7 @@ struct task_type_read;
 
 unsigned short memcheck_get_memstat(struct memstat_all *p);
 int memcheck_do_command(const struct track_cmd *cmd);
-void memcheck_save_top_slub(char *name);
+void memcheck_save_top_slub(const char *name);
 int memcheck_detail_read(void *buf, struct detail_info *info);
 int memcheck_stack_read(void *buf, struct stack_info *info);
 int memcheck_stack_write(const void *buf, const struct stack_info *info);

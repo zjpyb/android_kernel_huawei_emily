@@ -1,36 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2015-2019. All rights reserved.
  * Description: recovery misc
- * Author: jimingquan jimingquan@huawei.com
+ * Author: jimingquan
  * Create: 2015-05-19
  */
 
 #include "recovery_misc.h"
-#include <linux/kthread.h>
-#include <linux/sched/rt.h>
-#include <huawei_platform/log/hw_log.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/device.h>
-#include <linux/err.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
-#include <linux/uaccess.h>
-#include <linux/sched.h>
-#include <linux/freezer.h>
+
 #include <linux/input.h>
-#include <linux/i2c.h>
-#include <linux/reboot.h>
-#include <linux/suspend.h>
-#include <linux/fb.h>
-#include <linux/timer.h>
-#include <linux/rtc.h>
-#include <linux/device.h>
-#include <linux/pm_wakeup.h>
 #include <linux/module.h>
-#include <linux/fs.h>
+#include <linux/reboot.h>
 #include <linux/syscalls.h>
-#include <linux/async.h>
+#include <linux/types.h>
+
+#include <huawei_platform/log/hw_log.h>
 #include <securec.h>
 
 #define HWLOG_TAG MISC_RECOVERY
@@ -39,7 +22,7 @@ HWLOG_REGIST();
 #define RE 0
 
 int operate_node(const char *path, char *data, unsigned int len,
-		unsigned int write_read)
+	unsigned int write_read)
 {
 	struct file *fp = NULL;
 	unsigned long old_fs;
@@ -69,12 +52,11 @@ int operate_node(const char *path, char *data, unsigned int len,
 
 static int reboot_recovery_misc_write(void)
 {
-	misc_message_type misc_message;
-
-	(void)memset_s(&misc_message, sizeof(misc_message_type), 0,
-		sizeof(misc_message_type));
+	struct misc_message_type misc_message;
+	(void)memset_s(&misc_message, sizeof(misc_message), 0,
+		sizeof(misc_message));
 	if (operate_node(MISC_NODE_PATH, (char *)&misc_message,
-		sizeof(misc_message_type), RE) == 0)
+		sizeof(misc_message), RE) == 0)
 		MISC_LOG_INFO("read misc info success\n");
 	else
 		MISC_LOG_INFO("read misc failed\n");
@@ -82,7 +64,7 @@ static int reboot_recovery_misc_write(void)
 		MISC_BOOT_RECOVERY_STR, strlen(MISC_BOOT_RECOVERY_STR)) != EOK)
 		MISC_LOG_INFO("strncpy_s fail\n");
 	if (operate_node(MISC_NODE_PATH, (char *)&misc_message,
-		sizeof(misc_message_type), WR) == 0) {
+		sizeof(misc_message), WR) == 0) {
 		MISC_LOG_INFO("write boot-recovery into misc success\n");
 		return 0;
 	}
@@ -91,7 +73,7 @@ static int reboot_recovery_misc_write(void)
 }
 
 static int recovery_notify(struct notifier_block *this, unsigned long code,
-		void *buf)
+	void *buf)
 {
 	if (buf == NULL) {
 		MISC_LOG_INFO("no need to handle\n");
@@ -110,14 +92,15 @@ static int recovery_notify(struct notifier_block *this, unsigned long code,
 static struct notifier_block recovery_notifier = {
 	.notifier_call = recovery_notify,
 };
+
 static int __init misc_recovery_init(void)
 {
-	int ret;
+	int ret = register_reboot_notifier(&recovery_notifier);
 
-	ret = register_reboot_notifier(&recovery_notifier);
 	if (ret)
-		MISC_LOG_ERR("cannot register reboot notifier (err=%d)\n", ret);
+		MISC_LOG_ERR("can't register reboot notifier (err=%d)\n", ret);
 	return 0;
 }
+
 module_init(misc_recovery_init);
 

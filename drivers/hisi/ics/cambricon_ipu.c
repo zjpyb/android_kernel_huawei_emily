@@ -516,7 +516,11 @@ bool ipu_get_irq_offset (struct device *dev)
 		printk(KERN_ERR"[%s]: IPU_ERROR:find ics_irq node error\n", __func__);
 		return false;
 	}
-	memset(offset, 0, sizeof(*offset));// coverity[secure_coding]
+	if (memset_s(offset, sizeof(*offset), 0, sizeof(*offset)) != EOK) { // coverity[secure_coding]
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s offset error\n", __func__);
+		return false;
+	}
+
 	property_rd = (unsigned int)of_property_read_u32(node, "ics-irq-base-addr", &offset->ics_irq_base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "ics-irq-mask-ns", &offset->ics_irq_mask_ns);
 	property_rd |= (unsigned int)of_property_read_u32(node, "ics-irq-clr-ns", &offset->ics_irq_clr_ns);
@@ -564,7 +568,10 @@ bool ipu_get_reset_offset (struct device *dev)
 		printk(KERN_ERR"[%s]: IPU_ERROR:find pmctrl node error\n", __func__);
 		return false;
 	}
-	memset(pmctrl, 0, sizeof(*pmctrl));
+	if (memset_s(pmctrl, sizeof(*pmctrl), 0, sizeof(*pmctrl)) != EOK) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s pmctrl error\n", __func__);
+		return false;
+		}
 	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &pmctrl->base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "noc-power-idle-req", &pmctrl->noc_power_idle_req);
 	property_rd |= (unsigned int)of_property_read_u32(node, "noc-power-idle-ack", &pmctrl->noc_power_idle_ack);
@@ -579,7 +586,10 @@ bool ipu_get_reset_offset (struct device *dev)
 		printk(KERN_ERR"[%s]: IPU_ERROR:find pctrl node error\n", __func__);
 		return false;
 	}
-	memset(pctrl, 0, sizeof(*pctrl));
+	if (memset_s(pctrl, sizeof(*pctrl), 0, sizeof(*pctrl)) != EOK) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s pctrl error\n", __func__);
+		return false;
+	}
 	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &pctrl->base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "peri-stat3", &pctrl->peri_stat3);
 	if (property_rd) {
@@ -592,7 +602,10 @@ bool ipu_get_reset_offset (struct device *dev)
 		printk(KERN_ERR"[%s]: IPU_ERROR:find media2 node error\n", __func__);
 		return false;
 	}
-	memset(media2, 0, sizeof(*media2));
+	if (memset_s(media2, sizeof(*media2), 0, sizeof(*media2)) != EOK) {
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s media2 v error\n", __func__);
+		return false;
+	}
 	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &media2->base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "peren0", &media2->peren0);
 	property_rd |= (unsigned int)of_property_read_u32(node, "perdis0", &media2->perdis0);
@@ -611,7 +624,10 @@ bool ipu_get_reset_offset (struct device *dev)
 		printk(KERN_ERR"[%s]: IPU_ERROR:find peri node error\n", __func__);
 		return false;
 	}
-	memset(peri, 0, sizeof(*peri));// coverity[secure_coding]
+	if (memset_s(peri, sizeof(*peri), 0, sizeof(*peri)) != EOK) { // coverity[secure_coding]
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s peri error\n", __func__);
+		return false;
+	}
 	property_rd = (unsigned int)of_property_read_u32(node, "base-addr", &peri->base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "clkdiv18", &peri->clkdiv18);
 	property_rd |= (unsigned int)of_property_read_u32(node, "clkdiv8", &peri->clkdiv8);
@@ -630,7 +646,10 @@ bool ipu_get_feature_tree (struct device *dev)
 {
 	UNUSED_PARAMETER(dev);
 
-	memset(&adapter->feature_tree, 0, sizeof(adapter->feature_tree));// coverity[secure_coding]
+	if (memset_s(&adapter->feature_tree, sizeof(adapter->feature_tree), 0, sizeof(adapter->feature_tree)) != EOK) { // coverity[secure_coding]
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s adapter->feature_tree error\n", __func__);
+		return false;
+	}
 
 	adapter->feature_tree.finish_irq_expand_ns = true;
 	adapter->feature_tree.finish_irq_expand_p = true;
@@ -1171,14 +1190,12 @@ static void ipu_level1_irq_handler(void)
 			printk(KERN_ERR"[%s]: IPU_ERROR:INTERRUPTINST_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & CT_INTERRUPT_MASK) {
-			/* do_interruptinst_interrupt_service(); */
 			detect_fault = detect_fault | CT_INTERRUPT_MASK;
 			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_ID_REG));
 			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_ID_REG));
 			printk(KERN_ERR"[%s]: IPU_ERROR:CT_INTERRUPT error, fault_status=0x%x\n", __func__, fault_status);
 		}
 		if (lv1_int_status & IPU_CONTROL_INTERRUPT_MASK) {
-			/* do_ipu_control_interrupt_service(); */
 			detect_fault = detect_fault | IPU_CONTROL_INTERRUPT_MASK;
 			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_CONTROL_ID_REG));
 			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_CONTROL_ID_REG));
@@ -1186,7 +1203,6 @@ static void ipu_level1_irq_handler(void)
 		}
 		/* WATCH_DOG */
 		if (lv1_int_status & WATCH_DOG_MASK) {
-			/* do_watch_dog_interrupt_service();*/
 			detect_fault = detect_fault | WATCH_DOG_MASK;
 			fault_status = ioread32((void *)((uintptr_t)adapter->config_reg_virt_addr + IPU_WATCH_DOG_REG));
 			iowrite32(0, (void *)((uintptr_t)(adapter->config_reg_virt_addr) + IPU_WATCH_DOG_REG));
@@ -1535,7 +1551,9 @@ static int ipu_open(struct inode *inode, struct file *filp)
 
 	mutex_lock(&adapter->stat_mutex);
 	adapter->smmu_stat_en = false;
-	memset(&adapter->stat, 0, sizeof(adapter->stat));
+	if (memset_s(&adapter->stat, sizeof(adapter->stat), 0, sizeof(adapter->stat)) != EOK) {
+		printk(KERN_ERR"[%s]: memset_s adapter->stat error!\n", __func__);
+	}
 
 	ipu_clock_set_start_default(&adapter->clk);
 
@@ -1720,7 +1738,10 @@ static long ipu_write_dword(struct cambricon_ipu_private *dev, unsigned long arg
 		return -EINVAL;
 	}
 
-	memset(in, 0, sizeof(in));  /* [false alarm]:memset an array */
+	if (memset_s(in, sizeof(in), 0, sizeof(in)) != EOK) { /* [false alarm]:memset an array */
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s in error\n", __func__);
+		return -ENOMEM;
+	}
 
 	if (copy_from_user(in, (void __user *)(uintptr_t)arg, sizeof(in))) {
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy arg failed!\n", __func__);
@@ -1785,6 +1806,9 @@ static long ipu_set_map(struct cambricon_ipu_private *dev, unsigned long arg, st
 	}
 
 	if (copy_to_user((void __user *)(uintptr_t)arg, &map_data, sizeof(map_data))) {
+		if (ipu_smmu_unmap(&map_data)) {
+			printk(KERN_ERR"[%s]: IPU_ERROR:unmap failed\n", __func__);
+		}
 		printk(KERN_ERR"[%s]: IPU_ERROR:copy_to_user failed!\n", __func__);
 		return -EFAULT;
 	}
@@ -2146,7 +2170,12 @@ static ssize_t ipu_write_when_ipu_down(struct cambricon_ipu_private *dev, const 
 	}
 
 	/* clean-up buffer and recv new data */
-	memset(&adapter->boot_inst_set.boot_inst[0], 0, sizeof(adapter->boot_inst_set.boot_inst));
+	if (memset_s(&adapter->boot_inst_set.boot_inst[0], sizeof(adapter->boot_inst_set.boot_inst), 0,
+		sizeof(adapter->boot_inst_set.boot_inst)) != EOK) {
+		mutex_unlock(&adapter->boot_inst_set.boot_mutex);
+		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s  adapter->boot_inst_set.boot_inst[0] error\n", __func__);
+		return -ENOMEM;
+	}
 	bytes_not_copied = copy_from_user((void *)(uintptr_t)((uintptr_t)&adapter->boot_inst_set.boot_inst[0] + (unsigned long)(*f_pos)), buf, count);
 
 	if (bytes_not_copied) {

@@ -19,6 +19,7 @@
 #ifndef __FDLEAK_H_
 #define __FDLEAK_H_
 
+#include <linux/types.h>
 #include <linux/ioctl.h>
 
 #ifdef __cplusplus
@@ -93,10 +94,10 @@ struct fdleak_stackinfo {
 #define FDLEAK_CMD_MAX          _IO(__FDLEAKIO, 4)
 
 struct file;
-long fdleak_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+long fdleak_ioctl(struct file *file, unsigned int cmd, uintptr_t arg);
 int fdleak_report(enum fdleak_wp_id index, int probe_id);
 
 #ifdef __cplusplus
 }
 #endif
-#endif	/* __FDLEAK_H_ */
+#endif /* __FDLEAK_H_ */

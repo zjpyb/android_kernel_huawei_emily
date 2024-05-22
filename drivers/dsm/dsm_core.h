@@ -47,6 +47,23 @@
 #define DSM_IOCTL_GET_MODULE_NAME	_IOC(_IOC_READ | _IOC_WRITE, 'x', 0xF6, CLIENT_NAME_LEN)
 #define DSM_IOCTL_GET_IC_NAME		_IOC(_IOC_READ | _IOC_WRITE, 'x', 0xF7, CLIENT_NAME_LEN)
 
+#ifdef CONFIG_HUAWEI_DATA_ACQUISITION
+#define FMD_MAX_BSN_LEN 20
+#define FMD_MAX_STATION_LEN 8
+#define FMD_MAX_MSG_EVENT_NUM 4
+#define FMD_MAX_DEVICE_NAME_LEN 32
+#define FMD_MAX_TEST_NAME_LEN 32
+#define FMD_MAX_VALUE_LEN 64
+#define FMD_MAX_RESULT_LEN 8
+#define FMD_MAX_TIME_LEN 20
+#define FMD_MAX_FIRMWARE_LEN 32
+#define FMD_MAX_DESCRIPTION_LEN 512
+#define FMD_MAX_FRONT_ITEM_LEN 32
+#define FMD_MAX_ITEM_COUNTER_LEN 16
+#define FMD_MAX_ENVIRONMENT_LEN 128
+#define FMD_NO 924005999
+#endif
+
 #ifdef CONFIG_HUAWEI_SDCARD_VOLD
 #define SDCARD_ERR_LEN			5
 #endif
@@ -73,6 +90,34 @@ struct dsm_server {
 };
 
 #ifdef CONFIG_HUAWEI_DATA_ACQUISITION
+struct fmd_event {
+	int error_code;                                 //  error code
+	int item_id;                                    //  index of test item
+	int cycle;                                      //  record the count in RT
+	char result[FMD_MAX_RESULT_LEN];                //  test result, "pass"
+	char station[FMD_MAX_STATION_LEN];              //  station, "rt"
+	char bsn[FMD_MAX_BSN_LEN];                      //  bsn, "013GLX1566004289"
+	char time[FMD_MAX_TIME_LEN];                    //  test time, "2017-03-06 16:02:01"
+	char device_name[FMD_MAX_DEVICE_NAME_LEN];      //  device name, "camera4_back"
+	char test_name[FMD_MAX_TEST_NAME_LEN];          //  test item name,  "RT_KERNEL_DATA_TEST"
+	char value[FMD_MAX_VALUE_LEN];                  //  test return value
+	char min_threshold[FMD_MAX_VALUE_LEN];          //  the min value
+	char max_threshold[FMD_MAX_VALUE_LEN];          //  the max value
+	char firmware[FMD_MAX_FIRMWARE_LEN];            //  the firmware version, "NXP3304_VER1.0",  "NA"
+	char description[FMD_MAX_DESCRIPTION_LEN];      //  description, "not used"  "NA"
+	char front_item[FMD_MAX_FRONT_ITEM_LEN];
+	char item_counter[FMD_MAX_ITEM_COUNTER_LEN];
+	char environment[FMD_MAX_ENVIRONMENT_LEN];
+};
+
+/* data structs */
+struct fmd_msg {
+	int version;                                     //  fmd version,  1
+	int data_source;                                 //  where is data from?  FMD_DATA_FROM_HAL
+	int num_events;                                  //  events counts
+	struct fmd_event events[FMD_MAX_MSG_EVENT_NUM];  // events
+};
+
 /* keep size with power of 2 */
 #define MSGQ_SIZE			(32 * 1024)
 struct dsm_msgq {

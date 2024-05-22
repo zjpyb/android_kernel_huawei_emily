@@ -160,7 +160,7 @@
 
 
 
-typedef struct {
+struct VL53L1_static_nvm_managed_t {
 	uint8_t   i2c_slave__device_address;
 
 
@@ -273,7 +273,7 @@ typedef struct {
 
 
 
-} VL53L1_static_nvm_managed_t;
+};
 
 
 
@@ -286,7 +286,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_customer_nvm_managed_t {
 	uint8_t   global_config__spad_enables_ref_0;
 
 
@@ -463,7 +463,7 @@ typedef struct {
 
 
 
-} VL53L1_customer_nvm_managed_t;
+};
 
 
 
@@ -476,7 +476,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_static_config_t {
 	uint16_t  dss_config__target_total_rate_mcps;
 
 
@@ -821,7 +821,7 @@ typedef struct {
 
 
 
-} VL53L1_static_config_t;
+};
 
 
 
@@ -834,7 +834,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_general_config_t {
 	uint8_t   gph_config__stream_count_update_value;
 
 
@@ -1028,7 +1028,7 @@ typedef struct {
 
 
 
-} VL53L1_general_config_t;
+};
 
 
 
@@ -1041,7 +1041,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_timing_config_t {
 	uint8_t   mm_config__timeout_macrop_a_hi;
 
 
@@ -1218,7 +1218,7 @@ typedef struct {
 
 
 
-} VL53L1_timing_config_t;
+};
 
 
 
@@ -1231,7 +1231,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_dynamic_config_t {
 	uint8_t   system__grouped_parameter_hold_0;
 
 
@@ -1420,7 +1420,7 @@ typedef struct {
 
 
 
-} VL53L1_dynamic_config_t;
+};
 
 
 
@@ -1433,7 +1433,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_system_control_t {
 	uint8_t   power_management__go1_power_force;
 
 
@@ -1495,7 +1495,7 @@ typedef struct {
 
 
 
-} VL53L1_system_control_t;
+};
 
 
 
@@ -1508,7 +1508,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_system_results_t {
 	uint8_t   result__interrupt_status;
 
 
@@ -1790,7 +1790,7 @@ typedef struct {
 
 
 
-} VL53L1_system_results_t;
+};
 
 
 
@@ -1803,7 +1803,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_core_results_t {
 	uint32_t  result_core__ambient_window_events_sd0;
 
 
@@ -1903,7 +1903,7 @@ typedef struct {
 
 
 
-} VL53L1_core_results_t;
+};
 
 
 
@@ -1916,7 +1916,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_debug_results_t {
 	uint16_t  phasecal_result__reference_phase;
 
 
@@ -2424,7 +2424,7 @@ typedef struct {
 
 
 
-} VL53L1_debug_results_t;
+};
 
 
 
@@ -2437,7 +2437,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_nvm_copy_data_t {
 	uint8_t   identification__model_id;
 
 
@@ -2967,7 +2967,7 @@ typedef struct {
 
 
 
-} VL53L1_nvm_copy_data_t;
+};
 
 
 
@@ -2980,7 +2980,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_prev_shadow_system_results_t {
 	uint8_t   prev_shadow_result__interrupt_status;
 
 
@@ -3250,7 +3250,7 @@ typedef struct {
 
 
 
-} VL53L1_prev_shadow_system_results_t;
+};
 
 
 
@@ -3263,7 +3263,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_prev_shadow_core_results_t {
 	uint32_t  prev_shadow_result_core__ambient_window_events_sd0;
 
 
@@ -3363,7 +3363,7 @@ typedef struct {
 
 
 
-} VL53L1_prev_shadow_core_results_t;
+};
 
 
 
@@ -3376,7 +3376,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_patch_debug_t {
 	uint8_t   result__debug_status;
 
 
@@ -3399,7 +3399,7 @@ typedef struct {
 
 
 
-} VL53L1_patch_debug_t;
+};
 
 
 
@@ -3412,7 +3412,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_gph_general_config_t {
 	uint16_t  gph__system__thresh_rate_high;
 
 
@@ -3451,7 +3451,7 @@ typedef struct {
 
 
 
-} VL53L1_gph_general_config_t;
+};
 
 
 
@@ -3464,7 +3464,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_gph_static_config_t{
 	uint8_t   gph__dss_config__roi_mode_control;
 
 
@@ -3521,7 +3521,7 @@ typedef struct {
 
 
 
-} VL53L1_gph_static_config_t;
+};
 
 
 
@@ -3534,7 +3534,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_gph_timing_config_t {
 	uint8_t   gph__mm_config__timeout_macrop_a_hi;
 
 
@@ -3689,7 +3689,7 @@ typedef struct {
 
 
 
-} VL53L1_gph_timing_config_t;
+};
 
 
 
@@ -3702,7 +3702,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_fw_internal_t {
 	uint8_t   firmware__internal_stream_count_div;
 
 
@@ -3725,7 +3725,7 @@ typedef struct {
 
 
 
-} VL53L1_fw_internal_t;
+};
 
 
 
@@ -3738,7 +3738,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_patch_results_t {
 	uint8_t   dss_calc__roi_ctrl;
 
 
@@ -4400,7 +4400,7 @@ typedef struct {
 
 
 
-} VL53L1_patch_results_t;
+};
 
 
 
@@ -4413,7 +4413,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_shadow_system_results_t {
 	uint8_t   shadow_phasecal_result__vcsel_start;
 
 
@@ -4728,7 +4728,7 @@ typedef struct {
 
 
 
-} VL53L1_shadow_system_results_t;
+};
 
 
 
@@ -4741,7 +4741,7 @@ typedef struct {
 
 
 
-typedef struct {
+struct VL53L1_shadow_core_results_t {
 	uint32_t  shadow_result_core__ambient_window_events_sd0;
 
 
@@ -4841,7 +4841,7 @@ typedef struct {
 
 
 
-} VL53L1_shadow_core_results_t;
+};
 
 
 #endif

@@ -77,6 +77,10 @@
 #include <linux/capability.h>
 #include <linux/user_namespace.h>
 
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include <hwnet/booster/hw_pt.h>
+#endif
+
 struct kmem_cache *skbuff_head_cache __read_mostly;
 static struct kmem_cache *skbuff_fclone_cache __read_mostly;
 int sysctl_max_skb_frags __read_mostly = MAX_SKB_FRAGS;
@@ -232,6 +236,9 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 
 	/* make sure we initialize shinfo sequentially */
 	shinfo = skb_shinfo(skb);
+#ifdef CONFIG_HW_PACKET_TRACKER
+	hw_pt_set_skb_stamp(skb);
+#endif
 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
 	atomic_set(&shinfo->dataref, 1);
 
@@ -354,6 +361,8 @@ static void *__netdev_alloc_frag(unsigned int fragsz, gfp_t gfp_mask)
  */
 void *netdev_alloc_frag(unsigned int fragsz)
 {
+	fragsz = SKB_DATA_ALIGN(fragsz);
+
 	return __netdev_alloc_frag(fragsz, GFP_ATOMIC | __GFP_COLD);
 }
 EXPORT_SYMBOL(netdev_alloc_frag);
@@ -367,6 +376,8 @@ static void *__napi_alloc_frag(unsigned int fragsz, gfp_t gfp_mask)
 
 void *napi_alloc_frag(unsigned int fragsz)
 {
+	fragsz = SKB_DATA_ALIGN(fragsz);
+
 	return __napi_alloc_frag(fragsz, GFP_ATOMIC | __GFP_COLD);
 }
 EXPORT_SYMBOL(napi_alloc_frag);
@@ -2006,6 +2017,132 @@ end:
 }
 EXPORT_SYMBOL(__pskb_pull_tail);
 
+/* HMDFS ktls solution, alloc page with GFP_KERNEL flag.
+ * Currently, this interface is used for the hmdfs file system.
+ */
+void *__pskb_pull_tail_gfp_kernel(struct sk_buff *skb, int delta)
+{
+	/* If skb has not enough free space at tail, get new one
+	 * plus 128 bytes for future expansions. If we have enough
+	 * room at tail, reallocate without expansion only if skb is cloned.
+	 */
+	int i, k, eat = (skb->tail + delta) - skb->end;
+
+	if (eat > 0 || skb_cloned(skb)) {
+		if (pskb_expand_head(skb, 0, eat > 0 ? eat + 128 : 0,
+				     GFP_KERNEL))
+			return NULL;
+	}
+
+	if (skb_copy_bits(skb, skb_headlen(skb), skb_tail_pointer(skb), delta))
+		BUG();
+
+	/* Optimization: no fragments, no reasons to preestimate
+	 * size of pulled pages. Superb.
+	 */
+	if (!skb_has_frag_list(skb))
+		goto pull_pages;
+
+	/* Estimate size of pulled pages. */
+	eat = delta;
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		int size = skb_frag_size(&skb_shinfo(skb)->frags[i]);
+
+		if (size >= eat)
+			goto pull_pages;
+		eat -= size;
+	}
+
+	/* If we need update frag list, we are in troubles.
+	 * Certainly, it is possible to add an offset to skb data,
+	 * but taking into account that pulling is expected to
+	 * be very rare operation, it is worth to fight against
+	 * further bloating skb head and crucify ourselves here instead.
+	 * Pure masohism, indeed. 8)8)
+	 */
+	if (eat) {
+		struct sk_buff *list = skb_shinfo(skb)->frag_list;
+		struct sk_buff *clone = NULL;
+		struct sk_buff *insp = NULL;
+
+		do {
+			BUG_ON(!list);
+
+			if (list->len <= eat) {
+				/* Eaten as whole. */
+				eat -= list->len;
+				list = list->next;
+				insp = list;
+			} else {
+				/* Eaten partially. */
+
+				if (skb_shared(list)) {
+					/* Sucks! We need to fork list. :-( */
+					clone = skb_clone(list, GFP_KERNEL);
+					if (!clone)
+						return NULL;
+					insp = list->next;
+					list = clone;
+				} else {
+					/* This may be pulled without
+					 * problems. */
+					insp = list;
+				}
+				if (!pskb_pull(list, eat)) {
+					kfree_skb(clone);
+					return NULL;
+				}
+				break;
+			}
+		} while (eat);
+
+		/* Free pulled out fragments. */
+		while ((list = skb_shinfo(skb)->frag_list) != insp) {
+			skb_shinfo(skb)->frag_list = list->next;
+			kfree_skb(list);
+		}
+		/* And insert new clone at head. */
+		if (clone) {
+			clone->next = list;
+			skb_shinfo(skb)->frag_list = clone;
+		}
+	}
+	/* Success! Now we may commit changes to skb data. */
+
+pull_pages:
+	eat = delta;
+	k = 0;
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		int size = skb_frag_size(&skb_shinfo(skb)->frags[i]);
+
+		if (size <= eat) {
+			skb_frag_unref(skb, i);
+			eat -= size;
+		} else {
+			skb_shinfo(skb)->frags[k] = skb_shinfo(skb)->frags[i];
+			if (eat) {
+				skb_shinfo(skb)->frags[k].page_offset += eat;
+				skb_frag_size_sub(&skb_shinfo(skb)->frags[k], eat);
+				if (!i)
+					goto end;
+				eat = 0;
+			}
+			k++;
+		}
+	}
+	skb_shinfo(skb)->nr_frags = k;
+
+end:
+	skb->tail     += delta;
+	skb->data_len -= delta;
+
+	if (!skb->data_len)
+		skb_zcopy_clear(skb, false);
+
+	return skb_tail_pointer(skb);
+}
+
+
 /**
  *	skb_copy_bits - copy bits from skb to kernel buffer
  *	@skb: source skb
@@ -2302,6 +2439,7 @@ do_frag_list:
 		kv.iov_base = skb->data + offset;
 		kv.iov_len = slen;
 		memset(&msg, 0, sizeof(msg));
+		msg.msg_flags = MSG_DONTWAIT;
 
 		ret = kernel_sendmsg_locked(sk, &msg, &kv, 1, slen);
 		if (ret <= 0)
@@ -3847,7 +3985,7 @@ int skb_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 	struct sk_buff *lp, *p = *head;
 	unsigned int delta_truesize;
 
-	if (unlikely(p->len + len >= 65536))
+	if (unlikely(p->len + len >= 65536 || NAPI_GRO_CB(skb)->flush))
 		return -E2BIG;
 
 	lp = NAPI_GRO_CB(p)->last;
@@ -3962,6 +4100,9 @@ void __init skb_init(void)
 						0,
 						SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_CACHE_DMA,
 						NULL);
+#ifdef CONFIG_HISI_PAGE_TRACE
+	alloc_skb_with_frags_stats_init();
+#endif
 }
 
 static int
@@ -4198,6 +4339,102 @@ int skb_cow_data(struct sk_buff *skb, int tailbits, struct sk_buff **trailer)
 	return elt;
 }
 EXPORT_SYMBOL_GPL(skb_cow_data);
+
+/* HMDFS ktls solution, alloc page with GFP_KERNEL flag.
+ * Currently, this interface is used for the hmdfs file system.
+ */
+int skb_cow_data_gfp_kernel(struct sk_buff *skb, int tailbits, struct sk_buff **trailer)
+{
+	int copyflag;
+	int elt;
+	struct sk_buff *skb1, **skb_p;
+
+	/* If skb is cloned or its head is paged, reallocate
+	 * head pulling out all the pages (pages are considered not writable
+	 * at the moment even if they are anonymous).
+	 */
+	if ((skb_cloned(skb) || skb_shinfo(skb)->nr_frags) &&
+	    __pskb_pull_tail_gfp_kernel(skb, skb_pagelen(skb)-skb_headlen(skb)) == NULL)
+		return -ENOMEM;
+
+	/* Easy case. Most of packets will go this way. */
+	if (!skb_has_frag_list(skb)) {
+		/* A little of trouble, not enough of space for trailer.
+		 * This should not happen, when stack is tuned to generate
+		 * good frames. OK, on miss we reallocate and reserve even more
+		 * space, 128 bytes is fair. */
+
+		if (skb_tailroom(skb) < tailbits &&
+		    pskb_expand_head(skb, 0, tailbits-skb_tailroom(skb)+128, GFP_KERNEL))
+			return -ENOMEM;
+
+		/* Voila! */
+		*trailer = skb;
+		return 1;
+	}
+
+	/* Misery. We are in troubles, going to mincer fragments... */
+
+	elt = 1;
+	skb_p = &skb_shinfo(skb)->frag_list;
+	copyflag = 0;
+
+	while ((skb1 = *skb_p) != NULL) {
+		int ntail = 0;
+
+		/* The fragment is partially pulled by someone,
+		 * this can happen on input. Copy it and everything
+		 * after it. */
+
+		if (skb_shared(skb1))
+			copyflag = 1;
+
+		/* If the skb is the last, worry about trailer. */
+
+		if (skb1->next == NULL && tailbits) {
+			if (skb_shinfo(skb1)->nr_frags ||
+			    skb_has_frag_list(skb1) ||
+			    skb_tailroom(skb1) < tailbits)
+				ntail = tailbits + 128;
+		}
+
+		if (copyflag ||
+		    skb_cloned(skb1) ||
+		    ntail ||
+		    skb_shinfo(skb1)->nr_frags ||
+		    skb_has_frag_list(skb1)) {
+			struct sk_buff *skb2;
+
+			/* Fuck, we are miserable poor guys... */
+			if (ntail == 0)
+				skb2 = skb_copy(skb1, GFP_KERNEL);
+			else
+				skb2 = skb_copy_expand(skb1,
+						       skb_headroom(skb1),
+						       ntail,
+						       GFP_KERNEL);
+			if (unlikely(skb2 == NULL))
+				return -ENOMEM;
+
+			if (skb1->sk)
+				skb_set_owner_w(skb2, skb1->sk);
+
+			/* Looking around. Are we still alive?
+			 * OK, link new skb, drop old one */
+
+			skb2->next = skb1->next;
+			*skb_p = skb2;
+			kfree_skb(skb1);
+			skb1 = skb2;
+		}
+		elt++;
+		*trailer = skb1;
+		skb_p = &skb1->next;
+	}
+
+	return elt;
+}
+
 
 static void sock_rmem_free(struct sk_buff *skb)
 {
@@ -4925,6 +5162,10 @@ void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 	nf_reset(skb);
 	nf_reset_trace(skb);
 
+#ifdef CONFIG_NET_SWITCHDEV
+	skb->offload_fwd_mark = 0;
+#endif
+
 	if (!xnet)
 		return;
 
@@ -4959,6 +5200,8 @@ unsigned int skb_gso_transport_seglen(const struct sk_buff *skb)
 		thlen = tcp_hdrlen(skb);
 	} else if (unlikely(shinfo->gso_type & SKB_GSO_SCTP)) {
 		thlen = sizeof(struct sctphdr);
+	} else if (shinfo->gso_type & SKB_GSO_UDP_L4) {
+		thlen = sizeof(struct udphdr);
 	}
 	/* UFO sets gso_size to the size of the fragmentation
 	 * payload, i.e. the size of the L4 (UDP) header is already
@@ -4967,6 +5210,45 @@ unsigned int skb_gso_transport_seglen(const struct sk_buff *skb)
 	return thlen + shinfo->gso_size;
 }
 EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
+
+/**
+ * skb_gso_size_check - check the skb size, considering GSO_BY_FRAGS
+ *
+ * There are a couple of instances where we have a GSO skb, and we
+ * want to determine what size it would be after it is segmented.
+ *
+ * We might want to check:
+ * -    L3+L4+payload size (e.g. IP forwarding)
+ * - L2+L3+L4+payload size (e.g. sanity check before passing to driver)
+ *
+ * This is a helper to do that correctly considering GSO_BY_FRAGS.
+ *
+ * @seg_len: The segmented length (from skb_gso_*_seglen). In the
+ *           GSO_BY_FRAGS case this will be [header sizes + GSO_BY_FRAGS].
+ *
+ * @max_len: The maximum permissible length.
+ *
+ * Returns true if the segmented length <= max length.
+ */
+static inline bool skb_gso_size_check(const struct sk_buff *skb,
+				      unsigned int seg_len,
+				      unsigned int max_len) {
+	const struct skb_shared_info *shinfo = skb_shinfo(skb);
+	const struct sk_buff *iter;
+
+	if (shinfo->gso_size != GSO_BY_FRAGS)
+		return seg_len <= max_len;
+
+	/* Undo this so we can re-use header sizes */
+	seg_len -= GSO_BY_FRAGS;
+
+	skb_walk_frags(skb, iter) {
+		if (seg_len + skb_headlen(iter) > max_len)
+			return false;
+	}
+
+	return true;
+}
 
 /**
  * skb_gso_validate_mtu - Return in case such skb fits a given MTU
@@ -4979,26 +5261,24 @@ EXPORT_SYMBOL_GPL(skb_gso_transport_seglen);
  */
 bool skb_gso_validate_mtu(const struct sk_buff *skb, unsigned int mtu)
 {
-	const struct skb_shared_info *shinfo = skb_shinfo(skb);
-	const struct sk_buff *iter;
-	unsigned int hlen;
-
-	hlen = skb_gso_network_seglen(skb);
-
-	if (shinfo->gso_size != GSO_BY_FRAGS)
-		return hlen <= mtu;
-
-	/* Undo this so we can re-use header sizes */
-	hlen -= GSO_BY_FRAGS;
-
-	skb_walk_frags(skb, iter) {
-		if (hlen + skb_headlen(iter) > mtu)
-			return false;
-	}
-
-	return true;
+	return skb_gso_size_check(skb, skb_gso_network_seglen(skb), mtu);
 }
 EXPORT_SYMBOL_GPL(skb_gso_validate_mtu);
+
+/**
+ * skb_gso_validate_mac_len - Will a split GSO skb fit in a given length?
+ *
+ * @skb: GSO skb
+ * @len: length to validate against
+ *
+ * skb_gso_validate_mac_len validates if a given skb will fit a wanted
+ * length once split, including L2, L3 and L4 headers and the payload.
+ */
+bool skb_gso_validate_mac_len(const struct sk_buff *skb, unsigned int len)
+{
+	return skb_gso_size_check(skb, skb_gso_mac_seglen(skb), len);
+}
+EXPORT_SYMBOL_GPL(skb_gso_validate_mac_len);
 
 static struct sk_buff *skb_reorder_vlan_header(struct sk_buff *skb)
 {
@@ -5517,3 +5797,33 @@ void skb_condense(struct sk_buff *skb)
 	 */
 	skb->truesize = SKB_TRUESIZE(skb_end_offset(skb));
 }
+
+#ifdef CONFIG_HISI_PAGE_TRACE
+static atomic_t alloc_skb_with_frags_counts[MAX_ALLOC_SKB_WITH_FRAGS_COUNT];
+
+void alloc_skb_with_frags_stats_init(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_ALLOC_SKB_WITH_FRAGS_COUNT; i++)
+		atomic_set(&alloc_skb_with_frags_counts[i], 0);
+}
+
+void alloc_skb_with_frags_stats_inc(int type)
+{
+	if (type < MAX_ALLOC_SKB_WITH_FRAGS_COUNT)
+		atomic_inc(&alloc_skb_with_frags_counts[type]);
+}
+
+void alloc_skb_with_frags_stats_show(void)
+{
+	int i;
+
+	pr_err("========alloc skb with frags stats start==========\n");
+	for (i = 0; i < MAX_ALLOC_SKB_WITH_FRAGS_COUNT; i++)
+		pr_err("%d : %d\n", i,
+			atomic_read(&alloc_skb_with_frags_counts[i]));
+
+	pr_err("========alloc skb with frags stats end==========\n");
+}
+#endif

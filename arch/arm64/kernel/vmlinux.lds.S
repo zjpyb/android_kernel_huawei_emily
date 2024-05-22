@@ -119,7 +119,19 @@ SECTIONS
 			IRQENTRY_TEXT
 			SOFTIRQENTRY_TEXT
 			ENTRY_TEXT
+#ifdef CONFIG_ARM64_HKRR
+			__hkrr_text_start = .;
+			. += 1;		/* keep code away from __hkrr_text_start */
+#endif
 			TEXT_TEXT
+#ifdef CONFIG_ARM64_HKRR
+			. += 4;
+			__hkrr_text_end = .;
+			. += (CONFIG_ARM64_HKRR_EXTRA_TEXT_SIZE << 10);	/* extra space as it gets a bit bigger with LTO */
+			__text_info_start = .;
+			. += (CONFIG_ARM64_HKRR_EXTRA_OBJ_SIZE << 10);	/* extra 64K for objinfo */
+			__hkrr_text_end2 = .;
+#endif
 			SCHED_TEXT
 			CPUIDLE_TEXT
 			LOCK_TEXT
@@ -130,6 +142,14 @@ SECTIONS
 			TRAMP_TEXT
 			*(.fixup)
 			*(.gnu.warning)
+	}
+
+	. = ALIGN(SEGMENT_ALIGN);
+	_etext = .;			/* End of text section */
+
+	RO_AFTER_INIT_SECTION(PAGE_SIZE)	/* everything from this point */
+	RO_DATA(PAGE_SIZE)			/* to __init_begin will be    */
+	.got : {
 		. = ALIGN(16);
 		*(.got)			/* Global offset table		*/
 	}
@@ -144,11 +164,6 @@ SECTIONS
 	__stop_hwlog_tag = .;
 #endif
 
-	. = ALIGN(SEGMENT_ALIGN);
-	_etext = .;			/* End of text section */
-
-	RO_AFTER_INIT_SECTION(PAGE_SIZE)	/* everything from this point */
-	RO_DATA(PAGE_SIZE)			/* to __init_begin will be    */
 	EXCEPTION_TABLE(8)			/* marked RO NX		      */
 	NOTES
 	. = ALIGN(SZ_64K);
@@ -193,7 +208,13 @@ SECTIONS
 	PERCPU_SECTION(L1_CACHE_BYTES)
 
 	.rela.dyn : ALIGN(8) {
+#if defined(CONFIG_ARM64_HKRR)
+		__hkrr_rela_start = .;
+#endif
 		*(.rela .rela*)
+#if defined(CONFIG_ARM64_HKRR)
+		__hkrr_rela_end = .;
+#endif
 	}
 
 	__rela_offset	= ABSOLUTE(ADDR(.rela.dyn) - KIMAGE_VADDR);
@@ -202,6 +223,8 @@ SECTIONS
 	. = ALIGN(SEGMENT_ALIGN);
 	__initdata_end = .;
 	__init_end = .;
+
+	PRMEM_SECTIONS
 
 	_data = .;
 	_sdata = .;
@@ -253,6 +276,7 @@ SECTIONS
 	STABS_DEBUG
 
 	HEAD_SYMBOLS
+
 }
 
 /*

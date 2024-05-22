@@ -1,141 +1,62 @@
 /*
- * drivers/inputhub/sensor_feima.c
- *
- * sensors feima driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: sensor feima source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
+#include "sensor_feima.h"
+
 #include <linux/device.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
-#include <asm/memory.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/semaphore.h>
 #include <linux/time64.h>
+#include <linux/types.h>
+
 #include <asm/io.h>
 #include <asm/memory.h>
-#include <asm/cacheflush.h>
-#include <huawei_platform/inputhub/sensor_feima_ext.h>
-#include <linux/semaphore.h>
-#include <linux/freezer.h>
-#include <linux/of.h>
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
-#include "sensor_config.h"
-#include "sensor_feima.h"
-#include "sensor_sysfs.h"
-#include "sensor_detect.h"
+#include <securec.h>
 
-#define MIN_CAP_PROX_MODE             0
-#define MAZ_CAP_PROX_MODE             2
-#define ALS_UNDER_TP_RAWDATA_LEN      4
-#define ALS_UNDER_TP_RGB_DATA_LEN     16
-#define ELE_PHONE_TYPE                47
-#define VOGUE_PHONE_TYPE              48
-#define HALF_LENGTH                   45
-#define MAX_ALS_UD_CMD_BUF_ARGC       2
-#define ALS_UNDER_TP_RGB_DATA         4
-#define ALS_RAW_DATA_COLLECT          5
-#define ALS_CALI_DATA_COLLECT         6
+#include "acc_sysfs.h"
+#include "airpress_sysfs.h"
+#include "als_sysfs.h"
+#include "cap_prox_sysfs.h"
+#include "contexthub_boot.h"
+#include "contexthub_debug.h"
+#include "contexthub_route.h"
+#include "gyro_sysfs.h"
+#include "mag_sysfs.h"
+#include "ps_sysfs.h"
+#include "sensor_config.h"
+#include "sensor_detect.h"
+#include "sensor_info.h"
+#include "sensor_sysfs.h"
+#include "therm_sysfs.h"
+
+#define ALS_MCU_HAL_CONVER 10
+#define ACC_CONVERT_COFF 1000
 
 struct class *sensors_class;
 int sleeve_test_enabled;
-uint64_t als_rgb_pa_to_sh;
-
-static als_ud_cmd_map_t als_ud_cmd_map[] = {
-	{ "ADDR", ALS_UD_CMD_SET_ADDR },
-	{ "BUFF", ALS_UD_CMD_BUFFER_UPDATE },
-};
 
 static bool rpc_motion_request;
 static time_t get_data_last_time;
 static unsigned long sar_service_info;
-static int als_under_tp_cal_rawdata[ALS_UNDER_TP_RAWDATA_LEN];
-static int als_under_tp_rgb_data[ALS_UNDER_TP_RGB_DATA_LEN];
-extern u8 phone_color;
-extern struct sleeve_detect_pare sleeve_detect_paremeter[MAX_PHONE_COLOR_NUM];
 extern volatile int vibrator_shake;
 extern volatile int hall_value;
-extern BH1745_ALS_PARA_TABLE als_para_diff_tp_color_table[];
-extern APDS9251_ALS_PARA_TABLE apds_als_para_diff_tp_color_table[];
-extern TMD2745_ALS_PARA_TABLE tmd2745_als_para_diff_tp_color_table[];
-extern TMD3725_ALS_PARA_TABLE tmd3725_als_para_diff_tp_color_table[];
-extern LTR582_ALS_PARA_TABLE ltr582_als_para_diff_tp_color_table[];
-extern APDS9999_ALS_PARA_TABLE apds9999_als_para_diff_tp_color_table[];
-extern TMD3702_ALS_PARA_TABLE tmd3702_als_para_diff_tp_color_table[];
-extern TCS3707_ALS_PARA_TABLE tcs3707_tp_color_table[];
-extern TCS3701_ALS_PARA_TABLE tcs3701_als_para_diff_tp_color_table[];
-extern VCNL36658_ALS_PARA_TABLE vcnl36658_als_para_diff_tp_color_table[];
-/* airpress  calibrate result */
-static RET_TYPE airpress_calibration_res = RET_INIT;
-extern int rohm_rgb_flag;
-extern int avago_rgb_flag;
-extern int tmd2745_flag;
-extern int ams_tmd3725_rgb_flag;
-extern int liteon_ltr582_rgb_flag;
-extern int als_para_table;
-extern int apds9999_rgb_flag;
-extern int ams_tmd3702_rgb_flag;
-extern int ams_tcs3707_rgb_flag;
-extern int apds9253_rgb_flag;
-extern int ams_tcs3701_rgb_flag;
-extern int vishay_vcnl36658_als_flag;
-extern uint8_t gyro_position;
-extern struct als_platform_data als_data;
-extern bool fingersense_enabled;
-extern struct sensorlist_info sensorlist_info[SENSOR_MAX];
-extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
-extern struct sar_sensor_detect semtech_sar_detect;
-extern struct sar_sensor_detect semtech_9335_sar_detect;
-extern struct sar_sensor_detect g_abov_sar_detect;
-extern bool fingersense_data_ready;
-extern s16 fingersense_data[FINGERSENSE_DATA_NSAMPLES];
-extern struct compass_platform_data mag_data;
-extern int gsensor_offset[ACC_CALIBRATE_DATA_LENGTH]; /* g-sensor calibrate data */
-extern int gsensor1_offset[ACC1_OFFSET_DATA_LENGTH];
-extern int gyro_sensor_offset[GYRO_CALIBRATE_DATA_LENGTH];
-extern int gyro1_sensor_offset[GYRO1_CALIBRATE_DATA_LENGTH];
-extern int32_t ps_sensor_offset[PS_CALIBRATE_DATA_LENGTH];
-extern uint16_t als_offset[ALS_CALIBRATE_DATA_LENGTH];
-extern int mag_threshold_for_als_calibrate;
-extern int ps_support_abs_threshold;
-extern struct airpress_touch_calibrate_data pressure_touch_calibrate_data;
-extern struct airpress_platform_data airpress_data;
-extern struct als_under_tp_calidata als_under_tp_cal_data;
-extern int hall_sen_type;
-extern void create_debug_files(void);
-extern bool str_fuzzy_match(const char *cmd_buf, const char *target);
-extern const char *get_str_begin(const char *cmd_buf);
-extern const char *get_str_end(const char *cmd_buf);
-extern bool get_arg(const char *str, int *arg);
-extern als_run_stop_para_t als_ud_data_upload;
-extern int als_ud_rgbl_block;
-extern struct sar_platform_data sar_pdata;
-extern uint8_t sem_als_ud_rgbl_block_flag;
-int als_always_on;
 
 static bool camera_set_rpc_flag; /* default value: false */
-static DECLARE_WAIT_QUEUE_HEAD(sensorhub_als_block_waitq);
 static uint8_t g_stepcountdocm;
 
 static int rpc_commu(unsigned int cmd, unsigned int pare, uint16_t motion)
 {
 	int ret;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap = { 0 };
 	rpc_ioctl_t pkg_ioctl;
 
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	pkg_ap.tag = TAG_RPC;
 	pkg_ap.cmd = cmd;
 	pkg_ioctl.sub_cmd = pare;
@@ -182,8 +103,8 @@ static int rpc_motion(uint16_t motion)
 
 #define CHECK_SENSOR_COOKIE(data) \
 do {\
-	if (!data || (!(data->tag >= TAG_SENSOR_BEGIN && \
-		data->tag < TAG_SENSOR_END)) || (!data->name)) {\
+	if ((!(data)) || (!((data)->tag >= TAG_SENSOR_BEGIN && \
+		((data)->tag) < TAG_SENSOR_END)) || (!((data)->name))) {\
 		hwlog_err("error in %s\n", __func__);\
 		return -EINVAL;\
 	} \
@@ -204,22 +125,20 @@ static ssize_t store_enable(struct device *dev, struct device_attribute *attr,
 {
 	unsigned long val = 0;
 	int ret;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap = { 0 };
+	struct read_info pkg_mcu = { 0 };
 	const char *operation = NULL;
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
 
-	if (strict_strtoul(buf, 10, &val))
+	if (strict_strtoul(buf, TO_DECIMALISM, &val))
 		return -EINVAL;
 
 	if (ap_sensor_enable(data->tag, (val == 1)))
 		return size;
 
 	operation = ((val == 1) ? "enable" : "disable");
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	pkg_ap.tag = data->tag;
 	pkg_ap.cmd = (val == 1) ? CMD_CMN_OPEN_REQ : CMD_CMN_CLOSE_REQ;
 	pkg_ap.wr_buf = NULL;
@@ -244,8 +163,8 @@ static int rpc_status_change(void)
 {
 	int ret;
 
-	sar_service_info = (sar_service_info & ~BIT(9)) |
-		((unsigned long)rpc_motion_request << 9);
+	sar_service_info = (sar_service_info & ~BIT(9)) | /* clean bit 9 */
+		((unsigned long)rpc_motion_request << 9); /* set bit 9 */
 	hwlog_info("sar_service_info is %lu\n", sar_service_info);
 	ret = rpc_motion(sar_service_info);
 	if (ret) {
@@ -292,28 +211,33 @@ static ssize_t store_rpc_motion_req(struct device *dev,
 {
 	unsigned long value = 0;
 
-	if (strict_strtoul(buf, 10, &value))
+	if (strict_strtoul(buf, TO_DECIMALISM, &value))
 		hwlog_err("%s: rpc motion request val %lu invalid",
 			__func__, value);
 
 	hwlog_info("%s: rpc motion request val %lu\n", __func__, value);
+
+	if (value == CALL_START || value == CALL_STOP)
+		send_acc_filter_flag(value);
+
 	if ((value != 0) && (value != 1)) {
 		hwlog_err("%s: set enable fail, invalid val\n", __func__);
 		return size;
 	}
 	rpc_motion_request = value;
+	ps_telecall_status_change(value);
 	rpc_status_change();
 	return size;
-
 }
+
 static ssize_t store_rpc_sar_service_req(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	unsigned long sar_service = 0;
 
-	if (strict_strtoul(buf, 10, &sar_service))
+	if (strict_strtoul(buf, TO_DECIMALISM, &sar_service))
 		hwlog_err("rpc_sar_service_req strout error\n");
-	if (sar_service > 65535) {
+	if (sar_service > 0xFFFF) {
 		hwlog_err("%s: set enable fail, invalid val\n", __func__);
 		return size;
 	}
@@ -348,25 +272,23 @@ static ssize_t store_set_delay(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	unsigned long val = 0;
-	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	int ret;
+	struct write_info pkg_ap = { 0 };
+	struct read_info pkg_mcu = { 0 };
 	pkt_cmn_interval_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	struct sensor_cookie *data =
 		(struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	memset(&cpkt, 0, sizeof(cpkt));
-	if (strict_strtoul(buf, 10, &val))
+	if (strict_strtoul(buf, TO_DECIMALISM, &val))
 		return -EINVAL;
 
 	if (ap_sensor_setdelay(data->tag, val))
 		return size;
 
-	if (val >= 10 && val <= 1000) { /* range [10, 1000] */
+	if (val >= 1 && val <= 1000) { /* range [1, 1000] */
 		pkg_ap.tag = data->tag;
 		pkg_ap.cmd = CMD_CMN_INTERVAL_REQ;
 		cpkt.param.period = val;
@@ -396,10 +318,10 @@ static ssize_t store_set_delay(struct device *dev,
 
 static const char *get_sensor_info_by_tag(int tag)
 {
-	SENSOR_DETECT_LIST sname;
+	enum sensor_detect_list sname;
 
 	sname = get_id_by_sensor_tag(tag);
-	return (sname != SENSOR_MAX) ? sensor_chip_info[sname] : "";
+	return (sname != SENSOR_MAX) ? get_sensor_chip_info_address(sname) : "";
 }
 
 static ssize_t show_info(struct device *dev, struct device_attribute *attr, char *buf)
@@ -410,15 +332,15 @@ static ssize_t show_info(struct device *dev, struct device_attribute *attr, char
 	return snprintf(buf, MAX_STR_SIZE, "%s\n", get_sensor_info_by_tag(data->tag));
 }
 
-extern uint8_t tag_to_hal_sensor_type[TAG_SENSOR_END];
 static ssize_t show_get_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
-	unsigned int hal_sensor_tag = tag_to_hal_sensor_type[data->tag];
+	uint8_t *tag_type = get_tag_to_hal_sensor_type();
+	unsigned int hal_sensor_tag = tag_type[data->tag];
 	struct t_sensor_get_data *get_data = &sensor_status.get_data[hal_sensor_tag];
 	unsigned int offset = 0;
 	int i = 0;
-	int mem_num = 0;
+	int mem_num;
 
 	CHECK_SENSOR_COOKIE(data);
 
@@ -428,13 +350,12 @@ static ssize_t show_get_data(struct device *dev, struct device_attribute *attr, 
 	if (wait_for_completion_interruptible(&get_data->complete) == 0) {
 		mem_num = get_data->data.length / sizeof(get_data->data.value[0]);
 		for (; i < mem_num; i++) {
-			if (((data->tag == TAG_ALS) ||
-				(data->tag == TAG_ALS1)) && (i == 0))
+			if (((data->tag == TAG_ALS) || (data->tag == TAG_ALS1) ||
+				(data->tag == TAG_ALS2)) && (i == 0))
 				get_data->data.value[0] =
 					get_data->data.value[0] / ALS_MCU_HAL_CONVER;
 
-			if (data->tag == TAG_ACCEL || data->tag == TAG_ACC1 ||
-				data->tag == TAG_ACC2)
+			if (data->tag == TAG_ACCEL || data->tag == TAG_ACC1)
 				/* need be devicdd by 1000.0 for high resolu */
 				get_data->data.value[i] =
 					get_data->data.value[i] / ACC_CONVERT_COFF;
@@ -500,42 +421,60 @@ static ssize_t show_selftest(struct device *dev,
 static ssize_t store_selftest(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
+	int ret;
+	uint32_t errno;
 	unsigned long val = 0;
 	pkt_subcmd_req_t cpkt;
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
+#ifdef CONFIG_INPUTHUB_30
+	struct write_info wr;
+	struct read_info rd;
+#endif
 
 	CHECK_SENSOR_COOKIE(data);
+	/* SUC-->"0", OTHERS-->"1", size is 2 */
 	memcpy(sensor_status.selftest_result[data->tag], "1", 2);
-
-	if (strict_strtoul(buf, 10, &val))
+	if (strict_strtoul(buf, TO_DECIMALISM, &val))
 		return -EINVAL;
-
 	if (val == 1) {
-		pkt_header_resp_t resp_pkt;
-
 		cpkt.hd.tag = data->tag;
 		cpkt.hd.cmd = CMD_CMN_CONFIG_REQ;
 		cpkt.subcmd = SUB_CMD_SELFTEST_REQ;
 		cpkt.hd.resp = RESP;
 		cpkt.hd.length = SUBCMD_LEN;
-		if (WAIT_FOR_MCU_RESP_DATA_AFTER_SEND(&cpkt,
-			inputhub_mcu_write_cmd(&cpkt, sizeof(cpkt)), 4000,
-			&resp_pkt, sizeof(resp_pkt)) == 0) {
+#ifndef CONFIG_INPUTHUB_30
+		{
+			struct pkt_header_resp resp_pkt;
+			ret = wait_for_mcu_resp_data_after_send(&cpkt,
+				inputhub_mcu_write_cmd(&cpkt, sizeof(cpkt)),
+				4000, &resp_pkt, sizeof(resp_pkt)); /* 4000 ms */
+			errno = resp_pkt.errno;
+		}
+#else
+		wr.tag = cpkt.hd.tag;
+		wr.cmd = cpkt.hd.cmd;
+		wr.wr_buf = &cpkt.subcmd;
+		wr.wr_len = cpkt.hd.length;
+		ret = write_customize_cmd(&wr, &rd, false);
+		ret = !ret;
+		errno = rd.errno;
+#endif
+		if (ret == 0) {
 			hwlog_err("wait for %s selftest timeout\n", data->name);
-			/* flyhorse k : SUC-->"0", OTHERS-->"1" */
+			/* SUC-->"0", OTHERS-->"1", size is 2 */
 			memcpy(sensor_status.selftest_result[data->tag], "1", 2);
 			return size;
 		} else {
-			if (resp_pkt.errno != 0) {
+			if (errno != 0) {
 				hwlog_err("%s selftest fail\n", data->name);
 				/* flyhorse k : SUC-->"0", OTHERS-->"1" */
 				memcpy(sensor_status.selftest_result[data->tag],
-					"1", 2);
+					"1", 2); /* src size is 2 */
 			} else {
 				hwlog_info("%s selftest success\n", data->name);
 				/* flyhorse k : SUC-->"0", OTHERS-->"1" */
 				memcpy(sensor_status.selftest_result[data->tag],
-					"0", 2);
+					"0", 2); /* src size is 2 */
 			}
 		}
 	}
@@ -545,7 +484,8 @@ static ssize_t store_selftest(struct device *dev,
 static ssize_t show_read_airpress(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
 	return show_sensor_read_airpress_common(dev, attr, buf);
@@ -591,421 +531,21 @@ static ssize_t store_calibrate(struct device *dev,
 static ssize_t show_als_debug_data(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	short als_debug_para[ALS_DBG_PARA_SIZE] = { 0 };
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	if (!buf)
-		return 0;
-
-	hwlog_info("%s: show cofficient\n", __func__);
-
-	if (rohm_rgb_flag == 1) { /* bh745_para */
-		als_debug_para[0] =
-			als_para_diff_tp_color_table[als_para_table].bh745_para[0]; /* cofficient_red[0] */
-		als_debug_para[1] =
-			als_para_diff_tp_color_table[als_para_table].bh745_para[1]; /* cofficient_red[0] */
-		als_debug_para[2] =
-			als_para_diff_tp_color_table[als_para_table].bh745_para[3]; /* cofficient_green[0] */
-		als_debug_para[3] =
-			als_para_diff_tp_color_table[als_para_table].bh745_para[2]; /* cofficient_red[1] */
-		als_debug_para[4] =
-			als_para_diff_tp_color_table[als_para_table].bh745_para[4]; /* cofficient_green[1] */
-		hwlog_info("%s:rohm_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (avago_rgb_flag == 1 || apds9253_rgb_flag == 1) { /* apds251_para or apds9253_para */
-		als_debug_para[1] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[9]; /* avago_cofficient[1] */
-		als_debug_para[2] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[10]; /* avago_cofficient[2] */
-		als_debug_para[3] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[20]; /* avago_cofficient[3] */
-		als_debug_para[4] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[2]; /* LUX_P */
-		als_debug_para[5] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[4]; /* LUX_R */
-		als_debug_para[6] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[3]; /* LUX_Q */
-		als_debug_para[7] =
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para[19]; /* lux_mix */
-		hwlog_info("%s:avago_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (apds9999_rgb_flag == 1) { /* apds9999_para */
-		als_debug_para[1] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[9]; /* avago_cofficient[1] */
-		als_debug_para[2] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[10]; /* avago_cofficient[2] */
-		als_debug_para[3] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[20]; /* avago_cofficient[3] */
-		als_debug_para[4] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[2]; /* LUX_P */
-		als_debug_para[5] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[4]; /* LUX_R */
-		als_debug_para[6] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[3]; /* LUX_Q */
-		als_debug_para[7] =
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[19]; /* lux_mix */
-		hwlog_info("%s:apds9999_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (ams_tmd3725_rgb_flag == 1) { /* tmd3725_para */
-		als_debug_para[1] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[0]; /* atime */
-		als_debug_para[2] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[1]; /* again */
-		als_debug_para[3] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[2]; /* dgf */
-		als_debug_para[4] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[3]; /* c_coef */
-		als_debug_para[5] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[4]; /* r_coef */
-		als_debug_para[6] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[5]; /* g_coef */
-		als_debug_para[7] =
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[6]; /* b_coef */
-		hwlog_info("%s:ams_tmd3725_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (ams_tmd3702_rgb_flag == 1) { /* tmd3702_para */
-		als_debug_para[1] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[0]; /* atime */
-		als_debug_para[2] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[1]; /* again */
-		als_debug_para[3] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[2]; /* dgf */
-		als_debug_para[4] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[3]; /* c_coef */
-		als_debug_para[5] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[4]; /* r_coef */
-		als_debug_para[6] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[5]; /* g_coef */
-		als_debug_para[7] =
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[6]; /* b_coef */
-		hwlog_info("%s:ams_tmd3702_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (ams_tcs3707_rgb_flag == 1) { /* tcs3707_para */
-		als_debug_para[1] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[0]; /* atime */
-		als_debug_para[2] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[1]; /* again */
-		als_debug_para[3] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[2]; /* dgf */
-		als_debug_para[4] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[3]; /* c_coef */
-		als_debug_para[5] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[4]; /* r_coef */
-		als_debug_para[6] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[5]; /* g_coef */
-		als_debug_para[7] =
-			tcs3707_tp_color_table[als_para_table].tcs3707_para[6]; /* b_coef */
-		hwlog_info("%s:ams_tcs3707_rgb_flag is true and als_para_table=%d\n",
-			__FUNCTION__, als_para_table);
-	} else if (ams_tcs3701_rgb_flag == 1) { /* tmd3702_para */
-		als_debug_para[1] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[0]; /* atime */
-		als_debug_para[2] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[1]; /* again */
-		als_debug_para[3] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[2]; /* dgf */
-		als_debug_para[4] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[3]; /* c_coef */
-		als_debug_para[5] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[4]; /* r_coef */
-		als_debug_para[6] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[5]; /* g_coef */
-		als_debug_para[7] =
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[6]; /* b_coef */
-		hwlog_info("%s:ams_tcs3701_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (vishay_vcnl36658_als_flag == 1) {
-		als_debug_para[1] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[0];
-		als_debug_para[2] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[1];
-		als_debug_para[3] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[2];
-		als_debug_para[4] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[3];
-		als_debug_para[5] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[4];
-		als_debug_para[6] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[5];
-		als_debug_para[7] =
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[6];
-		hwlog_info("%s:vishay_vcnl36658_als_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (liteon_ltr582_rgb_flag == 1) { /* liteon_ltr582_rgb_flag */
-		als_debug_para[1] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[3]; /* ad_radio */
-		als_debug_para[2] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[4]; /* dc_radio */
-		als_debug_para[3] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[5]; /* a_winfac */
-		als_debug_para[4] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[6]; /* d_winfac */
-		als_debug_para[5] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[7]; /* c_winfac */
-		als_debug_para[6] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[8]; /* slope */
-		als_debug_para[7] =
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[9]; /* slope_offset */
-		hwlog_info("%s:liteon_ltr582_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	} else if (tmd2745_flag == 1) {
-		als_debug_para[0] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[0]; /* D_factor */
-		als_debug_para[1] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[1]; /* B_Coef */
-		als_debug_para[2] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[2]; /* C_Coef */
-		als_debug_para[3] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[3]; /* D_Coef */
-		als_debug_para[4] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[4]; /* is_min_algo */
-		als_debug_para[5] = tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[5]; /* is_auto_gain */
-		hwlog_info("%s:tmd2745_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-	}
-	return snprintf(buf, BUF_SIZE, "%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd\n",
-		als_debug_para[0], als_debug_para[1], als_debug_para[2],
-		als_debug_para[3], als_debug_para[4], als_debug_para[5],
-		als_debug_para[6], als_debug_para[7]);
-
+	CHECK_SENSOR_COOKIE(data);
+	return als_debug_data_show(data->tag, dev, attr, buf);
 }
 
 static ssize_t store_als_debug_data(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	short als_debug_para[ALS_DBG_PARA_SIZE] = { 0 };
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	if (!buf)
-		return 0;
-
-	if (sscanf(buf, "%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd", &als_debug_para[0],
-		&als_debug_para[1], &als_debug_para[2], &als_debug_para[3],
-		&als_debug_para[4], &als_debug_para[5], &als_debug_para[6],
-		&als_debug_para[7]))
-		hwlog_info("%s: get parameter success\n", __func__);
-	else
-		hwlog_info("%s: get parameter fail\n", __func__);
-
-	if (rohm_rgb_flag == 1) { /* bh745_para */
-		als_para_diff_tp_color_table[als_para_table].bh745_para[0] =
-			als_debug_para[0]; /* cofficient_judge */
-		als_para_diff_tp_color_table[als_para_table].bh745_para[1] =
-			als_debug_para[1]; /* cofficient_red[0] */
-		als_para_diff_tp_color_table[als_para_table].bh745_para[3] =
-			als_debug_para[2]; /* cofficient_green[0] */
-		als_para_diff_tp_color_table[als_para_table].bh745_para[2] =
-			als_debug_para[3]; /* cofficient_red[1] */
-		als_para_diff_tp_color_table[als_para_table].bh745_para[4] =
-			als_debug_para[4]; /* cofficient_green[1] */
-		hwlog_info("%s:rohm_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			als_para_diff_tp_color_table[als_para_table].bh745_para,
-			sizeof(als_para_diff_tp_color_table[als_para_table].bh745_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(als_para_diff_tp_color_table[als_para_table].bh745_para));
-	} else if (avago_rgb_flag == 1) { /* apds251_para */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[9] =
-			als_debug_para[1]; /* avago_cofficient[1] */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[10] =
-			als_debug_para[2]; /* avago_cofficient[2] */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[20] =
-			als_debug_para[3]; /* avago_cofficient[3] */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[2] =
-			als_debug_para[4]; /* LUX_P */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[4] =
-			als_debug_para[5]; /* LUX_R */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[3] =
-			als_debug_para[6]; /* LUX_Q */
-		apds_als_para_diff_tp_color_table[als_para_table].apds251_para[19] =
-			als_debug_para[7]; /* lux_mix */
-		hwlog_info("%s:avago_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			apds_als_para_diff_tp_color_table[als_para_table].apds251_para,
-			sizeof(apds_als_para_diff_tp_color_table[als_para_table].apds251_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(apds_als_para_diff_tp_color_table[als_para_table].apds251_para));
-	} else if (apds9999_rgb_flag == 1) { /* apds9999_para */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[9] =
-			als_debug_para[1]; /* avago_cofficient[1] */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[10] =
-			als_debug_para[2]; /* avago_cofficient[2] */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[20] =
-			als_debug_para[3]; /* avago_cofficient[3] */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[2] =
-			als_debug_para[4]; /* LUX_P */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[4] =
-			als_debug_para[5]; /* LUX_R */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[3] =
-			als_debug_para[6]; /* LUX_Q */
-		apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para[19] =
-			als_debug_para[7]; /* lux_mix */
-		hwlog_info("%s:apds9999_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para,
-			sizeof(apds9999_als_para_diff_tp_color_table[als_para_table].apds9999_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(apds_als_para_diff_tp_color_table[als_para_table].apds251_para));
-	} else if (ams_tmd3725_rgb_flag == 1) { /* tmd3725 */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[0] =
-			als_debug_para[1]; /* atime */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[1] =
-			als_debug_para[2]; /* again */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[2] =
-			als_debug_para[3]; /* dgf */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[3] =
-			als_debug_para[4]; /* c_coef */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[4] =
-			als_debug_para[5]; /* r_coef */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[5] =
-			als_debug_para[6]; /* g_coef */
-		tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para[6] =
-			als_debug_para[7]; /* b_coef */
-		hwlog_info("%s:tmd3725_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para,
-			sizeof(tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para));
-	} else if (ams_tmd3702_rgb_flag == 1) { /* tmd3702 */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[0] =
-			als_debug_para[1]; /* atime */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[1] =
-			als_debug_para[2]; /* again */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[2] =
-			als_debug_para[3]; /* dgf */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[3] =
-			als_debug_para[4]; /* c_coef */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[4] =
-			als_debug_para[5]; /* r_coef */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[5] =
-			als_debug_para[6]; /* g_coef */
-		tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para[6] =
-			als_debug_para[7]; /* b_coef */
-		hwlog_info("%s:tmd3725_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para,
-			sizeof(tmd3702_als_para_diff_tp_color_table[als_para_table].tmd3702_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(tmd3725_als_para_diff_tp_color_table[als_para_table].tmd3725_para));
-	} else if (ams_tcs3707_rgb_flag == 1) {
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[0] =
-			als_debug_para[1]; /* atime */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[1] =
-			als_debug_para[2]; /* again */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[2] =
-			als_debug_para[3]; /* dgf */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[3] =
-			als_debug_para[4]; /* c_coef */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[4] =
-			als_debug_para[5]; /* r_coef */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[5] =
-			als_debug_para[6]; /* g_coef */
-		tcs3707_tp_color_table[als_para_table].tcs3707_para[6] =
-			als_debug_para[7]; /* b_coef */
-		hwlog_info("%s:tcs3707_rgb_flag is true and als_para_table=%d\n",
-			__FUNCTION__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			tcs3707_tp_color_table[als_para_table].tcs3707_para,
-			sizeof(tcs3707_tp_color_table[als_para_table].tcs3707_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(tcs3707_tp_color_table[als_para_table].tcs3707_para));
-	} else if (ams_tcs3701_rgb_flag == 1) { /* tcs3701 */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[0] =
-			als_debug_para[1]; /* atime */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[1] =
-			als_debug_para[2]; /* again */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[2] =
-			als_debug_para[3]; /* dgf */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[3] =
-			als_debug_para[4]; /* c_coef */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[4] =
-			als_debug_para[5]; /* r_coef */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[5] =
-			als_debug_para[6]; /* g_coef */
-		tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para[6] =
-			als_debug_para[7]; /* b_coef */
-		hwlog_info("%s:tcs3701_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para,
-			sizeof(tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(tcs3701_als_para_diff_tp_color_table[als_para_table].tcs3701_para));
-	} else if (vishay_vcnl36658_als_flag == 1) {
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[0] =
-			als_debug_para[1];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[1] =
-			als_debug_para[2];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[2] =
-			als_debug_para[3];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[3] =
-			als_debug_para[4];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[4] =
-			als_debug_para[5];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[5] =
-			als_debug_para[6];
-		vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para[6] =
-			als_debug_para[7];
-		hwlog_info("%s:vcnl36658_als_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para,
-			sizeof(vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(vcnl36658_als_para_diff_tp_color_table[als_para_table].vcnl36658_para));
-	} else if (liteon_ltr582_rgb_flag == 1) { /* liteon_ltr582_rgb_flag */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[3] =
-			als_debug_para[1]; /* ad_radio */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[4] =
-			als_debug_para[2]; /* dc_radio */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[5] =
-			als_debug_para[3]; /* a_winfac */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[6] =
-			als_debug_para[4]; /* d_winfac */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[7] =
-			als_debug_para[5]; /* c_winfac */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[8] =
-			als_debug_para[6]; /* slope */
-		ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para[9] =
-			als_debug_para[7]; /* slope_offset */
-		hwlog_info("%s:liteon_ltr582_rgb_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para,
-			sizeof(ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(ltr582_als_para_diff_tp_color_table[als_para_table].ltr582_para));
-	}  else if (tmd2745_flag == 1) {
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[0] =
-			als_debug_para[0]; /* D_factor */
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[1] =
-			als_debug_para[1]; /* B_Coef */
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[2] =
-			als_debug_para[2]; /* C_Coef */
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[3] =
-			als_debug_para[3]; /* D_Coef */
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[4] =
-			als_debug_para[4]; /* is_min_algo */
-		tmd2745_als_para_diff_tp_color_table[als_para_table].als_para[5] =
-			als_debug_para[5]; /* is_auto_gain */
-		hwlog_info("%s:tmd2745_flag is true and als_para_table=%d\n",
-			__func__, als_para_table);
-		memcpy(als_data.als_extend_data,
-			tmd2745_als_para_diff_tp_color_table[als_para_table].als_para,
-			sizeof(tmd2745_als_para_diff_tp_color_table[als_para_table].als_para) >
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE ?
-			SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE :
-			sizeof(tmd2745_als_para_diff_tp_color_table[als_para_table].als_para));
-	}
-	return size;
+	CHECK_SENSOR_COOKIE(data);
+	return als_debug_data_store(data->tag, dev, attr, buf, size);
 }
 
 static ssize_t show_selftest_timeout(struct device *dev,
@@ -1014,7 +554,10 @@ static ssize_t show_selftest_timeout(struct device *dev,
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", 1000); /* ms */
+	if (data->tag == TAG_THERMOMETER)
+		return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%d\n", 2000); /* 2000 ms */
+	else
+		return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%d\n", 1000); /* 1000 ms */
 }
 
 static ssize_t show_calibrate_timeout(struct device *dev,
@@ -1023,13 +566,8 @@ static ssize_t show_calibrate_timeout(struct device *dev,
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", 1000); /* ms */
-}
-
-static ssize_t show_mag_calibrate_method(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", mag_data.calibrate_method);
+	return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%d\n",
+		1000); /* 1000 ms */
 }
 
 static ssize_t show_calibrate_method(struct device *dev,
@@ -1045,7 +583,8 @@ static ssize_t show_calibrate_method(struct device *dev,
 static ssize_t show_cap_prox_calibrate_type(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
 	/* non auto:0, auto:1 */
@@ -1055,109 +594,42 @@ static ssize_t show_cap_prox_calibrate_type(struct device *dev,
 static ssize_t show_cap_prox_calibrate_order(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
 	CHECK_SENSOR_COOKIE(data);
 	return show_cap_prox_calibrate_orders(data->tag, dev, attr, buf);
 }
 
-#define SAR_SENSOR_DEDECT_LENGTH 10
-static int sar_sensor_i2c_detect(struct sar_sensor_detect sar_detect)
-{
-	int detect_result = 0;
-	int ret;
-	uint8_t bus_num;
-	uint32_t i2c_address;
-	uint16_t reg_add;
-	uint8_t buf_temp[4] = { 0 };
-	uint32_t register_add_len = 0;
-	uint32_t rx_len = 0;
-	uint32_t chip_id_value;
-
-	/* ##(bus_num)##(i2c_addr)##(reg_addr)##(len) */
-	bus_num = sar_detect.cfg.bus_num;
-	i2c_address = sar_detect.cfg.i2c_address;
-	reg_add = sar_detect.chip_id;
-	buf_temp[0] = 0;
-
-	if (reg_add & 0xFF00) {
-		register_add_len = 2 ; /* reg addr is 16bit */
-		rx_len = 4;
-	} else {
-		register_add_len = 1 ; /* reg addr is 8bit */
-		rx_len = 1;
-	}
-
-	/*
-	 * static int mcu_i2c_rw(uint8_t bus_num, uint8_t i2c_add,
-	 * uint8_t register_add,uint8_t *rw, int len, uint8_t *buf)
-	 */
-	ret = mcu_i2c_rw(bus_num, i2c_address, (uint8_t *)&reg_add,
-		register_add_len, &buf_temp[0], rx_len);
-	if (ret < 0) {
-		hwlog_err("In %s! i2c read reg fail\n", __func__);
-		return 0;
-	}
-
-	memcpy(&chip_id_value, buf_temp, sizeof(buf_temp));
-
-	if ((chip_id_value == sar_detect.chip_id_value[0]) ||
-		(chip_id_value == sar_detect.chip_id_value[1])) {
-		detect_result = 1;
-		hwlog_info("sar_sensor_detect_succ 0x%8x\n", chip_id_value);
-	} else {
-		detect_result = 0;
-		hwlog_info("sar_sensor_detect_fail 0x%8x\n", chip_id_value);
-	}
-	return detect_result;
-}
-
 static ssize_t show_sar_sensor_detect(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int final_detect_result;
-	int semtech_detect_result = 0;
-	int adi_detect_result = 0;
-	int cypress_detect_result = 0;
-	int semtech_9335_detect_result = 0;
-	int abov_detect_result = 0;
-	int semtech_detect_result_aux = 0;
+	unsigned int final_detect_result;
+	unsigned int sar_detect_result;
+	unsigned int sar_aux_detect_result;
+	char *id_string = NULL;
 
-	if (semtech_sar_detect.detect_flag == 1) {
-		hwlog_info("semtech_sar_detect \n");
-		semtech_detect_result = sar_sensor_i2c_detect(semtech_sar_detect);
-	}
-	if (semtech_9335_sar_detect.detect_flag == 1) {
-		hwlog_info("semtech_9335_sar_detect\n");
-		semtech_9335_detect_result =
-			sar_sensor_i2c_detect(semtech_9335_sar_detect);
-	}
-	if (g_abov_sar_detect.detect_flag == 1) {
-		hwlog_info("abov_sar_detect\n");
-		abov_detect_result = sar_sensor_i2c_detect(g_abov_sar_detect);
-	}
-	if (g_semtech_sar_detect_aux.detect_flag == 1) {
-		hwlog_info("semtech_sar_new_detect\n");
-		semtech_detect_result_aux =
-			sar_sensor_i2c_detect(g_semtech_sar_detect_aux);
-	}
+	id_string = cap_prox_get_sensors_id_string();
+	if (id_string == NULL)
+		return -1;
 
-	final_detect_result = semtech_detect_result | adi_detect_result |
-		cypress_detect_result | semtech_9335_detect_result |
-		abov_detect_result;
-	if (!strcmp(cap_sensor_id, "65541 65572")) {
-		final_detect_result = (semtech_detect_result |
-		adi_detect_result | cypress_detect_result |
-		abov_detect_result) && (semtech_9335_detect_result |
-		semtech_detect_result_aux);
+	sar_detect_result = get_sar_detect_result();
+	sar_aux_detect_result = get_sar_aux_detect_result();
+
+	final_detect_result = sar_detect_result;
+	if (!strcmp(id_string, "65541 65572")) {
+		final_detect_result = sar_detect_result &&
+			sar_aux_detect_result;
 		hwlog_info("there two sar sensor\n");
 	}
-	hwlog_info("%s: final_detect_result=%d semtech_9323=%d adi=%d cypress=%d semtech_9335=%d abov_detect_result = %d semtech_detect_result_aux = %d\n",
-		__func__, final_detect_result, semtech_detect_result,
-		adi_detect_result, cypress_detect_result,
-		semtech_9335_detect_result, abov_detect_result,
-		semtech_detect_result_aux);
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", final_detect_result);
+
+	if (!strcmp(id_string, "65572")) {
+		final_detect_result = sar_aux_detect_result;
+		hwlog_info("only has sar1 sensor\n");
+	}
+
+	return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%u\n",
+		final_detect_result);
 }
 
 static ssize_t store_fingersense_enable(struct device *dev,
@@ -1165,8 +637,9 @@ static ssize_t store_fingersense_enable(struct device *dev,
 {
 	unsigned long val = 0;
 	int ret;
+	int *enabled = get_fingersense_enabled();
 
-	if (strict_strtoul(buf, 10, &val)) {
+	if (strict_strtoul(buf, TO_DECIMALISM, &val)) {
 		hwlog_err("%s: finger sense enable val %lu invalid",
 			__func__, val);
 		return -EINVAL;
@@ -1179,7 +652,7 @@ static ssize_t store_fingersense_enable(struct device *dev,
 		return size;
 	}
 
-	if (fingersense_enabled == val) {
+	if (*enabled == val) {
 		hwlog_info("%s:finger sense already at seted state\n",
 			__func__);
 		return size;
@@ -1192,37 +665,48 @@ static ssize_t store_fingersense_enable(struct device *dev,
 			__func__, ret);
 		return size;
 	}
-	fingersense_enabled = val;
+	*enabled = val;
 	return size;
 }
 
 static ssize_t show_fingersense_enable(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", fingersense_enabled);
+	int *enabled = get_fingersense_enabled();
+
+	return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1,
+		"%d\n", *enabled);
 }
 
 static ssize_t show_fingersense_data_ready(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", fingersense_data_ready);
+	bool *ready = get_fingersense_data_ready();
+
+	return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%d\n", *ready);
 }
 
 static ssize_t show_fingersense_latch_data(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	int size;
+	int *enabled = get_fingersense_enabled();
+	bool *ready = get_fingersense_data_ready();
+	s16 *data = get_fingersense_data();
 
-	size = MAX_STR_SIZE > sizeof(fingersense_data) ?
-		sizeof(fingersense_data) : MAX_STR_SIZE;
+	size = (MAX_STR_SIZE > (sizeof(*data) * FINGERSENSE_DATA_NSAMPLES)) ?
+		(sizeof(*data) * FINGERSENSE_DATA_NSAMPLES) : MAX_STR_SIZE;
 
-	if ((!fingersense_data_ready) || (!fingersense_enabled)) {
+	if ((!(*ready)) || (!(*enabled))) {
 		hwlog_err("%s:fingersense zaxix not ready %d or not enable %d\n",
-			__func__,
-			fingersense_data_ready, fingersense_enabled);
+			__func__, *ready, *enabled);
 		return size;
 	}
-	memcpy(buf, (char *)fingersense_data, size);
+	if (memcpy_s(buf, MAX_STR_SIZE, (char *)data, size) != EOK) {
+		hwlog_err("%s memcpy_s error\n", __func__);
+		return -1;
+	}
+
 	return size;
 }
 
@@ -1231,22 +715,25 @@ static ssize_t store_fingersense_req_data(struct device *dev,
 {
 	int ret;
 	unsigned int sub_cmd = SUB_CMD_ACCEL_FINGERSENSE_REQ_DATA_REQ;
+	int *enabled = get_fingersense_enabled();
+	bool *ready = get_fingersense_data_ready();
 
 #if defined(CONFIG_HISI_VIBRATOR)
 	if ((vibrator_shake == 1) ||
-	    ((HALL_COVERD & (unsigned int)hall_value) && (hall_sen_type == 0))) {
+		((HALL_COVERD & (unsigned int)hall_value) &&
+		(get_hall_sen_type() == 0))) {
 		hwlog_err("coverd, vibrator shaking, not send fingersense req data cmd to mcu\n");
 		return -1;
 	}
 #endif
 
-	if (!fingersense_enabled) {
+	if (!(*enabled)) {
 		hwlog_err("%s: finger sense not enable,  dont req data\n",
 			__func__);
 		return size;
 	}
 
-	fingersense_data_ready = false;
+	*ready = false;
 	ret = fingersense_commu(sub_cmd, sub_cmd, RESP, true);
 	if (ret) {
 		hwlog_err("%s: finger sense send requst data failed\n",
@@ -1268,15 +755,10 @@ static ssize_t store_ois_ctrl(struct device *dev,
 {
 	int source;
 	int ret;
-	unsigned int cmd = 0;
+	unsigned int cmd;
 	unsigned int delay = 200;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
 
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	source = simple_strtol(buf, NULL, 10);
-
+	source = simple_strtol(buf, NULL, TO_DECIMALISM);
 	if (source == 1) {
 		cmd = CMD_CMN_OPEN_REQ;
 		ret = ois_commu(TAG_OIS, cmd, source, NO_RESP, false);
@@ -1318,161 +800,34 @@ static ssize_t store_ois_ctrl(struct device *dev,
 	return size;
 }
 
-int send_als_ud_data_to_mcu(int tag, uint32_t subcmd, const void *data,
-	int length, bool is_recovery)
-{
-	int ret;
-	write_info_t pkg_ap;
-	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-
-	pkg_ap.tag = tag;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	cpkt.subcmd = subcmd;
-	pkg_ap.wr_buf = &hd[1];
-	pkg_ap.wr_len = length+SUBCMD_LEN;
-	memcpy(cpkt.para, data, length);
-
-	if (is_recovery)
-		return write_customize_cmd(&pkg_ap, NULL, false);
-
-	ret = write_customize_cmd(&pkg_ap, NULL, true);
-	if (ret) {
-		hwlog_err("send als ud data to mcu fail,ret=%d\n", ret);
-		return -1;
-	}
-
-	return 0;
-}
-
-void send_dc_status_to_sensorhub(uint32_t dc_status)
-{
-	uint32_t para;
-
-	if (als_data.als_phone_type == VOGUE_PHONE_TYPE) {
-		para = (uint32_t)dc_status;
-		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_CHANGE_DC_STATUS,
-			(const void *)&(para), sizeof(para), false);
-	}
-}
-
-void save_light_to_sensorhub(uint32_t mipi_level, uint32_t bl_level)
-{
-	uint64_t timestamp = 0;
-	struct timespec64 ts;
-	struct BrightData para;
-
-	if (als_data.als_phone_type == ELE_PHONE_TYPE ||
-		als_data.als_phone_type == VOGUE_PHONE_TYPE ||
-		als_data.is_bllevel_supported) {
-		get_monotonic_boottime64(&ts);
-		timestamp = ((unsigned long long)(ts.tv_sec * NSEC_PER_SEC) +
-			(unsigned long long)ts.tv_nsec) / 1000000;
-		para.mipiData = mipi_level;
-		para.brightData = bl_level;
-		para.timeStamp = (uint64_t)timestamp;
-		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_UPDATE_BL_LEVEL,
-			(const void *)&(para), sizeof(para), false);
-	}
-}
-
-extern void get_als_under_tp_calibrate_data(void);
 static ssize_t show_als_ud_rgbl_status(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	get_als_under_tp_calibrate_data();
-	if (als_data.als_phone_type != ELE_PHONE_TYPE)
-		return snprintf(buf, MAX_STR_SIZE, "%d,%d,%d,%d\n", 0, 0, 0, 0);
-	else if (als_under_tp_cal_data.x == 0 && als_under_tp_cal_data.y == 0)
-		return snprintf(buf, MAX_STR_SIZE, "%d,%d,%d,%d\n",
-			662, 0, 762, 100);
-	else
-		return snprintf(buf, MAX_STR_SIZE, "%d,%d,%d,%d\n",
-			als_under_tp_cal_data.x - HALF_LENGTH > 0 ?
-				als_under_tp_cal_data.x - HALF_LENGTH : 0,
-			als_under_tp_cal_data.y - HALF_LENGTH > 0 ?
-				als_under_tp_cal_data.y - HALF_LENGTH : 0,
-			als_under_tp_cal_data.x + HALF_LENGTH,
-			als_under_tp_cal_data.y + HALF_LENGTH);
-}
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-static int get_cmd(const char *str)
-{
-	int i;
-
-	for (i = 0; i < sizeof(als_ud_cmd_map) / sizeof(als_ud_cmd_map[0]); ++i) {
-		if (str_fuzzy_match(str, als_ud_cmd_map[i].str))
-			return als_ud_cmd_map[i].cmd;
-	}
-	return -1;
+	CHECK_SENSOR_COOKIE(data);
+	return als_ud_rgbl_status_show(data->tag, dev, attr, buf);
 }
 
 static ssize_t store_rgb_status(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	int cmd = 0;
-	int arg = -1;
-	int argc = 0;
-	uint64_t para[2];
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	for (; (buf = get_str_begin(buf)) != NULL; buf = get_str_end(buf)) {
-		if (!cmd)
-			cmd = get_cmd(buf);
-
-		if (get_arg(buf, &arg)) {
-			if (argc < MAX_ALS_UD_CMD_BUF_ARGC)
-				para[argc++] = arg;
-			else
-				hwlog_err("too many args, %d will be ignored\n",
-					arg);
-		}
-	}
-
-	switch (cmd) {
-	case ALS_UD_CMD_SET_ADDR:
-		als_rgb_pa_to_sh = para[1];
-		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_SET_ALS_PA,
-			(const void *)&als_rgb_pa_to_sh,
-			sizeof(als_rgb_pa_to_sh), false);
-		break;
-	case ALS_UD_CMD_BUFFER_UPDATE:
-		send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_UPDATE_RGB_DATA,
-			(const void *)&para, sizeof(para), false);
-		break;
-	default:
-		hwlog_err("Unspport cmd\n");
-		break;
-	}
-	return size;
-}
-
-void wake_up_als_ud_block(void)
-{
-	wake_up_interruptible(&sensorhub_als_block_waitq);
+	CHECK_SENSOR_COOKIE(data);
+	return als_rgb_status_store(data->tag, dev, attr, buf, size);
 }
 
 static ssize_t show_als_ud_rgbl_block_data(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int ret;
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	/* Block node by soft irq */
-	sem_als_ud_rgbl_block_flag = 1;
-	als_ud_rgbl_block = 0;
-	ret = wait_event_freezable_timeout(sensorhub_als_block_waitq,
-		(als_ud_rgbl_block != 0), msecs_to_jiffies(100000));
-	if (ret > 0) {
-		hwlog_info("normal message transfer\n");
-		return snprintf(buf, MAX_STR_SIZE, "%llu,%u,%u\n",
-			als_ud_data_upload.sample_start_time,
-			als_ud_data_upload.sample_interval,
-			als_ud_data_upload.integ_time); /* unit:ms */
-	} else {
-		hwlog_info("soft irq time out\n");
-		return snprintf(buf, MAX_STR_SIZE, "%d,%d,%d\n", 0, 0, 0);
-	}
+	CHECK_SENSOR_COOKIE(data);
+	return als_ud_rgbl_block_data_show(data->tag, dev, attr, buf);
 }
 
 /* files create for every sensor */
@@ -1495,6 +850,18 @@ static const struct attribute_group *sensors_attr_groups[] = {
 	NULL,
 };
 
+static ssize_t store_set_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	return therm_store_set_mode(dev, attr, buf, size);
+}
+
+static ssize_t show_get_calibrate_index(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return attr_get_therm_calibrate_index(dev, attr, buf);
+}
+
 /* files create for specific sensor */
 static DEVICE_ATTR(get_data, 0660, show_get_data, store_get_data);
 static DEVICE_ATTR(self_test, 0660, show_selftest, store_selftest);
@@ -1509,7 +876,6 @@ static DEVICE_ATTR(cap_prox_calibrate_type, 0440, show_cap_prox_calibrate_type, 
 static DEVICE_ATTR(cap_prox_calibrate_order, 0440, show_cap_prox_calibrate_order, NULL);
 static DEVICE_ATTR(sar_sensor_detect, 0440, show_sar_sensor_detect, NULL);
 static DEVICE_ATTR(get_sensor_id, 0440, show_get_sensor_id, NULL);
-
 static DEVICE_ATTR(set_fingersense_enable, 0660, show_fingersense_enable,
 	store_fingersense_enable);
 static DEVICE_ATTR(fingersense_data_ready, 0440, show_fingersense_data_ready, NULL);
@@ -1520,117 +886,32 @@ static DEVICE_ATTR(rpc_sar_service_req, 0660, NULL, store_rpc_sar_service_req);
 static DEVICE_ATTR(ois_ctrl, 0660, show_ois_ctrl, store_ois_ctrl);
 static DEVICE_ATTR(als_ud_rgbl, 0660, show_als_ud_rgbl_status, store_rgb_status);
 static DEVICE_ATTR(als_ud_rgbl_block, 0440, show_als_ud_rgbl_block_data, NULL);
-
-static ssize_t show_acc_sensorlist_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	memcpy(buf, &sensorlist_info[ACC], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
-}
+static DEVICE_ATTR(set_mode, 0660, NULL, store_set_mode);
+static DEVICE_ATTR(get_calibrate_index, 0440, show_get_calibrate_index, NULL);
 static DEVICE_ATTR(acc_sensorlist_info, 0664, show_acc_sensorlist_info, NULL);
-
-static ssize_t show_mag_sensorlist_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	memcpy(buf, &sensorlist_info[MAG], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
-}
 static DEVICE_ATTR(mag_sensorlist_info, 0664, show_mag_sensorlist_info, NULL);
-
-static ssize_t show_gyro_sensorlist_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	memcpy(buf, &sensorlist_info[GYRO], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
-}
-
-static ssize_t show_gyro_position_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	hwlog_info("%s: gyro_position is %d\n", __func__, gyro_position);
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", gyro_position);
-}
-
 static DEVICE_ATTR(gyro_sensorlist_info, 0664, show_gyro_sensorlist_info, NULL);
 static DEVICE_ATTR(gyro_position_info, 0660, show_gyro_position_info, NULL);
-
-unsigned long ungyro_timestamp_offset;
-#define MAX_TIMEOFFSET_VAL 100000000
-static ssize_t store_ungyro_time_offset(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t size)
-{
-	long val = 0;
-
-	if (!dev || !attr || !buf)
-		return -EINVAL;
-
-	if (strict_strtol(buf, 10, &val)) { /* change to 10 type */
-		hwlog_err("%s: read uni val %lu invalid", __func__, val);
-		return -EINVAL;
-	}
-
-	hwlog_info("%s: set ungyro timestamp offset val %ld\n", __func__, val);
-	if ((val < -MAX_TIMEOFFSET_VAL) || (val > MAX_TIMEOFFSET_VAL)) {
-		hwlog_err("%s:set ungyro timestamp offset fail, invalid val\n",
-			__func__);
-		return size;
-	}
-
-	ungyro_timestamp_offset = val;
-	return size;
-}
-static ssize_t show_ungyro_time_offset(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if (!dev || !attr || !buf)
-		return -EINVAL;
-
-	hwlog_info("%s: unigyro_time_offset is %lu\n",
-		__func__, ungyro_timestamp_offset);
-	memcpy(buf, &ungyro_timestamp_offset, sizeof(ungyro_timestamp_offset));
-	return sizeof(ungyro_timestamp_offset);
-}
 static DEVICE_ATTR(ungyro_time_offset, 0664, show_ungyro_time_offset,
 	store_ungyro_time_offset);
-
-static unsigned long unacc_timestamp_offset;
-static ssize_t store_unacc_time_offset(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t size)
-{
-	long val = 0;
-
-	if (!dev || !attr || !buf)
-		return -EINVAL;
-
-	if (strict_strtol(buf, 10, &val)) { /* change to 10 type */
-		hwlog_err("%s: read unacc_timestamp_offset val %lu invalid",
-			__func__, val);
-		return -EINVAL;
-	}
-
-	hwlog_info("%s: set acc timestamp offset val %ld\n", __func__, val);
-	if ((val < -MAX_TIMEOFFSET_VAL) || (val > MAX_TIMEOFFSET_VAL)) {
-		hwlog_err("%s:set acc timestamp offset fail, invalid val\n",
-			__func__);
-		return size;
-	}
-
-	unacc_timestamp_offset = val;
-	return size;
-}
-static ssize_t show_unacc_time_offset(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if (!dev || !attr || !buf)
-		return -EINVAL;
-
-	hwlog_info("%s: acc_time_offset is %lu\n",
-		__FUNCTION__, unacc_timestamp_offset);
-	memcpy(buf, &unacc_timestamp_offset, sizeof(unacc_timestamp_offset));
-	return sizeof(unacc_timestamp_offset);
-}
 static DEVICE_ATTR(unacc_time_offset, 0664, show_unacc_time_offset,
 	store_unacc_time_offset);
+
+int posture_sensor_enable(void)
+{
+	int ret;
+	interval_param_t param;
+
+	memset_s(&param, sizeof(param), 0, sizeof(param));
+	param.period = 50; /* 50 ms */
+
+	inputhub_sensor_enable(TAG_POSTURE, true);
+
+	ret = inputhub_sensor_setdelay(TAG_POSTURE, &param);
+	if (ret)
+		hwlog_err("set delay cmd to mcu fail,ret=%d\n", ret);
+	return 0;
+}
 
 static ssize_t show_judge_sensor_in_board_status(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -1643,360 +924,87 @@ static ssize_t show_judge_sensor_in_board_status(struct device *dev,
 static DEVICE_ATTR(judge_sensor_in_board_status, 0440,
 	show_judge_sensor_in_board_status, NULL);
 
-static ssize_t show_ps_sensorlist_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	memcpy(buf, &sensorlist_info[PS], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
-}
 static DEVICE_ATTR(ps_sensorlist_info, 0664, show_ps_sensorlist_info, NULL);
 
 static ssize_t show_als_sensorlist_info(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	memcpy(buf, &sensorlist_info[ALS], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
+
+	CHECK_SENSOR_COOKIE(data);
+	return als_sensorlist_info_show(data->tag, dev,	attr, buf);
 }
 static DEVICE_ATTR(als_sensorlist_info, 0664,
 	show_als_sensorlist_info, NULL);
-
-static ssize_t calibrate_threshold_from_mag_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	int val = mag_threshold_for_als_calibrate;
-
-	return snprintf(buf, PAGE_SIZE, "%d\n", val);
-}
-
 static DEVICE_ATTR(calibrate_threshold_from_mag, 0664,
 	calibrate_threshold_from_mag_show, NULL);
-
-static ssize_t show_airpress_sensorlist_info(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	memcpy(buf, &sensorlist_info[AIRPRESS], sizeof(struct sensorlist_info));
-	return sizeof(struct sensorlist_info);
-}
 static DEVICE_ATTR(airpress_sensorlist_info, 0664,
 	show_airpress_sensorlist_info, NULL);
 
 static ssize_t show_als_offset_data(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, MAX_STR_SIZE, "als OFFSET:%u %u %u %u %u %u\n",
-		als_offset[0], als_offset[1], als_offset[2],
-		als_offset[3], als_offset[4], als_offset[5]);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
+
+	CHECK_SENSOR_COOKIE(data);
+	return als_offset_data_show(data->tag, dev, attr, buf);
 }
 static DEVICE_ATTR(als_offset_data, 0444, show_als_offset_data, NULL);
 
-static ssize_t show_ps_offset_data(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "ps OFFSET:%d %d %d\n",
-		ps_sensor_offset[0], ps_sensor_offset[1], ps_sensor_offset[2]);
-}
 static DEVICE_ATTR(ps_offset_data, 0444, show_ps_offset_data, NULL);
-
-static ssize_t show_acc_offset_data(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "acc offset:%d %d %d\nsensitivity:%d %d %d\nxis_angle:%d %d %d %d %d %d %d %d %d\n",
-		gsensor_offset[0], gsensor_offset[1], gsensor_offset[2],
-		gsensor_offset[3], gsensor_offset[4], gsensor_offset[5],
-		gsensor_offset[6], gsensor_offset[7], gsensor_offset[8],
-		gsensor_offset[9], gsensor_offset[10], gsensor_offset[11],
-		gsensor_offset[12], gsensor_offset[13], gsensor_offset[14]);
-}
-
 static DEVICE_ATTR(acc_offset_data, 0444, show_acc_offset_data, NULL);
-
-static ssize_t show_acc1_offset_data(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "acc offset:%d %d %d\n",
-		gsensor1_offset[0], gsensor1_offset[1], gsensor1_offset[2]);
-}
-
 static DEVICE_ATTR(acc1_offset_data, 0444, show_acc1_offset_data, NULL);
-
-static ssize_t show_gyro_offset_data(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "gyro offset:%d %d %d\nsensitivity:%d %d %d\nxis_angle:%d %d %d %d %d %d %d %d %d\nuser calibrated offset:%d %d %d\n",
-		gyro_sensor_offset[0], gyro_sensor_offset[1], gyro_sensor_offset[2],
-		gyro_sensor_offset[3], gyro_sensor_offset[4], gyro_sensor_offset[5],
-		gyro_sensor_offset[6], gyro_sensor_offset[7], gyro_sensor_offset[8],
-		gyro_sensor_offset[9], gyro_sensor_offset[10], gyro_sensor_offset[11],
-		gyro_sensor_offset[12], gyro_sensor_offset[13], gyro_sensor_offset[14],
-		gyro_sensor_offset[15], gyro_sensor_offset[16], gyro_sensor_offset[17]);
-}
-
 static DEVICE_ATTR(gyro_offset_data, 0444, show_gyro_offset_data, NULL);
-
-static ssize_t show_gyro1_offset_data(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, MAX_STR_SIZE, "gyro1 offset:%d %d %d\n online calibrated offset:%d %d %d\n",
-		gyro1_sensor_offset[0], gyro1_sensor_offset[1], gyro1_sensor_offset[2],
-		gyro1_sensor_offset[15], gyro1_sensor_offset[16], gyro1_sensor_offset[17]);
-}
-
 static DEVICE_ATTR(gyro1_offset_data, 0444, show_gyro1_offset_data, NULL);
-
-
-static int airpress_close_after_touch_calibrate = true;
-static ssize_t attr_airpress_calibrate_write(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	unsigned long val = 0;
-	int ret = -1;
-	read_info_t read_pkg;
-	char temp[AIRPRESS_CALIDATA_NV_SIZE_WITH_AIRTOUCH] = { 0 };
-	interval_param_t param;
-	#ifdef SENSOR_DATA_ACQUISITION
-	int airpress_touch_data[AIRPRESS_CAL_NUM] = { 0 };
-	#endif
-	RET_TYPE airpress_calibration_result = RET_INIT;
-
-	if (!buf) {
-		hwlog_err("attr_airpress_calibrate_write: invalid input\n");
-		return -EINVAL;
-	}
-	if (strict_strtoul(buf, 10, &val))
-		return -EINVAL;
-
-	/* send calibrate command */
-	read_pkg = send_airpress_calibrate_cmd(TAG_PRESSURE, val,
-			&airpress_calibration_result);
-	if (airpress_calibration_result != SUC) {
-		hwlog_err("attr_airpress_calibrate_write: send_airpress_calibrate_cmd fail\n");
-		return -1;
-	}
-	/* calibration process */
-	if (val % 100 == 9) {
-		memcpy(&pressure_touch_calibrate_data, read_pkg.data,
-			sizeof(pressure_touch_calibrate_data));
-		memcpy(temp, &airpress_data.offset, sizeof(airpress_data.offset));
-		memcpy(temp + sizeof(airpress_data.offset),
-			&pressure_touch_calibrate_data,
-			sizeof(pressure_touch_calibrate_data));
-		if (write_calibrate_data_to_nv(AIRPRESS_CALIDATA_NV_NUM,
-			sizeof(airpress_data.offset) +
-			sizeof(pressure_touch_calibrate_data), "AIRDATA", temp)) {
-			hwlog_err("attr_airpress_calibrate_write: write_calibrate_data_to_nv fail\n");
-			return -1;
-		}
-		ret = 1;
-		hwlog_info("temp[0~7] = %x %x %x %x %x %x %x %x\n",
-			temp[0], temp[1], temp[2], temp[3],
-			temp[4], temp[5], temp[6], temp[7]);
-		hwlog_info("attr_airpress_calibrate_write: write_calibrate_data_to_nv success, cResult: %d %d %d %d %d %d %d %d, tResult: %d %d %d %d %d %d %d %d\n",
-			pressure_touch_calibrate_data.cResult.slope, pressure_touch_calibrate_data.cResult.base_press,
-			pressure_touch_calibrate_data.cResult.max_press, pressure_touch_calibrate_data.cResult.raise_press,
-			pressure_touch_calibrate_data.cResult.min_press, pressure_touch_calibrate_data.cResult.temp,
-			pressure_touch_calibrate_data.cResult.speed, pressure_touch_calibrate_data.cResult.result_flag,
-			pressure_touch_calibrate_data.tResult.slope, pressure_touch_calibrate_data.tResult.base_press,
-			pressure_touch_calibrate_data.tResult.max_press, pressure_touch_calibrate_data.tResult.raise_press,
-			pressure_touch_calibrate_data.tResult.min_press, pressure_touch_calibrate_data.tResult.temp,
-			pressure_touch_calibrate_data.tResult.speed, pressure_touch_calibrate_data.tResult.result_flag);
-		#ifdef SENSOR_DATA_ACQUISITION
-		airpress_touch_data[0] = airpress_data.offset;
-		airpress_touch_data[1] = pressure_touch_calibrate_data.cResult.slope;
-		airpress_touch_data[2] = pressure_touch_calibrate_data.cResult.base_press;
-		airpress_touch_data[3] = pressure_touch_calibrate_data.cResult.max_press;
-		airpress_touch_data[4] = pressure_touch_calibrate_data.cResult.raise_press;
-		airpress_touch_data[5] = pressure_touch_calibrate_data.cResult.min_press;
-		airpress_touch_data[6] = pressure_touch_calibrate_data.cResult.temp;
-		airpress_touch_data[7] = pressure_touch_calibrate_data.cResult.speed;
-		airpress_touch_data[8] = pressure_touch_calibrate_data.cResult.result_flag;
-		airpress_touch_data[9] = pressure_touch_calibrate_data.tResult.slope;
-		airpress_touch_data[10] = pressure_touch_calibrate_data.tResult.base_press;
-		airpress_touch_data[11] = pressure_touch_calibrate_data.tResult.max_press;
-		airpress_touch_data[12] = pressure_touch_calibrate_data.tResult.raise_press;
-		airpress_touch_data[13] = pressure_touch_calibrate_data.tResult.min_press;
-		airpress_touch_data[14] = pressure_touch_calibrate_data.tResult.temp;
-		airpress_touch_data[15] = pressure_touch_calibrate_data.tResult.speed;
-		airpress_touch_data[16] = pressure_touch_calibrate_data.tResult.result_flag;
-		airpress_touch_data_acquisition(airpress_touch_data, sizeof(airpress_touch_data)/sizeof(int));
-		#endif
-	} else if (val % 100 == 3) {
-		if (sensor_status.opened[TAG_PRESSURE] == 0) { /* if airpress is not opened, open first */
-			hwlog_info("send airpress open cmd(during calibrate) to mcu\n");
-			airpress_close_after_touch_calibrate = true;
-			ret = inputhub_sensor_enable(TAG_PRESSURE, true);
-			if (ret) {
-				hwlog_err("send airpress open cmd(during calibrate) to mcu fail,ret=%d\n", ret);
-				return -1;
-			}
-		} else {
-			airpress_close_after_touch_calibrate = false;
-		}
-		/* period must equals 20 ms */
-		if ((sensor_status.delay[TAG_PRESSURE] == 0) ||
-			(sensor_status.delay[TAG_PRESSURE] > 20)) {
-			hwlog_info("send airpress setdelay cmd(during calibrate) to mcu\n");
-			memset(&param, 0, sizeof(param));
-			param.period = 20;
-			ret = inputhub_sensor_setdelay(TAG_PRESSURE, &param);
-			if (ret) {
-				hwlog_err("send airpress set delay cmd(during calibrate) to mcu fail,ret=%d\n",
-					ret);
-				return -1;
-			}
-		}
-		ret = 1;
-	} else if (val % 100 == 10) {
-		if (airpress_close_after_touch_calibrate == true) {
-			airpress_close_after_touch_calibrate = false;
-			hwlog_info("send airpress close cmd(during calibrate) to mcu\n");
-			ret = inputhub_sensor_enable(TAG_PRESSURE, false);
-			if (ret) {
-				hwlog_err("send airpress close cmd(during calibrate) to mcu fail,ret=%d\n",
-					ret);
-				return -1;
-			}
-		}
-		ret = 1;
-	} else {
-		memcpy(&ret, read_pkg.data, sizeof(ret));
-	}
-	hwlog_info("attr_airpress_calibrate_write: ret = %d.\n", ret);
-	return ret;
-}
 
 static ssize_t attr_set_als_always_on_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
-	if (!buf)
-		return size;
-	als_always_on = simple_strtol(buf, NULL, 10); // get in dec
-	hwlog_info("get always on info = %d\n", als_always_on);
-	send_als_ud_data_to_mcu(TAG_ALS, SUB_CMD_CHANGE_ALWAYS_ON_STATUS,
-			(const void *)&als_always_on,
-			sizeof(als_always_on), false);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	return size;
+	CHECK_SENSOR_COOKIE(data);
+	return als_always_on_store(data->tag, dev, attr, buf, size);
 }
 static DEVICE_ATTR(always_on, 0660, NULL, attr_set_als_always_on_store);
 
-static ssize_t attr_airpress_calibrate_show(struct device *dev,
+static ssize_t show_als_mmi_para(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int val = airpress_calibration_res;
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	return snprintf(buf, PAGE_SIZE, "%d\n", val);
+	CHECK_SENSOR_COOKIE(data);
+	return als_mmi_para_show(data->tag, dev, attr, buf);
 }
+static DEVICE_ATTR(als_mmi_para, 0444, show_als_mmi_para, NULL);
 
 static DEVICE_ATTR(airpress_calibrate, 0660, attr_airpress_calibrate_show,
 	attr_airpress_calibrate_write);
 
-static ssize_t attr_airpress_set_tp_info_store(struct device *dev,
+static DEVICE_ATTR(airpress_set_tp_info, 0220,
+	NULL, attr_airpress_set_tp_info_store);
+
+static ssize_t attr_als_calibrate_under_tp_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	int ret;
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf || count > sizeof(spkt.para)) {
-		hwlog_err("attr_airpress_set_tp_info_store: buf is NULL, or data length is too large\n");
-		return -EINVAL;
-	}
-
-	hwlog_info("input buf_size is %lu\n", count);
-	spkt.subcmd = SUB_CMD_SET_TP_COORDINATE;
-	pkg_ap.tag = TAG_PRESSURE;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = count + SUBCMD_LEN;
-	memcpy(spkt.para, buf, count);
-
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("send tag %d tp touch info to mcu fail,ret=%d\n",
-			pkg_ap.tag, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("send tp touch info to mcu fail\n");
-			ret = -1;
-		} else {
-			hwlog_info("send tp touch info to mcu succes\n");
-			ret = count;
-		}
-	}
-	return (ssize_t)ret;
-}
-
-static DEVICE_ATTR(airpress_set_tp_info, 0220, NULL, attr_airpress_set_tp_info_store);
-
-static ssize_t attr_als_calibrate_under_tp_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	int ret;
-	unsigned long val = 0;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf) {
-		hwlog_err("attr_als_calibrate_under_tp_store: buf is NULL\n");
-		return -EINVAL;
-	}
-	if (strict_strtoul(buf, 10, &val)) {
-		hwlog_err("attr_als_calibrate_under_tp_store: strtoul fail\n");
-		return -EINVAL;
-	}
-	if (val != 3) {
-		hwlog_err("attr_als_calibrate_under_tp_store: wrong value input\n");
-		return -EINVAL;
-	}
-
-	spkt.subcmd = SUB_CMD_SELFCALI_REQ;
-	pkg_ap.tag = TAG_ALS;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(val) + SUBCMD_LEN;
-	memcpy(spkt.para, &val, sizeof(val));
-	hwlog_info("attr_als_calibrate_under_tp_store: under_tp_als calibrated val is %lu, len is %lu\n",
-		val, sizeof(val));
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("attr_als_calibrate_under_tp_store: send pkg to mcu fail, ret=%d\n",
-			ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("attr_als_calibrate_under_tp_store: mcu return fail\n");
-			ret = -1;
-		} else {
-			memcpy(als_under_tp_cal_rawdata, pkg_mcu.data,
-				sizeof(als_under_tp_cal_rawdata));
-			hwlog_info("attr_als_calibrate_under_tp_store: mcu return als_rawdata suc. R=%d G=%d B=%d C=%d\n",
-				als_under_tp_cal_rawdata[0], als_under_tp_cal_rawdata[1],
-				als_under_tp_cal_rawdata[2], als_under_tp_cal_rawdata[3]);
-			ret = 1;
-		}
-	}
-	return (ssize_t)ret;
+	CHECK_SENSOR_COOKIE(data);
+	return als_calibrate_under_tp_store(data->tag, dev, attr, buf, count);
 }
 
 static ssize_t attr_als_calibrate_under_tp_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE, "%d,%d,%d,%d",
-		als_under_tp_cal_rawdata[0], als_under_tp_cal_rawdata[1],
-		als_under_tp_cal_rawdata[2], als_under_tp_cal_rawdata[3]);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
+
+	CHECK_SENSOR_COOKIE(data);
+	return als_calibrate_under_tp_show(data->tag, dev, attr, buf);
 }
 
 static DEVICE_ATTR(als_calibrate_under_tp, 0660,
@@ -2005,239 +1013,45 @@ static DEVICE_ATTR(als_calibrate_under_tp, 0660,
 static ssize_t attr_als_rgb_data_under_tp_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	int ret;
-	unsigned long val = 0;
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-	if (!buf) {
-		hwlog_err("%s: buf is NULL\n", __func__);
-		return -EINVAL;
-	}
-	ret = strict_strtoul(buf, 10, &val);
-	if (ret) {
-		hwlog_err("%s: strtoul fail\n", __func__);
-		return -EINVAL;
-	}
-	if ((val != ALS_UNDER_TP_RGB_DATA) && (val != ALS_RAW_DATA_COLLECT) &&
-		(val != ALS_CALI_DATA_COLLECT)) {
-		hwlog_err("%s: wrong value input\n", __func__);
-		return -EINVAL;
-	}
-	spkt.subcmd = SUB_CMD_SELFCALI_REQ;
-	pkg_ap.tag = TAG_ALS;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(val) + SUBCMD_LEN;
-	memcpy(spkt.para, &val, sizeof(val));
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("%s: send pkg to mcu fail,ret=%d\n", __func__, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("%s: mcu return fail\n", __func__);
-			ret = -1;
-		} else {
-			memcpy(als_under_tp_rgb_data, pkg_mcu.data,
-				sizeof(als_under_tp_rgb_data));
-			ret = count;
-		}
-	}
-	return ret;
+	CHECK_SENSOR_COOKIE(data);
+	return als_rgb_data_under_tp_store(data->tag, dev, attr, buf, count);
 }
 
 static ssize_t attr_als_rgb_data_under_tp_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE,
-		"%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
-		als_under_tp_rgb_data[0], als_under_tp_rgb_data[1],
-		als_under_tp_rgb_data[2], als_under_tp_rgb_data[3],
-		als_under_tp_rgb_data[4], als_under_tp_rgb_data[5],
-		als_under_tp_rgb_data[6], als_under_tp_rgb_data[7],
-		als_under_tp_rgb_data[8], als_under_tp_rgb_data[9],
-		als_under_tp_rgb_data[10], als_under_tp_rgb_data[11],
-		als_under_tp_rgb_data[12], als_under_tp_rgb_data[13],
-		als_under_tp_rgb_data[14], als_under_tp_rgb_data[15]);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
+
+	CHECK_SENSOR_COOKIE(data);
+	return als_rgb_data_under_tp_show(data->tag, dev, attr, buf);
 }
 
 static DEVICE_ATTR(als_rgb_data_under_tp, 0660,
 	attr_als_rgb_data_under_tp_show, attr_als_rgb_data_under_tp_store);
 
-/* save als para to nv */
-int als_underscreen_calidata_save(void)
-{
-	if (sizeof(als_under_tp_cal_data) >
-		ALS_TP_CALIDATA_NV1_SIZE + ALS_TP_CALIDATA_NV2_SIZE) {
-		if (write_calibrate_data_to_nv(ALS_TP_CALIDATA_NV1_NUM,
-				ALS_TP_CALIDATA_NV1_SIZE,
-				"ALSTP1", ((char *)&als_under_tp_cal_data))) {
-			hwlog_err("%s: write_calidata_to_nv1 fail\n",
-				__func__);
-			return -1;
-		}
-		if (write_calibrate_data_to_nv(ALS_TP_CALIDATA_NV2_NUM,
-				ALS_TP_CALIDATA_NV2_SIZE,
-				"ALSTP2",
-				((char *)(&als_under_tp_cal_data) +
-				ALS_TP_CALIDATA_NV1_SIZE))) {
-			hwlog_err("%s: write_calidata_to_nv2 fail\n",
-				__func__);
-			return -1;
-		}
-		if (write_calibrate_data_to_nv(ALS_TP_CALIDATA_NV3_NUM,
-				sizeof(als_under_tp_cal_data) -
-				ALS_TP_CALIDATA_NV1_SIZE -
-				ALS_TP_CALIDATA_NV2_SIZE,
-				"ALSTP3",
-				((char *)(&als_under_tp_cal_data) +
-				ALS_TP_CALIDATA_NV1_SIZE +
-				ALS_TP_CALIDATA_NV2_SIZE))) {
-			hwlog_err("%s: write_calidata_to_nv3 fail\n",
-				__func__);
-			return -1;
-		}
-	}
-	hwlog_info("als_underscreen_calidata_save success\n");
-	return 0;
-}
-
 static ssize_t attr_als_under_tp_calidata_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	int i = 0;
-	int ret;
-	int als_undertp_calidata[ALS_UNDER_TP_CALDATA_LEN] = { 0 };
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	if (!buf || count != (ALS_UNDER_TP_CALDATA_LEN * sizeof(int))) {
-		hwlog_err("attr_als_under_tp_calidata_store: buf is NULL, or count is %zu\n",
-			count);
-		return -EINVAL;
-	}
-	hwlog_info("attr_als_under_tp_calidata_store: input buf_size = %zu, als_under_tp_cal_data_len = %zu\n",
-		count, sizeof(als_under_tp_cal_data));
-	memcpy(als_undertp_calidata, buf, sizeof(als_undertp_calidata));
-	als_under_tp_cal_data.x = (uint16_t)als_undertp_calidata[0];
-	als_under_tp_cal_data.y = (uint16_t)als_undertp_calidata[1];
-	als_under_tp_cal_data.width = (uint16_t)als_undertp_calidata[2];
-	als_under_tp_cal_data.length = (uint16_t)als_undertp_calidata[3];
-	hwlog_info("attr_als_under_tp_calidata_store: x = %d, y = %d, width = %d, len = %d\n",
-		als_under_tp_cal_data.x, als_under_tp_cal_data.y,
-		als_under_tp_cal_data.width, als_under_tp_cal_data.length);
-	memcpy(als_under_tp_cal_data.a, als_undertp_calidata + 4,
-		25 * sizeof(unsigned int)); /* start from 4 to 29 */
-	for (i = 4; i < 29; i++)
-		hwlog_info("attr_als_under_tp_calidata_store: als_under_tp_cal_data.a[%d] = %d\n",
-			i - 4, als_under_tp_cal_data.a[i - 4]);
-	for (i = 29; i < ALS_UNDER_TP_CALDATA_LEN; i++) {
-		als_under_tp_cal_data.b[i - 29] = als_undertp_calidata[i];
-		hwlog_info("attr_als_under_tp_calidata_store: als_under_tp_cal_data.b[%d] = %d\n",
-			i - 29, als_under_tp_cal_data.b[i - 29]);
-	}
-	ret = als_underscreen_calidata_save();
-	if (ret != 0) {
-		ret = mcu_save_calidata_to_nv(TAG_ALS, als_undertp_calidata);
-		if (ret != 0) {
-			hwlog_err("%s: als_underscreen_calidata_save fail\n",
-				__func__);
-			return -1;
-		}
-	}
-	return count;
-}
-
-/* read underscreen als nv data */
-static int als_under_tp_nv_read(void)
-{
-	size_t cal_data_len = sizeof(als_under_tp_cal_data);
-	size_t read_len;
-
-	if (cal_data_len > ALS_TP_CALIDATA_NV1_SIZE +
-		ALS_TP_CALIDATA_NV2_SIZE) {
-		if (read_calibrate_data_from_nv(ALS_TP_CALIDATA_NV1_NUM,
-				ALS_TP_CALIDATA_NV1_SIZE, "ALSTP1"))
-			return -1;
-		memcpy(&als_under_tp_cal_data, user_info.nv_data,
-				ALS_TP_CALIDATA_NV1_SIZE);
-		if (read_calibrate_data_from_nv(ALS_TP_CALIDATA_NV2_NUM,
-				ALS_TP_CALIDATA_NV2_SIZE, "ALSTP2"))
-			return -1;
-		memcpy((char *)(&als_under_tp_cal_data) +
-				ALS_TP_CALIDATA_NV1_SIZE,
-				user_info.nv_data,
-				ALS_TP_CALIDATA_NV2_SIZE);
-		read_len = cal_data_len - ALS_TP_CALIDATA_NV1_SIZE -
-					ALS_TP_CALIDATA_NV2_SIZE;
-		if (read_calibrate_data_from_nv(ALS_TP_CALIDATA_NV3_NUM,
-				read_len, "ALSTP3"))
-			return -1;
-		memcpy((char *)(&als_under_tp_cal_data) +
-				ALS_TP_CALIDATA_NV1_SIZE +
-				ALS_TP_CALIDATA_NV2_SIZE,
-				user_info.nv_data, read_len);
-		hwlog_info("attr_als_under_tp_calidata_show: x = %d, y = %d, width = %d, len = %d\n",
-				als_under_tp_cal_data.x,
-				als_under_tp_cal_data.y,
-				als_under_tp_cal_data.width,
-				als_under_tp_cal_data.length);
-		return 0;
-	}
-	return -1;
+	CHECK_SENSOR_COOKIE(data);
+	return als_under_tp_calidata_store(data->tag, dev, attr, buf, count);
 }
 
 /* return underscreen als to node file */
 static ssize_t attr_als_under_tp_calidata_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int ret;
-	int i;
-	int print_len;
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
 
-	if (!dev || !attr || !buf)
-		return -1;
-	ret = als_under_tp_nv_read();
-	if (ret != 0) {
-		hwlog_info("%s: read under screen als fail\n", __func__);
-		return -1;
-	}
-	ret = snprintf(buf, MAX_STR_SIZE, "%d,%d,%d,%d",
-				als_under_tp_cal_data.x,
-				als_under_tp_cal_data.y,
-				als_under_tp_cal_data.width,
-				als_under_tp_cal_data.length);
-	if (ret <= 0) {
-		hwlog_info("%s: write data to buf fail\n", __func__);
-		return -1;
-	}
-	print_len = sizeof(als_under_tp_cal_data.a) / sizeof(unsigned int);
-	for (i = 0; i < print_len; i++) {
-		ret = snprintf(buf, MAX_STR_SIZE, "%s,%d", buf,
-				als_under_tp_cal_data.a[i]);
-		if (ret <= 0) {
-			hwlog_info("%s: write a[%d] to buf fail\n",
-				__func__, i);
-			return -1;
-		}
-	}
-	print_len = sizeof(als_under_tp_cal_data.b) / sizeof(int);
-	for (i = 0; i < print_len; i++) {
-		ret = snprintf(buf, MAX_STR_SIZE, "%s,%d", buf,
-				als_under_tp_cal_data.b[i]);
-		if (ret <= 0) {
-			hwlog_info("%s: write b[%d] to buf fail\n",
-				__func__, i);
-			return -1;
-		}
-	}
-	return (ssize_t)ret;
+	CHECK_SENSOR_COOKIE(data);
+	return als_under_tp_calidata_show(data->tag, dev, attr, buf);
 }
 
 static DEVICE_ATTR(set_als_under_tp_calidata, 0660,
@@ -2249,377 +1063,25 @@ static ssize_t attr_als_calibrate_after_sale_show(
 	struct device_attribute *attr,
 	char *buf)
 {
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", als_support_under_screen_cali);
+	struct sensor_cookie *data =
+		(struct sensor_cookie *)dev_get_drvdata(dev);
+
+	CHECK_SENSOR_COOKIE(data);
+	return als_calibrate_after_sale_show(data->tag, dev, attr, buf);
 }
 static DEVICE_ATTR(als_calibrate_after_sale, 0440,
 	attr_als_calibrate_after_sale_show, NULL);
 
-/* return ps_support_under_screen_cali to node file */
-static ssize_t attr_ps_calibrate_after_sale_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE, "%d\n", ps_support_cali_after_sale);
-}
 static DEVICE_ATTR(ps_calibrate_after_sale, 0440,
 	attr_ps_calibrate_after_sale_show, NULL);
-
-static ssize_t attr_cap_prox_data_mode_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	unsigned long val = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	int ret;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf) {
-		hwlog_err("attr_cap_prox_data_mode_store: buf is NULL\n");
-		return -EINVAL;
-	}
-	if (strict_strtoul(buf, 10, &val))
-		return -EINVAL;
-	if (val < MIN_CAP_PROX_MODE || val > MAZ_CAP_PROX_MODE) {
-		hwlog_err("cap_prox_data_mode error, val=%lu\n", val);
-		return -1;
-	}
-
-	spkt.subcmd = SUB_CMD_SET_DATA_MODE;
-	pkg_ap.tag = TAG_CAP_PROX;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(val) + SUBCMD_LEN;
-	memcpy(spkt.para, &val, sizeof(val));
-
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n", pkg_ap.tag, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("send sar mode to mcu fail\n");
-			ret = -1;
-		} else {
-			hwlog_info("send sar mode to mcu succes\n");
-			ret = count;
-		}
-	}
-	return ret;
-}
-
 static DEVICE_ATTR(cap_prox_data_mode, 0220, NULL, attr_cap_prox_data_mode_store);
-
-static int abov_str_to_hex(const char *string, uint8_t *buf, int len)
-{
-	uint8_t high, low;
-	int index = 0;
-	int i = 0;
-
-	for (index = 0; index < len; index += 2) {
-		high = string[index];
-		low = string[index+1];
-
-		if (high >= '0' && high <= '9') {
-			high = high - '0';
-		} else if (high >= 'A' && high <= 'F') {
-			high = high - 'A' + 10;
-		} else if (high >= 'a' && high <= 'f') {
-			high = high - 'a' + 10;
-		} else {
-			hwlog_info("high = %x\n", high);
-			return -1;
-		}
-		if (low >= '0' && low <= '9') {
-			low = low - '0';
-		} else if (low >= 'A' && low <= 'F') {
-			low = low - 'A' + 10;
-		} else if (low >= 'a' && low <= 'f') {
-			low = low - 'a' + 10;
-		} else {
-			hwlog_info("low = %x\n", low);
-			return -1;
-		}
-		buf[i++] = high << 4 | low;
-	}
-	return 0;
-}
-
-#define ABOV_WRITE_DATA_LENGTH (36)
-static ssize_t attr_cap_prox_abov_data_write(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	uint8_t data[ABOV_WRITE_DATA_LENGTH] = { 0 };
-	int ret;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf) {
-		hwlog_err("%s: buf is NULL\n", __func__);
-		return -EINVAL;
-	}
-	if (count != (ABOV_WRITE_DATA_LENGTH * 2 + 1)) { /* include '\0' */
-		hwlog_err("%s:wrong input,count is %d\n", __func__, (int)count);
-		return -EINVAL;
-	}
-	/* data length is 72 */
-	ret = abov_str_to_hex(buf, data, ABOV_WRITE_DATA_LENGTH * 2);
-	if (ret) {
-		hwlog_err("%s: str2hex failed\n", __func__);
-		return count;
-	}
-
-	spkt.subcmd = SUB_CMD_SET_ADD_DATA_REQ;
-	pkg_ap.tag = TAG_CAP_PROX;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(data) + SUBCMD_LEN;
-	memcpy(spkt.para, data, sizeof(data));
-
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n",
-			pkg_ap.tag, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("%s send abov data to mcu fail\n", __func__);
-			ret = -1;
-		} else {
-			hwlog_info("%s send abov data to mcu succes\n", __func__);
-			ret = count;
-		}
-	}
-	return ret;
-}
-
 static DEVICE_ATTR(abov_data_write, 0220, NULL, attr_cap_prox_abov_data_write);
-
-#define  ABOV_CHECKSUM_DATA_LENGTH (2)
-static int32_t abov_bootloader_verify_result;
-static ssize_t attr_abov_bootloader_verify(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	uint8_t data[ABOV_CHECKSUM_DATA_LENGTH] = {0};
-	int ret;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf) {
-		hwlog_err("%s: buf is NULL\n", __func__);
-		return -EINVAL;
-	}
-	if (count != (ABOV_CHECKSUM_DATA_LENGTH * 2 + 1)) { /* include '\0' */
-		hwlog_err("%s wrong input, count is %d\n", __func__, (int)count);
-		return -EINVAL;
-	}
-	/* checksum length is 4 */
-	ret = abov_str_to_hex(buf, data, ABOV_CHECKSUM_DATA_LENGTH * 2);
-	if (ret) {
-		hwlog_err("%s: str2hex failed\n", __func__);
-		return count;
-	}
-
-	spkt.subcmd = SUB_CMD_ADDITIONAL_INFO;
-	pkg_ap.tag = TAG_CAP_PROX;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(data) + SUBCMD_LEN;
-	memcpy(spkt.para, data, sizeof(data));
-
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret != 0) {
-		hwlog_err("%s send tag %d sar mode to mcu fail,ret=%d\n",
-			__func__, pkg_ap.tag, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("%s send abov data to mcu return fail\n",
-				__func__);
-			abov_bootloader_verify_result = -1;
-			ret = -1;
-		} else {
-			abov_bootloader_verify_result = 0;
-			hwlog_info("%s mcu return succes,result is %d\n",
-				__func__, abov_bootloader_verify_result);
-			ret = count;
-		}
-	}
-	return ret;
-}
-
-static ssize_t attr_abov_bootloader_verify_result_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE, "%d", abov_bootloader_verify_result);
-}
-
 static DEVICE_ATTR(abov_bootloader_verify, 0660,
 	attr_abov_bootloader_verify_result_show, attr_abov_bootloader_verify);
-
-#define ABOV_ENTER_BOOTLOADER_CMD 5
-static uint8_t  abov_device_id;
-static ssize_t attr_abov_bootloader_enter(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
-	unsigned long val = 0;
-	int ret;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	memset(&spkt, 0, sizeof(spkt));
-
-	if (!buf) {
-		hwlog_err("%s: buf is NULL\n", __func__);
-		return -EINVAL;
-	}
-	if (strict_strtoul(buf, 10, &val)) {
-		hwlog_err("%s: strtoul fail\n", __func__);
-		return -EINVAL;
-	}
-	if (val != ABOV_ENTER_BOOTLOADER_CMD) {
-		hwlog_err("%s: wrong value input\n", __func__);
-		return -EINVAL;
-	}
-
-	spkt.subcmd = SUB_CMD_SELFCALI_REQ;
-	pkg_ap.tag = TAG_CAP_PROX;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &shd[1];
-	pkg_ap.wr_len = sizeof(val) + SUBCMD_LEN;
-	memcpy(spkt.para, &val, sizeof(val));
-
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("%s send tag %d sar mode to mcu fail,ret=%d\n",
-			__func__, pkg_ap.tag, ret);
-		ret = -1;
-	} else {
-		if (pkg_mcu.errno != 0) {
-			hwlog_err("%s send abov data to mcu return fail\n",
-				__func__);
-			ret = -1;
-		} else {
-			memcpy(&abov_device_id,
-				pkg_mcu.data, sizeof(abov_device_id));
-			hwlog_info("%s mcu return succes,device is %d\n",
-				__func__, abov_device_id);
-			ret = count;
-		}
-	}
-	return ret;
-}
-
-
-static ssize_t attr_abov_bootloader_enter_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	if (!dev || !attr || !buf)
-		return -1;
-	return snprintf(buf, MAX_STR_SIZE, "%x", abov_device_id);
-}
-
-
 static DEVICE_ATTR(abov_bootloader_enter, 0660,
 	attr_abov_bootloader_enter_show, attr_abov_bootloader_enter);
-
-static ssize_t abov_reg_dump_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	uint32_t reg = 0;
-	uint32_t val = 0;
-	uint8_t buf_temp[DEBUG_DATA_LENGTH] = { 0 };
-	int res;
-
-	if (count < 5) { /* input length must > 5 */
-		hwlog_err("%s, invalid input", __func__);
-		return -EINVAL;
-	}
-	hwlog_info("%s,buf 0x%x,0x%x,0x%x\n", __func__, buf[0], buf[1], buf[2]);
-
-	if (sscanf(buf, "%x,%x", &reg, &val) == 2) {
-		hwlog_info("%s,reg = 0x%02x, val = 0x%02x\n", __func__,
-			*(uint8_t *)&reg, *(uint8_t *)&val);
-		buf_temp[0] = reg;
-		buf_temp[1] = val;
-		res = mcu_i2c_rw(sar_pdata.cfg.bus_num,
-			(uint8_t)(sar_pdata.cfg.i2c_address),
-			buf_temp, 2, NULL, 0);
-		if (res < 0)
-			hwlog_err("%s: i2c write fail\n", __func__);
-	}
-	return count;
-}
-
-
-static ssize_t abov_reg_dump_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	uint8_t reg_value = 0;
-	uint8_t i;
-	int ret = 0;
-	int res;
-
-	if (!dev || !attr || !buf)
-		return -1;
-
-	for (i = 0; i < 0x26; i++) { /* reg value */
-		res = mcu_i2c_rw(sar_pdata.cfg.bus_num,
-			(uint8_t)(sar_pdata.cfg.i2c_address),
-			&i, 1, &reg_value, 1);
-		if (res < 0)
-			hwlog_err("%s: i2c read fail, i=%x\n", __func__, i);
-		ret += snprintf(buf+ret, PAGE_SIZE, "(0x%02x)=0x%02x\n",
-				i, reg_value);
-	}
-	for (i = 0x46; i < 0x4c; i++) { /* reg value */
-		res = mcu_i2c_rw(sar_pdata.cfg.bus_num,
-			(uint8_t)(sar_pdata.cfg.i2c_address),
-			&i, 1, &reg_value, 1);
-		if (res < 0)
-			hwlog_err("%s: i2c read fail, i=%x\n", __func__, i);
-		ret += snprintf(buf+ret, PAGE_SIZE, "(0x%02x)=0x%02x\n",
-				i, reg_value);
-	}
-
-	for (i = 0x80; i < 0x8C; i++) { /* reg value */
-		res = mcu_i2c_rw(sar_pdata.cfg.bus_num,
-			(uint8_t)(sar_pdata.cfg.i2c_address),
-			&i, 1, &reg_value, 1);
-		if (res < 0)
-			hwlog_err("%s: i2c read fail, i=%x\n", __func__, i);
-		ret += snprintf(buf + ret, PAGE_SIZE, "(0x%02x)=0x%02x\n",
-				i, reg_value);
-	}
-	return ret;
-}
-
 static DEVICE_ATTR(abov_reg_rw, 0660, abov_reg_dump_show, abov_reg_dump_store);
+static DEVICE_ATTR(ultra_ps_feature, 0440, attr_ultra_ps_feature_show, NULL);
 static struct attribute *acc_sensor_attrs[] = {
 	&dev_attr_get_data.attr,
 	&dev_attr_self_test.attr,
@@ -2654,36 +1116,13 @@ static const struct attribute_group acc1_sensor_attrs_grp = {
 	.attrs = acc1_sensor_attrs,
 };
 
-
-static int sleeve_test_ps_prepare(int ps_config)
-{
-	int ret;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
-
-	memset(&pkg_ap, 0, sizeof(pkg_ap));
-	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
-	pkg_ap.tag = TAG_PS;
-	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
-	pkg_ap.wr_buf = &ps_config;
-	pkg_ap.wr_len = sizeof(ps_config);
-	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret) {
-		hwlog_err("send sleeve_test ps config cmd to mcu fail,ret=%d\n", ret);
-		return ret;
-	}
-	if (pkg_mcu.errno != 0)
-		hwlog_err("sleeve_test ps config fail %d\n", pkg_mcu.errno);
-	return ret;
-}
-
 static ssize_t store_sleeve_test_prepare(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	unsigned long val = 0;
 	int ret;
 
-	if (strict_strtoul(buf, 10, &val)) {
+	if (strict_strtoul(buf, TO_DECIMALISM, &val)) {
 		hwlog_err("%s: sleeve_test enable val invalid", __func__);
 		return -EINVAL;
 	}
@@ -2709,21 +1148,23 @@ static ssize_t store_sleeve_test_prepare(struct device *dev,
 	sleeve_test_enabled = val;
 	hwlog_info("%s: sleeve_test set enable success\n", __func__);
 	return size;
-
 }
 
 static ssize_t show_sleeve_test_threshhold(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	int i;
+	u8 phone_color = get_phone_color();
+	struct sleeve_detect_pare *sleeve_para = get_sleeve_detect_parameter();
 
 	for (i = 0; i < MAX_PHONE_COLOR_NUM; i++) {
-		if (phone_color == sleeve_detect_paremeter[i].tp_color) {
+		if (phone_color == sleeve_para[i].tp_color) {
 			hwlog_info("sleeve_test threshhold %d, phone_color %d\n",
-				sleeve_detect_paremeter[i].sleeve_detect_threshhold,
+				sleeve_para[i].sleeve_detect_threshhold,
 				phone_color);
-			return snprintf(buf, MAX_STR_SIZE, "%d\n",
-				sleeve_detect_paremeter[i].sleeve_detect_threshhold);
+			return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1,
+				"%d\n",
+				sleeve_para[i].sleeve_detect_threshhold);
 		}
 	}
 	hwlog_info("sleeve_test get threshhold fail, phone_color %d\n", phone_color);
@@ -2736,13 +1177,15 @@ static DEVICE_ATTR(sleeve_test_threshhold, 0440, show_sleeve_test_threshhold, NU
 static ssize_t show_support_absolute_threshold(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int val;
+	struct ps_device_info *dev_info = NULL;
 
 	if (!dev || !attr || !buf)
 		return -1;
-
-	val = ps_support_abs_threshold;
-	return snprintf(buf, PAGE_SIZE, "%d\n", val);
+	dev_info = ps_get_device_info(TAG_PS);
+	if (dev_info == NULL)
+		return -1;
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%d\n",
+		dev_info->ps_support_abs_threshold);
 }
 
 static DEVICE_ATTR(support_absolute_threshold, 0664,
@@ -2757,6 +1200,7 @@ static struct attribute *ps_sensor_attrs[] = {
 	&dev_attr_ps_offset_data.attr,
 	&dev_attr_support_absolute_threshold.attr,
 	&dev_attr_ps_calibrate_after_sale.attr,
+	&dev_attr_ultra_ps_feature.attr,
 	NULL,
 };
 
@@ -2780,11 +1224,63 @@ static struct attribute *als_sensor_attrs[] = {
 	&dev_attr_als_ud_rgbl_block.attr,
 	&dev_attr_als_calibrate_after_sale.attr,
 	&dev_attr_always_on.attr,
+	&dev_attr_als_mmi_para.attr,
+	&dev_attr_get_sensor_id.attr,
+	NULL,
+};
+
+static struct attribute *als1_sensor_attrs[] = {
+	&dev_attr_get_data.attr,
+	&dev_attr_calibrate.attr,
+	&dev_attr_als_debug_data.attr,
+	&dev_attr_calibrate_timeout.attr,
+	&dev_attr_sleeve_test_threshhold.attr,
+	&dev_attr_als_sensorlist_info.attr,
+	&dev_attr_calibrate_threshold_from_mag.attr,
+	&dev_attr_als_offset_data.attr,
+	&dev_attr_als_calibrate_under_tp.attr,
+	&dev_attr_set_als_under_tp_calidata.attr,
+	&dev_attr_als_rgb_data_under_tp.attr,
+	&dev_attr_als_ud_rgbl.attr,
+	&dev_attr_als_ud_rgbl_block.attr,
+	&dev_attr_als_calibrate_after_sale.attr,
+	&dev_attr_always_on.attr,
+	&dev_attr_als_mmi_para.attr,
+	&dev_attr_get_sensor_id.attr,
+	NULL,
+};
+
+static struct attribute *als2_sensor_attrs[] = {
+	&dev_attr_get_data.attr,
+	&dev_attr_calibrate.attr,
+	&dev_attr_als_debug_data.attr,
+	&dev_attr_calibrate_timeout.attr,
+	&dev_attr_sleeve_test_threshhold.attr,
+	&dev_attr_als_sensorlist_info.attr,
+	&dev_attr_calibrate_threshold_from_mag.attr,
+	&dev_attr_als_offset_data.attr,
+	&dev_attr_als_calibrate_under_tp.attr,
+	&dev_attr_set_als_under_tp_calidata.attr,
+	&dev_attr_als_rgb_data_under_tp.attr,
+	&dev_attr_als_ud_rgbl.attr,
+	&dev_attr_als_ud_rgbl_block.attr,
+	&dev_attr_als_calibrate_after_sale.attr,
+	&dev_attr_always_on.attr,
+	&dev_attr_als_mmi_para.attr,
+	&dev_attr_get_sensor_id.attr,
 	NULL,
 };
 
 static const struct attribute_group als_sensor_attrs_grp = {
 	.attrs = als_sensor_attrs,
+};
+
+static const struct attribute_group als1_sensor_attrs_grp = {
+	.attrs = als1_sensor_attrs,
+};
+
+static const struct attribute_group als2_sensor_attrs_grp = {
+	.attrs = als2_sensor_attrs,
 };
 
 static struct attribute *mag_sensor_attrs[] = {
@@ -2957,6 +1453,20 @@ static const struct attribute_group rpc_sensor_attrs_grp = {
 	.attrs = rpc_sensor_attrs,
 };
 
+static struct attribute *thermometer_sensor_attrs[] = {
+	&dev_attr_calibrate.attr,
+	&dev_attr_set_mode.attr,
+	&dev_attr_get_sensor_id.attr,
+	&dev_attr_get_calibrate_index.attr,
+	&dev_attr_self_test.attr,
+	&dev_attr_self_test_timeout.attr,
+	NULL,
+};
+
+static const struct attribute_group thermometer_sensor_attrs_grp = {
+	.attrs = thermometer_sensor_attrs,
+};
+
 static ssize_t show_step_counter_info(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -2972,6 +1482,26 @@ static struct attribute *g_stepcounterattrs[] = {
 
 static const struct attribute_group step_counter_attrs_grp = {
 	.attrs = g_stepcounterattrs,
+};
+
+static ssize_t show_hinge_status_info(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	if (!buf)
+		return 0;
+	return snprintf_s(buf, MAX_STR_SIZE, MAX_STR_SIZE - 1, "%d\n",
+		get_fold_hinge_status());
+}
+
+static DEVICE_ATTR(hinge_status_info, 0664, show_hinge_status_info, NULL);
+
+static struct attribute *hinge_sensor_attrs[] = {
+	&dev_attr_hinge_status_info.attr,
+	NULL,
+};
+
+static const struct attribute_group g_hinge_sensor_attrs_grp = {
+	.attrs = hinge_sensor_attrs,
 };
 
 static struct sensor_cookie all_sensors[] = {
@@ -3051,9 +1581,19 @@ static struct sensor_cookie all_sensors[] = {
 		.attrs_group = &gyro1_sensor_attrs_grp,
 	},
 	{
+		.tag = TAG_ALS1,
+		.name = "als1_sensor",
+		.attrs_group = &als1_sensor_attrs_grp,
+	},
+	{
 		.tag = TAG_MAG1,
 		.name = "mag1_sensor",
 		.attrs_group = &mag1_sensor_attrs_grp,
+	},
+	{
+		.tag = TAG_ALS2,
+		.name = "als2_sensor",
+		.attrs_group = &als2_sensor_attrs_grp,
 	},
 	{
 		.tag = TAG_CAP_PROX1,
@@ -3065,7 +1605,50 @@ static struct sensor_cookie all_sensors[] = {
 		.name = "step_counter",
 		.attrs_group = &step_counter_attrs_grp,
 	 },
+	 {
+		.tag = TAG_THERMOMETER,
+		.name = "thermometer_sensor",
+		.attrs_group = &thermometer_sensor_attrs_grp,
+	},
+	{
+		.tag = TAG_POSTURE,
+		.name = "hinge_sensor",
+		.attrs_group = &g_hinge_sensor_attrs_grp,
+	},
 };
+
+void send_lcd_freq_to_sensorhub(uint32_t lcd_freq)
+{
+	ps_send_lcd_freq_to_sensorhub(lcd_freq);
+}
+
+void save_light_to_sensorhub(uint32_t mipi_level, uint32_t bl_level)
+{
+	als_save_light_to_sensorhub(mipi_level, bl_level);
+}
+
+void report_fold_status_when_poweroff_charging(int status)
+{
+	static int pre_status = -1;
+	char *fold_on[] = {"FOLDSTAUS=0", NULL};
+	char *fold_off[] = {"FOLDSTAUS=1", NULL};
+	int pos_type = 21; // define posture register sensor type
+
+	if (is_power_off_charging_posture() != 1) // off charge mode
+		return;
+
+	if (status == pre_status)
+		return;
+	pre_status = status;
+	hwlog_info("%s name = %s, status = %d\n", __func__,
+		all_sensors[pos_type].name, status);
+	if (status == 0)
+		kobject_uevent_env(&all_sensors[pos_type].dev->kobj, KOBJ_CHANGE,
+			fold_on);
+	else
+		kobject_uevent_env(&all_sensors[pos_type].dev->kobj, KOBJ_CHANGE,
+			fold_off);
+}
 
 struct device *get_sensor_device_by_name(const char *name)
 {
@@ -3075,7 +1658,7 @@ struct device *get_sensor_device_by_name(const char *name)
 		return NULL;
 
 	for (i = 0; i < sizeof(all_sensors) / sizeof(all_sensors[0]); ++i) {
-		if (all_sensors[i].name && (0 == strcmp(name, all_sensors[i].name)))
+		if (all_sensors[i].name && (strcmp(name, all_sensors[i].name) == 0))
 			return all_sensors[i].dev;
 	}
 
@@ -3086,11 +1669,19 @@ static void init_sensors_get_data(void)
 {
 	int tag;
 
-	for (tag = TAG_SENSOR_BEGIN; tag < TAG_SENSOR_END; ++tag) {
+	for (tag = SENSORHUB_TYPE_BEGIN; tag < SENSORHUB_TYPE_END; ++tag) {
 		atomic_set(&sensor_status.get_data[tag].reading, 0);
 		init_completion(&sensor_status.get_data[tag].complete);
-		/* 1 means fail , 2 set the length of buf */
-		memcpy(sensor_status.selftest_result[tag], "1", 2);
+	}
+
+	for (tag = TAG_SENSOR_BEGIN; tag < TAG_SENSOR_END; ++tag) {
+		/* 1 means fail */
+		if (memcpy_s(sensor_status.selftest_result[tag],
+			sizeof(sensor_status.selftest_result[tag]),
+			"1", sizeof("1")) != EOK) {
+			hwlog_err("%s memcpy_s error tag=%d\n", __func__, tag);
+			return;
+		}
 	}
 }
 
@@ -3106,12 +1697,11 @@ static int sensors_register(void)
 			hwlog_err("[%s] Failed", __func__);
 			return -1;
 		} else {
-			if (all_sensors[i].attrs_group) {
-				if (sysfs_create_group(&all_sensors[i].dev->kobj,
+			if (all_sensors[i].attrs_group &&
+				sysfs_create_group(&all_sensors[i].dev->kobj,
 					all_sensors[i].attrs_group))
-					hwlog_err("create files failed in %s\n",
-						__func__);
-			}
+				hwlog_err("create files failed in %s\n",
+					__func__);
 		}
 	}
 	return 0;
@@ -3152,6 +1742,8 @@ static int sensors_feima_init(void)
 	sensors_register();
 	init_sensors_get_data();
 	create_debug_files();
+	if (ps_ud_workqueue_init())
+		return -1;
 	return 0;
 }
 

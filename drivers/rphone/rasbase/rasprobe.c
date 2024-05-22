@@ -60,6 +60,29 @@ void rasprobe_setarg(struct pt_regs *regs, int index, long val)
 		break;
 	}
 }
+
+#ifdef CONFIG_ARCH_HISI
+void rasprobe_setargptr(struct pt_regs *regs, int index, void *val)
+{
+	switch (index) {
+	case 0:
+		REG_ARG0(regs) = val;
+		break;
+	case 1:
+		REG_ARG1(regs) = val;
+		break;
+	case 2:
+		REG_ARG2(regs) = val;
+		break;
+	case 3:
+		REG_ARG3(regs) = val;
+		break;
+	default:
+		break;
+	}
+}
+#endif
+
 int register_rasprobes(struct rasprobe **rps, int num)
 {
 	int i, ret;
@@ -69,6 +92,7 @@ int register_rasprobes(struct rasprobe **rps, int num)
 	for (i = 0; i < num; i++) {
 		ret = register_kretprobe(rps[i]);
 		if (ret < 0) {
+			pr_err("rasprobes failed when registering %s, ret = %d\n", rps[i]->kp.symbol_name, ret);
 			unregister_rasprobes(rps, i);
 			break;
 		}

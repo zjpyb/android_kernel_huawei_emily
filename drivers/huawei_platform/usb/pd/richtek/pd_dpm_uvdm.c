@@ -21,8 +21,7 @@
 
 #ifdef CONFIG_USB_PD_RICHTEK_UVDM
 
-bool richtek_dfp_notify_uvdm(pd_port_t *pd_port,
-				svdm_svid_data_t *svid_data, bool ack)
+bool richtek_dfp_notify_uvdm(pd_port_t *pd_port, svdm_svid_data_t *svid_data, bool ack)
 {
 	uint32_t resp_cmd = 0;
 
@@ -30,20 +29,20 @@ bool richtek_dfp_notify_uvdm(pd_port_t *pd_port,
 		if (pd_port->uvdm_wait_resp)
 			resp_cmd = PD_UVDM_HDR_CMD(pd_port->uvdm_data[0]);
 
-		UVDM_INFO("dfp_notify: ACK (0x%x)\r\n");
-	} else
-		UVDM_INFO("dfp_notify: NAK\r\n");
+		UVDM_INFO("dfp_notify: ACK\n");
+	} else {
+		UVDM_INFO("dfp_notify: NAK\n");
+	}
 
 	return true;
 }
 
-bool richtek_ufp_notify_uvdm(pd_port_t *pd_port,
-				svdm_svid_data_t *svid_data)
+bool richtek_ufp_notify_uvdm(pd_port_t *pd_port, svdm_svid_data_t *svid_data)
 {
 	uint32_t hdr = PD_UVDM_HDR(0x29cf, 0x1234);
 	uint32_t cmd = PD_UVDM_HDR_CMD(pd_port->uvdm_data[0]);
 
-	UVDM_INFO("ufp_notify: %d, resp: 0x%08x\r\n", cmd, hdr);
+	UVDM_INFO("ufp_notify: %d, resp: 0x%08x\n", cmd, hdr);
 
 	if (cmd == 0)
 		pd_reply_uvdm(pd_port, TCPC_TX_SOP, 1, &hdr);
@@ -51,4 +50,4 @@ bool richtek_ufp_notify_uvdm(pd_port_t *pd_port,
 	return true;
 }
 
-#endif	/* CONFIG_USB_PD_RICHTEK_UVDM */
+#endif /* CONFIG_USB_PD_RICHTEK_UVDM */

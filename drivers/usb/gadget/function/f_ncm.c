@@ -58,6 +58,7 @@ struct f_ncm {
 	struct usb_ep			*notify;
 	struct usb_request		*notify_req;
 	u8				notify_state;
+	atomic_t			notify_count;
 	bool				is_open;
 
 	const struct ndp_parser_opts	*parser_opts;
@@ -569,7 +570,7 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	int				status;
 
 	/* notification already in flight? */
-	if (!req)
+	if (atomic_read(&ncm->notify_count))
 		return;
 
 	event = req->buf;
@@ -609,7 +610,8 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	event->bmRequestType = 0xA1;
 	event->wIndex = cpu_to_le16(ncm->ctrl_id);
 
-	ncm->notify_req = NULL;
+	atomic_inc(&ncm->notify_count);
+
 	/*
 	 * In double buffering if there is a space in FIFO,
 	 * completion callback can be called right after the call,
@@ -619,7 +621,7 @@ static void ncm_do_notify(struct f_ncm *ncm)
 	status = usb_ep_queue(ncm->notify, req, GFP_ATOMIC);
 	spin_lock(&ncm->lock);
 	if (status < 0) {
-		ncm->notify_req = req;
+		atomic_dec(&ncm->notify_count);
 		DBG(cdev, "notify --> %d\n", status);
 	}
 }
@@ -654,17 +656,19 @@ static void ncm_notify_complete(struct usb_ep *ep, struct usb_request *req)
 	case 0:
 		VDBG(cdev, "Notification %02x sent\n",
 		     event->bNotificationType);
+		atomic_dec(&ncm->notify_count);
 		break;
 	case -ECONNRESET:
 	case -ESHUTDOWN:
+		atomic_set(&ncm->notify_count, 0);
 		ncm->notify_state = NCM_NOTIFY_NONE;
 		break;
 	default:
 		DBG(cdev, "event %02x --> %d\n",
 			event->bNotificationType, req->status);
+		atomic_dec(&ncm->notify_count);
 		break;
 	}
-	ncm->notify_req = req;
 	ncm_do_notify(ncm);
 	spin_unlock(&ncm->lock);
 }
@@ -1474,7 +1478,7 @@ static int ncm_bind(struct usb_configuration *c, struct usb_function *f)
 	if (!ncm_opts->bound) {
 		mutex_lock(&ncm_opts->lock);
 		gether_set_gadget(ncm_opts->net, cdev->gadget);
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 		/* overide netdev which is set in gether_set_gadget*/
 		SET_NETDEV_DEV(ncm_opts->net, &ncm_opts->dev);
 #endif
@@ -1641,15 +1645,15 @@ static void ncm_free_inst(struct usb_function_instance *f)
 	else
 		free_netdev(opts->net);
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	device_unregister(&opts->dev);
 #endif
 
 	kfree(opts);
 }
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-static void hisi_ncm_reset_net_device(struct f_ncm_opts *opts)
+#ifdef CONFIG_CHIP_USB_CONFIGFS
+static void ncm_reset_net_device(struct f_ncm_opts *opts)
 {
 #define ADDR_LEN 36
 	char host_addr[ADDR_LEN];
@@ -1681,21 +1685,21 @@ static void hisi_ncm_reset_net_device(struct f_ncm_opts *opts)
 	gether_set_qmult(opts->net, qmult);
 }
 
-static void hisi_ncm_nop_release(struct device *dev)
+static void ncm_nop_release(struct device *dev)
 {
 	dev_vdbg(dev, "%s\n", __func__);
 }
 
-static int hisi_ncm_register_dev(struct f_ncm_opts *opts)
+static int ncm_register_dev(struct f_ncm_opts *opts)
 {
 	int ret;
 	dev_set_name(&opts->dev, "ncm_opts");
-	opts->dev.release = hisi_ncm_nop_release;
+	opts->dev.release = ncm_nop_release;
 	ret = device_register(&opts->dev);
 	pr_info("%s: device_register ret %d\n", __func__, ret);
 	return ret;
 }
-#endif /* CONFIG_HISI_USB_CONFIGFS */
+#endif /* CONFIG_CHIP_USB_CONFIGFS */
 
 static struct usb_function_instance *ncm_alloc_inst(void)
 {
@@ -1708,7 +1712,7 @@ static struct usb_function_instance *ncm_alloc_inst(void)
 		return ERR_PTR(-ENOMEM);
 	mutex_init(&opts->lock);
 	opts->func_inst.free_func_inst = ncm_free_inst;
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	opts->net = gether_setup_name_default("ncm");
 #else
 	opts->net = gether_setup_default();
@@ -1721,8 +1725,8 @@ static struct usb_function_instance *ncm_alloc_inst(void)
 
 	config_group_init_type_name(&opts->func_inst.group, "", &ncm_func_type);
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-	if (hisi_ncm_register_dev(opts)) {
+#ifdef CONFIG_CHIP_USB_CONFIGFS
+	if (ncm_register_dev(opts)) {
 		free_netdev(opts->net);
 		kfree(opts);
 		return ERR_PTR(-ENODEV);
@@ -1743,8 +1747,8 @@ static void ncm_free(struct usb_function *f)
 	opts = container_of(f->fi, struct f_ncm_opts, func_inst);
 	kfree(ncm);
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-	hisi_ncm_reset_net_device(opts);
+#ifdef CONFIG_CHIP_USB_CONFIGFS
+	ncm_reset_net_device(opts);
 #endif
 
 	mutex_lock(&opts->lock);
@@ -1763,6 +1767,11 @@ static void ncm_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	ncm_string_defs[0].id = 0;
 	usb_free_all_descriptors(f);
+
+	if (atomic_read(&ncm->notify_count)) {
+		usb_ep_dequeue(ncm->notify, ncm->notify_req);
+		atomic_set(&ncm->notify_count, 0);
+	}
 
 	kfree(ncm->notify_req->buf);
 	usb_ep_free_request(ncm->notify, ncm->notify_req);

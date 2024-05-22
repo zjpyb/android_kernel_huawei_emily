@@ -261,6 +261,28 @@ void dp_set_hotplug_state(enum dp_link_state state)
 }
 EXPORT_SYMBOL_GPL(dp_set_hotplug_state);
 
+void dp_add_state_to_uevent_list(enum dp_link_state state, bool dptx_vr_flag)
+{
+	struct dp_link_state_node *node = NULL;
+
+	if (dptx_vr_flag) {
+		hwlog_info("%s:The display is VR,not report event\n", __func__);
+		return;
+	}
+	node = kzalloc(sizeof(struct dp_link_state_node), GFP_ATOMIC);
+	if (node != NULL) {
+		node->state = state;
+		spin_lock(&(g_imonitor_report.uevent_lock));
+		list_add_tail(&(node->list),
+			&(g_imonitor_report.uevent_list_head));
+		spin_unlock(&(g_imonitor_report.uevent_lock));
+		schedule_delayed_work(&(g_imonitor_report.uevent_work),
+			msecs_to_jiffies(10)); // report uevent after 10ms
+	} else {
+		hwlog_err("%s: node is NULL\n", __func__);
+	}
+}
+
 static void dp_report_hotplug_fail_state(struct dp_dsm_priv *priv)
 {
 	bool mmie_flag = false;
@@ -463,6 +485,44 @@ static void dp_imonitor_report_work(struct work_struct *work)
 	mutex_unlock(&(report->lock));
 }
 
+static void dp_uevent_report_work(struct work_struct *work)
+{
+	struct dp_imonitor_report_info *report = NULL;
+	struct list_head *pos = NULL;
+	struct list_head *q = NULL;
+	struct dp_link_state_node *node = NULL;
+	int list_count = 0;
+	// use temp list to save state
+	struct dp_link_state_node *temp = NULL;
+	struct dp_link_state_node head;
+	unsigned long flags;
+
+	INIT_LIST_HEAD(&head.list);
+	report = container_of(work, struct dp_imonitor_report_info,
+		uevent_work.work);
+	spin_lock_irqsave(&(report->uevent_lock), flags);
+	list_for_each_safe(pos, q, &(report->uevent_list_head)) {
+		node = list_entry(pos, struct dp_link_state_node, list);
+		list_count++;
+		temp = kzalloc(sizeof(struct dp_link_state_node), GFP_ATOMIC);
+		if (temp) {
+			list_del(pos);
+			temp->state = node->state;
+			list_add_tail(&(temp->list), &(head.list));
+			kfree(node);
+		}
+	}
+	spin_unlock_irqrestore(&(report->uevent_lock), flags);
+
+	list_for_each_safe(pos, q, &(head.list)) {
+		temp = list_entry(pos, struct dp_link_state_node, list);
+		list_del(pos);
+		dp_link_state_event(temp->state, false);
+		kfree(temp);
+	}
+	hwlog_info("%s: uevent report success %d\n", __func__, list_count);
+}
+
 static void dp_hpd_check_work(struct work_struct *work)
 {
 	struct dp_imonitor_report_info *report = NULL;
@@ -632,7 +692,7 @@ static void dp_typec_cable_in(struct dp_dsm_priv *priv, uint8_t mode_type)
 	struct dp_imonitor_report_info *report = &g_imonitor_report;
 
 	hwlog_info("typec cable in\n");
-	dp_link_state_event(DP_LINK_STATE_CABLE_IN, priv->is_dptx_vr);
+	dp_add_state_to_uevent_list(DP_LINK_STATE_CABLE_IN, priv->is_dptx_vr);
 	dp_factory_set_link_event_no(0, true, NULL, 0);
 	dp_clear_priv_data(priv);
 	dp_reinit_priv_data(priv);
@@ -661,7 +721,7 @@ static void dp_typec_cable_out(struct dp_dsm_priv *priv)
 	bool hpd_report = false;
 
 	hwlog_info("typec cable out\n");
-	dp_link_state_event(DP_LINK_STATE_CABLE_OUT, priv->is_dptx_vr);
+	dp_add_state_to_uevent_list(DP_LINK_STATE_CABLE_OUT, priv->is_dptx_vr);
 	if (dp_factory_mode_is_enable())
 		cancel_delayed_work_sync(&(g_imonitor_report.hpd_work));
 #ifdef DP_DEBUG_ENABLE
@@ -734,7 +794,8 @@ static void dp_set_irq_info(struct dp_dsm_priv *priv,
 		priv->hpd_repeated_num++;
 		if (priv->hpd_repeated_num >= DP_HPD_REPEATED_THRESHOLD) {
 			if (!dp_factory_mode_is_enable())
-				dp_link_state_event(DP_LINK_STATE_MULTI_HPD,
+				dp_add_state_to_uevent_list(
+					DP_LINK_STATE_MULTI_HPD,
 					priv->is_dptx_vr);
 			priv->hpd_repeated_num = 0;
 		}
@@ -747,7 +808,6 @@ static void dp_set_irq_info(struct dp_dsm_priv *priv,
 			priv->hpd_repeated_num++;
 		dp_set_first_or_second_dev_type(priv, dev_type);
 	}
-
 }
 
 void dp_imonitor_set_pd_event(uint8_t irq_type, uint8_t cur_mode,
@@ -975,7 +1035,7 @@ static void dp_set_edid_block(struct dp_dsm_priv *priv,
 #endif
 
 #ifdef DP_DSM_DEBUG
-	for (i = 0; i < DP_DSM_EDID_BLOCK_SIZE; i += 16) {
+	for (i = 0; i < DP_DSM_EDID_BLOCK_SIZE; i += 16)
 		hwlog_info("EDID%d[%02x]:%02x %02x %02x %02x %02x %02x %02x "
 			"%02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 			index, i,
@@ -983,7 +1043,6 @@ static void dp_set_edid_block(struct dp_dsm_priv *priv,
 			edid[i + 4], edid[i + 5], edid[i + 6], edid[i + 7],
 			edid[i + 8], edid[i + 9], edid[i + 10], edid[i + 11],
 			edid[i + 12], edid[i + 13], edid[i + 14], edid[i + 15]);
-	}
 #endif
 }
 
@@ -1006,7 +1065,7 @@ static void dp_set_dpcd_rx_caps(struct dp_dsm_priv *priv, uint8_t *rx_caps)
 		DP_DSM_DPCD_REVISION_MASK,
 		hotplug->dpcd_revision & DP_DSM_DPCD_REVISION_MASK);
 
-	for (i = 0; i < DP_DSM_DPCD_RX_CAPS_SIZE; i += 16) {
+	for (i = 0; i < DP_DSM_DPCD_RX_CAPS_SIZE; i += 16)
 		hwlog_info("DPCD[%02x]:%02x %02x %02x %02x %02x %02x %02x %02x "
 			"%02x %02x %02x %02x %02x %02x %02x %02x\n",
 			i, rx_caps[i], rx_caps[i + 1], rx_caps[i + 2],
@@ -1015,7 +1074,6 @@ static void dp_set_dpcd_rx_caps(struct dp_dsm_priv *priv, uint8_t *rx_caps)
 			rx_caps[i + 9], rx_caps[i + 10], rx_caps[i + 11],
 			rx_caps[i + 12], rx_caps[i + 13], rx_caps[i + 14],
 			rx_caps[i + 15]);
-	}
 #endif
 }
 
@@ -1225,7 +1283,8 @@ static void dp_set_param_basic_info(struct dp_dsm_priv *priv,
 			// 1. link retraining failed
 			// 2. aux rw failed
 			if (!dp_factory_mode_is_enable())
-				dp_link_state_event(DP_LINK_STATE_LINK_FAILED,
+				dp_add_state_to_uevent_list(
+					DP_LINK_STATE_LINK_FAILED,
 					priv->is_dptx_vr);
 		}
 		break;
@@ -1268,7 +1327,7 @@ static void dp_set_param_hdcp(struct dp_dsm_priv *priv,
 		do_gettimeofday(&(priv->hdcp_time));
 		priv->hdcp_key = HDCP_KEY_FAILED;
 		if (!dp_factory_mode_is_enable())
-			dp_link_state_event(DP_LINK_STATE_HDCP_FAILED,
+			dp_add_state_to_uevent_list(DP_LINK_STATE_HDCP_FAILED,
 				priv->is_dptx_vr);
 		// hdcp authentication failed
 #ifndef DP_DEBUG_ENABLE
@@ -1352,7 +1411,7 @@ static void dp_set_link_retraining(struct dp_dsm_priv *priv, const int *retval)
 	// dp link failed in func dp_device_srs()
 	if (priv->link_retraining_retval < 0) {
 		if (!dp_factory_mode_is_enable())
-			dp_link_state_event(DP_LINK_STATE_LINK_FAILED,
+			dp_add_state_to_uevent_list(DP_LINK_STATE_LINK_FAILED,
 				priv->is_dptx_vr);
 #ifndef DP_DEBUG_ENABLE
 		DP_DSM_ADD_TO_IMONITOR_LIST(priv,
@@ -1431,7 +1490,7 @@ void dp_imonitor_set_param(enum dp_imonitor_param param, void *data)
 	else if ((param >= DP_PARAM_DIAG) && (param <= DP_PARAM_DIAG_MAX))
 		dp_set_param_diag(priv, param, data);
 	else // other params
-		hwlog_info("%s: unknown param(%d), skip\n", __func__, param);
+		hwlog_info("%s: unknown param %d, skip\n", __func__, param);
 }
 EXPORT_SYMBOL_GPL(dp_imonitor_set_param);
 
@@ -1676,10 +1735,10 @@ static int dp_imonitor_time_info(struct imonitor_eventobj *obj,
 	if (report->report_skip_existed) {
 		int i;
 
-		for (i = 0; i < DP_IMONITOR_TYPE_NUM; i++) {
+		for (i = 0; i < DP_IMONITOR_TYPE_NUM; i++)
 			hwlog_info("%s: last_report_num[%d]=%u\n", __func__,
 				i, report->last_report_num[i]);
-		}
+
 		hwlog_info("%s: last_link_min_time=%ld\n", __func__,
 			report->last_link_min_time.tv_usec);
 		hwlog_info("%s: last_link_max_time=%ld\n", __func__,
@@ -1791,10 +1850,9 @@ static int dp_imonitor_link_training_info(struct imonitor_eventobj *obj,
 		return -EINVAL;
 
 	if ((hotplug->link_training_retval == 0) &&
-	   (priv->link_retraining_retval < 0)) {
+	   (priv->link_retraining_retval < 0))
 		hotplug->link_training_retval = priv->link_retraining_retval +
 			(-DP_DSM_ERRNO_DEVICE_SRS_FAILED);
-	}
 
 	ret += DP_SET_PARAM_I(obj, "CableType", priv->tpyec_cable_type);
 	ret += DP_SET_PARAM_I(obj, "MaxWidth", hotplug->max_width);
@@ -1975,6 +2033,7 @@ EXPORT_SYMBOL_GPL(dp_dmd_report);
 static void dp_dsm_release(struct dp_dsm_priv *priv, struct dsm_client *client)
 {
 	cancel_delayed_work_sync(&(g_imonitor_report.imonitor_work));
+	cancel_delayed_work_sync(&(g_imonitor_report.uevent_work));
 	cancel_delayed_work_sync(&(g_imonitor_report.hpd_work));
 
 	if (client != NULL)
@@ -2021,9 +2080,12 @@ static int __init dp_dsm_init(void)
 	// init report info
 	memset(report, 0, sizeof(*report));
 	INIT_LIST_HEAD(&(report->list_head));
+	INIT_LIST_HEAD(&(report->uevent_list_head));
 	mutex_init(&(report->lock));
+	spin_lock_init(&(report->uevent_lock));
 
 	INIT_DELAYED_WORK(&(report->imonitor_work), dp_imonitor_report_work);
+	INIT_DELAYED_WORK(&(report->uevent_work), dp_uevent_report_work);
 	INIT_DELAYED_WORK(&(report->hpd_work), dp_hpd_check_work);
 	report->hpd_jiffies = jiffies +
 		msecs_to_jiffies(DP_DSM_HPD_TIME_INTERVAL);

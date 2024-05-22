@@ -42,7 +42,6 @@ struct drv2605_data {
 	int reduce_timeout_ms;
 	int play_effect_time;
 	volatile int should_stop;
-	//struct timed_output_dev dev;
 	struct hrtimer timer;
 	struct mutex lock;
 	struct work_struct work;
@@ -110,36 +109,36 @@ enum VIB_TEST_TYPE{
 };
 
 struct {
-    int haptics_type;
-    char haptics_value[HAPTICS_NUM];
-    int time;
+	int haptics_type;
+	char haptics_value[HAPTICS_NUM];
+	int time;
 } haptics_table_hub[] = {
-    { 1, {0x04,0,0,0,0,0,0,0},75},
-    { 2, {0x18,0x06,0x18,0x06,0x18,0,0,0},200},
-    { 3, {0x01,0,0,0,0,0,0,0},231},
-    { 4, {0x02,0,0,0,0,0,0,0},102},
-    { 5, {0x07,0,0,0,0,0,0,0},379},
-    { 6, {0x0A,0,0,0,0,0,0,0},212},
-    { 7, {0x0E,0x85,0x0E,0x85,0,0,0,0},808},
-    { 8, {0x10,0xE4,0,0,0,0,0,0},1222},
-    { 9, {0x67,0,0,0,0,0,0,0},289},
-    { 10, {0x67,0x85,0x67,0x85,0,0,0,0},600},
-    { 11, {0x05,0,0,0,0,0,0,0},45},
-    { 12, {0x15,0,0,0,0,0,0,0},55},
-    { 13, {0x16,0,0,0,0,0,0,0},53},
-    { 14, {0x1B,0,0,0,0,0,0,0},289},
-    { 15, {0x1C,0,0,0,0,0,0,0},291},
-    { 16, {0x52,0x15,0,0,0,0,0,0},518},
-    { 17, {0x53,0x15,0,0,0,0,0,0},605},
-    { 18, {0x6A,0x16,0,0,0,0,0,0},501},
-    { 19, {0x04,0,0,0,0,0,0,0},74},
-    { 20, {0x06,0,0,0,0,0,0,0},113},
-    { 21, {0x06,0,0,0,0,0,0,0},113},
-    { 22, {0x05,0,0,0,0,0,0,0},45},
-    { 23, {0x04,0,0,0,0,0,0,0},74},
-    { 31, {0x2E,0,0,0,0,0,0,0},200},
-    { 32, {0x2D,0,0,0,0,0,0,0},200},
-    { 33, {0x2C,0,0,0,0,0,0,0},200},
+	{ 1, { 0x04, 0, 0, 0, 0, 0, 0, 0 },75 },
+	{ 2, { 0x18, 0x06, 0x18, 0x06, 0x18, 0, 0, 0 }, 200 },
+	{ 3, { 0x01, 0, 0, 0, 0, 0, 0, 0 }, 231 },
+	{ 4, { 0x02, 0, 0, 0, 0, 0, 0, 0 }, 102 },
+	{ 5, { 0x07, 0, 0, 0, 0, 0, 0, 0 }, 379 },
+	{ 6, { 0x0A, 0, 0, 0, 0, 0, 0, 0 }, 212 },
+	{ 7, { 0x0E, 0x85, 0x0E, 0x85, 0, 0, 0, 0 }, 808 },
+	{ 8, { 0x10, 0xE4, 0, 0, 0, 0, 0, 0 }, 1222 },
+	{ 9, { 0x67, 0, 0, 0, 0, 0, 0, 0 }, 289 },
+	{ 10, { 0x67, 0x85, 0x67, 0x85, 0, 0, 0, 0 }, 600 },
+	{ 11, { 0x05, 0, 0, 0, 0, 0, 0, 0 }, 45 },
+	{ 12, { 0x15, 0, 0, 0, 0, 0, 0, 0 }, 55 },
+	{ 13, { 0x16, 0, 0, 0, 0, 0, 0, 0 }, 53 },
+	{ 14, { 0x1B, 0, 0, 0, 0, 0, 0, 0 }, 289 },
+	{ 15, { 0x1C, 0, 0, 0, 0, 0, 0, 0 }, 291 },
+	{ 16, { 0x52, 0x15, 0, 0, 0, 0, 0, 0 }, 518 },
+	{ 17, { 0x53, 0x15, 0, 0, 0, 0, 0, 0 }, 605 },
+	{ 18, { 0x6A, 0x16, 0, 0, 0, 0, 0, 0 }, 501 },
+	{ 19, { 0x04, 0, 0, 0, 0, 0, 0, 0 },74 },
+	{ 20, { 0x06, 0, 0, 0, 0, 0, 0, 0 }, 113 },
+	{ 21, { 0x06, 0, 0, 0, 0, 0, 0, 0 }, 113 },
+	{ 22, { 0x05, 0, 0, 0, 0, 0, 0, 0 }, 45 },
+	{ 23, { 0x04, 0, 0, 0, 0, 0, 0, 0 }, 74 },
+	{ 31, { 0x2E, 0, 0, 0, 0, 0, 0, 0 }, 200 },
+	{ 32, { 0x2D, 0, 0, 0, 0, 0, 0, 0 }, 200 },
+	{ 33, { 0x2C, 0, 0, 0, 0, 0, 0, 0 }, 200 },
 };
 
 static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value);
@@ -167,7 +166,7 @@ static void vibrator_operate_reg(char reg, char rw_state, char write_regval, cha
 	buf_temp[1] = write_regval;
 
 	hwlog_info("In %s! bus_num = %d, i2c_address = %d, reg_add = %d, len = %d, rw = %d, buf_temp[1] = %d\n",
-	     __func__, bus_num, i2c_address, reg_add, len, rw, buf_temp[1]);
+		__func__, bus_num, i2c_address, reg_add, len, rw, buf_temp[1]);
 	if (rw) {
 		ret = mcu_i2c_rw(bus_num, i2c_address, &buf_temp[0], 1, &buf_temp[1], len);
 	} else {
@@ -213,13 +212,13 @@ static int write_vibrator_calib_value_to_nv(char *temp)
 	return ret;
 }
 
-static read_info_t vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rtype)
+static struct read_info vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rtype)
 {
 	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -229,7 +228,6 @@ static read_info_t vibrator_send_cali_test_cmd(char* cmd, int len, RET_TYPE *rty
 	pkg_ap.wr_buf=&shd[1];
 	pkg_ap.wr_len=len+SUBCMD_LEN;
 	memcpy(spkt.para, cmd, len);
-	//hwlog_err("tag %d calibrator val is %lu  len is %lu.\n", TAG_VIBRATOR, cmd, sizeof(cmd));
 	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	if (ret) {
 		*rtype = COMMU_FAIL;
@@ -258,7 +256,7 @@ static void haptics_play_effect(struct work_struct *work)
 {
 	unsigned char haptics_val[VIB_TEST_CMD_LEN] = {0};
 	RET_TYPE vib_return_calibration = RET_INIT;
-	read_info_t read_pkg;
+	struct read_info read_pkg;
 	vibrator_shake = 1;
 	switch_set_state(&data->sw_dev, SW_STATE_SEQUENCE_PLAYBACK);
 	haptics_val[0] = VIB_HAPTIC_TEST;
@@ -279,13 +277,12 @@ static void haptics_play_effect(struct work_struct *work)
 }
 
 static ssize_t vibrator_dbc_test_store(struct device *dev,
-				       struct device_attribute *attr,
-				       const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	uint64_t value = 0;
 	char test_case = 0;
 	RET_TYPE vib_return_calibration = RET_INIT;
-	read_info_t read_pkg;
+	struct read_info read_pkg;
 	char test_cmd[VIB_TEST_CMD_LEN] = {0};
 	hwlog_info("%s\n", __func__);
 	if (strict_strtoull(buf, CONVERT_TO_16, &value)) {
@@ -313,10 +310,9 @@ static ssize_t vibrator_dbc_test_store(struct device *dev,
 }
 
 static ssize_t vibrator_calib_store(struct device *dev,
-				    struct device_attribute *attr,
-				    const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
-	read_info_t read_pkg;
+	struct read_info read_pkg;
 	char status = 0;
 	RET_TYPE vib_return_calibration = RET_INIT;
 	char calib_value[VIB_CALIDATA_NV_SIZE] = {0};
@@ -356,7 +352,7 @@ static ssize_t vibrator_calib_store(struct device *dev,
 }
 
 static ssize_t vibrator_calib_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	hwlog_info("vibrator check vib calibrate result\n");
 	int val = vib_calib_result;
@@ -364,8 +360,7 @@ static ssize_t vibrator_calib_show(struct device *dev,
 }
 
 static ssize_t vibrator_get_reg_store(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	uint64_t value = 0;
 	char reg_address = 0;
@@ -389,15 +384,14 @@ out:
 }
 
 static ssize_t vibrator_get_reg_show(struct device *dev,
-				     struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	int val = reg_value;
 	return snprintf(buf, PAGE_SIZE, "%d\n", val);
 }
 
 static ssize_t vibrator_set_reg_address_store(struct device *dev,
-					      struct device_attribute *attr,
-					      const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	uint64_t value = 0;
 
@@ -417,8 +411,7 @@ out:
 }
 
 static ssize_t vibrator_set_reg_value_store(struct device *dev,
-					    struct device_attribute *attr,
-					    const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	char val = 0;
 	uint64_t value = 0;
@@ -443,7 +436,7 @@ static ssize_t vibrator_set_reg_value_store(struct device *dev,
 }
 
 static ssize_t haptic_test_store(struct device *dev, struct device_attribute *attr,
-				const char *buf, size_t count)
+	const char *buf, size_t count)
 {
 	char a[2] = {0};
 	char haptic_value[100] = {0};
@@ -474,7 +467,7 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 			haptic_value[j] = m + n;
 		}
 		hwlog_info("-----> haptic_test2 is 0x%x, m = %d, n=%d\n",
-						haptic_value[j],m,n);
+			haptic_value[j],m,n);
 		j++;
 	}
 
@@ -487,7 +480,7 @@ static ssize_t haptic_test_store(struct device *dev, struct device_attribute *at
 }
 
 static ssize_t vibrator_set_rtp_value_store(struct device *dev,
-			struct device_attribute *attr, const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	uint64_t value = 0;
 
@@ -509,7 +502,7 @@ out:
 }
 
 static ssize_t vibrator_reg_value_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	char reg_val = 0;
 	char write_regval = 0, read_regval = 0;
@@ -522,7 +515,7 @@ static ssize_t vibrator_reg_value_show(struct device *dev,
 }
 
 static ssize_t vibrator_reg_value_store(struct device *dev,
-			struct device_attribute *attr, const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	char val = 0;
 	char read_regval = 0;
@@ -546,15 +539,15 @@ out:
 }
 
 static ssize_t set_amplitude_store(struct device *dev,
-			struct device_attribute *attr, const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	char val = 0;
 	uint64_t value = 0;
 	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	if(buf == NULL){
 		hwlog_err("drv2605 set_amplitude_store error buf\n");
@@ -593,30 +586,30 @@ out:
 }
 
 static ssize_t support_amplitude_control_show(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%d\n", vibrator_data.support_amplitude_control);//not support
 }
 
 static DEVICE_ATTR(vibrator_dbc_test, S_IRUSR | S_IWUSR, NULL,
-		   vibrator_dbc_test_store);
+	vibrator_dbc_test_store);
 static DEVICE_ATTR(vibrator_calib, S_IRUSR | S_IWUSR, vibrator_calib_show,
-		   vibrator_calib_store);
+	vibrator_calib_store);
 static DEVICE_ATTR(vibrator_get_reg, S_IRUSR | S_IWUSR, vibrator_get_reg_show,
-		   vibrator_get_reg_store);
+	vibrator_get_reg_store);
 static DEVICE_ATTR(vibrator_set_reg_address, S_IRUSR | S_IWUSR, NULL,
-		   vibrator_set_reg_address_store);
+	vibrator_set_reg_address_store);
 static DEVICE_ATTR(vibrator_set_reg_value, S_IRUSR | S_IWUSR, NULL,
-		   vibrator_set_reg_value_store);
+	vibrator_set_reg_value_store);
 static DEVICE_ATTR(haptic_test, S_IRUSR|S_IWUSR, NULL, haptic_test_store);
 static DEVICE_ATTR(vibrator_set_rtp_value, S_IRUSR|S_IWUSR, NULL,
-		   vibrator_set_rtp_value_store);
+	vibrator_set_rtp_value_store);
 static DEVICE_ATTR(vibrator_reg_value, S_IRUSR|S_IWUSR, vibrator_reg_value_show,
-		   vibrator_reg_value_store);
+	vibrator_reg_value_store);
 static DEVICE_ATTR(set_amplitude, S_IRUSR|S_IWUSR, NULL,
-		   set_amplitude_store);
+	set_amplitude_store);
 static DEVICE_ATTR(support_amplitude_control, S_IRUSR|S_IWUSR, support_amplitude_control_show,
-		   NULL);
+	NULL);
 
 static struct attribute *vb_attributes[] = {
 	&dev_attr_vibrator_dbc_test.attr,
@@ -637,10 +630,10 @@ static const struct attribute_group vb_attr_group = {
 };
 static void vibrator_set_time(int val){
 	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	pkg_ap.tag = TAG_VIBRATOR;
@@ -676,11 +669,9 @@ static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value
 			val = vibrator_data.max_timeout_ms;
 		}
 		vib_time = val;
-		//vibrator_set_time(val);
 		__pm_wakeup_event(&vibwlock,jiffies_to_msecs(VIB_WAKELOCK_TIME));
 		hwlog_err("vibrator_enable, time = %d end\n", val);
 	}else{
-		//vibrator_set_time(VIB_OFF);
 		hwlog_err("vibrator_enable, time = %d end\n", val);
 		vib_time = 0;
 		vibrator_shake = 0;
@@ -725,8 +716,6 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 
 	if (type == HAPTIC_STOP) {
 		data->should_stop = YES;
-		//hrtimer_cancel(&data->timer);
-		//cancel_work_sync(&data->work);
 		vibrator_off();
 		goto out;
 	}
@@ -747,9 +736,9 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		vibrator_off();
 		memcpy(&data->sequence, &haptics_table_hub[table_num].haptics_value,HAPTICS_NUM);
 		hwlog_info("[haptics write] sequence1-4: 0x%x,0x%x,0x%x,0x%x.\n", data->sequence[0],
-						data->sequence[1],data->sequence[2],data->sequence[3]);
+			data->sequence[1],data->sequence[2],data->sequence[3]);
 		hwlog_info("[haptics write] sequence5-8: 0x%x,0x%x,0x%x,0x%x.\n", data->sequence[4],
-						data->sequence[5],data->sequence[6],data->sequence[7]);
+			data->sequence[5],data->sequence[6],data->sequence[7]);
 		data->play_effect_time = haptics_table_hub[table_num].time;
 		data->should_stop = NO;
 		schedule_work(&data->work_play_eff);
@@ -867,7 +856,7 @@ static int __init vibratorhub_init(void)
 	if(support_vibratorhub()){
 		return - 1;
 	}
-  	data = kzalloc(sizeof(struct drv2605_data), GFP_KERNEL);
+	data = kzalloc(sizeof(struct drv2605_data), GFP_KERNEL);
 	if (!data) {
 		hwlog_err("unable to allocate memory\n");
 		return -ENOMEM;

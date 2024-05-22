@@ -34,4 +34,7 @@ proc-$(CONFIG_PROC_KCORE)	+= kcore.o
 proc-$(CONFIG_PROC_VMCORE)	+= vmcore.o
 proc-$(CONFIG_PRINTK)	+= kmsg.o
 proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
+obj-$(CONFIG_TASK_PROTECT_LRU) += protect_lru.o
+obj-$(CONFIG_MEMCG_PROTECT_LRU) += protect_lru.o
 obj-$(CONFIG_HISI_PROC) += hisi/
+obj-$(CONFIG_SMARTGC_MEMSCENE)	+= memstatscene.o

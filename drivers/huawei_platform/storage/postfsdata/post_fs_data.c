@@ -48,7 +48,6 @@ EXPORT_SYMBOL(set_postfsdata_flag);
 int wait_for_postfsdata(unsigned int timeout)
 {
 	while (postfsdata_flag == 0) {
-		/* schedule_timeout(HZ); */
 		msleep(1000);
 		if (timeout) {
 			timeout--;

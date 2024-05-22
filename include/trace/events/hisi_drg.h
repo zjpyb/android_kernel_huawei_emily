@@ -1,3 +1,21 @@
+/*
+ * hisi_drg.h
+ *
+ * implement dual rail governor
+ *
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM hisi_drg
 
@@ -6,7 +24,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(drg_thermal_limit,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(drg_thermal_limit,
 	TP_PROTO(const char *name, int slave_id, int thermal_state,
 		 int target_state, unsigned long target_freq,
 		 unsigned long cliped_freq),
@@ -32,11 +50,11 @@ TRACE_EVENT(drg_thermal_limit,/* [false alarm]:原生宏定义 */
 	),
 
 	TP_printk("rule=%s slave=%d thermal_state=%d target_state=%d target_freq=%lu cliped_freq=%lu",
-	          __entry->name, __entry->slave_id, __entry->thermal_state,
-	          __entry->target_state, __entry->target_freq, __entry->cliped_freq)
+		  __entry->name, __entry->slave_id, __entry->thermal_state,
+		  __entry->target_state, __entry->target_freq, __entry->cliped_freq)
 );
 
-TRACE_EVENT(drg_update_freq_range,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(drg_update_freq_range,
 	TP_PROTO(const char *name, int slave_id, int state,
 		 unsigned long min_freq, unsigned long max_freq),
 	TP_ARGS(name, slave_id, state, min_freq, max_freq),
@@ -58,11 +76,11 @@ TRACE_EVENT(drg_update_freq_range,/* [false alarm]:原生宏定义 */
 	),
 
 	TP_printk("rule=%s slave=%d state=%d min_freq=%lu max_freq=%lu",
-	          __entry->name, __entry->slave_id, __entry->state,
-	          __entry->min_freq, __entry->max_freq)
+		  __entry->name, __entry->slave_id, __entry->state,
+		  __entry->min_freq, __entry->max_freq)
 );
 
-TRACE_EVENT(drg_check_limit,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(drg_check_limit,
 	TP_PROTO(const char *name, int cpu, unsigned long target_freq,
 		 unsigned long min_freq, unsigned long max_freq),
 	TP_ARGS(name, cpu, target_freq, min_freq, max_freq),
@@ -84,11 +102,11 @@ TRACE_EVENT(drg_check_limit,/* [false alarm]:原生宏定义 */
 	),
 
 	TP_printk("freq_device=%s cpu=%d target_freq=%lu min_freq=%lu max_freq=%lu",
-	          __entry->name, __entry->cpu, __entry->target_freq,
-	          __entry->min_freq, __entry->max_freq)
+		  __entry->name, __entry->cpu, __entry->target_freq,
+		  __entry->min_freq, __entry->max_freq)
 );
 
-TRACE_EVENT(drg_cpu_policy_adjust,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(drg_cpu_policy_adjust,
 	TP_PROTO(int cpu, unsigned int margin,
 		 unsigned long min_freq, unsigned long max_freq),
 	TP_ARGS(cpu, margin, min_freq, max_freq),
@@ -108,8 +126,8 @@ TRACE_EVENT(drg_cpu_policy_adjust,/* [false alarm]:原生宏定义 */
 	),
 
 	TP_printk("cpu=%d margin=%u min_freq=%lu max_freq=%lu",
-	          __entry->cpu, __entry->margin,
-	          __entry->min_freq, __entry->max_freq)
+		  __entry->cpu, __entry->margin,
+		  __entry->min_freq, __entry->max_freq)
 );
 
 #endif /* _TRACE_HISI_DRG_H */

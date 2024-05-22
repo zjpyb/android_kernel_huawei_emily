@@ -1,17 +1,9 @@
 /*
- * hw_packet_filter_bypass.h
- *
- * Copyright (c) 2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
+ * Description: This file is iptables and bpf exception detection
+ *              and recovery head file.
+ * Author: fanxiaoyu3@huawei.com
+ * Create: 2019-04-18
  */
 
 #ifndef HW_PACKET_FILTER_BYPASS_H
@@ -59,8 +51,7 @@ bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 	struct net_device *out, int pass);
 int hw_translate_hook_num(int af, int hook);
 int hw_translate_verdict(u32 verdict);
-bool hw_hook_bypass_skb(int af , int hook, struct sk_buff *skb);
-bool is_ds_rnic(const struct net_device *dev);
+bool hw_hook_bypass_skb(int af, int hook, struct sk_buff *skb);
 
 msg_process* hw_packet_filter_bypass_init(notify_event *notify);
 

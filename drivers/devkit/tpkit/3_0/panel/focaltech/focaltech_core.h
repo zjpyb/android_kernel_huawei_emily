@@ -29,7 +29,8 @@
 #include <linux/dma-mapping.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/ctype.h>
-#include "../../huawei_ts_kit.h"
+#include <linux/completion.h>
+#include "huawei_ts_kit.h"
 
 extern struct focal_platform_data *g_focal_pdata ;
 extern  struct ts_kit_device_data *g_focal_dev_data ;
@@ -53,10 +54,23 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_DETECT_SPI_RETRY_TIMES			3
 #define FTS_COMMON_COMMAND_LENGTH			1
 #define FTS_COMMON_COMMAND_VALUE			1
+#define FTS_FT8756_ECC_VALUE 0xA5
 #define FTS_FW_MANUAL_UPDATE_FILE_NAME	"ts/touch_screen_firmware.img"
 
 #define FTS_VDDIO_GPIO_NAME		"ts_vddio_gpio"
 #define FTS_VCI_GPIO_NAME		"ts_vci_gpio"
+
+#define FOCAL_TAG ((sizeof(__func__) > sizeof("focal")) ? \
+	(__func__ + sizeof("focal")) : \
+	__func__)
+
+#define FTS_TAG ((sizeof(__func__) > sizeof("fts")) ? \
+	(__func__ + sizeof("fts")) : \
+	__func__)
+
+#define FT8201_TAG ((sizeof(__func__) > sizeof("focal_8201")) ? \
+	(__func__ + sizeof("focal_8201")) : \
+	__func__)
 
 #if defined (CONFIG_HUAWEI_DEVKIT_MTK_3_0)
 #define PINCTRL_STATE_RESET_HIGH	"state_rst_output1"
@@ -79,6 +93,12 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_DOZE_DISABLE			0
 #define FTS_FT86XX_HIGH                              0x86
 #define FTS_PALM_IRON				0x55
+
+#define FTS_IS_CHARGER_IN 1
+#define FTS_IS_CHARGER_OUT 0
+#ifndef HUAWEI_CHARGER_FB
+#define HUAWEI_CHARGER_FB
+#endif
 
 #define GESTURE_DOUBLECLICK                     0x24
 #define FTS_REG_GESTURE_EN      			(0xD0)
@@ -118,8 +138,19 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define CHAR_MAX			127
 #define FTS_FW_STATE_ERROR		0xEF
 #define FTS_FW_DOWNLOAD_MODE         0x02
+#define FTS_FW_DOWNLOAD_MODE_FT8756 0x01
 #define FOCAL_RESET_DELAY_TIME			10
 #define FOCAL_AFTER_WRITE_55_DELAY_TIME 	8
+#define FOCAL_ADC_NUM_OFFSET 6
+#define FOCAL_DELAY_AFTER_ADC_SCAN 150
+#define FOCAL_DELAY_AFTER_RED_VREF 50
+#define CHIP_ID_FT5446P03 0x5452
+#define CHIP_ID_FT5X46 0x5422
+#define CHIP_ID_FT8201 0x8006
+#define CHIP_ID_FT8201AB 0x8203
+
+#define FTS_ESD_HARDWARE_MARK 0xAA
+#define FTS_ESD_NOISE_MARK 0x33
 
 enum focal_ic_type {
 	FOCAL_FT8716 = 0,
@@ -128,6 +159,9 @@ enum focal_ic_type {
 	FOCAL_FT8719,
 	FOCAL_FT8201,
 	FOCAL_FT8006U,
+	FOCAL_FT8756,
+	FOCAL_FT5446P03,
+	FOCAL_FT8201_AB,
 };
 
 enum roi_data_status {
@@ -210,6 +244,7 @@ struct focal_platform_data {
 	char vendor_name[FTS_VENDOR_NAME_LEN + 1];
 	struct ts_event touch_data;
 	bool support_get_tp_color;/*for tp color */
+	bool get_tp_color_from_reg; /* get tp color from reg */
 	struct regulator *vddd;
 	struct regulator *vdda;
 	int self_ctrl_power;
@@ -217,11 +252,16 @@ struct focal_platform_data {
 	int power_down_ctrl;
 	bool open_threshold_status;
 	int only_open_once_captest_threshold;
+	u32 allow_print_fw_version;
 	int projectid_length_control_flag;
 	u32 enable_edge_touch;
 	u32 edge_data_addr;
 	u32 aft_wxy_enable;
 	u32 roi_pkg_num_addr;
+	u32 support_point_to_point_test;
+	u32 supported_vamalloc_fortest;
+	u32 capa_test_sequence; /* Only for kob2 */
+	u32 allow_refresh_ic_type;
 	int need_distinguish_lcd;
 	int hide_plain_lcd_log;
 	int fw_only_depend_on_lcd;//0 : fw depend on TP and others ,1 : fw only depend on lcd.
@@ -237,11 +277,18 @@ struct focal_platform_data {
 	u32 fts_use_pinctrl;
 	struct mutex spilock;
 	unsigned int fw_update_duration_check;
+	u32 palm_esd_support;
+	u32 fts_8201_gesture_value;
 };
 
 /* spi interface communication*/
+int fts_bus_init(void);
+void fts_bus_exit(void);
+
 int fts_read(u8 *writebuf, u32 writelen, u8 *readbuf, u32 readlen);
+int fts_read_8756(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen);
 int fts_write(u8 *writebuf, u32 writelen);
+int fts_write_8756(u8 *writebuf, u32 writelen);
 int focal_read(u8 *addr, u16 addr_len, u8 *value, u16 values_size);
 int focal_read_reg(u8 addr, u8 *val);
 int focal_read_default(u8 *values, u16 values_size);

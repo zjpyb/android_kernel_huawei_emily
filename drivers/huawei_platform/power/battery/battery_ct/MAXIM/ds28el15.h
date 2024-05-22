@@ -3,7 +3,7 @@
  *
  * ds28el15 driver head file for battery checker
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -64,20 +64,20 @@ struct ds28el15_des {
 #define GET_MAC_RETRY                               8
 
 #define CURRENT_DS28EL15_TASK                       0
-#define BYTES2BITS(x)                               ((x) << 3)
+#define bytes2bits(x)                               ((x) << 3)
 
 #define SN_LENGTH_BITS                              108
 #define PRINTABLE_SN_SIZE                           17
 #define SN_CHAR_PRINT_SIZE                          11
 #define SN_HEX_PRINT_SIZE                           5
 
-#define IS_ODD(a)                                   ((a) & 0x1)
-#define IS_EVEN(a)                                  (!IS_ODD(a))
-#define NOT_MUTI8(a)                                ((a) & 0x7)
-#define IS_MUTI8(a)                                 (!NOT_MUTI8(a))
+#define is_odd(a)                                   ((a) & 0x1)
+#define is_even(a)                                  (!is_odd(a))
+#define not_muti8(a)                                ((a) & 0x7)
+#define is_muti8(a)                                 (!not_muti8(a))
 
 /* onewire communication error process */
-#define DS28EL15_COMMUNICATION_INFO(x, y)                        \
+#define ds28el15_communication_info(x, y)                        \
 do {                                                             \
 	if (x)                                                   \
 		hwlog_info(y" failed(%x) in %s\n", x, __func__); \

@@ -110,7 +110,7 @@ static struct workqueue_struct	*uether_wq;
 static inline int qlen(struct usb_gadget *gadget, unsigned qmult)
 {
 	if (gadget_is_dualspeed(gadget) && (gadget->speed == USB_SPEED_HIGH ||
-					    gadget->speed == USB_SPEED_SUPER))
+					    gadget->speed >= USB_SPEED_SUPER))
 		return qmult * DEFAULT_QLEN;
 	else
 		return DEFAULT_QLEN;
@@ -908,10 +908,19 @@ static int eth_stop(struct net_device *net)
 		usb_ep_disable(link->out_ep);
 		if (netif_carrier_ok(net)) {
 			DBG(dev, "host still using in/out endpoints\n");
-			link->in_ep->desc = in;
-			link->out_ep->desc = out;
-			usb_ep_enable(link->in_ep);
-			usb_ep_enable(link->out_ep);
+			if (in) {
+				link->in_ep->desc = in;
+				usb_ep_enable(link->in_ep);
+			} else {
+				pr_err("%s: in: null pointer!!\n", __func__);
+			}
+
+			if (out) {
+				link->out_ep->desc = out;
+				usb_ep_enable(link->out_ep);
+			} else {
+				pr_err("%s: out: null pointer!!\n", __func__);
+			}
 		}
 	}
 	spin_unlock_irqrestore(&dev->lock, flags);

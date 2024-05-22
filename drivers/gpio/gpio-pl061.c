@@ -42,6 +42,13 @@
 
 struct hwspinlock       *gpio_hwlock;
 
+#define GPIO_DUMP_NR	2
+#define LABEL_T	3
+#define LABEL_F	4
+static struct gpio_dump g_gd[2];
+static unsigned int g_times;
+static unsigned int g_hwlock_sta;
+
 #define HISI_SECURE_GPIO_REG_READ   0xc5010004
 #define HISI_SECURE_GPIO_REG_WRITE  0xc5010005
 unsigned char pl061_readb(struct pl061 *chip, unsigned offset)
@@ -51,7 +58,8 @@ unsigned char pl061_readb(struct pl061 *chip, unsigned offset)
 	struct arm_smccc_res res;
 
 	if (adev->secure_mode) {
-		arm_smccc_1_1_smc(HISI_SECURE_GPIO_REG_READ, offset, &res);//lint !e1514
+		arm_smccc_1_1_smc(HISI_SECURE_GPIO_REG_READ,
+			offset, adev->res.start, &res);
 		v = (u8)res.a1;
 	} else {
 		v = readb(chip->base + offset);
@@ -66,7 +74,8 @@ void pl061_writeb(struct pl061 *chip, unsigned char v, unsigned offset)
 	struct arm_smccc_res res;
 
 	if (adev->secure_mode) {
-		arm_smccc_1_1_smc(HISI_SECURE_GPIO_REG_WRITE, v, offset, &res);//lint !e1514
+		arm_smccc_1_1_smc(HISI_SECURE_GPIO_REG_WRITE, v,
+			offset, adev->res.start, &res);
 	} else {
 		writeb(v, chip->base + offset);
 	}
@@ -93,17 +102,25 @@ static int pl061_direction_input(struct gpio_chip *gc, unsigned offset)
 
 	raw_spin_lock_irqsave(&pl061->lock, flags);
 
+	g_gd[g_times].offset = offset;
+	g_gd[g_times].label_t = pl061->gc.label[LABEL_T];
+	g_gd[g_times].label_f = pl061->gc.label[LABEL_F];
+	g_times = (g_times + 1) % GPIO_DUMP_NR;
+
 	if (hwspin_lock_timeout(gpio_hwlock, LOCK_TIMEOUT)) {
-		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
 		raw_spin_unlock_irqrestore(&pl061->lock, flags);
+		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
+		dev_err(gc->parent, "hwspinlock status is 0x%x\n",
+			get_gpio_hwspinlock_status());
 		return -EBUSY;
 	}
-
+	g_hwlock_sta = 1;
 	gpiodir = pl061_readb(pl061,  GPIODIR);
 	gpiodir &= ~(BIT(offset));
 	pl061_writeb(pl061, gpiodir, GPIODIR);
 
 	hwspin_unlock(gpio_hwlock);
+	g_hwlock_sta = 0;
 	raw_spin_unlock_irqrestore(&pl061->lock, flags);
 
 	return 0;
@@ -123,12 +140,19 @@ static int pl061_direction_output(struct gpio_chip *gc, unsigned offset,
 
 	raw_spin_lock_irqsave(&pl061->lock, flags);
 
+	g_gd[g_times].offset = offset;
+	g_gd[g_times].label_t = pl061->gc.label[LABEL_T];
+	g_gd[g_times].label_f = pl061->gc.label[LABEL_F];
+	g_times = (g_times + 1) % GPIO_DUMP_NR;
+
 	if (hwspin_lock_timeout(gpio_hwlock, LOCK_TIMEOUT)) {
-		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
 		raw_spin_unlock_irqrestore(&pl061->lock, flags);
+		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
+		dev_err(gc->parent, "hwspinlock status is 0x%x\n",
+			get_gpio_hwspinlock_status());
 		return -EBUSY;
 	}
-
+	g_hwlock_sta = 1;
 	pl061_writeb(pl061, !!value << offset, (BIT(offset + 2)));//lint !e514
 	gpiodir = pl061_readb(pl061, GPIODIR);
 	gpiodir |= BIT(offset);
@@ -140,6 +164,7 @@ static int pl061_direction_output(struct gpio_chip *gc, unsigned offset,
 	 */
 	pl061_writeb(pl061, !!value << offset, (BIT(offset + 2)));
 	hwspin_unlock(gpio_hwlock);
+	g_hwlock_sta = 0;
 	raw_spin_unlock_irqrestore(&pl061->lock, flags);
 
 	return 0;
@@ -192,12 +217,19 @@ static int pl061_irq_type(struct irq_data *d, unsigned trigger)
 
 	raw_spin_lock_irqsave(&pl061->lock, flags);
 
+	g_gd[g_times].offset = offset;
+	g_gd[g_times].label_t = pl061->gc.label[LABEL_T];
+	g_gd[g_times].label_f = pl061->gc.label[LABEL_F];
+	g_times = (g_times + 1) % GPIO_DUMP_NR;
+
 	if (hwspin_lock_timeout(gpio_hwlock, LOCK_TIMEOUT)) {
-		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
 		raw_spin_unlock_irqrestore(&pl061->lock, flags);
+		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
+		dev_err(gc->parent, "hwspinlock status is 0x%x\n",
+			get_gpio_hwspinlock_status());
 		return -EBUSY;
 	}
-
+	g_hwlock_sta = 1;
 	gpioiev = pl061_readb(pl061, GPIOIEV);
 	gpiois = pl061_readb(pl061, GPIOIS);
 	gpioibe = pl061_readb(pl061, GPIOIBE);
@@ -257,6 +289,7 @@ static int pl061_irq_type(struct irq_data *d, unsigned trigger)
 	pl061_writeb(pl061, gpioiev, GPIOIEV);
 
 	hwspin_unlock(gpio_hwlock);
+	g_hwlock_sta = 0;
 	raw_spin_unlock_irqrestore(&pl061->lock, flags);
 
 	return 0;
@@ -297,16 +330,24 @@ static void pl061_irq_mask(struct irq_data *d)
 		return ;
 	raw_spin_lock_irqsave(&pl061->lock, flags);
 
+	g_gd[g_times].offset = irqd_to_hwirq(d) % PL061_GPIO_NR;;
+	g_gd[g_times].label_t = pl061->gc.label[LABEL_T];
+	g_gd[g_times].label_f = pl061->gc.label[LABEL_F];
+	g_times = (g_times + 1) % GPIO_DUMP_NR;
+
 	if (hwspin_lock_timeout(gpio_hwlock, LOCK_TIMEOUT)) {
-		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
 		raw_spin_unlock_irqrestore(&pl061->lock, flags);
+		dev_err(gc->parent, "%s: hwspinlock timeout!\n", __func__);
+		dev_err(gc->parent, "hwspinlock status is 0x%x\n",
+			get_gpio_hwspinlock_status());
 		return ;
 	}
-
+	g_hwlock_sta = 1;
 	gpioie = pl061_readb(pl061, GPIOIE) & ~mask;
 	pl061_writeb(pl061, gpioie, GPIOIE);
 
 	hwspin_unlock(gpio_hwlock);
+	g_hwlock_sta = 0;
 	raw_spin_unlock_irqrestore(&pl061->lock, flags);
 }
 
@@ -323,14 +364,23 @@ static void pl061_irq_unmask(struct irq_data *d)
 
 	raw_spin_lock_irqsave(&pl061->lock, flags);
 
+	g_gd[g_times].offset = irqd_to_hwirq(d) % PL061_GPIO_NR;;
+	g_gd[g_times].label_t = pl061->gc.label[LABEL_T];
+	g_gd[g_times].label_f = pl061->gc.label[LABEL_F];
+	g_times = (g_times + 1) % GPIO_DUMP_NR;
+
 	if (hwspin_lock_timeout(gpio_hwlock, LOCK_TIMEOUT)) {
-		dev_err(gc->parent, "%s: hwspinlock timeout!\n!", __func__);
 		raw_spin_unlock_irqrestore(&pl061->lock, flags);
+		dev_err(gc->parent, "%s: hwspinlock timeout!\n!", __func__);
+		dev_err(gc->parent, "hwspinlock status is 0x%x\n",
+			get_gpio_hwspinlock_status());
 		return;
 	}
+	g_hwlock_sta = 1;
 	gpioie = pl061_readb(pl061, GPIOIE) | mask;
 	pl061_writeb(pl061, gpioie, GPIOIE);
 	hwspin_unlock(gpio_hwlock);
+	g_hwlock_sta = 0;
 	raw_spin_unlock_irqrestore(&pl061->lock, flags);
 }
 
@@ -356,6 +406,14 @@ static void pl061_irq_ack(struct irq_data *d)
 static int pl061_irq_set_wake(struct irq_data *d, unsigned int state)
 {
 	return 0;
+}
+
+void get_gpio_dump(void)
+{
+	pr_err("get_gpio_dump offset[0] = %u label_t[0] = %c label_f[0] = %c g_hwlock_sta = %u\n",
+		g_gd[0].offset, g_gd[0].label_t, g_gd[0].label_f, g_hwlock_sta);
+	pr_err("get_gpio_dump offset[1] = %u label_t[1] = %c label_f[1] = %c g_times = %u\n",
+		g_gd[1].offset, g_gd[1].label_t, g_gd[1].label_f, g_times);
 }
 
 static struct irq_chip pl061_irqchip = {

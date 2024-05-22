@@ -64,6 +64,9 @@
 #define CSV_TP_SPECIAL_SELFRAW_MAX	"special_selfraw_max"
 #define CSV_TP_SPECIAL_SELFRAW_MIN	"special_selfraw_min"
 #define CSV_TP_SELFNOISE_LIMIT		"noise_selfdata_limit"
+#define DRV_MAX_NUM_IN_DIE_GT738X 46
+#define SEN_MAX_NUM_IN_DIE_GT738X 76
+
 
 static u8 gt9886_drv_map[] = {46, 48, 49, 47, 45, 50, 56, 52, 51, 53, 55, 54, 59, 64, 57, 60, 62, 58, 65, 63, 61, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 static u8 gt9886_sen_map[] = {32, 34, 35, 30, 31, 33, 27, 28, 29, 10, 25, 26, 23, 13, 24, 12, 9, 11, 8, 7, 5, 6, 4, 3, 2, 1, 0, 73, 75, 74, 39, 72, 40, 36, 37, 38};
@@ -395,8 +398,8 @@ static int gtx8_init_params(struct gtx8_ts_test *ts_test)
 		test_params->rawdata_addr = GTP_RAWDATA_ADDR_6861;
 		test_params->noisedata_addr = GTP_NOISEDATA_ADDR_6861;
 		test_params->basedata_addr = GTP_BASEDATA_ADDR_6861;
-		test_params->max_drv_num = MAX_DRV_NUM;
-		test_params->max_sen_num = MAX_SEN_NUM;
+		test_params->max_drv_num = MAX_MAP_DEV_NUM_6861;
+		test_params->max_sen_num = MAX_MAP_SEN_NUM_6861;
 		test_params->drv_map = gt6861_drv_map;
 		test_params->sen_map = gt6861_sen_map;
 		break;
@@ -1323,11 +1326,12 @@ int gtx8_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd)
 		return -ENODEV;
 	}
 
-	gts_test = kzalloc(sizeof(struct gtx8_ts_test), GFP_KERNEL);
+	gts_test = (struct gtx8_ts_test *)vmalloc(sizeof(struct gtx8_ts_test));
 	if (!gts_test) {
 		TS_LOG_ERR("%s: Failed to alloc mem\n", __func__);
 		return -ENOMEM;
 	}
+	memset(gts_test, 0, sizeof(struct gtx8_ts_test));
 	gts_test->ts = gtx8_ts;
 
 	ret = gtx8_set_i2c_doze_mode(false);
@@ -1363,7 +1367,7 @@ exit_finish:
 		/* add wakelock,avoid i2c suspend */
 		__pm_relax(&gts_test->ts->wake_lock);
 	if (gts_test) {
-		kfree(gts_test);
+		vfree(gts_test);
 		gts_test = NULL;
 	}
 	if (gtx8_set_i2c_doze_mode(true))
@@ -1928,11 +1932,20 @@ static int gtx8_send_short_param(struct gtx8_ts_test *ts_test)
 	memset(short_param, 0, len + chksum_len);
 
 	/* sen/drv line */
-	for (j = 0; j < MAX_SEN_NUM_7382; j++)
-		short_param[i++] = gt7382_sen_map[j];
+	for (j = 0; j < SEN_MAX_NUM_IN_DIE_GT738X; j++){
+		if(j > MAX_SEN_NUM_7382)
+			short_param[i++] = 0xFF;
+		else
+			short_param[i++] = gt7382_sen_map[j];
+	}
 
-	for (j = 0; j < MAX_DRV_NUM_7382; j++)
-		short_param[i++] = gt7382_drv_map[j];
+	for (j = 0; j < DRV_MAX_NUM_IN_DIE_GT738X; j++){
+		if(j > MAX_DRV_NUM_7382)
+			short_param[i++] = 0xFF;
+		else
+			short_param[i++] = gt7382_drv_map[j];
+
+	}
 
 	/*
 	 * 4 bytes reseverd -> 2 bytes reseved add 2 bytes for driver,

@@ -792,9 +792,10 @@ static int pci_register_host_bridge(struct pci_host_bridge *bridge)
 		goto free;
 
 	err = device_register(&bridge->dev);
-	if (err)
+	if (err) {
 		put_device(&bridge->dev);
-
+		goto free;
+	}
 	bus->bridge = get_device(&bridge->dev);
 	device_enable_async_suspend(bus->bridge);
 	pci_set_bus_of_node(bus);
@@ -1419,7 +1420,7 @@ int pci_setup_device(struct pci_dev *dev)
 	pci_dev_assign_slot(dev);
 	/* Assume 32-bit PCI; let 64-bit PCI cards (which are far rarer)
 	   set this higher, assuming the system even supports it.  */
-#ifdef CONFIG_PCIE_KIRIN
+#ifdef CONFIG_PCIE_KPORT
 	dev->dma_mask = DMA_BIT_MASK(64);/*lint !e598 !e648*/
 #else
 	dev->dma_mask = 0xffffffff;
@@ -1432,7 +1433,7 @@ int pci_setup_device(struct pci_dev *dev)
 	dev->revision = class & 0xff;
 	dev->class = class >> 8;		    /* upper 3 bytes */
 
-#if !defined(CONFIG_PCIE_KIRIN) || defined(CONFIG_KIRIN_PCIE_TEST)
+#if !defined(CONFIG_PCIE_KPORT) || defined(CONFIG_PCIE_KPORT_TEST)
 	dev_printk(KERN_DEBUG, &dev->dev, "[%04x:%04x] type %02x class %#08x\n",
 		   dev->vendor, dev->device, dev->hdr_type, dev->class);
 #else
@@ -1454,7 +1455,7 @@ int pci_setup_device(struct pci_dev *dev)
 	/* device class may be changed after fixup */
 	class = dev->class >> 8;
 
-	if (dev->non_compliant_bars) {
+	if (dev->non_compliant_bars && !dev->mmio_always_on) {
 		pci_read_config_word(dev, PCI_COMMAND, &cmd);
 		if (cmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) {
 			dev_info(&dev->dev, "device has non-compliant BARs; disabling IO/MEM decoding\n");
@@ -2101,7 +2102,7 @@ void pci_device_add(struct pci_dev *dev, struct pci_bus *bus)
 	set_dev_node(&dev->dev, pcibus_to_node(bus));
 	dev->dev.dma_mask = &dev->dma_mask;
 	dev->dev.dma_parms = &dev->dma_parms;
-#ifdef CONFIG_PCIE_KIRIN
+#ifdef CONFIG_PCIE_KPORT
 	dev->dev.coherent_dma_mask = DMA_BIT_MASK(64);/*lint !e598 !e648*/
 #else
 	dev->dev.coherent_dma_mask = 0xffffffffull;

@@ -1,10 +1,11 @@
 /*
- *  Hisilicon K3 SOC camera driver source file
+ * laser_module.h
  *
- *  Copyright (C) Huawei Technology Co., Ltd.
+ * Hisilicon K3 SOC camera driver source file
+ *
+ * Copyright (C) 2017-2020 Huawei Technology Co., Ltd.
  *
  * Author:    wangyaofeng
- * Email:
  * Date:      2017-12-08
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,30 +21,27 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  */
+
+#ifndef _LASER_MODULE_H_
+#define _LASER_MODULE_H_
+
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <media/huawei/laser_cfg.h>
 
-#define laser_err(fmt, ...) \
-    do { \
-            pr_err("[laser]" "ERROR: " fmt "\n", ##__VA_ARGS__); \
-    }while (0)
+#define laser_err(fmt, ...) pr_err("[laser]ERROR: " fmt "\n", ##__VA_ARGS__)
+#define laser_info(fmt, ...) pr_info("[laser]INFO: " fmt "\n", ##__VA_ARGS__)
+#define laser_dbg(fmt, ...) pr_debug("[laser]DBG: " fmt "\n", ##__VA_ARGS__)
 
-#define laser_info(fmt, ...) \
-    do { \
-            pr_info("[laser]" "INFO: " fmt "\n", ##__VA_ARGS__); \
-    }while (0)
-#define laser_dbg(fmt, ...) \
-    do { \
-            pr_debug("[laser]" "DBG: " fmt "\n", ##__VA_ARGS__); \
-    }while (0)
+typedef struct _tag_laser_module_intf_t {
+	char *laser_name;
+	int (*data_init)(struct i2c_client *client,
+		const struct i2c_device_id *id);
+	int (*data_remove)(struct i2c_client *client);
+	long (*laser_ioctl)(void *hw_data, unsigned int cmd, void *p);
+} laser_module_intf_t;
 
-typedef struct _tag_laser_module_intf_t
-{
-    char *laser_name;
-    int  (*data_init)(struct i2c_client *client, const struct i2c_device_id *id);
-    int  (*data_remove)(struct i2c_client *client);
-    long (*laser_ioctl)(void *hw_data, unsigned int cmd, void  *p);
-}laser_module_intf_t;
+#endif
 

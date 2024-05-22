@@ -14,3 +14,10 @@ config HUAWEI_DSM_IOMT_EMMC_HOST
 	default n
 	help
 	  enable emmc host state stat feature.
+
+config HUAWEI_DSM_IOMT_UFS_HOST
+	bool "Huawei dsm iomt ufs host"
+	depends on SCSI != n && HUAWEI_DSM_IOMT_HOST != n
+	default n
+	help
+	  enable ufs host state stat feature.

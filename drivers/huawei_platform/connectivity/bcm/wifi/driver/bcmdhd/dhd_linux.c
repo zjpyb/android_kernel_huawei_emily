@@ -6063,7 +6063,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	    }
 	}
 	DHD_ERROR(("gscan max ap per scan is %d \n", g_gscan_maxap_per_scan));
-#endif /* HW_WIFI_DRIVER_NORMALIZE */		
+#endif /* HW_WIFI_DRIVER_NORMALIZE */
 #ifndef HW_SKIP_ATTACH_GET_MAC
 #ifdef GET_CUSTOM_MAC_ENABLE
 	wifi_platform_get_mac_addr(dhd->adapter, dhd->pub.mac.octet);
@@ -10050,7 +10050,8 @@ int dhd_dev_get_feature_set(struct net_device *dev)
 		feature_set |= WIFI_FEATURE_PNO;
 		feature_set |= WIFI_FEATURE_BATCH_SCAN;
 #ifdef GSCAN_SUPPORT
-		feature_set |= WIFI_FEATURE_GSCAN;
+		/* modify wifi GTS test fail problem */
+		/* feature_set |= WIFI_FEATURE_GSCAN; */
 		feature_set |= WIFI_FEATURE_HAL_EPNO;
 #endif /* GSCAN_SUPPORT */
 	}
@@ -12028,8 +12029,7 @@ int dhd_os_check_wakelock(dhd_pub_t *pub)
 
 #ifdef CONFIG_HAS_WAKELOCK
 	/* Indicate to the SD Host to avoid going to suspend if internal locks are up */
-	if (dhd && dhd->wl_wifi.active ||
-		dhd->wl_wdwake.active)
+	if (dhd && (dhd->wl_wifi.active || dhd->wl_wdwake.active))
 		return 1;
 #elif defined(BCMSDIO) && (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
 	if (dhd && (dhd->wakelock_counter > 0) && dhd_bus_dev_pm_enabled(pub))
@@ -12052,12 +12052,9 @@ int dhd_os_check_wakelock_all(dhd_pub_t *pub)
 
 #ifdef CONFIG_HAS_WAKELOCK
 	/* Indicate to the SD Host to avoid going to suspend if internal locks are up */
-	if (dhd && dhd->wl_wifi.active ||
-		dhd->wl_wdwake.active ||
-		dhd->wl_rxwake.active ||
-		dhd->wl_ctrlwake.active) {
+	if (dhd && (dhd->wl_wifi.active || dhd->wl_wdwake.active ||
+		dhd->wl_rxwake.active || dhd->wl_ctrlwake.active))
 		return 1;
-	}
 #elif defined(BCMSDIO) && (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
 	if (dhd && (dhd->wakelock_counter > 0) && dhd_bus_dev_pm_enabled(pub))
 		return 1;

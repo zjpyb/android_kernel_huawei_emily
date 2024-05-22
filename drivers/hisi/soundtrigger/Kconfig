@@ -3,3 +3,8 @@ config SOUND_TRIGGER
 	default n
 	---help---
 	 Say Y here if you want to support sound trigger
+config SND_SOC_THIRD_CODEC
+	tristate "Support third codec for sound trigger"
+	default n
+	---help---
+	Say Y here if you want to support third codec for sound trigger

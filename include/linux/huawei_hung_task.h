@@ -23,8 +23,8 @@
 #define HEARTBEAT_TIME 3
 #endif
 
-extern unsigned long __read_mostly sysctl_hung_task_timeout_secs;
-extern unsigned int __read_mostly sysctl_hung_task_panic;
+extern unsigned long sysctl_hung_task_timeout_secs;
+extern unsigned int sysctl_hung_task_panic;
 
 void check_hung_tasks_proposal(unsigned long timeout);
 void fetch_hung_task_panic(int new_did_panic);

@@ -10,6 +10,8 @@
 #include "../core/platform.h"
 
 #include <huawei_platform/usb/hw_pd_dev.h>
+#include <chipset_common/hwpower/common_module/power_dsm.h>
+
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
 #endif

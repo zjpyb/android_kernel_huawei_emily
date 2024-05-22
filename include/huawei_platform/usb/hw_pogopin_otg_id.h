@@ -3,7 +3,7 @@
  *
  * huawei pogopin driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,7 +45,7 @@
 #define TIMEOUT_200MS               200
 #define TIMEOUT_800MS               800
 #define SLEEP_50MS                  50
-
+#define OCP_DELAY_2MS               2
 #define OTG_INVALID_ADC             0
 
 struct pogopin_otg_id_dev {
@@ -54,11 +54,17 @@ struct pogopin_otg_id_dev {
 	struct notifier_block pogopin_nb;
 	u32 otg_adc_channel;
 	int gpio;
+	int ocp_int_gpio;
+	int ocp_irq;
+	int ocp_en_gpio;
+	int ocp_control_support;
+	struct work_struct ocp_work;
 	int irq;
 	u32 fpga_flag;
 	u32 sampling_time_optimize;
 	struct work_struct otg_intb_work;
 	bool otg_irq_enabled;
+	struct notifier_block pogopin_otg_status_check_nb;
 };
 
 #endif /* _HW_POGOPIN_OTG_ID_H_ */

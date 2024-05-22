@@ -19,10 +19,10 @@
 #ifndef DYNBRD_PUBLIC_H
 #define DYNBRD_PUBLIC_H
 
-struct bfmr_dbrd_ioctl_block;
+struct dbrd_ioctl_block;
 
-int create_dynamic_ramdisk(struct bfmr_dbrd_ioctl_block *arg_u);
-int delete_dynamic_ramdisk(struct bfmr_dbrd_ioctl_block *arg_u);
+int create_dynamic_ramdisk(struct dbrd_ioctl_block *arg_u);
+int delete_dynamic_ramdisk(struct dbrd_ioctl_block *arg_u);
 
 #endif // DYNBRD_PUBLIC_H
 

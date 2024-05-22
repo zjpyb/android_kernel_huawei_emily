@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the rproc.c for root processes list checking
  * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
  *         likun <quentin.lee@huawei.com>
@@ -76,11 +76,25 @@ static int tokens_cmp(const void *p1, const void *p2)
 	return strcmp(*i1, *i2);
 }
 
-static char *g_whitelist_proc[MAX_PROC_NUM] = { NULL };
-static int g_whitelist_count;
-static char *g_whitelist_proc_buf;
+static char *g_trustlist_proc[MAX_PROC_NUM] = { NULL };
+static int g_trustlist_count;
+static char *g_trustlist_proc_buf;
 
-bool is_dup_token(char **const tokens, int index)
+static int move_tokens(char **const tokens, uint32_t cur,
+			int next, int token_count)
+{
+	int ret;
+	ret = memmove_s(tokens + cur,
+			(ulong)((token_count - next) * sizeof(char *)),
+			tokens + next,
+			(ulong)((token_count - next) * sizeof(char *)));
+	if (ret != EOK)
+		RSLogError(TAG, "memmove_s fail\n");
+
+	return ret;
+}
+
+static bool is_dup_token(char **const tokens, uint32_t index)
 {
 	/* we should delete empty token */
 	if (tokens[index][0]  == '\0')
@@ -96,15 +110,16 @@ bool is_dup_token(char **const tokens, int index)
 /*
  * "::sbin/c:sbin/a:sbin/b::sbin/a"  ->   [sbin/a][sbin/b][sbin/c]
  */
-static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
+static bool format_rprocs(char **const tokens, int *ntoken, char *trustlist)
 {
-	int cur;
+	uint32_t cur;
 	int token_count;
+	int ret;
 
-	if ((tokens == NULL) || (whitelist == NULL) || (ntoken == NULL))
+	if ((tokens == NULL) || (trustlist == NULL) || (ntoken == NULL))
 		return false;
 
-	token_count = paths_explode(whitelist, tokens);
+	token_count = paths_explode(trustlist, tokens);
 
 	sort(tokens, (ulong)token_count, sizeof(char *), tokens_cmp, NULL);
 
@@ -114,8 +129,10 @@ static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 			int next = cur + 1;
 
 			if (next < token_count) {
-				memmove(tokens + cur, tokens + next,
-				(ulong)((token_count - next) * sizeof(char *)));
+				ret = move_tokens(tokens, cur, next,
+							token_count);
+				if (ret != EOK)
+					return false;
 			}
 			cur--;
 			token_count--;
@@ -126,44 +143,53 @@ static bool format_rprocs(char **const tokens, int *ntoken, char *whitelist)
 	return true;
 }
 
-bool init_rprocs_whitelist(const char *whitelist)
+bool init_rprocs_trustlist(const char *trustlist)
 {
-	if (whitelist == NULL)
+	int ret;
+	int trustlist_proc_buf_len;
+
+	if (trustlist == NULL)
 		return false;
 
-	if (strlen(whitelist) >= PAGE_SIZE) {
-		RSLogError(TAG, "whitelist over the PAGE_SIZE, %u",
-				(unsigned int)strlen(whitelist));
+	if (strlen(trustlist) >= PAGE_SIZE) {
+		RSLogError(TAG, "trustlist over the PAGE_SIZE, %u",
+				(unsigned int)strlen(trustlist));
 		return false;
 	}
 
-	if (g_whitelist_proc_buf == NULL) {
-		/* never freed, the maximum size of whitelist is PAGE_SIZE */
-		g_whitelist_proc_buf = (char *)__get_free_page(GFP_KERNEL);
+	if (g_trustlist_proc_buf == NULL) {
+		/* never freed, the maximum size of trustlist is PAGE_SIZE */
+		g_trustlist_proc_buf = (char *)(uintptr_t)__get_free_page(GFP_KERNEL);
+		trustlist_proc_buf_len = PAGE_SIZE;
 
-		if (g_whitelist_proc_buf != NULL) {
-			strncpy(g_whitelist_proc_buf, whitelist, PAGE_SIZE);
+		if (g_trustlist_proc_buf != NULL) {
+			ret = strncpy_s(g_trustlist_proc_buf,
+					trustlist_proc_buf_len,
+					trustlist, PAGE_SIZE);
+			if (ret != EOK) {
+				RSLogError(TAG, "strncpy_s fail\n");
+				return false;
+			}
 		} else {
 			return false;
 		}
 	}
-	return format_rprocs(g_whitelist_proc, &g_whitelist_count,
-			g_whitelist_proc_buf);
+	return format_rprocs(g_trustlist_proc, &g_trustlist_count,
+			g_trustlist_proc_buf);
 }
 
 bool find_proc_in_init_list(const char *proc_name)
 {
 	/* use dichotomization */
 	int begin = 0;
-	int end = g_whitelist_count - 1;
+	int end = g_trustlist_count - 1;
 
 	if (proc_name == NULL)
 		return false;
 
 	while (begin <= end) {
 		int pos = (begin + end) / 2;
-		int ret = strcmp(proc_name, g_whitelist_proc[pos]);
-
+		int ret = strcmp(proc_name, g_trustlist_proc[pos]);
 		if (ret == 0) {
 			return true;
 		} else if (ret < 0) {
@@ -180,12 +206,13 @@ bool find_proc_in_init_list(const char *proc_name)
 /*
  * "::sbin/c:sbin/a:sbin/b::sbin/a"  ->   "sbin/a:sbin/b:sbin/c"
  */
-void _rprocs_strip_whitelist(char **const exec_path, char **final_tokens,
+void _rprocs_strip_trustlist(char **const exec_path, char **final_tokens,
 					char *rprocs, ssize_t rprocs_len)
 {
 	int ntoken = 0;
 	int final_ntoken = 0;
 	int i;
+	int ret;
 	char *tmp = NULL;
 
 	if ((exec_path == NULL) || (final_tokens == NULL) || (rprocs == NULL) ||
@@ -196,15 +223,21 @@ void _rprocs_strip_whitelist(char **const exec_path, char **final_tokens,
 
 	tmp = vmalloc((ulong)rprocs_len);
 	if (tmp == NULL) {
-		RSLogError(TAG, "rprocs_strip_whitelist failed, out of memory");
+		RSLogError(TAG, "rprocs_strip_trustlist failed, out of memory");
 		return;
 	}
-	memcpy(tmp, rprocs, rprocs_len);
+
+	ret = memcpy_s(tmp, rprocs_len, rprocs, rprocs_len);
+	if (ret != EOK) {
+		RSLogError(TAG, "memcpy_s fail\n");
+		vfree(tmp);
+		return;
+	}
 
 	if (!format_rprocs(exec_path, &ntoken, tmp))
 		RSLogError(TAG, "strip white list failed, format_rprocs error");
 
-	/* strip whitelist */
+	/* strip trustlist */
 	for (i = 0; i < ntoken; i++) {
 		if (!find_proc_in_init_list(exec_path[i])) {
 			final_tokens[final_ntoken++] = exec_path[i];
@@ -218,13 +251,13 @@ void _rprocs_strip_whitelist(char **const exec_path, char **final_tokens,
 }
 
 /*
- * remove tokens that are in rprocs_whitelist, also sort and remove duplicates
+ * remove tokens that are in rprocs_trustlist, also sort and remove duplicates
  * Example:
  * input: "a:d:a:c:d:b"
- * rprocs_whitelist: "a:c"
+ * rprocs_trustlist: "a:c"
  * output: "b:d"
  */
-void rprocs_strip_whitelist(char *rprocs, ssize_t rprocs_len)
+void rprocs_strip_trustlist(char *rprocs, ssize_t rprocs_len)
 {
 	char **tokens = NULL;
 	char **final_tokens = NULL;
@@ -243,7 +276,7 @@ void rprocs_strip_whitelist(char *rprocs, ssize_t rprocs_len)
 		return;
 	}
 
-	_rprocs_strip_whitelist(tokens, final_tokens, rprocs, rprocs_len);
+	_rprocs_strip_trustlist(tokens, final_tokens, rprocs, rprocs_len);
 
 	kfree(tokens);
 	kfree(final_tokens);
@@ -288,6 +321,7 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 	char *pathname = NULL;
 	char *blank_spaces = NULL;
 	size_t len;
+	int ret;
 
 	if ((mm == NULL) || (out == NULL) || (dbuf == NULL)) {
 		RSLogError(TAG, "input parameter invalid");
@@ -296,7 +330,6 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 	if (&mm->mmap_sem == NULL)
 		return -EINVAL;
 	exe_file = my_get_mm_exe_file(mm);
-
 	if (exe_file == NULL) {
 		RSLogError(TAG, "get mm exe file %d failed", pid);
 		return 0;
@@ -319,13 +352,17 @@ static int get_task_exe(struct mm_struct *mm, pid_t pid, char *out,
 		return 0;
 	}
 
-	if (outlen < len) {
+	if (outlen < (int)len) {
 		RSLogWarning(TAG, "get task exe path too long \"%s\" > %d",
 			pathname, outlen);
 		return -1;
 	}
 
-	memcpy(out, pathname, len);
+	ret = memcpy_s(out, len, pathname, len);
+	if (ret != EOK) {
+		RSLogError(TAG, "memcpy_s fail\n");
+		return -1;
+	}
 
 	return len;
 }
@@ -334,14 +371,14 @@ int get_root_procs(char *out, size_t outlen)
 {
 	char *tmp = NULL;
 	struct task_struct *task = NULL;
-	int pos = 0;
+	size_t pos = 0;
 
 	if (out == NULL || outlen <= 0) {
 		RSLogError(TAG, "input parameter invalid");
 		return -EINVAL;
 	}
 
-	tmp = (char *)__get_free_page(GFP_KERNEL);
+	tmp = (char *)(uintptr_t)__get_free_page(GFP_KERNEL);
 	if (tmp == NULL) {
 		RSLogError(TAG, "get free page failed");
 		return -EINVAL;
@@ -350,7 +387,7 @@ int get_root_procs(char *out, size_t outlen)
 	read_lock(&tasklist_lock);
 	for_each_process(task) { /* lint -save -e550 */
 		int len;
-		struct task_struct *t;
+		struct task_struct *t = NULL;
 
 		/*
 		 * last char must be '\0',

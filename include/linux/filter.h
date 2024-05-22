@@ -18,7 +18,9 @@
 #include <linux/capability.h>
 #include <linux/cryptohash.h>
 #include <linux/set_memory.h>
-
+#ifdef CONFIG_HKIP_PRMEM
+#include <linux/hisi/prmem.h>
+#endif
 #include <net/sch_generic.h>
 
 #include <uapi/linux/filter.h>
@@ -53,7 +55,8 @@ struct bpf_prog_aux;
  * constants. See JIT pre-step in bpf_jit_blind_constants().
  */
 #define BPF_REG_AX		MAX_BPF_REG
-#define MAX_BPF_JIT_REG		(MAX_BPF_REG + 1)
+#define MAX_BPF_EXT_REG		(MAX_BPF_REG + 1)
+#define MAX_BPF_JIT_REG		MAX_BPF_EXT_REG
 
 /* unused opcode to mark special call to bpf_tail_call() helper */
 #define BPF_TAIL_CALL	0xf0
@@ -447,7 +450,12 @@ struct sock_fprog_kern {
 	struct sock_filter	*filter;
 };
 
+#define BPF_BINARY_HEADER_MAGIC	0x05de0e82
+
 struct bpf_binary_header {
+#ifdef CONFIG_CFI_CLANG
+	u32 magic;
+#endif
 	unsigned int pages;
 	u8 image[];
 };
@@ -480,7 +488,62 @@ struct sk_filter {
 	struct bpf_prog	*prog;
 };
 
-#define BPF_PROG_RUN(filter, ctx)  (*filter->bpf_func)(ctx, filter->insnsi)
+#if IS_ENABLED(CONFIG_BPF_JIT) && IS_ENABLED(CONFIG_CFI_CLANG)
+/*
+ * With JIT, the kernel makes an indirect call to dynamically generated
+ * code. Use bpf_call_func to perform additional validation of the call
+ * target to narrow down attack surface. Architectures implementing BPF
+ * JIT can override arch_bpf_jit_check_func for arch-specific checking.
+ */
+extern bool arch_bpf_jit_check_func(const struct bpf_prog *prog);
+
+static inline unsigned int __bpf_call_func(const struct bpf_prog *prog,
+					   const void *ctx)
+{
+	/* Call interpreter with CFI checking. */
+	return prog->bpf_func(ctx, prog->insnsi);
+}
+
+static inline struct bpf_binary_header *
+bpf_jit_binary_hdr(const struct bpf_prog *fp);
+
+static inline unsigned int __nocfi bpf_call_func(const struct bpf_prog *prog,
+						 const void *ctx)
+{
+	const struct bpf_binary_header *hdr = bpf_jit_binary_hdr(prog);
+
+	if (!IS_ENABLED(CONFIG_BPF_JIT_ALWAYS_ON) && !prog->jited)
+		return __bpf_call_func(prog, ctx);
+
+	/*
+	 * We are about to call dynamically generated code. Check that the
+	 * page has bpf_binary_header with a valid magic to limit possible
+	 * call targets.
+	 */
+	BUG_ON(hdr->magic != BPF_BINARY_HEADER_MAGIC ||
+		!arch_bpf_jit_check_func(prog));
+
+	/* Call jited function without CFI checking. */
+	return prog->bpf_func(ctx, prog->insnsi);
+}
+
+static inline void bpf_jit_set_header_magic(struct bpf_binary_header *hdr)
+{
+	hdr->magic = BPF_BINARY_HEADER_MAGIC;
+}
+#else
+static inline unsigned int bpf_call_func(const struct bpf_prog *prog,
+					 const void *ctx)
+{
+	return prog->bpf_func(ctx, prog->insnsi);
+}
+
+static inline void bpf_jit_set_header_magic(struct bpf_binary_header *hdr)
+{
+}
+#endif
+
+#define BPF_PROG_RUN(filter, ctx)  bpf_call_func(filter, ctx)
 
 #define BPF_SKB_CB_LEN QDISC_CB_PRIV_LEN
 
@@ -613,13 +676,19 @@ bpf_ctx_narrow_access_ok(u32 off, u32 size, const u32 size_default)
 static inline void bpf_prog_lock_ro(struct bpf_prog *fp)
 {
 	fp->locked = 1;
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	prmem_protect_addr(fp);
+#else
 	WARN_ON_ONCE(set_memory_ro((unsigned long)fp, fp->pages));
+#endif
 }
 
 static inline void bpf_prog_unlock_ro(struct bpf_prog *fp)
 {
 	if (fp->locked) {
+#ifndef CONFIG_HKIP_PROTECT_BPF
 		WARN_ON_ONCE(set_memory_rw((unsigned long)fp, fp->pages));
+#endif
 		/* In case set_memory_rw() fails, we want to be the first
 		 * to crash here instead of some random place later on.
 		 */
@@ -629,12 +698,18 @@ static inline void bpf_prog_unlock_ro(struct bpf_prog *fp)
 
 static inline void bpf_jit_binary_lock_ro(struct bpf_binary_header *hdr)
 {
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	prmem_protect_addr(hdr);
+#else
 	WARN_ON_ONCE(set_memory_ro((unsigned long)hdr, hdr->pages));
+#endif
 }
 
 static inline void bpf_jit_binary_unlock_ro(struct bpf_binary_header *hdr)
 {
+#ifndef CONFIG_HKIP_PROTECT_BPF
 	WARN_ON_ONCE(set_memory_rw((unsigned long)hdr, hdr->pages));
+#endif
 }
 #else
 static inline void bpf_prog_lock_ro(struct bpf_prog *fp)
@@ -733,6 +808,7 @@ struct sock *do_sk_redirect_map(struct sk_buff *skb);
 extern int bpf_jit_enable;
 extern int bpf_jit_harden;
 extern int bpf_jit_kallsyms;
+extern long bpf_jit_limit;
 
 typedef void (*bpf_jit_fill_hole_t)(void *area, unsigned int size);
 

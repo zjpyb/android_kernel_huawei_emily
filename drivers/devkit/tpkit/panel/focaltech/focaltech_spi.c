@@ -37,7 +37,19 @@
 
 #define WRITE_CMD					0x00//0x60
 #define READ_CMD					0x80//0xE0
-
+#define READ_CMD_8756 (0x80 | DATA_CHECK_EN)
+#define SPI_RETRY_NUMBER 3
+#define CS_HIGH_DELAY_8756 150
+#define DATA_CHECK_EN 0x20
+#define SPI_DUMMY_BYTE 3
+#define SPI_HEADER_LENGTH_8756 6
+#define SPI_TRANSFER_MAX_LEN 1024
+#define CHECK_BUF_MIN_SIZE 2
+#define CHECK_BIT_SIZE 8
+#define LOW_BIT_CHECK 0x01
+#define PER_BIT_CHECK 0x01
+#define RDATA_CHECK_CODE 0x8408
+#define SPI_BUF_LENGTH_8756 2048
 #define SPI_STATUS_MASK				0x81
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
 /*****************************************************************************
@@ -57,6 +69,8 @@ extern  struct ts_kit_device_data *g_focal_dev_data;
 * Static function prototypes
 *****************************************************************************/
 static u8 spibuf[SPI_BUF_LENGTH] = {0};
+static u8 *bus_tx_buf;
+static u8 *bus_rx_buf;
 static struct special_cmd special_cmd_list[] = {
 	{0x55, 1},
 	{0x90, 1},
@@ -527,4 +541,241 @@ int fts_read(u8 *writebuf, u32 writelen, u8 *readbuf, u32 readlen)
 	}
 
 	return ret;
+}
+
+static int fts_spi_transfer(u8 *tx_buf, u8 *rx_buf, u32 len)
+{
+	int ret;
+	struct spi_device *spi = g_focal_dev_data->ts_platform_data->spi;
+	struct spi_message msg;
+	struct spi_transfer xfer[2];
+	u32 packet_length;
+	u32 packet_remainder = 0;
+
+	if (!spi || !tx_buf || !rx_buf || !len) {
+		TS_LOG_ERR("spi or tx_buf-rx_buf-len is invalid\n");
+		return -EINVAL;
+	}
+
+	memset(&xfer[0], 0, sizeof(struct spi_transfer));
+	memset(&xfer[1], 0, sizeof(struct spi_transfer));
+
+	spi_message_init(&msg);
+	if (len > SPI_TRANSFER_MAX_LEN)
+		packet_remainder = len % SPI_TRANSFER_MAX_LEN;
+	packet_length = len - packet_remainder;
+	xfer[0].tx_buf = &tx_buf[0];
+	xfer[0].rx_buf = &rx_buf[0];
+	xfer[0].len = packet_length;
+	spi_message_add_tail(&xfer[0], &msg);
+
+	if (packet_remainder) {
+		xfer[1].tx_buf = &tx_buf[packet_length];
+		xfer[1].rx_buf = &rx_buf[packet_length];
+		xfer[1].len = packet_remainder;
+		spi_message_add_tail(&xfer[1], &msg);
+	}
+	mutex_lock(&g_focal_pdata->spilock);
+	ret = spi_sync(spi, &msg);
+	mutex_unlock(&g_focal_pdata->spilock);
+	if (ret) {
+		TS_LOG_ERR("spi_sync fail,ret:%d", ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int rdata_check_8756(u8 *rdata, u32 rlen)
+{
+	u16 i;
+	u16 j;
+	u16 value_read;
+	u16 value_calc = 0xFFFF;
+
+	if (rdata == NULL) {
+		TS_LOG_ERR("rdata_check: rdata is NULL\n");
+		return -EIO;
+	}
+	if (rlen < CHECK_BUF_MIN_SIZE) {
+		TS_LOG_ERR("rdata_check: rdata_check buf less than 2: %d\n",
+			rlen);
+		return -EIO;
+	}
+	for (i = 0; i < (rlen - CHECK_BUF_MIN_SIZE); i++) {
+		value_calc ^= rdata[i];
+		for (j = 0; j < CHECK_BIT_SIZE; j++) {
+			if (value_calc & LOW_BIT_CHECK)
+				value_calc = (value_calc >> PER_BIT_CHECK) ^
+					RDATA_CHECK_CODE;
+			else
+				value_calc = (value_calc >> PER_BIT_CHECK);
+		}
+	}
+	/* rlen - 1 is to get the last element of rdata array */
+	value_read = (u16)(rdata[rlen - 1] << CHECK_BIT_SIZE) +
+		rdata[rlen - CHECK_BUF_MIN_SIZE];
+	if (value_calc != value_read) {
+		TS_LOG_ERR("rdata_check: ecc fail:cal %x != buf %x\n",
+			value_calc, value_read);
+		return -EIO;
+	}
+	return 0;
+}
+
+int fts_write_8756(u8 *writebuf, u32 writelen)
+{
+	int ret;
+	int i;
+	u8 *txbuf = NULL;
+	u8 *rxbuf = NULL;
+	u32 txlen = 0;
+	u32 txlen_need = writelen + SPI_HEADER_LENGTH_8756 + SPI_DUMMY_BYTE;
+	u32 datalen = writelen - 1;
+
+	if (!writebuf || !writelen) {
+		TS_LOG_ERR("writebuf or len is invalid\n");
+		return -EINVAL;
+	}
+	if (txlen_need > SPI_BUF_LENGTH_8756) {
+		txbuf = kzalloc(txlen_need, GFP_KERNEL);
+		rxbuf = kzalloc(txlen_need, GFP_KERNEL);
+		if (!txbuf || !rxbuf) {
+			TS_LOG_ERR("txbuf or rxbuf malloc fail\n");
+			ret = -ENOMEM;
+			goto err_write;
+		}
+	} else {
+		txbuf = bus_tx_buf;
+		rxbuf = bus_rx_buf;
+		memset(txbuf, 0x0, SPI_BUF_LENGTH_8756);
+		memset(rxbuf, 0x0, SPI_BUF_LENGTH_8756);
+	}
+
+	txbuf[txlen++] = writebuf[0];
+	txbuf[txlen++] = WRITE_CMD;
+	txbuf[txlen++] = (datalen >> 8) & 0xFF;
+	txbuf[txlen++] = datalen & 0xFF;
+	if (datalen > 0) {
+		txlen = txlen + SPI_DUMMY_BYTE;
+		memcpy(&txbuf[txlen], &writebuf[1], datalen);
+		txlen = txlen + datalen;
+	}
+
+	for (i = 0; i < SPI_RETRY_NUMBER; i++) {
+		ret = fts_spi_transfer(txbuf, rxbuf, txlen);
+		if ((ret == 0) && ((rxbuf[3] & 0xA0) == 0)) {
+			break;
+		} else {
+			TS_LOG_ERR("data write status=%x,retry=%d,ret=%d\n",
+				rxbuf[3], i, ret);
+			ret = -EIO;
+			udelay(CS_HIGH_DELAY_8756);
+		}
+	}
+err_write:
+	if (txlen_need > SPI_BUF_LENGTH_8756) {
+		kfree(txbuf);
+		txbuf = NULL;
+		kfree(rxbuf);
+		rxbuf = NULL;
+	}
+	udelay(CS_HIGH_DELAY);
+	return ret;
+}
+
+int fts_read_8756(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
+{
+	int ret = 0;
+	int i;
+	u8 *txbuf = NULL;
+	u8 *rxbuf = NULL;
+	u32 txlen = 0;
+	u32 txlen_need = datalen + SPI_HEADER_LENGTH_8756 + SPI_DUMMY_BYTE;
+	u32 dp = 0;
+
+	if (!cmd || !cmdlen || !data || !datalen) {
+		TS_LOG_ERR("cmd/cmdlen/data/datalen is invalid\n");
+		return -EINVAL;
+	}
+	if (txlen_need > SPI_BUF_LENGTH_8756) {
+		txbuf = kzalloc(txlen_need, GFP_KERNEL);
+		rxbuf = kzalloc(txlen_need, GFP_KERNEL);
+		if (!txbuf || !rxbuf) {
+			TS_LOG_ERR("txbuf or rxbuf malloc fail\n");
+			ret = -ENOMEM;
+			goto err_read;
+		}
+	} else {
+		txbuf = bus_tx_buf;
+		rxbuf = bus_rx_buf;
+		memset(txbuf, 0x0, SPI_BUF_LENGTH_8756);
+		memset(rxbuf, 0x0, SPI_BUF_LENGTH_8756);
+	}
+
+	txbuf[txlen++] = cmd[0];
+	txbuf[txlen++] = READ_CMD_8756;
+	txbuf[txlen++] = (datalen >> 8) & 0xFF;
+	txbuf[txlen++] = datalen & 0xFF;
+	dp = txlen + SPI_DUMMY_BYTE;
+	txlen = dp + datalen;
+	txlen = txlen + 2;
+
+	for (i = 0; i < SPI_RETRY_NUMBER; i++) {
+		ret = fts_spi_transfer(txbuf, rxbuf, txlen);
+		if ((ret == 0) && ((rxbuf[3] & 0xA0) == 0)) {
+			memcpy(data, &rxbuf[dp], datalen);
+			ret = rdata_check_8756(&rxbuf[dp], txlen - dp);
+			if (ret < 0) {
+				TS_LOG_ERR("addr:%x crc abnormal,retry:%d\n",
+					cmd[0], i);
+				udelay(CS_HIGH_DELAY_8756);
+				continue;
+			}
+			break;
+		} else {
+			TS_LOG_ERR("data read addr:%x status:%x,retry:%d,ret:%d\n",
+				cmd[0], rxbuf[3], i, ret);
+			ret = -EIO;
+			udelay(CS_HIGH_DELAY);
+		}
+	}
+	if (ret < 0)
+		TS_LOG_ERR("data read addr:%x status:%s,retry:%d,ret:%d\n",
+			cmd[0], i >= SPI_RETRY_NUMBER ? "err":"fail", i, ret);
+err_read:
+	if (txlen_need > SPI_BUF_LENGTH_8756) {
+		kfree(txbuf);
+		txbuf = NULL;
+		kfree(rxbuf);
+		rxbuf = NULL;
+	}
+	udelay(CS_HIGH_DELAY);
+	return ret;
+}
+
+int fts_bus_init(void)
+{
+	bus_tx_buf = kzalloc(SPI_BUF_LENGTH_8756, GFP_KERNEL);
+	if (bus_tx_buf == NULL) {
+		TS_LOG_ERR("failed to allocate memory for bus_tx_buf");
+		return -ENOMEM;
+	}
+
+	bus_rx_buf = kzalloc(SPI_BUF_LENGTH_8756, GFP_KERNEL);
+	if (bus_rx_buf == NULL) {
+		TS_LOG_ERR("failed to allocate memory for bus_rx_buf");
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+void fts_bus_exit(void)
+{
+
+	kfree(bus_tx_buf);
+	bus_tx_buf = NULL;
+
+	kfree(bus_rx_buf);
+	bus_rx_buf = NULL;
 }

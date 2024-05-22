@@ -62,7 +62,7 @@ static int stmvl53l1_ipp_do_wrapper(struct stmvl53l1_data *data,
 		rc = IPP_ERR_CODE;
 		goto done;
 	}
-	vl53l1_dbgmsg("ipp ok \n");
+	vl53l1_dbgmsg("ipp ok  \n");
 	/* check what we got back if valid answer error etc */
 	if (pout->status) {
 		vl53l1_errmsg("ipp error status %d from user", pout->status);
@@ -115,20 +115,20 @@ done:
  * @return  "Other error code"    See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_ipp_hist_process_data(
-	VL53L1_DEV dev,
-	VL53L1_dmax_calibration_data_t    *pdmax_cal,
-	VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
-	VL53L1_hist_post_process_config_t *ppost_cfg,
-	VL53L1_histogram_bin_data_t       *pbins,
-	VL53L1_xtalk_histogram_data_t     *pxtalk,
-	VL53L1_range_results_t            *presults)
+	VL53L1_DEV                               dev,
+	struct VL53L1_dmax_calibration_data_t    *pdmax_cal,
+	struct VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
+	struct VL53L1_hist_post_process_config_t *ppost_cfg,
+	struct VL53L1_histogram_bin_data_t       *pbins,
+	struct VL53L1_xtalk_histogram_data_t     *pxtalk,
+	struct VL53L1_range_results_t            *presults)
 {
 	struct stmvl53l1_data *data = (struct stmvl53l1_data *)
 		container_of(dev, struct stmvl53l1_data, stdev);
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_range_results_t *presults_ipp = NULL;
+	struct VL53L1_range_results_t *presults_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 
@@ -180,11 +180,11 @@ done:
  * @return  "Other error code"    See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_ipp_hist_ambient_dmax(
-	VL53L1_DEV                         dev,
-	uint16_t                           target_reflectance,
-	VL53L1_dmax_calibration_data_t    *pdmax_cal,
-	VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
-	VL53L1_histogram_bin_data_t       *pbins,
+	VL53L1_DEV                               dev,
+	uint16_t                                 target_reflectance,
+	struct VL53L1_dmax_calibration_data_t    *pdmax_cal,
+	struct VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
+	struct VL53L1_histogram_bin_data_t       *pbins,
 	int16_t                           *pambient_dmax_mm)
 {
 	struct stmvl53l1_data *data = (struct stmvl53l1_data *)
@@ -240,18 +240,18 @@ done:
  * @return  "Other error code"    See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_ipp_xtalk_calibration_process_data(
-	VL53L1_DEV                          dev,
-	VL53L1_xtalk_range_results_t       *pxtalk_ranges,
-	VL53L1_xtalk_histogram_data_t      *pxtalk_shape,
-	VL53L1_xtalk_calibration_results_t *pxtalk_cal)
+	VL53L1_DEV                                dev,
+	struct VL53L1_xtalk_range_results_t       *pxtalk_ranges,
+	struct VL53L1_xtalk_histogram_data_t      *pxtalk_shape,
+	struct VL53L1_xtalk_calibration_results_t *pxtalk_cal)
 {
 	struct stmvl53l1_data *data = (struct stmvl53l1_data *)
 		container_of(dev, struct stmvl53l1_data, stdev);
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_xtalk_histogram_data_t *pxtalk_shape_ipp = NULL;
-	VL53L1_xtalk_calibration_results_t *pxtalk_cal_ipp = NULL;
+	struct VL53L1_xtalk_histogram_data_t *pxtalk_shape_ipp = NULL;
+	struct VL53L1_xtalk_calibration_results_t *pxtalk_cal_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 
@@ -301,18 +301,18 @@ done:
  */
 
 VL53L1_Error VL53L1_ipp_generate_dual_reflectance_xtalk_samples(
-	VL53L1_DEV                     dev,
-	VL53L1_xtalk_range_results_t  *pxtalk_results,
-	uint16_t                       expected_target_distance_mm,
-	uint8_t                        higher_reflectance,
-	VL53L1_histogram_bin_data_t    *pxtalk_avg_samples)
+	VL53L1_DEV                           dev,
+	struct VL53L1_xtalk_range_results_t  *pxtalk_results,
+	uint16_t                             expected_target_distance_mm,
+	uint8_t                              higher_reflectance,
+	struct VL53L1_histogram_bin_data_t   *pxtalk_avg_samples)
 {
 	struct stmvl53l1_data *data = (struct stmvl53l1_data *)
 		container_of(dev, struct stmvl53l1_data, stdev);
 	struct ipp_work_t *pout = &data->ipp.work_out;
 	struct ipp_work_t *pin = &data->ipp.work;
 	int rc;
-	VL53L1_histogram_bin_data_t *pxtalk_avg_samples_ipp = NULL;
+	struct VL53L1_histogram_bin_data_t *pxtalk_avg_samples_ipp = NULL;
 
 	IPP_SERIALIZE_VAR;
 

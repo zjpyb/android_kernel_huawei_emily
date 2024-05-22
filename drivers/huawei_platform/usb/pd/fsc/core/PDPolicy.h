@@ -1,29 +1,20 @@
-/*********************************************************************
-* FileName:        PDPolicy.h
-* Dependencies:    See INCLUDES section below
-* Processor:       PIC32
-* Compiler:        XC32
-* Company:         Fairchild Semiconductor
-*
-* Software License Agreement:
-*
-* The software supplied herewith by Fairchild Semiconductor (the “Company”)
-* is supplied to you, the Company's customer, for exclusive use with its
-* USB Type C / USB PD products.  The software is owned by the Company and/or
-* its supplier, and is protected under applicable copyright laws.
-* All rights are reserved. Any use in violation of the foregoing restrictions
-* may subject the user to criminal sanctions under applicable laws, as well
-* as to civil liability for the breach of the terms and conditions of this
-* license.
-*
-* THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
-* WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
-* TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-* PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
-* IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
-* CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
-*
-********************************************************************/
+/*
+ * PDPolicy.h
+ *
+ * PDPolicy driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #ifndef _PDPOLICY_H_
 #define	_PDPOLICY_H_
@@ -33,6 +24,8 @@
 /////////////////////////////////////////////////////////////////////////////
 #include "platform.h"
 #include "PD_Types.h"
+#include "TypeC_Types.h"
+#include "vdm/vdm.h"
 
 // EXTERNS
 extern FSC_BOOL                 USBPDTxFlag;                                    // Flag to indicate that we need to send a message (set by device policy manager)
@@ -63,6 +56,10 @@ extern doDataObject_t           USBPDContract;                                  
 
 #ifdef FSC_DEBUG
 extern FSC_BOOL                 SourceCapsUpdated;                              // Flag to indicate whether we have updated the source caps (for the GUI)
+/* Tracks seconds elapsed for log timestamp */
+extern volatile u16 Timer_S;
+/* Tracks tenths of milliseconds elapsed for log timestamp */
+extern volatile u16 Timer_tms;
 #endif // FSC_DEBUG
 
 extern PolicyState_t            PolicyState;                                    // State variable for Policy Engine
@@ -80,14 +77,37 @@ extern doDataObject_t           PolicyTxDataObj[7];                             
 extern TIMER                  NoResponseTimer;                                // Policy engine no response timer
 
 #ifdef FSC_HAVE_VDM
-extern TIMER                  VdmTimer;
-extern FSC_BOOL                 VdmTimerStarted;
-#endif // FSC_HAVE_VDM
+extern TIMER VdmTimer;
+extern FSC_BOOL VdmTimerStarted;
+extern VdmManager vdmm;
+extern FSC_BOOL mode_entered;
+extern SvidInfo core_svid_info;
+extern FSC_BOOL ExpectingVdmResponse;
+#endif /* FSC_HAVE_VDM */
+
+#ifdef FSC_HAVE_DP
+extern u32 DpModeEntered;
+extern s32 AutoModeEntryObjPos;
+#endif /* FSC_HAVE_DP */
+
+extern PolicyState_t originalPolicyState;
+/* Set to 1 to enable manual retries */
+extern u8 manualRetriesEnabled;
+/* Number of tries for manual retry */
+extern u8 nRetries;
+/* Tracks seconds elapsed for log timestamp */
+extern FSC_BOOL g_Idle;
+/* Puts state machine into Idle state */
+extern USBTypeCCurrent SourceCurrent;
+/* TypeC advertised current */
+extern u8 DetachThreshold;
+extern FSC_BOOL ProtocolCheckRxBeforeTx;
+/* Used to count the number of Unattach<->AttachWait loops */
+extern u8 loopCounter;
 
 /////////////////////////////////////////////////////////////////////////////
 //                            LOCAL PROTOTYPES
 /////////////////////////////////////////////////////////////////////////////
-void PolicyTick(void);
 void InitializePDPolicyVariables(void);
 void USBPDEnable(FSC_BOOL DeviceUpdate, SourceOrSink TypeCDFP);
 void USBPDDisable(FSC_BOOL DeviceUpdate);
@@ -205,4 +225,4 @@ void SetVbusTransitionTime(FSC_U32 time_ms);
 #endif	/* _PDPOLICY_H_ */
 void SetPDLimitVoltage(int vol);
 void SetPolicyState(PolicyState_t state);
-extern void pd_dpm_set_optional_max_power_status(bool status);
+extern void pd_dpm_set_max_power(int max_power);

@@ -306,9 +306,9 @@ int inet_csk_get_port(struct sock *sk, unsigned short snum)
 	spin_lock_bh(&head->lock);
 
 	if (inet_is_local_reserved_port(net, port) &&
-		!sysctl_local_reserved_ports_bind_ctrl &&
-		(!sysctl_local_reserved_ports_bind_pid ||
-		 sysctl_local_reserved_ports_bind_pid != current->tgid))
+	    !sysctl_local_reserved_ports_bind_ctrl &&
+	    (!sysctl_local_reserved_ports_bind_pid ||
+	     sysctl_local_reserved_ports_bind_pid != current->tgid))
 		goto fail_unlock;
 
 	inet_bind_bucket_for_each(tb, &head->chain)
@@ -552,7 +552,8 @@ struct dst_entry *inet_csk_route_req(const struct sock *sk,
 	struct ip_options_rcu *opt;
 	struct rtable *rt;
 
-	opt = ireq_opt_deref(ireq);
+	rcu_read_lock();
+	opt = rcu_dereference(ireq->ireq_opt);
 
 	flowi4_init_output(fl4, ireq->ir_iif, ireq->ir_mark,
 			   RT_CONN_FLAGS(sk), RT_SCOPE_UNIVERSE,
@@ -566,11 +567,13 @@ struct dst_entry *inet_csk_route_req(const struct sock *sk,
 		goto no_route;
 	if (opt && opt->opt.is_strictroute && rt->rt_uses_gateway)
 		goto route_err;
+	rcu_read_unlock();
 	return &rt->dst;
 
 route_err:
 	ip_rt_put(rt);
 no_route:
+	rcu_read_unlock();
 	__IP_INC_STATS(net, IPSTATS_MIB_OUTNOROUTES);
 	return NULL;
 }
@@ -952,7 +955,7 @@ struct sock *inet_csk_reqsk_queue_add(struct sock *sk,
 		req->sk = child;
 		req->dl_next = NULL;
 		if (queue->rskq_accept_head == NULL)
-			queue->rskq_accept_head = req;
+			WRITE_ONCE(queue->rskq_accept_head, req);
 		else
 			queue->rskq_accept_tail->dl_next = req;
 		queue->rskq_accept_tail = req;
@@ -1001,9 +1004,11 @@ void inet_csk_listen_stop(struct sock *sk)
 		struct sock *child = req->sk;
 #ifdef CONFIG_MPTCP
 		bool mutex_taken = false;
+		struct mptcp_cb *mpcb = tcp_sk(child)->mpcb;
 
 		if (is_meta_sk(child)) {
-			mutex_lock(&tcp_sk(child)->mpcb->mpcb_mutex);
+			WARN_ON(atomic_inc_not_zero(&mpcb->mpcb_refcnt) == 0);
+			mutex_lock(&mpcb->mpcb_mutex);
 			mutex_taken = true;
 		}
 #endif
@@ -1017,8 +1022,10 @@ void inet_csk_listen_stop(struct sock *sk)
 		bh_unlock_sock(child);
 		local_bh_enable();
 #ifdef CONFIG_MPTCP
-		if (mutex_taken)
-			mutex_unlock(&tcp_sk(child)->mpcb->mpcb_mutex);
+		if (mutex_taken) {
+			mutex_unlock(&mpcb->mpcb_mutex);
+			mptcp_mpcb_put(mpcb);
+		}
 #endif
 		sock_put(child);
 
@@ -1115,7 +1122,7 @@ struct dst_entry *inet_csk_update_pmtu(struct sock *sk, u32 mtu)
 		if (!dst)
 			goto out;
 	}
-	dst->ops->update_pmtu(dst, sk, NULL, mtu);
+	dst->ops->update_pmtu(dst, sk, NULL, mtu, true);
 
 	dst = __sk_dst_check(sk, 0);
 	if (!dst)

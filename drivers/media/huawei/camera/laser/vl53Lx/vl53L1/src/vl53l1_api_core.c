@@ -139,20 +139,20 @@
 extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 VL53L1_Error VL53L1_get_version(
-	VL53L1_DEV           Dev,
-	VL53L1_ll_version_t *pdata)
+	VL53L1_DEV                 Dev,
+	struct VL53L1_ll_version_t *pdata)
 {
 
 
 
 
 
-
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	VL53L1_init_version(Dev);
 
-	memcpy_s(pdata, sizeof(VL53L1_ll_version_t), &(pdev->version), sizeof(VL53L1_ll_version_t));
+	memcpy_s(pdata, sizeof(struct VL53L1_ll_version_t),
+		&(pdev->version), sizeof(struct VL53L1_ll_version_t));
 
 	return VL53L1_ERROR_NONE;
 }
@@ -199,24 +199,24 @@ VL53L1_Error VL53L1_data_init(
 
 
 
-	VL53L1_Error status       = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t    *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	VL53L1_Error status = VL53L1_ERROR_NONE;
+	struct VL53L1_LLDriverData_t    *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
 
 
 
-	VL53L1_zone_objects_t    *pobjects = NULL;
+	struct VL53L1_zone_objects_t    *pobjects = NULL;
 
 	uint8_t  i = 0;
 
 	LOG_FUNCTION_START("");
 
 	VL53L1_init_ll_driver_state(
-			Dev,
-			VL53L1_DEVICESTATE_UNKNOWN);
+		Dev,
+		VL53L1_DEVICESTATE_UNKNOWN);
 
 	pres->range_results.max_results    = VL53L1_MAX_RANGE_RESULTS;
 	pres->range_results.active_results = 0;
@@ -263,7 +263,7 @@ VL53L1_Error VL53L1_data_init(
 	pdev->dmax_mode  =
 		VL53L1_DEVICEDMAXMODE__FMT_CAL_DATA;
 
-	pdev->phasecal_config_timeout_us  =  1000;
+	pdev->phasecal_config_timeout_us  =  1000; /* init value */
 	pdev->mm_config_timeout_us        =  2000;
 	pdev->range_config_timeout_us     = 13000;
 	pdev->inter_measurement_period_ms =   100;
@@ -494,36 +494,36 @@ VL53L1_Error VL53L1_read_p2p_data(
 
 
 
-	VL53L1_Error status       = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	VL53L1_Error status = VL53L1_ERROR_NONE;
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
-	VL53L1_decoded_nvm_fmt_range_data_t fmt_range_result_data;
+	struct VL53L1_decoded_nvm_fmt_range_data_t fmt_range_result_data;
 
 	LOG_FUNCTION_START("");
 
 	if (status == VL53L1_ERROR_NONE)
 
 		status = VL53L1_get_static_nvm_managed(
-						Dev,
-						&(pdev->stat_nvm));
+			Dev,
+			&(pdev->stat_nvm));
 
 	if (status == VL53L1_ERROR_NONE)
 		status = VL53L1_get_customer_nvm_managed(
-						Dev,
-						&(pdev->customer));
+			Dev,
+			&(pdev->customer));
 
 	if (status == VL53L1_ERROR_NONE) {
 
 		status = VL53L1_get_nvm_copy_data(
-						Dev,
-						&(pdev->nvm_copy_data));
+			Dev,
+			&(pdev->nvm_copy_data));
 
 
 
 		if (status == VL53L1_ERROR_NONE)
 			VL53L1_copy_rtn_good_spads_to_buffer(
-					&(pdev->nvm_copy_data),
-					&(pdev->rtn_good_spads[0]));
+				&(pdev->nvm_copy_data),
+				&(pdev->rtn_good_spads[0]));
 	}
 
 
@@ -749,7 +749,7 @@ VL53L1_Error VL53L1_software_reset(
 
 VL53L1_Error VL53L1_set_part_to_part_data(
 	VL53L1_DEV                            Dev,
-	VL53L1_calibration_data_t            *pcal_data)
+	struct VL53L1_calibration_data_t      *pcal_data)
 {
 
 
@@ -757,7 +757,7 @@ VL53L1_Error VL53L1_set_part_to_part_data(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint32_t tempu32;
 
@@ -773,51 +773,51 @@ VL53L1_Error VL53L1_set_part_to_part_data(
 
 
 		memcpy_s(
-			&(pdev->customer),sizeof(VL53L1_customer_nvm_managed_t),
+			&(pdev->customer),sizeof(struct VL53L1_customer_nvm_managed_t),
 			&(pcal_data->customer),
-			sizeof(VL53L1_customer_nvm_managed_t));
+			sizeof(struct VL53L1_customer_nvm_managed_t));
 
 
 
 		memcpy_s(
-			&(pdev->add_off_cal_data),sizeof(VL53L1_additional_offset_cal_data_t),
+			&(pdev->add_off_cal_data),sizeof(struct VL53L1_additional_offset_cal_data_t),
 			&(pcal_data->add_off_cal_data),
-			sizeof(VL53L1_additional_offset_cal_data_t));
+			sizeof(struct VL53L1_additional_offset_cal_data_t));
 
 
 
 		memcpy_s(
-			&(pdev->fmt_dmax_cal),sizeof(VL53L1_dmax_calibration_data_t),
+			&(pdev->fmt_dmax_cal),sizeof(struct VL53L1_dmax_calibration_data_t),
 			&(pcal_data->fmt_dmax_cal),
-			sizeof(VL53L1_dmax_calibration_data_t));
+			sizeof(struct VL53L1_dmax_calibration_data_t));
 
 
 
 		memcpy_s(
-			&(pdev->cust_dmax_cal),sizeof(VL53L1_dmax_calibration_data_t),
+			&(pdev->cust_dmax_cal),sizeof(struct VL53L1_dmax_calibration_data_t),
 			&(pcal_data->cust_dmax_cal),
-			sizeof(VL53L1_dmax_calibration_data_t));
+			sizeof(struct VL53L1_dmax_calibration_data_t));
 
 
 
 		memcpy_s(
-			&(pdev->xtalk_shapes),sizeof(VL53L1_xtalk_histogram_data_t),
+			&(pdev->xtalk_shapes),sizeof(struct VL53L1_xtalk_histogram_data_t),
 			&(pcal_data->xtalkhisto),
-			sizeof(VL53L1_xtalk_histogram_data_t));
+			sizeof(struct VL53L1_xtalk_histogram_data_t));
 
 
 
 		memcpy_s(
-			&(pdev->gain_cal),sizeof(VL53L1_gain_calibration_data_t),
+			&(pdev->gain_cal),sizeof(struct VL53L1_gain_calibration_data_t),
 			&(pcal_data->gain_cal),
-			sizeof(VL53L1_gain_calibration_data_t));
+			sizeof(struct VL53L1_gain_calibration_data_t));
 
 
 
 		memcpy_s(
-			&(pdev->cal_peak_rate_map),sizeof(VL53L1_cal_peak_rate_map_t),
+			&(pdev->cal_peak_rate_map),sizeof(struct VL53L1_cal_peak_rate_map_t),
 			&(pcal_data->cal_peak_rate_map),
-			sizeof(VL53L1_cal_peak_rate_map_t));
+			sizeof(struct VL53L1_cal_peak_rate_map_t));
 
 
 
@@ -871,8 +871,8 @@ VL53L1_Error VL53L1_set_part_to_part_data(
 
 
 VL53L1_Error VL53L1_get_part_to_part_data(
-	VL53L1_DEV                      Dev,
-	VL53L1_calibration_data_t      *pcal_data)
+	VL53L1_DEV                        Dev,
+	struct VL53L1_calibration_data_t  *pcal_data)
 {
 
 
@@ -880,7 +880,7 @@ VL53L1_Error VL53L1_get_part_to_part_data(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -890,9 +890,9 @@ VL53L1_Error VL53L1_get_part_to_part_data(
 
 
 	memcpy_s(
-		&(pcal_data->customer),sizeof(VL53L1_customer_nvm_managed_t),
+		&(pcal_data->customer),sizeof(struct VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
-		sizeof(VL53L1_customer_nvm_managed_t));
+		sizeof(struct VL53L1_customer_nvm_managed_t));
 
 
 
@@ -916,49 +916,49 @@ VL53L1_Error VL53L1_get_part_to_part_data(
 	memcpy(
 		&(pcal_data->fmt_dmax_cal),
 		&(pdev->fmt_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t));
+		sizeof(struct VL53L1_dmax_calibration_data_t));
 
 
 
 	memcpy(
 		&(pcal_data->cust_dmax_cal),
 		&(pdev->cust_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t));
+		sizeof(struct VL53L1_dmax_calibration_data_t));
 
 
 
 	memcpy(
 		&(pcal_data->add_off_cal_data),
 		&(pdev->add_off_cal_data),
-		sizeof(VL53L1_additional_offset_cal_data_t));
+		sizeof(struct VL53L1_additional_offset_cal_data_t));
 
 
 
 	memcpy(
 		&(pcal_data->optical_centre),
 		&(pdev->optical_centre),
-		sizeof(VL53L1_optical_centre_t));
+		sizeof(struct VL53L1_optical_centre_t));
 
 
 
 	memcpy(
 		&(pcal_data->xtalkhisto),
 		&(pdev->xtalk_shapes),
-		sizeof(VL53L1_xtalk_histogram_data_t));
+		sizeof(struct VL53L1_xtalk_histogram_data_t));
 
 
 
 	memcpy(
 		&(pcal_data->gain_cal),
 		&(pdev->gain_cal),
-		sizeof(VL53L1_gain_calibration_data_t));
+		sizeof(struct VL53L1_gain_calibration_data_t));
 
 
 
 	memcpy(
 		&(pcal_data->cal_peak_rate_map),
 		&(pdev->cal_peak_rate_map),
-		sizeof(VL53L1_cal_peak_rate_map_t));
+		sizeof(struct VL53L1_cal_peak_rate_map_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -976,7 +976,7 @@ VL53L1_Error VL53L1_set_inter_measurement_period_ms(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1006,7 +1006,7 @@ VL53L1_Error VL53L1_get_inter_measurement_period_ms(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1038,8 +1038,8 @@ VL53L1_Error VL53L1_set_timeouts_us(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1069,10 +1069,10 @@ VL53L1_Error VL53L1_set_timeouts_us(
 
 
 VL53L1_Error VL53L1_get_timeouts_us(
-	VL53L1_DEV           Dev,
+	VL53L1_DEV          Dev,
 	uint32_t            *pphasecal_config_timeout_us,
 	uint32_t            *pmm_config_timeout_us,
-	uint32_t			*prange_config_timeout_us)
+	uint32_t            *prange_config_timeout_us)
 {
 
 
@@ -1081,8 +1081,8 @@ VL53L1_Error VL53L1_get_timeouts_us(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint32_t  macro_period_us = 0;
 	uint16_t  timeout_encoded = 0;
@@ -1157,7 +1157,7 @@ VL53L1_Error VL53L1_set_calibration_repeat_period(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	pdev->gen_cfg.cal_config__repeat_rate = cal_config__repeat_period;
@@ -1177,7 +1177,7 @@ VL53L1_Error VL53L1_get_calibration_repeat_period(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	*pcal_config__repeat_period = pdev->gen_cfg.cal_config__repeat_rate;
@@ -1199,7 +1199,7 @@ VL53L1_Error VL53L1_set_sequence_config_bit(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  bit_mask        = 0x01;
@@ -1239,7 +1239,7 @@ VL53L1_Error VL53L1_get_sequence_config_bit(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  bit_mask        = 0x01;
@@ -1275,14 +1275,14 @@ VL53L1_Error VL53L1_set_interrupt_polarity(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	pdev->stat_cfg.gpio_hv_mux__ctrl = \
-			(pdev->stat_cfg.gpio_hv_mux__ctrl & \
-			 VL53L1_DEVICEINTERRUPTPOLARITY_CLEAR_MASK) | \
-			(interrupt_polarity & \
-			 VL53L1_DEVICEINTERRUPTPOLARITY_BIT_MASK);
+		(pdev->stat_cfg.gpio_hv_mux__ctrl & \
+		VL53L1_DEVICEINTERRUPTPOLARITY_CLEAR_MASK) | \
+		(interrupt_polarity & \
+		VL53L1_DEVICEINTERRUPTPOLARITY_BIT_MASK);
 
 	return status;
 
@@ -1290,8 +1290,8 @@ VL53L1_Error VL53L1_set_interrupt_polarity(
 
 
 VL53L1_Error VL53L1_set_refspadchar_config_struct(
-	VL53L1_DEV                     Dev,
-	VL53L1_refspadchar_config_t   *pdata)
+	VL53L1_DEV                           Dev,
+	struct VL53L1_refspadchar_config_t   *pdata)
 {
 
 
@@ -1299,7 +1299,7 @@ VL53L1_Error VL53L1_set_refspadchar_config_struct(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
@@ -1320,8 +1320,8 @@ VL53L1_Error VL53L1_set_refspadchar_config_struct(
 }
 
 VL53L1_Error VL53L1_get_refspadchar_config_struct(
-	VL53L1_DEV                     Dev,
-	VL53L1_refspadchar_config_t   *pdata)
+	VL53L1_DEV                           Dev,
+	struct VL53L1_refspadchar_config_t   *pdata)
 {
 
 
@@ -1329,7 +1329,7 @@ VL53L1_Error VL53L1_get_refspadchar_config_struct(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
@@ -1361,7 +1361,7 @@ VL53L1_Error VL53L1_set_range_ignore_threshold(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	pdev->xtalk_cfg.crosstalk_range_ignore_threshold_rate_mcps =
@@ -1391,7 +1391,7 @@ VL53L1_Error VL53L1_get_range_ignore_threshold(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	*prange_ignore_thresh_mult =
@@ -1419,7 +1419,7 @@ VL53L1_Error VL53L1_get_interrupt_polarity(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
 	*pinterrupt_polarity = \
@@ -1432,8 +1432,8 @@ VL53L1_Error VL53L1_get_interrupt_polarity(
 
 
 VL53L1_Error VL53L1_set_user_zone(
-	VL53L1_DEV              Dev,
-	VL53L1_user_zone_t     *puser_zone)
+	VL53L1_DEV                 Dev,
+	struct VL53L1_user_zone_t  *puser_zone)
 {
 
 
@@ -1441,7 +1441,7 @@ VL53L1_Error VL53L1_set_user_zone(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1469,8 +1469,8 @@ VL53L1_Error VL53L1_set_user_zone(
 
 
 VL53L1_Error VL53L1_get_user_zone(
-	VL53L1_DEV              Dev,
-	VL53L1_user_zone_t     *puser_zone)
+	VL53L1_DEV                    Dev,
+	struct VL53L1_user_zone_t     *puser_zone)
 {
 
 
@@ -1478,16 +1478,16 @@ VL53L1_Error VL53L1_get_user_zone(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
 	VL53L1_decode_row_col(
-			pdev->dyn_cfg.roi_config__user_roi_centre_spad,
-			&(puser_zone->y_centre),
-			&(puser_zone->x_centre));
+		pdev->dyn_cfg.roi_config__user_roi_centre_spad,
+		&(puser_zone->y_centre),
+		&(puser_zone->x_centre));
 
 
 
@@ -1504,8 +1504,8 @@ VL53L1_Error VL53L1_get_user_zone(
 
 
 VL53L1_Error VL53L1_get_mode_mitigation_roi(
-	VL53L1_DEV              Dev,
-	VL53L1_user_zone_t     *pmm_roi)
+	VL53L1_DEV                  Dev,
+	struct VL53L1_user_zone_t   *pmm_roi)
 {
 
 
@@ -1513,7 +1513,7 @@ VL53L1_Error VL53L1_get_mode_mitigation_roi(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  x       = 0;
 	uint8_t  y       = 0;
@@ -1552,8 +1552,8 @@ VL53L1_Error VL53L1_get_mode_mitigation_roi(
 
 
 VL53L1_Error VL53L1_set_zone_config(
-	VL53L1_DEV                 Dev,
-	VL53L1_zone_config_t      *pzone_cfg)
+	VL53L1_DEV                   Dev,
+	struct VL53L1_zone_config_t  *pzone_cfg)
 {
 
 
@@ -1562,7 +1562,7 @@ VL53L1_Error VL53L1_set_zone_config(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1602,8 +1602,8 @@ VL53L1_Error VL53L1_set_zone_config(
 
 
 VL53L1_Error VL53L1_get_zone_config(
-	VL53L1_DEV                 Dev,
-	VL53L1_zone_config_t      *pzone_cfg)
+	VL53L1_DEV                    Dev,
+	struct VL53L1_zone_config_t   *pzone_cfg)
 {
 
 
@@ -1611,13 +1611,13 @@ VL53L1_Error VL53L1_get_zone_config(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
-	memcpy(pzone_cfg, &(pdev->zone_cfg), sizeof(VL53L1_zone_config_t));
+	memcpy(pzone_cfg, &(pdev->zone_cfg), sizeof(struct VL53L1_zone_config_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -1633,7 +1633,7 @@ VL53L1_Error VL53L1_get_preset_mode_timing_cfg(
 	uint32_t                    *prange_config_timeout_us)
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -1814,24 +1814,24 @@ VL53L1_Error VL53L1_set_preset_mode(
 
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
-	VL53L1_hist_post_process_config_t *phistpostprocess =
-			&(pdev->histpostprocess);
+	struct VL53L1_hist_post_process_config_t *phistpostprocess =
+		&(pdev->histpostprocess);
 
-	VL53L1_static_config_t        *pstatic       = &(pdev->stat_cfg);
-	VL53L1_histogram_config_t     *phistogram    = &(pdev->hist_cfg);
-	VL53L1_general_config_t       *pgeneral      = &(pdev->gen_cfg);
-	VL53L1_timing_config_t        *ptiming       = &(pdev->tim_cfg);
-	VL53L1_dynamic_config_t       *pdynamic      = &(pdev->dyn_cfg);
-	VL53L1_system_control_t       *psystem       = &(pdev->sys_ctrl);
-	VL53L1_zone_config_t          *pzone_cfg     = &(pdev->zone_cfg);
-	VL53L1_tuning_parm_storage_t  *ptuning_parms = &(pdev->tuning_parms);
-	VL53L1_low_power_auto_data_t  *plpadata      =
-					&(pdev->low_power_auto_data);
+	struct VL53L1_static_config_t        *pstatic       = &(pdev->stat_cfg);
+	struct VL53L1_histogram_config_t     *phistogram    = &(pdev->hist_cfg);
+	struct VL53L1_general_config_t       *pgeneral      = &(pdev->gen_cfg);
+	struct VL53L1_timing_config_t        *ptiming       = &(pdev->tim_cfg);
+	struct VL53L1_dynamic_config_t       *pdynamic      = &(pdev->dyn_cfg);
+	struct VL53L1_system_control_t       *psystem       = &(pdev->sys_ctrl);
+	struct VL53L1_zone_config_t          *pzone_cfg     = &(pdev->zone_cfg);
+	struct VL53L1_tuning_parm_storage_t  *ptuning_parms = &(pdev->tuning_parms);
+	struct VL53L1_low_power_auto_data_t  *plpadata      =
+		&(pdev->low_power_auto_data);
 
 	LOG_FUNCTION_START("");
 
@@ -2389,10 +2389,10 @@ VL53L1_Error VL53L1_set_zone_preset(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
-	VL53L1_general_config_t       *pgeneral      = &(pdev->gen_cfg);
-	VL53L1_zone_config_t          *pzone_cfg     = &(pdev->zone_cfg);
+	struct VL53L1_general_config_t *pgeneral  = &(pdev->gen_cfg);
+	struct VL53L1_zone_config_t    *pzone_cfg = &(pdev->zone_cfg);
 
 	LOG_FUNCTION_START("");
 
@@ -2571,7 +2571,7 @@ VL53L1_Error  VL53L1_enable_xtalk_compensation(
 	VL53L1_Error status = VL53L1_ERROR_NONE;
 	uint32_t tempu32;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2659,7 +2659,7 @@ void VL53L1_get_xtalk_compensation_enable(
 
 
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2684,7 +2684,7 @@ VL53L1_Error VL53L1_get_lite_xtalk_margin_kcps(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2708,7 +2708,7 @@ VL53L1_Error VL53L1_set_lite_xtalk_margin_kcps(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2732,7 +2732,7 @@ VL53L1_Error VL53L1_get_histogram_xtalk_margin_kcps(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2756,7 +2756,7 @@ VL53L1_Error VL53L1_set_histogram_xtalk_margin_kcps(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2778,7 +2778,7 @@ VL53L1_Error VL53L1_restore_xtalk_nvm_default(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2807,7 +2807,7 @@ VL53L1_Error  VL53L1_disable_xtalk_compensation(
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2867,7 +2867,7 @@ VL53L1_Error VL53L1_get_histogram_phase_consistency(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2892,7 +2892,7 @@ VL53L1_Error VL53L1_set_histogram_phase_consistency(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2917,7 +2917,7 @@ VL53L1_Error VL53L1_get_histogram_event_consistency(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2942,7 +2942,7 @@ VL53L1_Error VL53L1_set_histogram_event_consistency(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2969,7 +2969,7 @@ VL53L1_Error VL53L1_get_histogram_ambient_threshold_sigma(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -2996,7 +2996,7 @@ VL53L1_Error VL53L1_set_histogram_ambient_threshold_sigma(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3023,7 +3023,7 @@ VL53L1_Error VL53L1_get_lite_sigma_threshold(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3050,7 +3050,7 @@ VL53L1_Error VL53L1_set_lite_sigma_threshold(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3076,7 +3076,7 @@ VL53L1_Error VL53L1_get_lite_min_count_rate(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3103,7 +3103,7 @@ VL53L1_Error VL53L1_set_lite_min_count_rate(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3139,7 +3139,7 @@ VL53L1_Error VL53L1_get_xtalk_detect_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3180,7 +3180,7 @@ VL53L1_Error VL53L1_set_xtalk_detect_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3212,7 +3212,7 @@ VL53L1_Error VL53L1_get_target_order_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3237,7 +3237,7 @@ VL53L1_Error VL53L1_set_target_order_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3251,15 +3251,15 @@ VL53L1_Error VL53L1_set_target_order_mode(
 
 
 VL53L1_Error VL53L1_get_dmax_reflectance_values(
-	VL53L1_DEV                          Dev,
-	VL53L1_dmax_reflectance_array_t    *pdmax_reflectances)
+	VL53L1_DEV                               Dev,
+	struct VL53L1_dmax_reflectance_array_t   *pdmax_reflectances)
 {
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
 	uint8_t i = 0;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3282,15 +3282,15 @@ VL53L1_Error VL53L1_get_dmax_reflectance_values(
 }
 
 VL53L1_Error VL53L1_set_dmax_reflectance_values(
-	VL53L1_DEV                          Dev,
-	VL53L1_dmax_reflectance_array_t    *pdmax_reflectances)
+	VL53L1_DEV                              Dev,
+	struct VL53L1_dmax_reflectance_array_t  *pdmax_reflectances)
 {
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
 	uint8_t i = 0;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3325,7 +3325,7 @@ VL53L1_Error VL53L1_get_vhv_loopbound(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3356,7 +3356,7 @@ VL53L1_Error VL53L1_set_vhv_loopbound(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3397,7 +3397,7 @@ VL53L1_Error VL53L1_get_vhv_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3426,7 +3426,7 @@ VL53L1_Error VL53L1_set_vhv_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -3461,21 +3461,21 @@ VL53L1_Error VL53L1_init_and_start_range(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t  *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t  *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
 	uint8_t buffer[VL53L1_MAX_I2C_XFER_SIZE];
 
-	VL53L1_static_nvm_managed_t   *pstatic_nvm   = &(pdev->stat_nvm);
-	VL53L1_customer_nvm_managed_t *pcustomer_nvm = &(pdev->customer);
-	VL53L1_static_config_t        *pstatic       = &(pdev->stat_cfg);
-	VL53L1_general_config_t       *pgeneral      = &(pdev->gen_cfg);
-	VL53L1_timing_config_t        *ptiming       = &(pdev->tim_cfg);
-	VL53L1_dynamic_config_t       *pdynamic      = &(pdev->dyn_cfg);
-	VL53L1_system_control_t       *psystem       = &(pdev->sys_ctrl);
+	struct VL53L1_static_nvm_managed_t   *pstatic_nvm   = &(pdev->stat_nvm);
+	struct VL53L1_customer_nvm_managed_t *pcustomer_nvm = &(pdev->customer);
+	struct VL53L1_static_config_t        *pstatic       = &(pdev->stat_cfg);
+	struct VL53L1_general_config_t       *pgeneral      = &(pdev->gen_cfg);
+	struct VL53L1_timing_config_t        *ptiming       = &(pdev->tim_cfg);
+	struct VL53L1_dynamic_config_t       *pdynamic      = &(pdev->dyn_cfg);
+	struct VL53L1_system_control_t       *psystem       = &(pdev->sys_ctrl);
 
-	VL53L1_ll_driver_state_t  *pstate   = &(pdev->ll_state);
+	struct VL53L1_ll_driver_state_t  *pstate   = &(pdev->ll_state);
 
 	uint8_t  *pbuffer                   = &buffer[0];
 	uint16_t i                          = 0;
@@ -3782,10 +3782,10 @@ VL53L1_Error VL53L1_stop_range(
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
 
 
@@ -3839,13 +3839,13 @@ VL53L1_Error VL53L1_get_measurement_results(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t buffer[VL53L1_MAX_I2C_XFER_SIZE];
 
-	VL53L1_system_results_t   *psystem_results = &(pdev->sys_results);
-	VL53L1_core_results_t     *pcore_results   = &(pdev->core_results);
-	VL53L1_debug_results_t    *pdebug_results  = &(pdev->dbg_results);
+	struct VL53L1_system_results_t   *psystem_results = &(pdev->sys_results);
+	struct VL53L1_core_results_t     *pcore_results   = &(pdev->core_results);
+	struct VL53L1_debug_results_t    *pdebug_results  = &(pdev->dbg_results);
 
 	uint16_t i2c_index               = VL53L1_SYSTEM_RESULTS_I2C_INDEX;
 	uint16_t i2c_buffer_offset_bytes = 0;
@@ -3935,7 +3935,7 @@ VL53L1_Error VL53L1_get_measurement_results(
 VL53L1_Error VL53L1_get_device_results(
 	VL53L1_DEV                    Dev,
 	VL53L1_DeviceResultsLevel     device_results_level,
-	VL53L1_range_results_t       *prange_results)
+	struct VL53L1_range_results_t *prange_results)
 {
 
 
@@ -3950,19 +3950,19 @@ VL53L1_Error VL53L1_get_device_results(
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
-	VL53L1_range_results_t   *presults = &(pres->range_results);
-	VL53L1_zone_objects_t    *pobjects = &(pres->zone_results.VL53L1_PRM_00005[0]);
-	VL53L1_ll_driver_state_t *pstate   = &(pdev->ll_state);
-	VL53L1_zone_config_t     *pzone_cfg = &(pdev->zone_cfg);
-	VL53L1_zone_hist_info_t  *phist_info = &(pres->zone_hists.VL53L1_PRM_00005[0]);
+	struct VL53L1_range_results_t   *presults = &(pres->range_results);
+	struct VL53L1_zone_objects_t    *pobjects = &(pres->zone_results.VL53L1_PRM_00005[0]);
+	struct VL53L1_ll_driver_state_t *pstate   = &(pdev->ll_state);
+	struct VL53L1_zone_config_t     *pzone_cfg = &(pdev->zone_cfg);
+	struct VL53L1_zone_hist_info_t  *phist_info = &(pres->zone_hists.VL53L1_PRM_00005[0]);
 
-	VL53L1_dmax_calibration_data_t   dmax_cal;
-	VL53L1_dmax_calibration_data_t *pdmax_cal = &dmax_cal;
+	struct VL53L1_dmax_calibration_data_t   dmax_cal;
+	struct VL53L1_dmax_calibration_data_t *pdmax_cal = &dmax_cal;
 
 	uint8_t i;
 
@@ -4349,9 +4349,9 @@ VL53L1_Error VL53L1_get_device_results(
 
 
 	memcpy_s(
-		prange_results,sizeof(VL53L1_range_results_t),
+		prange_results,sizeof(struct VL53L1_range_results_t),
 		presults,
-		sizeof(VL53L1_range_results_t));
+		sizeof(struct VL53L1_range_results_t));
 
 
 
@@ -4419,8 +4419,8 @@ VL53L1_Error VL53L1_clear_interrupt_and_enable_next_range(
 
 
 VL53L1_Error VL53L1_get_histogram_bin_data(
-		VL53L1_DEV                   Dev,
-		VL53L1_histogram_bin_data_t *pdata)
+	VL53L1_DEV                         Dev,
+	struct VL53L1_histogram_bin_data_t *pdata)
 {
 
 
@@ -4428,18 +4428,18 @@ VL53L1_Error VL53L1_get_histogram_bin_data(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev =
-			VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
-			VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev =
+		VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres =
+		VL53L1DevStructGetLLResultsHandle(Dev);
 
-	VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg = NULL;
+	struct VL53L1_zone_private_dyn_cfg_t *pzone_dyn_cfg = NULL;
 
-	VL53L1_static_nvm_managed_t   *pstat_nvm = &(pdev->stat_nvm);
-	VL53L1_static_config_t        *pstat_cfg = &(pdev->stat_cfg);
-	VL53L1_general_config_t       *pgen_cfg  = &(pdev->gen_cfg);
-	VL53L1_timing_config_t        *ptim_cfg  = &(pdev->tim_cfg);
-	VL53L1_range_results_t        *presults  = &(pres->range_results);
+	struct VL53L1_static_nvm_managed_t   *pstat_nvm = &(pdev->stat_nvm);
+	struct VL53L1_static_config_t        *pstat_cfg = &(pdev->stat_cfg);
+	struct VL53L1_general_config_t       *pgen_cfg  = &(pdev->gen_cfg);
+	struct VL53L1_timing_config_t        *ptim_cfg  = &(pdev->tim_cfg);
+	struct VL53L1_range_results_t        *presults  = &(pres->range_results);
 
 	uint8_t    buffer[VL53L1_MAX_I2C_XFER_SIZE];
 	uint8_t   *pbuffer = &buffer[0];
@@ -4701,13 +4701,13 @@ VL53L1_Error VL53L1_get_histogram_bin_data(
 
 
 void VL53L1_copy_sys_and_core_results_to_range_results(
-	int32_t                           gain_factor,
-	VL53L1_system_results_t          *psys,
-	VL53L1_core_results_t            *pcore,
-	VL53L1_range_results_t           *presults)
+	int32_t                                 gain_factor,
+	struct VL53L1_system_results_t          *psys,
+	struct VL53L1_core_results_t            *pcore,
+	struct VL53L1_range_results_t           *presults)
 {
 	uint8_t  i = 0;
-	VL53L1_range_data_t *pdata = NULL;
+	struct VL53L1_range_data_t *pdata = NULL;
 	int32_t range_mm = 0;
 	uint32_t tmpu32 = 0;
 
@@ -4907,8 +4907,8 @@ void VL53L1_copy_sys_and_core_results_to_range_results(
 
 
 VL53L1_Error VL53L1_set_zone_dss_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_zone_private_dyn_cfg_t  *pzone_dyn_cfg)
+	VL53L1_DEV                            Dev,
+	struct VL53L1_zone_private_dyn_cfg_t  *pzone_dyn_cfg)
 {
 
 
@@ -4918,8 +4918,8 @@ VL53L1_Error VL53L1_set_zone_dss_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_ll_driver_state_t *pstate = &(pdev->ll_state);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_ll_driver_state_t *pstate = &(pdev->ll_state);
 
 	LOG_FUNCTION_START("");
 
@@ -4946,11 +4946,11 @@ VL53L1_Error VL53L1_calc_ambient_dmax(
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev =
+	struct VL53L1_LLDriverData_t *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
 
-	VL53L1_dmax_calibration_data_t   dmax_cal;
-	VL53L1_dmax_calibration_data_t *pdmax_cal = &dmax_cal;
+	struct VL53L1_dmax_calibration_data_t   dmax_cal;
+	struct VL53L1_dmax_calibration_data_t *pdmax_cal = &dmax_cal;
 
 	LOG_FUNCTION_START("");
 
@@ -4993,21 +4993,21 @@ VL53L1_Error VL53L1_calc_ambient_dmax(
 
 VL53L1_Error VL53L1_set_GPIO_interrupt_config(
 	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_Interrupt_Mode	intr_mode_distance,
-	VL53L1_GPIO_Interrupt_Mode	intr_mode_rate,
-	uint8_t				intr_new_measure_ready,
-	uint8_t				intr_no_target,
-	uint8_t				intr_combined_mode,
-	uint16_t			thresh_distance_high,
-	uint16_t			thresh_distance_low,
-	uint16_t			thresh_rate_high,
-	uint16_t			thresh_rate_low
+	VL53L1_GPIO_Interrupt_Mode      intr_mode_distance,
+	VL53L1_GPIO_Interrupt_Mode      intr_mode_rate,
+	uint8_t                         intr_new_measure_ready,
+	uint8_t                         intr_no_target,
+	uint8_t                         intr_combined_mode,
+	uint16_t                        thresh_distance_high,
+	uint16_t                        thresh_distance_low,
+	uint16_t                        thresh_rate_high,
+	uint16_t                        thresh_rate_low
 	)
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_GPIO_interrupt_config_t *pintconf = &(pdev->gpio_interrupt_config);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_GPIO_interrupt_config_t *pintconf = &(pdev->gpio_interrupt_config);
 
 	LOG_FUNCTION_START("");
 
@@ -5045,19 +5045,20 @@ VL53L1_Error VL53L1_set_GPIO_interrupt_config(
 
 
 VL53L1_Error VL53L1_set_GPIO_interrupt_config_struct(
-	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_interrupt_config_t	intconf)
+	VL53L1_DEV Dev,
+	struct VL53L1_GPIO_interrupt_config_t intconf)
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_GPIO_interrupt_config_t *pintconf = &(pdev->gpio_interrupt_config);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_GPIO_interrupt_config_t *pintconf = &(pdev->gpio_interrupt_config);
 
 	LOG_FUNCTION_START("");
 
 
 
-	memcpy_s(pintconf, sizeof(VL53L1_GPIO_interrupt_config_t), &(intconf), sizeof(VL53L1_GPIO_interrupt_config_t));
+	memcpy_s(pintconf, sizeof(struct VL53L1_GPIO_interrupt_config_t), &(intconf),
+		sizeof(struct VL53L1_GPIO_interrupt_config_t));
 
 
 
@@ -5080,12 +5081,12 @@ VL53L1_Error VL53L1_set_GPIO_interrupt_config_struct(
 
 
 VL53L1_Error VL53L1_get_GPIO_interrupt_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_interrupt_config_t	*pintconf)
+	VL53L1_DEV Dev,
+	struct VL53L1_GPIO_interrupt_config_t *pintconf)
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5118,8 +5119,9 @@ VL53L1_Error VL53L1_get_GPIO_interrupt_config(
 
 
 
-		memcpy_s(pintconf, sizeof(VL53L1_GPIO_interrupt_config_t), &(pdev->gpio_interrupt_config),
-				sizeof(VL53L1_GPIO_interrupt_config_t));
+		memcpy_s(pintconf, sizeof(struct VL53L1_GPIO_interrupt_config_t),
+			&(pdev->gpio_interrupt_config),
+			sizeof(struct VL53L1_GPIO_interrupt_config_t));
 	}
 
 	LOG_FUNCTION_END(status);
@@ -5138,7 +5140,7 @@ VL53L1_Error VL53L1_set_dmax_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5161,7 +5163,7 @@ VL53L1_Error VL53L1_get_dmax_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5174,10 +5176,10 @@ VL53L1_Error VL53L1_get_dmax_mode(
 
 
 VL53L1_Error VL53L1_get_dmax_calibration_data(
-	VL53L1_DEV                      Dev,
-	VL53L1_DeviceDmaxMode           dmax_mode,
-	uint8_t                         zone_id,
-	VL53L1_dmax_calibration_data_t *pdmax_cal)
+	VL53L1_DEV                            Dev,
+	VL53L1_DeviceDmaxMode                 dmax_mode,
+	uint8_t                               zone_id,
+	struct VL53L1_dmax_calibration_data_t *pdmax_cal)
 {
 
 
@@ -5187,9 +5189,9 @@ VL53L1_Error VL53L1_get_dmax_calibration_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t    *pdev =
+	struct VL53L1_LLDriverData_t    *pdev =
 		VL53L1DevStructGetLLDriverHandle(Dev);
-	VL53L1_LLDriverResults_t *pres =
+	struct VL53L1_LLDriverResults_t *pres =
 		VL53L1DevStructGetLLResultsHandle(Dev);
 
 	LOG_FUNCTION_START("");
@@ -5210,16 +5212,16 @@ VL53L1_Error VL53L1_get_dmax_calibration_data(
 
 	case VL53L1_DEVICEDMAXMODE__CUST_CAL_DATA:
 		memcpy_s(
-			pdmax_cal,sizeof(VL53L1_dmax_calibration_data_t),
+			pdmax_cal,sizeof(struct VL53L1_dmax_calibration_data_t),
 			&(pdev->cust_dmax_cal),
-			sizeof(VL53L1_dmax_calibration_data_t));
+			sizeof(struct VL53L1_dmax_calibration_data_t));
 	break;
 
 	case VL53L1_DEVICEDMAXMODE__FMT_CAL_DATA:
 		memcpy_s(
-			pdmax_cal,sizeof(VL53L1_dmax_calibration_data_t),
+			pdmax_cal,sizeof(struct VL53L1_dmax_calibration_data_t),
 			&(pdev->fmt_dmax_cal),
-			sizeof(VL53L1_dmax_calibration_data_t));
+			sizeof(struct VL53L1_dmax_calibration_data_t));
 	break;
 
 	default:
@@ -5235,8 +5237,8 @@ VL53L1_Error VL53L1_get_dmax_calibration_data(
 
 
 VL53L1_Error VL53L1_set_hist_dmax_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_hist_gen3_dmax_config_t *pdmax_cfg)
+	VL53L1_DEV                            Dev,
+	struct VL53L1_hist_gen3_dmax_config_t *pdmax_cfg)
 {
 
 
@@ -5246,16 +5248,16 @@ VL53L1_Error VL53L1_set_hist_dmax_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
 	memcpy_s(
-		&(pdev->dmax_cfg),sizeof(VL53L1_hist_gen3_dmax_config_t),
+		&(pdev->dmax_cfg),sizeof(struct VL53L1_hist_gen3_dmax_config_t),
 		pdmax_cfg,
-		sizeof(VL53L1_hist_gen3_dmax_config_t));
+		sizeof(struct VL53L1_hist_gen3_dmax_config_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -5264,8 +5266,8 @@ VL53L1_Error VL53L1_set_hist_dmax_config(
 
 
 VL53L1_Error VL53L1_get_hist_dmax_config(
-	VL53L1_DEV                      Dev,
-	VL53L1_hist_gen3_dmax_config_t *pdmax_cfg)
+	VL53L1_DEV                            Dev,
+	struct VL53L1_hist_gen3_dmax_config_t *pdmax_cfg)
 {
 
 
@@ -5275,16 +5277,16 @@ VL53L1_Error VL53L1_get_hist_dmax_config(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
 	memcpy_s(
-		pdmax_cfg,sizeof(VL53L1_hist_gen3_dmax_config_t),
+		pdmax_cfg,sizeof(struct VL53L1_hist_gen3_dmax_config_t),
 		&(pdev->dmax_cfg),
-		sizeof(VL53L1_hist_gen3_dmax_config_t));
+		sizeof(struct VL53L1_hist_gen3_dmax_config_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -5304,7 +5306,7 @@ VL53L1_Error VL53L1_set_offset_calibration_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5328,7 +5330,7 @@ VL53L1_Error VL53L1_get_offset_calibration_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5352,7 +5354,7 @@ VL53L1_Error VL53L1_set_offset_correction_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5376,7 +5378,7 @@ VL53L1_Error VL53L1_get_offset_correction_mode(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5392,8 +5394,8 @@ VL53L1_Error VL53L1_get_offset_correction_mode(
 
 
 VL53L1_Error VL53L1_set_zone_calibration_data(
-	VL53L1_DEV                          Dev,
-	VL53L1_zone_calibration_results_t  *pzone_cal)
+	VL53L1_DEV                                Dev,
+	struct VL53L1_zone_calibration_results_t  *pzone_cal)
 {
 
 
@@ -5403,7 +5405,7 @@ VL53L1_Error VL53L1_set_zone_calibration_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverResults_t *pres = VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres = VL53L1DevStructGetLLResultsHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5416,9 +5418,9 @@ VL53L1_Error VL53L1_set_zone_calibration_data(
 
 
 		memcpy_s(
-			&(pres->zone_cal),sizeof(VL53L1_zone_calibration_results_t),
+			&(pres->zone_cal),sizeof(struct VL53L1_zone_calibration_results_t),
 			pzone_cal,
-			sizeof(VL53L1_zone_calibration_results_t));
+			sizeof(struct VL53L1_zone_calibration_results_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -5427,8 +5429,8 @@ VL53L1_Error VL53L1_set_zone_calibration_data(
 
 
 VL53L1_Error VL53L1_get_zone_calibration_data(
-	VL53L1_DEV                          Dev,
-	VL53L1_zone_calibration_results_t  *pzone_cal)
+	VL53L1_DEV                                Dev,
+	struct VL53L1_zone_calibration_results_t  *pzone_cal)
 {
 
 
@@ -5438,19 +5440,19 @@ VL53L1_Error VL53L1_get_zone_calibration_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverResults_t *pres = VL53L1DevStructGetLLResultsHandle(Dev);
+	struct VL53L1_LLDriverResults_t *pres = VL53L1DevStructGetLLResultsHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
 	memcpy_s(
-		pzone_cal,sizeof(VL53L1_zone_calibration_results_t),
+		pzone_cal,sizeof(struct VL53L1_zone_calibration_results_t),
 		&(pres->zone_cal),
-		sizeof(VL53L1_zone_calibration_results_t));
+		sizeof(struct VL53L1_zone_calibration_results_t));
 
 	pzone_cal->struct_version =
-			VL53L1_LL_ZONE_CALIBRATION_DATA_STRUCT_VERSION;
+		VL53L1_LL_ZONE_CALIBRATION_DATA_STRUCT_VERSION;
 
 	LOG_FUNCTION_END(status);
 
@@ -5460,7 +5462,7 @@ VL53L1_Error VL53L1_get_zone_calibration_data(
 
 VL53L1_Error VL53L1_get_tuning_debug_data(
 	VL53L1_DEV                            Dev,
-	VL53L1_tuning_parameters_t           *ptun_data)
+	struct VL53L1_tuning_parameters_t     *ptun_data)
 {
 
 
@@ -5469,7 +5471,7 @@ VL53L1_Error VL53L1_get_tuning_debug_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -5920,7 +5922,7 @@ VL53L1_Error VL53L1_get_tuning_parm(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -6515,7 +6517,7 @@ VL53L1_Error VL53L1_set_tuning_parm(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7127,7 +7129,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_enable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7150,7 +7152,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_disable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7174,7 +7176,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_apply_enable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7198,7 +7200,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_apply_disable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7222,7 +7224,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_single_apply_enable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7245,7 +7247,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_single_apply_disable(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7273,7 +7275,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_set_scalers(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7294,8 +7296,8 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_set_scalers(
 
 
 VL53L1_Error VL53L1_get_current_xtalk_settings(
-	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_calibration_results_t *pxtalk
+	VL53L1_DEV                                Dev,
+	struct VL53L1_xtalk_calibration_results_t *pxtalk
 	)
 {
 
@@ -7305,7 +7307,7 @@ VL53L1_Error VL53L1_get_current_xtalk_settings(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -7331,8 +7333,8 @@ VL53L1_Error VL53L1_get_current_xtalk_settings(
 
 
 VL53L1_Error VL53L1_set_current_xtalk_settings(
-	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_calibration_results_t *pxtalk
+	VL53L1_DEV                                Dev,
+	struct VL53L1_xtalk_calibration_results_t *pxtalk
 	)
 {
 
@@ -7342,7 +7344,7 @@ VL53L1_Error VL53L1_set_current_xtalk_settings(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 

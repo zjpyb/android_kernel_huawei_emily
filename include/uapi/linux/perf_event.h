@@ -36,10 +36,12 @@ enum perf_type_id {
 #ifdef CONFIG_ARM_DSU_PMU
 	PERF_TYPE_DSU,
 #endif
-#ifdef CONFIG_HISI_KARMA_PMU
+#ifdef CONFIG_KARMA_PMU
 	PERF_TYPE_KARMA,
 #endif
-
+#ifdef CONFIG_NAMSTO_PMU
+	PERF_TYPE_NAMSTO,
+#endif
 	PERF_TYPE_MAX,				/* non-ABI */
 };
 

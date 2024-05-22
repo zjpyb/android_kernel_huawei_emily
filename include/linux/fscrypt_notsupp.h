@@ -103,9 +103,9 @@ static inline int fscrypt_inherit_context(struct inode *parent,
 	return -EOPNOTSUPP;
 }
 
-#ifdef CONFIG_HWAA
-static inline int hwaa_inherit_context(struct inode *dir, struct inode *inode,
-	struct dentry *dentry, void *fs_data, bool preload)
+#ifdef CONFIG_HWDPS
+static inline int hwdps_inherit_context(struct inode *dir, struct inode *inode,
+	struct dentry *dentry, void *fs_data, struct page *dpage)
 {
 	return -EAGAIN;
 }
@@ -122,8 +122,13 @@ static inline void fscrypt_put_encryption_info(struct inode *inode)
 	return;
 }
 
-#ifdef CONFIG_HWAA
-static inline int hwaa_get_context(struct inode *inode)
+#ifdef CONFIG_HWDPS
+static inline int hwdps_update_context(struct inode *inode, uid_t new_uid)
+{
+	return -EAGAIN;
+}
+
+static inline int hwdps_get_context(struct inode *inode)
 {
 	return -EAGAIN;
 }

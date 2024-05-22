@@ -1,11 +1,8 @@
 /*
- * hjpg_reg_offset_field.h
- *
- * defination for config jpeg reg address offset and len.
- *
- * Copyright (c) 2001-2021, Huawei Tech. Co., Ltd. All rights reserved.
- *
- * lixiuhua <aimee.li@hisilicon.com>
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: define jpeg reg address offset.
+ * Author: lixiuhua
+ * Create: 2012-12-22
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,11 +11,9 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
  */
-
 
 #ifndef __JPGENC_REG_OFFSET_FIELD_H__
 #define __JPGENC_REG_OFFSET_FIELD_H__
@@ -281,4 +276,4 @@
 #define JPGENC_DBG_13_LEN    32
 #define JPGENC_DBG_13_OFFSET 0
 
-#endif // __JPGENC_REG_OFFSET_FIELD_H__
+#endif /* __JPGENC_REG_OFFSET_FIELD_H__ */

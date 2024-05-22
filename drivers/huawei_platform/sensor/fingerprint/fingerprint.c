@@ -45,6 +45,7 @@
 #include <huawei_platform/fingerprint_interface/fingerprint_interface.h>
 #include <huawei_platform/sensor/hw_comm_pmic.h>
 #include "hisi_fb.h"
+#include "product/dpu_displayengine_fingerprint_utils.h"
 #if defined(CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
@@ -130,10 +131,15 @@ static int fp_fiq_flg;
 
 /* extern ldo power supply for fingerprint */
 struct regulator *fp_ex_regulator;
+struct regulator *fp_dvdd_regulator;
+
 #define FINGERPRINT_EXTERN_LDO_NUM "fingreprint_ldo"
+#define DVDD_LDO_NUM "fingerprint_dvdd_ldo"
 #define FINGERPRINT_EXTERN_LDO_NAME "EXTERN_LDO"
+#define FINGERPRINT_DVDD_LDO_NAME "PMU_LDO"
 #define SUB_LDO "SUB_PMIC_LDO"
-#define HBM_WAIT_TIMEOUT (550 * HZ / 1000)
+
+#define HBM_WAIT_TIMEOUT (50 * HZ / 1000)
 extern unsigned int get_pd_charge_flag(void);
 extern int tp_gpio_num;
 
@@ -465,7 +471,7 @@ static char *fingerprint_get_sensor_name(unsigned int sensor_id)
 			return g_fp_sensor_info[i].sensor_name;
 		}
 	}
-	hwlog_err("sensor_name not found, sensor_id = %d\n", sensor_id);
+	hwlog_err("sensor_name not found");
 	return NULL;
 }
 
@@ -549,7 +555,7 @@ static ssize_t chip_info_show(struct device *device,
 			ic_name, module_name);
 		hwlog_info("chip_info:%s, %s\n", chip_info, __func__);
 	} else {
-		hwlog_info("hw_debug didn't find fingerprint:%x, %s\n",
+		hwlog_info("hw_debug didn't find fingerprint:%u, %s\n",
 			sensor_id, __func__);
 		ret = snprintf(chip_info, FP_MAX_SENSOR_ID_LEN, "%x--%s\n",
 			sensor_id, module_name);
@@ -837,6 +843,24 @@ void fingerprint_get_navigation_adjustvalue(struct device *dev,
 		fp_data->navigation_adjust2);
 }
 
+static void fingerprint_get_poweroff_scheme_from_dts(
+	struct device_node *np, struct fp_data *fp_data)
+{
+	int result;
+
+	result = of_property_read_u32(np, "fingerprint,poweroff_scheme",
+		(unsigned int *)(&fp_data->poweroff_scheme));
+	if (result) {
+		fp_data->poweroff_scheme = -EINVAL;
+		hwlog_info("%s failed to get poweroff_scheme\n", __func__);
+	}
+	result = of_property_read_u32(np, "fingerprint,poweroff_scheme_dvdd",
+		(unsigned int *)(&fp_data->poweroff_scheme_dvdd));
+	if (result) {
+		fp_data->poweroff_scheme_dvdd = -EINVAL;
+		hwlog_info("%s failed to get poweroff_scheme_dvdd\n", __func__);
+	}
+}
 static int fingerprint_get_power_supply_config(struct device *dev,
 	struct fp_data *fp_data)
 {
@@ -883,6 +907,29 @@ static int fingerprint_get_power_supply_config(struct device *dev,
 		}
 	}
 	return result;
+}
+static void fingerprint_get_dvdd_supply_config(struct device *dev,
+	struct fp_data *fp_data)
+{
+	int result;
+	struct device_node *np = NULL;
+	struct fp_data *priv = NULL;
+
+	priv = dev_get_drvdata(dev);
+	np = dev->of_node;
+
+	result = of_property_read_u32(np, "fingerprint,dvdd_ldo_num",
+		(unsigned int *)(&fp_data->dvdd_ldo_num));
+	if (result) {
+		fp_data->dvdd_ldo_num = -EINVAL;
+		hwlog_err("%s failed to get dvdd_ldo_num\n", __func__);
+	}
+	result = of_property_read_u32(np, "fingerprint,dvdd_vol",
+		(unsigned int *)(&fp_data->dvdd_vol));
+	if (result) {
+		fp_data->dvdd_vol = -EINVAL;
+		hwlog_err("%s failed to get dvdd_vol\n", __func__);
+	}
 }
 
 static int fingerprint_get_gpio_rst_cs(struct device_node *np,
@@ -981,6 +1028,17 @@ static void fingerprint_get_gpio_ldo_product(struct device *dev,
 				__func__);
 	}
 
+	ret = of_property_read_string(np, "fingerprint,dvdd_ldo_name", &ldo_info);
+	if (ret) {
+		strncpy(fp_data->dvdd_ldo_name, "EINVAL", sizeof("EINVAL"));
+		hwlog_err("%s failed to get dvdd_ldo_name\n", __func__);
+	} else {
+		name_len = sizeof(fp_data->dvdd_ldo_name);
+		strncpy(fp_data->dvdd_ldo_name, ldo_info, name_len - 1);
+		fp_data->dvdd_ldo_name[name_len - 1] = '\0';
+		fingerprint_get_dvdd_supply_config(dev, fp_data);
+	}
+
 	ret = of_property_read_string(np, "fingerprint,product", &product);
 	if (ret) {
 		strncpy(fp_data->product_name, "EINVAL", sizeof("EINVAL"));
@@ -1036,6 +1094,7 @@ int fingerprint_get_dts_data(struct device *dev, struct fp_data *fp_data)
 		goto exit;
 
 	fingerprint_get_gpio_ldo_product(dev, np, fp_data);
+	fingerprint_get_poweroff_scheme_from_dts(np, fp_data);
 
 	ret = of_property_read_u32(np, "fingerprint,pen_anti_enable",
 		&(fp_data->pen_anti_enable));
@@ -1285,37 +1344,220 @@ static void fingerprint_gpio_direction_output(int fp_gpio, int value)
 /*
  * some device the ldo can not be closed,
  * so there is a loadswitch(gpio) to control the power of fingerprint,
- * and now close the loadswitch
+ * and now close the loadswitch(gpio)
  */
-static void fingerprint_poweroff_close_loadswtich(struct fp_data *fp)
+static void fingerprint_set_power_en_gpio_pin_value(struct fp_data *fp,
+	int gpio_value)
 {
 	hwlog_info("%s enter\n", __func__);
 	if ((fp == NULL) || (fp->power_en_gpio == (-EINVAL))) {
 		hwlog_err("%s fail\n", __func__);
 		return;
 	}
-	fingerprint_gpio_direction_output(fp->power_en_gpio, GPIO_LOW_LEVEL);
+	fingerprint_gpio_direction_output(fp->power_en_gpio, gpio_value);
 }
 
-static void fingerprint_sensor_abnormal_poweroff(struct fp_data *fp)
+static int fingerprint_get_poweroff_scheme(struct fp_data *fp, int ldo_type,
+	int *poweroff_scheme, struct regulator **fp_regulator, int *voltage)
+{
+	if (ldo_type == FP_LDO_TYPE_EXTERN) {
+		hwlog_info("%s extern: %d\n", __func__, fp->poweroff_scheme);
+		*poweroff_scheme = fp->poweroff_scheme;
+		*fp_regulator = fp_ex_regulator;
+		*voltage = fp->extern_vol;
+	} else if (ldo_type == FP_LDO_TYPE_DVDD) {
+		hwlog_info("%s dvdd: %d\n", __func__, fp->poweroff_scheme_dvdd);
+		*poweroff_scheme = fp->poweroff_scheme_dvdd;
+		*fp_regulator = fp_dvdd_regulator;
+		*voltage = fp->dvdd_vol;
+	} else {
+		hwlog_err("%s: no this ldo type\n", __func__);
+		*poweroff_scheme = -EINVAL;
+		*voltage = -EINVAL;
+	}
+
+	return (*poweroff_scheme != -EINVAL) ? FP_RETURN_SUCCESS : (-EINVAL);
+}
+
+static void fingerprint_poweroff_close_ldo(struct fp_data *fp,
+	struct regulator *fp_regulator)
+{
+	int ret;
+	int max_cnt = 100; /* max times that try to close the power */
+
+	if ((fp_regulator == NULL) || IS_ERR(fp_regulator)) {
+		hwlog_err("%s:No this type ldo found for fingerprint\n",
+			__func__);
+		return;
+	}
+	/*
+	 * the power may be shared with other modules,
+	 * so now close the power maybe more than one times
+	 */
+	do {
+		hwlog_info("%s regulator flag:%d\n",
+			__func__, regulator_is_enabled(fp_regulator));
+		if (regulator_is_enabled(fp_regulator)) {
+			ret = regulator_disable(fp_regulator);
+			if (ret != FP_RETURN_SUCCESS)
+				hwlog_err("%s:regulator_disable fail, ret:%d\n",
+					__func__, ret);
+
+			/* break the process when the ldo regulator is close */
+			if (!regulator_is_enabled(fp_regulator)) {
+				hwlog_info("regulator is close and break\n");
+				break;
+			}
+		}
+		max_cnt--;
+	} while (max_cnt > 0);
+}
+
+static void fingerprint_sensor_abnormal_poweroff(struct fp_data *fp,
+	int ldo_type)
 {
 	int ret;
 	unsigned int poweroff_scheme = 0;
+	struct regulator *fp_regulator = NULL;
+	int voltage = 0;
 
-	ret = of_property_read_u32(fp->dev->of_node,
-		"fingerprint,poweroff_scheme", &poweroff_scheme);
+	ret = fingerprint_get_poweroff_scheme(fp, ldo_type,
+		&poweroff_scheme, &fp_regulator, &voltage);
 	if (ret) {
-		hwlog_info("%s failed to get poweroff_scheme from device tree, just go on\n",
+		hwlog_info("%s failed to get poweroff_scheme, just go on\n",
 			__func__);
 		return;
 	}
 	/*
 	 * when the sensor is abnormal,
-	 * the loadswtich maybe cause leakage of current,
-	 * so should close the loadswtich
+	 * the loadswtich(or ldo) maybe cause leakage of current,
+	 * so should close the loadswtich(or ldo)
 	 */
-	if (poweroff_scheme == FP_POWEROFF_SCHEME_TWO)
-		fingerprint_poweroff_close_loadswtich(fp);
+	switch (poweroff_scheme) {
+	case FP_POWEROFF_SCHEME_ONE:
+		hwlog_err("%s poweroff_scheme %d do nothing, just go on\n",
+			__func__, poweroff_scheme);
+		break;
+	case FP_POWEROFF_SCHEME_TWO:
+		fingerprint_set_power_en_gpio_pin_value(fp, GPIO_LOW_LEVEL);
+		break;
+	/* scheme three for independent power supply */
+	case FP_POWEROFF_SCHEME_THREE:
+		fingerprint_poweroff_close_ldo(fp, fp_regulator);
+		break;
+	default:
+		hwlog_err("%s poweroff_scheme config error %d\n",
+			__func__, poweroff_scheme);
+		break;
+	}
+}
+
+static void fingerprint_enable_regulator(
+	struct regulator *fp_regulator, int voltage)
+{
+	int ret;
+
+	hwlog_info("%s: voltage: %d\n", __func__, voltage);
+	if (voltage <= 0)
+		return;
+
+	ret = regulator_set_voltage(fp_regulator, voltage, voltage);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_set_voltage fail, ret = %d\n",
+			__func__, ret);
+
+	ret = regulator_set_mode(fp_regulator, REGULATOR_MODE_NORMAL);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_set_mode fail, ret = %d\n",
+			__func__, ret);
+
+	ret = regulator_enable(fp_regulator);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_enable fail, ret:%d\n", __func__, ret);
+}
+
+static void fingerprint_poweron_open_ldo(struct fp_data *fp,
+	struct regulator *fp_regulator, int voltage)
+{
+	int max_cnt = 100; /* max times that try to open the power */
+
+	if ((fp_regulator == NULL) || IS_ERR(fp_regulator)) {
+		hwlog_err("%s:No this type ldo found for fingerprint\n",
+			__func__);
+		return;
+	}
+	do {
+		if (!regulator_is_enabled(fp_regulator)) {
+			fingerprint_enable_regulator(fp_regulator, voltage);
+
+			/* break the process when the ldo regulator is open */
+			if (regulator_is_enabled(fp_regulator)) {
+				hwlog_info("regulator is open and break\n");
+				break;
+			}
+		}
+		max_cnt--;
+	} while (max_cnt > 0);
+}
+
+static void fingerprint_sensor_poweron(struct fp_data *fp, int ldo_type)
+{
+	int ret;
+	unsigned int poweroff_scheme = 0;
+	struct regulator *fp_regulator = NULL;
+	int voltage = 0;
+
+	ret = fingerprint_get_poweroff_scheme(fp, ldo_type,
+		&poweroff_scheme, &fp_regulator, &voltage);
+	if (ret) {
+		hwlog_err("%s failed to get poweroff_scheme, just go on\n",
+			__func__);
+		return;
+	}
+
+	switch (poweroff_scheme) {
+	case FP_POWEROFF_SCHEME_ONE:
+		hwlog_err("%s poweroff_scheme %d do nothing, just go on\n",
+			__func__, poweroff_scheme);
+		break;
+	case FP_POWEROFF_SCHEME_TWO:
+		fingerprint_set_power_en_gpio_pin_value(fp, GPIO_HIGH_LEVEL);
+		break;
+	case FP_POWEROFF_SCHEME_THREE:
+		fingerprint_poweron_open_ldo(fp, fp_regulator, voltage);
+		break;
+	default:
+		hwlog_err("%s poweroff_scheme config error %d\n",
+			__func__, poweroff_scheme);
+		break;
+	}
+}
+
+static int get_supported_hbm_mode(void __user *argp)
+{
+	int ret;
+	int hbm_mode;
+
+	hbm_mode = display_engine_local_hbm_get_support();
+	ret = copy_to_user(argp, &hbm_mode, sizeof(hbm_mode));
+	if (ret) {
+		hwlog_err("%s copy_to_user failed, ret=%d\n", __func__,
+			ret);
+		return -EFAULT;
+	}
+
+	return FP_RETURN_SUCCESS;
+}
+
+static int set_brightness_level(const void __user *argp)
+{
+	int grayscale = 0;
+
+	if (copy_from_user(&grayscale, argp, sizeof(grayscale))) {
+		hwlog_err("%s copy_from_user failed\n", __func__);
+		return -EFAULT;
+	}
+	return display_engine_local_hbm_set(grayscale);
 }
 
 static void fp_ioc_enable_irq(struct fp_data *fp)
@@ -1426,7 +1668,7 @@ static int fp_ioc_send_sensorid(struct fp_data *fp, const void __user *argp)
 #if defined(CONFIG_HUAWEI_DSM)
 	fingerprint_update_vendor_info(fp);
 #endif
-	hwlog_info("fingerprint_ioctl FP_IOC_CMD_SEND_SENSORID =%x\n",
+	hwlog_info("fingerprint_ioctl FP_IOC_CMD_SEND_SENSORID = %u\n",
 		sensor_id);
 	return FP_RETURN_SUCCESS;
 }
@@ -1441,7 +1683,7 @@ static int fp_ioc_send_sensorid_ud(struct fp_data *fp, const void __user *argp)
 	}
 
 	fp->sensor_id_ud = sensor_id;
-	hwlog_info("fingerprint_ioctl FP_IOC_CMD_SEND_SENSORID_UD =%x\n",
+	hwlog_info("fingerprint_ioctl FP_IOC_CMD_SEND_SENSORID_UD = %u\n",
 		fp->sensor_id_ud);
 	return FP_RETURN_SUCCESS;
 }
@@ -1468,13 +1710,15 @@ static int fp_ioc_set_ipc_wakelocks(const void __user *argp)
 static int fp_ioc_check_hbm_status(struct fp_data *fp)
 {
 	int ret = FP_RETURN_SUCCESS;
-
+	if (fp->hbm_status == HBM_ON) {
+		hwlog_info("fp_ioc_check_hbm_status ok");
+		return ret;
+	}
 	if (wait_event_timeout(fp->hbm_queue,
 		fp->hbm_status == HBM_ON, HBM_WAIT_TIMEOUT) <= 0) {
-		hwlog_err("fingerprint wait hbm timeout\n");
+		hwlog_info("fingerprint wait hbm timeout\n");
 		ret = -EFAULT;
 	}
-	fp->hbm_status = HBM_NONE;
 	return ret;
 }
 
@@ -1560,7 +1804,8 @@ static long fingerprint_ioctl(struct file *file, unsigned int cmd,
 
 	case FP_IOC_CMD_SET_POWEROFF:
 		hwlog_info("%s FP_IOC_CMD_SET_POWEROFF\n", __func__);
-		fingerprint_sensor_abnormal_poweroff(fp);
+		fingerprint_sensor_abnormal_poweroff(fp, FP_LDO_TYPE_EXTERN);
+		fingerprint_sensor_abnormal_poweroff(fp, FP_LDO_TYPE_DVDD);
 		break;
 
 	case FP_IOC_CMD_GET_BIGDATA:
@@ -1569,6 +1814,19 @@ static long fingerprint_ioctl(struct file *file, unsigned int cmd,
 
 	case FP_IOC_CMD_NOTIFY_DISPLAY_FP_DOWN_UD:
 		ret = fp_ioc_update_te();
+		break;
+	case FP_IOC_CMD_SET_POWERON:
+		hwlog_info("%s FP_IOC_CMD_SET_POWERON\n", __func__);
+		fingerprint_sensor_poweron(fp, FP_LDO_TYPE_EXTERN);
+		fingerprint_sensor_poweron(fp, FP_LDO_TYPE_DVDD);
+		break;
+	case FP_IOC_CMD_GET_BRIGHTNESS_MODE:
+		hwlog_info("%s FP_IOC_CMD_GET_BRIGHTNESS_MODE\n", __func__);
+		ret = ret = get_supported_hbm_mode(argp);
+		break;
+	case FP_IOC_CMD_SET_BRIGHTNESS_LEVEL:
+		hwlog_info("%s FP_IOC_CMD_SET_BRIGHTNESS_LEVEL\n", __func__);
+		ret = set_brightness_level(argp);
 		break;
 	default:
 		hwlog_err("%s error = -EFAULT\n", __func__);
@@ -1603,6 +1861,8 @@ static int fingerprint_reset_gpio_init(struct fp_data *fp)
 #elif defined(CONFIG_HISI_PARTITION_CANCER)
 #elif defined(CONFIG_HISI_PARTITION_TAURUS)
 #elif defined(CONFIG_HISI_PARTITION_CAPRICORN)
+#elif defined(CONFIG_HISI_PARTITION_LEO)
+#elif defined(CONFIG_PARTITION_TABLE_PISCES)
 #else
 	ret = gpio_request(fp->rst_gpio, "fingerprint_reset_gpio");
 	if (ret) {
@@ -1663,48 +1923,17 @@ static int fingerprint_power_en_gpio_init(struct fp_data *fp)
 	return ret;
 }
 
-static void fingerprint_poweroff_close_ldo(struct fp_data *fp)
-{
-	int ret;
-	int max_cnt = 100; /* max times that try to close the power */
-
-	if (IS_ERR(fp_ex_regulator)) {
-		hwlog_err("%s:No extern ldo found for fingerprint\n", __func__);
-		return;
-	}
-	/*
-	 * the power may be shared with other modules,
-	 * so now close the power maybe more than one times
-	 */
-	do {
-		hwlog_info("%s regulator flag:%d\n",
-			__func__, regulator_is_enabled(fp_ex_regulator));
-		if (regulator_is_enabled(fp_ex_regulator)) {
-			ret = regulator_disable(fp_ex_regulator);
-			if (ret != FP_RETURN_SUCCESS)
-				hwlog_err("%s:regulator_disable fail, ret:%d\n",
-					__func__, ret);
-
-			/* break the process when the ldo regulator is close */
-			if (regulator_is_enabled(fp_ex_regulator) == false) {
-				hwlog_info("regulator is close and break\n");
-				break;
-			}
-		}
-		max_cnt--;
-	} while (max_cnt > 0);
-}
-
-static void fingerprint_poweroff_pd_charge(struct fp_data *fp)
+static void fingerprint_poweroff_pd_charge(struct fp_data *fp, int ldo_type)
 {
 	int ret;
 	unsigned int poweroff_scheme = 0;
+	struct regulator *fp_regulator = NULL;
+	int voltage = 0;
 
-	hwlog_info("%s enter\n", __func__);
-	ret = of_property_read_u32(fp->dev->of_node,
-		"fingerprint,poweroff_scheme", &poweroff_scheme);
+	ret = fingerprint_get_poweroff_scheme(fp, ldo_type,
+		&poweroff_scheme, &fp_regulator, &voltage);
 	if (ret) {
-		hwlog_info("%s fail to get poweroff_scheme from device tree, just go on\n",
+		hwlog_info("%s failed to get poweroff_scheme, just go on\n",
 			__func__);
 		return;
 	}
@@ -1714,10 +1943,12 @@ static void fingerprint_poweroff_pd_charge(struct fp_data *fp)
 	if (get_pd_charge_flag() == true) {
 		switch (poweroff_scheme) {
 		case FP_POWEROFF_SCHEME_ONE:
-			fingerprint_poweroff_close_ldo(fp);
+		case FP_POWEROFF_SCHEME_THREE:
+			fingerprint_poweroff_close_ldo(fp, fp_regulator);
 			break;
 		case FP_POWEROFF_SCHEME_TWO:
-			fingerprint_poweroff_close_loadswtich(fp);
+			fingerprint_set_power_en_gpio_pin_value(fp,
+				GPIO_LOW_LEVEL);
 			break;
 		default:
 			hwlog_err("%s poweroff_scheme config error %d\n",
@@ -1787,7 +2018,7 @@ static int fingerprint_extern_ldo_proc(struct fp_data *fp)
 	if (ret != FP_RETURN_SUCCESS)
 		hwlog_err("%s:regulator_enable,ret = %d\n", __func__, ret);
 
-	fingerprint_poweroff_pd_charge(fp);
+	fingerprint_poweroff_pd_charge(fp, FP_LDO_TYPE_EXTERN);
 	return FP_RETURN_SUCCESS;
 }
 
@@ -1818,6 +2049,37 @@ static int fingerprint_extern_power_en(struct fp_data *fp)
 	}
 
 	return FP_RETURN_SUCCESS;
+}
+static int fingerprint_dvdd_ldo_power_on(struct fp_data *fp)
+{
+	int ret;
+
+	if (fp->dvdd_vol == -EINVAL) {
+		hwlog_err("%s something wrong with dts config dvdd ldo\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	fp_dvdd_regulator = devm_regulator_get(fp->dev, DVDD_LDO_NUM);
+	if (IS_ERR(fp_dvdd_regulator)) {
+		hwlog_err("%s:No pmu ldo found for fingerprint\n", __func__);
+		return -EINVAL;
+	}
+
+	ret = regulator_set_voltage(fp_dvdd_regulator, fp->dvdd_vol, fp->dvdd_vol);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_set_voltage fail,ret = %d\n", __func__, ret);
+
+	ret = regulator_set_mode(fp_dvdd_regulator, REGULATOR_MODE_NORMAL);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_set_mode fail,ret = %d\n", __func__, ret);
+
+	ret = regulator_enable(fp_dvdd_regulator);
+	if (ret != FP_RETURN_SUCCESS)
+		hwlog_err("%s:regulator_enable,ret = %d\n", __func__, ret);
+
+	fingerprint_poweroff_pd_charge(fp, FP_LDO_TYPE_DVDD);
+	return ret;
 }
 
 /*
@@ -2069,6 +2331,11 @@ static void check_power_en_gpio_exsit(struct fp_data *fp)
 		if (ret)
 			hwlog_err("something wrong in extern_power_en init ret=%d\n",
 				ret);
+	}
+	if (strncmp(fp->dvdd_ldo_name, "EINVAL", strlen("EINVAL")) != 0) {
+		ret = fingerprint_dvdd_ldo_power_on(fp);
+		if (ret)
+			hwlog_err("something wrong in dvdd_ldo_power_on ret=%d\n", ret);
 	}
 }
 
@@ -2367,7 +2634,7 @@ exit:
 static int fingerprint_remove(struct platform_device *pdev)
 {
 	int ret;
-	struct  fp_data *fp = dev_get_drvdata(&pdev->dev);
+	struct fp_data *fp = dev_get_drvdata(&pdev->dev);
 
 	if (fp == NULL)
 		return -EINVAL;
@@ -2379,12 +2646,21 @@ static int fingerprint_remove(struct platform_device *pdev)
 			pr_err("%s:regulator_disable fail, ret = %d\n",
 				__func__, ret);
 	}
-	if (strncmp(fp->extern_ldo_name,
-		SUB_LDO, strlen(SUB_LDO)) == 0) {
+
+	ret = strncmp(fp->extern_ldo_name, SUB_LDO, strlen(SUB_LDO));
+	if (ret == 0) {
 		hwlog_info("%s extern_ldo_name using sub_ldo\n", __func__);
 		if (fingerprint_sub_pmic_power_set(fp, FP_POWER_DISABLE))
 			hwlog_info("%s pmic_power_set failed\n", __func__);
 	}
+	ret = strncmp(fp->dvdd_ldo_name, FINGERPRINT_DVDD_LDO_NAME,
+		strlen(FINGERPRINT_DVDD_LDO_NAME));
+	if (ret == 0) {
+		ret = regulator_disable(fp_dvdd_regulator);
+		if (ret < 0)
+			hwlog_err("%s: close dvdd fail, ret = %d\n", __func__, ret);
+	}
+
 	if (fp->pen_anti_enable)
 		ts_event_notifier_unregister(&pen_nb);
 
@@ -2401,6 +2677,7 @@ static int fingerprint_remove(struct platform_device *pdev)
 	input_free_device(fp->input_dev);
 	mutex_destroy(&fp->lock);
 	wakeup_source_trash(&fp->ttw_wl);
+	devm_kfree(&pdev->dev, fp);
 	hwlog_info("%s\n", __func__);
 	return FP_RETURN_SUCCESS;
 }

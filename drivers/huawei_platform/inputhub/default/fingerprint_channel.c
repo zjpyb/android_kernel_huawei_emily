@@ -1,54 +1,44 @@
 /*
- * fingerprinthub_channel.c
- *
- * Fingerprint Hub Channel driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: fingerprint channel source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
+#include "fingerprint_channel.h"
+
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
-#include <linux/uaccess.h>
-#include <huawei_platform/inputhub/fingerprinthub.h>
+#include <linux/module.h>
 #include <linux/poll.h>
-#include "contexthub_route.h"
+#include <linux/slab.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+
+#include <huawei_platform/inputhub/fingerprinthub.h>
+#include <securec.h>
+
 #include "contexthub_boot.h"
+#include "contexthub_recovery.h"
+#include "contexthub_route.h"
+#include "sensor_info.h"
 #include "protocol.h"
 
 #define CA_TYPE_DEFAULT   (-1)
 
-static int fp_ref_cnt;
+static int64_t fp_ref_cnt;
 static bool fingerprint_status[FINGERPRINT_TYPE_END];
-wait_queue_head_t ipc_wait;
-unsigned int fingerprint_ipc_cbge_handle;
+static struct mutex fingerprint_status_lock;
 
 struct fingerprint_cmd_map {
 	int fhb_ioctl_app_cmd;
 	int ca_type;
 	int tag;
-	obj_cmd_t cmd;
+	enum obj_cmd cmd;
 };
-
-extern int flag_for_sensor_test;
-extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
-extern int send_app_config_cmd_with_resp(int tag,
-	void *app_config, bool use_lock);
 
 static const struct fingerprint_cmd_map fingerprint_cmd_map_tab[] = {
 	{ FHB_IOCTL_FP_START, CA_TYPE_DEFAULT, TAG_FP, CMD_CMN_OPEN_REQ },
@@ -57,22 +47,20 @@ static const struct fingerprint_cmd_map fingerprint_cmd_map_tab[] = {
 		TAG_FP, FHB_IOCTL_FP_DISABLE_SET_CMD },
 };
 
-void fingerprint_ipc_cgbe_abort_handle(void)
-{
-	fingerprint_ipc_cbge_handle = 1; /* 1:There is data to read */
-	wake_up_interruptible_sync_poll(&ipc_wait, POLLIN);
-}
-
-static void update_fingerprint_info(obj_cmd_t cmd, fingerprint_type_t type)
+static void update_fingerprint_info(enum obj_cmd cmd, fingerprint_type_t type)
 {
 	switch (cmd) {
 	case CMD_CMN_OPEN_REQ:
+		mutex_lock(&fingerprint_status_lock);
 		fingerprint_status[type] = true;
+		mutex_unlock(&fingerprint_status_lock);
 		hwlog_err("fingerprint: CMD_CMN_OPEN_REQ in %s, type:%d, %d\n",
 			__func__, type, fingerprint_status[type]);
 		break;
 	case CMD_CMN_CLOSE_REQ:
+		mutex_lock(&fingerprint_status_lock);
 		fingerprint_status[type] = false;
+		mutex_unlock(&fingerprint_status_lock);
 		hwlog_err("fingerprint: CMD_CMN_CLOSE_REQ in %s, type:%d, %d\n",
 			__func__, type, fingerprint_status[type]);
 		break;
@@ -94,12 +82,11 @@ static void fingerprint_report(void)
 	fingerprint_upload.data = 0; /* 0 : cancel wait sensorhub msg */
 	fingerprint_data = (char *)(&fingerprint_upload) +
 		sizeof(pkt_common_data_t);
-	fingerprint_ipc_cgbe_abort_handle();
 	inputhub_route_write(ROUTE_FHB_PORT, fingerprint_data,
 		sizeof(fingerprint_upload.data));
 }
 
-static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd,
+static int send_fingerprint_cmd_internal(int tag, enum obj_cmd cmd,
 	fingerprint_type_t type, bool use_lock)
 {
 	interval_param_t interval_param;
@@ -149,13 +136,12 @@ static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd,
 
 static int send_fingerprint_cmd(unsigned int cmd, unsigned long arg)
 {
-	uintptr_t arg_tmp = (uintptr_t)arg;
-	void __user *argp = (void __user *)arg_tmp;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	int arg_value = 0;
 	int i;
 	const int len = ARRAY_SIZE(fingerprint_cmd_map_tab);
 
-	if (flag_for_sensor_test)
+	if (get_flag_for_sensor_test())
 		return 0;
 
 	hwlog_info("fingerprint: %s enter\n", __func__);
@@ -219,11 +205,7 @@ void disable_fingerprint_when_sysreboot(void)
 static ssize_t fhb_read(struct file *file, char __user *buf, size_t count,
 	loff_t *pos)
 {
-	ssize_t ret;
-
-	ret = inputhub_route_read(ROUTE_FHB_PORT, buf, count);
-	fingerprint_ipc_cbge_handle = 0; /* 0:There is not data to read */
-	return ret;
+	return inputhub_route_read(ROUTE_FHB_PORT, buf, count);
 }
 
 /* write to /dev/fingerprinthub, do nothing now */
@@ -232,7 +214,7 @@ static ssize_t fhb_write(struct file *file, const char __user *data, size_t len,
 {
 	int ret;
 	fingerprint_req_t fp_pkt;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 
 	memset(&fp_pkt, 0, sizeof(fp_pkt));
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -329,11 +311,7 @@ static struct notifier_block fingerprint_recovery_notify = {
 /* fhb_poll CBGE */
 static unsigned int fhb_poll(struct file *file, poll_table *wait)
 {
-	unsigned int mask;
-
-	poll_wait(file, &ipc_wait, wait);
-	mask = fingerprint_ipc_cbge_handle ? POLLIN : 0;
-	return mask;
+	return 0;
 }
 
 /* file_operations to fingerprinthub */
@@ -364,6 +342,7 @@ static int __init fingerprinthub_init(void)
 {
 	int ret;
 
+	mutex_init(&fingerprint_status_lock);
 	if (is_sensorhub_disabled())
 		return -1;
 
@@ -381,7 +360,6 @@ static int __init fingerprinthub_init(void)
 		return ret;
 	}
 	register_iom3_recovery_notifier(&fingerprint_recovery_notify);
-	init_waitqueue_head(&ipc_wait);
 	hwlog_info("%s ok\n", __func__);
 
 	return ret;
@@ -392,6 +370,7 @@ static void __exit fingerprinthub_exit(void)
 {
 	inputhub_route_close(ROUTE_FHB_PORT);
 	misc_deregister(&fingerprinthub_miscdev);
+	mutex_destroy(&fingerprint_status_lock);
 	hwlog_info("exit %s\n", __func__);
 }
 

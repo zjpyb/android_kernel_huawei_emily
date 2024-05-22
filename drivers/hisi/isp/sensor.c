@@ -1,7 +1,7 @@
 /*
- * Hisilicon ISP Sensor Driver
+ * ISP Sensor Driver
  * Name : sensor.c
- * Copyright (c) 2018- Hisilicon Technologies CO., Ltd.
+ * Copyright (c) 2018- ISP Technologies CO., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 59 Temple Place, Suite 330, MA  02111-1307  USA
  */
 
 #include <linux/kernel.h>
@@ -24,7 +24,7 @@
 #include <linux/list.h>
 #include <linux/gpio.h>
 #include <uapi/linux/histarisp.h>
-#include <linux/platform_data/remoteproc-hisi.h>
+#include <linux/platform_data/remoteproc_hisp.h>
 #include "sensor_commom.h"
 
 enum hisp_gpio_type_e {
@@ -60,7 +60,7 @@ struct hisp_sensor_info {
 
 static LIST_HEAD(g_sinfo);
 
-int __weak hisi_is_clt_flag(void)
+int __weak isp_is_clt_flag(void)
 {
 	pr_err("[%s] Not Supported Now!\n", __func__);
 	return 0;
@@ -72,7 +72,8 @@ int __weak hw_is_fpga_board(void)
 	return 1;
 }
 
-int __weak hw_sensor_power_up_config(struct device *dev, hwsensor_board_info_t *sensor_info)
+int __weak hw_sensor_power_up_config(struct device *dev,
+					hwsensor_board_info_t *sensor_info)
 {
 	pr_err("[%s] Not Supported Now!\n", __func__);
 	return 0;
@@ -81,7 +82,6 @@ int __weak hw_sensor_power_up_config(struct device *dev, hwsensor_board_info_t *
 void __weak hw_sensor_power_down_config(hwsensor_board_info_t *sensor_info)
 {
 	pr_err("[%s] Not Supported Now!\n", __func__);
-	return;
 }
 
 int __weak hw_sensor_power_up(sensor_t *s_ctrl)
@@ -90,19 +90,23 @@ int __weak hw_sensor_power_up(sensor_t *s_ctrl)
 	return 0;
 }
 
-static int hw_sensor_gpio_config(struct hisp_sensor_info *hsi, struct hisp_gpio_s *gpio)
+static int hw_sensor_gpio_config(struct hisp_sensor_info *hsi,
+					struct hisp_gpio_s *gpio)
 {
 	hwsensor_board_info_t *bi = NULL;
 	sensor_t *sensor = NULL;
 	int ret = 0;
 
-	if (!(sensor = hsi->sensor)) {
+	sensor = hsi->sensor;
+	if (sensor == NULL) {
 		pr_err("[%s] Failed : sensor.%pK\n", __func__, sensor);
 		return -EINVAL;
 	}
 
-	if (!(bi = sensor->board_info)) {
-		pr_err("[%s] Failed : board_info.%pK\n", __func__, sensor->board_info);
+	bi = sensor->board_info;
+	if (bi == NULL) {
+		pr_err("[%s] Failed : board_info.%pK\n",
+				__func__, sensor->board_info);
 		return -EINVAL;
 	}
 
@@ -112,27 +116,34 @@ static int hw_sensor_gpio_config(struct hisp_sensor_info *hsi, struct hisp_gpio_
 	}
 
 	if (gpio->type >= MAX_HISP_GPIO || gpio->level >= MAX_HISP_LEVEL) {
-		pr_err("[%s] Failed : Invalid gpio.(%d, %d)\n", __func__, gpio->type, gpio->level);
+		pr_err("[%s] Failed : Invalid gpio. %d, %d\n",
+				__func__, gpio->type, gpio->level);
 		return -EINVAL;
 	}
 
-	if (!(ret = hisi_is_clt_flag())) {
-		pr_err("[%s] Failed : hisi_is_clt_flag.%d\n", __func__, ret);
+	ret = isp_is_clt_flag();
+	if (ret == 0) {
+		pr_err("[%s] Failed : isp_is_clt_flag.%d\n", __func__, ret);
 		return 0;
 	}
 
 	if (!bi->gpios[gpio->type].gpio) {
-		pr_err("[%s] Failed : GPIO.%d Not Actived\n", __func__, gpio->type);
+		pr_err("[%s] Failed : GPIO.%d Not Actived\n",
+				__func__, gpio->type);
 		return -EINVAL;
 	}
 
-	if (!(ret = gpio_request(bi->gpios[gpio->type].gpio, NULL))) {
-		pr_err("[%s] Failed : gpio_request.%d, type.%d\n", __func__, ret, gpio->type);
+	ret = gpio_request(bi->gpios[gpio->type].gpio, NULL);
+	if (ret == 0) {
+		pr_err("[%s] Failed : gpio_request.%d, type.%d\n",
+				__func__, ret, gpio->type);
 		return ret;
 	}
 
-	if (!(ret = gpio_direction_output(bi->gpios[gpio->type].gpio, gpio->level))) {
-		pr_err("[%s] Failed : gpio_direction_output.%d, type.%d\n", __func__, ret, gpio->type);
+	ret = gpio_direction_output(bi->gpios[gpio->type].gpio, gpio->level);
+	if (ret == 0) {
+		pr_err("[%s] Failed : gpio_direction_output.%d, type.%d\n",
+				__func__, ret, gpio->type);
 		return ret;
 	}
 
@@ -141,7 +152,8 @@ static int hw_sensor_gpio_config(struct hisp_sensor_info *hsi, struct hisp_gpio_
 	return 0;
 }
 
-static int check_sensor_name(int sensorid, const char *name, struct hisp_sensor_info **ret_hsi)
+static int check_sensor_name(int sensorid, const char *name,
+				struct hisp_sensor_info **ret_hsi)
 {
 	struct hisp_sensor_info *hsi = NULL;
 	hwsensor_board_info_t *bi = NULL;
@@ -160,24 +172,30 @@ static int check_sensor_name(int sensorid, const char *name, struct hisp_sensor_
 			return -EINVAL;
 		}
 
-		if (!(sensor = hsi->sensor)) {
+		sensor = hsi->sensor;
+		if (sensor == NULL) {
 			pr_err("[%s] Failed : sensor.%pK\n", __func__, sensor);
 			return -EINVAL;
 		}
 
-		if (!(bi = sensor->board_info)) {
-			pr_err("[%s] Failed : board_info.%pK\n", __func__, sensor->board_info);
+		bi = sensor->board_info;
+		if (bi == NULL) {
+			pr_err("[%s] Failed : board_info.%pK\n",
+					__func__, sensor->board_info);
 			return -EINVAL;
 		}
 
-		if (!bi->name) {
+		if (bi->name == NULL) {
 			pr_err("[%s] Failed : name.%pK\n", __func__, bi->name);
 			return -EINVAL;
 		}
 
-		pr_info("[%s][%d][(%s, %d) = (%s, %d)]\n", __func__, i ++, name, sensorid, bi->name, bi->sensor_index);
-		if (!strncmp(bi->name, name, strlen(name)) && (bi->sensor_index == sensorid)) {
-			pr_info("[%s] %s @ %d Found\n", __func__, bi->name, bi->sensor_index);
+		pr_info("[%s][%d][(%s, %d) = (%s, %d)]\n", __func__,
+			i++, name, sensorid, bi->name, bi->sensor_index);
+		if (!strncmp(bi->name, name, strlen(name)) &&
+		   (bi->sensor_index == sensorid)) {
+			pr_info("[%s] %s @ %d Found\n", __func__,
+				bi->name, bi->sensor_index);
 			*ret_hsi = hsi;
 			return 0;
 		}
@@ -193,14 +211,14 @@ int rpmsg_sensor_register(struct platform_device *pdev, void *psensor)
 	struct hisp_sensor_info *hsi = NULL;
 
 	if (!pdev || !psensor) {
-		pr_err("[%s] Failed : pdev.%pK, psensor.%pK\n", __func__, pdev, psensor);
+		pr_err("[%s] Failed : pdev.%pK, psensor.%pK\n",
+				__func__, pdev, psensor);
 		return -ENOMEM;
 	}
 
-	if ((hsi = (struct hisp_sensor_info *)kzalloc( sizeof(struct hisp_sensor_info), GFP_KERNEL)) == NULL) {
-		pr_err("[%s] Failed : kzalloc.%pK\n", __func__, hsi);
+	hsi = kzalloc(sizeof(struct hisp_sensor_info), GFP_KERNEL);
+	if (hsi == NULL)
 		return -ENOMEM;
-	}
 
 	hsi->dev = &pdev->dev;
 	hsi->sensor = (sensor_t *)psensor;
@@ -220,7 +238,8 @@ void rpmsg_sensor_unregister(void *psensor)
 		return;
 	}
 
-	if ((hsi = container_of(psensor, struct hisp_sensor_info, sensor)) == NULL) {
+	hsi = container_of(psensor, struct hisp_sensor_info, sensor);
+	if (hsi == NULL) {
 		pr_err("[%s] Failed : container_of.%pK\n", __func__, hsi);
 		return;
 	}
@@ -233,8 +252,6 @@ void rpmsg_sensor_unregister(void *psensor)
 		}
 	}
 	pr_err("[%s] Failed : Can't find sensor!\n", __func__);
-
-	return;
 }
 
 static int do_gpio_config_on(struct hisp_sensor_info *hsi)
@@ -255,9 +272,12 @@ static int do_gpio_config_on(struct hisp_sensor_info *hsi)
 		{CAM_VCM_2V85_EN,   HIGH},
 	};
 
-	for (gpio = &on_sequence[0], i = 0; i < sizeof(on_sequence)/sizeof(on_sequence[0]); gpio ++, i ++) {
-		if ((ret = hw_sensor_gpio_config(hsi, gpio)) != 0) {
-			pr_err("[%s] Failed : hw_sensor_gpio_config.%d.(%pK, %pK)\n", __func__, ret, hsi, gpio);
+	for (gpio = &on_sequence[0], i = 0;
+			i < ARRAY_SIZE(on_sequence); gpio++, i++) {
+		ret = hw_sensor_gpio_config(hsi, gpio);
+		if (ret != 0) {
+			pr_err("[%s] Failed : hw_sensor_gpio_config.%d.(%pK, %pK)\n",
+					__func__, ret, hsi, gpio);
 			return ret;
 		}
 	}
@@ -283,9 +303,12 @@ static int do_gpio_config_off(struct hisp_sensor_info *hsi)
 		{CAM_VCM_2V85_EN,   LOW},
 	};
 
-	for (gpio = &off_sequence[0], i = 0; i < sizeof(off_sequence)/sizeof(off_sequence[0]); gpio ++, i ++) {
-		if ((ret = hw_sensor_gpio_config(hsi, gpio)) != 0) {
-			pr_err("[%s] Failed : hw_sensor_gpio_config.%d, (%pK, %pK)\n", __func__, ret, hsi, gpio);
+	for (gpio = &off_sequence[0], i = 0;
+			i < ARRAY_SIZE(off_sequence); gpio++, i++) {
+		ret = hw_sensor_gpio_config(hsi, gpio);
+		if (ret != 0) {
+			pr_err("[%s] Failed : hw_sensor_gpio_config.%d, (%pK, %pK)\n",
+					__func__, ret, hsi, gpio);
 			return ret;
 		}
 	}
@@ -306,13 +329,16 @@ static int all_sensor_power_on(int index)
 	}
 
 	list_for_each_entry(hsi, &g_sinfo, link) {
-		if (!(sensor = hsi->sensor)) {
+		sensor = hsi->sensor;
+		if (sensor == NULL) {
 			pr_err("[%s] Failed : sensor.%pK\n", __func__, sensor);
 			return -EINVAL;
 		}
 
-		if (!(bi = sensor->board_info)) {
-			pr_err("[%s] Failed : board_info.%pK\n", __func__, sensor->board_info);
+		bi = sensor->board_info;
+		if (bi == NULL) {
+			pr_err("[%s] Failed : board_info.%pK\n",
+					__func__, sensor->board_info);
 			return -EINVAL;
 		}
 
@@ -320,8 +346,10 @@ static int all_sensor_power_on(int index)
 			continue;
 
 		pr_info("[%s] %s@%d\n", __func__, bi->name, index);
-		if ((ret = do_gpio_config_on(hsi)) != 0) {
-			pr_err("[%s] Failed : do_gpio_config_on.%d, %s@%d\n", __func__, ret, bi->name, index);
+		ret = do_gpio_config_on(hsi);
+		if (ret != 0) {
+			pr_err("[%s] Failed : do_gpio_config_on.%d, %s@%d\n",
+					__func__, ret, bi->name, index);
 			return ret;
 		}
 	}
@@ -342,13 +370,16 @@ static int all_sensor_power_off(int index)
 	}
 
 	list_for_each_entry(hsi, &g_sinfo, link) {
-		if (!(sensor = hsi->sensor)) {
+		sensor = hsi->sensor;
+		if (sensor == NULL) {
 			pr_err("[%s] Failed : sensor.%pK\n", __func__, sensor);
 			return -EINVAL;
 		}
 
-		if (!(bi = sensor->board_info)) {
-			pr_err("[%s] Failed : board_info.%pK\n", __func__, sensor->board_info);
+		bi = sensor->board_info;
+		if (bi == NULL) {
+			pr_err("[%s] Failed : board_info.%pK\n",
+					__func__, sensor->board_info);
 			return -EINVAL;
 		}
 
@@ -356,8 +387,10 @@ static int all_sensor_power_off(int index)
 			continue;
 
 		pr_info("[%s] %s@%d\n", __func__, bi->name, index);
-		if((ret = do_gpio_config_off(hsi)) != 0) {
-			pr_err("[%s] Failed : do_gpio_config_off.%d, %s@%d\n", __func__, ret, bi->name, index);
+		ret = do_gpio_config_off(hsi);
+		if (ret != 0) {
+			pr_err("[%s] Failed : do_gpio_config_off.%d, %s@%d\n",
+					__func__, ret, bi->name, index);
 			return ret;
 		}
 	}
@@ -371,24 +404,32 @@ int do_sensor_power_on(int index, const char *name)
 	int ret = 0;
 
 	pr_info("[%s] %s@%d\n", __func__, name, index);
-	if ((ret = check_sensor_name(index, name, &hsi)) != 0) {
-		pr_err("[%s] Failed : check_sensor_name.%d.(%d, %s, %pK)\n", __func__, ret, index, name, hsi);
+	ret = check_sensor_name(index, name, &hsi);
+	if (ret != 0) {
+		pr_err("[%s] Failed : check_sensor_name.%d. %d, %s, %pK\n",
+				__func__, ret, index, name, hsi);
 		return ret;
 	}
 
-	if ((ret = hw_sensor_power_up_config(hsi->dev, hsi->sensor->board_info))) {
-		pr_err("[%s] Failed : hw_sensor_power_up_config.%d\n", __func__, ret);
+	ret = hw_sensor_power_up_config(hsi->dev, hsi->sensor->board_info);
+	if (ret != 0) {
+		pr_err("[%s] Failed : hw_sensor_power_up_config.%d\n",
+				__func__, ret);
 		return ret;
 	}
 
 	if (hw_is_fpga_board()) {
-		if ((ret = do_gpio_config_on(hsi)) != 0)
-			pr_err("[%s] Failed : do_gpio_config_on.%d, %s@%d\n", __func__, ret, name, index);
+		ret = do_gpio_config_on(hsi);
+		if (ret != 0)
+			pr_err("[%s] Failed : do_gpio_config_on.%d, %s@%d\n",
+					__func__, ret, name, index);
 		return ret;
 	}
 
-	if ((ret = hw_sensor_power_up(hsi->sensor)) != 0)
-		pr_err("[%s] Failed : hw_sensor_power_up.%d, %s@%d\n", __func__, ret, name, index);
+	ret = hw_sensor_power_up(hsi->sensor);
+	if (ret != 0)
+		pr_err("[%s] Failed : hw_sensor_power_up.%d, %s@%d\n",
+				__func__, ret, name, index);
 	return 0;
 }
 
@@ -398,22 +439,21 @@ int do_sensor_power_off(int index, const char *name)
 	int ret = 0;
 
 	pr_info("[%s] %s@%d\n", __func__, name, index);
-	if ((ret = check_sensor_name(index, name, &hsi)) != 0) {
-		pr_err("[%s] Failed : check_sensor_name.%d.(%d, %s, %pK)\n", __func__, ret, index, name, hsi);
+	ret = check_sensor_name(index, name, &hsi);
+	if (ret != 0) {
+		pr_err("[%s] Failed : check_sensor_name.%d. %d, %s, %pK\n",
+				__func__, ret, index, name, hsi);
 		return ret;
 	}
 
 	if (hw_is_fpga_board()) {
-		if ((ret = do_gpio_config_off(hsi)) != 0)
-			pr_err("[%s] Failed : do_gpio_config_off.%d, %s@%d\n", __func__, ret, name, index);
+		ret = do_gpio_config_off(hsi);
+		if (ret != 0)
+			pr_err("[%s] Failed : do_gpio_config_off.%d, %s@%d\n",
+					__func__, ret, name, index);
 		return ret;
 	}
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
-	if ((ret = hw_sensor_power_down(hsi->sensor)) != 0)
-		pr_err("[%s] Failed : hw_sensor_power_down.%d, %s@%d\n", __func__, ret, name, index);
-#else
 
-#endif
 	hw_sensor_power_down_config(hsi->sensor->board_info);
 
 	return 0;
@@ -424,47 +464,60 @@ int rpmsg_sensor_ioctl(unsigned int cmd, int index, char *name)
 	int ret = -EINVAL;
 
 	switch (cmd) {
-		case HWSENSOR_IOCTL_POWER_UP:
-			if (0 == strlen(name)) {
-				if ((ret = all_sensor_power_on(index)) != 0)
-					pr_err("[%s] Failed : all_sensor_power_on.%d, index.%d, name.%s\n", __func__, ret, index, name);
-				break;
-			}
-
-			if ((ret = hisi_rproc_select_def()) != 0) {
-				pr_err("[%s] Failed : hisi_rproc_select_def.%d, index.%d, name.%s\n", __func__, ret, index, name);
-				break;
-			}
-
-			if ((ret = do_sensor_power_on(index, name)) != 0)
-				pr_err("[%s] Failed : do_sensor_power_on.%d, index.%d, name.%s\n", __func__, ret, index, name);
-
+	case HWSENSOR_IOCTL_POWER_UP:
+		if (strlen(name) == 0) {
+			ret = all_sensor_power_on(index);
+			if (ret != 0)
+				pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+					__func__, ret, index, name);
 			break;
-		case HWSENSOR_IOCTL_POWER_DOWN:
-			if (0 == strlen(name)) {
-				if ((ret = all_sensor_power_off(index)) != 0)
-					pr_err("[%s] Failed : all_sensor_power_off.%d, index.%d, name.%s\n", __func__, ret, index, name);
-				break;
-			}
+		}
 
-			if ((ret = do_sensor_power_off(index, name)) != 0) {
-				pr_err("[%s] Failed : do_sensor_power_off.%d, index.%d, name.%s\n", __func__, ret, index, name);
-				break;
-			}
-
-			if ((ret = hisi_rproc_select_idle()) != 0)
-				pr_err("[%s] Failed : hisi_rproc_select_idle.%d, index.%d, name.%s\n", __func__, ret, index, name);
-
+		ret = isp_rproc_select_def();
+		if (ret != 0) {
+			pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+					__func__, ret, index, name);
 			break;
-		default:
-			pr_err("[%s] Failed : cmd.%d, index.%d, name.%s\n", __func__, cmd, index, name);
+		}
+
+		ret = do_sensor_power_on(index, name);
+		if (ret != 0)
+			pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+					__func__, ret, index, name);
+
+		break;
+	case HWSENSOR_IOCTL_POWER_DOWN:
+		if (strlen(name) == 0) {
+			ret = all_sensor_power_off(index);
+			if (ret != 0)
+				pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+						__func__, ret, index, name);
 			break;
+		}
+
+		ret = do_sensor_power_off(index, name);
+		if (ret != 0) {
+			pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+					__func__, ret, index, name);
+			break;
+		}
+
+		ret = isp_rproc_select_idle();
+		if (ret != 0)
+			pr_err("[%s] Failed : ret.%d, index.%d, name.%s\n",
+					__func__, ret, index, name);
+
+		break;
+	default:
+		pr_err("[%s] Failed : cmd.%d, index.%d, name.%s\n",
+				__func__, cmd, index, name);
+		break;
 	}
-	pr_info("[%s] cmd.%d, index.%d, name.%s\n", __func__, cmd, index, name);
+	pr_info("[%s] cmd.%d, index.%d, name.%s\n",
+			__func__, cmd, index, name);
 
 	return ret;
 }
 
-MODULE_AUTHOR("Chen Tao <chentao20@hisilicon.com>");
-MODULE_DESCRIPTION("Hisilicon ISP Sensor Driver");
+MODULE_DESCRIPTION("ISP Sensor Driver");
 MODULE_LICENSE("GPL v2");

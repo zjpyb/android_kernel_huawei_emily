@@ -3,7 +3,7 @@
  *
  * huawei battery capacity
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,58 +18,20 @@
 
 #include <linux/types.h>
 #include <linux/err.h>
-#include <linux/power_supply.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_battery_capacity.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
 
 #define HWLOG_TAG huawei_battery_capacity
 HWLOG_REGIST();
-
-static int huawei_battery_get_prop(enum power_supply_property psp,
-	union power_supply_propval *val)
-{
-	int ret;
-	struct power_supply *psy = NULL;
-
-	psy = power_supply_get_by_name(HUAWEI_BATTERY);
-	if (!psy)
-		return -ENODEV;
-
-	ret = power_supply_get_property(psy, psp, val);
-	power_supply_put(psy);
-	return ret;
-}
-
-static int huawei_battery_get_cap(int *cap)
-{
-	int ret;
-	union power_supply_propval val;
-
-	ret = huawei_battery_get_prop(POWER_SUPPLY_PROP_CAPACITY, &val);
-	if (!ret)
-		*cap = val.intval;
-
-	return ret;
-}
-
-static int huawei_battery_get_health(int *health)
-{
-	int ret;
-	union power_supply_propval val;
-
-	ret = huawei_battery_get_prop(POWER_SUPPLY_PROP_HEALTH, &val);
-	if (!ret)
-		*health = val.intval;
-
-	return ret;
-}
 
 int huawei_battery_capacity(void)
 {
 	int cap = 0;
 
-	if (huawei_battery_get_cap(&cap))
-		return hisi_battery_capacity();
+	if (power_supply_get_int_property_value(HUAWEI_BATTERY,
+		POWER_SUPPLY_PROP_CAPACITY, &cap))
+		return coul_drv_battery_capacity();
 
 	return cap;
 }
@@ -78,8 +40,9 @@ int huawei_battery_health(void)
 {
 	int health = 0;
 
-	if (huawei_battery_get_health(&health))
-		return hisi_battery_health();
+	if (power_supply_get_int_property_value(HUAWEI_BATTERY,
+		POWER_SUPPLY_PROP_HEALTH, &health))
+		return coul_drv_battery_health();
 
 	return health;
 }

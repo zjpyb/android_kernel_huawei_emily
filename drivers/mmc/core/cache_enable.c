@@ -15,7 +15,7 @@
 #include <linux/kernel.h>
 
 #define CID_MANFID_SAMSUNG             0x15
-extern int is_hisi_battery_exist(void);
+extern int coul_drv_is_battery_exist(void);
 #ifdef CONFIG_HISI_CMDLINE_PARSE
 extern unsigned int runmode_is_factory(void);
 #endif
@@ -32,8 +32,8 @@ int mmc_screen_test_cache_enable(struct mmc_card *card)
 #ifdef CONFIG_HISI_CMDLINE_PARSE
 	runmode_normal = !runmode_is_factory();
 #endif
-#ifdef CONFIG_HISI_COUL
-	batterystate_exist = is_hisi_battery_exist();
+#ifdef CONFIG_COUL_DRV
+	batterystate_exist = coul_drv_is_battery_exist();
 #else
 	batterystate_exist = 0;
 #endif

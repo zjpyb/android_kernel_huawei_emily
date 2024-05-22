@@ -1,15 +1,15 @@
 
-config HISI_SOH
-        bool "hisi soh"
+config BATT_SOH
+        bool "batt soh"
         default n
 
-config HISI_SOH_PMIC
-        bool "hisi soh pmic driver"
+config BATT_SOH_PMIC
+        bool "batt soh pmic driver"
         default n
 
-config HISI_SOH_HI6531
-        bool "hisi soh hi6531 driver"
+config BATT_SOH_HI6531
+        bool "batt soh hi6531 driver"
         default n
-config HISI_SOH_CHARGER
-        bool "hisi soh charger driver"
+config BATT_SOH_CHARGER
+        bool "batt soh charger driver"
         default n

@@ -50,7 +50,8 @@ static long usb_audio_common_ioctl(struct file *file, unsigned int cmd,
 				unsigned long arg)
 {
 	int ret;
-	unsigned int __user *p_user = (unsigned int __user *) arg;
+	uintptr_t arg_tmp = (uintptr_t)arg;
+	unsigned int __user *p_user = (unsigned int __user *)arg_tmp;
 
 	if (!p_user || !usb_audio_com_pdata)
 		return -EBUSY;

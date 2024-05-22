@@ -33,7 +33,7 @@ static inline bool arm64_lz4m_neon_begin(struct lz4mneon_fpsimd_ctx *ctx)
 	__asm__ __volatile__(
 			"stp    q0, q1, [" __lz4mneon_vargs "]\n\r"
 			"stp    q2, q3, [" __lz4mneon_vargs ", #32]"
-			: /* "=r"(ctx->fpsr) */ : "r"(ctx->vregs)
+			:: "r"(ctx->vregs)
 			: "memory", "cc");
 	return true;
 }
@@ -43,7 +43,7 @@ static inline void __restore_lz4mneon_ctx(struct lz4mneon_fpsimd_ctx *ctx)
 	__asm__ __volatile__(
 			"ldp    q0, q1, [" __lz4mneon_vargs "]\n\r"
 			"ldp    q2, q3, [" __lz4mneon_vargs ", #32]"
-			:: /* "r"(ctx->fpsr), */ "r"(ctx->vregs)
+			:: "r"(ctx->vregs)
 			: "memory", "cc");
 }
 

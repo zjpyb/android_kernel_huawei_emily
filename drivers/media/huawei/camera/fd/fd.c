@@ -294,13 +294,11 @@ static irqreturn_t fd_irq_handler(int irq, void *dev_id)
     }
     if(flags & IRQ_PRE_WR)
     {
-        //pre_end = ktime_get();
         FD_HW_WRITE_32(0, base_addr + AHFD_PRE_EN);
         statePRE = WAIT_RESULT_READY;
     }
     if(flags & IRQ_TME_WR)
     {
-        //tme_end = ktime_get();
         FD_HW_WRITE_32(0, base_addr + AHFD_TME_EN);
         stateTME = WAIT_RESULT_READY;
     }
@@ -496,7 +494,6 @@ int  fd_smmu_master_cfg(struct fd_device *pdev,int bypass,IO_IPU_MAPS_va *maps_V
     tmp = maps_Va->preMap_va_1[0]+2785280; //844k to 864k  - 32k = 832k
     fd_smmu_mstr_w(pdev,tmp,(mstr_offset_list[4]+10*SMMU_STREAM_OFFSET));
 exit:
-   // iounmap(fd_dev.mstr_vir_base);
    return 0;
 }
 
@@ -880,19 +877,6 @@ static int fd_write_reg(struct fd_device *pdev, uint32_t * regStart)
         if (is_writeable_reg(offset)) {
             FD_HW_WRITE_32(reg_val, addr);
         }
-        /*for FD perf count*/
-        /*if(offset == 0x041C)
-        {
-            uint32_t tmp = reg_val & 0x4;
-            if(tmp !=0)
-            {
-                pre_start = ktime_get();
-            }
-        }
-        if((offset == 0x031C)&&(reg_val == 1))
-        {
-            tme_start = ktime_get();
-        }*/
         addr += 4;
         offset +=4;
     }
@@ -937,7 +921,6 @@ static long fd_do_write_reg(struct fd_device *pdev, uint32_t *regStart, uint32_t
             return -1;
         }
 
-        //fd_info("offset = 0x%x, size = %d", offset, size);
         regStart += (size + 2);//lint !e679
         buffer_length -= (size + 2);
     }
@@ -1027,7 +1010,6 @@ static long fd_do_read_reg(struct fd_device *pdev, uint32_t *regStart, uint32_t 
             addr += 4;
         }
 
-        //fd_info("offset = 0x%x, size = %d", offset, size);
         buffer_length -= (size + 2);
     }
 
@@ -1125,11 +1107,6 @@ static long AHFD_Wait_Result(struct fd_device *pdev, unsigned int cmd, unsigned 
             rc = -EIO;
             atomic_set(&pdev->waitFlag[IDX_WAIT_TME], WAIT_RESULT_PENDING);//lint !e1058
         }
-        /*for FD perf count*/
-        /*PRE_time = ktime_to_us(ktime_sub(pre_end, pre_start));
-        TME_time = ktime_to_us(ktime_sub(tme_end, pre_end));
-        fd_dbg("AHFD_WAIT_RESULT IDX_WAIT_TME finished, status = %ld\n", rc);
-        fd_info("PRE_time: %lu,TME_time: %lu\n", (unsigned long)PRE_time, (unsigned long)TME_time);*/
     }
     return rc;
 }

@@ -217,8 +217,7 @@ int ovl_xattr_set(struct dentry *dentry, struct inode *inode, const char *name,
 		goto out;
 
 	if (!value && !upperdentry) {
-		err = vfs_getxattr(NULL, realdentry, name, NULL, 0);
-
+		err = vfs_getxattr(realdentry, name, NULL, 0);
 		if (err < 0)
 			goto out_drop_write;
 	}
@@ -233,10 +232,10 @@ int ovl_xattr_set(struct dentry *dentry, struct inode *inode, const char *name,
 
 	old_cred = ovl_override_creds(dentry->d_sb);
 	if (value) {
-		err = vfs_setxattr(NULL, realdentry, name, value, size, flags);
+		err = vfs_setxattr(realdentry, name, value, size, flags);
 	} else {
 		WARN_ON(flags != XATTR_REPLACE);
-		err = vfs_removexattr(NULL, realdentry, name);
+		err = vfs_removexattr(realdentry, name);
 	}
 	ovl_revert_creds(old_cred);
 
@@ -255,7 +254,7 @@ int ovl_xattr_get(struct dentry *dentry, struct inode *inode, const char *name,
 		ovl_i_dentry_upper(inode) ?: ovl_dentry_lower(dentry);
 
 	old_cred = ovl_override_creds(dentry->d_sb);
-	res = vfs_getxattr(NULL, realdentry, name, value, size);
+	res = vfs_getxattr(realdentry, name, value, size);
 	ovl_revert_creds(old_cred);
 	return res;
 }
@@ -267,7 +266,8 @@ static bool ovl_can_list(const char *s)
 		return true;
 
 	/* Never list trusted.overlay, list other trusted for superuser only */
-	return !ovl_is_private_xattr(s) && capable(CAP_SYS_ADMIN);
+	return !ovl_is_private_xattr(s) &&
+	       ns_capable_noaudit(&init_user_ns, CAP_SYS_ADMIN);
 }
 
 ssize_t ovl_listxattr(struct dentry *dentry, char *list, size_t size)
@@ -559,7 +559,7 @@ unsigned int ovl_get_nlink(struct dentry *lowerdentry,
 	if (!lowerdentry || !upperdentry || d_inode(lowerdentry)->i_nlink == 1)
 		return fallback;
 
-	err = vfs_getxattr(NULL, upperdentry, OVL_XATTR_NLINK, &buf, sizeof(buf) - 1);
+	err = vfs_getxattr(upperdentry, OVL_XATTR_NLINK, &buf, sizeof(buf) - 1);
 	if (err < 0)
 		goto fail;
 

@@ -410,7 +410,7 @@ struct usb_gadget {
 	unsigned			deactivated:1;
 	unsigned			connected:1;
 	unsigned			lpm_capable:1;
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	unsigned			is_removing_driver;
 #endif
 };

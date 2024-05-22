@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -38,14 +38,14 @@
 #define THP_LOG_AVAILABLE_DATA_LENGTH 16
 #define THP_FS_WAIT_TIME 2
 
-typedef struct {
+struct pkt_thp_frame_data_format_t {
 	unsigned short col;
 	unsigned short row;
 	unsigned int len;
 	unsigned char data[THP_FRAME_DATA_LENGTH];
-} pkt_thp_frame_data_format_t;
+};
 
-typedef struct {
+struct pkt_thplog_report_data_t {
 	unsigned char dae_log[THP_DAE_LOG_BUFF_LENGTH];
 	unsigned int dae_logbuff_len;
 	unsigned char afe_log[THP_AFE_LOG_BUFF_LENGTH];
@@ -56,13 +56,13 @@ typedef struct {
 	unsigned char frame_head[THP_FRAME_DATA_LENGTH];
 	unsigned int frame_head_len;
 
-	pkt_thp_frame_data_format_t raw_data;
-	pkt_thp_frame_data_format_t dif_data;
-} pkt_thplog_report_data_t;
+	struct pkt_thp_frame_data_format_t raw_data;
+	struct pkt_thp_frame_data_format_t dif_data;
+};
 
 struct thp_log_save {
-	pkt_thplog_report_data_t *data;
-	struct mutex lock_mutex;
+	struct pkt_thplog_report_data_t *data;
+	struct semaphore sem;
 };
 
 extern int thp_log_init(void);

@@ -16,11 +16,9 @@
  *
  */
 
-
-
 #include "drv_mailbox_msg.h"
 #include "bsp_drv_ipc.h"
-#include "hifi_lpp.h"
+#include "dsp_misc.h"
 
 #include "huawei_platform/audio/virtual_voice_proxy.h"
 
@@ -49,6 +47,9 @@ LIST_HEAD(virtual_proxy_confirm_queue);
 /* this queue is used for tell the write thread that the type of new message */
 LIST_HEAD(virtual_proxy_command_queue);
 
+/* this queue is used for handle mail message */
+LIST_HEAD(virtual_proxy_mail_msg_queue);
+
 /* the message callback is used for handling message from hifi */
 static struct voice_proxy_msg_handle message_callbacks[MESSAGE_CALLBACKS_SIZE];
 
@@ -63,16 +64,264 @@ struct virtual_voice_proxy_priv {
 	/* this lock is used for handling the queue of command_queue */
 	spinlock_t command_lock;
 	spinlock_t cnf_queue_lock;
+	spinlock_t mail_lock;
 	wait_queue_head_t command_waitq;
+	wait_queue_head_t mail_waitq;
 	int32_t command_wait_flag;
+	int32_t mail_wait_flag;
 	struct workqueue_struct *send_mailbox_cnf_wq;
 	struct work_struct send_mailbox_cnf_work;
 	struct task_struct *write_thread;
+	struct task_struct *mail_thread;
 	mailbox_send_msg_cb send_mailbox_msg;
 	read_mailbox_msg_cb read_mailbox_msg;
+	struct virtual_voice_memory_pool command_pool;
+	struct virtual_voice_memory_pool confirm_pool;
+	struct virtual_voice_memory_pool msg_pool;
 };
 
 static struct virtual_voice_proxy_priv porxy_priv;
+
+int virtual_voice_get_free_node_num(struct virtual_voice_memory_pool *mem_pool)
+{
+	int count = 0;
+	struct vir_free_node *free_node = NULL;
+
+	if (mem_pool == NULL)
+		return 0;
+
+	free_node = mem_pool->free_node_header;
+	while (free_node != NULL) {
+		count++;
+		free_node = free_node->next;
+	}
+
+	return count;
+}
+
+static int virtual_voice_malloc_mem_pool_block_data(
+	struct vir_mem_block **mem_block, uint32_t size)
+{
+	int i;
+	int index;
+	struct vir_mem_block *new_block = NULL;
+
+	if (mem_block == NULL || *mem_block == NULL)
+		return -ENOMEM;
+
+	new_block = *mem_block;
+	for (i = 0; i < VIR_MEM_BLOCK_NUM; i++) {
+		new_block->data[i].data = kzalloc(size, GFP_ATOMIC);
+		if (new_block->data[i].data == NULL) {
+			loge("vir_free_node data malloc failed\n");
+			index = i - 1;
+			while (index >= 0) {
+				if (new_block->data[index].data != NULL) {
+					kfree(new_block->data[index].data);
+					new_block->data[index].data = NULL;
+				}
+				index--;
+			}
+			return -ENOMEM;
+		}
+		new_block->data[i].next = NULL;
+	}
+
+	for (i = 1; i < VIR_MEM_BLOCK_NUM; i++)
+		new_block->data[i - 1].next = &new_block->data[i];
+
+	new_block->data[VIR_MEM_BLOCK_NUM - 1].next = NULL;
+	return 0;
+}
+
+void *virtual_voice_malloc(struct virtual_voice_memory_pool *mem_pool,
+	uint32_t size, int *ret)
+{
+	struct vir_free_node *free_node = NULL;
+	struct vir_mem_block *new_block = NULL;
+	int temp;
+
+	if (mem_pool == NULL || ret == NULL)
+		return NULL;
+
+	*ret = VIR_MEM_BLOCK_POOL_NOT_USE;
+	if (size != mem_pool->elem_size) {
+		logw("size:%u, is not equal to mem pool elem_size:%u\n",
+			size, mem_pool->elem_size);
+		return kzalloc(size, GFP_ATOMIC);
+	}
+	spin_lock_bh(&mem_pool->mem_lock);
+	if (mem_pool->free_node_header == NULL) {
+		if (mem_pool->block_num > VIT_MEM_BLOCK_MAXNUM_LIMIT) {
+			loge("block_num is exceed limit\n");
+			spin_unlock_bh(&mem_pool->mem_lock);
+			return NULL;
+		}
+		new_block = kzalloc(sizeof(*new_block), GFP_ATOMIC);
+		if (new_block == NULL) {
+			loge("new_block malloc failed\n");
+			spin_unlock_bh(&mem_pool->mem_lock);
+			return NULL;
+		}
+		new_block->next = NULL;
+		mem_pool->free_node_header = &new_block->data[0];
+		temp = virtual_voice_malloc_mem_pool_block_data(&new_block,
+			size);
+		if (temp < 0) {
+			if (new_block != NULL)
+				kfree(new_block);
+			spin_unlock_bh(&mem_pool->mem_lock);
+			return NULL;
+		}
+		mem_pool->block_num++;
+		if (mem_pool->mem_block_header == NULL) {
+			mem_pool->mem_block_header = new_block;
+		} else {
+			new_block->next = mem_pool->mem_block_header;
+			mem_pool->mem_block_header = new_block;
+		}
+	}
+	*ret = VIR_MEM_BLOCK_POOL_USE;
+	free_node = mem_pool->free_node_header;
+	mem_pool->free_node_header = mem_pool->free_node_header->next;
+	free_node->next = NULL;
+	spin_unlock_bh(&mem_pool->mem_lock);
+	return (void *)free_node;
+}
+
+void virtual_voice_free(struct virtual_voice_memory_pool *mem_pool,
+	void **mem, int mem_status)
+{
+	struct vir_free_node *free_node = NULL;
+
+	if (mem_pool == NULL || mem == NULL || *mem == NULL)
+		return;
+
+	if (mem_status == VIR_MEM_BLOCK_POOL_NOT_USE) {
+		kfree(*mem);
+		*mem = NULL;
+		return;
+	}
+
+	free_node = (struct vir_free_node *)(*mem);
+	spin_lock_bh(&mem_pool->mem_lock);
+	free_node->next = mem_pool->free_node_header;
+	mem_pool->free_node_header = free_node;
+	*mem = NULL;
+	spin_unlock_bh(&mem_pool->mem_lock);
+}
+
+void virtual_voice_memory_pool_free(struct virtual_voice_memory_pool *mem_pool)
+{
+	int i;
+	struct vir_mem_block *mem_ptr = NULL;
+	struct vir_free_node *free_node = NULL;
+	int free_node_count = 0;
+
+	if (mem_pool == NULL)
+		return;
+
+	spin_lock_bh(&mem_pool->mem_lock);
+	free_node = mem_pool->free_node_header;
+	while (free_node != NULL) {
+		free_node_count++;
+		free_node = free_node->next;
+	}
+	if ((free_node_count != mem_pool->block_num * VIR_MEM_BLOCK_NUM) &&
+		(free_node_count == 0)) {
+		spin_unlock_bh(&mem_pool->mem_lock);
+		logi("memory pool not full idle or not exsit, so not free\n");
+		return;
+	}
+	while (mem_pool->mem_block_header != NULL) {
+		mem_ptr = mem_pool->mem_block_header->next;
+		for (i = 0; i < VIR_MEM_BLOCK_NUM; i++) {
+			if (mem_pool->mem_block_header->data[i].data == NULL)
+				continue;
+
+			kfree(mem_pool->mem_block_header->data[i].data);
+			mem_pool->mem_block_header->data[i].data = NULL;
+		}
+		kfree(mem_pool->mem_block_header);
+		mem_pool->mem_block_header = mem_ptr;
+	}
+	mem_pool->free_node_header = NULL;
+	mem_pool->block_num = 0;
+	spin_unlock_bh(&mem_pool->mem_lock);
+}
+
+void virtual_voice_memory_pool_init(struct virtual_voice_memory_pool *mem_pool,
+	uint32_t elem_size)
+{
+	if (mem_pool == NULL)
+		return;
+
+	mem_pool->block_num = 0;
+	mem_pool->free_node_header = NULL;
+	mem_pool->mem_block_header = NULL;
+	mem_pool->elem_size = elem_size;
+	spin_lock_init(&mem_pool->mem_lock);
+}
+
+bool virtual_voice_memory_pool_free_node_full_idle(
+	struct virtual_voice_memory_pool *mem_pool)
+{
+	int free_node_count;
+
+	if (mem_pool == NULL)
+		return false;
+
+	spin_lock_bh(&mem_pool->mem_lock);
+	free_node_count =
+		virtual_voice_get_free_node_num(mem_pool);
+	if ((free_node_count == mem_pool->block_num * VIR_MEM_BLOCK_NUM) &&
+		(free_node_count > 0)) {
+		spin_unlock_bh(&mem_pool->mem_lock);
+		return true;
+	}
+
+	spin_unlock_bh(&mem_pool->mem_lock);
+	return false;
+}
+
+void virtual_voice_cmd_memory_pool_free(void)
+{
+	spin_lock_bh(&porxy_priv.cnf_queue_lock);
+	if (!list_empty_careful(&virtual_proxy_confirm_queue)) {
+		spin_unlock_bh(&porxy_priv.cnf_queue_lock);
+		return;
+	}
+	if (virtual_voice_memory_pool_free_node_full_idle(
+		&porxy_priv.confirm_pool)) {
+		logi("confirm mem pool prepare clear\n");
+		virtual_voice_memory_pool_free(&porxy_priv.confirm_pool);
+	}
+	spin_unlock_bh(&porxy_priv.cnf_queue_lock);
+
+	spin_lock_bh(&porxy_priv.command_lock);
+	if (!list_empty_careful(&virtual_proxy_command_queue)) {
+		spin_unlock_bh(&porxy_priv.command_lock);
+		return;
+	}
+	if (virtual_voice_memory_pool_free_node_full_idle(
+		&porxy_priv.command_pool)) {
+		logi("cmd mem pool prepare clear\n");
+		virtual_voice_memory_pool_free(&porxy_priv.command_pool);
+	}
+	spin_unlock_bh(&porxy_priv.command_lock);
+
+	spin_lock_bh(&porxy_priv.mail_lock);
+	if (!list_empty_careful(&virtual_proxy_mail_msg_queue)) {
+		spin_unlock_bh(&porxy_priv.mail_lock);
+		return;
+	}
+	if (virtual_voice_memory_pool_free_node_full_idle(
+		&porxy_priv.msg_pool)) {
+		logi("msg mem pool prepare clear\n");
+		virtual_voice_memory_pool_free(&porxy_priv.msg_pool);
+	}
+	spin_unlock_bh(&porxy_priv.mail_lock);
+}
 
 void virtual_voice_proxy_register_msg_callback(uint16_t msg_id,
 	voice_proxy_msg_cb callback)
@@ -216,7 +465,7 @@ void virtual_voice_proxy_set_send_sign(bool first,
 		spend_time = cur_timestamp - *timestamp;
 		if (spend_time > TIME_OUT_MSEC) {
 			if (spend_time > TIME_OUT_MSEC_PRINTF)
-				logd("time spend [%d], is exceed limit[%d]\n",
+				logd("time spend %lld, it exceed limit %d\n",
 					spend_time, TIME_OUT_MSEC);
 			*cnf = 1;
 		}
@@ -224,49 +473,69 @@ void virtual_voice_proxy_set_send_sign(bool first,
 	}
 }
 
-int32_t virtual_voice_proxy_create_data_node(
-	struct virtual_voice_proxy_data_node **node,
-	int8_t *data, int32_t size)
+static struct virtual_voice_proxy_cmd_node *virtual_voice_proxy_cmd_malloc(
+	uint32_t size, struct virtual_voice_memory_pool *pool)
 {
-	struct virtual_voice_proxy_data_node *n = NULL;
+	int ret;
+	void *ptr = NULL;
+	struct virtual_voice_proxy_cmd_node *command = NULL;
+	struct vir_free_node *mem_node = NULL;
 
-	if (node == NULL || data == NULL) {
-		loge("input parameter invalid");
-		return -EINVAL;
+	ptr = virtual_voice_malloc(pool,
+		size, &ret);
+	if (ptr == NULL) {
+		loge("command malloc in pool failed\n");
+		return NULL;
 	}
 
-	n = kzalloc(sizeof(*n) + size, GFP_ATOMIC);
-	if (n == NULL) {
-		loge("kzalloc failed\n");
-		return -ENOMEM;
+	if (ret == VIR_MEM_BLOCK_POOL_NOT_USE) {
+		command = ptr;
+		/* only for virtual_voice_free use the node_cmd->mem_node */
+		command->mem_node = ptr;
+	} else {
+		mem_node = ptr;
+		command = (struct virtual_voice_proxy_cmd_node *)(mem_node->data);
+		if (command == NULL) {
+			loge("command is NULL\n");
+			return NULL;
+		}
+		command->mem_node = mem_node;
 	}
+	command->mem_status = ret;
+	return command;
+}
 
-	memcpy(n->list_data.data, data, size);
-	n->list_data.size = size;
-	*node = n;
+static void virtual_voice_cmd_node_free(
+	struct virtual_voice_memory_pool *mem_pool,
+	struct virtual_voice_proxy_cmd_node **command)
+{
+	struct virtual_voice_proxy_cmd_node *node_cmd = NULL;
 
-	return 0;
+	if (command == NULL || *command == NULL || mem_pool == NULL)
+		return;
+
+	node_cmd = *command;
+	virtual_voice_free(mem_pool,
+		(void **)(&node_cmd->mem_node),
+		node_cmd->mem_status);
 }
 
 int32_t virtual_voice_proxy_add_cmd(uint16_t msg_id)
 {
 	struct virtual_voice_proxy_cmd_node *command =
-		kzalloc(sizeof(*command), GFP_ATOMIC);
-
+		virtual_voice_proxy_cmd_malloc(sizeof(*command),
+		&porxy_priv.command_pool);
 	if (command == NULL) {
-		loge("command kzalloc failed\n");
+		loge("command malloc failed\n");
 		return -ENOMEM;
 	}
 
 	command->msg_id = msg_id;
 	spin_lock_bh(&porxy_priv.command_lock);
-
 	list_add_tail(&command->list_node, &virtual_proxy_command_queue);
 	porxy_priv.command_wait_flag++;
-
 	spin_unlock_bh(&porxy_priv.command_lock);
 	wake_up(&porxy_priv.command_waitq);
-
 	return 0;
 }
 
@@ -282,19 +551,21 @@ int32_t virtual_voice_proxy_add_data(voice_proxy_add_data_cb callback,
 		return -EINVAL;
 	}
 
-	command = kzalloc(sizeof(*command), GFP_ATOMIC);
+	spin_lock_bh(&porxy_priv.command_lock);
+	command = virtual_voice_proxy_cmd_malloc(sizeof(*command),
+				&porxy_priv.command_pool);
 	if (command == NULL) {
-		loge("kzalloc failed\n");
+		spin_unlock_bh(&porxy_priv.command_lock);
+		loge("command malloc failed\n");
 		return -ENOMEM;
 	}
-
 	command->msg_id = msg_id;
-
-	spin_lock_bh(&porxy_priv.command_lock);
 	ret = callback(data, size);
 	if (ret < 0) {
+		virtual_voice_cmd_node_free(&porxy_priv.command_pool,
+			(struct virtual_voice_proxy_cmd_node **)(&command));
+		command = NULL;
 		spin_unlock_bh(&porxy_priv.command_lock);
-		kfree(command);
 		return ret;
 	}
 
@@ -302,7 +573,6 @@ int32_t virtual_voice_proxy_add_data(voice_proxy_add_data_cb callback,
 	porxy_priv.command_wait_flag++;
 	spin_unlock_bh(&porxy_priv.command_lock);
 	wake_up(&porxy_priv.command_waitq);
-
 	return ret;
 }
 
@@ -330,15 +600,20 @@ static int32_t send_mailbox_cnf_msg(uint16_t msg_id)
 static void vir_voc_send_mailbox_cnf_work_queue(struct work_struct *work)
 {
 	int32_t ret = 0;
-	struct virtual_voice_proxy_cnf_cmd_code *command = NULL;
+	struct virtual_voice_proxy_cmd_node *command = NULL;
 
 	UNUSED_PARAMETER(work);
 
 	spin_lock_bh(&porxy_priv.cnf_queue_lock);
 	while (!list_empty_careful(&virtual_proxy_confirm_queue)) {
 		command = list_first_entry(&virtual_proxy_confirm_queue,
-					struct virtual_voice_proxy_cnf_cmd_code,
+					struct virtual_voice_proxy_cmd_node,
 					list_node);
+		if (command == NULL) {
+			loge("command is NULL\n");
+			spin_unlock_bh(&porxy_priv.cnf_queue_lock);
+			return;
+		}
 
 		list_del_init(&command->list_node);
 		spin_unlock_bh(&porxy_priv.cnf_queue_lock);
@@ -347,27 +622,27 @@ static void vir_voc_send_mailbox_cnf_work_queue(struct work_struct *work)
 		if (ret != MAILBOX_OK)
 			loge("send mailbox cnf msg fail\n");
 
-		kfree(command);
-		command = NULL;
-
 		spin_lock_bh(&porxy_priv.cnf_queue_lock);
+		virtual_voice_cmd_node_free(&porxy_priv.confirm_pool,
+			(struct virtual_voice_proxy_cmd_node **)(&command));
+		command = NULL;
 	}
 	spin_unlock_bh(&porxy_priv.cnf_queue_lock);
 }
 
 int32_t virtual_voice_proxy_add_work_queue_cmd(uint16_t msg_id)
 {
-	struct virtual_voice_proxy_cnf_cmd_code *command;
-
-	command = kzalloc(sizeof(*command), GFP_ATOMIC);
-	if (command == NULL) {
-		loge("command kzalloc fail\n");
-		return -ENOMEM;
-	}
-
-	command->msg_id = msg_id;
+	struct virtual_voice_proxy_cmd_node *command = NULL;
 
 	spin_lock_bh(&porxy_priv.cnf_queue_lock);
+	command = virtual_voice_proxy_cmd_malloc(sizeof(*command),
+		&porxy_priv.confirm_pool);
+	if (command == NULL) {
+		loge("command malloc fail\n");
+		spin_unlock_bh(&porxy_priv.cnf_queue_lock);
+		return -ENOMEM;
+	}
+	command->msg_id = msg_id;
 	list_add_tail(&command->list_node, &virtual_proxy_confirm_queue);
 	spin_unlock_bh(&porxy_priv.cnf_queue_lock);
 
@@ -377,7 +652,6 @@ int32_t virtual_voice_proxy_add_work_queue_cmd(uint16_t msg_id)
 
 	return 0;
 }
-
 
 int32_t virtual_voice_proxy_mailbox_send_msg_cb(uint32_t mailcode,
 	uint16_t msg_id, const void *buf, uint32_t size)
@@ -419,14 +693,12 @@ static int32_t virtual_voice_read_mailbox_msg_cb(void *mail_handle,
 static void handle_voice_mail(const void *usr_para,
 		struct mb_queue *mail_handle, uint32_t mail_len)
 {
-	int32_t i;
 	int32_t ret_mail;
-	uint16_t msg_id;
 	struct virtual_voice_proxy_rev_msg rev_msg = {0};
 	unsigned int mail_size = mail_len;
+	struct virtual_voice_proxy_cmd_node *mail_msg = NULL;
 
 	UNUSED_PARAMETER(usr_para);
-
 	if (mail_handle == NULL) {
 		loge("mail_handle is NULL\n");
 		return;
@@ -452,17 +724,19 @@ static void handle_voice_mail(const void *usr_para,
 		return;
 	}
 
-	msg_id = rev_msg.msg_id;
-	for (i = 0; i < MESSAGE_CALLBACKS_SIZE; i++) {
-		if (message_callbacks[i].msg_id == msg_id) {
-			message_callbacks[i].callback((int8_t *)&rev_msg,
-				(uint32_t)sizeof(rev_msg));
-			break;
-		}
+	spin_lock_bh(&porxy_priv.mail_lock);
+	mail_msg = virtual_voice_proxy_cmd_malloc(sizeof(*mail_msg),
+				&porxy_priv.msg_pool);
+	if (mail_msg == NULL) {
+		spin_unlock_bh(&porxy_priv.mail_lock);
+		loge("mail_msg malloc failed\n");
+		return;
 	}
-
-	if (i == MESSAGE_CALLBACKS_SIZE)
-		loge("handle_mail callback fail, msg_id is invalid\n");
+	memcpy(&mail_msg->rev_msg, &rev_msg, sizeof(rev_msg));
+	list_add_tail(&mail_msg->list_node, &virtual_proxy_mail_msg_queue);
+	porxy_priv.mail_wait_flag++;
+	spin_unlock_bh(&porxy_priv.mail_lock);
+	wake_up(&porxy_priv.mail_waitq);
 }
 
 static int32_t register_mailbox_msg_cb(mb_msg_cb callback)
@@ -472,7 +746,6 @@ static int32_t register_mailbox_msg_cb(mb_msg_cb callback)
 	ret = (int32_t)mailbox_reg_msg_cb(
 		(size_t)MAILBOX_MAILCODE_HIFI_TO_ACPU_VIRTUAL_VOICE,
 		callback, NULL);
-
 	if (ret)
 		loge("hifi mailbox handle func register fail\n");
 
@@ -522,13 +795,16 @@ static int32_t write_thread_get_data(uint32_t *size, uint16_t *msg_id)
 	}
 
 	if (list_empty_careful(&virtual_proxy_command_queue)) {
-		loge("proxy_command_queue is empty\n");
+		logw("proxy_command_queue is empty\n");
 		return -EINVAL;
 	}
 
 	command = list_first_entry(&virtual_proxy_command_queue,
 		struct virtual_voice_proxy_cmd_node, list_node);
-
+	if (command == NULL) {
+		loge("command is NULL\n");
+		return -EINVAL;
+	}
 	for (i = 0; i < COMMAND_CALLBACKS_SIZE; i++) {
 		if (command_callbacks[i].msg_id == command->msg_id) {
 			command_callbacks[i].callback(size, msg_id);
@@ -547,11 +823,10 @@ static int32_t write_thread_get_data(uint32_t *size, uint16_t *msg_id)
 			*size, VOICE_PROXY_LIMIT_PARAM_SIZE);
 		ret = -EINVAL;
 	}
-
 	list_del_init(&command->list_node);
-	kfree(command);
+	virtual_voice_cmd_node_free(&porxy_priv.command_pool,
+		(struct virtual_voice_proxy_cmd_node **)(&command));
 	command = NULL;
-
 	return ret;
 }
 
@@ -602,31 +877,97 @@ static int virtual_voice_proxy_write_thread(void *arg)
 	return 0;
 }
 
+/* handle mail message */
+static int virtual_voice_proxy_handle_mail_thread(void *arg)
+{
+	int32_t ret;
+	uint16_t msg_id;
+	uint32_t i;
+	struct virtual_voice_proxy_rev_msg rev_msg;
+	struct virtual_voice_proxy_cmd_node *mail_msg = NULL;
+
+	UNUSED_PARAMETER(arg);
+	while (!kthread_should_stop()) {
+		ret = wait_event_interruptible(porxy_priv.mail_waitq,
+			porxy_priv.mail_wait_flag != 0);
+		if (ret) {
+			loge("wait event failed, 0x%x.\n", ret);
+			continue;
+		}
+
+		spin_lock_bh(&porxy_priv.mail_lock);
+		porxy_priv.mail_wait_flag = 0;
+		while (!list_empty_careful(&virtual_proxy_mail_msg_queue)) {
+			mail_msg = list_first_entry(&virtual_proxy_mail_msg_queue,
+				struct virtual_voice_proxy_cmd_node, list_node);
+			if (mail_msg == NULL) {
+				loge("mail_msg is NULL\n");
+				break;
+			}
+			memcpy(&rev_msg, &mail_msg->rev_msg, sizeof(rev_msg));
+			msg_id = mail_msg->rev_msg.msg_id;
+			list_del_init(&mail_msg->list_node);
+			virtual_voice_cmd_node_free(&porxy_priv.msg_pool,
+				(struct virtual_voice_proxy_cmd_node **)(&mail_msg));
+			spin_unlock_bh(&porxy_priv.mail_lock);
+			for (i = 0; i < MESSAGE_CALLBACKS_SIZE; i++) {
+				if (message_callbacks[i].msg_id == msg_id) {
+					message_callbacks[i].callback(
+						(int8_t *)&rev_msg,
+						(uint32_t)sizeof(rev_msg));
+					break;
+				}
+			}
+
+			if (i == MESSAGE_CALLBACKS_SIZE)
+				loge("handle mail msg_id is invalid\n");
+
+			spin_lock_bh(&porxy_priv.mail_lock);
+		}
+		spin_unlock_bh(&porxy_priv.mail_lock);
+	}
+	return 0;
+}
 
 static int32_t virtual_voice_proxy_create_thread(void)
 {
-	int32_t ret = 0;
-
 	porxy_priv.write_thread = kthread_run(virtual_voice_proxy_write_thread,
 			NULL, "virtual_voice proxy write");
 
-	if (IS_ERR(porxy_priv.write_thread)) {
-		loge("call kthread_run fail\n");
-		ret = -EBUSY;
+	if (IS_ERR_OR_NULL(porxy_priv.write_thread)) {
+		loge("write_thread call kthread_run fail\n");
+		return -EBUSY;
 	}
 
-	return ret;
+	porxy_priv.mail_thread = kthread_run(
+		virtual_voice_proxy_handle_mail_thread,
+		NULL, "virtual_voice handle mail thread");
+
+	if (IS_ERR_OR_NULL(porxy_priv.mail_thread)) {
+		loge("mail_thread call kthread_run fail\n");
+		return -EBUSY;
+	}
+	return 0;
 }
 
 static void destroy_thread(void)
 {
-	if (!IS_ERR(porxy_priv.write_thread)) {
+	if (!IS_ERR_OR_NULL(porxy_priv.write_thread)) {
 		kthread_stop(porxy_priv.write_thread);
 		spin_lock_bh(&porxy_priv.command_lock);
 		porxy_priv.command_wait_flag++;
 		spin_unlock_bh(&porxy_priv.command_lock);
 		wake_up(&porxy_priv.command_waitq);
 		porxy_priv.write_thread = NULL;
+	}
+
+	if (!IS_ERR_OR_NULL(porxy_priv.mail_thread)) {
+		kthread_stop(porxy_priv.mail_thread);
+		spin_lock_bh(&porxy_priv.mail_lock);
+		porxy_priv.mail_wait_flag++;
+		spin_unlock_bh(&porxy_priv.mail_lock);
+		wake_up(&porxy_priv.mail_waitq);
+		porxy_priv.mail_thread = NULL;
 	}
 }
 
@@ -637,10 +978,17 @@ static int virtual_voice_proxy_probe(struct platform_device *pdev)
 	memset(&porxy_priv, 0, sizeof(porxy_priv));
 	porxy_priv.dev = &pdev->dev;
 	porxy_priv.command_wait_flag = 0;
-
+	virtual_voice_memory_pool_init(&porxy_priv.command_pool,
+		sizeof(struct virtual_voice_proxy_cmd_node));
+	virtual_voice_memory_pool_init(&porxy_priv.confirm_pool,
+		sizeof(struct virtual_voice_proxy_cmd_node));
+	virtual_voice_memory_pool_init(&porxy_priv.msg_pool,
+		sizeof(struct virtual_voice_proxy_cmd_node));
 	spin_lock_init(&porxy_priv.command_lock);
+	spin_lock_init(&porxy_priv.mail_lock);
 	spin_lock_init(&porxy_priv.cnf_queue_lock);
 	init_waitqueue_head(&porxy_priv.command_waitq);
+	init_waitqueue_head(&porxy_priv.mail_waitq);
 
 	porxy_priv.send_mailbox_cnf_wq =
 		create_singlethread_workqueue("vir_voice_send_mailbox_cnf_wq");
@@ -669,9 +1017,10 @@ static int virtual_voice_proxy_probe(struct platform_device *pdev)
 	return (int)ret;
 
 thread_create_err:
+	destroy_thread();
 	virtual_voice_proxy_mailbox_cb_deinit();
 mailbox_cb_init_err:
-	if (porxy_priv.send_mailbox_cnf_wq) {
+	if (porxy_priv.send_mailbox_cnf_wq != NULL) {
 		flush_workqueue(porxy_priv.send_mailbox_cnf_wq);
 		destroy_workqueue(porxy_priv.send_mailbox_cnf_wq);
 		porxy_priv.send_mailbox_cnf_wq = NULL;
@@ -685,8 +1034,9 @@ static int virtual_voice_proxy_remove(struct platform_device *pdev)
 
 	destroy_thread();
 	virtual_voice_proxy_mailbox_cb_deinit();
+	virtual_voice_cmd_memory_pool_free();
 
-	if (porxy_priv.send_mailbox_cnf_wq) {
+	if (porxy_priv.send_mailbox_cnf_wq != NULL) {
 		flush_workqueue(porxy_priv.send_mailbox_cnf_wq);
 		destroy_workqueue(porxy_priv.send_mailbox_cnf_wq);
 		porxy_priv.send_mailbox_cnf_wq = NULL;
@@ -713,7 +1063,6 @@ static struct platform_driver virtual_voice_proxy_driver = {
 	.probe = virtual_voice_proxy_probe,
 	.remove = virtual_voice_proxy_remove,
 };
-
 
 static int __init virtual_voice_proxy_init(void)
 {

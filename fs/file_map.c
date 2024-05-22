@@ -339,7 +339,7 @@ static bool file_map_check_cur_uid(uid_t cur_uid)
 
 static enum file_map_fs_type file_map_get_fs_type(struct inode *inode)
 {
-	const char *fs_name;
+	const char *fs_name = NULL;
 
 	if (!file_map_check_fs_name_valid(inode))
 		return FS_TYPE_MAX;
@@ -385,7 +385,7 @@ static bool check_extension(const unsigned char *s)
 static bool file_map_is_foreground(void)
 {
 #ifdef CONFIG_BLK_CGROUP
-	struct blkcg *blkcg;
+	struct blkcg *blkcg = NULL;
 
 	rcu_read_lock();
 	blkcg = task_blkcg(current);
@@ -543,8 +543,8 @@ static unsigned long file_map_extract_item(struct bitmap_file_hdr *pfhdr,
 					unsigned long save_cnt)
 {
 	unsigned long page_bitmap_size;
-	unsigned long *page_bitmaps;
-	struct bitmap_hdr *pbhdr;
+	unsigned long *page_bitmaps = NULL;
+	struct bitmap_hdr *pbhdr = NULL;
 
 	if (!pentry->size)
 		return 0;
@@ -588,7 +588,7 @@ static unsigned long file_map_extract_item(struct bitmap_file_hdr *pfhdr,
 static size_t file_map_study_content_extract(uid_t uid, char *buf)
 {
 	struct bitmap_file_hdr *pfhdr = (struct bitmap_file_hdr *)buf;
-	struct file_map_entry *pentry;
+	struct file_map_entry *pentry = NULL;
 	unsigned long file_save_pos = 0;
 	unsigned long page_bitmap_size;
 	unsigned long save_cnt;
@@ -633,7 +633,7 @@ static size_t file_map_study_content_extract(uid_t uid, char *buf)
 #ifdef FILE_MAP_DEBUG
 static void file_map_history_add(struct file_map_history_item_s *new)
 {
-	struct file_map_history_item_s *item;
+	struct file_map_history_item_s *item = NULL;
 
 	spin_lock(&file_map_history_list.lock);
 	list_add_tail(&new->list, &file_map_history_list.head);
@@ -650,7 +650,7 @@ static void file_map_history_add(struct file_map_history_item_s *new)
 
 static void file_map_history_show(uid_t uid)
 {
-	struct file_map_history_item_s *pos;
+	struct file_map_history_item_s *pos = NULL;
 	unsigned long i = 0;
 
 	/* -1 means show all uid's history */
@@ -674,11 +674,11 @@ static void file_map_history_show(uid_t uid)
 /* file_map.s_lock hold */
 static void file_map_data_show(void)
 {
-	struct file_map_entry *pentry;
+	struct file_map_entry *pentry = NULL;
 	struct rtc_time tm;
 	unsigned long i;
 	unsigned long id;
-	char *content;
+	char *content = NULL;
 
 	id = 0;
 	fm_print(log_level_info, "[used list]:\n");
@@ -769,7 +769,7 @@ static int file_map_check_entry_outofdate(struct inode *inode,
  * Parameters:
  *      @ struct file *filp
  *      @ pgoff_t offset: access start page offset
- *      @ pgoff_t last index: access last page offset(included)
+ *      @ pgoff_t last index: access last page offset(not included)
  * return value:
  *      @ NULL
  */
@@ -777,8 +777,8 @@ void file_map_page_offset_update(struct file *filp, pgoff_t offset,
 				 pgoff_t last_index)
 {
 	unsigned long pgoff;
-	struct file_map_entry *entry;
-	struct inode *inode;
+	struct file_map_entry *entry = NULL;
+	struct inode *inode = NULL;
 	unsigned long flags;
 
 	if (!file_map_check_support())
@@ -800,7 +800,7 @@ void file_map_page_offset_update(struct file *filp, pgoff_t offset,
 	if (!file_map_check_cur_uid(entry->uid))
 		goto out_unlock;
 
-	for (pgoff = offset; pgoff <= last_index; pgoff++) {
+	for (pgoff = offset; pgoff < last_index; pgoff++) {
 		if (unlikely(pgoff >= (entry->size * BITS_PER_BYTE)))
 			break;
 
@@ -856,7 +856,7 @@ unsigned long file_map_data_analysis(struct inode *inode,
 	pgoff_t expand_end;
 	unsigned int old_ra_pages = nr_to_read;
 	unsigned int f_ra_pages = nr_to_read;
-	struct file_map_entry *entry;
+	struct file_map_entry *entry = NULL;
 	uint32_t frags = 0;
 	pgoff_t pos, new_pos;
 	pgoff_t calc_end;
@@ -1049,7 +1049,7 @@ static ssize_t file_map_read(struct file *filp, char __user *buf,
 			     size_t count, loff_t *offp)
 {
 	uint32_t len = 0;
-	char *map;
+	char *map = NULL;
 	ssize_t ret;
 
 	if (!file_map_check_in_study()) {
@@ -1111,7 +1111,7 @@ static void file_map_entry_add_inode(struct file_map_entry *entry,
 
 void file_map_entry_del_inode(struct inode *inode)
 {
-	struct file_map_entry *entry;
+	struct file_map_entry *entry = NULL;
 
 	if (!file_map_bitmap_enable)
 		return;
@@ -1156,7 +1156,8 @@ static void file_map_entry_free(struct file_map_entry *entry)
 /* hold file_map.s_lock */
 static void file_map_entry_clear(void)
 {
-	struct file_map_entry *entry, *tmp;
+	struct file_map_entry *entry = NULL;
+	struct file_map_entry *tmp = NULL;
 
 	list_for_each_entry_safe(entry, tmp, &file_map.used, list)
 		__file_map_entry_del_inode(entry);
@@ -1195,7 +1196,8 @@ static struct file_map_entry *file_map_entry_alloc(struct bitmap_hdr *hdr,
 
 void file_map_entry_attach_unused(struct inode *inode)
 {
-	struct file_map_entry *entry, *tmp;
+	struct file_map_entry *entry = NULL;
+	struct file_map_entry *tmp = NULL;
 
 	if (!file_map_bitmap_enable)
 		return;
@@ -1223,7 +1225,7 @@ EXPORT_SYMBOL(file_map_entry_attach_unused);
 
 bool file_map_is_set(struct inode *inode, pgoff_t page_offset)
 {
-	struct file_map_entry *entry;
+	struct file_map_entry *entry = NULL;
 	bool ret = false;
 	unsigned long flags;
 
@@ -1245,7 +1247,8 @@ EXPORT_SYMBOL(file_map_is_set);
 static void file_map_study_entry_alloc(struct inode *inode,
 					enum file_map_fs_type fs_type)
 {
-	struct file_map_entry *entry, *tmp;
+	struct file_map_entry *entry = NULL;
+	struct file_map_entry *tmp = NULL;
 	bool in_unused = false;
 	uint32_t size;
 
@@ -1314,7 +1317,7 @@ static void file_map_study_entry_alloc(struct inode *inode,
  */
 void file_map_filter(struct file *filp, const char *name)
 {
-	struct inode *inode;
+	struct inode *inode = NULL;
 	enum file_map_fs_type fs_type;
 
 	if (!filp || !name)
@@ -1355,14 +1358,14 @@ static int file_map_bitmap_file_push(uid_t uid,
 {
 	unsigned long i;
 	int ret = 0;
-	struct bitmap_hdr *pbhdr;
+	struct bitmap_hdr *pbhdr = NULL;
 	uint32_t nr_bitmaps;
 	uint32_t cur_offset = 0;
 	uint32_t last_end = 0;
 	uint32_t b_magic;
-	struct file_map_entry *entry;
-	struct super_block *sb;
-	struct inode *inode;
+	struct file_map_entry *entry = NULL;
+	struct super_block *sb = NULL;
+	struct inode *inode = NULL;
 	uint32_t s_offset, e_offset, b_size, b_offset;
 
 	nr_bitmaps = le32_to_cpu(pfhdr->nr_bitmaps);
@@ -1465,10 +1468,10 @@ err_out:
 static ssize_t file_map_write(struct file *filp, const char __user *buf,
 			      size_t count, loff_t *offp)
 {
-	struct bitmap_file_hdr *pfhdr;
+	struct bitmap_file_hdr *pfhdr = NULL;
 	uint32_t nr_bitmaps, f_magic;
 	__wsum csum;
-	char *map;
+	char *map = NULL;
 	size_t ret;
 	uid_t uid;
 
@@ -1636,7 +1639,7 @@ static int file_map_app_get_res(unsigned long arg)
 	enum file_map_state state;
 	enum file_map_result res;
 #ifdef FILE_MAP_DEBUG
-	struct file_map_history_item_s *his;
+	struct file_map_history_item_s *his = NULL;
 #endif
 
 	spin_lock(&file_map.s_lock);
@@ -1719,7 +1722,7 @@ static long file_map_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case FILE_MAP_ENABLE_CTL: {
-		bool enable;
+		bool enable = false;
 
 		if (copy_from_user(&enable, (bool __user *)arg, sizeof(bool)))
 			return -EFAULT;
@@ -1768,7 +1771,7 @@ static struct miscdevice file_map_device = {
 #define FILE_MAP_PROC_ENTRY	"driver/file_map_status"
 static int __init file_map_init(void)
 {
-	struct proc_dir_entry *entry;
+	struct proc_dir_entry *entry = NULL;
 
 	setup_timer(&file_map.timer, file_map_timeout, 0);
 

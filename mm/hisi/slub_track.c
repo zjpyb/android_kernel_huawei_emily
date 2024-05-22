@@ -1,3 +1,19 @@
+/*
+ * mm/hisi/slub_track.c
+ *
+ * Copyright(C) 2019-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/sizes.h>
 #include <linux/types.h>
 #include <linux/spinlock_types.h>
@@ -11,11 +27,12 @@
 
 #define invalid_slub_type(type) (type != SLUB_ALLOC && type != SLUB_FREE)
 #define SLUB_RINGBUF_LEN   SZ_8K
+#define SLUB_RINGBUF_HALF   2
 
 struct slub_ring_buf {
 	int type;
-	unsigned long *buf;/*save caller*/
-	spinlock_t lock;/*protect ringbuf*/
+	unsigned long *buf; /* save caller */
+	spinlock_t lock; /* protect ringbuf */
 	size_t size;
 	unsigned long in;
 	unsigned long out;
@@ -28,9 +45,9 @@ struct slub_rb_node {
 };
 
 struct slub_track {
-	int type;/*kslubtrackd need type to distinct rbtree*/
+	int type; /* kslubtrackd need type to distinct rbtree */
 	wait_queue_head_t slub_wait;
-	struct mutex slub_mutex;/*protect rbtree*/
+	struct mutex slub_mutex; /* protect rbtree */
 	struct task_struct *slub_ktrackd;
 	struct rb_root slubrb;
 };
@@ -52,7 +69,7 @@ static inline int ring_buf_is_full(struct slub_ring_buf *srb)
 
 static inline int ring_buf_is_half(struct slub_ring_buf *srb)
 {
-	return (get_ring_buf_len(srb) >= (srb->size / 2));
+	return (get_ring_buf_len(srb) >= (srb->size / SLUB_RINGBUF_HALF));
 }
 
 static inline int ring_buf_is_empty(struct slub_ring_buf *srb)
@@ -102,7 +119,7 @@ static inline int __get_caller(
 }
 
 static inline void set_caller(struct slub_ring_buf *srb,
-	unsigned long caller, int type)
+				unsigned long caller, int type)
 {
 	if (slub_track_flag) {
 		__set_caller(srb, caller);
@@ -147,11 +164,11 @@ static void slub_add_node(unsigned long caller, int type)
 		parent = *p;
 		entry = rb_entry(parent, struct slub_rb_node, node);
 
-		if (caller < entry->caller)
+		if (caller < entry->caller) {
 			p = &(*p)->rb_left;
-		else if (caller > entry->caller)
+		} else if (caller > entry->caller) {
 			p = &(*p)->rb_right;
-		else {
+		} else {
 			atomic_inc(&entry->ref);
 			return;
 		}
@@ -172,8 +189,8 @@ static void slub_del_node(struct slub_rb_node *rbnode, int type)
 	kmem_cache_free(slub_track_cache, rbnode);
 }
 
-static size_t slub_read_node(struct hisi_stack_info *buf,
-	const size_t len, int type)
+static size_t slub_read_node(struct mm_stack_info *buf,
+				const size_t len, int type)
 {
 	struct rb_node *n = NULL;
 	struct slub_rb_node *vnode = NULL;
@@ -206,7 +223,7 @@ static void __slub_fetch_node(struct slub_ring_buf *srb, int type)
 	slub_add_node(caller, type);
 }
 
-/*move entry from ringbuf to rb tree */
+/* move entry from ringbuf to rb tree */
 static void slub_fetch_node(int slubtype)
 {
 	unsigned long i, len, flags;
@@ -253,8 +270,9 @@ static void slub_node_type_show(int type)
 	for (n = rb_first(&slub_track[type].slubrb); n; n = rb_next(n)) {
 		slub = rb_entry(n, struct slub_rb_node, node);
 		if (slub)
-			pr_err("caller:0x%lx, %pS, ref:0x%x\n",
-			slub->caller, (void *)slub->caller, atomic_read(&slub->ref));
+			pr_err("caller:%pS, ref:0x%x\n",
+			(void *)(uintptr_t)slub->caller,
+					atomic_read(&slub->ref));
 	}
 	mutex_unlock(&slub_track[type].slub_mutex);
 }
@@ -270,7 +288,7 @@ void slub_node_show(void)
 
 static long slub_create_track(int type)
 {
-	long err = 0;
+	long err;
 
 	init_waitqueue_head(&slub_track[type].slub_wait);
 	mutex_init(&slub_track[type].slub_mutex);
@@ -287,9 +305,10 @@ static long slub_create_track(int type)
 	return 0;
 }
 
-static int __slub_create_ringbuf(int type, size_t size)
+static int __slub_create_ringbuf(int type)
 {
 	void *buf = NULL;
+	size_t size = SLUB_RINGBUF_LEN;
 	struct slub_ring_buf *srb = &srb_array[type];
 
 	if (!is_power_of_2(size)) {
@@ -297,16 +316,9 @@ static int __slub_create_ringbuf(int type, size_t size)
 		return -EINVAL;
 	}
 
-	if (!size) {
-		pr_err("%s: size must be not zero!\n", __func__);
-		return -EINVAL;
-	}
-
 	buf = vmalloc(size * sizeof(long));
-	if (!buf) {
-		pr_err("%s: memory alloc failed!\n", __func__);
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	srb->in = 0;
 	srb->out = 0;
@@ -317,16 +329,16 @@ static int __slub_create_ringbuf(int type, size_t size)
 	return 0;
 }
 
-static int slub_create_ringbuf(size_t size)
+static int slub_create_ringbuf(void)
 {
 	int ret;
 
-	ret =  __slub_create_ringbuf(SLUB_ALLOC, SLUB_RINGBUF_LEN);
+	ret =  __slub_create_ringbuf(SLUB_ALLOC);
 	if (ret) {
 		pr_err("%s,create alloc ringbuf failed\n", __func__);
 		return -ENOMEM;
 	}
-	ret = __slub_create_ringbuf(SLUB_FREE, SLUB_RINGBUF_LEN);
+	ret = __slub_create_ringbuf(SLUB_FREE);
 	if (ret) {
 		pr_err("%s,create free ringbuf failed\n", __func__);
 		return -ENOMEM;
@@ -353,7 +365,7 @@ static int slub_del_ringbuf(void)
 	return 0;
 }
 
-/*on->off->open->read->close*/
+/* on->off->open->read->close */
 int hisi_slub_track_on(char *name)
 {
 	int ret;
@@ -365,9 +377,10 @@ int hisi_slub_track_on(char *name)
 
 	mutex_lock(&slab_mutex);
 	list_for_each_entry(cachep, &slab_caches, list) {/*lint !e666 !e413*/
+		/* slub track cache cannot track */
 		if (slub_track_cache &&
 			strncmp(cachep->name, slub_track_cache->name,
-			strlen(cachep->name) + 1) == 0)/*slub track cache cannot track*/
+			strlen(cachep->name) + 1) == 0)
 			continue;
 
 		if (strncmp(cachep->name, name,
@@ -383,7 +396,7 @@ int hisi_slub_track_on(char *name)
 		return -EINVAL;
 	}
 
-	ret = slub_create_ringbuf(SLUB_RINGBUF_LEN);
+	ret = slub_create_ringbuf();
 	if (ret) {
 		pr_err("%s, create ringbuf failed\n", __func__);
 		return -ENOMEM;
@@ -423,7 +436,7 @@ int hisi_slub_track_off(char *name)
 	return 0;
 }
 
-size_t hisi_slub_stack_read(struct hisi_stack_info *buf, size_t len, int type)
+size_t hisi_slub_stack_read(struct mm_stack_info *buf, size_t len, int type)
 {
 	size_t cnt;
 	unsigned long flags;
@@ -442,7 +455,8 @@ size_t hisi_slub_stack_read(struct hisi_stack_info *buf, size_t len, int type)
 static int __init slub_track_init(void)
 {
 	slub_track_cache = kmem_cache_create("slub_track_cache",
-			sizeof(struct slub_rb_node), 0, SLAB_HISI_NOTRACE, NULL);
+			sizeof(struct slub_rb_node),
+			0, SLAB_HISI_NOTRACE, NULL);
 	if (!slub_track_cache) {
 		pr_err("%s: alloc failed!\n", __func__);
 		return -EINVAL;

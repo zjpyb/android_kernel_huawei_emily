@@ -374,6 +374,11 @@ struct sdhci_adma2_32_desc {
 #define SDHCI_ADMA2_64_DESC_SZ	16
 /* ADMA2 64-bit DMA alignment */
 #define SDHCI_ADMA2_64_ALIGN	8
+#elif CONFIG_MMC_SDHCI_HISI_SCORPIO
+/* ADMA2 64-bit DMA descriptor size */
+#define SDHCI_ADMA2_64_DESC_SZ	16
+/* ADMA2 64-bit DMA alignment */
+#define SDHCI_ADMA2_64_ALIGN	8
 #else
 /* ADMA2 64-bit DMA descriptor size */
 #define SDHCI_ADMA2_64_DESC_SZ	12
@@ -519,6 +524,8 @@ struct sdhci_host {
 	void __iomem *mmc_phy;
 	void __iomem *mmc_sys;
 	void __iomem *sysctrl;
+	void __iomem *hsdt1crg;
+	void __iomem *crgctrl;
 
 	char *bounce_buffer;	/* For packing SDMA reads/writes */
 	dma_addr_t bounce_addr;
@@ -538,7 +545,7 @@ struct sdhci_host {
 
 	spinlock_t lock;	/* Mutex */
 
-	int flags;		/* Host attributes */
+	unsigned int flags;		/* Host attributes */
 #define SDHCI_USE_SDMA		(1<<0)	/* Host is SDMA capable */
 #define SDHCI_USE_ADMA		(1<<1)	/* Host is ADMA capable */
 #define SDHCI_REQ_USE_DMA	(1<<2)	/* Use DMA for this req. */
@@ -554,6 +561,8 @@ struct sdhci_host {
 #define SDHCI_SIGNALING_180	(1<<15)	/* Host is capable of 1.8V signaling */
 #define SDHCI_SIGNALING_120	(1<<16)	/* Host is capable of 1.2V signaling */
 #define SDHCI_EXE_SOFT_TUNING	(1<<17)	/* Host execute soft tuning */
+#define SDHCI_SET_TX_CLK_1_3T	(1<<18)	/* cancel config strobe clk 1/3T */
+#define SDHCI_WITHOUT_TUNING_MOVE	(1<<19)	/* host close tuning move */
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -696,6 +705,7 @@ struct sdhci_ops {
 	void (*delay_measurement)(struct sdhci_host *host, struct mmc_ios *ios);
 	void (*set_clk_emmc_gt)(struct sdhci_host *host, bool enable);
 	void (*sqscmd_idle_tmr)(struct cmdq_host *cq_host);
+	int (*sdhci_get_cd)(struct sdhci_host *host);
 };
 
 #ifdef CONFIG_MMC_SDHCI_IO_ACCESSORS
@@ -845,5 +855,8 @@ bool sdhci_cqe_irq(struct sdhci_host *host, u32 intmask, int *cmd_error,
 		   int *data_error);
 
 void sdhci_dumpregs(struct sdhci_host *host);
+int sdhci_card_busy_data0(struct mmc_host *mmc);
+void sdhci_set_transfer_irqs(struct sdhci_host *host);
+void sdhci_set_default_irqs(struct sdhci_host *host);
 
 #endif /* __SDHCI_HW_H */

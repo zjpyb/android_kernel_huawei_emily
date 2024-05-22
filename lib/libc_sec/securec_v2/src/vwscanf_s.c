@@ -5,7 +5,10 @@
  * Create: 2014-02-25
  */
 
-#define SECUREC_INLINE_INIT_FILE_STREAM_STDIN 1
+#ifndef SECUREC_FOR_WCHAR
+#define SECUREC_FOR_WCHAR
+#endif
+
 #include "secinput.h"
 
 /*
@@ -35,19 +38,15 @@ int vwscanf_s(const wchar_t *format, va_list argList)
 {
     int retVal;                 /* If initialization causes  e838 */
     SecFileStream fStr;
-
-    SecInitFileStreamFromStdin(&fStr);
+    SECUREC_FILE_STREAM_FROM_STDIN(&fStr);
     if (format == NULL || fStr.pf == NULL) {
         SECUREC_ERROR_INVALID_PARAMTER("vwscanf_s");
         return SECUREC_SCANF_EINVAL;
     }
 
     SECUREC_LOCK_STDIN(0, fStr.pf);
-
     retVal = SecInputSW(&fStr, format, argList);
-
     SECUREC_UNLOCK_STDIN(0, fStr.pf);
-
     if (retVal < 0) {
         SECUREC_ERROR_INVALID_PARAMTER("vwscanf_s");
         return SECUREC_SCANF_EINVAL;
@@ -55,5 +54,4 @@ int vwscanf_s(const wchar_t *format, va_list argList)
 
     return retVal;
 }
-
 

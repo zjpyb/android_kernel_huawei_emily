@@ -227,6 +227,6 @@ extern int ois_commu(int tag, unsigned int cmd, unsigned int pare, unsigned int 
 extern ssize_t show_cap_prox_calibrate_method(struct device *dev, struct device_attribute *attr, char *buf);
 extern ssize_t show_cap_prox_calibrate_orders(struct device *dev, struct device_attribute *attr, char *buf);
 
-read_info_t send_airpress_calibrate_cmd(uint8_t tag, unsigned long val, RET_TYPE *rtype);
+struct read_info send_airpress_calibrate_cmd(uint8_t tag, unsigned long val, RET_TYPE *rtype);
 
 #endif //__SENSOR_SYSFS_H

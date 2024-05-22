@@ -5,7 +5,6 @@ menuconfig BCMGPS
       Say Y here to enable bcm gps support. This allows
       ap to control this module.
 if BCMGPS
-source "drivers/huawei_platform/connectivity/bcm/gps/bcm4752/Kconfig"
 source "drivers/huawei_platform/connectivity/bcm/gps/bcm47531/Kconfig"
 source "drivers/huawei_platform/connectivity/bcm/gps/bcm4774/Kconfig"
 source "drivers/huawei_platform/connectivity/bcm/gps/bcm4775/Kconfig"

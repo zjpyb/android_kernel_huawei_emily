@@ -19,9 +19,7 @@
 #ifndef __DP_SOURCE_SWITCH_H__
 #define __DP_SOURCE_SWITCH_H__
 
-#ifndef uint32_t
-typedef unsigned int uint32_t;
-#endif
+#include <linux/types.h>
 
 enum dp_event_type {
 	DP_LINK_STATE_BAD = 0,
@@ -38,6 +36,7 @@ int get_current_dp_source_mode(void);
 int update_external_display_timming_info(uint32_t width,
 					 uint32_t high,
 					 uint32_t fps);
+int save_dp_edid(uint8_t *edid_buf, uint32_t buf_len);
 void dp_send_event(enum dp_event_type event);
 #else
 static inline int get_current_dp_source_mode(void) { return SAME_SOURCE; }
@@ -45,6 +44,11 @@ static inline int get_current_dp_source_mode(void) { return SAME_SOURCE; }
 static inline int update_external_display_timming_info(uint32_t width,
 						       uint32_t high,
 						       uint32_t fps)
+{
+	return 0;
+}
+
+static inline int save_dp_edid(uint8_t *edid_buf, uint32_t buf_len)
 {
 	return 0;
 }

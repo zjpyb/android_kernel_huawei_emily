@@ -63,6 +63,7 @@
 #define PATH_PREFIX_MEDIA "/media"
 #define PATH_PREFIX_STORAGE_EMULATED "/storage/emulated"
 #define PATH_UNKNOWN "unknown_path"
+#define PKGNAME_KWORKER_PREFIX "kworker"
 
 #define UEVENT_KEY_STR_MAX 16
 #define ENV_DSM_PKGNAME_MAX (UEVENT_KEY_STR_MAX + ACM_PKGNAME_MAX)

@@ -1,13 +1,17 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: vmalloc_track.c
- * Description: This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation;
- * either version 2 of the License,
- * or (at your option) any later version.
- * vmalloc_track.c is included by vmalloc.c,
- * so it is the extension of vmalloc.c in fact.
- * This file records the vmalloc detail stats and stacktrace in rbtree.
+/*
+ * mm/hisi/vmalloc_track.c
+ *
+ * Copyright(C) 2019-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/sizes.h>
@@ -35,7 +39,7 @@ struct vm_track {
 
 static struct vm_track vm_track;
 static int hisi_vmalloc_open;
-static int vm_type[] = {VM_IOREMAP, VM_ALLOC, VM_MAP, VM_USERMAP};
+static int vm_type[] = { VM_IOREMAP, VM_ALLOC, VM_MAP, VM_USERMAP };
 
 static inline void vm_buid_rbtree(void)
 {
@@ -59,11 +63,11 @@ static void vm_set_track(unsigned long caller)
 	while (*p) {
 		parent = *p;
 		entry = rb_entry(parent, struct vm_node, node);
-		if (caller < entry->caller)
+		if (caller < entry->caller) {
 			p = &(*p)->rb_left;
-		else if (caller > entry->caller)
+		} else if (caller > entry->caller) {
 			p = &(*p)->rb_right;
-		else {
+		} else {
 			atomic_inc(&entry->ref);
 			return;
 		}
@@ -100,7 +104,7 @@ size_t vm_type_detail_get(int subtype)
 	return len;
 }
 
-static size_t vm_read_node(struct hisi_stack_info *buf, const size_t len)
+static size_t vm_read_node(struct mm_stack_info *buf, const size_t len)
 {
 	struct rb_node *n = NULL;
 	struct vm_node *vnode = NULL;
@@ -132,7 +136,8 @@ void vm_show_node(void)
 		vnode = rb_entry(n, struct vm_node, node);
 		if (vnode)
 			pr_err("caller:%pS, ref:0x%x\n",
-				(void *)vnode->caller, atomic_read(&vnode->ref));
+				(void *)(uintptr_t)vnode->caller,
+						atomic_read(&vnode->ref));
 	}
 	mutex_unlock(&vm_track.v_mutex);
 }
@@ -158,7 +163,7 @@ int hisi_vmalloc_stack_open(int subtype)
 		vm = va->vm;
 		if (!(vm->flags & type))
 			continue;
-		vm_set_track((unsigned long)vm->caller);
+		vm_set_track((uintptr_t)vm->caller);
 	}
 	spin_unlock(&vmap_area_lock);
 	hisi_vmalloc_open = 1;
@@ -175,7 +180,7 @@ int hisi_vmalloc_stack_close(void)
 }
 
 size_t hisi_vmalloc_stack_read(
-	struct hisi_stack_info *buf, size_t len, int type)
+	struct mm_stack_info *buf, size_t len, int type)
 {
 	size_t cnt;
 
@@ -194,8 +199,8 @@ size_t hisi_get_vmalloc_detail(void *buf, size_t len)
 	size_t i;
 	size_t num = len;
 	size_t size;
-	struct hisi_vmalloc_detail_info *info =
-		(struct hisi_vmalloc_detail_info *)buf;
+	struct mm_vmalloc_detail_info *info =
+		(struct mm_vmalloc_detail_info *)buf;
 
 	for (i = 0; i < ARRAY_SIZE(vm_type) && num--; i++) {/*lint !e514*/
 		size = vm_type_detail_get(vm_type[i]);

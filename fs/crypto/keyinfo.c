@@ -16,12 +16,12 @@
 #include <crypto/sha.h>
 #include <crypto/skcipher.h>
 #include "fscrypt_private.h"
-#ifdef CONFIG_HWAA
+#ifdef CONFIG_HWDPS
 #include <linux/security.h>
 #include <securec.h>
-#include <huawei_platform/hwaa/hwaa_limits.h>
-#include <huawei_platform/hwaa/hwaa_fs_hooks.h>
-#define HWAA_KEY_DESC_STANDARD_FLAG 0x42
+#include <huawei_platform/hwdps/hwdps_limits.h>
+#include <huawei_platform/hwdps/hwdps_fs_hooks.h>
+#define HWDPS_KEY_DESC_STANDARD_FLAG 0x42
 #endif
 
 static struct crypto_shash *essiv_hash_tfm;
@@ -77,6 +77,21 @@ int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
 	DECLARE_FS_COMPLETION_RESULT(ecr);
 	struct scatterlist src_sg, dst_sg;
 	unsigned int ilen;
+#ifdef CONFIG_VMAP_STACK
+	u8 *src = NULL;
+	u8 *dst = NULL;
+
+	src = kmalloc(FS_KEY_DERIVATION_CIPHER_SIZE, GFP_NOFS);
+	if (!src) {
+		res = -ENOMEM;
+		goto out;
+	}
+	dst = kmalloc(FS_KEY_DERIVATION_CIPHER_SIZE, GFP_NOFS);
+	if (!dst) {
+		res = -ENOMEM;
+		goto out;
+	}
+#endif
 
 	if (!tfm) {
 		res = -EINVAL;
@@ -102,8 +117,15 @@ int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
 	ilen = enc ? FS_KEY_DERIVATION_NONCE_SIZE :
 			FS_KEY_DERIVATION_CIPHER_SIZE;
 
+#ifdef CONFIG_VMAP_STACK
+	memcpy(src, source_key, FS_KEY_DERIVATION_CIPHER_SIZE);
+	memcpy(dst, derived_key, FS_KEY_DERIVATION_CIPHER_SIZE);
+	sg_init_one(&src_sg, src, FS_KEY_DERIVATION_CIPHER_SIZE);
+	sg_init_one(&dst_sg, dst, FS_KEY_DERIVATION_CIPHER_SIZE);
+#else
 	sg_init_one(&src_sg, source_key, FS_KEY_DERIVATION_CIPHER_SIZE);
 	sg_init_one(&dst_sg, derived_key, FS_KEY_DERIVATION_CIPHER_SIZE);
+#endif
 
 	aead_request_set_ad(req, 0);
 
@@ -113,7 +135,15 @@ int fscrypt_derive_gcm_key(struct crypto_aead *tfm,
 		wait_for_completion(&ecr.completion);
 		res = ecr.res;
 	}
+#ifdef CONFIG_VMAP_STACK
+	memcpy(derived_key, dst, FS_KEY_DERIVATION_CIPHER_SIZE);
 out:
+	kfree(src);
+	kfree(dst);
+#else
+out:
+#endif
+
 	if (req)
 		aead_request_free(req);
 	return res;
@@ -428,7 +458,7 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	int res;
 	int flag = 0;
 
-	/* TicketNo:AR000B5MB3 -- HWAA file needs to check access control */
+	/* TicketNo:AR000B5MB3 -- HWDPS file needs to check access control */
 	/* TicketNo:AR0009DF3P -- SDP file needs to check master key */
 	if (inode->i_crypt_info && !inode->i_crypt_info->ci_hw_enc_flag)
 		return 0;
@@ -439,12 +469,14 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	if (res)
 		return res;
 
-	/* TicketNo:AR000B5MB3 -- For HWAA protection */
+	/* TicketNo:AR000B5MB3 -- For HWDPS protection */
 	/* TicketNo:AR0009DF3P -- For SDP protection */
 	if (inode->i_sb->s_cop && inode->i_sb->s_cop->get_keyinfo) {
 		res = inode->i_sb->s_cop->get_keyinfo(inode, NULL, &flag);
-		if (res) /* err case */
+		if (res) { /* err case */
+			pr_err("f2fs_sdp: get_keyinfo failed res:%d", res);
 			return res;
+		}
 		if (flag) /* get sdp crypt info success */
 			return 0;
 	}
@@ -537,7 +569,7 @@ int fscrypt_get_encryption_info(struct inode *inode)
 	if (res)
 		goto out;
 
-       if (S_ISREG(inode->i_mode) &&
+	if (S_ISREG(inode->i_mode) &&
 			inode->i_sb->s_cop->is_inline_encrypted &&
 			inode->i_sb->s_cop->is_inline_encrypted(inode)) {
 		crypt_info->ci_key = kzalloc((size_t)FS_MAX_KEY_SIZE, GFP_NOFS);
@@ -549,6 +581,11 @@ int fscrypt_get_encryption_info(struct inode *inode)
 		/*lint -save -e732 -e747*/
 		memcpy(crypt_info->ci_key, raw_key, crypt_info->ci_key_len);
 		/*lint -restore*/
+		res = fscrypt_get_metadata(inode, crypt_info);
+		if (res && res != -EOPNOTSUPP)
+			goto out;
+		else
+			res = 0;
 	}
 
 	if (S_ISREG(inode->i_mode) &&
@@ -579,49 +616,49 @@ void fscrypt_put_encryption_info(struct inode *inode)
 }
 EXPORT_SYMBOL(fscrypt_put_encryption_info);
 
-#ifdef CONFIG_HWAA
+#ifdef CONFIG_HWDPS
 #ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
 #define MAX_HISI_KEY_INDEX 31
 #define FS_KEY_INDEX_OFFSET 63
-static int hwaa_get_key_index(u8 *descriptor)
+static int hwdps_get_key_index(u8 *descriptor)
 {
 	struct key *keyring_key;
 	const struct user_key_payload *ukp;
-	struct fscrypt_key *master_key;
+	struct fscrypt_key *primary_key;
 	int res;
 
 	keyring_key = fscrypt_request_key(descriptor, FS_KEY_DESC_PREFIX,
 		FS_KEY_DESC_PREFIX_SIZE);
 	if (IS_ERR(keyring_key)) {
-		pr_err("hwaa request_key failed!\n");
+		pr_err("hwdps request_key failed!\n");
 		return PTR_ERR(keyring_key);
 	}
 
 	down_read(&keyring_key->sem);
 	if (keyring_key->type != &key_type_logon) {
-		pr_err("hwaa key type must be logon\n");
+		pr_err("hwdps key type must be logon\n");
 		res = -ENOKEY;
 		goto out;
 	}
 	ukp = user_key_payload_locked(keyring_key);
 	if (!ukp) {
 		/* key was revoked before we acquired its semaphore */
-		pr_warn_once("hwaa key was revoked\n");
+		pr_warn_once("hwdps key was revoked\n");
 		res = -EKEYREVOKED;
 		goto out;
 	}
 	if (ukp->datalen != sizeof(struct fscrypt_key)) {
-		pr_warn_once("hwaa fscrypt key size err %d", ukp->datalen);
+		pr_warn_once("hwdps fscrypt key size err %d", ukp->datalen);
 		res = -EINVAL;
 		goto out;
 	}
-	master_key = (struct fscrypt_key *)ukp->data;
-	if (master_key->size != FS_AES_256_GCM_KEY_SIZE) {
-		pr_warn_once("hwaa master key size err %d", master_key->size);
+	primary_key = (struct fscrypt_key *)ukp->data;
+	if (primary_key->size != FS_AES_256_GCM_KEY_SIZE) {
+		pr_warn_once("hwdps key size err %d", primary_key->size);
 		res = -ENOKEY;
 		goto out;
 	}
-	res = (int) (*(master_key->raw + FS_KEY_INDEX_OFFSET) & 0xff);
+	res = (int) (*(primary_key->raw + FS_KEY_INDEX_OFFSET) & 0xff);
 
 out:
 	up_read(&keyring_key->sem);
@@ -630,65 +667,26 @@ out:
 }
 #endif
 
-static int hwaa_check_support(struct inode *inode)
+/*
+ * Description: Get the context of a file inode whether support the hwdps.
+ * Input: inode: the inode requesting fek struct
+ * Input: ctx: the fscrypt_context of the inode
+ * Return: 0: successfully get the context
+ *         -EOPNOTSUPP: not support
+ */
+static int hwdps_do_get_context(struct inode *inode,
+	struct fscrypt_context *ctx)
 {
-	int err = 0;
-	u32 flags;
+	int err;
 
-	if (!inode->i_sb->s_cop->get_hwaa_flags ||
-		!inode->i_sb->s_cop->get_hwaa_attr)
+	pr_info_once("%s enter\n", __func__);
+	if (!inode || !inode->i_sb || !inode->i_sb->s_cop ||
+		!inode->i_sb->s_cop->get_context || !ctx)
 		return -EOPNOTSUPP;
-	if (!inode->i_crypt_info) {
-		err = inode->i_sb->s_cop->get_hwaa_flags(inode, NULL, &flags);
-	} else {
-		/*
-		 * The inode->i_crypt_info->ci_hw_enc_flag keeps sync with the
-		 * flags in xattr_header. And it can not be changed once the
-		 * file is opened.
-		 */
-		flags = (u32)(inode->i_crypt_info->ci_hw_enc_flag);
-	}
-	if (err) {
-		pr_err("hwaa ino %lu get flags err %d\n", inode->i_ino, err);
-	} else if (!(flags & HWAA_XATTR_ENABLE_FLAG)) {
-		pr_info_once("hwaa ino %lu no support auth\n", inode->i_ino);
-		err = -EOPNOTSUPP;
-	}
-
-	return err;
-}
-
-static uint8_t *hwaa_do_get_attr(struct inode *inode, size_t size)
-{
-	int err;
-	uint8_t *wfek;
-
-	wfek = kmalloc(size, GFP_NOFS);
-	if (!wfek)
-		return NULL;
-	err = inode->i_sb->s_cop->get_hwaa_attr(inode, wfek, size);
-	if (err == -ENODATA) {
-		pr_err("hwaa ino %lu hwaa xattr is null\n", inode->i_ino);
-		goto free_out;
-	} else if (err != HWAA_ENCODED_WFEK_SIZE) {
-		pr_err("hwaa ino %lu wrong encoded_wfek size %d\n",
-			inode->i_ino, err);
-		goto free_out;
-	}
-	return wfek;
-
-free_out:
-	kfree(wfek);
-	return NULL;
-}
-
-static int hwaa_do_get_context(struct inode *inode, struct fscrypt_context *ctx)
-{
-	int err;
 
 	err = fscrypt_initialize(inode->i_sb->s_cop->flags);
-	if (err) {
-		pr_err("hwaa ino %lu init fscrypt fail\n", inode->i_ino);
+	if (err != 0) {
+		pr_err("hwdps ino %lu init fscrypt fail\n", inode->i_ino);
 		return err;
 	}
 	err = inode->i_sb->s_cop->get_context(inode, ctx, sizeof(*ctx));
@@ -703,19 +701,82 @@ static int hwaa_do_get_context(struct inode *inode, struct fscrypt_context *ctx)
 		ctx->contents_encryption_mode = FS_ENCRYPTION_MODE_AES_256_XTS;
 		ctx->filenames_encryption_mode = FS_ENCRYPTION_MODE_AES_256_CTS;
 		if (memset_s(ctx->master_key_descriptor, FS_KEY_DESCRIPTOR_SIZE,
-			HWAA_KEY_DESC_STANDARD_FLAG,
+			HWDPS_KEY_DESC_STANDARD_FLAG,
 			FS_KEY_DESCRIPTOR_SIZE) != EOK)
 			return err;
 	} else if (err != sizeof(*ctx)) {
-		pr_err("hwaa ino %lu ctx size [%u : %lu]\n",
+		pr_err("hwdps ino %lu ctx size [%u : %lu]\n",
 			inode->i_ino, err, sizeof(*ctx));
 		return -EINVAL;
 	}
+	if (ctx->format != FS_ENCRYPTION_CONTEXT_FORMAT_V2) {
+		pr_err("hwdps format error, format %x", ctx->format);
+		return -EINVAL;
+	}
+	if (ctx->flags & ~FS_POLICY_FLAGS_VALID)
+		return -EINVAL;
 
 	return 0;
 }
 
-static struct fscrypt_info *hwaa_get_fscrypt_info(struct fscrypt_context *ctx,
+int hwdps_update_context(struct inode *inode, uid_t new_uid)
+{
+	int err;
+	uint32_t fek_len;
+	struct fscrypt_context ctx;
+	encrypt_id id;
+	uint8_t *encoded_wfek = NULL;
+	uint8_t *fek = NULL;
+	secondary_buffer_t fek_buffer = { &fek, &fek_len };
+	buffer_t encoded_wfek_buffer = { NULL, 0 };
+	uint32_t flags = 0;
+
+	if (hwdps_check_support(inode, &flags) != 0)
+		return 0;
+	encoded_wfek = hwdps_do_get_attr(inode, HWDPS_ENCODED_WFEK_SIZE, flags);
+	if (!encoded_wfek) {
+		pr_err("hwdps_do_get_attr failed\n");
+		return -ENOMEM;
+	}
+	encoded_wfek_buffer.data = encoded_wfek;
+	encoded_wfek_buffer.len = HWDPS_ENCODED_WFEK_SIZE;
+	err = hwdps_has_access(inode, &encoded_wfek_buffer, flags);
+	if (err != 0) {
+		pr_err("hwdps_has_access %d\n", err);
+		goto free_encoded_wfek;
+	}
+	err = hwdps_do_get_context(inode, &ctx);
+	if (err != 0) {
+		pr_err("hwdps_do_get_context failed %d\n", err);
+		goto free_encoded_wfek;
+	}
+	id.uid = new_uid;
+	id.task_uid = inode->i_uid.val;
+	err = hwdps_update_fek(ctx.master_key_descriptor, &encoded_wfek_buffer,
+		&fek_buffer, new_uid, inode->i_uid.val);
+	if (err != 0) {
+		pr_err("hwdps ino %lu update_fek err %d\n", inode->i_ino, err);
+		goto free_fek;
+	}
+	if (inode->i_sb->s_cop->update_hwdps_attr)
+		err = inode->i_sb->s_cop->update_hwdps_attr(inode, encoded_wfek,
+			HWDPS_ENCODED_WFEK_SIZE, NULL);
+	else
+		err = -EINVAL;
+	if (err != 0)
+		pr_err("hwdps ino %lu update xattr err %d\n", inode->i_ino, err);
+
+free_fek:
+	kzfree(fek);
+	if (err == -ENOKEY)
+		err = 0;
+free_encoded_wfek:
+	kzfree(encoded_wfek);
+	return err;
+}
+EXPORT_SYMBOL(hwdps_update_context); //lint !e580
+
+static struct fscrypt_info *hwdps_get_fscrypt_info(struct fscrypt_context *ctx,
 	struct inode *inode, const char **cipher_str, int *keysize)
 {
 	struct fscrypt_info *ci;
@@ -740,79 +801,61 @@ static struct fscrypt_info *hwaa_get_fscrypt_info(struct fscrypt_context *ctx,
 		return ERR_PTR(-EINVAL);
 	}
 	err = determine_cipher_type(ci, inode, cipher_str, keysize);
-	if (err) {
-		pr_err("hwaa ino %lu cipher type fail\n", inode->i_ino);
+	if (err != 0) {
+		pr_err("hwdps ino %lu cipher type fail\n", inode->i_ino);
 		put_crypt_info(ci);
 		return ERR_PTR(err);
 	}
 	return ci;
 }
 
-static int hwaa_do_get_fek(struct inode *inode, uint8_t *wfek, size_t size,
-	uint8_t **fek, int *fek_len)
+static int hwdps_do_set_cipher(struct inode *inode, const char *cipher_str,
+	secondary_buffer_t fek_buffer, int keysize, struct fscrypt_info *ci)
 {
 	int err;
-
-	err = hwaa_get_fek(inode, wfek, size, fek, fek_len, GFP_NOFS);
-	if (err) {
-		pr_err("hwaa ino %lu get fek err %d\n", inode->i_ino, err);
-		return err;
-	}
-	if ((*fek_len) > HWAA_FEK_SIZE_MAX) {
-		pr_err("hwaa fek length too large %d\n", *fek_len);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int hwaa_do_set_cipher(struct inode *inode, const char *cipher_str,
-	uint8_t *fek, int fek_len, int keysize, struct fscrypt_info *ci)
-{
-	struct crypto_skcipher *ctfm;
-	int err;
+	struct crypto_skcipher *ctfm = NULL;
 
 	ctfm = crypto_alloc_skcipher(cipher_str, 0, 0); // 0 as default value
 	if (!ctfm || IS_ERR(ctfm)) {
 		err = ctfm ? PTR_ERR(ctfm) : -ENOMEM;
-		pr_err("hwaa ino %lu alloc ctfm err %d\n", inode->i_ino, err);
+		pr_err("hwdps ino %lu alloc ctfm err %d\n", inode->i_ino, err);
 		return err;
 	}
 	ci->ci_ctfm = ctfm;
 	crypto_skcipher_clear_flags(ctfm, ~0);
 	crypto_skcipher_set_flags(ctfm, CRYPTO_TFM_REQ_WEAK_KEY);
-	err = crypto_skcipher_setkey(ctfm, fek, keysize);
-	if (err) {
-		pr_err("hwaa ino %lu setkey fail\n", inode->i_ino);
+	err = crypto_skcipher_setkey(ctfm, *fek_buffer.data, keysize);
+	if (err != 0) {
+		pr_err("hwdps ino %lu setkey fail\n", inode->i_ino);
 		return err;
 	}
-	if (S_ISREG(inode->i_mode) &&
-		inode->i_sb->s_cop->is_inline_encrypted &&
+	if (S_ISREG(inode->i_mode) && inode->i_sb->s_cop->is_inline_encrypted &&
 		inode->i_sb->s_cop->is_inline_encrypted(inode)) {
 		ci->ci_key = kzalloc(FS_MAX_KEY_SIZE, GFP_NOFS);
 		if (!ci->ci_key)
 			return -ENOMEM;
-		ci->ci_key_len = fek_len;
-		if (memcpy_s(ci->ci_key, FS_MAX_KEY_SIZE, fek, fek_len) != EOK)
+		ci->ci_key_len = *fek_buffer.len;
+		if (memcpy_s(ci->ci_key, FS_MAX_KEY_SIZE,
+			*fek_buffer.data, *fek_buffer.len) != EOK)
 			return -EINVAL;
 	}
 	if (S_ISREG(inode->i_mode) &&
 		(ci->ci_data_mode == FS_ENCRYPTION_MODE_AES_128_CBC)) {
-		err = init_essiv_generator(ci, fek, keysize);
-		if (err) {
-			pr_err("hwaa ino %lu alloc essiv err %d\n",
+		err = init_essiv_generator(ci, *fek_buffer.data, keysize);
+		if (err != 0) {
+			pr_err("hwdps ino %lu alloc essiv err %d\n",
 				inode->i_ino, err);
 			return err;
 		}
 	}
 	/* cached kmem may have dirty data */
-	ci->ci_hw_enc_flag = (u8)(HWAA_XATTR_ENABLE_FLAG);
+	ci->ci_hw_enc_flag = (u8)(HWDPS_XATTR_ENABLE_FLAG_NEW);
 #ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
 	if (inode->i_crypt_info && (inode->i_crypt_info->ci_key_index >= 0) &&
 	    	(inode->i_crypt_info->ci_key_index <= MAX_HISI_KEY_INDEX))
 		ci->ci_key_index = inode->i_crypt_info->ci_key_index;
 	else
-		ci->ci_key_index = hwaa_get_key_index(ci->ci_master_key);
+		ci->ci_key_index = hwdps_get_key_index(ci->ci_master_key);
 	if ((ci->ci_key_index < 0) || (ci->ci_key_index > MAX_HISI_KEY_INDEX)) {
 		pr_err("ci_key_index: %d\n", ci->ci_key_index);
 		return -EINVAL;
@@ -821,52 +864,78 @@ static int hwaa_do_set_cipher(struct inode *inode, const char *cipher_str,
 	return 0;
 }
 
+static int hwdps_check_support_and_get_attr(struct inode *inode, u32 *flags,
+	buffer_t *encoded_wfek)
+{
+	int err;
+
+	err = hwdps_check_support(inode, flags);
+	if (err != 0)
+		return err;
+
+	if (*flags == HWDPS_XATTR_ENABLE_FLAG) {
+		encoded_wfek->data = hwdps_do_get_attr(inode,
+			HWDPS_ENCODE_WFEK_SIZE_OLD, *flags);
+		encoded_wfek->len = HWDPS_ENCODE_WFEK_SIZE_OLD;
+	} else {
+		encoded_wfek->data = hwdps_do_get_attr(inode,
+			HWDPS_ENCODED_WFEK_SIZE, *flags);
+		encoded_wfek->len = HWDPS_ENCODED_WFEK_SIZE;
+	}
+	if (!encoded_wfek->data)
+		return -ENOMEM;
+	return 0;
+}
+
 /*
  * mainly copied from fscrypt_get_encryption_info
  *
  * Return:
- *  o -EAGAIN: file is not protected by HWAA
+ *  o -EAGAIN: file is not protected by HWDPS
  *  o -EPERM: no permission to open the file
  *  o 0: SUCC
  *  o other errno: other errors
  */
-int hwaa_get_context(struct inode *inode)
+int hwdps_get_context(struct inode *inode)
 {
-	struct fscrypt_info *ci = NULL;
-	struct fscrypt_context ctx;
-	const char *cipher_str = NULL;
-	int keysize;
-	uint8_t *encoded_wfek = NULL;
-	uint8_t *fek = NULL;
-	uint32_t fek_len;
 	int err;
-	if (inode->i_crypt_info && !inode->i_crypt_info->ci_hw_enc_flag)
-		return 0;
-	err = hwaa_check_support(inode);
-	if (err)
+	int keysize;
+	struct fscrypt_context ctx;
+	struct fscrypt_info *ci = NULL;
+	const char *cipher_str = NULL;
+	buffer_t encoded_wfek = { NULL, 0 };
+	uint8_t *fek = NULL;
+	uint32_t fek_len = 0;
+	uint32_t flags = 0;
+	secondary_buffer_t fek_buffer = { &fek, &fek_len };
+
+	err = hwdps_check_support_and_get_attr(inode, &flags, &encoded_wfek);
+	if (err != 0)
 		return err;
-	encoded_wfek = hwaa_do_get_attr(inode, HWAA_ENCODED_WFEK_SIZE);
-	if (!encoded_wfek)
-		return -ENOMEM;
 	if (inode->i_crypt_info) {
-		err = hwaa_has_access(encoded_wfek, HWAA_ENCODED_WFEK_SIZE);
+		err = hwdps_has_access(inode, &encoded_wfek, flags);
 		goto free_encoded_wfek; // return anyway
 	}
-	err = hwaa_do_get_context(inode, &ctx);
-	if (err)
+	err = hwdps_do_get_context(inode, &ctx);
+	if (err != 0)
 		goto free_encoded_wfek;
-	ci = hwaa_get_fscrypt_info(&ctx, inode, &cipher_str, &keysize);
+	ci = hwdps_get_fscrypt_info(&ctx, inode, &cipher_str, &keysize);
 	if (IS_ERR(ci)) {
 		err = PTR_ERR(ci);
 		goto free_encoded_wfek;
 	}
-	err = hwaa_do_get_fek(inode, encoded_wfek, HWAA_ENCODED_WFEK_SIZE,
-		&fek, &fek_len);
-	if (err)
+	err = hwdps_get_fek(ctx.master_key_descriptor, inode, &encoded_wfek,
+		&fek_buffer, flags);
+	if (err != 0)
 		goto free_fek;
-	err = hwaa_do_set_cipher(inode, cipher_str, fek, fek_len, keysize, ci);
-	if (err)
+	err = hwdps_do_set_cipher(inode, cipher_str, fek_buffer, keysize, ci);
+	if (err != 0)
 		goto free_fek;
+	err = fscrypt_get_metadata(inode, ci);
+	if (err && err != -EOPNOTSUPP)
+		goto free_fek;
+	else
+		err = 0;
 	if (cmpxchg(&inode->i_crypt_info, NULL, ci) == NULL)
 		ci = NULL;
 free_fek:
@@ -875,8 +944,8 @@ free_fek:
 		err = 0;
 	put_crypt_info(ci);
 free_encoded_wfek:
-	kfree(encoded_wfek);
+	kfree(encoded_wfek.data);
 	return err;
 }
-EXPORT_SYMBOL(hwaa_get_context);
+EXPORT_SYMBOL(hwdps_get_context); //lint !e580
 #endif

@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2020. All rights reserved.
+ * Description: Save user space progress pid when registernetlink socket.
+ * Author: linlixin2@huawei.com
+ * Create: 2017-11-16
+ */
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -30,12 +37,12 @@ DEFINE_MUTEX(nb_receive_sem);
 DEFINE_MUTEX(nb_send_sem);
 
 /* netlink socket fd */
-static struct sock *g_nlfd;
+static struct sock *g_nlfd = NULL;
 
 /* save user space progress pid when user space netlink socket registering. */
 static unsigned int g_user_space_pid;
 static unsigned int g_native_space_pid;
-static struct task_struct *g_netlink_task;
+static struct task_struct *g_netlink_task = NULL;
 static int g_nb_module_state = NB_NETLINK_EXIT;
 
 struct nb_event_info {
@@ -51,9 +58,9 @@ static DEFINE_SPINLOCK(g_event_info_lock);
 
 static struct semaphore g_event_sema;
 
-static int __nb_notify_event(enum nb_evt_type event_type, void *data, int size);
+static int __nb_notify_event(enum nb_evt_type event_type, const void *data, int size);
 
-void nb_notify_event(enum nb_evt_type event_type, void *data, int size)
+void nb_notify_event(enum nb_evt_type event_type, const void *data, int size)
 {
 	if (!data) {
 		hwlog_err("%s:null data\n", __func__);
@@ -67,38 +74,39 @@ void nb_notify_event(enum nb_evt_type event_type, void *data, int size)
 
 	spin_lock_bh(&g_event_info_lock);
 	switch (event_type) {
-		case NBMSG_VOD_EVT:
-			if (sizeof(struct vod_event) != size) {
-				hwlog_err("%s:wrong vod event size %d\n", __func__, size);
-				spin_unlock_bh(&g_event_info_lock);
-				return;
-			}
-			g_event_info.type = event_type;
-			memcpy(&(g_event_info.vod_info), data, size);
-			break;
-		case NBMSG_KSI_EVT:
-			if (sizeof(struct ksi_event) != size) {
-				hwlog_err("%s:wrong ksi event size %d\n", __func__, size);
-				spin_unlock_bh(&g_event_info_lock);
-				return;
-			}
-			g_event_info.type = event_type;
-			memcpy(&(g_event_info.ksi_info), data, size);
-			break;
-		case NBMSG_NATIVE_RTT:
-			if (sizeof(struct native_event) != size) {
-				hwlog_err("%s:wrong native state size %d\n", __func__, size);
-				spin_unlock_bh(&g_event_info_lock);
-				return;
-			}
-			g_event_info.type = event_type;
-			memcpy(&(g_event_info.native_info), data, size);
-			break;
-		default:
-			g_event_info.type = NBMSG_EVT_INVALID;
-			hwlog_err("%s:unsupported event type %d\n", __func__, event_type);
+	case NBMSG_VOD_EVT:
+		if (sizeof(struct vod_event) != size) {
+			hwlog_err("%s:wrong vod eventsize %d\n", __func__, size);
 			spin_unlock_bh(&g_event_info_lock);
 			return;
+		}
+		g_event_info.type = event_type;
+		memcpy(&(g_event_info.vod_info), data, size);
+		break;
+	case NBMSG_KSI_EVT:
+		if (sizeof(struct ksi_event) != size) {
+			hwlog_err("%s:wrong ksi eventsize %d\n", __func__, size);
+			spin_unlock_bh(&g_event_info_lock);
+			return;
+		}
+		g_event_info.type = event_type;
+		memcpy(&(g_event_info.ksi_info), data, size);
+		break;
+	case NBMSG_NATIVE_RTT:
+		if (sizeof(struct native_event) != size) {
+			hwlog_err("%s:wrong native state size %d\n",
+				__func__, size);
+			spin_unlock_bh(&g_event_info_lock);
+			return;
+		}
+		g_event_info.type = event_type;
+		memcpy(&(g_event_info.native_info), data, size);
+		break;
+	default:
+		g_event_info.type = NBMSG_EVT_INVALID;
+		hwlog_err("%s:unsupported eventtype %d\n", __func__, event_type);
+		spin_unlock_bh(&g_event_info_lock);
+		return;
 	}
 	spin_unlock_bh(&g_event_info_lock);
 
@@ -135,7 +143,8 @@ void process_native_requst(struct native_requst *requst)
 
 	get_rtt_list(&native_info, requst->len);
 	native_info.len = requst->len;
-	nb_notify_event(NBMSG_NATIVE_RTT, &native_info, sizeof(struct native_event));
+	nb_notify_event(NBMSG_NATIVE_RTT,
+		&native_info, sizeof(struct native_event));
 }
 
 #ifdef CONFIG_APP_QOE_AI_PREDICT
@@ -143,22 +152,24 @@ void process_app_qoe_params_request(struct app_qoe_request *request)
 {
 	if (!request)
 		return;
-	if (request->msg_type == APP_QOE_MSG_RSRP_REQ) {
+	if (request->msg_type == APP_QOE_MSG_RSRP_REQ)
 		set_app_qoe_rsrp(request->rsrp, request->rsrq);
-	} else if (request->msg_type == APP_QOE_MSG_UID_REQ) {
+	else if (request->msg_type == APP_QOE_MSG_UID_REQ)
 		set_app_qoe_uid(request->app_uid, request->report_period);
-	}
 }
 #endif
 
-static void process_settings_params_request(struct setting_params_request *request)
+static void process_settings_params_request(
+	struct setting_params_request *request)
 {
-	int strategy = 0;
-	int uid = 0;
+	int strategy;
+	int uid;
+
 	if (!request)
 		return;
 	if (request->msg_id == REQ_TYPE_CLOSE_SOCKET) {
-		pr_info("process_settings_params_request REQ_TYPE_CLOSE_SOCKET,%d,%d\n", request->param1, request->param2);
+		pr_info("REQ_TYPE_CLOSE_SOCKET,%d,%d\n",
+			request->param1, request->param2);
 #ifdef CONFIG_HW_DPIMARK_MODULE
 		strategy = request->param1;
 		uid = request->param2;
@@ -171,19 +182,20 @@ static void process_settings_params_request(struct setting_params_request *reque
 		mplk_del_nw_bind((uid_t)uid);
 #endif
 	} else if (request->msg_id == REQ_TYPE_SET_SLOW_THRESHOLD) {
-		pr_info("process_settings_params_request REQ_TYPE_SET_SLOW_THRESHOLD,%d,%d,%d\n",
+		pr_info("REQ_TYPE_SET_SLOW_THRESHOLD,%d,%d,%d\n",
 			request->param1, request->param2, request->param3);
-		set_slow_proba_threshold(request->param1, request->param2, request->param3);
+		set_slow_proba_threshold(request->param1, request->param2,
+			request->param3);
 	} else if (request->msg_id == REQ_TYPE_SET_ALPHA_FILTER_ALG_PARAMS) {
 		set_alpha_filter_alg_params(request->param1, request->param2);
-	} else if (request->msg_id == REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD) {
+	} else if (request->msg_id == REQ_TYPE_SET_FILTER_ALG_CHG_THRESHOLD) {
 		set_alpha_filter_alg_change_thresh(request->param1);
 	} else if (request->msg_id == REQ_TYPE_SET_PCIE_POWER_LEVEL) {
-		pr_info("process_settings_params_request REQ_TYPE_SET_PCIE_POWER_LEVEL,%d,%d,%d\n",
+		pr_info("REQ_TYPE_SET_PCIE_POWER_LEVEL,%d,%d,%d\n",
 			request->param1, request->param2, request->param3);
 		config_pcie_power_level(request->param1, request->param2);
 	} else {
-		pr_info("process_settings_params_request ,msg_id=%d\n", request->msg_id);
+		pr_info("msg_id=%d\n", request->msg_id);
 	}
 }
 
@@ -192,20 +204,18 @@ static void nb_netlink_rcv(struct sk_buff *__skb)
 	struct nlmsghdr *nlh = NULL;
 	struct sk_buff *skb = NULL;
 
-	// TODO:check sender permission of NETLINK_NETBOOSTER
-
 	if (g_nb_module_state != NB_NETLINK_INIT) {
 		hwlog_err("%s:module not inited\n", __func__);
 		return;
 	}
 
-	if (NULL == __skb) {
+	if (__skb == NULL) {
 		hwlog_err("Invalid parameter: zero pointer reference(__skb)\n");
 		return;
 	}
 
 	skb = skb_get(__skb);
-	if (NULL == skb) {
+	if (skb == NULL) {
 		hwlog_err("nb_netlink_rcv: skb = NULL\n");
 		return;
 	}
@@ -214,73 +224,85 @@ static void nb_netlink_rcv(struct sk_buff *__skb)
 
 	if (skb->len >= NLMSG_HDRLEN) {
 		nlh = nlmsg_hdr(skb);
-		if (NULL == nlh) {
+		if (nlh == NULL) {
 			hwlog_err("nb_netlink_rcv:nlh = NULL\n");
 			kfree_skb(skb);
 			mutex_unlock(&nb_receive_sem);
 			return;
 		}
-		if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr)) && (skb->len >= nlh->nlmsg_len)) {
-			switch(nlh->nlmsg_type) {
-			case NBMSG_REG:
-				/*
-				 * Save user space progress pid when register
-				 * netlink socket.
-				 */
-				g_user_space_pid = nlh->nlmsg_pid;
+		if ((nlh->nlmsg_len < sizeof(struct nlmsghdr)) ||
+			(skb->len < nlh->nlmsg_len)) {
+			kfree_skb(skb);
+			mutex_unlock(&nb_receive_sem);
+			return;
+		}
+
+		switch (nlh->nlmsg_type) {
+		case NBMSG_REG:
+			/*
+			 * Save user space progress pid when register
+			 * netlink socket.
+			 */
+			g_user_space_pid = nlh->nlmsg_pid;
+			break;
+		case NBMSG_UNREG:
+			g_user_space_pid = 0;
+			break;
+		case NBMSG_VOD_REQ:
+			if (nlh->nlmsg_len <
+				NLMSG_LENGTH(sizeof(struct vod_request))) {
+				hwlog_err("nlmsg_len %d of nlmsg_type %d\n",
+					nlh->nlmsg_len, nlh->nlmsg_type);
 				break;
-			case NBMSG_UNREG:
-				g_user_space_pid = 0;
+			}
+			process_vod_request((struct vod_request *)NLMSG_DATA(nlh));
+			break;
+		case NBMSG_KSI_REQ:
+			if (nlh->nlmsg_len <
+				NLMSG_LENGTH(sizeof(struct ksi_request))) {
+				hwlog_err("nlmsg_len %d of nlmsg_type %d\n",
+					nlh->nlmsg_len, nlh->nlmsg_type);
 				break;
-			case NBMSG_VOD_REQ:
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct vod_request))) {
-					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
-								nlh->nlmsg_len, nlh->nlmsg_type);
-					break;
-				}
-				process_vod_request((struct vod_request *)NLMSG_DATA(nlh));
-				break;
-			case NBMSG_KSI_REQ:
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct ksi_request))) {
-					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
-								nlh->nlmsg_len, nlh->nlmsg_type);
-					break;
-				}
-				process_ksi_request((struct ksi_request *)NLMSG_DATA(nlh));
-				break;
-			case NBMSG_NATIVE_REG:
-				g_native_space_pid = nlh->nlmsg_pid;
-				break;
-			case NBMSG_NATIVE_UNREG:
-				g_native_space_pid = 0;
-				break;
-			case NBMSG_NATIVE_GET_RTT:
-				process_native_requst((struct native_requst *)NLMSG_DATA(nlh));
-				break;
+			}
+			process_ksi_request((struct ksi_request *)NLMSG_DATA(nlh));
+			break;
+		case NBMSG_NATIVE_REG:
+			g_native_space_pid = nlh->nlmsg_pid;
+			break;
+		case NBMSG_NATIVE_UNREG:
+			g_native_space_pid = 0;
+			break;
+		case NBMSG_NATIVE_GET_RTT:
+			process_native_requst(
+				(struct native_requst *)NLMSG_DATA(nlh));
+			break;
 #ifdef CONFIG_APP_QOE_AI_PREDICT
-			case NBMSG_APP_QOE_PARAMS_REQ: {
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct app_qoe_request))) {
-					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
-								nlh->nlmsg_len, nlh->nlmsg_type);
-					break;
-				}
-				process_app_qoe_params_request((struct app_qoe_request *)NLMSG_DATA(nlh));
+		case NBMSG_APP_QOE_PARAMS_REQ: {
+			if (nlh->nlmsg_len <
+				NLMSG_LENGTH(sizeof(struct app_qoe_request))) {
+				hwlog_err("nlmsg_len %d of nlmsg_type %d\n",
+					nlh->nlmsg_len, nlh->nlmsg_type);
 				break;
 			}
+			process_app_qoe_params_request(
+				(struct app_qoe_request *)NLMSG_DATA(nlh));
+			break;
+		}
 #endif
-			case NBMSG_SETTING_PARAMS_REQ: {
-				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct setting_params_request))) {
-					hwlog_err("nb_netlink_rcv:invalid nlmsg_len %d of nlmsg_type %d\n",
-								nlh->nlmsg_len, nlh->nlmsg_type);
-					break;
-				}
-				process_settings_params_request((struct setting_params_request *)NLMSG_DATA(nlh));
+		case NBMSG_SETTING_PARAMS_REQ: {
+			if (nlh->nlmsg_len < NLMSG_LENGTH(
+				sizeof(struct setting_params_request))) {
+				hwlog_err("nlmsg_len %d of nlmsg_type %d\n",
+					nlh->nlmsg_len, nlh->nlmsg_type);
 				break;
 			}
-			default:
-				hwlog_err("nb_netlink_rcv:invalid nlmsg_type %d\n", nlh->nlmsg_type);
-				break;
-			}
+			process_settings_params_request(
+				(struct setting_params_request *)NLMSG_DATA(nlh));
+			break;
+		}
+		default:
+			hwlog_err("nlmsg_type %d\n", nlh->nlmsg_type);
+			break;
 		}
 	}
 
@@ -293,7 +315,6 @@ static int nb_netlink_thread(void *data)
 	struct nb_event_info event_info = {0};
 
 	while (!kthread_should_stop()) {
-
 		down(&g_event_sema);
 
 		spin_lock_bh(&g_event_info_lock);
@@ -306,16 +327,23 @@ static int nb_netlink_thread(void *data)
 		if ((g_user_space_pid != 0) || (g_native_space_pid != 0)) {
 			switch (event_info.type) {
 			case NBMSG_VOD_EVT:
-				__nb_notify_event(NBMSG_VOD_EVT, &event_info.vod_info, sizeof(struct vod_event));
+				__nb_notify_event(NBMSG_VOD_EVT,
+					&event_info.vod_info,
+					sizeof(struct vod_event));
 				break;
 			case NBMSG_KSI_EVT:
-				__nb_notify_event(NBMSG_KSI_EVT, &event_info.ksi_info, sizeof(struct ksi_event));
+				__nb_notify_event(NBMSG_KSI_EVT,
+					&event_info.ksi_info,
+					sizeof(struct ksi_event));
 				break;
 			case NBMSG_NATIVE_RTT:
-				__nb_notify_event(NBMSG_NATIVE_RTT, &event_info.native_info, sizeof(struct native_event));
+				__nb_notify_event(NBMSG_NATIVE_RTT,
+					&event_info.native_info,
+					sizeof(struct native_event));
 				break;
 			default:
-				hwlog_err("%s:unexpected event type %d\n", __func__, event_info.type);
+				hwlog_err("%s:unexpected event type %d\n",
+					__func__, event_info.type);
 				break;
 			}
 		}
@@ -367,16 +395,17 @@ static void nb_netlink_exit(void)
 }
 
 /* send a message to user space */
-static int __nb_notify_event(enum nb_evt_type event, void *src, int size)
+static int __nb_notify_event(enum nb_evt_type event, const void *src, int size)
 {
-	int ret = 0;
+	int ret;
 	struct sk_buff *skb = NULL;
 	struct nlmsghdr *nlh = NULL;
 	struct vod_event *pdata = NULL;
 
 	mutex_lock(&nb_send_sem);
 	if ((!g_user_space_pid && !g_native_space_pid) || !g_nlfd) {
-		hwlog_err("%s: cannot notify event, pid = %d\n", __func__, g_user_space_pid);
+		hwlog_err("%s: cannot notify event, pid = %d\n",
+			__func__, g_user_space_pid);
 		ret = -1;
 		goto end;
 	}
@@ -401,14 +430,14 @@ static int __nb_notify_event(enum nb_evt_type event, void *src, int size)
 	/* skb will be freed in netlink_unicast */
 	switch (event) {
 	case NBMSG_NATIVE_RTT:
-		ret = netlink_unicast(g_nlfd, skb, g_native_space_pid, MSG_DONTWAIT);
+		ret = netlink_unicast(g_nlfd,
+			skb, g_native_space_pid, MSG_DONTWAIT);
 		break;
 	default:
-		ret = netlink_unicast(g_nlfd, skb, g_user_space_pid, MSG_DONTWAIT);
+		ret = netlink_unicast(g_nlfd,
+			skb, g_user_space_pid, MSG_DONTWAIT);
 		break;
 	}
-
-	goto end;
 
 end:
 	mutex_unlock(&nb_send_sem);

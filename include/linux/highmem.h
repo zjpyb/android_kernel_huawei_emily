@@ -194,7 +194,22 @@ static inline struct page *
 alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma,
 					unsigned long vaddr)
 {
-	return __alloc_zeroed_user_highpage(__GFP_MOVABLE | ___GFP_CMA, vma, vaddr);
+	gfp_t gfp_flags = __GFP_MOVABLE | ___GFP_CMA;
+#ifdef CONFIG_KZEROD
+	struct page *page = NULL;
+
+	mod_node_page_state(&contig_page_data, NR_ZERO_PAGE_ALLOC_TOTAL, 1);
+	page = alloc_zeroed_page();
+	if (page) {
+		mod_node_page_state(&contig_page_data, NR_ZERO_PAGE_ALLOC_PREZERO, 1);
+		return page;
+	}
+#endif
+#ifdef CONFIG_VM_COPY
+	if (vma->ext_flags & VM_COPY_COW)
+		gfp_flags &= ~___GFP_CMA;
+#endif
+	return __alloc_zeroed_user_highpage(gfp_flags, vma, vaddr);
 }
 
 static inline void clear_highpage(struct page *page)

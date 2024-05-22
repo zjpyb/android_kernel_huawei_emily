@@ -21,6 +21,7 @@
 #include <linux/audit.h>
 #include <linux/vmalloc.h>
 #include <linux/posix_acl_xattr.h>
+#include <chipset_common/security/kshield.h>
 
 #include <linux/uaccess.h>
 #include "internal.h"
@@ -206,9 +207,8 @@ int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
 	return error;
 }
 
-
 int
-vfs_setxattr(struct vfsmount *mnt, struct dentry *dentry, const char *name, const void *value,
+vfs_setxattr2(struct vfsmount *mnt, struct dentry *dentry, const char *name, const void *value,
 		size_t size, int flags)
 {
 	struct inode *inode = dentry->d_inode;
@@ -228,6 +228,13 @@ vfs_setxattr(struct vfsmount *mnt, struct dentry *dentry, const char *name, cons
 out:
 	inode_unlock(inode);
 	return error;
+}
+
+int
+vfs_setxattr(struct dentry *dentry, const char *name, const void *value,
+	      size_t size, int flags)
+{
+	return vfs_setxattr2(NULL, dentry, name, value, size, flags);
 }
 EXPORT_SYMBOL_GPL(vfs_setxattr);
 
@@ -309,6 +316,9 @@ __vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name,
 	handler = xattr_resolve_name(inode, &name);
 	if (IS_ERR(handler))
 		return PTR_ERR(handler);
+	if (unlikely(handler->__get))
+		return handler->__get(handler, dentry, inode, name, value,
+				      size);
 	if (!handler->get)
 		return -EOPNOTSUPP;
 	return handler->get(handler, dentry, inode, name, value, size);
@@ -316,10 +326,11 @@ __vfs_getxattr(struct dentry *dentry, struct inode *inode, const char *name,
 EXPORT_SYMBOL(__vfs_getxattr);
 
 ssize_t
-vfs_getxattr(struct vfsmount *mnt, struct dentry *dentry, const char *name, void *value, size_t size)
+vfs_getxattr2(struct vfsmount *mnt, struct dentry *dentry, const char *name, void *value, size_t size)
 {
 	struct inode *inode = dentry->d_inode;
 	int error;
+	const struct xattr_handler *handler;
 
 	error = xattr_permission(mnt, inode, name, MAY_READ);
 	if (error)
@@ -342,7 +353,18 @@ vfs_getxattr(struct vfsmount *mnt, struct dentry *dentry, const char *name, void
 		return ret;
 	}
 nolsm:
-	return __vfs_getxattr(dentry, inode, name, value, size);
+	handler = xattr_resolve_name(inode, &name);
+	if (IS_ERR(handler))
+		return PTR_ERR(handler);
+	if (!handler->get)
+		return -EOPNOTSUPP;
+	return handler->get(handler, dentry, inode, name, value, size);
+}
+
+ssize_t
+vfs_getxattr(struct dentry *dentry, const char *name, void *value, size_t size)
+{
+	return vfs_getxattr2(NULL, dentry, name, value, size);
 }
 EXPORT_SYMBOL_GPL(vfs_getxattr);
 
@@ -383,7 +405,7 @@ __vfs_removexattr(struct dentry *dentry, const char *name)
 EXPORT_SYMBOL(__vfs_removexattr);
 
 int
-vfs_removexattr(struct vfsmount *mnt, struct dentry *dentry, const char *name)
+vfs_removexattr2(struct vfsmount *mnt, struct dentry *dentry, const char *name)
 {
 	struct inode *inode = dentry->d_inode;
 	int error;
@@ -407,6 +429,12 @@ vfs_removexattr(struct vfsmount *mnt, struct dentry *dentry, const char *name)
 out:
 	inode_unlock(inode);
 	return error;
+}
+
+int
+vfs_removexattr(struct dentry *dentry, const char *name)
+{
+	return vfs_removexattr2(NULL, dentry, name);
 }
 EXPORT_SYMBOL_GPL(vfs_removexattr);
 
@@ -434,6 +462,7 @@ setxattr(struct vfsmount *mnt, struct dentry *d, const char __user *name, const 
 	if (size) {
 		if (size > XATTR_SIZE_MAX)
 			return -E2BIG;
+		kshield_chk_heap_spray(1);
 		kvalue = kvmalloc(size, GFP_KERNEL);
 		if (!kvalue)
 			return -ENOMEM;
@@ -452,7 +481,7 @@ setxattr(struct vfsmount *mnt, struct dentry *d, const char __user *name, const 
 		}
 	}
 
-	error = vfs_setxattr(mnt, d, kname, kvalue, size, flags);
+	error = vfs_setxattr2(mnt, d, kname, kvalue, size, flags);
 out:
 	kvfree(kvalue);
 
@@ -539,7 +568,7 @@ getxattr(struct vfsmount *mnt, struct dentry *d, const char __user *name, void _
 			return -ENOMEM;
 	}
 
-	error = vfs_getxattr(mnt, d, kname, kvalue, size);
+	error = vfs_getxattr2(mnt, d, kname, kvalue, size);
 	if (error > 0) {
 		if ((strcmp(kname, XATTR_NAME_POSIX_ACL_ACCESS) == 0) ||
 		    (strcmp(kname, XATTR_NAME_POSIX_ACL_DEFAULT) == 0))
@@ -692,7 +721,7 @@ removexattr(struct vfsmount *mnt, struct dentry *d, const char __user *name)
 	if (error < 0)
 		return error;
 
-	return vfs_removexattr(mnt, d, kname);
+	return vfs_removexattr2(mnt, d, kname);
 }
 
 static int path_removexattr(const char __user *pathname,

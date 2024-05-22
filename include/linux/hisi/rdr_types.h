@@ -17,5 +17,5 @@
 #define RDR_PTR		(void*)
 #define RDR_NVE     u64
 
-#endif/* End #define __RDR_TYPES_H__ */
+#endif /* End #define __RDR_TYPES_H__ */
 

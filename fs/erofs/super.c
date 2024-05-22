@@ -15,7 +15,11 @@
 #include <linux/statfs.h>
 #include <linux/parser.h>
 #include <linux/seq_file.h>
+
+#ifdef CONFIG_FILE_MAP
 #include <linux/file_map.h>
+#endif
+
 #include "internal.h"
 #include "xattr.h"
 
@@ -461,8 +465,11 @@ static struct inode *erofs_init_managed_cache(struct super_block *sb)
 
 	inode->i_mapping->a_ops = &managed_cache_aops;
 	mapping_set_gfp_mask(inode->i_mapping,
-			     GFP_NOFS | __GFP_HIGHMEM |
-			     __GFP_MOVABLE |  __GFP_NOFAIL);
+			     GFP_NOFS | __GFP_HIGHMEM | __GFP_MOVABLE
+#if defined(CONFIG_CMA) && defined(___GFP_CMA)
+			     | ___GFP_CMA
+#endif
+			    );
 	return inode;
 }
 
@@ -476,7 +483,7 @@ static int erofs_read_super(struct super_block *sb,
 	struct erofs_sb_info *sbi;
 	int err = -EINVAL;
 
-	infoln("read_super, device -> %s", dev_name);
+	infoln("read_super, device -> %s sb(%s)", dev_name, sb->s_id);
 	infoln("options -> %s", (char *)data);
 
 	if (unlikely(!sb_set_blocksize(sb, EROFS_BLKSIZ))) {

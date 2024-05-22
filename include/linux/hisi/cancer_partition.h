@@ -1,7 +1,7 @@
 #ifndef _CANCER_PARTITION_H_
 #define _CANCER_PARTITION_H_
 
-#include "hisi_partition.h"
+#include "partition_macro.h"
 #include "partition_def.h"
 
 static const struct partition partition_table_emmc[] =
@@ -70,7 +70,7 @@ static const struct partition partition_table_emmc[] =
   {PART_ENG_VENDOR,                 801*1024,          12*1024,        EMMC_USER_PART},/* eng_vendor        12M    p52*/
   {PART_MODEM_PATCH_NV,             813*1024,           4*1024,        EMMC_USER_PART},/* modem_patch_nv     4M    p53*/
   {PART_MODEM_DRIVER,               817*1024,          20*1024,        EMMC_USER_PART},/* modem_driver      20M    p54*/
-  {PART_RESERVED4,                  837*1024,          12*1024,        EMMC_USER_PART},/* reserved4A        12M    p55*/
+  {PART_KPATCH,                     837*1024,          12*1024,        EMMC_USER_PART},/* kpatch            12M    p55*/
   {PART_RAMDISK,                    849*1024,           2*1024,        EMMC_USER_PART},/* ramdisk            2M    p56*/
   {PART_VBMETA_SYSTEM,              851*1024,           1*1024,        EMMC_USER_PART},/* vbmeta_system      1M    p57*/
   {PART_VBMETA_VENDOR,              852*1024,           1*1024,        EMMC_USER_PART},/* vbmeta_vendor      1M    p58*/
@@ -86,70 +86,93 @@ static const struct partition partition_table_emmc[] =
 #ifdef CONFIG_FACTORY_MODE
   {PART_PREAS,                      928*1024,        1216*1024,        EMMC_USER_PART},/* preas          1216M     p68*/
   {PART_PREAVS,                    2144*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     2176*1024,        7576*1024,        EMMC_USER_PART},/* super           7576M    p70*/
-  {PART_VERSION,                   9752*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                  10328*1024,        1144*1024,        EMMC_USER_PART},/* preload_a       1144M    p72*/
-  {PART_HIBENCH_IMG,              11472*1024,         128*1024,        EMMC_USER_PART},/* hibench_img      128M    p73*/
-  {PART_HIBENCH_DATA,             11600*1024,         512*1024,        EMMC_USER_PART},/* hibench_data     512M    p74*/
-  {PART_FLASH_AGEING,             12112*1024,         512*1024,        EMMC_USER_PART},/* FLASH_AGEING     512M    p75*/
-  {PART_HIBENCH_LOG,              12624*1024,          32*1024,        EMMC_USER_PART},/* HIBENCH_LOG       32M    p76*/
-  {PART_USERDATA,                 12656*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p77*/
+  {PART_PRETS,                     2176*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    2200*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     2208*1024,        7544*1024,        EMMC_USER_PART},/* super           7544M    p72*/
+  {PART_VERSION,                   9752*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                  10328*1024,        1144*1024,        EMMC_USER_PART},/* preload_a       1144M    p74*/
+  {PART_HIBENCH_IMG,              11472*1024,         128*1024,        EMMC_USER_PART},/* hibench_img      128M    p75*/
+  {PART_HIBENCH_DATA,             11600*1024,         512*1024,        EMMC_USER_PART},/* hibench_data     512M    p76*/
+  {PART_FLASH_AGEING,             12112*1024,         512*1024,        EMMC_USER_PART},/* FLASH_AGEING     512M    p77*/
+  {PART_HIBENCH_LOG,              12624*1024,          32*1024,        EMMC_USER_PART},/* HIBENCH_LOG       32M    p78*/
+  {PART_USERDATA,                 12656*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p79*/
 #else
 #ifdef CONFIG_USE_EROFS
 #ifdef CONFIG_UPDATE_PRODUCT_EROFS
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                      928*1024,         360*1024,        EMMC_USER_PART},/* preas           360M     p68*/
   {PART_PREAVS,                    1288*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     1320*1024,        7480*1024,        EMMC_USER_PART},/* super           7480M    p70*/
-  {PART_VERSION,                   8800*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                   9376*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                 10520*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+  {PART_PRETS,                     1320*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    1344*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     1352*1024,        7448*1024,        EMMC_USER_PART},/* super           7448M    p72*/
+  {PART_VERSION,                   8800*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                   9376*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                 10520*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
 #else
   {PART_PREAS,                      928*1024,        1216*1024,        EMMC_USER_PART},/* preas          1216M     p68*/
   {PART_PREAVS,                    2144*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     2176*1024,        7544*1024,        EMMC_USER_PART},/* super           7544M    p70*/
-  {PART_VERSION,                   9720*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                  10296*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                 11440*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+  {PART_PRETS,                     2176*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    2200*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     2208*1024,        7512*1024,        EMMC_USER_PART},/* super           7512M    p72*/
+  {PART_VERSION,                   9720*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                  10296*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                 11440*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
 #endif
 #else
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                      928*1024,         296*1024,        EMMC_USER_PART},/* preas           296M     p68*/
   {PART_PREAVS,                    1224*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     1256*1024,        5632*1024,        EMMC_USER_PART},/* super           5632M    p70*/
-  {PART_VERSION,                   6888*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                   7464*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                  8608*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+  {PART_PRETS,                     1256*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    1280*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     1288*1024,        5600*1024,        EMMC_USER_PART},/* super           5600M    p72*/
+  {PART_VERSION,                   6888*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                   7464*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                  8608*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
 #else
   {PART_PREAS,                      928*1024,         976*1024,        EMMC_USER_PART},/* preas           976M     p68*/
   {PART_PREAVS,                    1904*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     1936*1024,        5552*1024,        EMMC_USER_PART},/* super           5552M    p70*/
-  {PART_VERSION,                   7488*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                   8064*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                  9208*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+#ifdef CONFIG_SUPPORT_DOCOMO
+  {PART_PRETS,                     1936*1024,         128*1024,        EMMC_USER_PART}, /* prets           128M    p70*/
+  {PART_PRETVS,                    2064*1024,          16*1024,        EMMC_USER_PART}, /* pretvs           16M    p71*/
+  {PART_SUPER,                     2080*1024,        5408*1024,        EMMC_USER_PART}, /* super          5408M    p72*/
+  {PART_VERSION,                   7488*1024,         576*1024,        EMMC_USER_PART}, /* version         576M    p73*/
+  {PART_PRELOAD,                   8064*1024,        1144*1024,        EMMC_USER_PART}, /* preload        1144M    p74*/
+  {PART_USERDATA,                  9208*1024,  (4UL)*1024*1024,        EMMC_USER_PART}, /* userdata          4G    p75*/
+#else
+  {PART_PRETS,                     1936*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    1960*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     1968*1024,        5520*1024,        EMMC_USER_PART},/* super           5520M    p72*/
+  {PART_VERSION,                   7488*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                   8064*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                  9208*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
+#endif
 #endif
 #endif
 #else
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                      928*1024,         360*1024,        EMMC_USER_PART},/* preas           360M     p68*/
   {PART_PREAVS,                    1288*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     1320*1024,        7480*1024,        EMMC_USER_PART},/* super           7480M    p70*/
-  {PART_VERSION,                   8800*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                   9376*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                 10520*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+  {PART_PRETS,                     1320*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    1344*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     1352*1024,        7448*1024,        EMMC_USER_PART},/* super           7448M    p72*/
+  {PART_VERSION,                   8800*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                   9376*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                 10520*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
 #else
   {PART_PREAS,                      928*1024,        1216*1024,        EMMC_USER_PART},/* preas          1216M     p68*/
   {PART_PREAVS,                    2144*1024,          32*1024,        EMMC_USER_PART},/* preavs           32M     p69*/
-  {PART_SUPER,                     2176*1024,        7544*1024,        EMMC_USER_PART},/* super           7544M    p70*/
-  {PART_VERSION,                   9720*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p71*/
-  {PART_PRELOAD,                  10296*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p72*/
-  {PART_USERDATA,                 11440*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p73*/
+  {PART_PRETS,                     2176*1024,          24*1024,        EMMC_USER_PART},/* prets             24M    p70*/
+  {PART_PRETVS,                    2200*1024,           8*1024,        EMMC_USER_PART},/* pretvs             8M    p71*/
+  {PART_SUPER,                     2208*1024,        7512*1024,        EMMC_USER_PART},/* super           7512M    p72*/
+  {PART_VERSION,                   9720*1024,         576*1024,        EMMC_USER_PART},/* version          576M    p73*/
+  {PART_PRELOAD,                  10296*1024,        1144*1024,        EMMC_USER_PART},/* preload         1144M    p74*/
+  {PART_USERDATA,                 11440*1024,  (4UL)*1024*1024,        EMMC_USER_PART},/* userdata           4G    p75*/
 #endif
 #endif
 #endif
   {"0", 0, 0, 0},                                        /* total 11848M*/
 };
-#ifdef CONFIG_HISI_STORAGE_UFS_PARTITION
+
 static const struct partition partition_table_ufs[] =
 {
   {PART_XLOADER,                           0,        2*1024,        UFS_PART_0},
@@ -216,7 +239,7 @@ static const struct partition partition_table_ufs[] =
   {PART_ENG_VENDOR,                     793*1024,       12*1024,        UFS_PART_3},/* eng_vendor                 12M    p48*/
   {PART_MODEM_PATCH_NV,                 805*1024,        4*1024,        UFS_PART_3},/* modem_patch_nv              4M    p49*/
   {PART_MODEM_DRIVER,                   809*1024,       20*1024,        UFS_PART_3},/* modem_driver               20M    p50*/
-  {PART_RESERVED4,                      829*1024,       12*1024,        UFS_PART_3},/* reserved4A                 12M    p51*/
+  {PART_KPATCH,                         829*1024,       12*1024,        UFS_PART_3},/* kpatch                     12M    p51*/
   {PART_RAMDISK,                        841*1024,        2*1024,        UFS_PART_3},/* ramdisk                     2M    p52*/
   {PART_VBMETA_SYSTEM,                  843*1024,        1*1024,        UFS_PART_3},/* vbmeta_system               1M    p53*/
   {PART_VBMETA_VENDOR,                  844*1024,        1*1024,        UFS_PART_3},/* vbmeta_vendor               1M    p54*/
@@ -232,69 +255,91 @@ static const struct partition partition_table_ufs[] =
 #ifdef CONFIG_FACTORY_MODE
   {PART_PREAS,                          920*1024,        1216*1024,        UFS_PART_3},/* preas           1216M          p64*/
   {PART_PREAVS,                        2136*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         2168*1024,        7576*1024,        UFS_PART_3},/* super           7576M          p66*/
-  {PART_VERSION,                       9744*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                      10320*1024,        1144*1024,        UFS_PART_3},/* preload_a       1144M          p68*/
-  {PART_HIBENCH_IMG,                  11464*1024,         128*1024,        UFS_PART_3},/* hibench_img      128M          p69*/
-  {PART_HIBENCH_DATA,                 11592*1024,         512*1024,        UFS_PART_3},/* hibench_data     512M          p70*/
-  {PART_FLASH_AGEING,                 12104*1024,         512*1024,        UFS_PART_3},/* FLASH_AGEING     512M          p71*/
-  {PART_HIBENCH_LOG,                  12616*1024,          32*1024,        UFS_PART_3},/* HIBENCH_LOG       32M          p72*/
-  {PART_USERDATA,                     12648*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p73*/
+  {PART_PRETS,                         2168*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        2192*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         2200*1024,        7544*1024,        UFS_PART_3},/* super           7544M          p68*/
+  {PART_VERSION,                       9744*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                      10320*1024,        1144*1024,        UFS_PART_3},/* preload_a       1144M          p70*/
+  {PART_HIBENCH_IMG,                  11464*1024,         128*1024,        UFS_PART_3},/* hibench_img      128M          p71*/
+  {PART_HIBENCH_DATA,                 11592*1024,         512*1024,        UFS_PART_3},/* hibench_data     512M          p72*/
+  {PART_FLASH_AGEING,                 12104*1024,         512*1024,        UFS_PART_3},/* FLASH_AGEING     512M          p73*/
+  {PART_HIBENCH_LOG,                  12616*1024,          32*1024,        UFS_PART_3},/* HIBENCH_LOG       32M          p74*/
+  {PART_USERDATA,                     12648*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p75*/
 #else
 #ifdef CONFIG_USE_EROFS
 #ifdef CONFIG_UPDATE_PRODUCT_EROFS
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                          920*1024,         360*1024,        UFS_PART_3},/* preas            360M          p64*/
   {PART_PREAVS,                        1280*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         1312*1024,        7480*1024,        UFS_PART_3},/* super           7480M          p66*/
-  {PART_VERSION,                       8792*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                       9368*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                     10512*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+  {PART_PRETS,                         1312*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        1336*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         1344*1024,        7448*1024,        UFS_PART_3},/* super           7448M          p68*/
+  {PART_VERSION,                       8792*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                       9368*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                     10512*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
 #else
   {PART_PREAS,                          920*1024,        1216*1024,        UFS_PART_3},/* preas           1216M          p64*/
   {PART_PREAVS,                        2136*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         2168*1024,        7544*1024,        UFS_PART_3},/* super           7544M          p66*/
-  {PART_VERSION,                       9712*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                      10288*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                     11432*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+  {PART_PRETS,                         2168*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        2192*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         2200*1024,        7512*1024,        UFS_PART_3},/* super           7512M          p68*/
+  {PART_VERSION,                       9712*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                      10288*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                     11432*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
 #endif
 #else
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                          920*1024,         296*1024,        UFS_PART_3},/* preas            296M          p64*/
   {PART_PREAVS,                        1216*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         1248*1024,        5632*1024,        UFS_PART_3},/* super           5632M          p66*/
-  {PART_VERSION,                       6880*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                       7456*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                      8600*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+  {PART_PRETS,                         1248*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        1272*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         1280*1024,        5600*1024,        UFS_PART_3},/* super           5600M          p68*/
+  {PART_VERSION,                       6880*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                       7456*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                      8600*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
 #else
   {PART_PREAS,                          920*1024,         976*1024,        UFS_PART_3},/* preas            976M          p64*/
   {PART_PREAVS,                        1896*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         1928*1024,        5552*1024,        UFS_PART_3},/* super           5552M          p66*/
-  {PART_VERSION,                       7480*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                       8056*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                      9200*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+#ifdef CONFIG_SUPPORT_DOCOMO
+  {PART_PRETS,                         1928*1024,         128*1024,        UFS_PART_3}, /* prets            128M         p66*/
+  {PART_PRETS,                         2056*1024,         16*1024,         UFS_PART_3}, /* pretvs           16M          p66*/
+  {PART_SUPER,                         2072*1024,        5408*1024,        UFS_PART_3}, /* super           5408M         p68*/
+  {PART_VERSION,                       7480*1024,         576*1024,        UFS_PART_3}, /* version          576M         p69*/
+  {PART_PRELOAD,                       8056*1024,        1144*1024,        UFS_PART_3}, /* preload         1144M         p70*/
+  {PART_USERDATA,                      9200*1024,  (4UL)*1024*1024,        UFS_PART_3}, /* userdata           4G         p71*/
+#else
+  {PART_PRETS,                         1928*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        1952*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         1960*1024,        5520*1024,        UFS_PART_3},/* super           5520M          p68*/
+  {PART_VERSION,                       7480*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                       8056*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                      9200*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
+#endif
 #endif
 #endif
 #else
 #ifdef CONFIG_MARKET_INTERNAL
   {PART_PREAS,                          920*1024,         360*1024,        UFS_PART_3},/* preas            360M          p64*/
   {PART_PREAVS,                        1280*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         1312*1024,        7480*1024,        UFS_PART_3},/* super           7480M          p66*/
-  {PART_VERSION,                       8792*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                       9368*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                     10512*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+  {PART_PRETS,                         1312*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        1336*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         1344*1024,        7448*1024,        UFS_PART_3},/* super           7448M          p68*/
+  {PART_VERSION,                       8792*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                       9368*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                     10512*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
 #else
   {PART_PREAS,                          920*1024,        1216*1024,        UFS_PART_3},/* preas           1216M          p64*/
   {PART_PREAVS,                        2136*1024,          32*1024,        UFS_PART_3},/* preavs            32M          p65*/
-  {PART_SUPER,                         2168*1024,        7544*1024,        UFS_PART_3},/* super           7544M          p66*/
-  {PART_VERSION,                       9712*1024,         576*1024,        UFS_PART_3},/* version          576M          p67*/
-  {PART_PRELOAD,                      10288*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p68*/
-  {PART_USERDATA,                     11432*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p69*/
+  {PART_PRETS,                         2168*1024,          24*1024,        UFS_PART_3},/* prets             24M          p66*/
+  {PART_PRETVS,                        2192*1024,           8*1024,        UFS_PART_3},/* pretvs             8M          p67*/
+  {PART_SUPER,                         2200*1024,        7512*1024,        UFS_PART_3},/* super           7512M          p68*/
+  {PART_VERSION,                       9712*1024,         576*1024,        UFS_PART_3},/* version          576M          p69*/
+  {PART_PRELOAD,                      10288*1024,        1144*1024,        UFS_PART_3},/* preload         1144M          p70*/
+  {PART_USERDATA,                     11432*1024,  (4UL)*1024*1024,        UFS_PART_3},/* userdata           4G          p71*/
 #endif
 #endif
 #endif
   {"0", 0, 0, 0},
 };
-#endif
 
 #endif

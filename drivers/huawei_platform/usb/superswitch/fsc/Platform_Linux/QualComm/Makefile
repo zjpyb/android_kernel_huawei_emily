@@ -29,4 +29,4 @@ fusb3601_whole-objs := Platform_Linux/fusb3601_driver.o \
 			core/systempolicy.o \
 			core/timer.o \
 			core/vdm.o \
-			core/display_port.o 
+			core/display_port.o

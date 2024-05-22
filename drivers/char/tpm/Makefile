@@ -23,3 +23,4 @@ obj-$(CONFIG_TCG_XEN) += xen-tpmfront.o
 obj-$(CONFIG_TCG_TEE) += tcg_tee/
 obj-$(CONFIG_TCG_CRB) += tpm_crb.o
 obj-$(CONFIG_TCG_VTPM_PROXY) += tpm_vtpm_proxy.o
+obj-$(CONFIG_HUAWEI_ARMPC_TPM) += tpm-huawei.o

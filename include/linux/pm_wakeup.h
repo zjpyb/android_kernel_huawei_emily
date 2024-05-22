@@ -214,8 +214,8 @@ static inline void wakeup_source_trash(struct wakeup_source *ws)
 	wakeup_source_drop(ws);
 }
 
-extern int wakeup_source_set(char *name, u8 lock_timeout);
-extern int wake_unlockByName(char *name);
+extern int wakeup_source_set(const char *name, u8 lock_timeout);
+extern int wake_unlockByName(const char *name);
 extern int wakeup_source_set_all(u8 lock_timeout);
 extern int wake_unlockAll(unsigned int msec);
 #ifdef CONFIG_HUAWEI_DUBAI

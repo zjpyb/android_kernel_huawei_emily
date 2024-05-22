@@ -23,10 +23,11 @@
 #include <linux/hugetlb.h>
 #include <linux/memcontrol.h>
 #include <linux/mm_inline.h>
+#include <chipset_common/security/kshield.h>
 
 #include "internal.h"
 #ifdef CONFIG_TASK_PROTECT_LRU
-#include <linux/hisi/protect_lru.h>
+#include <linux/protect_lru.h>
 #endif
 
 bool can_do_mlock(void)
@@ -649,11 +650,11 @@ static int apply_vma_lock_flags(unsigned long start, size_t len,
  * is also counted.
  * Return value: previously mlocked page counts
  */
-static int count_mm_mlocked_page_nr(struct mm_struct *mm,
+static unsigned long count_mm_mlocked_page_nr(struct mm_struct *mm,
 		unsigned long start, size_t len)
 {
 	struct vm_area_struct *vma;
-	int count = 0;
+	unsigned long count = 0;
 
 	if (mm == NULL)
 		mm = current->mm;
@@ -686,6 +687,9 @@ static __must_check int do_mlock(unsigned long start, size_t len, vm_flags_t fla
 	unsigned long locked;
 	unsigned long lock_limit;
 	int error = -ENOMEM;
+
+	kshield_chk_mlock();
+	start = untagged_addr(start);
 
 	if (!can_do_mlock())
 		return -EPERM;
@@ -749,6 +753,8 @@ SYSCALL_DEFINE3(mlock2, unsigned long, start, size_t, len, int, flags)
 SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
 {
 	int ret;
+
+	start = untagged_addr(start);
 
 	len = PAGE_ALIGN(len + (offset_in_page(start)));
 	start &= PAGE_MASK;

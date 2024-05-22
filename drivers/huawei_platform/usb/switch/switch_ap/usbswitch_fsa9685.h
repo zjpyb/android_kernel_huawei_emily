@@ -3,7 +3,7 @@
  *
  * usbswitch with fsa9685 driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,9 +19,7 @@
 #ifndef _USBSWITCH_FSA9685_H_
 #define _USBSWITCH_FSA9685_H_
 
-#ifndef BIT
-#define BIT(x)          (1 << (x))
-#endif
+#include <linux/bitops.h>
 
 /*
  * Register addresses

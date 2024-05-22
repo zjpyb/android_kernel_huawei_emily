@@ -2,7 +2,7 @@ menu "IProvision Scheduling v1.0"
 
 config FRAME_RTG
 	bool "Frame rtg control"
-	depends on HISI_RTG && HISI_PERF_CTRL
+	depends on SCHED_RTG && PERF_CTRL
 	default n
 	help
 	  Frame RTG Process Control and Per Frame Load Tracking.
@@ -27,5 +27,12 @@ config TRACE_FRAME_SYSTRACE
 	  Frame Systrace used clock_set_rate for chrome systrace.
 	  If you say Y here, the FRAME_SYATRACE will be enabled,
 	  you can see all the load tracking from chrome systrace.
+
+config HW_RTG_MULTI_FRAME
+	bool "Multi-Frame RTG Scheduling"
+	depends on FRAME_RTG
+	default n
+	help
+	  Use multi frame_rtg group
 
 endmenu #"IProvision Scheduling v1.0"

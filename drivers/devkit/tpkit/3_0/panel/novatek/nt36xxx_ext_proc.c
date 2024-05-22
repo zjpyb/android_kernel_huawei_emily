@@ -27,7 +27,7 @@
 #include <linux/regulator/consumer.h>
 
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -108,10 +108,11 @@ static ssize_t nvt_flash_i2c_read(struct file *file, char __user *buff, size_t c
 	i2c_wr = str[0] >> 7;
 
 	if (i2c_wr == 0) {	//I2C write
-		TS_LOG_DEBUG("%s: i2c_addr=0x%02X, len=%d\n", __func__, (str[0] & 0x7F), str[1]);
+		TS_LOG_DEBUG("%s: i2c_addr=0x%02X, len=%u\n", NVT_TAG,
+			(str[0] & 0x7F), str[1]);
 
 		if (!nvt_ts->chip_data->ts_platform_data->bops->bus_read) {
-			TS_LOG_ERR("%s: error, invalid bus_write\n", __func__);
+			TS_LOG_ERR("%s: error, invalid bus_write\n", NVT_TAG);
 			return -EIO;
 		}
 
@@ -121,17 +122,19 @@ static ssize_t nvt_flash_i2c_read(struct file *file, char __user *buff, size_t c
 
 		ret = nvt_ts->chip_data->ts_platform_data->bops->bus_write(&str[2], str[1]);
 		if (ret < 0)
-			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n",
+				NVT_TAG, ret);
 
 		nvt_ts->chip_data->ts_platform_data->client->addr = tmp_addr;
 		mutex_unlock(&nvt_ts->bus_mutex);
 
 		return ret;
 	} else if (i2c_wr == 1) {	//I2C read
-		TS_LOG_DEBUG("%s: i2c_addr=0x%02X, len=%d\n", __func__, (str[0] & 0x7F), str[1]);
+		TS_LOG_DEBUG("%s: i2c_addr=0x%02X, len=%u\n", NVT_TAG,
+			(str[0] & 0x7F), str[1]);
 
 		if (!nvt_ts->chip_data->ts_platform_data->bops->bus_read) {
-			TS_LOG_ERR("%s: error, invalid bus_read\n", __func__);
+			TS_LOG_ERR("%s: error, invalid bus_read\n", NVT_TAG);
 			return -EIO;
 		}
 
@@ -141,7 +144,8 @@ static ssize_t nvt_flash_i2c_read(struct file *file, char __user *buff, size_t c
 
 		ret = nvt_ts->chip_data->ts_platform_data->bops->bus_read(&str[2], 1, &str[3], (str[1] - 1));
 		if (ret < 0)
-			TS_LOG_ERR("%s: error, bus_read fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: error, bus_read fail, ret=%d\n",
+				NVT_TAG, ret);
 
 		nvt_ts->chip_data->ts_platform_data->client->addr = tmp_addr;
 		mutex_unlock(&nvt_ts->bus_mutex);
@@ -154,7 +158,7 @@ static ssize_t nvt_flash_i2c_read(struct file *file, char __user *buff, size_t c
 
 		return ret;
 	} else {
-		TS_LOG_ERR("%s: Call error, str[0]=%d\n", __func__, str[0]);
+		TS_LOG_ERR("%s: Call error, str[0]=%u\n", NVT_TAG, str[0]);
 		return -EFAULT;
 	}
 }
@@ -176,7 +180,7 @@ static ssize_t nvt_flash_spi_read(struct file *file, char __user *buff, size_t c
 	int32_t retries = 0;
 	int8_t spi_wr = 0;
 
-	if (count > NVT_TANSFER_LEN) {
+	if (count > nvt_ts->bus_transfer_len) {
 		TS_LOG_ERR("invalid transfer len!\n");
 		return -EFAULT;
 	}
@@ -203,27 +207,29 @@ static ssize_t nvt_flash_spi_read(struct file *file, char __user *buff, size_t c
 
 	if (spi_wr == NVTWRITE) {	//SPI write
 		if (!nvt_ts->chip_data->ts_platform_data->bops->bus_write) {
-			TS_LOG_ERR("%s: error, invalid bus_write\n", __func__);
+			TS_LOG_ERR("%s: error, invalid bus_write\n", NVT_TAG);
 			ret = -EIO;
 			goto out;
 		}
 
 		ret = novatek_ts_kit_write(I2C_FW_Address, &str[2], ((str[0]&0x7F) << 8) | str[1]);
 		if (ret < 0) {
-			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: error, bus_write fail, ret=%d\n",
+				NVT_TAG, ret);
 		}
 
 		goto out;
 	} else if (spi_wr == NVTREAD) {	//SPI read
 		if (!nvt_ts->chip_data->ts_platform_data->bops->bus_read) {
-			TS_LOG_ERR("%s: error, invalid bus_read\n", __func__);
+			TS_LOG_ERR("%s: error, invalid bus_read\n", NVT_TAG);
 			ret = -EIO;
 			goto out;
 		}
 
 		ret = novatek_ts_kit_read(I2C_FW_Address, &str[2], (((str[0] & 0x7F) << 8) | str[1]));
 		if (ret < 0) {
-			TS_LOG_ERR("%s: error, bus_read fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: error, bus_read fail, ret=%d\n",
+				NVT_TAG, ret);
 		}
 
 		// copy buff to user if spi transfer
@@ -236,7 +242,7 @@ static ssize_t nvt_flash_spi_read(struct file *file, char __user *buff, size_t c
 
 		goto out;
 	} else {
-		TS_LOG_ERR("%s: Call error, str[0]=%d\n", __func__, str[0]);
+		TS_LOG_ERR("%s: Call error, str[0]=%d\n", NVT_TAG, str[0]);
 		ret = -EFAULT;
 		goto out;
 	}
@@ -262,7 +268,8 @@ static int32_t nvt_flash_open(struct inode *inode, struct file *file)
 
 	dev = kmalloc(sizeof(struct nvt_flash_data), GFP_KERNEL);
 	if (dev == NULL) {
-		TS_LOG_ERR("%s: Failed to allocate memory for nvt flash data\n", __func__);
+		TS_LOG_ERR("%s: Failed to alloc memory for nvt flash data\n",
+			NVT_TAG);
 		return -ENOMEM;
 	}
 
@@ -318,10 +325,10 @@ int32_t nvt_kit_flash_proc_init(void)
 		NVT_proc_entry = proc_create(DEVICE_SPI_NAME, 0444, NULL,&nvt_flash_spi_fops);
 	}
 	if (NVT_proc_entry == NULL) {
-		TS_LOG_ERR("%s: Failed!\n", __func__);
+		TS_LOG_ERR("kit_flash_proc_init: Failed!\n");
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: Succeeded!\n", __func__);
+		TS_LOG_INFO("kit_flash_proc_init: Succeeded!\n");
 	}
 
 	TS_LOG_INFO("============================================================\n");
@@ -330,7 +337,7 @@ int32_t nvt_kit_flash_proc_init(void)
 		TS_LOG_INFO("Create /proc/NVTflash\n");
 	} else if (nvt_ts->btype == TS_BUS_SPI) {
 		NVT_TRANSFER_LENGTH = SPI_TRANSFER_LENGTH;	//Support SPI transfer length
-		TS_LOG_INFO("Create /proc/NVTSPI\n");
+		TS_LOG_INFO("Create /proc/SPI\n");
 	}
 	TS_LOG_INFO("============================================================\n");
 
@@ -364,7 +371,7 @@ void nvt_kit_change_mode(uint8_t mode)
 	buf[1] = mode;
 	ret = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 	if (ret) {
-		TS_LOG_INFO("%s: set mode FAIL\n", __func__);
+		TS_LOG_INFO("%s: set mode FAIL\n", NVT_TAG);
 	}
 
 	if (mode == NORMAL_MODE) {
@@ -372,7 +379,8 @@ void nvt_kit_change_mode(uint8_t mode)
 		buf[1] = HANDSHAKING_HOST_READY;
 		ret = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 		if (ret) {
-			TS_LOG_INFO("%s: in NORMAL_MODE set mode FAIL\n", __func__);
+			TS_LOG_INFO("%s: in NORMAL_MODE set mode FAIL\n",
+				NVT_TAG);
 		}
 		msleep(20);
 	}
@@ -401,7 +409,7 @@ info_retry:
 	buf[0] = EVENT_MAP_FWINFO;
 	ret_32 = novatek_ts_kit_read(I2C_FW_Address, buf, 17);
 	if (ret_32) {
-		TS_LOG_INFO("%s:read fw info FAIL\n", __func__);
+		TS_LOG_INFO("kit_get_fw_info:read fw info FAIL\n");
 	}
 
 	nvt_fw_ver = buf[1];
@@ -410,28 +418,28 @@ info_retry:
 
 	/* rawdata array[40*40],so x_num y_num must <= 40 */
 	if (x_num > RAWDATA_NUM_MAX) {
-		TS_LOG_ERR("%s: x_num out of the max value\n", __func__);
+		TS_LOG_ERR("kit_get_fw_info: x_num out of the max value\n");
 		x_num = RAWDATA_NUM_MAX;
 	}
 	if (y_num > RAWDATA_NUM_MAX) {
-		TS_LOG_ERR("%s: y_num out of the max value\n", __func__);
+		TS_LOG_ERR("kit_get_fw_info: y_num out of the max value\n");
 		y_num = RAWDATA_NUM_MAX;
 	}
 	nvt_ts->x_num = x_num;
 	nvt_ts->y_num = y_num;
 	button_num = buf[11];
 
-	TS_LOG_INFO("%s: nvt_fw_ver=0x%02X\n", __func__, nvt_fw_ver);
+	TS_LOG_INFO("kit_get_fw_info: fw_ver=0x%02X\n", nvt_fw_ver);
 	//---clear x_num, y_num if fw info is broken---
 	if ((buf[1] + buf[2]) != 0xFF) {
-		TS_LOG_ERR("%s: FW info is broken! nvt_fw_ver=0x%02X, ~nvt_fw_ver=0x%02X\n", __func__, buf[1], buf[2]);
+		TS_LOG_ERR("kit_get_fw_info:FW info is broken! fw_ver=0x%02X, ~ fw_ver=0x%02X\n", buf[1], buf[2]);
 		x_num = 0;
 		y_num = 0;
 		button_num = 0;
 
 		if(retry_count < 3) {
 			retry_count++;
-			TS_LOG_ERR("%s: retry_count=%d\n", __func__, retry_count);
+			TS_LOG_ERR("kit_get_fw_info: retry_count=%d\n", retry_count);
 			goto info_retry;
 		} else {
 			ret = -1;
@@ -463,7 +471,7 @@ uint8_t nvt_kit_get_fw_pipe(void)
 	buf[1] = 0x00;
 	ret = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 	if (ret) {
-		TS_LOG_INFO("%s: read fw status FAIL\n", __func__);
+		TS_LOG_INFO("%s: read fw status FAIL\n", NVT_TAG);
 	}
 	//TS_LOG_INFO("FW pipe=%d, buf[1]=0x%02X\n", (buf[1]&0x01), buf[1]);
 
@@ -515,7 +523,8 @@ void nvt_kit_read_mdata(uint32_t xdata_addr)
 			buf[0] = NVT_TRANSFER_LENGTH * j;
 			ret = novatek_ts_kit_read(I2C_FW_Address, buf, NVT_TRANSFER_LENGTH + 1);
 			if (ret) {
-				TS_LOG_INFO("%s: read data 1st FAIL\n", __func__);
+				TS_LOG_INFO("%s: read data 1st FAIL\n",
+					NVT_TAG);
 			}
 
 			//---copy buf to xdata_tmp---
@@ -545,7 +554,8 @@ void nvt_kit_read_mdata(uint32_t xdata_addr)
 			buf[0] = NVT_TRANSFER_LENGTH * j;
 			ret = novatek_ts_kit_read(I2C_FW_Address, buf, NVT_TRANSFER_LENGTH + 1);
 			if (ret) {
-				TS_LOG_INFO("%s: read data 2rd FAIL\n", __func__);
+				TS_LOG_INFO("%s: read data 2rd FAIL\n",
+					NVT_TAG);
 			}
 
 			//---copy buf to xdata_tmp---
@@ -571,7 +581,7 @@ void nvt_kit_read_mdata(uint32_t xdata_addr)
 		buf[0] = (xdata_btn_addr & 0xFF);
 		ret = novatek_ts_kit_read(I2C_FW_Address, buf, (TOUCH_KEY_NUM * 2 + 1));
 		if (ret) {
-			TS_LOG_INFO("%s: read data 3rd FAIL\n", __func__);
+			TS_LOG_INFO("%s: read data 3rd FAIL\n", NVT_TAG);
 		}
 
 		//---2bytes-to-1data---
@@ -875,34 +885,34 @@ int32_t nvt_kit_extra_proc_init(void)
 {
 	NVT_proc_fw_version_entry = proc_create(NVT_FW_VERSION, 0444, NULL,&nvt_fw_version_fops);
 	if (NVT_proc_fw_version_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_fw_version Failed!\n", __func__);
+		TS_LOG_ERR("kit_extra_proc_init: create proc/fw_version Failed!\n");
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_fw_version Succeeded!\n", __func__);
+		TS_LOG_INFO("kit_extra_proc_init: create proc/fw_version Succeeded!\n");
 	}
 
 	NVT_proc_baseline_entry = proc_create(NVT_BASELINE, 0444, NULL,&nvt_baseline_fops);
 	if (NVT_proc_baseline_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_baseline Failed!\n", __func__);
+		TS_LOG_ERR("kit_extra_proc_init: create proc/baseline Failed!\n");
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_baseline Succeeded!\n", __func__);
+		TS_LOG_INFO("kit_extra_proc_init: create proc/baseline Succeeded!\n");
 	}
 
 	NVT_proc_raw_entry = proc_create(NVT_RAW, 0444, NULL,&nvt_raw_fops);
 	if (NVT_proc_raw_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_raw Failed!\n", __func__);
+		TS_LOG_ERR("kit_extra_proc_init: create proc/raw Failed!\n");
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_raw Succeeded!\n", __func__);
+		TS_LOG_INFO("kit_extra_proc_init: create proc/raw Succeeded!\n");
 	}
 
 	NVT_proc_diff_entry = proc_create(NVT_DIFF, 0444, NULL,&nvt_diff_fops);
 	if (NVT_proc_diff_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_diff Failed!\n", __func__);
+		TS_LOG_ERR("kit_extra_proc_init: create proc/diff Failed!\n");
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_diff Succeeded!\n", __func__);
+		TS_LOG_INFO("kit_extra_proc_init: create proc/diff Succeeded!\n");
 	}
 
 	return 0;

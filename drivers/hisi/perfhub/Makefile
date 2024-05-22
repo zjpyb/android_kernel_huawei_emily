@@ -1,1 +1,1 @@
-obj-$(CONFIG_HISI_PERFHUB) += hisi_perfhub.o
+obj-$(CONFIG_PERFHUB) += perfhub.o

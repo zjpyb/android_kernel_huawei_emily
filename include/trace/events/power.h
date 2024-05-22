@@ -644,7 +644,7 @@ TRACE_EVENT(memlat_dev_update,
 );
 #endif
 
-#ifdef CONFIG_HISI_DEVFREQ_DEVBW
+#ifdef CONFIG_DEVFREQ_DEVBW
 TRACE_EVENT(memlat_set_ddr_freq,
 
 	TP_PROTO(const char *reason, int cpu,
@@ -677,7 +677,7 @@ TRACE_EVENT(memlat_set_ddr_freq,
 );
 #endif
 
-#ifdef CONFIG_HISI_DEVFREQ_DEVBW
+#ifdef CONFIG_DEVFREQ_DEVBW
 TRACE_EVENT(memlat_set_dev_freq,
 
 	TP_PROTO(const char *name, const char *reason, int cpu,

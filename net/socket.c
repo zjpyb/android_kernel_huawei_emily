@@ -108,6 +108,7 @@
 #include <linux/atalk.h>
 #include <net/busy_poll.h>
 #include <linux/errqueue.h>
+#include <chipset_common/security/kshield.h>
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
 unsigned int sysctl_net_busy_read __read_mostly;
@@ -119,7 +120,7 @@ unsigned int sysctl_net_busy_poll __read_mostly;
 #endif
 
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
 #endif
 #ifdef CONFIG_HUAWEI_BASTET
 #include <huawei_platform/net/bastet/bastet.h>
@@ -594,6 +595,7 @@ struct socket *sock_alloc(void)
 #if defined(CONFIG_HUAWEI_KSTATE) || defined(CONFIG_MPTCP)
 	if (sock != NULL && current != NULL) {
 		sock->pid = current->tgid;
+		sock->tpid = current->pid;
 	}
 #endif
 
@@ -912,7 +914,7 @@ static ssize_t sock_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			     .msg_iocb = iocb};
 	ssize_t res;
 
-	if (file->f_flags & O_NONBLOCK)
+	if (file->f_flags & O_NONBLOCK || (iocb->ki_flags & IOCB_NOWAIT))
 		msg.msg_flags = MSG_DONTWAIT;
 
 	if (iocb->ki_pos != 0)
@@ -937,7 +939,7 @@ static ssize_t sock_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	if (iocb->ki_pos != 0)
 		return -ESPIPE;
 
-	if (file->f_flags & O_NONBLOCK)
+	if (file->f_flags & O_NONBLOCK || (iocb->ki_flags & IOCB_NOWAIT))
 		msg.msg_flags = MSG_DONTWAIT;
 
 	if (sock->type == SOCK_SEQPACKET)
@@ -1373,6 +1375,7 @@ SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
 	retval = sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));
 	if (retval < 0)
 		goto out_release;
+	kshield_chk_sock_spray(1);
 
 out:
 	/* It may be already another descriptor 8) Not kernel problem. */
@@ -2001,6 +2004,8 @@ static int copy_msghdr_from_user(struct msghdr *kmsg,
 		return -EMSGSIZE;
 
 	kmsg->msg_iocb = NULL;
+	if (msg.msg_iovlen > UIO_FASTIOV)
+		kshield_chk_heap_spray(1);
 
 	return import_iovec(save_addr ? READ : WRITE,
 			    msg.msg_iov, msg.msg_iovlen,
@@ -2680,15 +2685,6 @@ out_fs:
 
 core_initcall(sock_init);	/* early initcall */
 
-static int __init jit_init(void)
-{
-#ifdef CONFIG_BPF_JIT_ALWAYS_ON
-	bpf_jit_enable = 1;
-#endif
-	return 0;
-}
-pure_initcall(jit_init);
-
 #ifdef CONFIG_PROC_FS
 void socket_seq_show(struct seq_file *seq)
 {
@@ -3300,6 +3296,7 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	case SIOCSARP:
 	case SIOCGARP:
 	case SIOCDARP:
+	case SIOCOUTQNSD:
 	case SIOCATMARK:
 		return sock_do_ioctl(net, sock, cmd, arg);
 	}
@@ -3402,11 +3399,17 @@ int kernel_getsockopt(struct socket *sock, int level, int optname,
 	uoptlen = (int __user __force *) optlen;
 
 	set_fs(KERNEL_DS);
-	if (level == SOL_SOCKET)
+	if (level == SOL_SOCKET) {
 		err = sock_getsockopt(sock, level, optname, uoptval, uoptlen);
-	else
+	} else {
+		if (kshield_chk_heap_ret2dir(sock) ||
+		    kshield_chk_fops(sock->ops, sizeof(*sock->ops))) {
+			set_fs(oldfs);
+			return -EINVAL;
+		}
 		err = sock->ops->getsockopt(sock, level, optname, uoptval,
 					    uoptlen);
+	}
 	set_fs(oldfs);
 	return err;
 }
@@ -3422,11 +3425,17 @@ int kernel_setsockopt(struct socket *sock, int level, int optname,
 	uoptval = (char __user __force *) optval;
 
 	set_fs(KERNEL_DS);
-	if (level == SOL_SOCKET)
+	if (level == SOL_SOCKET) {
 		err = sock_setsockopt(sock, level, optname, uoptval, optlen);
-	else
+	} else {
+		if (kshield_chk_heap_ret2dir(sock) ||
+		    kshield_chk_fops(sock->ops, sizeof(*sock->ops))) {
+			set_fs(oldfs);
+			return -EINVAL;
+		}
 		err = sock->ops->setsockopt(sock, level, optname, uoptval,
 					    optlen);
+	}
 	set_fs(oldfs);
 	return err;
 }
@@ -3461,6 +3470,11 @@ int kernel_sock_ioctl(struct socket *sock, int cmd, unsigned long arg)
 	int err;
 
 	set_fs(KERNEL_DS);
+	if (kshield_chk_heap_ret2dir(sock) ||
+	    kshield_chk_fops(sock->ops, sizeof(*sock->ops))) {
+		set_fs(oldfs);
+		return -EINVAL;
+	}
 	err = sock->ops->ioctl(sock, cmd, arg);
 	set_fs(oldfs);
 

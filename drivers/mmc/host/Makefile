@@ -11,9 +11,10 @@ obj-$(CONFIG_MMC_MXC)		+= mxcmmc.o
 obj-$(CONFIG_MMC_MXS)		+= mxs-mmc.o
 obj-$(CONFIG_MMC_SDHCI)		+= sdhci.o
 obj-$(CONFIG_MMC_SDHCI)         += sdhci_hisi.o
-obj-$(CONFIG_MMC_SDHCI_OF_ARASAN)	+= sdhci-of-arasan.o
-obj-$(CONFIG_MMC_SDHCI_MSHC_LIBRA)          += sdhci_mshc_libra.o
-obj-$(CONFIG_MMC_SDHCI_MSHC_CAPRICORN)      += sdhci_mshc_capricorn.o
+obj-$(CONFIG_MMC_SDHCI_MSHC_LIBRA)          += sdhci_mshc_libra.o sdhci_mshc.o
+obj-$(CONFIG_MMC_SDHCI_MSHC_CAPRICORN)      += sdhci_mshc_capricorn.o sdhci_mshc.o
+obj-$(CONFIG_MMC_SDHCI_HISI_SCORPIO)      += sdhci_hisi_mmc.o sdhci_hisi_mmc_scorpio.o
+obj-$(CONFIG_MMC_SDHCI_MUX_SDSIM)      += sdhci_hisi_mux_sdsim.o
 obj-$(CONFIG_MMC_SDHCI_PCI)	+= sdhci-pci.o
 sdhci-pci-y			+= sdhci-pci-core.o sdhci-pci-o2micro.o
 obj-$(subst m,y,$(CONFIG_MMC_SDHCI_PCI))	+= sdhci-pci-data.o
@@ -60,9 +61,9 @@ obj-$(CONFIG_MMC_DW)		+= dw_mmc.o
 obj-$(CONFIG_MMC_DW_PLTFM)	+= dw_mmc-pltfm.o
 obj-$(CONFIG_MMC_DW_EXYNOS)	+= dw_mmc-exynos.o
 obj-$(CONFIG_MMC_DW_K3)		+= dw_mmc-k3.o
-obj-$(CONFIG_MMC_DW_HI3XXX)	+= dw_mmc_hi3xxx.o
+obj-$(CONFIG_MMC_DW_HI3XXX)	+= dw_mmc_hi3xxx.o dw_mmc_hi3xxx_helper.o
 obj-$(CONFIG_MMC_DW_MUX_SDSIM)	+= dw_mmc_mux_sdsim.o
-obj-$(CONFIG_MMC_DW_HI3XXX)     += dw_mmc_test.o
+obj-$(CONFIG_HISI_DEBUG_FS)     += dw_mmc_test.o
 obj-$(CONFIG_MMC_DW_HI3XXX)     += dw_mmc_clk_for_calibration.o
 obj-$(CONFIG_MMC_DW_PCI)	+= dw_mmc-pci.o
 obj-$(CONFIG_MMC_DW_ROCKCHIP)	+= dw_mmc-rockchip.o
@@ -101,7 +102,6 @@ obj-$(CONFIG_MMC_SDHCI_BRCMSTB)		+= sdhci-brcmstb.o
 obj-$(CONFIG_MMC_CQ_HCI)		+= cmdq_hci.o
 obj-$(CONFIG_MMC_CQ_HCI)        += hisi_sdhci_cmdq.o
 
-obj-$(CONFIG_MMC_HISI_TRACE)    += mmc_trace.o
 ifeq ($(CONFIG_CB710_DEBUG),y)
 	CFLAGS-cb710-mmc	+= -DDEBUG
 endif

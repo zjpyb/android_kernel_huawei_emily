@@ -991,6 +991,8 @@ static int spi_map_msg(struct spi_controller *ctlr, struct spi_message *msg)
 		if (max_tx || max_rx) {
 			list_for_each_entry(xfer, &msg->transfers,
 					    transfer_list) {
+				if (!xfer->len)
+					continue;
 				if (!xfer->tx_buf)
 					xfer->tx_buf = ctlr->dummy_tx;
 				if (!xfer->rx_buf)
@@ -1247,18 +1249,8 @@ static void __spi_pump_messages(struct spi_controller *ctlr, bool in_kthread)
 		}
 	}
 
-	if (!was_busy){
-		ret = pl022_runtime_resume(ctlr->dev.parent);
-		if (ret < 0) {
-			dev_err(&ctlr->dev, "Failed to power device: %d\n", ret);
-
-			if (ctlr->unprepare_transfer_hardware)
-				ctlr->unprepare_transfer_hardware(ctlr);
-
-			mutex_unlock(&ctlr->io_mutex);
-			return;
-		}
-	}
+	if (!was_busy)
+		(void)pl022_runtime_resume(ctlr->dev.parent);
 
 #else
 	if (!was_busy && ctlr->auto_runtime_pm) {
@@ -2155,8 +2147,17 @@ int spi_register_controller(struct spi_controller *ctlr)
 	 */
 	if (ctlr->num_chipselect == 0)
 		return -EINVAL;
-	/* allocate dynamic bus number using Linux idr */
-	if ((ctlr->bus_num < 0) && ctlr->dev.of_node) {
+	if (ctlr->bus_num >= 0) {
+		/* devices with a fixed bus num must check-in with the num */
+		mutex_lock(&board_lock);
+		id = idr_alloc(&spi_master_idr, ctlr, ctlr->bus_num,
+			ctlr->bus_num + 1, GFP_KERNEL);
+		mutex_unlock(&board_lock);
+		if (WARN(id < 0, "couldn't get idr"))
+			return id == -ENOSPC ? -EBUSY : id;
+		ctlr->bus_num = id;
+	} else if (ctlr->dev.of_node) {
+		/* allocate dynamic bus number using Linux idr */
 		id = of_alias_get_id(ctlr->dev.of_node, "spi");
 		if (id >= 0) {
 			ctlr->bus_num = id;
@@ -3128,6 +3129,22 @@ static void spi_complete(void *arg)
 	complete(arg);
 }
 
+#if defined CONFIG_HISI_SPI
+void spi_show_err_info(struct spi_device *spi)
+{
+	u32 cost_time;
+	struct spi_controller *master = NULL;
+
+	if (!spi || !spi->controller)
+		return;
+
+	master =  spi->controller;
+	cost_time = jiffies_to_msecs(jiffies - spi->start);
+	dev_err(&master->dev, "spi cost :%u ms\n", cost_time);
+	master->show_err_info(master);
+}
+#endif
+
 static int __spi_sync(struct spi_device *spi, struct spi_message *message)
 {
 	DECLARE_COMPLETION_ONSTACK(done);
@@ -3139,6 +3156,9 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message)
 	if (status != 0)
 		return status;
 
+#if defined CONFIG_HISI_SPI
+	spi->start = jiffies;
+#endif
 	message->complete = spi_complete;
 	message->context = &done;
 	message->spi = spi;

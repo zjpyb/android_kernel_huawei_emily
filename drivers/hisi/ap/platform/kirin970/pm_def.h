@@ -43,7 +43,7 @@
 #define HIFI_MASK (0x04)
 #define IOMCU_MASK (0x08)
 #define LPMCU_MASK (0x10)
-#define HISEE_MASK (0x20)
+#define GENERAL_SEE_MASK (0x20)
 #define HOTPLUG_MASK(cluster) (0x1 << ((cluster) + 6))
 enum tickmark_point
 {

@@ -64,6 +64,10 @@
 #include "tree.h"
 #include "rcu.h"
 
+#ifdef CONFIG_HISI_BB
+#include <linux/hisi/rdr_hisi_ap_hook.h>
+#endif
+
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
 #endif
@@ -2935,13 +2939,22 @@ __rcu_process_callbacks(struct rcu_state *rsp)
 static __latent_entropy void rcu_process_callbacks(struct softirq_action *unused)
 {
 	struct rcu_state *rsp;
-
-	if (cpu_is_offline(smp_processor_id()))
+#ifdef CONFIG_HISI_BB
+	softirq_hook(HK_RCU_SOFTIRQ, (u64)rcu_process_callbacks, 0);
+#endif
+	if (cpu_is_offline(smp_processor_id())) {
+#ifdef CONFIG_HISI_BB
+		softirq_hook(HK_RCU_SOFTIRQ, (u64)rcu_process_callbacks, 1);
+#endif
 		return;
+	}
 	trace_rcu_utilization(TPS("Start RCU core"));
 	for_each_rcu_flavor(rsp)
 		__rcu_process_callbacks(rsp);
 	trace_rcu_utilization(TPS("End RCU core"));
+#ifdef CONFIG_HISI_BB
+	softirq_hook(HK_RCU_SOFTIRQ, (u64)rcu_process_callbacks, 1);
+#endif
 }
 
 /*

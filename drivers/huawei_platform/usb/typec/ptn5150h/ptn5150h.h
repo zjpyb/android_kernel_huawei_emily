@@ -3,7 +3,7 @@
  *
  * header file for Nxp ptn5150h typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,9 +19,7 @@
 #ifndef _PTN5150H_H_
 #define _PTN5150H_H_
 
-#ifndef BIT
-#define BIT(x)        (1 << (x))
-#endif
+#include <linux/bitops.h>
 
 #define PTN5150H_REGISTER_NUM                            20
 #define PTN5150H_DUMP_REG_NUM                            9
@@ -133,4 +131,4 @@
 #define PTN5150H_REG_RP_RESERV2                          BIT(1)
 #define PTN5150H_REG_RP_RESERV3                          BIT(0)
 
-#endif /*_PTN5150H_H_*/
+#endif /* _PTN5150H_H_ */

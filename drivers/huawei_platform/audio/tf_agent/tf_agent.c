@@ -69,7 +69,7 @@ static int __init early_parse_vendorcountry_cmdline(char *arg)
 	hwlog_debug("%s: vendorcountry is %s\n", __func__, arg);
 
 	tf_agent_support_flag = false;
-	if (strcmp(arg, "cmcc/cn") == 0)
+	if (strcmp(arg, "all/cn") == 0)
 		tf_agent_support_flag = true;
 	hwlog_debug("%s: tf_agent_support_flag is %d\n",
 		__func__, tf_agent_support_flag);

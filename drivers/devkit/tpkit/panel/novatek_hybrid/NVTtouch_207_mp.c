@@ -29,10 +29,10 @@
 #include "NVTtouch_207.h"
 #include "NVTtouch_207_mp.h"
 
-#include <../../huawei_ts_kit.h>
+#include <huawei_ts_kit.h>
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -262,7 +262,7 @@ return:
 static int32_t nvt_hybrid_read_open(void)
 {
 	int32_t ret;
-	int32_t i = 0;
+	uint32_t i;
 	int32_t j = 0;
 	int32_t iArrayIndex = 0;
 	uint8_t buf[128]={0};
@@ -1297,9 +1297,9 @@ int32_t nvt_hybrid_selftest(struct ts_rawdata_info *info)
 	}
 
 	if (NVT_Hybrid_TestResult_PixelRaw != 0) {
-		strncat(test_2_result, "2F-", (strlen("2F-")+1));
+		strncat(test_2_result, "2F-", strlen("2F-"));
 	} else {
-		strncat(test_2_result, "2P-", (strlen("2P-")+1));
+		strncat(test_2_result, "2P-", strlen("2P-"));
 	}
 
 err_nvt_check_fw_reset_state:
@@ -1333,7 +1333,8 @@ err_nvt_i2c_read:
 		|| (NVT_Hybrid_TestResult_Noise ==-1) 
 		|| (NVT_Hybrid_TestResult_FW_Diff == -1)
 		|| (NVT_Hybrid_TestResult_FWMutual == -1))
-		strncpy(selftest_failed_reason, "-panel_reason", NVT_HYBRID_TP_TEST_FAILED_REASON_LEN);
+		strncpy(selftest_failed_reason, "-panel_reason",
+			NVT_HYBRID_TP_TEST_FAILED_REASON_LEN - 1);
 
 	//---String Copy---
 	memset(mmitest_result, 0, sizeof(mmitest_result));

@@ -38,10 +38,14 @@
 #include "internal.h"
 
 #ifdef CONFIG_TASK_PROTECT_LRU
-#include <linux/hisi/protect_lru.h>
+#include <linux/protect_lru.h>
 #endif
 #define CREATE_TRACE_POINTS
 #include <trace/events/pagemap.h>
+
+#ifdef CONFIG_HISI_CMA_DEBUG
+#include <linux/hisi/hisi_cma_debug.h>
+#endif
 
 /* How many pages do we try to swap or page in/out together? */
 int page_cluster;
@@ -113,6 +117,10 @@ void __put_page(struct page *page)
 		return;
 	}
 
+#ifdef CONFIG_VM_COPY
+	if (PageVMcpy(page))
+		__count_vm_event(VM_COPY_FREE_PAGE);
+#endif
 	if (unlikely(PageCompound(page)))
 		__put_compound_page(page);
 	else
@@ -278,15 +286,142 @@ void rotate_reclaimable_page(struct page *page)
 	}
 }
 
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 static void update_page_reclaim_stat(struct lruvec *lruvec,
 				     int file, int rotated)
 {
 	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+	struct zone_reclaim_stat *node_reclaim_stat;
 
+	node_reclaim_stat = &pgdat->lruvec.reclaim_stat;
+	if (!file)
+		node_reclaim_stat->recent_scanned[0]++;
+#endif
 	reclaim_stat->recent_scanned[file]++;
-	if (rotated)
+	if (rotated) {
 		reclaim_stat->recent_rotated[file]++;
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+		if (!file)
+			node_reclaim_stat->recent_rotated[0]++;
+#endif
+	}
 }
+#else
+static void update_page_reclaim_stat(struct lruvec *lruvec,
+				     int file, int rotated) {}
+
+
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+static void __lru_note_cost(struct lruvec *lruvec, bool file,
+			    unsigned int nr_pages)
+{
+	unsigned long lrusize;
+	unsigned long file_cost =
+		lruvec_page_state(lruvec, WORKINGSET_FILE_COST);
+	unsigned long anon_cost =
+		lruvec_page_state(lruvec, WORKINGSET_ANON_COST);
+	int reduct_file, reduct_anon;
+
+	/* Record cost event */
+	if (file) {
+		mod_lruvec_state(lruvec, WORKINGSET_FILE_COST, nr_pages);
+		file_cost += nr_pages;
+	}
+	else {
+		mod_lruvec_state(lruvec, WORKINGSET_ANON_COST, nr_pages);
+		anon_cost +=nr_pages;
+	}
+
+	/*
+	 * Decay previous events
+	 *
+	 * Because workloads change over time (and to avoid
+	 * overflow) we keep these statistics as a floating
+	 * average, which ends up weighing recent refaults
+	 * more than old ones.
+	 */
+	lrusize = lruvec_page_state(lruvec, NR_INACTIVE_ANON) +
+			lruvec_page_state(lruvec, NR_ACTIVE_ANON) +
+			lruvec_page_state(lruvec, NR_INACTIVE_FILE) +
+			lruvec_page_state(lruvec, NR_ACTIVE_FILE);
+
+	if (file_cost + anon_cost > lrusize / 4) {
+		reduct_file = (int)(file_cost >> 1);
+		reduct_anon = (int)(anon_cost >> 1);
+		mod_lruvec_state(lruvec, WORKINGSET_FILE_COST, -reduct_file);
+		mod_lruvec_state(lruvec, WORKINGSET_ANON_COST, -reduct_anon);
+	}
+}
+
+/*
+ * In memcg, parent lruvec will not stop at root memcg and not record node lruvec
+ * But, we need to record node anon/file cost status, and then do something.
+ * So, if the input lruvec is not node lruvec, we need record into node first.
+ */
+static void lru_note_node_cost(struct lruvec *lruvec, bool file,
+			       unsigned int nr_pages)
+{
+	struct lruvec *node_lruvec = NULL;
+	/* Node record will start in lru note cost, so just skip */
+	if (is_node_lruvec(lruvec))
+		return;
+
+	node_lruvec = lruvec_node_lruvec(lruvec);
+	__lru_note_cost(node_lruvec, file, nr_pages);
+}
+#else
+static void __lru_note_cost(struct lruvec *lruvec, bool file,
+			    unsigned int nr_pages)
+{
+	unsigned long lrusize;
+
+	/* Record cost event */
+	if (file)
+		lruvec->file_cost += nr_pages;
+	else
+		lruvec->anon_cost += nr_pages;
+
+	/*
+	 * Decay previous events
+	 *
+	 * Because workloads change over time (and to avoid
+	 * overflow) we keep these statistics as a floating
+	 * average, which ends up weighing recent refaults
+	 * more than old ones.
+	 */
+	lrusize = lruvec_page_state(lruvec, NR_INACTIVE_ANON) +
+			lruvec_page_state(lruvec, NR_ACTIVE_ANON) +
+			lruvec_page_state(lruvec, NR_INACTIVE_FILE) +
+			lruvec_page_state(lruvec, NR_ACTIVE_FILE);
+
+	if (lruvec->file_cost + lruvec->anon_cost > lrusize / 4) {
+		lruvec->file_cost /= 2;
+		lruvec->anon_cost /= 2;
+	}
+}
+#endif
+
+void lru_note_cost(struct lruvec *lruvec, bool file, unsigned int nr_pages)
+{
+	if (nr_pages == 0)
+		return;
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	lru_note_node_cost(lruvec, file, nr_pages);
+#endif
+	do {
+		__lru_note_cost(lruvec, file, nr_pages);
+	} while ((lruvec = parent_lruvec(lruvec)));
+}
+
+void lru_note_cost_page(struct page *page)
+{
+	lru_note_cost(mem_cgroup_lruvec(page_pgdat(page), page_memcg(page)),
+		      page_is_file_cache(page), hpage_nr_pages(page));
+}
+
+#endif
 
 static void __activate_page(struct page *page, struct lruvec *lruvec,
 			    void *arg)
@@ -329,11 +464,11 @@ void activate_page(struct page *page)
 	if (PageLRU(page) && !PageActive(page) && !PageUnevictable(page)) {
 		struct pagevec *pvec = &get_cpu_var(activate_page_pvecs);
 
+#ifdef CONFIG_TASK_PROTECT_LRU
+		pvec->lru_head = true;
+#endif
 		get_page(page);
 		if (!pagevec_add(pvec, page) || PageCompound(page))
-#ifdef CONFIG_TASK_PROTECT_LRU
-			pvec->lru_head = true;
-#endif
 			pagevec_lru_move_fn(pvec, __activate_page, NULL);
 		put_cpu_var(activate_page_pvecs);
 	}
@@ -414,8 +549,7 @@ void mark_page_accessed(struct page *page)
 		else
 			__lru_cache_activate_page(page);
 		ClearPageReferenced(page);
-		if (page_is_file_cache(page))
-			workingset_activation(page);
+		workingset_activation(page);
 	} else if (!PageReferenced(page)) {
 		SetPageReferenced(page);
 	}
@@ -488,10 +622,10 @@ void add_page_to_unevictable_list(struct page *page)
 	struct lruvec *lruvec;
 
 	spin_lock_irq(&pgdat->lru_lock);
-	lruvec = mem_cgroup_page_lruvec(page, pgdat);
 	ClearPageActive(page);
 	SetPageUnevictable(page);
 	SetPageLRU(page);
+	lruvec = mem_cgroup_page_lruvec(page, pgdat);
 	add_page_to_lru_list(page, lruvec, LRU_UNEVICTABLE);
 	spin_unlock_irq(&pgdat->lru_lock);
 }
@@ -520,7 +654,9 @@ void lru_cache_add_active_or_unevictable(struct page *page,
 #else
 	if (likely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED)) {
 #endif
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 		SetPageActive(page);
+#endif
 		lru_cache_add(page);
 		return;
 	}
@@ -643,6 +779,10 @@ static void lru_lazyfree_fn(struct page *page, struct lruvec *lruvec,
 void lru_add_drain_cpu(int cpu)
 {
 	struct pagevec *pvec = &per_cpu(lru_add_pvec, cpu);
+
+#ifdef CONFIG_HISI_CMA_DEBUG
+	cma_work_record_start(cpu);
+#endif
 
 	if (pagevec_count(pvec))
 		__pagevec_lru_add(pvec);
@@ -771,6 +911,9 @@ void lru_add_drain_all_cpuslocked(void)
 	for_each_cpu(cpu, &has_work)
 		flush_work(&per_cpu(lru_add_drain_work, cpu));
 
+#ifdef CONFIG_HISI_CMA_DEBUG
+	cma_work_record_exec_time(&has_work);
+#endif
 	mutex_unlock(&lock);
 }
 
@@ -825,6 +968,10 @@ void release_pages(struct page **pages, int nr, bool cold)
 			put_zone_device_private_or_public_page(page);
 			continue;
 		}
+#ifdef CONFIG_VM_COPY
+		if (PageVMcpy(page))
+			__count_vm_event(VM_COPY_FREE_PAGE);
+#endif
 
 		page = compound_head(page);
 		if (!put_page_testzero(page))

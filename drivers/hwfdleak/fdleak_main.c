@@ -28,6 +28,7 @@
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
 #include <linux/stacktrace.h>
+#include "securec.h"
 #include <log/log_usertype.h>
 #include <chipset_common/hwlogger/hw_logger.h>
 
@@ -75,7 +76,7 @@ static unsigned long long stack_entries[FDLEAK_MAX_STACK_TRACE_DEPTH];
 static unsigned int usertype;
 static int tgid_hiview;
 
-DEFINE_MUTEX(mutex);
+static DEFINE_MUTEX(mutex);
 
 static int fdleak_check_parameter(const void __user *argp, struct fdleak_op *op)
 {
@@ -299,7 +300,10 @@ static int fdleak_get_stack(void __user *arg)
 
 	info->is_32bit = fdleak_table[info->wpid].is_32bit[idx_pid];
 	info->probe_cnt = fdleak_table[info->wpid].probe_cnt;
-	strncpy(info->wp_name, fdleak_table[info->wpid].name, sizeof(info->wp_name));
+	if (strncpy_s(info->wp_name, sizeof(info->wp_name) - 1, fdleak_table[info->wpid].name, sizeof(info->wp_name) - 1) != EOK)
+		fdleak_err("strncpy from fdleak_table[info->wpid].name to info->wp_name failed\n");
+
+	info->wp_name[sizeof(info->wp_name) - 1] = '\0';
 
 	for (probe_id = 0; probe_id < info->probe_cnt; probe_id++) {
 		info->diff_cnt[probe_id] = fdleak_table[info->wpid].list[idx_pid][probe_id].diff_cnt;
@@ -326,7 +330,7 @@ err:
 	return -1;
 }
 
-long fdleak_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+long fdleak_ioctl(struct file *file, unsigned int cmd, uintptr_t arg)
 {
 	long ret = FDLEAK_CMD_INVALID;
 	struct fdleak_op op = {0};
@@ -408,7 +412,7 @@ static bool fdleak_compare_stack(unsigned long long *stack1,
 
 	/* find the last equivalent value in the stack */
 	for (i = 0; (i < FDLEAK_MAX_STACK_TRACE_DEPTH) && (stack1[i] == stack2[i]); i++)
-		;
+ 		;
 	return i == FDLEAK_MAX_STACK_TRACE_DEPTH;
 }
 
@@ -453,7 +457,6 @@ int fdleak_report(enum fdleak_wp_id wpid, int probe_id)
 	}
 	mutex_lock(&mutex);
 	idx_pid = fdleak_find_pid(current->tgid, wpid);
-
 	if (idx_pid < 0) {
 		mutex_unlock(&mutex);
 		return -1;

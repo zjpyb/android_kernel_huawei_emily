@@ -16,7 +16,7 @@
 static int capacity = -1;
 static unsigned int *hook_capacity_sum;
 static unsigned int *hook_capacity_filter;
-#ifdef CONFIG_HISI_COUL
+#ifdef CONFIG_COUL_DRV
 void skip_pulling(unsigned int cap)
 {
 	int i = 0;
@@ -28,7 +28,7 @@ void skip_pulling(unsigned int cap)
 	*hook_capacity_sum = 10*capacity;
 }
 
-static int rasprobe_handler(hisi_battery_capacity) (struct rasprobe_instance
+static int rasprobe_handler(coul_drv_battery_capacity) (struct rasprobe_instance
 							*ri,
 							struct pt_regs *regs) {
 	if (capacity == -1)
@@ -37,7 +37,7 @@ static int rasprobe_handler(hisi_battery_capacity) (struct rasprobe_instance
 	rasprobe_seturn(regs, capacity);
 	return 0;
 }
-static int rasprobe_handler(hisi_battery_current) (struct rasprobe_instance
+static int rasprobe_handler(coul_drv_battery_current) (struct rasprobe_instance
 							*ri,
 							struct pt_regs *regs) {
 	if (capacity == -1)
@@ -46,23 +46,23 @@ static int rasprobe_handler(hisi_battery_current) (struct rasprobe_instance
 	return 0;
 }
 
-static int rasprobe_handler(hisi_battery_voltage) (struct rasprobe_instance
+static int rasprobe_handler(coul_drv_battery_voltage) (struct rasprobe_instance
 							*ri,
 							struct pt_regs *regs) {
 	if (capacity != -1 && capacity < 2)
 		rasprobe_seturn(regs, 3400);/*simulate the vol low*/
 	return 0;
 }
-rasprobe_define(hisi_battery_capacity);
-rasprobe_define(hisi_battery_current);
-rasprobe_define(hisi_battery_voltage);
+rasprobe_define(coul_drv_battery_capacity);
+rasprobe_define(coul_drv_battery_current);
+rasprobe_define(coul_drv_battery_voltage);
 #endif
 
 static struct rasprobe *probes[] = {
-#ifdef CONFIG_HISI_COUL
-	&rasprobe_name(hisi_battery_capacity),
-	&rasprobe_name(hisi_battery_current),
-	&rasprobe_name(hisi_battery_voltage),
+#ifdef CONFIG_COUL_DRV
+	&rasprobe_name(coul_drv_battery_capacity),
+	&rasprobe_name(coul_drv_battery_current),
+	&rasprobe_name(coul_drv_battery_voltage),
 #endif
 };
 

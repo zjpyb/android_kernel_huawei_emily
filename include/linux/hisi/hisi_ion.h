@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, Hisilicon. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,7 +17,6 @@
 #define _LINUX_HISI_ION_H
 
 #include <linux/dma-buf.h>
-#include <linux/ion.h>
 #include <linux/sizes.h>
 #include <linux/version.h>
 
@@ -36,6 +35,7 @@ enum ion_lb_pid_ids {
 	ION_LB_TINY = PID_TINY,
 	ION_LB_AUDIO = PID_AUDIO,
 	ION_LB_VOICE = PID_VOICE,
+	ION_LB_ISPNN = PID_ISPNN,
 	ION_LB_MAX = PID_MAX,
 };
 #endif
@@ -74,6 +74,8 @@ enum ion_heap_ids {
 	ION_DRM_HEAP_ID = 20,
 	ION_ALGO_HEAP_ID = 21,
 	ION_DRM_CPA_HEAP_ID = 22,
+	ION_DRM_TINY_HEAP_ID = 23,
+	ION_PHYS_CONTINUITY_HEAP_ID = 24,
 	ION_HEAP_ID_RESERVED = 31, /* Bit reserved */
 };
 
@@ -138,6 +140,16 @@ struct ion_flush_data {
 	unsigned int length;
 };
 
+#ifdef CONFIG_ZONE_MEDIA
+#define MAX_MEDIA_ZONE_RSVDMEM  1
+struct media_zone_rsvdmem {
+	phys_addr_t base;
+	phys_addr_t size;
+};
+
+extern struct media_zone_rsvdmem media_zone_rsvdmem_sp[MAX_MEDIA_ZONE_RSVDMEM];
+extern int num_mz_rsvdmem;
+#endif
 
 /* user command add for additional use */
 enum ION_HISI_CUSTOM_CMD {
@@ -168,6 +180,7 @@ enum ion_ta_tag {
 	ION_SEC_CMD_UNMAP_USER,
 	ION_SEC_CMD_TABLE_SET,
 	ION_SEC_CMD_TABLE_CLEAN,
+	ION_SEC_CMD_VLTMM,
 #ifdef CONFIG_SECMEM_TEST
 	ION_SEC_CMD_TEST,
 #endif
@@ -181,37 +194,45 @@ enum SEC_SVC {
 	SEC_FACE_ID = 3,
 	SEC_FACE_ID_3D = 4,
 	SEC_DRM_TEE = 5,
+	SEC_HIAI = 6,
+	ISPNN_NORMAL = 7,
 	SEC_SVC_MAX,
 };
 
-#define TINY_SYSTEM   0x0        /* tiny version system for chip test*/
+#define TINY_SYSTEM   0x0        /* tiny version system for chip test */
 #define FULL_SYSTEM   0x1        /* full version system */
 
-struct platform_device *get_hisi_ion_platform_device(void);
+struct platform_device *get_mm_ion_platform_device(void);
 
 #define ION_IOC_HISI_MAGIC 'H'
 /**
- *DOC: ION_IOC_FLUSH_ALL_CACHES - flush all the caches pf L1 and L2
+ * DOC: ION_IOC_FLUSH_ALL_CACHES - flush all the caches pf L1 and L2
  *
- *flush all the caches pf L1 and L2
+ * flush all the caches pf L1 and L2
  */
 #define ION_IOC_FLUSH_ALL_CACHES _IOWR(ION_IOC_HISI_MAGIC, 3, \
 				struct ion_flush_data)
 
 #ifdef CONFIG_ION
-extern unsigned long hisi_ion_total(void);
+extern unsigned long mm_ion_total(void);
+extern bool is_ion_dma_buf(struct dma_buf *dmabuf);
 #else
-static inline unsigned long hisi_ion_total(void)
+static inline unsigned long mm_ion_total(void)
 {
 	return 0;
 }
+
+static inline bool is_ion_dma_buf(struct dma_buf *dmabuf)
+{
+	return false;
+}
 #endif
 
-int hisi_ion_memory_info(bool verbose);
-int hisi_ion_proecss_info(void);
-
+int mm_ion_memory_info(bool verbose);
+int mm_ion_proecss_info(void);
+void mm_ion_process_summary_info(void);
 int ion_secmem_get_phys(struct dma_buf *dmabuf, phys_addr_t *addr, size_t *len);
-int hisi_ion_cache_operate(int fd, unsigned long uaddr,
+int mm_ion_cache_operate(int fd, unsigned long uaddr,
 	unsigned long offset, unsigned long length,
 	unsigned int cmd);
 
@@ -233,15 +254,19 @@ static inline int secmem_get_buffer(int fd, struct sg_table **table,
 #endif
 
 #ifdef CONFIG_ION_HISI
-struct sg_table *hisi_secmem_alloc(int id, unsigned long size);
-void hisi_secmem_free(int id, struct sg_table *table);
+struct sg_table *mm_secmem_alloc(int id, unsigned long size);
+void mm_secmem_free(int id, struct sg_table *table);
 #else
-static inline struct sg_table *hisi_secmem_alloc(int id, unsigned long size)
+static inline struct sg_table *mm_secmem_alloc(int id, unsigned long size)
 {
 	return NULL;
 }
 
-static inline void hisi_secmem_free(int id, struct sg_table *table) {}
+static inline void mm_secmem_free(int id, struct sg_table *table) {}
+#endif
+
+#ifdef CONFIG_HISI_VLTMM
+int vltmm_agent_register(void);
 #endif
 
 #endif

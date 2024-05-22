@@ -166,7 +166,7 @@ void set_high_res_data(const unsigned int cmd, const unsigned int val)
 static int high_res_hs_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct high_res_hs_data *priv;
+	struct high_res_hs_data *priv = NULL;
 	int ret;
 
 	hwlog_info("begin\n");

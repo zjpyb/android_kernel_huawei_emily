@@ -19,12 +19,13 @@
 #include <linux/errno.h>
 #include <linux/uaccess.h>
 
-#include <chipset_common/bfmr/bfm/core/bfm_core.h>
+#include <hwbootfail/chipsets/common/bootfail_common.h>
+
 #include "brd_import.h"
 
-int create_dynamic_ramdisk(struct bfmr_dbrd_ioctl_block *arg_u)
+int create_dynamic_ramdisk(struct dbrd_ioctl_block *arg_u)
 {
-	struct bfmr_dbrd_ioctl_block ioc;
+	struct dbrd_ioctl_block ioc;
 	int rc = -EFAULT;
 
 	if (copy_from_user(&ioc, arg_u, sizeof(ioc)))
@@ -40,12 +41,12 @@ int create_dynamic_ramdisk(struct bfmr_dbrd_ioctl_block *arg_u)
 	return 0;
 }
 
-int delete_dynamic_ramdisk(struct bfmr_dbrd_ioctl_block *arg_u)
+int delete_dynamic_ramdisk(struct dbrd_ioctl_block *arg_u)
 {
-	struct bfmr_dbrd_ioctl_block ioc;
+	struct dbrd_ioctl_block ioc;
 	int rc = -EFAULT;
 
-	if (copy_from_user(&ioc, arg_u, sizeof(struct bfmr_dbrd_ioctl_block)))
+	if (copy_from_user(&ioc, arg_u, sizeof(struct dbrd_ioctl_block)))
 		return rc;
 
 	return brd_delete(ioc.number);

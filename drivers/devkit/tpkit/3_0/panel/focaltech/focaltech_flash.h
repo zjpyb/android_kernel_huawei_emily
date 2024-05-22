@@ -94,6 +94,34 @@
 
 #define FTS_ROMBOOT_CMD_GET_STA			0xF2
 #define PROJECT_ID_ADDR					0x007812
+#define FTS_FACTORY_MODE_VALUE 0x40
+#define FTS_COLOR_ID_ADDR 0xCB
+
+#define FTS_FT8756_PRAM_OFFSET 0x100
+#define FTS_PRAM_SADDR 0x000000
+#define FTS_DRAM_SADDR 0xD00000
+#define FTS_FLASH_PACKET_LENGTH_SPI ((32 * 1024) - 16)
+#define FTS_ROMBOOT_CMD_SET_PRAM_ADDR 0xAD
+#define FTS_ROMBOOT_CMD_SET_PRAM_ADDR_LEN 4
+#define FTS_ROMBOOT_CMD_WRITE 0xAE
+#define ECCMAX_LEN 32766
+#define DATA_0 0
+#define FTS_BOOT_PROJ_CODE_ADDR_FT5446P03 0x1FFD0
+#define LONG_LEN_FLASH_ECC_MAX (96 * 1024)
+#define CRC_CHECKSUM_COEFFICIENT 256
+
+/* focal_8201ab */
+#define FTS_FLASH_PACKET_LENGTH 32 /* max=128 */
+#define FTS_CMD_WRITE_LEN 6
+#define PRAMBOOT_MIN_SIZE 0x120
+#define PRAMBOOT_MAX_SIZE (64 * 1024)
+#define FTS_ROMBOOT_CMD_ECC_NEW_LEN 7
+#define FTS_ROMBOOT_CMD_ECC_FINISH_OK_A5 0xA5
+#define FTS_ROMBOOT_CMD_ECC_FINISH_OK_00 0x00
+#define FTS_ECC_FINISH_TIMEOUT 100
+#define FTS_ROMBOOT_CMD_START_APP 0x08
+#define FTS_FIRMWARE_LEN 0x7A
+#define MAX_RETRY_TIME 3
 
 struct focal_delay_time {
 	int hard_reset_delay;
@@ -136,5 +164,6 @@ int focal_read_vendor_id(struct focal_platform_data *focal_pdata, u8 *vendor_id)
 int focal_flash_upgrade_with_bin_file(struct focal_platform_data *focal_pdata,
 	char *fw_name);
 int focal_software_reset_to_bootloader(struct focal_platform_data *focal_pdata);
+int touch_driver_get_tpcolor_from_reg(void);
 #endif
 

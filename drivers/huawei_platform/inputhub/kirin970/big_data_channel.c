@@ -61,8 +61,8 @@ static char *big_data_str_map[] = {
 
 static int iomcu_big_data_fetch(uint32_t event_id, void *data, uint32_t length)
 {
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	int ret;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -72,6 +72,11 @@ static int iomcu_big_data_fetch(uint32_t event_id, void *data, uint32_t length)
 	pkg_ap.cmd = CMD_BIG_DATA_REQUEST_DATA;
 	pkg_ap.wr_buf = &event_id;
 	pkg_ap.wr_len = sizeof(event_id);
+
+	if (g_iom3_state != IOM3_ST_NORMAL) {
+		hwlog_err("%s fail g_iom3_state=%d\n", __func__, g_iom3_state);
+		return -1;
+	}
 
 	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
 	if (ret != 0) {
@@ -161,7 +166,7 @@ static int process_big_data(uint32_t event_id, void* data)
 	return ret;
 }
 
-static int iomcu_big_data_process(const pkt_header_t *head)
+static int iomcu_big_data_process(const struct pkt_header *head)
 {
 	uint32_t *data;
 	if(!head)
@@ -194,7 +199,11 @@ static int iomcu_big_data_process(const pkt_header_t *head)
 
 static int iomcu_big_data_init(void)
 {
-	register_mcu_event_notifier(TAG_BIG_DATA, CMD_BIG_DATA_SEND_TO_AP_RESP, iomcu_big_data_process);
+	if (is_sensorhub_disabled())
+		return -1;
+
+	register_mcu_event_notifier(TAG_BIG_DATA,
+		CMD_BIG_DATA_SEND_TO_AP_RESP, iomcu_big_data_process);
 	hwlog_info("iomcu_big_data_init success\n");
 	return 0;
 }

@@ -57,7 +57,7 @@
 #define LEVEL_LEN			2
 #define LOGGER_LOG_EXCEPTION_BUF_SIZE	(128 * 1024)
 #define LOGGER_LOG_JANK_BUF_SIZE	(64 * 1024)
-#define LOGGER_LOG_DUBAI_BUF_SIZE	(64 * 1024)
+#define LOGGER_LOG_DUBAI_BUF_SIZE	(256 * 1024)
 /* LEVEL_LEN plus the len of " 0X" */
 #define LEVEL_AND_CHAR_LEN		(LEVEL_LEN + 3)
 /* LEVEL_AND_CHAR_LEN plus the len of "/n" */

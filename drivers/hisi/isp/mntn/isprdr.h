@@ -2,15 +2,15 @@
  * record the data to rdr. (RDR: kernel run data recorder.)
  * This file wraps the ring buffer.
  *
- * Copyright (c) 2013 Hisilicon Technologies CO., Ltd.
+ * Copyright (c) 2013 ISP Technologies CO., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
 
-#ifndef _BLACKBOX_PLATFORM_ISP_RDR_HISI_ISP_H
-#define _BLACKBOX_PLATFORM_ISP_RDR_HISI_ISP_H
+#ifndef _BLACKBOX_PLATFORM_ISP_RDR_HISP_H
+#define _BLACKBOX_PLATFORM_ISP_RDR_HISP_H
 
 /* sync data */
 #define RDR_ISP_MAGIC       0x66668888
@@ -40,5 +40,6 @@ struct level_switch_s {
 };
 
 extern u64 get_isprdr_addr(void);
+extern char *hisp_get_comp_name(void);
 
-#endif /* _BLACKBOX_PLATFORM_ISP_RDR_HISI_ISP_H */
+#endif /* _BLACKBOX_PLATFORM_ISP_RDR_HISP_H */

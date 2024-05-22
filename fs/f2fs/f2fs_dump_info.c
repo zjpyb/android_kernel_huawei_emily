@@ -17,7 +17,7 @@
 #include <linux/f2fs_fs.h>
 #include <linux/sysfs.h>
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 #include <linux/workqueue.h>
 #endif
 
@@ -191,6 +191,11 @@ void f2fs_print_sbi_info(struct f2fs_sb_info *sbi)
 		if (likely(FREE_I(sbi))) {
 			f2fs_msg(sbi->sb, KERN_ALERT, "free_segs: %d\n", free_segments(sbi));
 			f2fs_msg(sbi->sb, KERN_ALERT, "free_secs: %d\n", free_sections(sbi));
+#ifdef CONFIG_F2FS_TURBO_ZONE
+			if (is_tz_existed(sbi))
+				f2fs_msg(sbi->sb, KERN_ALERT, "normal_free_segs: %d\n",
+					 get_free_segs_in_normal_zone(sbi));
+#endif
 		}
 		if (likely(DIRTY_I(sbi))) {
 			f2fs_msg(sbi->sb, KERN_ALERT, "prefree_count: %d\n", prefree_segments(sbi));
@@ -276,7 +281,8 @@ void f2fs_print_inode(struct f2fs_inode *ri)
 	printk("\n\n");
 }
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
+static unsigned int f2fs_free_size;
 static inline void __do_f2fs_print_frag_info(struct super_block *sb, void *arg)
 {
 	struct f2fs_sb_info *sbi = NULL;
@@ -293,10 +299,21 @@ static inline void __do_f2fs_print_frag_info(struct super_block *sb, void *arg)
 	undiscard_size = blks_to_mb(SM_I(sbi)->dcc_info->undiscard_blks,
 			sbi->blocksize);
 
+	f2fs_free_size += free_size;
+
 	pr_err("<f2fs> : size = %lluMB, free = %lluMB, undiscard = %lluMB, free_sec = %u\n",
 			total_size, free_size, undiscard_size,
 			free_sections(sbi));
 }
+
+/* get f2fs free_size */
+unsigned int f2fs_get_free_size(void)
+{
+	f2fs_free_size = 0;
+	iterate_supers(__do_f2fs_print_frag_info, NULL);
+	return f2fs_free_size;
+}
+EXPORT_SYMBOL(f2fs_get_free_size);
 
 static void do_f2fs_print_frag_info(struct work_struct *work)
 {

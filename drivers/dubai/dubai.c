@@ -1,126 +1,135 @@
-/*
- * DUBAI drvier.
- *
- * Copyright (C) 2017 Huawei Device Co.,Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- */
-
 #include <linux/init.h>
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
 #include <linux/miscdevice.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 
-#include <chipset_common/dubai/dubai_common.h>
+#include <chipset_common/dubai/dubai_ioctl.h>
+#include <chipset_common/dubai/dubai_plat.h>
+
+#include "dubai_battery_stats.h"
+#include "dubai_cpu_stats.h"
+#include "dubai_ddr_stats.h"
+#include "dubai_display_stats.h"
+#include "dubai_gpu_stats.h"
+#include "dubai_peri_stats.h"
+#include "dubai_misc_stats.h"
+#include "dubai_sensorhub_stats.h"
+#include "dubai_sr_stats.h"
+#include "utils/buffered_log_sender.h"
+#include "utils/dubai_utils.h"
 
 #define DUBAI_MAGIC 'k'
-#define IOCTL_GPU_ENABLE _IOW(DUBAI_MAGIC, 1, bool)
-#define IOCTL_GPU_INFO_GET _IOR(DUBAI_MAGIC, 2, struct dev_transmit_t)
-#define IOCTL_PROC_CPUTIME_REQUEST _IOW(DUBAI_MAGIC, 3, long long)
-#define IOCTL_PROC_NAME_GET _IOWR(DUBAI_MAGIC, 4, struct dev_transmit_t)
-#define IOCTL_LOG_STATS_ENABLE _IOW(DUBAI_MAGIC, 5, bool)
-#define IOCTL_KWORKER_INFO_REQUEST _IOW(DUBAI_MAGIC, 6, long long)
-#define IOCTL_UEVENT_INFO_REQUEST _IOW(DUBAI_MAGIC, 7, long long)
-#define IOCTL_BRIGHTNESS_ENABLE _IOW(DUBAI_MAGIC, 8, bool)
-#define IOCTL_BRIGHTNESS_GET _IOR(DUBAI_MAGIC, 9, uint32_t)
-#define IOCTL_PROC_CPUTIME_ENABLE _IOW(DUBAI_MAGIC, 10, bool)
-#define IOCTL_BINDER_STATS_ENABLE _IOW(DUBAI_MAGIC, 11, bool)
-#define IOCTL_BINDER_STATS_REQUEST _IOW(DUBAI_MAGIC, 13, long long)
-#define IOCTL_TASK_CPUPOWER_ENABLE _IOR(DUBAI_MAGIC, 14, bool)
-#define IOCTL_AOD_GET_DURATION _IOR(DUBAI_MAGIC, 15, uint64_t)
-#define IOCTL_BATTERY_PROP _IOWR(DUBAI_MAGIC, 16, struct dev_transmit_t)
-#define IOCTL_WAKEUP_SOURCE_NAME_REQUEST _IOW(DUBAI_MAGIC, 17, long long)
-#define IOCTL_PROC_DECOMPOSE_SET _IOW(DUBAI_MAGIC, 18, struct dev_transmit_t)
-#define IOCTL_SENSORHUB_TYPE_LIST _IOW(DUBAI_MAGIC, 19, long long)
-#define IOCTL_SENSOR_TIME_GET _IOWR(DUBAI_MAGIC, 20, struct dev_transmit_t)
-#define IOCTL_FP_ICON_STATS _IOR(DUBAI_MAGIC, 21, uint32_t)
-#define IOCTL_SWING_GET _IOWR(DUBAI_MAGIC, 22, struct dev_transmit_t)
-#define IOCTL_RSS_GET _IOR(DUBAI_MAGIC, 23, long long)
+#define DUBAID_NAME				"dubaid"
+
+int dubai_register_module_ops(enum dubai_module_t module, void *mops)
+{
+	int ret = -EINVAL;
+
+	switch (module) {
+	case DUBAI_MODULE_BATTERY:
+		ret = dubai_battery_register_ops(mops);
+		break;
+	case DUBAI_MODULE_DDR:
+		ret = dubai_ddr_register_ops(mops);
+		break;
+	case DUBAI_MODULE_DISPLAY:
+		ret = dubai_display_register_ops(mops);
+		break;
+	case DUBAI_MODULE_GPU:
+		ret = dubai_gpu_register_ops(mops);
+		break;
+	case DUBAI_MODULE_PERI:
+		ret = dubai_peri_register_ops(mops);
+		break;
+	case DUBAI_MODULE_WAKEUP:
+		ret = dubai_wakeup_register_ops(mops);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+int dubai_unregister_module_ops(enum dubai_module_t module)
+{
+	int ret = -EINVAL;
+
+	switch (module) {
+	case DUBAI_MODULE_BATTERY:
+		ret = dubai_battery_unregister_ops();
+		break;
+	case DUBAI_MODULE_DDR:
+		ret = dubai_ddr_unregister_ops();
+		break;
+	case DUBAI_MODULE_DISPLAY:
+		ret = dubai_display_unregister_ops();
+		break;
+	case DUBAI_MODULE_GPU:
+		ret = dubai_gpu_unregister_ops();
+		break;
+	case DUBAI_MODULE_PERI:
+		ret = dubai_peri_unregister_ops();
+		break;
+	case DUBAI_MODULE_WAKEUP:
+		ret = dubai_wakeup_unregister_ops();
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
 
 static long dubai_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int rc = 0;
+	int rc;
 	void __user *argp = (void __user *)arg;
+	const char *comm = NULL;
 
-	switch (cmd) {
-	case IOCTL_GPU_ENABLE:
-		rc = dubai_set_gpu_enable(argp);
+	comm = current->group_leader ? current->group_leader->comm : current->comm;
+	if (!strstr(comm, DUBAID_NAME))
+		return -EPERM;
+
+	rc = 0;
+	switch (_IOC_TYPE(cmd)) {
+	case DUBAI_IOC_DISPLAY:
+		rc = dubai_ioctl_display(cmd, argp);
 		break;
-	case IOCTL_GPU_INFO_GET:
-		rc = dubai_get_gpu_info(argp);
+	case DUBAI_IOC_CPU:
+		rc = dubai_ioctl_cpu(cmd, argp);
 		break;
-	case IOCTL_PROC_CPUTIME_ENABLE:
-		rc = dubai_proc_cputime_enable(argp);
+	case DUBAI_IOC_GPU:
+		rc = dubai_ioctl_gpu(cmd, argp);
 		break;
-	case IOCTL_PROC_CPUTIME_REQUEST:
-		rc = dubai_get_proc_cputime(argp);
+	case DUBAI_IOC_SENSORHUB:
+		rc = dubai_ioctl_sensorhub(cmd, argp);
 		break;
-	case IOCTL_PROC_NAME_GET:
-		rc = dubai_get_proc_name(argp);
+	case DUBAI_IOC_BATTERY:
+		rc = dubai_ioctl_battery(cmd, argp);
 		break;
-	case IOCTL_LOG_STATS_ENABLE:
-		rc = dubai_log_stats_enable(argp);
+	case DUBAI_IOC_UTILS:
+		rc = dubai_ioctl_utils(cmd, argp);
 		break;
-	case IOCTL_KWORKER_INFO_REQUEST:
-		rc = dubai_get_kworker_info(argp);
+	case DUBAI_IOC_SR:
+		rc = dubai_ioctl_sr(cmd, argp);
 		break;
-	case IOCTL_UEVENT_INFO_REQUEST:
-		rc = dubai_get_uevent_info(argp);
+	case DUBAI_IOC_MISC:
+		rc = dubai_ioctl_misc(cmd, argp);
 		break;
-	case IOCTL_BRIGHTNESS_ENABLE:
-		rc = dubai_set_brightness_enable(argp);
+	case DUBAI_IOC_DDR:
+		rc = dubai_ioctl_ddr(cmd, argp);
 		break;
-	case IOCTL_BRIGHTNESS_GET:
-		rc = dubai_get_brightness_info(argp);
-		break;
-	case IOCTL_BINDER_STATS_ENABLE:
-		rc = dubai_binder_stats_enable(argp);
-		break;
-	case IOCTL_BINDER_STATS_REQUEST:
-		rc = dubai_get_binder_stats(argp);
-		break;
-	case IOCTL_TASK_CPUPOWER_ENABLE:
-		rc = dubai_get_task_cpupower_enable(argp);
-		break;
-	case IOCTL_AOD_GET_DURATION:
-		rc = dubai_get_aod_duration(argp);
-		break;
-	case IOCTL_WAKEUP_SOURCE_NAME_REQUEST:
-		rc = dubai_get_ws_lasting_name(argp);
-		break;
-	case IOCTL_PROC_DECOMPOSE_SET:
-		rc = dubai_set_proc_decompose(argp);
-		break;
-	case IOCTL_BATTERY_PROP:
-		rc = dubai_get_battery_prop(argp);
-		break;
-	case IOCTL_SENSORHUB_TYPE_LIST:
-		rc = dubai_get_sensorhub_type_list(argp);
-		break;
-	case IOCTL_SENSOR_TIME_GET:
-		rc = dubai_get_all_sensor_stats(argp);
-		break;
-	case IOCTL_FP_ICON_STATS:
-		rc = dubai_get_fp_icon_stats(argp);
-		break;
-	case IOCTL_SWING_GET:
-		rc = dubai_get_swing_data(argp);
-		break;
-	case IOCTL_RSS_GET:
-		rc = dubai_get_rss(argp);
+	case DUBAI_IOC_PERI:
+		rc = dubai_ioctl_peri(cmd, argp);
 		break;
 	default:
+		dubai_err("Unknown dubai ioctrl type");
 		rc = -EINVAL;
 		break;
 	}
@@ -166,30 +175,38 @@ static int __init dubai_init(void)
 {
 	int ret = 0;
 
-	dubai_gpu_init();
+	dubai_display_stats_init();
+	dubai_gpu_stats_init();
 	dubai_proc_cputime_init();
-	dubai_stats_init();
+	dubai_sr_stats_init();
+	dubai_misc_stats_init();
+	dubai_ddr_stats_init();
+	dubai_peri_stats_init();
 
 	ret = misc_register(&dubai_device);
 	if (ret) {
-		DUBAI_LOGE("Failed to register dubai device");
+		dubai_err("Failed to register dubai device");
 		goto out;
 	}
+	dubai_info("Succeed to init dubai module");
 
-	DUBAI_LOGI("DUBAI module initialize success");
 out:
 	return ret;
 }
 
 static void __exit dubai_exit(void)
 {
-	dubai_gpu_exit();
+	dubai_battery_stats_exit();
+	dubai_gpu_stats_exit();
 	dubai_proc_cputime_exit();
-	dubai_stats_exit();
+	dubai_sr_stats_exit();
+	dubai_misc_stats_exit();
+	dubai_ddr_stats_exit();
+	dubai_peri_stats_exit();
 	buffered_log_release();
 }
 
-late_initcall(dubai_init);
+late_initcall_sync(dubai_init);
 module_exit(dubai_exit);
 
 MODULE_LICENSE("GPL");

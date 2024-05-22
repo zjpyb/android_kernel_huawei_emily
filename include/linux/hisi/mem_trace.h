@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) Hisilicon Technologies Co., Ltd. 2019-2020. All rights reserved.
+ * Description: This file is tracking mem trace.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * Create: 2019-5-26
+ */
+
 #ifndef _MEM_TRACE_H
 #define _MEM_TRACE_H
 
@@ -26,28 +42,28 @@ enum {
 	NR_SLUB_ID,
 };
 
-struct hisi_slub_detail_info {
+struct mm_slub_detail_info {
 	char name[SLUB_NAME_LEN];
 	unsigned long active_objs;
 	unsigned long num_objs;
 	unsigned long active_slabs;
 	unsigned long num_slabs;
-	unsigned long size;//total size
+	unsigned long size; /* total size */
 	unsigned int objects_per_slab;
 	unsigned int objsize;
 };
 
-struct hisi_ion_detail_info {
+struct mm_ion_detail_info {
 	pid_t pid;
 	size_t size;
 };
 
-struct hisi_vmalloc_detail_info {
+struct mm_vmalloc_detail_info {
 	int type;
 	size_t size;
 };
 
-struct hisi_stack_info {
+struct mm_stack_info {
 	unsigned long caller;
 	atomic_t ref;
 };
@@ -60,12 +76,13 @@ int hisi_page_trace_off(int type, char *name);
 int hisi_page_trace_open(int type, int subtype);
 int hisi_page_trace_close(int type, int subtype);
 size_t hisi_page_trace_read(int type,
-	struct hisi_stack_info *info, size_t len, int subtype);
+				struct mm_stack_info *info,
+				size_t len, int subtype);
 size_t hisi_get_ion_by_pid(pid_t pid);
 void set_buddy_track(struct page *page,
-	unsigned int order, unsigned long caller);
+				unsigned int order, unsigned long caller);
 void set_lslub_track(struct page *page,
-	unsigned int order, unsigned long caller);
+				unsigned int order, unsigned long caller);
 void alloc_node_func_map(struct pglist_data *pgdat);
 void set_alloc_track(unsigned long caller);
 void set_free_track(unsigned long caller);
@@ -110,17 +127,18 @@ static inline int hisi_page_trace_close(int type, int subtype)
 }
 
 static inline size_t hisi_page_trace_read(int type,
-	struct hisi_stack_info *info, size_t len, int subtype)
+				struct mm_stack_info *info,
+				size_t len, int subtype)
 {
 	return 0;
 }
 static inline void set_buddy_track(struct page *page,
-	unsigned int order, unsigned long caller){}
+				unsigned int order, unsigned long caller) { }
 static inline void set_lslub_track(struct page *page,
-	unsigned int order, unsigned long caller){}
-static inline void alloc_node_func_map(struct pglist_data *pgdat){}
-static inline void set_alloc_track(unsigned long caller){}
-static inline void set_free_track(unsigned long caller){}
+				unsigned int order, unsigned long caller) { }
+static inline void alloc_node_func_map(struct pglist_data *pgdat) { }
+static inline void set_alloc_track(unsigned long caller) { }
+static inline void set_free_track(unsigned long caller) { }
 static inline int buddy_track_map(int nid)
 {
 	return 0;
@@ -129,8 +147,8 @@ static inline int buddy_track_unmap(void)
 {
 	return 0;
 }
-static inline void hisi_vmalloc_detail_show(void){}
-static inline void hisi_mem_stats_show(void){}
+static inline void hisi_vmalloc_detail_show(void) { }
+static inline void hisi_mem_stats_show(void) { }
 
 #endif
 #endif

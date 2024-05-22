@@ -26,6 +26,11 @@
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/hw_log.h>
 #include <dsm/dsm_pub.h>
+#include "securec.h"
+
+#ifdef CONFIG_SND_SOC_AU_PA
+#include <sound/au_pa.h>
+#endif
 
 #ifdef CONFIG_HUAWEI_DSM_AUDIO_MODULE
 #define CONFIG_HUAWEI_DSM_AUDIO
@@ -60,9 +65,68 @@ HWLOG_REGIST();
 #define AW_TRIM_VALUE_BASE         1000
 
 #define aw_fill_short_type_sign(a) ((((a) & 0x200) == 0) ? (a) : ((a) | 0xfc00))
+#define TIME_COUNT_FOR_DMD 5
+#define TIME_DIFF 60 // 60s
+
+#ifdef CONFIG_SND_SOC_AU_PA
+int __attribute__((weak)) au_pa_cfg_iomux(enum au_pa_mode mode)
+{
+	return 0;
+}
+#endif
 
 /* 0 i2c device not init completed, 1 init completed */
-static bool smartpakit_i2c_probe_skip[SMARTPAKIT_PA_ID_MAX] = { 0, 0, 0, 0 };
+static bool smartpakit_i2c_probe_skip[SMARTPAKIT_PA_ID_MAX] = { 0, 0, 0, 0 , 0, 0, 0, 0 };
+
+static void delete_list_info_by_given_chip_id(unsigned int chip_id)
+{
+	struct i2c_dev_info *pos = NULL;
+	struct i2c_dev_info *n = NULL;
+	struct smartpakit_priv *pakit_priv = NULL;
+
+	pakit_priv = smartpakit_get_misc_priv();
+	if (pakit_priv == NULL) {
+		hwlog_err("%s: smartpakit_priv is NULL\n", __func__);
+		return;
+	}
+
+	list_for_each_entry_safe(pos, n, &pakit_priv->i2c_dev_list, list) {
+		if (pos->chip_id != chip_id)
+			continue;
+		list_del(&pos->list);
+		kfree(pos);
+	}
+}
+
+static void insert_i2c_dev_info_list(struct smartpakit_i2c_priv *i2c_priv,
+	unsigned int status)
+{
+	struct i2c_dev_info *dev_info = NULL;
+	struct smartpakit_priv *pakit_priv = NULL;
+	unsigned int model_len;
+
+	pakit_priv = smartpakit_get_misc_priv();
+	if (pakit_priv == NULL) {
+		hwlog_err("%s: smartpakit_priv is NULL\n", __func__);
+		return;
+	}
+
+	dev_info = kzalloc(sizeof(struct i2c_dev_info), GFP_KERNEL);
+	if (dev_info == NULL)
+		return;
+	dev_info->chip_id = i2c_priv->chip_id;
+	dev_info->status = status;
+	dev_info->addr = pakit_priv->misc_i2c_use_pseudo_addr ?
+		i2c_priv->i2c_pseudo_addr : i2c_priv->i2c->addr;
+	model_len = strlen(i2c_priv->chip_model);
+	model_len = (model_len < sizeof(dev_info->chip_model)) ?
+		model_len : (sizeof(dev_info->chip_model) - 1);
+	if (strncpy_s(dev_info->chip_model, sizeof(dev_info->chip_model),
+		i2c_priv->chip_model, model_len) != EOK)
+		hwlog_err("%s: strncpy_s is failed\n", __func__);
+
+	list_add(&dev_info->list, &pakit_priv->i2c_dev_list);
+}
 
 static inline int smartpakit_check_i2c_regmap_cfg(
 	struct smartpakit_i2c_priv *i2c_priv)
@@ -196,7 +260,7 @@ static void smartpakit_append_dsm_report(char *dst, char *fmt, ...)
 	va_end(args);
 
 	buf_len = DSM_BUF_SIZE - strlen(dst) - 1;
-	if (strlen(dst) < DSM_BUF_SIZE - 1)
+	if (strlen(dst) < (DSM_BUF_SIZE - 1))
 		strncat(dst, tmp_str, buf_len);
 }
 #endif
@@ -244,6 +308,87 @@ static void smartpakit_i2c_dsm_report(struct smartpakit_i2c_priv *i2c_priv,
 		(int)i2c_priv->chip_id, flag, errno, info);
 }
 
+#ifdef CONFIG_HUAWEI_DSM_AUDIO
+static void add_probed_result_of_given_chip_id(char *report, unsigned int id,
+	struct list_head *head)
+{
+	struct i2c_dev_info *dev_info = NULL;
+
+	list_for_each_entry(dev_info, head, list) {
+		if (dev_info->chip_id != id)
+			continue;
+		smartpakit_append_dsm_report(report, "%u:", id);
+		if (dev_info->status == 0)
+			smartpakit_append_dsm_report(report, "f,");
+		else
+			smartpakit_append_dsm_report(report, "s,");
+		break;
+	}
+}
+
+static void add_probed_devs_by_given_chip_id(char *report, unsigned int id,
+	struct list_head *head)
+{
+	struct i2c_dev_info *dev_info = NULL;
+
+	list_for_each_entry(dev_info, head, list) {
+		if (dev_info->chip_id != id)
+			continue;
+		smartpakit_append_dsm_report(report, "%s_%x,",
+			dev_info->chip_model, dev_info->addr);
+	}
+}
+
+static bool is_i2c_probe_dsm_report_required(struct smartpakit_priv *pakit_priv)
+{
+	if (pakit_priv == NULL)
+		return false;
+
+	if (pakit_priv->pa_num == pakit_priv->i2c_num)
+		return false;
+
+	/*
+	 * if i2c check is success, but register to smartpa platform failed,
+	 * need not to upload dsm report
+	 */
+	if (pakit_priv->chip_register_failed)
+		return false;
+
+	if ((pakit_priv->algo_in != SMARTPAKIT_ALGO_IN_CODEC_DSP) &&
+		(pakit_priv->algo_in != SMARTPAKIT_ALGO_IN_SOC_DSP) &&
+		(pakit_priv->algo_in != SMARTPAKIT_ALGO_IN_SIMPLE_WITH_I2C))
+		return false;
+	return true;
+}
+
+void smartpakit_handle_i2c_probe_dsm_report(struct smartpakit_priv *pakit_priv)
+{
+	char *report = NULL;
+	unsigned int i;
+
+	if (!is_i2c_probe_dsm_report_required(pakit_priv))
+		return;
+
+	report = kzalloc(sizeof(char) * DSM_BUF_SIZE, GFP_KERNEL);
+	if (report == NULL)
+		return;
+
+	smartpakit_append_dsm_report(report, "Probed%u/%u;",
+		pakit_priv->i2c_num, pakit_priv->pa_num);
+	for (i = 0; i < SMARTPAKIT_PA_ID_MAX; i++) {
+		add_probed_result_of_given_chip_id(report, i,
+			&pakit_priv->i2c_dev_list);
+		add_probed_devs_by_given_chip_id(report, i,
+			&pakit_priv->i2c_dev_list);
+	}
+	hwlog_info("%s: %s", __func__, report);
+
+	audio_dsm_report_info(AUDIO_SMARTPA, DSM_SMARTPA_I2C_ERR, "%s",
+		report);
+	kfree(report);
+}
+#endif
+
 static bool smartpakit_i2c_is_request_same_irq_gpio(int gpio)
 {
 	struct smartpakit_priv *pakit_priv = NULL;
@@ -280,7 +425,38 @@ static bool smartpakit_i2c_is_request_same_reset_gpio(int gpio)
 	return false;
 }
 
-static void smartpakit_i2c_hw_reset_gpio_ctl(int gpio,
+#ifdef CONFIG_SND_SOC_AU_PA
+static void smartpakit_switch_hismartpa_gpio(const char *model, int state, unsigned int gpio, int i2c_state)
+{
+	int ret = 0;
+	const char *hismartpa_str = "hi6565";
+	const char *hisipa_type = "04-01"; // hismartpa chip_model type
+
+	if (strcmp(model, hismartpa_str) != 0 &&
+		strcmp(model, hisipa_type) != 0) {
+		return;
+	}
+
+	if (state == GPIO_LOW) {
+		/* config gpio mode */
+		ret = au_pa_cfg_iomux(RESET_MODE);
+		if (ret < 0)
+			hwlog_err("RESET_MODE err, ret is %d\n", ret);
+		gpio_direction_output(gpio, i2c_state);
+		hwlog_info("au_pa_cfg_iomux RESET_MODE\n");
+	} else {
+		/* recovery fuction mode */
+		mdelay(1);
+		ret = au_pa_cfg_iomux(NORMAL_MODE);
+		if (ret < 0)
+			hwlog_err("NORMAL_MODE err, ret is %d\n", ret);
+		gpio_direction_input(gpio);
+		hwlog_info("au_pa_cfg_iomux NORMAL_MODE\n");
+	}
+}
+#endif
+
+static void smartpakit_i2c_hw_reset_gpio_ctl(struct smartpakit_i2c_priv *i2c_priv,
 	struct smartpakit_gpio_sequence *sequence)
 {
 	struct smartpakit_gpio_state *node = NULL;
@@ -296,11 +472,34 @@ static void smartpakit_i2c_hw_reset_gpio_ctl(int gpio,
 	node = sequence->node;
 
 	for (j = 0; j < num; j++) {
-		hwlog_info("%s: gpio %d set %u, delay %u\n", __func__, gpio,
+		hwlog_info("%s: gpio %d set %u, delay %u\n", __func__, i2c_priv->hw_reset->gpio,
 			node[j].state, node[j].delay);
-		gpio_direction_output((unsigned int)gpio, (int)node[j].state);
+		gpio_direction_output((unsigned int)i2c_priv->hw_reset->gpio, (int)node[j].state);
+#ifdef CONFIG_SND_SOC_AU_PA
+		if (i2c_priv->irq_handler != NULL)
+			smartpakit_switch_hismartpa_gpio(i2c_priv->chip_model,
+				(int)node[j].state,
+				(unsigned int)i2c_priv->irq_handler->gpio,
+				(int)i2c_priv->i2c_addr_state);
+#endif
 		smartpakit_delay(node[j].delay, j, num - 1);
 	}
+}
+
+static void kit_i2c_reset_irq_debounce_time(
+	struct smartpakit_i2c_priv *i2c_priv)
+{
+	if (i2c_priv->reset_debounce_wait_time == 0)
+		return;
+
+	cancel_delayed_work_sync(&i2c_priv->irq_debounce_work);
+	hwlog_info("%s: pa%d software reset debounce, trigger delayed_work\n",
+		__func__, i2c_priv->chip_id);
+
+	i2c_priv->irq_debounce_jiffies = jiffies +
+		msecs_to_jiffies(i2c_priv->reset_debounce_wait_time);
+	schedule_delayed_work(&i2c_priv->irq_debounce_work,
+		msecs_to_jiffies(i2c_priv->reset_debounce_wait_time));
 }
 
 static int smartpakit_i2c_hw_reset(struct smartpakit_i2c_priv *i2c_priv)
@@ -333,7 +532,7 @@ static int smartpakit_i2c_hw_reset(struct smartpakit_i2c_priv *i2c_priv)
 	}
 
 	sequence = &i2c_priv->hw_reset->sequence;
-	smartpakit_i2c_hw_reset_gpio_ctl(i2c_priv->hw_reset->gpio, sequence);
+	smartpakit_i2c_hw_reset_gpio_ctl(i2c_priv, sequence);
 	return 0;
 }
 
@@ -350,7 +549,8 @@ static int kit_i2c_dts_regs_read(struct smartpakit_i2c_priv *i2c_priv,
 
 	regmap = i2c_priv->regmap_cfg->regmap;
 	reg_addr = reg->addr;
-	memset(&reg_info, 0, sizeof(reg_info));
+	if (memset_s(&reg_info, sizeof(reg_info), 0, sizeof(reg_info)) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
 
 	for (j = 0; j < (int)reg->value; j++) {
 		ret_once = smartpakit_regmap_read(regmap, reg_addr, &value);
@@ -435,7 +635,7 @@ static int smartpakit_i2c_dump_regs(struct smartpakit_i2c_priv *i2c_priv)
 }
 
 int smartpakit_i2c_get_hismartpa_info(struct smartpakit_i2c_priv *i2c_priv,
-	struct hismartpa_cfg *cfg)
+	struct hismartpa_coeff *cfg)
 {
 	struct smartpakit_reg_info *pos = NULL;
 	unsigned char reg_val[HISMARTPA_OTP_REG_NUM] = {0};
@@ -466,13 +666,16 @@ int smartpakit_i2c_get_hismartpa_info(struct smartpakit_i2c_priv *i2c_priv,
 	}
 
 	list_for_each_entry(pos, &otp_req_list, list) {
-		if (i >= HISMARTPA_OTP_REG_NUM)
+		if (i >= HISMARTPA_OTP_REG_NUM) {
+			hwlog_err("%s: hismartpa_otp_regs num err\n", __func__);
 			break;
+		}
 		reg_val[i] = (unsigned char)pos->info;
 		i++;
 	}
 
-	memcpy(cfg, reg_val, sizeof(*cfg));
+	if (memcpy_s(cfg, sizeof(*cfg), reg_val, sizeof(*cfg)) != EOK)
+		hwlog_err("%s: memcpy_s is failed\n", __func__);
 
 	hwlog_info("%s: pa%d, 0x%x, 0x%x, 0x%x, 0x%x\n", __func__,
 		i2c_priv->chip_id, cfg->kv1, cfg->kv2, cfg->kr1, cfg->kr2);
@@ -635,6 +838,7 @@ static void smartpakit_i2c_get_i2c_err_info(struct i2c_err_info *info,
 static int smartpakit_i2c_ctrl_write_regs(struct smartpakit_i2c_priv *i2c_priv,
 	unsigned int num, struct smartpakit_param_node *regs)
 {
+	struct smartpakit_priv *pakit_priv = NULL;
 	struct smartpakit_regmap_cfg *cfg = NULL;
 	int ret = 0;
 	int i;
@@ -665,6 +869,9 @@ static int smartpakit_i2c_ctrl_write_regs(struct smartpakit_i2c_priv *i2c_priv,
 			__func__, i2c_priv->chip_id);
 		return 0;
 	}
+	pakit_priv = smartpakit_get_misc_priv();
+	if (pakit_priv == NULL)
+		return false;
 
 	cfg = i2c_priv->regmap_cfg;
 	/* for smartpa, node type has gpio node and reg node */
@@ -678,6 +885,10 @@ static int smartpakit_i2c_ctrl_write_regs(struct smartpakit_i2c_priv *i2c_priv,
 			hwlog_err("%s: node %d, set gpio%u %u err\n", __func__,
 				i, regs[i].index, regs[i].value);
 			return ret;
+		} else if (regs[i].node_type ==       /* reset irq debounce */
+			SMARTPAKIT_PARAM_NODE_TYPE_IRQ_DEBOUNCE) {
+			kit_i2c_reset_irq_debounce_time(i2c_priv);
+			continue;
 		}
 		/* regmap node */
 		ret = smartpakit_i2c_reg_node_ops(cfg, &regs[i], i, num);
@@ -686,6 +897,7 @@ static int smartpakit_i2c_ctrl_write_regs(struct smartpakit_i2c_priv *i2c_priv,
 				__func__, i, regs[i].index, regs[i].value, ret);
 			smartpakit_i2c_get_i2c_err_info(&info, (unsigned int)i);
 			errno = ret;
+			pakit_priv->i2c_errno = errno;
 		}
 	}
 	info.regs_num = num;
@@ -803,10 +1015,9 @@ static bool is_irq_filter_config_hited(
 {
 	struct smartpakit_reg_info *read_reg_info = NULL;
 	unsigned int read_val;
-	unsigned int cfg_val;
 
 	if ((!dump_reg_list) || (!cfg_info)) {
-		hwlog_err("%s: Input argument invalid\n", __func__);
+		hwlog_err("%s: Input argument invalid, not reset\n", __func__);
 		return false;
 	}
 
@@ -814,9 +1025,13 @@ static bool is_irq_filter_config_hited(
 		if ((read_reg_info->chip_id == cfg_info->chip_id) &&
 			(read_reg_info->reg_addr == cfg_info->reg_addr)) {
 			read_val = read_reg_info->info & cfg_info->mask;
-			cfg_val = cfg_info->info & cfg_info->mask;
-			if (read_val == cfg_val) {
-				hwlog_info("Filter trigger reset\n");
+			if (read_val) {
+				hwlog_info("%s:pa%d,reg:0x%x,info:0x%x,mask:0x%x\n",
+					__func__, read_reg_info->chip_id,
+					read_reg_info->reg_addr,
+					read_reg_info->info, cfg_info->mask);
+				hwlog_info("%s:Filter trigger reset\n",
+					__func__);
 				return true;
 			}
 		}
@@ -965,6 +1180,34 @@ static void smartpakit_i2c_handler_irq_dsm_report(
 }
 #endif
 
+#ifdef CONFIG_HUAWEI_DSM_AUDIO
+bool record_i2c_irq_time(void)
+{
+	struct timeval tv;
+	static int time_num = 0;
+	static long time_buf[TIME_COUNT_FOR_DMD] = {0};
+	int i;
+
+	do_gettimeofday(&tv);
+
+	if (time_num >= TIME_COUNT_FOR_DMD)
+		time_num = 0;
+
+	hwlog_info("%s tv.tv_sec %ld time_buf %ld time_num %d", __func__, tv.tv_sec,
+		time_buf[time_num], time_num);
+	if ((time_buf[time_num] != 0) && (tv.tv_sec - time_buf[time_num] < TIME_DIFF)) {
+		for (i = 0; i < TIME_COUNT_FOR_DMD; i++) {
+			time_buf[i] = 0;
+		}
+		hwlog_info("%s dmd report %d", __func__, time_num);
+		return true;
+	}
+	time_buf[time_num] = tv.tv_sec;
+	time_num++;
+	return false;
+}
+#endif
+
 void smartpakit_i2c_handler_irq(struct work_struct *work)
 {
 	struct smartpakit_i2c_priv *i2c_priv = NULL;
@@ -994,8 +1237,9 @@ void smartpakit_i2c_handler_irq(struct work_struct *work)
 
 	need_reset = smartpakit_is_need_reset(i2c_priv, &dump_regs_list);
 #ifdef CONFIG_HUAWEI_DSM_AUDIO
-	smartpakit_i2c_handler_irq_dsm_report(i2c_priv, &dump_regs_list,
-		need_reset);
+	if (record_i2c_irq_time())
+		smartpakit_i2c_handler_irq_dsm_report(i2c_priv, &dump_regs_list,
+			need_reset);
 #endif
 	/* dump regs */
 	smartpakit_dump_chips(pakit_priv);
@@ -1101,7 +1345,6 @@ static struct smartpakit_regmap_cfg *smartpakit_i2c_get_regmap_cfg(
 		return NULL;
 	}
 	i2c_priv = dev_get_drvdata(dev);
-
 	if ((i2c_priv == NULL) || (i2c_priv->regmap_cfg == NULL)) {
 		hwlog_err("%s: regmap_cfg invalid argument\n", __func__);
 		return NULL;
@@ -1184,7 +1427,6 @@ static int smartpakit_i2c_parse_hw_reset_gpio_ctl_seq(struct device_node *node,
 
 	ret = smartpakit_get_prop_of_u32_array(node, ctl_sequence_str,
 		(u32 **)&gpio_node, &count);
-
 	if ((count <= 0) || (ret < 0)) {
 		hwlog_err("%s: get gpio_state sequence err\n", __func__);
 		return -EFAULT;
@@ -1238,8 +1480,9 @@ static int smartpakit_i2c_parse_hw_reset_info(
 		}
 	}
 
-	ret = snprintf(reset_info->gpio_name,
-		(unsigned long)SMARTPAKIT_NAME_MAX, "%s_gpio_reset_%d",
+	ret = snprintf_s(reset_info->gpio_name,
+		(unsigned long)SMARTPAKIT_NAME_MAX,
+		(unsigned long)SMARTPAKIT_NAME_MAX - 1, "%s_gpio_reset_%d",
 		i2c_priv->chip_model, i2c_priv->chip_id);
 	if (ret < 0) {
 		hwlog_err("%s: set gpio_name failed\n", __func__);
@@ -1414,10 +1657,14 @@ static int smartpakit_i2c_parse_irq_handler_info(
 		(int)irq_info->need_reset, (int)irq_info->need_filter_irq);
 #endif
 
-	ret = snprintf(irq_info->gpio_name, (unsigned long)SMARTPAKIT_NAME_MAX,
-		"%s_gpio_irq_%d", i2c_priv->chip_model, i2c_priv->chip_id);
-	ret += snprintf(irq_info->irq_name, (unsigned long)SMARTPAKIT_NAME_MAX,
-		"%s_irq_%d", i2c_priv->chip_model, i2c_priv->chip_id);
+	ret = snprintf_s(irq_info->gpio_name, (unsigned long)SMARTPAKIT_NAME_MAX,
+		(unsigned long)SMARTPAKIT_NAME_MAX - 1, "%s_gpio_irq_%d",
+		i2c_priv->chip_model, i2c_priv->chip_id);
+	if (ret < 0)
+		hwlog_err("%s: set gpio_name failed\n", __func__);
+	ret += snprintf_s(irq_info->irq_name, (unsigned long)SMARTPAKIT_NAME_MAX,
+		(unsigned long)SMARTPAKIT_NAME_MAX - 1, "%s_irq_%d",
+		i2c_priv->chip_model, i2c_priv->chip_id);
 	if (ret < 0) {
 		hwlog_err("%s: set gpio_name/irq_name failed\n", __func__);
 		ret = -EFAULT;
@@ -1450,6 +1697,11 @@ static int smartpakit_i2c_request_threaded_irq(struct i2c_client *i2c,
 	int ret;
 
 	irq_handler = i2c_priv->irq_handler;
+	if (irq_handler == NULL) {
+		hwlog_info("%s: irq_handler not configed\n", __func__);
+		return 0;
+	}
+
 	gpio = irq_handler->gpio;
 	if (!gpio_is_valid(gpio)) {
 		hwlog_err("%s: irq_handler gpio %d invalid\n", __func__, gpio);
@@ -1533,7 +1785,6 @@ static int smartpakit_i2c_parse_dt_dump_regs(struct i2c_client *i2c,
 	if (!of_property_read_bool(i2c->dev.of_node, dump_regs_str)) {
 		hwlog_debug("%s: dump_regs not existed, skip\n", __func__);
 		return 0;
-
 	}
 	ret = smartpakit_i2c_parse_reg_ctl(&i2c_priv->dump_regs_sequence,
 		i2c->dev.of_node, dump_regs_str);
@@ -1543,10 +1794,11 @@ static int smartpakit_i2c_parse_dt_dump_regs(struct i2c_client *i2c,
 	return ret;
 }
 
-static int smartpakit_i2c_parse_hismartpa_otp_regs(struct i2c_client *i2c,
+static int smartpakit_i2c_parse_dt_hismartpa(struct i2c_client *i2c,
 	struct smartpakit_i2c_priv *i2c_priv)
 {
 	const char *hismartpa_otp_regs_str = "hismartpa_otp";
+	const char *hismartpa_i2c_state_str = "i2c_addr_state";
 	int ret;
 
 	if (!of_property_read_bool(i2c->dev.of_node, hismartpa_otp_regs_str)) {
@@ -1555,10 +1807,19 @@ static int smartpakit_i2c_parse_hismartpa_otp_regs(struct i2c_client *i2c,
 	}
 	ret = smartpakit_i2c_parse_reg_ctl(&i2c_priv->hismartpa_otp_sequence,
 		i2c->dev.of_node, hismartpa_otp_regs_str);
-	if (ret < 0)
+	if (ret < 0) {
 		hwlog_err("%s: parse hismartpa_otp_regs failed\n", __func__);
+		return -EFAULT;
+	}
 
-	return ret;
+	ret = smartpakit_get_prop_of_u32_type(i2c->dev.of_node, hismartpa_i2c_state_str,
+		&i2c_priv->i2c_addr_state, false);
+	if (ret < 0) {
+		hwlog_err("%s: parse i2c_addr_state failed\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
 }
 
 static unsigned int smartpakit_i2c_get_reg_value_mask(int val_bits)
@@ -1901,6 +2162,7 @@ static int smartpakit_i2c_init_chip(struct i2c_client *i2c,
 	return smartpakit_i2c_request_threaded_irq(i2c, i2c_priv);
 err_out:
 	smartpakit_i2c_free_hw_reset(i2c_priv->hw_reset);
+	i2c_priv->hw_reset = NULL;
 	return ret;
 }
 
@@ -1960,6 +2222,7 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 	if (smartpakit_i2c_probe_skip[i2c_priv->chip_id]) {
 		hwlog_info("%s: chip_id = %u has been probed success, skip\n",
 			__func__, i2c_priv->chip_id);
+		ret = -EINVAL;
 		goto skip_probe;
 	}
 
@@ -1970,6 +2233,9 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 	dev_set_drvdata(&i2c->dev, i2c_priv);
 
 	INIT_WORK(&i2c_priv->irq_handle_work, smartpakit_i2c_handler_irq);
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	INIT_WORK(&i2c_priv->pm_s4_work, smartpakit_restore_process);
+#endif
 	INIT_DELAYED_WORK(&i2c_priv->irq_debounce_work,
 		smartpakit_i2c_irq_debounce_work);
 
@@ -1977,7 +2243,7 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 	ret += smartpakit_i2c_parse_dt_irq(i2c, i2c_priv);
 	ret += smartpakit_i2c_parse_dt_version_regs(i2c, i2c_priv);
 	ret += smartpakit_i2c_parse_dt_dump_regs(i2c, i2c_priv);
-	ret += smartpakit_i2c_parse_hismartpa_otp_regs(i2c, i2c_priv);
+	ret += smartpakit_i2c_parse_dt_hismartpa(i2c, i2c_priv);
 	if (ret < 0) {
 		smartpakit_i2c_free_hw_reset(i2c_priv->hw_reset);
 		goto err_out;
@@ -1993,8 +2259,10 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 		goto err_out;
 
 	ret = smartpakit_i2c_read_chip_version(i2c_priv);
-	if (ret < 0)
+	if (ret < 0) {
+		insert_i2c_dev_info_list(i2c_priv, 0); /* i2c check failed */
 		goto err_out;
+	}
 
 	/* register i2c device to smartpakit device */
 	ret = smartpakit_register_i2c_device(i2c_priv);
@@ -2003,6 +2271,8 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 
 	smartpakit_register_i2c_ctl_ops(&i2c_ctl_ops);
 
+	delete_list_info_by_given_chip_id(i2c_priv->chip_id);
+	insert_i2c_dev_info_list(i2c_priv, 1); /* i2c check success */
 	i2c_priv->probe_completed = 1;
 	smartpakit_i2c_probe_skip[i2c_priv->chip_id] = true;
 	hwlog_info("%s: end success\n", __func__);
@@ -2100,6 +2370,15 @@ static int smartpakit_i2c_suspend(struct device *dev)
 	if (i2c_priv == NULL)
 		return 0;
 
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	struct smartpakit_gpio_irq *irq_handler = NULL;
+
+	irq_handler = i2c_priv->irq_handler;
+	if (irq_handler != NULL) {
+		disable_irq(irq_handler->irq);
+		hwlog_info("%s: disable irq:%d\n", __func__, irq_handler->irq);
+	}
+#endif
 	if ((i2c_priv->regmap_cfg != NULL) &&
 		(i2c_priv->regmap_cfg->regmap != NULL) &&
 		(i2c_priv->regmap_cfg->cfg.cache_type == REGCACHE_RBTREE))
@@ -2127,7 +2406,16 @@ static int smartpakit_i2c_resume(struct device *dev)
 		regcache_cache_only(i2c_priv->regmap_cfg->regmap, (bool)false);
 		regcache_sync(i2c_priv->regmap_cfg->regmap);
 	}
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	struct smartpakit_gpio_irq *irq_handler = NULL;
 
+	irq_handler = i2c_priv->irq_handler;
+	if (irq_handler != NULL) {
+		enable_irq(irq_handler->irq);
+		hwlog_info("%s: end and enable irq : %d\n",
+					__func__, irq_handler->irq);
+	}
+#endif
 	return 0;
 }
 #else
@@ -2138,6 +2426,10 @@ static int smartpakit_i2c_resume(struct device *dev)
 static const struct dev_pm_ops smartpakit_i2c_pm_ops = {
 	.suspend = smartpakit_i2c_suspend,
 	.resume  = smartpakit_i2c_resume,
+#ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
+	.freeze = smartpakit_i2c_freeze,
+	.restore = smartpakit_i2c_restore,
+#endif
 };
 
 static const struct i2c_device_id smartpakit_i2c_id[] = {

@@ -9,8 +9,8 @@
  *
  */
 
-#ifndef __LINUX_LEDS_k3_H
-#define __LINUX_LEDS_k3_H
+#ifndef __LINUX_HISI_LEDS_H
+#define __LINUX_HISI_LEDS_H
 #include <linux/leds.h>
 #define HISI_LEDS "hisi_leds"
 
@@ -127,7 +127,7 @@ struct hisi_led {
 	char *default_trigger;
 };
 
-struct hisi_led_platform_data {
+struct led_spmi_platform_data {
 	struct hisi_led leds[HISI_LEDS_MAX];
 	u8 leds_size;
 };

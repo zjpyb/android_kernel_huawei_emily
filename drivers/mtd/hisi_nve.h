@@ -1,20 +1,19 @@
 /*
- * Copyright (C) Hisilicon technologies Co., Ltd All rights reserved.
- * FileName: kernel/drivers/mtd/hisi_nve.h
+ * Copyright (C) Hisilicon technologies Co., Ltd. 2012-2020. All rights reserved.
  * Description: define some macros and declear some functions that will be
  * used in file hisi_nve.c.
- * Author: jinguojun
+ * Author: hisilicon
  * Create: 2012-12-22
- * Revision history:2019-06-20 zhanghugang NVE CSEC
+ * Revision history:2019-06-20 NVE CSEC
  */
 
 #ifndef __HISI_NVE_H
 #define __HISI_NVE_H
 
-#include <linux/mtd/hisi_nve_interface.h>
 #include <stddef.h>
+#include <linux/mtd/hisi_nve_interface.h>
 
-#include "hisi_partition.h"
+#include "partition_macro.h"
 
 #define TEST_NV_IN_KERNEL 1
 #define CONFIG_CRC_SUPPORT
@@ -27,14 +26,16 @@
 #define NVE_CRC_SUPPORT_VERSION         0x2
 #define NV_ITEMS_MAX_NUMBER     1023
 #define NVE_HEADER_NAME "Hisi-NV-Partition" /* ReliableData area */
-#define NVE_BLOCK_SIZE	512
-#define NVE_NV_DATA_SIZE	104
+#define NVE_BLOCK_SIZE 512
+#define NVE_NV_DATA_SIZE 104
 #define NV_DEVICE_NAME "/dev/block/by-name/nvme"
 
 #define NV_INFO_LEN 1024
-#define NVE_ERROR -1
+#define NVE_ERROR (-1)
+#define NV_DEVICE_MAX_PATH_LEN 64
+
 /*
- *In case accidently power-off happened when NV
+ * In case accidently power-off happened when NV
  * is writing,we put the partition_header at the
  * position that locate the last 128 Bytes of every
  * partition,so even if power-off happend,current
@@ -57,7 +58,7 @@ struct nve_partition_header_struct {
 	char nve_partition_name[32];
 	/* should be built in image with const value */
 	unsigned int nve_version;
-	/* should be built in image with const value*/
+	/* should be built in image with const value */
 	unsigned int nve_block_id;
 	/* should be built in image with const value */
 	unsigned int nve_block_count;
@@ -66,7 +67,7 @@ struct nve_partition_header_struct {
 	unsigned int nv_checksum;
 	unsigned int nve_crc_support;
 	unsigned char reserved[68];
-	/*changed by run-time image*/
+	/* changed by run-time image */
 	unsigned int nve_age;
 };
 
@@ -89,13 +90,12 @@ struct nv_items_struct {
 };
 
 struct nv_partittion_struct {
-	struct nv_items_struct NV_items[NV_ITEMS_MAX_NUMBER];
+	struct nv_items_struct nv_items[NV_ITEMS_MAX_NUMBER];
 	struct nve_partition_header_struct header;
 };
 
 struct nve_ramdisk_struct {
 	int nve_major_number;
-	int initialized;
 	unsigned int nve_partition_count;
 	unsigned int nve_current_id;
 	struct nv_partittion_struct *nve_current_ramdisk;

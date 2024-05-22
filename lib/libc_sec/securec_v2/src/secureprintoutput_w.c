@@ -35,16 +35,8 @@
 
 #include "secureprintoutput.h"
 
-
-#define SECUREC_CHAR(x) L ## x
-#define SECUREC_WRITE_MULTI_CHAR SecWriteMultiCharW
-#define SECUREC_WRITE_STRING     SecWriteStringW
-
 SECUREC_INLINE void SecWriteCharW(wchar_t ch, SecPrintfStream *f, int *pnumwritten);
-SECUREC_INLINE void SecWriteMultiCharW(wchar_t ch, int num, SecPrintfStream *f, int *pnumwritten);
-SECUREC_INLINE void SecWriteStringW(const wchar_t *string, int len, SecPrintfStream *f, int *pnumwritten);
 SECUREC_INLINE int SecPutWcharStrEndingZero(SecPrintfStream *str, int zeroCount);
-
 
 #include "output.inl"
 
@@ -61,41 +53,41 @@ int SecVswprintfImpl(wchar_t *string, size_t sizeInWchar, const wchar_t *format,
     str.count = (int)(sizeInWchar * sizeof(wchar_t));
 
     retVal = SecOutputSW(&str, format, argList);
-    if (retVal >= 0 && SecPutWcharStrEndingZero(&str, (int)sizeof(wchar_t)) == 0) {
-        return (retVal);
-    } else if (str.count < 0) {
-        /* The buffer was too small; we return truncation */
+    if (retVal >= 0) {
+        if (SecPutWcharStrEndingZero(&str, (int)sizeof(wchar_t)) == 0) {
+            return retVal;
+        }
+    }
+    if (str.count < 0) {
+        /* The buffer was too small, then truncate */
         string[sizeInWchar - 1] = L'\0';
         return SECUREC_PRINTF_TRUNCATE;
     }
-    string[0] = L'\0';
+    string[0] = L'\0'; /* Empty the dest string */
     return -1;
 }
-
-
 
 /*
  * Output a wide character zero end into the SecPrintfStream structure
  */
 SECUREC_INLINE int SecPutWcharStrEndingZero(SecPrintfStream *str, int zeroCount)
 {
-    int i = 0;
-    while (i < zeroCount && SecPutZeroChar(str) == 0) {
-        ++i;
+    int count;
+    for (count = zeroCount; count > 0; --count) {
+        if (SecPutZeroChar(str) != 0) {
+            return -1;
+        }
     }
-    if (i == zeroCount) {
-        return 0;
-    }
-    return -1;
+    return 0;
 }
-
 
 /*
  * Output a wide character into the SecPrintfStream structure
  */
 SECUREC_INLINE int SecPutCharW(wchar_t ch, SecPrintfStream *f)
 {
-    if (((f)->count -= (int)sizeof(wchar_t)) >= 0) {
+    f->count -= (int)sizeof(wchar_t); /* f -> count may be negative,indicating insufficient space */
+    if (f->count >= 0) {
         *(wchar_t *)(void *)(f->cur) = ch;
         f->cur += sizeof(wchar_t);
         return 0;
@@ -120,8 +112,8 @@ SECUREC_INLINE void SecWriteCharW(wchar_t ch, SecPrintfStream *f, int *pnumwritt
  */
 SECUREC_INLINE void SecWriteMultiCharW(wchar_t ch, int num, SecPrintfStream *f, int *pnumwritten)
 {
-    int count = num;
-    while (count-- > 0) {
+    int count;
+    for (count = num; count > 0; --count) {
         SecWriteCharW(ch, f, pnumwritten);
         if (*pnumwritten == -1) {
             break;
@@ -135,8 +127,8 @@ SECUREC_INLINE void SecWriteMultiCharW(wchar_t ch, int num, SecPrintfStream *f, 
 SECUREC_INLINE void SecWriteStringW(const wchar_t *string, int len, SecPrintfStream *f, int *pnumwritten)
 {
     const wchar_t *str = string;
-    int count = len;
-    while (count-- > 0) {
+    int count;
+    for (count = len; count > 0; --count) {
         SecWriteCharW(*str, f, pnumwritten);
         ++str;
         if (*pnumwritten == -1) {

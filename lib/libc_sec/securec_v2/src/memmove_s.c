@@ -27,7 +27,8 @@ SECUREC_INLINE void SecUtilMemmove(void *dst, const void *src, size_t count)
          * Non-Overlapping Buffers
          * Copy from lower addresses to higher addresses
          */
-        while (maxCount--) {
+        while (maxCount > 0) {
+            --maxCount;
             *pDest = *pSrc;
             ++pDest;
             ++pSrc;
@@ -39,7 +40,8 @@ SECUREC_INLINE void SecUtilMemmove(void *dst, const void *src, size_t count)
          */
         pDest = pDest + maxCount - 1;
         pSrc = pSrc + maxCount - 1;
-        while (maxCount--) {
+        while (maxCount > 0) {
+            --maxCount;
             *pDest = *pSrc;
             --pDest;
             --pSrc;

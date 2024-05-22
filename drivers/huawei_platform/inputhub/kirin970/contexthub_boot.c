@@ -11,7 +11,6 @@
 #include <linux/notifier.h>
 #include <linux/kernel.h>
 #include <linux/err.h>
-#include <linux/hisi/hisi_mailbox.h>
 #include <linux/hisi/hisi_rproc.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -59,9 +58,9 @@ int sensor_power_pmic_flag = 0;
 int sensor_power_init_finish = 0;
 u8 tplcd_manufacture;
 unsigned long sensor_jiffies;
-rproc_id_t ipc_ap_to_iom_mbx = HISI_RPROC_IOM3_MBX10;
-rproc_id_t ipc_ap_to_lpm_mbx = HISI_RPROC_LPM3_MBX17;
-rproc_id_t ipc_iom_to_ap_mbx = HISI_RPROC_IOM3_MBX4;
+rproc_id_t ipc_ap_to_iom_mbx = HISI_AO_ACPU_IOM3_MBX1;
+rproc_id_t ipc_ap_to_lpm_mbx = HISI_ACPU_LPM3_MBX_5;
+rproc_id_t ipc_iom_to_ap_mbx = HISI_AO_IOM3_ACPU_MBX1;
 int sensorhub_reboot_reason_flag = SENSOR_POWER_DO_RESET;
 
 /*lint -e550 -e715 -e773 */
@@ -151,13 +150,36 @@ static int hw_extern_pmic_query_state(int index, int *state)
 
 int getSensorMcuMode(void)
 {
-    return isSensorMcuMode;
+	return isSensorMcuMode;
 }
 EXPORT_SYMBOL(getSensorMcuMode);
 
 static void setSensorMcuMode(int mode)
 {
-    isSensorMcuMode = mode;
+	isSensorMcuMode = mode;
+}
+
+static bool recovery_mode_skip_load(void)
+{
+	int len = 0;
+	struct device_node *recovery_node = NULL;
+	const char *recovery_attr = NULL;
+
+	if (!strstr(saved_command_line, "recovery_update=1"))
+		return false;
+
+	recovery_node = of_find_compatible_node(NULL, NULL, "hisilicon,recovery_iomcu_image_skip");
+	if (!recovery_node)
+		return false;
+
+	recovery_attr = of_get_property(recovery_node, "status", &len);
+	if (!recovery_attr)
+		return false;
+
+	if (strcmp(recovery_attr, "ok") != 0)
+		return false;
+
+	return true;
 }
 
 int is_sensorhub_disabled(void)
@@ -170,24 +192,31 @@ int is_sensorhub_disabled(void)
 	if(once)
 		return ret;
 
+	if (recovery_mode_skip_load()) {
+		hwlog_err("%s: recovery update mode, do not start sensorhub\n", __func__);
+		once = 1;
+		ret = -1;
+		return ret;
+	}
+
 	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub_status");
 	if (!sh_node) {
-	    hwlog_err("%s, can not find node  sensorhub_status n", __func__);
-	    return -1;
+		hwlog_err("%s, can not find node sensorhub_status\n", __func__);
+		return -1;
 	}
 
 	sh_status = of_get_property(sh_node, "status", &len);
 	if (!sh_status) {
-	    hwlog_err("%s, can't find property status\n", __func__);
-	    return -1;
+		hwlog_err("%s, can't find property status\n", __func__);
+		return -1;
 	}
 
 	if (strstr(sh_status, "ok")) {
-	    hwlog_info("%s, sensorhub enabled!\n", __func__);
-	    ret = 0;
+		hwlog_info("%s, sensorhub enabled\n", __func__);
+		ret = 0;
 	} else {
-	    hwlog_info("%s, sensorhub disabled!\n", __func__);
-	    ret = -1;
+		hwlog_info("%s, sensorhub disabled\n", __func__);
+		ret = -1;
 	}
 	once = 1;
 	return ret;
@@ -363,25 +392,24 @@ static int get_lcd_module(void)
 
 static int inputhub_mcu_recv(const char* buf, unsigned int length)
 {
-    if (IOM3_RECOVERY_START == atomic_read(&iom3_rec_state))
-    {
-        hwlog_err("iom3 under recovery mode, ignore all recv data\n");
-        return 0;
-    }
+	if (atomic_read(&iom3_rec_state) == IOM3_RECOVERY_START) {
+		hwlog_err("iom3 under recovery mode, ignore all recv data\n");
+		return 0;
+	}
 
-    if (api_inputhub_mcu_recv != NULL) {
-        return api_inputhub_mcu_recv(buf, length);
-    } else {
-        hwlog_err("---->error: api_inputhub_mcu_recv == NULL\n");
-        return -1;
-    }
+	if (api_inputhub_mcu_recv != NULL) {
+		return api_inputhub_mcu_recv(buf, length);
+	} else {
+		hwlog_err("---->error: api_inputhub_mcu_recv == NULL\n");
+		return -1;
+	}
 }
 
 /*received data from mcu.*/
 static int mbox_recv_notifier(struct notifier_block* nb, unsigned long len, void* msg)
 {
-    inputhub_mcu_recv(msg, len * sizeof(int));	/*convert to bytes*/
-    return 0;
+	inputhub_mcu_recv(msg, len * sizeof(int));
+	return 0;
 }
 
 static int inputhub_mcu_connect(void)
@@ -405,24 +433,24 @@ static int inputhub_mcu_connect(void)
 /*extern void hisi_rdr_nmi_notify_iom3(void);*/
 static int sensorhub_img_dump(int type, void* buff, int size)
 {
-    return 0;
+	return 0;
 }
 
 #ifdef CONFIG_HUAWEI_DSM
 struct dsm_client_ops sensorhub_ops =
 {
-    .poll_state = NULL,
-    .dump_func = sensorhub_img_dump,
+	.poll_state = NULL,
+	.dump_func = sensorhub_img_dump,
 };
 
 struct dsm_dev dsm_sensorhub =
 {
-    .name = "dsm_sensorhub",
-    .device_name = NULL,
-    .ic_name = NULL,
-    .module_name = NULL,
-    .fops = &sensorhub_ops,
-    .buff_size = 1024,
+	.name = "dsm_sensorhub",
+	.device_name = NULL,
+	.ic_name = NULL,
+	.module_name = NULL,
+	.fops = &sensorhub_ops,
+	.buff_size = 1024,
 };
 #endif
 
@@ -445,7 +473,7 @@ void write_timestamp_base_to_sharemem(void)
 	struct timespec64 ts;
 
 	get_monotonic_boottime64(&ts);
-#ifdef CONFIG_HISI_SYSCOUNTER
+#ifdef CONFIG_BSP_SYSCOUNTER
 	syscnt = hisi_get_syscount();
 #endif
 	kernel_ns = (u64)(ts.tv_sec * NSEC_PER_SEC) + (u64)ts.tv_nsec;
@@ -456,7 +484,7 @@ void write_timestamp_base_to_sharemem(void)
 	return;
 }
 
-static int mcu_sys_ready_callback(const pkt_header_t *head)
+static int mcu_sys_ready_callback(const struct pkt_header *head)
 {
 	int ret = 0;
 	unsigned int time_of_vddio_power_reset = 0;
@@ -553,73 +581,34 @@ static void read_reboot_reason_cmdline(void)
 
 static int write_defualt_config_info_to_sharemem(void)
 {
-    if (!pConfigOnDDr) {
-        pConfigOnDDr = (struct CONFIG_ON_DDR*)ioremap_wc(IOMCU_CONFIG_START, IOMCU_CONFIG_SIZE);
-    }
+	if (!pConfigOnDDr)
+		pConfigOnDDr = (struct CONFIG_ON_DDR *)ioremap_wc(IOMCU_CONFIG_START, IOMCU_CONFIG_SIZE);
 
-    if (pConfigOnDDr == NULL) {
-        hwlog_err("ioremap (%x) failed in %s!\n", IOMCU_CONFIG_START, __func__);
-        return -1;
-    }
-
-    memset(pConfigOnDDr, 0, sizeof(struct CONFIG_ON_DDR));
-    pConfigOnDDr->LogBuffCBBackup.mutex = 0;
-    pConfigOnDDr->log_level = INFO_LEVEL;
-    return 0;
-}
-
-static void check_ipc_mbx_from_dts(void)
-{
-	struct device_node* sh_node;
-	uint32_t u32_temp = 0;
-	int ret;
-
-	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub_ipc_cfg");
-	if (!sh_node) {
-		hwlog_err("%s, can not find node huawei,sensorhub_ipc_cfg", __func__);
-		return;
+	if (pConfigOnDDr == NULL) {
+		hwlog_err("ioremap %x failed in %s\n", IOMCU_CONFIG_START, __func__);
+		return -1;
 	}
 
-	ret = of_property_read_u32(sh_node, "AP_IOM_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property AP_IOM_MBX_NUM\n", __func__);
-	} else {
-		ipc_ap_to_iom_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_ap_to_iom_mbx is %d;\n", ipc_ap_to_iom_mbx);
-	}
-
-	ret = of_property_read_u32(sh_node, "IOM_AP_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property IOM_AP_MBX_NUM\n", __func__);
-	} else {
-		ipc_iom_to_ap_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_iom_to_ap_mbx is %d;\n", ipc_iom_to_ap_mbx);
-	}
-
-	ret = of_property_read_u32(sh_node, "AP_LPM_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property AP_LPM_MBX_NUM\n", __func__);
-	} else {
-		ipc_ap_to_lpm_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_ap_to_lpm_mbx is %d;\n", ipc_ap_to_lpm_mbx);
-	}
+	memset(pConfigOnDDr, 0, sizeof(struct CONFIG_ON_DDR));
+	pConfigOnDDr->LogBuffCBBackup.mutex = 0;
+	pConfigOnDDr->log_level = INFO_LEVEL;
+	return 0;
 }
 
 static int inputhub_mcu_init(void)
 {
 	int ret = 0;
 
-	if (is_sensorhub_disabled())
-		return -1;
-
 	peri_used_init();
-	check_ipc_mbx_from_dts();
 	if (write_defualt_config_info_to_sharemem())
 		return -1;
 	write_timestamp_base_to_sharemem();
 	read_tp_color_cmdline();
 	read_reboot_reason_cmdline();
 	sensorhub_io_driver_init();
+
+	if (is_sensorhub_disabled())
+		return -1;
 
 #ifdef CONFIG_HUAWEI_DSM
 	shb_dclient = dsm_register_client(&dsm_sensorhub);
@@ -641,9 +630,9 @@ static int inputhub_mcu_init(void)
 
 static void __exit inputhub_mcu_exit(void)
 {
-    inputhub_route_exit();
-    RPROC_PUT(ipc_ap_to_iom_mbx);
-    RPROC_PUT(ipc_iom_to_ap_mbx);
+	inputhub_route_exit();
+	RPROC_PUT(ipc_ap_to_iom_mbx);
+	RPROC_PUT(ipc_iom_to_ap_mbx);
 }
 
 late_initcall(inputhub_mcu_init);

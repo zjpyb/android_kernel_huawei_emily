@@ -16,7 +16,11 @@
 #include <linux/io.h>
 #include <linux/err.h>
 #ifdef CONFIG_HISI_CLK_DEBUG
-#include "hisi-clk-debug.h"
+#ifndef CONFIG_ARCH_HISI_CLK_EXTREME
+#include "hisi/debug/clk-debug.h"
+#else
+#include "hisi_extreme/debug/clk-debug.h"
+#endif
 #include <securec.h>
 #endif
 
@@ -137,7 +141,7 @@ static int hisi_selreg_check(struct clk_hw *hw)
         return 0;
 }
 
-static int hi3xxx_dumpmux(struct clk_hw *hw, char* buf, struct seq_file *s)
+static int hi3xxx_dumpmux(struct clk_hw *hw, char* buf, int buf_length, struct seq_file *s)
 {
 	struct clk_mux *mux = to_clk_mux(hw);
 	long unsigned int clk_base_addr = 0;
@@ -145,9 +149,9 @@ static int hi3xxx_dumpmux(struct clk_hw *hw, char* buf, struct seq_file *s)
 	u32 val = 0;
 	int ret = 0;
 
-	if (mux->reg && buf && !s) {
+	if (mux->reg && buf && !s && (buf_length > 0)) {
 		val = readl(mux->reg) ;
-		ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, \
+		ret = snprintf_s(buf, buf_length, buf_length - 1, \
 			"[%s] : regAddress = 0x%pK, regval = 0x%x\n", __clk_get_name(hw->clk), mux->reg, val);
 		if(ret == -1)
 			pr_err("%s snprintf_s failed!\n", __func__);

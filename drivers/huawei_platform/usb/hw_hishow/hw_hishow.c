@@ -3,7 +3,7 @@
  *
  * hishow driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,22 +16,23 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
+#include <huawei_platform/usb/hw_hishow.h>
+#include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/platform_device.h>
-#include <linux/power_supply.h>
 #include <linux/gpio.h>
-#include <linux/interrupt.h>
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/init.h>
 #include <linux/irq.h>
+#include <linux/interrupt.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
-#include <huawei_platform/log/hw_log.h>
 #include <linux/of_gpio.h>
-#include <linux/delay.h>
+#include <linux/platform_device.h>
+#include <linux/power_supply.h>
 #include <linux/workqueue.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <huawei_platform/usb/hw_hishow.h>
+#include <chipset_common/hwpower/common_module/power_sysfs.h>
+#include <huawei_platform/log/hw_log.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -40,10 +41,8 @@
 #define HWLOG_TAG hw_hishow
 HWLOG_REGIST();
 
-static struct class *hishow_class;
-static struct device *hishow_device;
-
-struct hishow_info *g_hishow_di;
+static struct device *g_hishow_dev;
+static struct hishow_info *g_hishow_di;
 
 static ssize_t hishow_dev_info_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -88,6 +87,17 @@ static const struct attribute_group hishow_attr_group = {
 	.attrs = hishow_ctrl_attributes,
 };
 
+static struct device *hishow_create_group(void)
+{
+	return power_sysfs_create_group("hishow", "monitor",
+		&hishow_attr_group);
+}
+
+static void hishow_remove_group(struct device *dev)
+{
+	power_sysfs_remove_group(dev, &hishow_attr_group);
+}
+
 void hishow_notify_android_uevent(int dev_state, int dev_no)
 {
 	char *offline[HISHOW_STATE_MAX] = {
@@ -101,8 +111,8 @@ void hishow_notify_android_uevent(int dev_state, int dev_no)
 	};
 	char device_data[HISHOW_DEV_DATA_MAX] = {0};
 
-	if (IS_ERR(hishow_device) || !g_hishow_di) {
-		hwlog_err("hishow_device or g_hishow_di is null\n");
+	if (IS_ERR(g_hishow_dev) || !g_hishow_di) {
+		hwlog_err("g_hishow_dev or g_hishow_di is null\n");
 		return;
 	}
 
@@ -120,83 +130,26 @@ void hishow_notify_android_uevent(int dev_state, int dev_no)
 	switch (dev_state) {
 	case HISHOW_DEVICE_ONLINE:
 		online[1] = device_data;
-		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, online);
+		kobject_uevent_env(&g_hishow_dev->kobj, KOBJ_CHANGE, online);
 		hwlog_info("hishow_notify kobject_uevent_env connected\n");
 		break;
 	case HISHOW_DEVICE_OFFLINE:
 		offline[1] = device_data;
-		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, offline);
+		kobject_uevent_env(&g_hishow_dev->kobj, KOBJ_CHANGE, offline);
 		hwlog_info("hishow_notify kobject_uevent_env disconnected\n");
 		break;
 	default:
 		unknown[1] = device_data;
-		kobject_uevent_env(&hishow_device->kobj, KOBJ_CHANGE, unknown);
+		kobject_uevent_env(&g_hishow_dev->kobj, KOBJ_CHANGE, unknown);
 		hwlog_info("hishow_notify kobject_uevent_env unknown\n");
 		break;
 	}
 }
 EXPORT_SYMBOL_GPL(hishow_notify_android_uevent);
 
-static void hishow_destroy_monitor_device(struct platform_device *pdev)
-{
-	if (!IS_ERR(hishow_device)) {
-		sysfs_remove_group(&hishow_device->kobj, &hishow_attr_group);
-		device_destroy(hishow_device->class, hishow_device->devt);
-	}
-
-	if (!IS_ERR(hishow_class))
-		class_destroy(hishow_class);
-
-	hishow_device = NULL;
-	hishow_class = NULL;
-}
-
-static int hishow_init_monitor_device(struct platform_device *pdev)
-{
-	int ret;
-
-	if (hishow_device || hishow_class)
-		hishow_destroy_monitor_device(pdev);
-
-	hishow_class = class_create(THIS_MODULE, "hishow");
-	if (IS_ERR(hishow_class)) {
-		hwlog_err("cannot create class\n");
-		ret = PTR_ERR(hishow_class);
-		goto fail_create_class;
-	}
-
-	if (hishow_class) {
-		hishow_device = device_create(hishow_class, NULL, 0, NULL,
-			"monitor");
-		if (IS_ERR(hishow_device)) {
-			hwlog_err("sysfs device create failed\n");
-			ret = PTR_ERR(hishow_device);
-			goto fail_create_device;
-		}
-	}
-
-	ret = sysfs_create_group(&hishow_device->kobj, &hishow_attr_group);
-	if (ret) {
-		hwlog_err("sysfs group create failed\n");
-		goto fail_create_sysfs;
-	}
-
-	return 0;
-
-fail_create_sysfs:
-fail_create_device:
-fail_create_class:
-	hishow_destroy_monitor_device(pdev);
-
-	return ret;
-}
-
 static int hishow_probe(struct platform_device *pdev)
 {
 	struct hishow_info *di = NULL;
-	int ret;
-
-	hwlog_info("probe begin\n");
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -211,41 +164,27 @@ static int hishow_probe(struct platform_device *pdev)
 	di->pdev = pdev;
 	di->dev = &pdev->dev;
 
-	ret = hishow_init_monitor_device(pdev);
-	if (ret)
-		goto fail_free_mem;
-
+	g_hishow_dev = hishow_create_group();
 	platform_set_drvdata(pdev, di);
 
-	hwlog_info("probe end\n");
 	return 0;
-
-fail_free_mem:
-	devm_kfree(&pdev->dev, di);
-	g_hishow_di = NULL;
-
-	return ret;
 }
 
 static int hishow_remove(struct platform_device *pdev)
 {
 	struct hishow_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	hishow_destroy_monitor_device(pdev);
-
+	hishow_remove_group(g_hishow_dev);
+	g_hishow_dev = NULL;
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
 	g_hishow_di = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
-
 
 static const struct of_device_id hishow_match_table[] = {
 	{

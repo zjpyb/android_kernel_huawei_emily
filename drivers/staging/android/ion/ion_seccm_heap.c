@@ -1,39 +1,49 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: ion_seccm_heap.c
- * Description: This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation;
- * either version 2 of the License,
- * or (at your option) any later version.
+/*
+ * drivers/staging/android/ion/ion_seccm_heap.c
+ *
+ * Copyright(C) 2004-2019 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #define pr_fmt(fmt) "seccm: " fmt
 
+#include <linux/cma.h>
 #include <linux/delay.h>
-#include <linux/err.h>
-#include <linux/dma-mapping.h>
 #include <linux/dma-contiguous.h>
+#include <linux/dma-mapping.h>
+#include <linux/err.h>
 #include <linux/genalloc.h>
+#include <linux/hisi/hisi_drmdriver.h>
+#include <linux/hisi/hisi_ion.h>
+#include <linux/hisi/hisi_mm.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/scatterlist.h>
-#include <linux/slab.h>
-#include <linux/cma.h>
 #include <linux/sizes.h>
+#include <linux/slab.h>
 #include <linux/version.h>
-#include <linux/hisi/hisi_cma.h>
-#include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi_drmdriver.h>
-#include <linux/hisi/hisi_mm.h>
+#ifdef CONFIG_HISI_CMA_DEBUG
+#include <linux/hisi/hisi_cma_debug.h>
+#endif
+
 #include <asm/tlbflush.h>
 
+#include "mm_ion_priv.h"
 #include "ion.h"
-#include "hisi_ion_priv.h"
 
 #define PER_REGION_HAVE_BITS	16
-#define DEVICE_MEMORY PROT_DEVICE_nGnRE
+#define DEVICE_MEMORY	PROT_DEVICE_nGnRE
 
 #ifdef CONFIG_HISI_ION_SEC_HEAP_DEBUG
 #define ion_sec_dbg(format, arg...)    \
@@ -63,9 +73,9 @@ struct ion_seccm_heap {
 	u64	protect_id;
 };
 
-struct cma *hisi_sec_cma = NULL;
+struct cma *mm_sec_cma = NULL;
 
-static int  hisi_sec_cma_set_up(struct reserved_mem *rmem)
+static int  mm_sec_cma_set_up(struct reserved_mem *rmem)
 {
 	phys_addr_t align = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
 	phys_addr_t mask = align - 1;
@@ -81,19 +91,22 @@ static int  hisi_sec_cma_set_up(struct reserved_mem *rmem)
 		pr_err("Reserved memory: incorrect alignment of CMA region\n");
 		return -EINVAL;
 	}
+
 	err = cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name, &cma);
 	if (err) {
 		pr_err("Reserved memory: unable to setup CMA region\n");
 		return err;
 	}
-
-	hisi_sec_cma = cma;
+#ifdef CONFIG_HISI_CMA_DEBUG
+	cma_set_flag(cma, node);
+#endif
+	mm_sec_cma = cma;
 	ion_register_dma_camera_cma((void *)cma);
 
 	return 0;
 }
 
-RESERVEDMEM_OF_DECLARE(hisi_sec_cma, "hisi-cma-pool", hisi_sec_cma_set_up);
+RESERVEDMEM_OF_DECLARE(mm_sec_cma, "mm-cma-pool", mm_sec_cma_set_up);
 
 static unsigned int sz2order(size_t size)
 {
@@ -111,7 +124,7 @@ static void list_for_drm_create_mem(struct ion_seccm_heap *seccm_heap)
 	u64 shift, start;
 	struct page *pg = NULL;
 	unsigned long virt;
-	DRM_SEC_CFG sec_cfg;
+	drm_sec_cfg sec_cfg;
 	u64 saddr = seccm_heap->align_saddr;
 #ifdef CONFIG_HISI_KERNELDUMP
 	int k;
@@ -146,7 +159,11 @@ static void list_for_drm_create_mem(struct ion_seccm_heap *seccm_heap)
 			      per_alloc_sz);
 
 		if (seccm_heap->flag & ION_FLAG_SECURE_BUFFER) {
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+			ion_flush_all_cpus_caches_raw();
+#else
 			ion_flush_all_cpus_caches();
+#endif
 
 			virt = (unsigned long)__va(page_to_phys(pg));
 			change_secpage_range(page_to_phys(pg),
@@ -161,8 +178,9 @@ static void list_for_drm_create_mem(struct ion_seccm_heap *seccm_heap)
 			sec_cfg.bit_map = seccm_heap->bitmap;
 			sec_cfg.sec_port = seccm_heap->attr;
 			hisi_sec_ddr_set(&sec_cfg, (int)seccm_heap->protect_id);
-		} else
+		} else {
 			memset(page_address(pg), 0x0, per_alloc_sz); /* unsafe_function_ignore: memset  */
+		}
 		nr--;
 	}
 	ion_sec_dbg("out %s %llu MB memory bitmap 0x%llx\n", __func__,
@@ -218,7 +236,7 @@ static void seccm_add_pool(struct ion_seccm_heap *seccm_heap)
 	u64 nr;
 	u64 shift, start;
 	struct page *pg = NULL;
-	DRM_SEC_CFG sec_cfg;
+	drm_sec_cfg sec_cfg;
 	u64 water_mark = seccm_heap->water_mark;
 	u64 per_alloc_sz = seccm_heap->per_alloc_sz;
 	u64 per_bit_sz = seccm_heap->per_bit_sz;
@@ -256,7 +274,11 @@ static void seccm_add_pool(struct ion_seccm_heap *seccm_heap)
 		gen_pool_free(seccm_heap->pool, page_to_phys(pg), per_alloc_sz);
 
 		if (seccm_heap->flag & ION_FLAG_SECURE_BUFFER) {
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+			ion_flush_all_cpus_caches_raw();
+#else
 			ion_flush_all_cpus_caches();
+#endif
 
 			virt = (unsigned long)__va(page_to_phys(pg));
 			change_secpage_range(page_to_phys(pg),
@@ -270,8 +292,9 @@ static void seccm_add_pool(struct ion_seccm_heap *seccm_heap)
 			sec_cfg.bit_map = seccm_heap->bitmap;
 			sec_cfg.sec_port = seccm_heap->attr;
 			hisi_sec_ddr_set(&sec_cfg, (int)seccm_heap->protect_id);
-		} else
+		} else {
 			memset(page_address(pg), 0x0, per_alloc_sz); /* unsafe_function_ignore: memset  */
+		}
 		nr--;
 	}
 
@@ -323,10 +346,11 @@ static void seccm_destroy_pool(struct ion_seccm_heap *seccm_heap)
 				    seccm_heap->bitmap,
 				    page_to_pfn(pg),
 				    shift);
-		} else
+		} else {
 			gen_pool_free(seccm_heap->pool,
 				      page_to_phys(pg),
 				      per_bit_sz);
+		}
 	}
 
 	flush_tlb_all();
@@ -596,16 +620,16 @@ static int set_seccm_heap_data(struct ion_seccm_heap *seccm_heap,
 	}
 	seccm_heap->water_mark = water_mark;
 
-	if (!hisi_sec_cma)
+	if (!mm_sec_cma)
 		return -1;
-	cma = hisi_sec_cma;
+	cma = mm_sec_cma;
 	seccm_heap->cma = cma;
 	return 0;
 }
 
 struct ion_heap *ion_seccm_heap_create(struct ion_platform_heap *heap_data)
 {
-	int ret;
+	int ret = -1;
 	u64 region_nr;
 	u64 per_bit_sz;
 	u64 align_saddr;

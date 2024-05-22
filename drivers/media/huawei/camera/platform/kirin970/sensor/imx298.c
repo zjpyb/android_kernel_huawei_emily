@@ -32,14 +32,13 @@
 
 #include "hwsensor.h"
 #include "sensor_commom.h"
-#include "hw_csi.h"
+
 #include "../pmic/hw_pmic.h"
 
 //lint -save -e31 -e64 -e650
 #define I2S(i) container_of(i, sensor_t, intf)
 #define Sensor2Pdev(s) container_of((s).dev, struct platform_device, dev)
 
-extern struct hw_csi_pad hw_csi_pad;
 static hwsensor_vtbl_t s_imx298_vtbl;
 
 static char *sensor_dts_name = "IMX298_VENDOR";
@@ -234,35 +233,11 @@ imx298_power_down(
 
 static int imx298_csi_enable(hwsensor_intf_t* si)
 {
-    int ret = 0;
-    sensor_t* sensor = NULL;
-
-    sensor = I2S(si);
-
-    ret = hw_csi_pad.hw_csi_enable((int)0, sensor->board_info->csi_lane, sensor->board_info->csi_mipi_clk);//by hefei
-    if(ret)
-    {
-        cam_err("failed to csi enable index 0 ");
-        return ret;
-    }
-
     return 0;
 }
 
 static int imx298_csi_disable(hwsensor_intf_t* si)
 {
-    int ret = 0;
-    sensor_t* sensor = NULL;
-
-    sensor = I2S(si);
-
-    ret = hw_csi_pad.hw_csi_disable((int)0);//by hefei
-    if(ret)
-    {
-        cam_err("failed to csi disable index 0 ");
-        return ret;
-    }
-
     return 0;
 }
 

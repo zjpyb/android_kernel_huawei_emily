@@ -376,10 +376,10 @@ static void bictcp_state(struct sock *sk, u8 new_state)
 		bictcp_reset(inet_csk_ca(sk));
 		bictcp_hystart_reset(sk);
 	}
+
 #ifdef CONFIG_HW_WIFIPRO
-	if (is_wifipro_on && new_state != TCP_CA_Open) {
-	    wifipro_handle_congestion(sk, new_state);
-	}
+	if (is_wifipro_on && new_state != TCP_CA_Open)
+		wifipro_handle_congestion(sk, new_state);
 #endif
 }
 

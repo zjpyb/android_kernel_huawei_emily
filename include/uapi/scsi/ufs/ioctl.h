@@ -7,11 +7,14 @@
  *  IOCTL opcode for ufs queries has the following opcode after
  *  SCSI_IOCTL_GET_PCI
  */
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+#define UFS_IOCTL_SCSI_CMD 0x5391
+#endif
 #define UFS_IOCTL_QUERY			0x5388
 #define UFS_DESC_SIZE_MAX		128
 #define UFS_IOCTL_VENDOR_PACKAGE	0x5389
 #define UFS_IOCTL_VENDOR_PACKAGE_TICK	0x5390
-
+#define UFS_IOCTL_QUERY_DATA_SIZE	(sizeof(struct ufs_ioctl_query_data))
 /**
  * struct ufs_ioctl_query_data - used to transfer data to and from user via ioctl
  * @opcode: type of data to query (descriptor/attribute/flag)

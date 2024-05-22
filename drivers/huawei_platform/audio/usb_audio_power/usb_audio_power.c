@@ -37,10 +37,10 @@
 #include <huawei_platform/usb/superswitch/fsc/core/hw_scp.h>
 #endif
 #ifdef CONFIG_WIRELESS_CHARGER
-#include <huawei_platform/power/wired_channel_switch.h>
+#include <chipset_common/hwpower/hardware_channel/wired_channel_switch.h>
 #endif
 #ifdef CONFIG_BOOST_5V
-#include <huawei_platform/power/boost_5v.h>
+#include <chipset_common/hwpower/hardware_ic/boost_5v.h>
 #endif
 #include "huawei_platform/audio/usb_audio_power.h"
 
@@ -108,6 +108,9 @@ struct usb_audio_power_data {
 	/* used to static audio vboost ctrl */
 	bool audio_ref;
 	bool audio_buckboost_enable;
+#ifdef CONFIG_WIRELESS_CHARGER
+	bool using_ovp_switch;
+#endif
 
 	struct mutex vboost_ctrl_lock;
 	struct wakeup_source wake_lock;
@@ -202,6 +205,10 @@ static int buckboost_voltage_control(void)
 		power_gpio_set_value(power_pdata->gpio_ear_power_en,
 			AUDIO_POWER_GPIO_SET);
 	}
+#ifdef CONFIG_WIRELESS_CHARGER
+	if (power_pdata->using_ovp_switch)
+		wired_chsw_set_wired_channel(WIRED_CHANNEL_ALL, WIRED_CHANNEL_CUTOFF);
+#endif
 	pd_dpm_vbus_ctrl(CHARGER_TYPE_NONE);
 	power_pdata->audio_buckboost_enable = true;
 	hwlog_info("%s", __func__);
@@ -250,6 +257,12 @@ int usb_audio_power_scharger(void)
 			power_gpio_set_value(power_pdata->gpio_ear_power_en,
 				AUDIO_POWER_GPIO_RESET);
 		}
+#ifdef CONFIG_WIRELESS_CHARGER
+		if (power_pdata->using_ovp_switch) {
+			usleep_range(100000, 101000); /* sleep 100ms */
+			wired_chsw_set_wired_channel(WIRED_CHANNEL_MAIN, WIRED_CHANNEL_RESTORE);
+		}
+#endif
 #ifdef	CONFIG_BOOST_5V
 		if (power_pdata->using_boost_5v == USING_BOOST_5V)
 			boost_5v_enable(false, BOOST_CTRL_AUDIO);
@@ -274,7 +287,7 @@ static int usb_audio_power_ioctl_no_headset(void)
 
 #ifdef CONFIG_WIRELESS_CHARGER
 	if (power_pdata->using_wireless_charger == USING_WIRELESS_CHARGER)
-		wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
+		wired_chsw_set_wired_channel(WIRED_CHANNEL_ALL, WIRED_CHANNEL_CUTOFF);
 #endif
 #ifdef CONFIG_SUPERSWITCH_FSC
 	if (power_pdata->using_superswitch == USING_SUPWRSWITCH) {
@@ -296,10 +309,9 @@ static int usb_audio_power_ioctl_scharger(void)
 {
 #ifdef CONFIG_WIRELESS_CHARGER
 	if (power_pdata->using_wireless_charger == USING_WIRELESS_CHARGER)
-		wired_chsw_set_wired_channel(WIRED_CHANNEL_RESTORE);
+		wired_chsw_set_wired_channel(WIRED_CHANNEL_MAIN, WIRED_CHANNEL_RESTORE);
 #endif
 	return usb_audio_power_scharger();
-
 }
 
 static long usb_audio_power_ioctl(struct file *file, unsigned int cmd,
@@ -309,10 +321,12 @@ static long usb_audio_power_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd) {
 	case IOCTL_USB_AUDIO_POWER_BUCKBOOST_NO_HEADSET_CMD:
+		pd_dpm_set_audio_power_no_hs_state(true);
 		ret = usb_audio_power_ioctl_no_headset();
 		break;
 	case IOCTL_USB_AUDIO_POWER_SCHARGER_CMD:
 		ret = usb_audio_power_ioctl_scharger();
+		pd_dpm_set_audio_power_no_hs_state(false);
 		break;
 	default:
 		hwlog_err("unsupport cmd\n");
@@ -356,6 +370,10 @@ static void load_usb_audio_power_config(struct device_node *node)
 	else
 		power_pdata->using_boost_5v = NOT_USING_BOOST_5V;
 #endif
+#ifdef CONFIG_WIRELESS_CHARGER
+	power_pdata->using_ovp_switch =
+		of_property_read_bool(node, "using_ovp_switch");
+#endif
 }
 
 static void load_usb_audio_power_config_one_gpio(struct device_node *node)
@@ -379,7 +397,7 @@ static const struct file_operations usb_audio_power_fops = {
 
 static struct miscdevice usb_audio_power_miscdev = {
 	.minor =    MISC_DYNAMIC_MINOR,
-	.name =     "usb_audio_power",
+	.name =     "dig_hs_power",
 	.fops =     &usb_audio_power_fops,
 };
 

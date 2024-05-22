@@ -137,7 +137,7 @@ struct pt_regs {
 #endif
 
 	u64 orig_addr_limit;
-#ifdef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
+#ifdef CONFIG_HKIP_ADDR_LIMIT_PROTECTION
 	u32 orig_addr_limit_hkip[2];
 #else
 	u64 unused;

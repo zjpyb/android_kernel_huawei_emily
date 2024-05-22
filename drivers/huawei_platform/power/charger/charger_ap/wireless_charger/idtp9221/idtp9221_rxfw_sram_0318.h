@@ -5,7 +5,7 @@
  * 1. Modify copyhex.py for .h file.
  * 2. Modify a fix for freescale Tx in RPP.
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

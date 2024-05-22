@@ -231,8 +231,6 @@ static int invert_hs_probe(struct platform_device *pdev)
 err_invert_ctl_delay_wq:
 	invert_hs_remove_workqueue();
 err_out:
-	kfree(invert_hs_pdata);
-	invert_hs_pdata = NULL;
 	return ret;
 }
 
@@ -245,8 +243,6 @@ static int invert_hs_remove(struct platform_device *pdev)
 	invert_hs_remove_workqueue();
 
 	gpio_free(invert_hs_pdata->gpio_mic_gnd);
-	kfree(invert_hs_pdata);
-	invert_hs_pdata = NULL;
 
 	return 0;
 }

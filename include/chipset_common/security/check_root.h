@@ -39,11 +39,26 @@ extern int checkroot_setgid(gid_t gid);
 extern int checkroot_setresuid(uid_t uid);
 extern int checkroot_setresgid(gid_t gid);
 #else
-static inline uint get_setids_state(void) { return 0; }
-static inline int checkroot_setuid(uid_t uid) { return 0; }
-static inline int checkroot_setgid(gid_t gid) { return 0; }
-static inline int checkroot_setresuid(uid_t uid) { return 0; }
-static inline int checkroot_setresgid(gid_t gid) { return 0; }
+static inline uint get_setids_state(void)
+{
+	return 0;
+}
+static inline int checkroot_setuid(uid_t uid)
+{
+	return 0;
+}
+static inline int checkroot_setgid(gid_t gid)
+{
+	return 0;
+}
+static inline int checkroot_setresuid(uid_t uid)
+{
+	return 0;
+}
+static inline int checkroot_setresgid(gid_t gid)
+{
+	return 0;
+}
 #endif // CONFIG_HUAWEI_PROC_CHECK_ROOT
 
 #endif // _CHECK_ROOT_H_

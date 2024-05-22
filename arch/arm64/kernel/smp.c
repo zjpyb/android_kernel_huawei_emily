@@ -52,6 +52,7 @@
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/processor.h>
+#include <asm/scs.h>
 #include <asm/smp_plat.h>
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -77,10 +78,13 @@
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
 #endif
-#ifdef CONFIG_HISI_RPMB
+#ifdef CONFIG_VENDOR_RPMB
 #include <linux/hisi/rpmb.h>
 #endif
 
+#ifdef CONFIG_HHEE
+#include <linux/hisi/hkip_hhee.h>
+#endif
 DEFINE_PER_CPU_READ_MOSTLY(int, cpu_number);
 EXPORT_PER_CPU_SYMBOL(cpu_number);
 
@@ -90,8 +94,8 @@ EXPORT_PER_CPU_SYMBOL(cpu_number);
  * where to place its SVC stack
  */
 struct secondary_data secondary_data;
-extern void hisi_hisee_active(void);
-extern void hisi_hieps_active(void);
+extern void hisee_active(void);
+extern void hieps_active(void);
 /* Number of CPUs which aren't online, but looping in kernel text. */
 int cpus_stuck_in_kernel;
 
@@ -108,6 +112,8 @@ enum ipi_msg_type {
 	IPI_CPU_CRASH_STOP,
 	IPI_WAKEUP,
 	IPI_HIEPS_INFORM,
+	IPI_HHEE_INFORM,
+	IPI_TEE_IPI = 15, /* place holder for TEE use the INT15 in secure mode */
 };
 
 #ifdef CONFIG_ARM64_VHE
@@ -404,6 +410,9 @@ void cpu_die(void)
 {
 	unsigned int cpu = smp_processor_id();
 
+	/* Save the shadow stack pointer before exiting the idle task */
+	scs_save(current);
+
 	idle_task_exit();
 
 	local_irq_disable();
@@ -469,19 +478,8 @@ void __init smp_cpus_done(unsigned int max_cpus)
 void __init smp_prepare_boot_cpu(void)
 {
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
-	/*
-	 * Initialise the static keys early as they may be enabled by the
-	 * cpufeature code.
-	 */
-	jump_label_init();
 	cpuinfo_store_boot_cpu();
 	save_boot_cpu_run_el();
-	/*
-	 * Run the errata work around checks on the boot CPU, once we have
-	 * initialised the cpu feature infrastructure from
-	 * cpuinfo_store_boot_cpu() above.
-	 */
-	update_cpu_errata_workarounds();
 }
 
 static u64 __init of_get_cpu_mpidr(struct device_node *dn)
@@ -804,6 +802,7 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 	S(IPI_CPU_CRASH_STOP, "CPU stop (for crash dump) interrupts"),
 	S(IPI_WAKEUP, "CPU wake-up interrupts"),
 	S(IPI_HIEPS_INFORM, "HISI HIEPS INFORM"),
+	S(IPI_HHEE_INFORM, "HKIP HHEE information"),
 };
 /*lint +e773*/
 
@@ -987,19 +986,27 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		break;
 #endif
 
-#ifdef CONFIG_HISI_HISEE
+#if defined(CONFIG_HISEE) || defined (CONFIG_MSPC)
 	case IPI_HISEE_INFORM:
 		irq_enter();
-		hisi_hisee_active();
+		hisee_active();
 		irq_exit();
 		break;
 
 #endif
 
-#ifdef CONFIG_HISI_HIEPS
+#ifdef CONFIG_HIEPS
 	case IPI_HIEPS_INFORM:
 		irq_enter();
-		hisi_hieps_active();
+		hieps_active();
+		irq_exit();
+		break;
+#endif
+
+#ifdef CONFIG_HHEE
+	case IPI_HHEE_INFORM:
+		irq_enter();
+		hhee_irq_receive();
 		irq_exit();
 		break;
 #endif
@@ -1020,10 +1027,10 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		break;
 #endif
 
-#ifdef CONFIG_HISI_RPMB
+#ifdef CONFIG_VENDOR_RPMB
 	case IPI_SECURE_RPMB:
 		irq_enter();
-		hisi_rpmb_active();
+		vendor_rpmb_active();
 		irq_exit();
 		break;
 #endif
@@ -1049,11 +1056,22 @@ void tick_broadcast(const struct cpumask *mask)
 }
 #endif
 
+/*
+ * The number of CPUs online, not counting this CPU (which may not be
+ * fully online and so not counted in num_online_cpus()).
+ */
+static inline unsigned int num_other_online_cpus(void)
+{
+	unsigned int this_cpu_online = cpu_online(smp_processor_id());
+
+	return num_online_cpus() - this_cpu_online;
+}
+
 void smp_send_stop(void)
 {
 	unsigned long timeout;
 
-	if (num_online_cpus() > 1) {
+	if (num_other_online_cpus()) {
 		cpumask_t mask;
 
 		cpumask_copy(&mask, cpu_online_mask);
@@ -1066,10 +1084,10 @@ void smp_send_stop(void)
 
 	/* Wait up to 1 second for other CPUs to stop */
 	timeout = USEC_PER_SEC >> 4;
-	while (num_online_cpus() > 1 && timeout--)
+	while (num_other_online_cpus() && timeout--)
 		udelay(1 << 4);
 
-	if (num_online_cpus() > 1)
+	if (num_other_online_cpus())
 		pr_warning("SMP: failed to stop secondary CPUs %*pbl\n",
 			   cpumask_pr_args(cpu_online_mask));
 }
@@ -1090,13 +1108,17 @@ void crash_smp_send_stop(void)
 
 	cpus_stopped = 1;
 
-	if (num_online_cpus() == 1)
+	/*
+	 * If this cpu is the only one alive at this point in time, online or
+	 * not, there are no stop messages to be sent around, so just back out.
+	 */
+	if (num_other_online_cpus() == 0)
 		return;
 
 	cpumask_copy(&mask, cpu_online_mask);
 	cpumask_clear_cpu(smp_processor_id(), &mask);
 
-	atomic_set(&waiting_for_crash_ipi, num_online_cpus() - 1);
+	atomic_set(&waiting_for_crash_ipi, num_other_online_cpus());
 
 	pr_crit("SMP: stopping secondary CPUs\n");
 	smp_cross_call(&mask, IPI_CPU_CRASH_STOP);

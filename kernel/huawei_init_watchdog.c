@@ -42,7 +42,12 @@
 #include <linux/rtc.h>
 #include <linux/workqueue.h>
 #include <linux/sched/debug.h>
+#include <linux/version.h>
+#include "securec.h"
 #include <chipset_common/hwzrhung/zrhung.h>
+#ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
+#include "huawei_hung_task.h"
+#endif
 
 #define ENABLE_SHOW_LEN  6
 #define SIG_TO_INIT 40
@@ -104,6 +109,9 @@ static void init_watchdog_check(void)
 		goto no_block;
 	}
 	init_block_times++;
+#ifdef CONFIG_DETECT_HUAWEI_HUNG_TASK
+	hwhungtask_show_state_filter(TASK_UNINTERRUPTIBLE);
+#endif
 	if (p->state == TASK_UNINTERRUPTIBLE) {
 		pr_err("InitWatchdog: init process is in d-state\n");
 #ifdef CONFIG_HW_ZEROHUNG
@@ -168,7 +176,9 @@ static ssize_t init_watchdog_store(struct kobject *kobj,
 	p = memchr(buf, '\n', count);
 	len = p ? (size_t)(p - buf) : count;
 	memset(tmp, 0, sizeof(tmp));
-	strncpy(tmp, buf, len);
+	if (strncpy_s(tmp, sizeof(tmp), buf, len) != EOK)
+		pr_err("strncpy from buf to tmp failed\n");
+
 	if (strncmp(tmp, "on", strlen(tmp)) == 0) {
 		init_watchdog_enable = 1;
 		pr_info("InitWatchdog: init_watchdog_enable is set to enable\n");
@@ -223,7 +233,11 @@ int create_sysfs_init(void)
 	return retval;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0))
+static void init_watchdog_handler(struct timer_list *t)
+#else
 static void init_watchdog_handler(unsigned long time)
+#endif
 {
 	mod_timer(&init_watchdog_timer, jiffies +
 		  msecs_to_jiffies(1000 * WATCHDOG_CHECK_TIME)); /* to ms */
@@ -245,10 +259,15 @@ static int __init init_watchdog_init(void)
 		return -1;
 	}
 	INIT_WORK(&work, work_handler);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0))
+	timer_setup(&init_watchdog_timer, init_watchdog_handler, 0);
+	mod_timer(&init_watchdog_timer, jiffies + HZ * WATCHDOG_CHECK_TIME);
+#else
 	init_timer(&init_watchdog_timer);
 	init_watchdog_timer.function = init_watchdog_handler;
 	init_watchdog_timer.expires = jiffies + HZ * WATCHDOG_CHECK_TIME;
 	add_timer(&init_watchdog_timer);
+#endif
 	return 0;
 }
 

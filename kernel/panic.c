@@ -14,6 +14,7 @@
 #include <linux/kmsg_dump.h>
 #include <linux/kallsyms.h>
 #include <linux/notifier.h>
+#include <linux/vt_kern.h>
 #include <linux/module.h>
 #include <linux/random.h>
 #include <linux/ftrace.h>
@@ -26,6 +27,7 @@
 #include <linux/nmi.h>
 #include <linux/console.h>
 #include <linux/bug.h>
+#include <chipset_common/security/kshield.h>
 #include <linux/ratelimit.h>
 #ifdef CONFIG_CORESIGHT
 #include <linux/coresight.h>
@@ -176,6 +178,7 @@ void panic(const char *fmt, ...)
 	 * after setting panic_cpu) from invoking panic() again.
 	 */
 	local_irq_disable();
+	preempt_disable_notrace();
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and
@@ -239,6 +242,10 @@ void panic(const char *fmt, ...)
 		crash_smp_send_stop();
 	}
 
+#ifdef CONFIG_HISI_EARLY_PANIC
+	if (!rdr_get_ap_init_done())
+		rdr_log_buf_notify_bl31();
+#endif
 	/*
 	 * Run any panic handlers, including those that might need to
 	 * add information to the kmsg dump output.
@@ -261,7 +268,10 @@ void panic(const char *fmt, ...)
 	if (_crash_kexec_post_notifiers)
 		__crash_kexec(NULL);
 
-	bust_spinlocks(0);
+#ifdef CONFIG_VT
+	unblank_screen();
+#endif
+	console_unblank();
 
 	/*
 	 * We may have ended up stopping the CPU holding the lock (in
@@ -549,6 +559,7 @@ void __warn(const char *file, int line, void *caller, unsigned taint,
 {
 	disable_trace_on_warning();
 
+	kshield_chk_warn();
 	pr_warn("------------[ cut here ]------------\n");
 
 	if (file)

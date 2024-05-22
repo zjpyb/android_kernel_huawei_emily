@@ -1,39 +1,40 @@
 /*
- * asp_cfg.c -- asp dma driver
+ * asp_cfg.c
  *
- * Copyright (c) 2017 Hisilicon Technologies CO., Ltd.
+ * asp dma driver
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2017-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.s
  */
-#include <linux/module.h>
-#include <linux/platform_device.h>
-#include <linux/init.h>
-#include <linux/device.h>
-#include <linux/io.h>
-#include <linux/slab.h>
-#include <linux/err.h>
-#include <linux/errno.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/of_device.h>
-#include <linux/of_irq.h>
-#include <linux/of_platform.h>
-#include <linux/hwspinlock.h>
-#include <linux/interrupt.h>
-#include <linux/delay.h>
-#include <linux/regulator/consumer.h>
-#include <linux/clk.h>
-#include <linux/types.h>
+
 #include "asp_cfg.h"
 
-/*lint -e774 -e747 -e502 -e429*/
+#include <linux/module.h>
+#include <linux/io.h>
+#include <linux/slab.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
+#include <linux/hwspinlock.h>
+#include <linux/regulator/consumer.h>
+#include <linux/clk.h>
+#include <linux/hisi/audio_log.h>
+
+#define LOG_TAG "asp_cfg"
+
 
 enum {
 	USB_H2X,
-	ASP_H2X,
+	ASP_H2X
 };
+
 
 struct asp_cfg_priv {
 	struct device *dev;
@@ -49,18 +50,18 @@ struct asp_cfg_priv {
 	bool asp_h2x_enable;
 };
 
-static struct asp_cfg_priv *asp_cfg_priv = NULL;
+static struct asp_cfg_priv *g_asp_cfg_priv;
 
 
 static unsigned int asp_cfg_reg_read(unsigned int reg)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
-	unsigned int ret = 0;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
+	unsigned int ret;
 	unsigned long flag_sft = 0;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
-		return EINVAL;
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
+		return 0;
 	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
@@ -72,14 +73,13 @@ static unsigned int asp_cfg_reg_read(unsigned int reg)
 	return ret;
 }
 
-
 static void asp_cfg_reg_write(unsigned int reg, unsigned int value)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
 		return;
 	}
 
@@ -88,24 +88,23 @@ static void asp_cfg_reg_write(unsigned int reg, unsigned int value)
 	writel(value, priv->asp_cfg_reg_base_addr + reg);
 
 	spin_unlock_irqrestore(&priv->lock, flag_sft);
-
 }
 
 static void asp_cfg_reg_set_bit(unsigned int reg, unsigned int offset)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
-	unsigned int value = 0;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
+	unsigned int value;
 	unsigned long flag_sft = 0;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
 		return;
 	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
 	value = readl(priv->asp_cfg_reg_base_addr + reg);
-	value |= (1 << offset);
+	value |= BIT(offset);
 	writel(value, priv->asp_cfg_reg_base_addr + reg);
 
 	spin_unlock_irqrestore(&priv->lock, flag_sft);
@@ -113,36 +112,36 @@ static void asp_cfg_reg_set_bit(unsigned int reg, unsigned int offset)
 
 static void asp_cfg_reg_clr_bit(unsigned int reg, unsigned int offset)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
-	unsigned int value = 0;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
+	unsigned int value;
 	unsigned long flag_sft = 0;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
 		return;
 	}
 
 	spin_lock_irqsave(&priv->lock, flag_sft);
 
 	value = readl(priv->asp_cfg_reg_base_addr + reg);
-	value &= ~(1 << offset);
+	value &= ~BIT(offset);
 	writel(value, priv->asp_cfg_reg_base_addr + reg);
 
 	spin_unlock_irqrestore(&priv->lock, flag_sft);
 }
 
-void h2x_module_set(unsigned int module, bool enable)
+static void h2x_module_set(unsigned int module, bool enable)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 	unsigned long flag_sft = 0;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
 		return;
 	}
 
 	spin_lock_irqsave(&priv->h2x_lock, flag_sft);
-	pr_info("%s:module %d, enable %d \n", __FUNCTION__, module, enable);
+	AUDIO_LOGI("module %u, enable %d", module, enable);
 	if (module == ASP_H2X)
 		priv->asp_h2x_enable = enable;
 	else
@@ -158,55 +157,59 @@ void h2x_module_set(unsigned int module, bool enable)
 	spin_unlock_irqrestore(&priv->h2x_lock, flag_sft);
 }
 
-void dp_h2x_on(void)
+static void dp_h2x_on(void)
 {
 	h2x_module_set(ASP_H2X, true);
 }
 
-void dp_h2x_off(void)
+static void dp_h2x_off(void)
 {
 	h2x_module_set(ASP_H2X, false);
 }
 
 int usb_h2x_on(void)
 {
-	int ret = 0;
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	int ret;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 	struct clk *asp_subsys_clk = NULL;
 
-	WARN_ON(NULL == priv);
+	WARN_ON(!priv);
 
-	ret = regulator_bulk_enable(1, &asp_cfg_priv->regu);
-	if (0 != ret) {
-		pr_err("[%s:%d] couldn't enable regulators %d\n", __func__, __LINE__, ret);
+	ret = regulator_bulk_enable(CONSUMER_ASP, &priv->regu);
+	if (ret != 0) {
+		AUDIO_LOGE("couldn't enable regulators %d", ret);
 		return -EFAULT;
 	}
 
-	asp_subsys_clk = asp_cfg_priv->asp_subsys_clk;
+	asp_subsys_clk = priv->asp_subsys_clk;
 	if (asp_subsys_clk) {
 		ret = clk_prepare_enable(asp_subsys_clk);
-		if (ret) {
-			pr_err("asp_subsys_clk enable fail, error=%d\n", ret);
-			ret = regulator_bulk_disable(1, &asp_cfg_priv->regu);
-			if (ret)
-				pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
+		if (ret != 0) {
+			AUDIO_LOGE("asp_subsys_clk enable fail, error: %d", ret);
+			ret = regulator_bulk_disable(CONSUMER_ASP,
+				&priv->regu);
+			if (ret != 0)
+				AUDIO_LOGE("fail to disable regulator, ret: %d",
+					ret);
+
 			return -EFAULT;
 		}
 	}
 
 	h2x_module_set(USB_H2X, true);
-	pr_info("%s exit \n",__FUNCTION__);
+	AUDIO_LOGI("exit");
+
 	return ret;
 }
 
 int usb_h2x_off(void)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 	struct clk *asp_subsys_clk = NULL;
-	int ret = 0;
+	int ret;
 
-	if (priv == NULL) {
-		pr_err("%s:priv is null\n", __FUNCTION__);
+	if (!priv) {
+		AUDIO_LOGE("priv is null");
 		return -EINVAL;
 	}
 
@@ -216,31 +219,33 @@ int usb_h2x_off(void)
 	if (asp_subsys_clk)
 		clk_disable_unprepare(asp_subsys_clk);
 
-	ret = regulator_bulk_disable(1, &asp_cfg_priv->regu);
-	if (ret)
-		pr_err("[%s:%d] fail to disable regulator, ret:%d\n", __FUNCTION__, __LINE__, ret);
-	pr_info("%s exit \n",__FUNCTION__);
+	ret = regulator_bulk_disable(CONSUMER_ASP, &priv->regu);
+	if (ret != 0)
+		AUDIO_LOGE("fail to disable regulator, ret: %d", ret);
+
+	AUDIO_LOGI("exit");
+
 	return 0;
 }
 
 static void asp_cfg_h2x_module_enable(void)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 
-	if (0 == priv->asp_h2x_module_count)
+	if (priv->asp_h2x_module_count == 0)
 		dp_h2x_on();
 
-	 priv->asp_h2x_module_count++;
-	 pr_info("[%s:%d],+asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
+	priv->asp_h2x_module_count++;
+	AUDIO_LOGI("asp_h2x_module_count: %u", priv->asp_h2x_module_count);
 }
 
 static void asp_cfg_h2x_module_disable(void)
 {
-	struct asp_cfg_priv *priv = asp_cfg_priv;
+	struct asp_cfg_priv *priv = g_asp_cfg_priv;
 
 	priv->asp_h2x_module_count--;
-	pr_info("[%s:%d],-asp_h2x_module_count = %d\n", __FUNCTION__, __LINE__, priv->asp_h2x_module_count);
-	if (0 == priv->asp_h2x_module_count)
+	AUDIO_LOGI("asp_h2x_module_count: %u", priv->asp_h2x_module_count);
+	if (priv->asp_h2x_module_count == 0)
 		dp_h2x_off();
 }
 
@@ -256,128 +261,171 @@ void asp_cfg_div_clk(unsigned int value)
 
 void asp_cfg_enable_hdmi_interrupeter(void)
 {
-	asp_cfg_reg_set_bit(ASP_CFG_R_INTR_NS_EN_REG, ASP_CFG_ASP_HDMI_INT_OFFSET);
+	asp_cfg_reg_set_bit(ASP_CFG_R_INTR_NS_EN_REG,
+		ASP_CFG_ASP_HDMI_INT_OFFSET);
 }
 
 void asp_cfg_disable_hdmi_interrupeter(void)
 {
-	asp_cfg_reg_clr_bit(ASP_CFG_R_INTR_NS_EN_REG, ASP_CFG_ASP_HDMI_INT_OFFSET);
+	asp_cfg_reg_clr_bit(ASP_CFG_R_INTR_NS_EN_REG,
+		ASP_CFG_ASP_HDMI_INT_OFFSET);
 }
 
 void asp_cfg_hdmi_module_enable(void)
 {
-	/*reset */
+	/* reset */
 	asp_cfg_h2x_module_enable();
 	asp_cfg_reg_write(ASP_CFG_R_RST_CTRLDIS_REG, RST_ASP_HDMI_BIT);
 
-	/*enable clk */
+	/* enable clk */
 	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_HDMI_HCLK_BIT);
 	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_AUDIO_PLL_BIT);
 
-	/*enable hdmimclk_div & hdmirefclk_div*/
-	asp_cfg_reg_set_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG, ASP_CFG_GT_HDMIREF_DIV_OFFSET);
+	/* enable hdmimclk_div & hdmirefclk_div */
+	asp_cfg_reg_set_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_HDMIREF_DIV_OFFSET);
 }
 
 void asp_cfg_hdmi_module_disable(void)
 {
-	/*disable clk */
+	/* disable clk */
 	asp_cfg_reg_write(ASP_CFG_R_GATE_DIS_REG, CLK_AUDIO_PLL_BIT);
 	asp_cfg_reg_write(ASP_CFG_R_GATE_DIS_REG, CLK_HDMI_HCLK_BIT);
 
-	/*disable hdmimclk_div & hdmirefclk_div*/
-	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG, ASP_CFG_GT_HDMIREF_DIV_OFFSET);
+	/* disable hdmimclk_div & hdmirefclk_div */
+	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_HDMIREF_DIV_OFFSET);
 
-	/*enable reset*/
+	/* enable reset */
 	asp_cfg_h2x_module_disable();
 }
 
+#ifdef DP_AUDIO_ASP_HDMI_I2S
 void asp_cfg_dp_module_enable(void)
 {
-	/*enable clk */
-	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_GT_SPDIF_BIT);
-	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_SPDIF_HCLK_BIT);
+	/* enable clk */
+	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_HDMI_BCLK_BIT);
 
-	/*enable hdmirefclk_div*/
-	asp_cfg_reg_set_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG, ASP_CFG_GT_SPDIF_BCLK_DIV_OFFSET);
-	pr_info("[%s:%d],asp_cfg_dp_module_enable", __FUNCTION__, __LINE__);
+	/* enable hdmirefclk_div */
+	asp_cfg_reg_set_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_HDMIADWS_CLK_DIV_OFFSET);
+	AUDIO_LOGI("add asp cfg dp module i2s clk enable");
 }
 
 void asp_cfg_dp_module_disable(void)
 {
-	/*disable clk */
+	/* disable clk */
+	asp_cfg_reg_write(ASP_CFG_R_GATE_DIS_REG, CLK_HDMI_BCLK_BIT);
+
+	/* disable hdmirefclk_div */
+	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_HDMIADWS_CLK_DIV_OFFSET);
+	AUDIO_LOGI("sub asp cfg dp module i2s clk disable");
+}
+
+#else
+void asp_cfg_dp_module_enable(void)
+{
+	/* enable clk */
+	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_GT_SPDIF_BIT);
+	asp_cfg_reg_write(ASP_CFG_R_GATE_EN_REG, CLK_SPDIF_HCLK_BIT);
+
+	/* enable hdmirefclk_div */
+	asp_cfg_reg_set_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_SPDIF_BCLK_DIV_OFFSET);
+	AUDIO_LOGI("asp_cfg");
+}
+
+void asp_cfg_dp_module_disable(void)
+{
+	/* disable clk */
 	asp_cfg_reg_write(ASP_CFG_R_GATE_DIS_REG, CLK_GT_SPDIF_BIT);
 	asp_cfg_reg_write(ASP_CFG_R_GATE_DIS_REG, CLK_SPDIF_HCLK_BIT);
 
-	/*disable hdmirefclk_div*/
-	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG, ASP_CFG_GT_SPDIF_BCLK_DIV_OFFSET);
-	pr_info("[%s:%d],asp_cfg_dp_module_disable", __FUNCTION__, __LINE__);
+	/* disable hdmirefclk_div */
+	asp_cfg_reg_clr_bit(ASP_CFG_R_GATE_CLKDIV_EN_REG,
+		ASP_CFG_GT_SPDIF_BCLK_DIV_OFFSET);
+	AUDIO_LOGI("asp_cfg");
 }
+#endif /* DP_AUDIO_ASP_HDMI_I2S */
 
 unsigned int asp_cfg_get_irq_value(void)
 {
 	return asp_cfg_reg_read(ASP_CFG_R_INTR_NS_INI_REG);
 }
 
-static int asp_cfg_probe(struct platform_device *pdev)
+static int asp_cfg_priv_init(struct platform_device *pdev,
+	struct device *dev, struct asp_cfg_priv *priv)
 {
-	int ret = 0;
-	struct device *dev = NULL;
-	struct asp_cfg_priv *priv = NULL;
-
-	if (NULL == pdev) {
-		pr_err("[%s:%d]  pdev is NULL!\n", __func__, __LINE__);
-		return -ENOMEM;
-	}
-
-	dev = &pdev->dev;
-	dev_info(dev, "probe begin.\n");
-
-	priv = devm_kzalloc(dev, sizeof(struct asp_cfg_priv), GFP_KERNEL);
-	if (!priv) {
-		dev_err(dev, "malloc failed.\n");
-		return -ENOMEM;
-	}
+	int ret;
 
 	priv->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!priv->res) {
-		dev_err(dev, "get resource failed.\n");
+		AUDIO_LOGE("get asp_cfg resource failed");
 		return -ENOENT;
 	}
 
 	priv->regu.supply = "asp-supply";
-	ret = devm_regulator_bulk_get(dev, 1, &(priv->regu));
-	if (0 != ret) {
-		dev_err(dev, "couldn't get regulators %d\n", ret);
+	ret = devm_regulator_bulk_get(dev, CONSUMER_ASP, &(priv->regu));
+	if (ret != 0) {
+		AUDIO_LOGE("couldn't get asp_cfg regulators %d", ret);
 		return -EFAULT;
 	}
 
 	priv->asp_subsys_clk = devm_clk_get(dev, "clk_asp_subsys");
 	if (IS_ERR_OR_NULL(priv->asp_subsys_clk)) {
-		dev_err(dev, "devm_clk_get: clk_asp_subsys not found!\n");
+		AUDIO_LOGE("devm_clk_get: clk_asp_subsys not found");
 		return -EFAULT;
 	}
 
 	priv->asp_cfg_reg_base_addr = devm_ioremap(dev, priv->res->start,
-						resource_size(priv->res));
+		resource_size(priv->res));
 	if (!priv->asp_cfg_reg_base_addr) {
-		dev_err(dev, "asp cfg reg addr ioremap failed.\n");
+		AUDIO_LOGE("asp cfg reg addr ioremap failed");
 		return -ENOMEM;
 	}
 
-	dev_info(dev, "res->start.%pK\n", (void *)(uintptr_t)priv->res->start);
-	dev_info(dev, "asp_cfg_reg_base_addr.%pK\n", (void *)priv->asp_cfg_reg_base_addr);
+	return 0;
+}
+
+static int asp_cfg_probe(struct platform_device *pdev)
+{
+	int ret;
+	struct device *dev = NULL;
+	struct asp_cfg_priv *priv = NULL;
+
+	if (!pdev) {
+		AUDIO_LOGE("pdev is null");
+		return -EINVAL;
+	}
+
+	dev = &pdev->dev;
+	AUDIO_LOGI("probe begin");
+
+	priv = devm_kzalloc(dev, sizeof(struct asp_cfg_priv), GFP_KERNEL);
+	if (!priv) {
+		AUDIO_LOGE("malloc asp_cfg platform data failed");
+		return -ENOMEM;
+	}
+
+	ret = asp_cfg_priv_init(pdev, dev, priv);
+	if (ret != 0)
+		return ret;
+
+	AUDIO_LOGI("res->start.%pK", (void *)(uintptr_t)priv->res->start);
+	AUDIO_LOGI("asp_cfg_reg_base_addr.%pK",
+		(void *)priv->asp_cfg_reg_base_addr);
 
 	spin_lock_init(&priv->lock);
-
 	spin_lock_init(&priv->h2x_lock);
 
 	priv->dev = dev;
 
 	platform_set_drvdata(pdev, priv);
 
-	asp_cfg_priv = priv;
+	g_asp_cfg_priv = priv;
 
-	dev_info(dev, "probe end.\n");
+	AUDIO_LOGI("probe end");
 
 	return ret;
 }
@@ -393,42 +441,41 @@ static int asp_cfg_remove(struct platform_device *pdev)
 	if (priv->asp_cfg_reg_base_addr)
 		devm_iounmap(priv->dev, priv->asp_cfg_reg_base_addr);
 
-	asp_cfg_priv = NULL;
+	g_asp_cfg_priv = NULL;
 
-	dev_info(priv->dev, "asp cfg driver remove succ.\n");
+	AUDIO_LOGI("asp cfg driver remove succ");
 
 	return 0;
 }
 
-static const struct of_device_id of_asp_cfg_match[] = {
+static const struct of_device_id g_of_asp_cfg_match[] = {
 	{ .compatible = "hisilicon,asp-cfg", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, g_of_asp_cfg_match);
 
-MODULE_DEVICE_TABLE(of, of_asp_cfg_match);
-
-static struct platform_driver asp_cfg_driver = {
-	.driver    = {
-		.name      = "asp_cfg_drv",
-		.owner     = THIS_MODULE,
-		.of_match_table = of_asp_cfg_match,
+static struct platform_driver g_asp_cfg_driver = {
+	.driver = {
+		.name = "asp_cfg_drv",
+		.owner = THIS_MODULE,
+		.of_match_table = g_of_asp_cfg_match,
 	},
-	.probe    = asp_cfg_probe,
-	.remove   = asp_cfg_remove,
+	.probe = asp_cfg_probe,
+	.remove = asp_cfg_remove,
 };
 
 static int __init asp_cfg_init(void)
 {
-	return platform_driver_register(&asp_cfg_driver);
+	return platform_driver_register(&g_asp_cfg_driver);
 }
 module_init(asp_cfg_init);
 
 static void __exit asp_cfg_exit(void)
 {
-	platform_driver_unregister(&asp_cfg_driver);
+	platform_driver_unregister(&g_asp_cfg_driver);
 }
 module_exit(asp_cfg_exit);
 
-MODULE_AUTHOR("wushengyang <wushengyang1@hisilicon.com>");
-MODULE_DESCRIPTION("Hisilicon (R) ASP CFG Driver");
-MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("ASP CFG Driver");
+MODULE_LICENSE("GPL v2");
+

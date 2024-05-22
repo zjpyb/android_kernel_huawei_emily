@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: misctrl for USB
+ * Create: 2019-6-16
+ *
+ * This software is distributed under the terms of the GNU General
+ * Public License ("GPL") as published by the Free Software Foundation,
+ * either version 2 of that License or (at your option) any later version.
+ */
+
 #include <linux/io.h>
 #include <linux/mutex.h>
 #include <linux/bitops.h>
@@ -82,12 +92,13 @@ void usb3_sc_misc_reg_clrvalue(u32 val, unsigned long int offset)
 	usb3_rw_reg_clrvalue(val, sc_misc_base_addr, offset);
 }
 
-static unsigned int misc_usecount = 0;
+static unsigned int misc_usecount;
 static DEFINE_MUTEX(misc_ctrl_mutex);
 
 static char *misc_ctrl_status_string(unsigned int misc_ctrl_status)
 {
 	char *s = NULL;
+
 	if (misc_ctrl_status == (1 << MICS_CTRL_USB))
 		s = "MICS_CTRL_USB";
 	else if (misc_ctrl_status == (1 << MICS_CTRL_COMBOPHY))
@@ -104,6 +115,7 @@ static char *misc_ctrl_status_string(unsigned int misc_ctrl_status)
 static char *misc_ctrl_type_string(enum misc_ctrl_type type)
 {
 	char *s = NULL;
+
 	if (type == MICS_CTRL_USB)
 		s = "MICS_CTRL_USB";
 	else if (type == MICS_CTRL_COMBOPHY)
@@ -115,10 +127,10 @@ static char *misc_ctrl_type_string(enum misc_ctrl_type type)
 
 int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 {
-	struct hisi_usb_combophy *combophy = NULL;
+	struct chip_usb_combophy *combophy = NULL;
 	int ret;
 
-	pr_debug("+ misc_usecount [%s] type[%s] \n",
+	pr_debug("+ misc_usecount [%s] type[%s]\n",
 			misc_ctrl_status_string(misc_usecount),
 			misc_ctrl_type_string(type));
 
@@ -146,7 +158,7 @@ int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 
 		/* make sure Misc-ctrl at reset status */
 		combophy_reset_misc_ctrl(combophy);
-		udelay(100);
+		udelay(100); /* delay 100us */
 
 		/* dis-reset usb misc ctrl module */
 		combophy_unreset_misc_ctrl(combophy);
@@ -155,18 +167,18 @@ int dwc3_misc_ctrl_get(enum misc_ctrl_type type)
 	} else {
 		pr_debug("%s has got, just return!\n",
 				misc_ctrl_status_string(misc_usecount));
-		misc_usecount =  misc_usecount |(1 << (unsigned int)type);
+		misc_usecount =  misc_usecount | (1 << (unsigned int)type);
 	}
 	mutex_unlock(&misc_ctrl_mutex);
-	pr_debug("-misc_usecount[%s]\n",misc_ctrl_status_string(misc_usecount));
+	pr_debug("-misc_usecount[%s]\n", misc_ctrl_status_string(misc_usecount));
 	return 0;
 }
 
 void dwc3_misc_ctrl_put(enum misc_ctrl_type type)
 {
-	struct hisi_usb_combophy *combophy = NULL;
+	struct chip_usb_combophy *combophy = NULL;
 
-	pr_debug("+ misc_usecount [%s] type[%s] \n",
+	pr_debug("+ misc_usecount [%s] type[%s]\n",
 			misc_ctrl_status_string(misc_usecount),
 			misc_ctrl_type_string(type));
 
@@ -182,7 +194,7 @@ void dwc3_misc_ctrl_put(enum misc_ctrl_type type)
 	}
 
 	mutex_lock(&misc_ctrl_mutex);
-	misc_usecount = misc_usecount & (~(1 << (unsigned int)type));/*lint !e502 */
+	misc_usecount = misc_usecount & (~(unsigned int)(1 << (unsigned int)type));
 	if (misc_usecount == 0) {
 		pr_debug("it will be going to reset miscctrl\n");
 		/* reset usb misc ctrl module */
@@ -194,5 +206,5 @@ void dwc3_misc_ctrl_put(enum misc_ctrl_type type)
 				misc_ctrl_status_string(misc_usecount));
 	}
 	mutex_unlock(&misc_ctrl_mutex);
-	pr_debug("-misc_usecount[%s]\n",misc_ctrl_status_string(misc_usecount));
+	pr_debug("-misc_usecount[%s]\n", misc_ctrl_status_string(misc_usecount));
 }

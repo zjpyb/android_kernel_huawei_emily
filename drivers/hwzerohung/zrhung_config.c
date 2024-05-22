@@ -35,30 +35,19 @@
 
 #define SCONTEXT "u:r:logserver:s0"
 #define HCFG_VAL_SIZE_MAX ((ZRHUNG_CFG_VAL_LEN_MAX + 1) * ZRHUNG_CFG_ENTRY_NUM)
-static const uint32_t MAX_LOG_SIZE = 4 * 1024; // 4KB
+#define MAX_LOG_SIZE (4 * 1024) // 4KB
 static const uint32_t MAX_STACK_DEPTH = 64;
-
-enum hcfg_feature {
-	HCFG_FEATURE_V1 = 0,
-	HCFG_FEATURE_V2
-};
-
+static const uint32_t HCFG_FEATURE_VERSION = 1;
 #define NOT_SUPPORT (-2)
 #define NO_CONFIG (-1)
 #define NOT_READY 1
 
 struct hcfg_entry {
 	uint32_t offset;
-	uint32_t valid:1;
+	uint32_t valid : 1;
 };
 
-struct hcfg_table_v1 {
-	uint64_t len;
-	struct hcfg_entry entry[ZRHUNG_CFG_CAT_NUM_MAX];
-	char data[0];
-};
-
-struct hcfg_table_v2 {
+struct hcfg_table_version {
 	uint64_t len;
 	struct hcfg_entry entry[ZRHUNG_CFG_ENTRY_NUM];
 	char data[0];
@@ -92,6 +81,7 @@ struct hstack_val {
 
 static DEFINE_SPINLOCK(lock);
 static struct hcfg_ctx ctx;
+static pid_t hiview_pid;
 
 int zrhung_is_id_valid(short wp_id)
 {
@@ -112,27 +102,30 @@ int hcfgk_set_cfg(struct file *file, const void __user *arg)
 	void *tmp = NULL;
 	uint64_t table_len = 0;
 	uint64_t entry_num = 0;
+	struct hcfg_table_version *t = NULL;
 
 	if (!arg)
 		return -EINVAL;
+
+	hiview_pid = current->tgid;
 
 	ret = copy_from_user(&len, arg, sizeof(len));
 	if (ret) {
 		pr_err("copy hung config table from user failed\n");
 		return ret;
 	}
-	if (len > HCFG_VAL_SIZE_MAX)
+	if (len > HCFG_VAL_SIZE_MAX || len <= 0)
 		return -EINVAL;
 
 	spin_lock(&lock);
 
-	if (ctx.cfg_feature == HCFG_FEATURE_V2) {
-		table_len = sizeof(struct hcfg_table_v2);
-		entry_num = ZRHUNG_CFG_ENTRY_NUM;
-	} else {
-		table_len = sizeof(struct hcfg_table_v1);
-		entry_num = ZRHUNG_CFG_CAT_NUM_MAX;
+	if (ctx.cfg_feature != HCFG_FEATURE_VERSION) {
+		spin_unlock(&lock);
+		pr_err("cfg_feature is invalid\n");
+		return -EINVAL;
 	}
+	table_len = sizeof(struct hcfg_table_version);
+	entry_num = ZRHUNG_CFG_ENTRY_NUM;
 
 	spin_unlock(&lock);
 
@@ -160,17 +153,16 @@ int hcfgk_set_cfg(struct file *file, const void __user *arg)
 	ctx.entry_num = entry_num;
 
 	/* init table entry */
-	if (ctx.cfg_feature == HCFG_FEATURE_V2) {
-		struct hcfg_table_v2 *t = ctx.user_table;
-
-		ctx.table.entry = t->entry;
-		ctx.table.data = t->data;
-	} else {
-		struct hcfg_table_v1 *t = ctx.user_table;
-
-		ctx.table.entry = t->entry;
-		ctx.table.data = t->data;
+	if (ctx.cfg_feature != HCFG_FEATURE_VERSION) {
+		spin_unlock(&lock);
+		pr_err("cfg_feature is invalid\n");
+		vfree(user_table);
+		return -EINVAL;
 	}
+
+	t = ctx.user_table;
+	ctx.table.entry = t->entry;
+	ctx.table.data = t->data;
 
 	/* make sure last byte in data is 0 terminated */
 	ctx.table.len = len;
@@ -308,10 +300,6 @@ int hcfgk_set_feature(struct file *file, const void __user *arg)
 
 	spin_lock(&lock);
 
-	if ((ctx.table.entry != NULL) || (ctx.cfg_feature != HCFG_FEATURE_V1)) {
-		spin_unlock(&lock);
-		return -EPERM;
-	}
 	ctx.cfg_feature = feature;
 
 	spin_unlock(&lock);
@@ -319,24 +307,27 @@ int hcfgk_set_feature(struct file *file, const void __user *arg)
 	return 0;
 }
 
-static int xcollie_save_stack(struct task_struct *task, char *out)
+static int xcollie_save_stack(struct task_struct *task, char *out, uint32_t len)
 {
 	struct stack_trace trace;
 	char *buf = NULL;
-	unsigned long *entries = NULL;
+	uintptr_t *entries = NULL;
 	size_t used = 0;
 	int tmp = 0;
 	int ret = -EFAULT;
 	int i;
 
+	if (len <= 0 || len > MAX_LOG_SIZE)
+		return ret;
+
 	entries = kmalloc_array(MAX_STACK_DEPTH, sizeof(*entries), GFP_KERNEL);
 	if (!entries)
 		return ret;
 
-	trace.nr_entries        = 0;
-	trace.max_entries       = MAX_STACK_DEPTH;
-	trace.entries           = entries;
-	trace.skip              = 0;
+	trace.nr_entries = 0;
+	trace.max_entries = MAX_STACK_DEPTH;
+	trace.entries = entries;
+	trace.skip = 0;
 
 	buf = vzalloc(MAX_LOG_SIZE);
 	if (!buf)
@@ -370,14 +361,37 @@ err_entry:
 	return ret;
 }
 
+static int xcollie_obtain_stack(struct task_struct *task, int target_tgid,
+			 struct hstack_val *val)
+{
+	int ret;
+
+	if ((!current->tgid || (current->tgid != target_tgid)) &&
+	    (!hiview_pid || (current->tgid != hiview_pid))) {
+		pr_err("can not print stack of other process\n");
+		return -EPERM;
+	}
+
+	ret = xcollie_save_stack(task, val->hstack_log_buff,
+		sizeof(val->hstack_log_buff));
+	if (ret) {
+		pr_err("failed to get stack\n");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 int xcollie_get_stack(struct file *file, void __user *arg)
 {
 	struct hstack_val *val = NULL;
 	struct task_struct *task = NULL;
 	int ret = -EFAULT;
+	int target_tgid = 0;
 
 	if (!arg)
 		return -EINVAL;
+
 	val = vzalloc(sizeof(*val));
 	if (!val)
 		return -ENOMEM;
@@ -393,23 +407,22 @@ int xcollie_get_stack(struct file *file, void __user *arg)
 
 	rcu_read_lock();
 	task = find_task_by_vpid(val->tid);
-	if (task)
+	if (task) {
 		get_task_struct(task);
+		target_tgid = task->tgid;
+	}
 	rcu_read_unlock();
 	if (!task) {
 		pr_err("task is null\n");
 		goto err_val;
 	}
 
-	ret = xcollie_save_stack(task, val->hstack_log_buff);
-	if (ret) {
-		pr_err("failed to get stack\n");
+	ret = xcollie_obtain_stack(task, target_tgid, val);
+	if (ret)
 		goto err_task;
-	}
 
 	if (copy_to_user(arg, val, sizeof(*val))) {
 		pr_err("Failed to copy kernel stack to user\n");
-		ret = -EFAULT;
 		goto err_task;
 	}
 	ret = 0;

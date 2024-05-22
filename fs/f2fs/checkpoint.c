@@ -14,6 +14,10 @@
 #include <linux/pagevec.h>
 #include <linux/swap.h>
 
+#ifdef CONFIG_FSCK_BOOST
+#include <linux/fsck_boost.h>
+#endif
+
 #include "f2fs.h"
 #include "node.h"
 #include "segment.h"
@@ -56,7 +60,7 @@ repeat:
 struct page *get_meta_page_ex(struct f2fs_sb_info *sbi, pgoff_t index,
 			bool is_meta, bool cache_only)
 {
-	struct address_space *mapping = META_MAPPING(sbi);
+	struct address_space *mapping = NULL;
 	struct page *page;
 	struct f2fs_io_info fio = {
 		.sbi = sbi,
@@ -69,6 +73,17 @@ struct page *get_meta_page_ex(struct f2fs_sb_info *sbi, pgoff_t index,
 		.is_meta = is_meta,
 	};
 	int err;
+
+#ifdef CONFIG_FSCK_BOOST
+	if (!sbi->inited) {
+		mapping = BDEV_MAPPING(sbi);
+		page = find_lock_page(mapping, index);
+		if (page && PageUptodate(page))
+			return page;
+	}
+#endif
+
+	mapping = META_MAPPING(sbi);
 
 	if (unlikely(!is_meta))
 		fio.op_flags &= ~REQ_META;
@@ -249,6 +264,21 @@ int f2fs_ra_meta_pages(struct f2fs_sb_info *sbi, block_t start, int nrpages,
 		default:
 			BUG();
 		}
+
+#ifdef CONFIG_FSCK_BOOST
+		if (!sbi->inited && is_fsck_boost_done(sbi->sb->s_bdev)) {
+			page = find_get_page(BDEV_MAPPING(sbi),
+					fio.new_blkaddr);
+			if (page) {
+				if (PageUptodate(page)) {
+					put_page(page);
+					continue;
+				} else {
+					put_page(page);
+				}
+			}
+		}
+#endif
 
 		page = f2fs_grab_cache_page(META_MAPPING(sbi),
 						fio.new_blkaddr, false);
@@ -432,7 +462,7 @@ static int f2fs_set_meta_page_dirty(struct page *page)
 	if (!PageDirty(page)) {
 		__set_page_dirty_nobuffers(page);
 		inc_page_count(F2FS_P_SB(page), F2FS_DIRTY_META);
-		SetPagePrivate(page);
+		f2fs_set_page_private(page, 0);
 		f2fs_trace_pid(page);
 		return 1;
 	}
@@ -652,6 +682,7 @@ static int recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 
 err_out:
 	set_sbi_flag(sbi, SBI_NEED_FSCK);
+	f2fs_set_need_fsck_report();
 	f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: orphan failed (ino=%x), run fsck to fix.",
 			__func__, ino);
@@ -1004,7 +1035,7 @@ void f2fs_update_dirty_page(struct inode *inode, struct page *page)
 	inode_inc_dirty_pages(inode);
 	spin_unlock(&sbi->inode_lock[type]);
 
-	SetPagePrivate(page);
+	f2fs_set_page_private(page, 0);
 	f2fs_trace_pid(page);
 }
 
@@ -1338,9 +1369,13 @@ static void update_ckpt_flags(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	else
 		__clear_ckpt_flags(ckpt, CP_ORPHAN_PRESENT_FLAG);
 
-	if (is_sbi_flag_set(sbi, SBI_NEED_FSCK) ||
-		is_sbi_flag_set(sbi, SBI_IS_RESIZEFS))
+	if (is_sbi_flag_set(sbi, SBI_NEED_FSCK))
 		__set_ckpt_flags(ckpt, CP_FSCK_FLAG);
+
+	if (is_sbi_flag_set(sbi, SBI_IS_RESIZEFS))
+		__set_ckpt_flags(ckpt, CP_RESIZEFS_FLAG);
+	else
+		__clear_ckpt_flags(ckpt, CP_RESIZEFS_FLAG);
 
 	if (is_sbi_flag_set(sbi, SBI_CP_DISABLED))
 		__set_ckpt_flags(ckpt, CP_DISABLED_FLAG);
@@ -1377,11 +1412,12 @@ static void commit_checkpoint(struct f2fs_sb_info *sbi,
 	struct page *page = f2fs_grab_meta_page(sbi, blk_addr);
 	int err;
 
-	memcpy(page_address(page), src, PAGE_SIZE);
-	set_page_dirty(page);
-
 	f2fs_wait_on_page_writeback(page, META, true);
 	f2fs_bug_on(sbi, PageWriteback(page));
+
+	memcpy(page_address(page), src, PAGE_SIZE);
+
+	set_page_dirty(page);
 	if (unlikely(!clear_page_dirty_for_io(page)))
 		f2fs_bug_on(sbi, 1);
 

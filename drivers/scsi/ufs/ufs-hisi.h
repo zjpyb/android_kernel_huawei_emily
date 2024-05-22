@@ -1,112 +1,143 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/*
+ * ufs-hisi.h
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  */
+#ifndef HUFS_H_
+#define HUFS_H_
+#include "ufshcd.h"
+#include "ufs-hisi-hci.h"
 
-#ifndef UFS_HISI_H_
-#define UFS_HISI_H_
-
-int hisi_auto_h8_op(struct ufs_hba *hba, bool auto_h8_op);
-int hisi_uic_write_reg(
+struct ufs_pa_layer_attr;
+int hufs_uic_write_reg(
 	struct ufs_hba *hba, uint32_t reg_offset, uint32_t value);
-int hisi_uic_read_reg(
-	struct ufs_hba *hba, uint32_t reg_offset, u32 *value);
-int hisi_uic_peer_set(struct ufs_hba *hba, uint32_t reg_offset, uint32_t value);
-int hisi_uic_peer_get(
+int hufs_uic_read_reg(struct ufs_hba *hba, uint32_t reg_offset, u32 *value);
+int hufs_uic_peer_set(struct ufs_hba *hba, uint32_t reg_offset, uint32_t value);
+int hufs_uic_peer_get(
 	struct ufs_hba *hba, uint32_t reg_offset, uint32_t *value);
-uint32_t snps_to_hisi_addr(uint32_t cmd, uint32_t arg1);
-int hisi_dme_link_startup(struct ufs_hba *hba);
-int ufshcd_hisi_wait_for_unipro_register_poll(
+uint32_t snps_to_hufs_addr(uint32_t cmd, uint32_t arg1);
+int hufs_dme_link_startup(struct ufs_hba *hba);
+int ufshcd_wait_for_unipro_register_poll(
 	struct ufs_hba *hba, u32 reg, u32 mask, u32 val, int timeout_ms);
-int ufshcd_hisi_hibern8_op_irq_safe(struct ufs_hba *hba, bool h8_op);
-int config_hisi_tr_qos(struct ufs_hba *hba);
-void ufshcd_hisi_enable_auto_hibern8(struct ufs_hba *hba);
-void ufshcd_hisi_disable_auto_hibern8(struct ufs_hba *hba);
-void ufshcd_hisi_print_dme_hibern_ind(struct ufs_hba *hba);
-void clear_dme_intr(struct ufs_hba *hba, int dme_intr_clr);
-void hisi_ufs_dme_reg_dump(struct ufs_hba *hba);
-void ufshcd_enable_clock_gating(struct ufs_hba *hba);
-bool ufshcd_is_hisi_ufs_hc_used(struct ufs_hba *hba);
-void ufshcd_hisi_enable_unipro_intr(struct ufs_hba *hba, u32 unipro_intrs);
-irqreturn_t ufshcd_hisi_unipro_intr(int unipro_irq, void *__hba);
+int ufshcd_hibern8_op_irq_safe(struct ufs_hba *hba, bool h8_op);
+void ufshcd_hufs_enable_auto_hibern8(struct ufs_hba *hba);
+int ufshcd_hufs_disable_auto_hibern8(struct ufs_hba *hba);
+void ufshcd_hufs_print_dme_hibern_ind(struct ufs_hba *hba);
+void clear_unipro_intr(struct ufs_hba *hba, int dme_intr_clr);
+void ufshcd_idle_auto_gating(struct ufs_hba *hba);
+void ufshcd_enable_clock_gating_autodiv(struct ufs_hba *hba);
+bool ufshcd_is_hufs_hc(struct ufs_hba *hba);
+void ufshcd_hufs_enable_unipro_intr(struct ufs_hba *hba, u32 unipro_intrs);
+void ufshcd_hufs_disable_unipro_intr(struct ufs_hba *hba, u32 unipro_intrs);
+irqreturn_t ufshcd_hufs_unipro_intr(int unipro_irq, void *__hba);
+void unipro_clk_auto_gate_enable(struct ufs_hba *hba);
+void unipro_clk_auto_gate_disable(struct ufs_hba *hba);
 void ufshcd_sl_fatal_intr(struct ufs_hba *hba, u32 intr_status);
-irqreturn_t ufshcd_hisi_fatal_err_intr(int fatal_err_irq, void *__hba);
-irqreturn_t ufshcd_hisi_core0_intr(int fatal_err_irq, void *__hba);
+irqreturn_t ufshcd_hufs_fatal_err_intr(int fatal_err_irq, void *__hba);
 int wait_mphy_init_done(struct ufs_hba *hba);
-int ufshcd_hisi_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
+void ufshcd_hufs_host_memory_configure(struct ufs_hba *hba);
+int ufshcd_hufs_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
+void ufshcd_enable_vs_intr(struct ufs_hba *hba, u32 intrs);
+void ufshcd_disable_vs_intr(struct ufs_hba *hba, u32 intrs);
+void ufshcd_hufs_enable_dev_tmt_intr(struct ufs_hba *hba);
+void ufshcd_hufs_enable_pwm_intr(struct ufs_hba *hba);
+void ufshcd_hufs_enable_idle_tmt_cnt(struct ufs_hba *hba);
+void ufshcd_hufs_disable_idle_tmt_cnt(struct ufs_hba *hba);
+void ufs_pwr_change_pre_change(
+	struct ufs_hba *hba, struct ufs_pa_layer_attr *dev_req_params);
+int ufs_access_register_and_check(struct ufs_hba *hba, u32 access_mode);
 
-/*HISI HCI*/
-#define HISI_UNIPRO_BIT_SHIFT 2
+int auto_k_enable_pmc_check(
+	struct ufs_hba *hba, struct ufs_pa_layer_attr final_params);
+void hufs_txpost_enable(struct ufs_pa_layer_attr *dev_req_params,u32 *value);
+
+/* HUFS HCI */
+#define HUFS_UNIPRO_BIT_SHIFT 2
 #define UFS_AHIT_CTRL_OFF 0x110
 #define UFS_HIBERNATE_EXIT_MODE UFS_BIT(1)
-#define UFS_AUTO_EN UFS_BIT(0)
 #define UFS_AUTO_HIBERN_EN UFS_BIT(0)
 
+#define UFS_AHIT_EXIT_REQ 0x114
 #define UFS_AUTO_H8_STATE_OFF 0x130
 #define UFS_CFG_RAM_CTRL 0x039C
 #define UFS_CFG_RAM_STATUS 0x03A0
+/*
+ * reg for ufs suspend and resume:
+ * UFS_CFG_RAM_CTRL:	BIT(0)=1 enable ram write,
+ * 			BIT(1)=1 enable ram read.
+ * UFS_CFG_RAM_STATUS:	BIT(0)=1 indicates write completed,
+ * 			BIT(1)=1 indicates read completed
+ */
+#define UFS_CFG_SUSPEND BIT(0)
+#define UFS_CFG_RESUME BIT(1)
 
 #define UFS_HC_AH8_STATE 0xFF
 #define AH8_XFER 0x1
+#define AH8_IDLE 0x2
 #define UFS_BLOCK_CG_CFG 0x108
 
-#define RAM_STORE_OK 0x1
-#define RAM_LOAD_OK 0x2
 #define AH8_H8ING 0x20
 
-/*HISI DME*/
+/* HUFS DME */
 #define HIBERNATE_EXIT_MODE 0xD000
-#define DME_LAYER_ENABLE 0xD002
 #define DME_LAYERENABLE_STATE 0xD003
 #define DME_LINKSTARTUPREQ 0xD008
 #define DME_LINKSTARTUP_STATE 0xD009
-#define DME_HIBERNATE_ENTER 0xD00B
+#define DME_LINKLOSTIND_STATE 0xD00A
 #define DME_HIBERNATE_ENTER_STATE 0xD00C
+#define DME_HIBERNATE_EXIT_STATE 0xD00F
+
 #define DME_HIBERNATE_REQ_RECEIVED UFS_BIT(0)
 #define DME_HIBERNATE_REQ_DENIED UFS_BIT(1)
-#define DME_HIBERNATE_ENTER_IND 0xD00D
+#define DME_HIBERNATE_ENTER_BUSY BIT(3)
 #define DME_HIBERNATE_ENTER_LOCAL_SUCC UFS_BIT(1)
 #define DME_HIBERNATE_ENTER_REMOTE_SUCC UFS_BIT(2)
 #define CFG_LAYER_ENABLE UFS_BIT(0)
 #define DME_ENABLE_CNF UFS_BIT(0)
 #define LINK_STARTUP_CNF (UFS_BIT(0) | UFS_BIT(1))
-#define LINK_STARTUP_SUCC       UFS_BIT(0)
-#define LINK_STARTUP_FAIL       UFS_BIT(1)
+#define LINK_STARTUP_SUCC UFS_BIT(0)
+#define LINK_STARTUP_FAIL UFS_BIT(1)
 
 #define DME_HIBERNATE_ENTER_SUCC                                               \
 	(DME_HIBERNATE_ENTER_LOCAL_SUCC | DME_HIBERNATE_ENTER_REMOTE_SUCC)
 
-#define DME_HIBERNATE_EXIT 0xD00E
-#define DME_HIBERNATE_EXIT_STATE 0xD00F
-
-#define DME_HIBERNATE_EXIT_IND 0xD010
 #define DME_HIBERNATE_EXIT_LOCAL_SUCC UFS_BIT(1)
+#define DME_HIBERNATE_EXIT_BUSY UFS_BIT(3)
 
 #define DME_POWERMODEIND 0xD011
+#define DME_PWR_BUSY UFS_BIT(3)
 
+#define DME_INTR_RAW_STATUS 0xD049
 #define DME_INTR_ENABLE 0xD050
-#define DME_INTR_STATUS 0xD052
-
 #define DME_INTR_CLR 0xD051
-#define MASK_PMC_IND_INTR UFS_BIT(5)
-#define DME_HIBERN_ENTER_CNF_INTR UFS_BIT(20)
-#define DME_HIBERN_EXIT_CNF_INTR UFS_BIT(21)
+#define DME_INTR_STATUS 0xD052
+#define DME_UNIPRO_STATE 0xD053
+#define DME_PEER_OPC_DBG 0xD065
+
+/* unipro intrs */
 #define DME_HIBERN_ENTER_IND_INTR UFS_BIT(3)
 #define DME_HIBERN_EXIT_IND_INTR UFS_BIT(4)
-#define DME_PMC_IND_INTR UFS_BIT(5)
-#define MASK_DME_PMC_IND UFS_BIT(5)
-#define MASK_LOCAL_ATTR_FAIL UFS_BIT(22)
-#define MASK_PEER_ATTR_COMPL UFS_BIT(23)
-//#define DME_ENABLE_INTRS DME_PMC_IND_INTR
-#define DME_ENABLE_INTRS 0xCFFFE7
+#define PMC_IND_INTR UFS_BIT(5)
+#define DEBUG_COUNTER_OVER_FLOW_INTR UFS_BIT(8)
+#define LINKUP_CNF_INTR UFS_BIT(19)
+#define ENDPOINT_RESET_CNF_INTR UFS_BIT(18)
+#define DME_HIBERN_ENTER_CNF_INTR UFS_BIT(20)
+#define DME_HIBERN_EXIT_CNF_INTR UFS_BIT(21)
+#define PEER_ATTR_COMPL_INTR UFS_BIT(23)
+#define DME_ENABLE_INTRS                                                       \
+	(PMC_IND_INTR | ENDPOINT_RESET_CNF_INTR | LINKUP_CNF_INTR |            \
+	 PEER_ATTR_COMPL_INTR | HSH8ENT_LR_INTR | LOCAL_ATTR_FAIL_INTR)
+
 #define DME_HIBERN_ENTER_INTR                                                  \
 	(DME_HIBERN_ENTER_CNF_INTR | DME_HIBERN_ENTER_IND_INTR)
 #define DME_HIBERN_EXIT_INTR                                                   \
@@ -114,13 +145,14 @@ int ufshcd_hisi_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
 #define DME_HIBERN_INTR (DME_HIBERN_ENTER_INTR | DME_HIBERN_EXIT_INTR)
 
 #define DME_UE_TL_INTR UFS_BIT(13)
-#define DME_UE_NL_INTR  UFS_BIT(12)
-#define DME_UE_DL_INTR  UFS_BIT(11)
-#define DME_UE_PA_INTR  UFS_BIT(10)
+#define DME_UE_NL_INTR UFS_BIT(12)
+#define DME_UE_DL_INTR UFS_BIT(11)
+#define DME_UE_PA_INTR UFS_BIT(10)
 #define DME_UE_PHY_INTR UFS_BIT(9)
-#define DME_UE_INTR (DME_UE_TL_INTR | DME_UE_NL_INTR | DME_UE_DL_INTR | DME_UE_PA_INTR | DME_UE_PHY_INTR)
+#define DME_UE_INTR                                                            \
+	(DME_UE_TL_INTR | DME_UE_NL_INTR | DME_UE_DL_INTR | DME_UE_PA_INTR |   \
+		DME_UE_PHY_INTR)
 
-#define DME_UNIPRO_STATE 0xD053
 #define MASK_DEBUG_UNIPRO_STATE 0x3F80
 #define LINK_DISABLED (0x0 << 7)
 #define LINK_DOWN (0x1 << 7)
@@ -131,24 +163,54 @@ int ufshcd_hisi_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
 #define DME_PEER_OPC_STATE 0xD061
 #define DME_PEER_OPC_WDATA 0xD062
 #define DME_PEER_OPC_RDATA 0xD063
-#define Peer_AttrCfgRdy (0x1 << 4)
+#define DME_UECPHY 0xD070
+#define DME_UECPA 0xD071
+#define DME_UECDL 0xD072
+#define DME_UECNL 0xD073
+#define DME_UECTL 0xD074
+#define DME_UECDME 0xD075
+
+#define INVALID_MIB_ATTRIBUTE 1
+#define PEER_ATTRCFGRDY (0x1 << 4)
 #define DME_LOCAL_OPC_DBG 0xD064
 #define DME_LOCAL_OPC_STATE 0xD066
-#define DME_UECDL 0xD072
 #define DME_CTRL0 0xD100
 #define DME_CTRL1 0xD101
-#define DEBUGCOUNTER0 0xD056
-#define DEBUGCOUNTER1 0xD057
-#define DBG_CNT0_MASK0 0xD058
-#define DBG_CNT0_MASK1 0xD05A
-#define DEBUGCOUNTER_EN 0xD05C
-#define DME_POWER_MODE_CHANGE_SUCC      (DME_POWER_MODE_LOCAL_SUCC | DME_POWER_MODE_REMOTE_SUCC)
+#define DME_POWER_MODE_CHANGE_SUCC                                             \
+	(DME_POWER_MODE_LOCAL_SUCC | DME_POWER_MODE_REMOTE_SUCC)
 #define DME_POWER_MODE_LOCAL_SUCC UFS_BIT(1)
 #define DME_POWER_MODE_REMOTE_SUCC UFS_BIT(2)
 #define PEER_ATTR_RES 0xF
+#define LOCAL_ATTR_BUSY 0x9
 
+#define DME_DFX_MMI_TX_CFG_STATE 0xD202
+#define DME_DFX_MMI_RX_CFG_STATE 0xD203
+#define DME_DFX_MMI_TX_SYS_STATE0 0xD204
+#define DME_DFX_MMI_RX_SYS_STATE0 0xD206
+#define DME_DFX_TX_LATL_ITF_STATE 0xD208
+#define DME_DFX_RX_LATL_ITF_STATE 0xD209
+
+
+#define TX_AUTO_BURST_SEL 0x952B
+#define HSH8ENT_LR 0x952D
 #define PA_FSM_STATUS 0x9540
 #define PA_STATUS 0x9541
+#define TX_CFG_DBG0 0x9581
+#define PA_TX_DBG1 0x9582
+#define PA_DBG_CFG_RX02 0x9593
+#define PA_DBG_CFG_RX03 0x9594
+#define PA_DBG_TX_TIMER 0x9596
+
+/* L2 Registers */
+#define DL_IMPL_STATE 0xA011
+#define DL_DBG_DL_TOP1 0xA013
+#define DL_DBG_DL_TOP2 0xA014
+#define DL_DBG_TX_TOP0 0xA015
+#define DL_DBG_TX_TOP1 0xA016
+#define DL_DBG_TX_TOP2 0xA017
+#define DL_DBG_TX_TOP3 0xA018
+#define DL_DBG_TX_TOP4 0xA019
+#define DL_IMPL_ERROR_PA_INIT_COUNT 0xA01B
 
 #define MPHY_DEEMPH_20T4_EN (1 << 4)
 #define MPHY_INIT 0x000000D6
@@ -158,47 +220,269 @@ int ufshcd_hisi_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
 #define MPHY_INIT_DONE (LANE0_DONE | LANE1_DONE)
 #define MPHY_INIT_TIMEOUT 40
 
-/* bit 4 ~ bit 30*/
+/* bit 4 ~ bit 30 */
 #define ATTR_LOCAL_ERR_ADDR 0x7FFFFFF0
 #define ATTR_LOCAL_ERR_RES 0xF
+#define UFS_VS_IE 0x011C
+#define VS_IS_IO_TIMEOUT UFS_BIT(0)
+#define RESTORE_REG_CMPL_INTR UFS_BIT(16)
+#define SAVE_REG_CMPL_INTR UFS_BIT(17)
+#define UFS_AH8_EXIT_INTR UFS_BIT(18)
+#define IDLE_PREJUDGE_INTR UFS_BIT(19)
 
+#define UFS_VS_ENABLE_INTRS                                                    \
+	(VS_IS_IO_TIMEOUT | AH8_ENTER_REQ_CNF_FAIL_INTR |                      \
+	 AH8_EXIT_REQ_CNF_FAIL_INTR)
 
-#define DME_POWER_MODE_IND_SUCC                                                \
-	(DME_POWER_MODE_LOCAL_SUCC | DME_POWER_MODE_REMOTE_SUCC)
+#define UFS_VS_IS 0x0254
+#define UFS_VS_IS_SET 0x0258
+#define UFS_CFG_IDLE_TIME_THRESHOLD 0x390
+#define UFS_CFG_IDLE_ENABLE 0x3A4
+#define IDLE_PREJUDGE_TIMTER_EN UFS_BIT(0)
 
-#define UNIPRO_CLK_AUTO_GATE_WHEN_HIBERN 0x3009C0F
+#define UNIPRO_CLK_AUTO_GATE_WHEN_HIBERN 0x03001C0E
 
-/* HISI Qos related registers */
 #define UFS_PROC_MODE_CFG 0xC0
 #define MASK_CFG_UTR_QOS_EN UFS_BIT(1)
+#define CFG_RX_CPORT_IDLE_CHK_EN UFS_BIT(20)
+#define CFG_RX_CPORT_IDLE_TIMEOUT_TRSH (0xFF << 12)
+#define BIT_SHIFT_DEV_TMT_TRSH 12
+#define DEV_TMT_VAL 0xC8
 
-#define UFS_DOORBELL_0_7_QOS 0xC4
-#define UFS_DOORBELL_8_15_QOS 0xC8
-#define UFS_DOORBELL_16_23_QOS 0xCC
-#define UFS_DOORBELL_24_31_QOS 0xD0
-#define UFS_CORE_DOORBELL_QOS(i) (0x2010 + (i)*0x80)
+#define UFS_IO_TIMEOUT_CHECK 0x118
+#define MASK_CFG_IO_TIMEOUT_TRSH 0x7F
+#define MASK_CFG_IO_TIMEOUT_CHECK_EN UFS_BIT(8)
+/* IO timeout trsh in second */
+#define IO_TIMEOUT_TRSH_VAL 20
+
+#define UFS_HW_PRESS_CFG 0x200
+#define UFS_TR_TIMEOUT_STATUS 0x250
+#define UFS_TRP_DFX0 0x290
+#define UFS_TRP_DFX1 0x294
+#define UFS_TRP_DFX2 0x298
+#define UFS_TRP_DFX3 0x29C
+#define UFS_UTP_RX_DFX0 0x2C0
+#define UFS_UTP_RX_DFX1 0x2C4
+#define UFS_UTP_RX_DFX2 0x2C8
+#define UFS_UTP_RX_DFX3 0x2CC
+#define UFS_UTP_RX_DFX4 0x2D0
+#define UFS_UTP_RX_NORM_NUM 0x2D4
+#define UFS_UTP_RX_DISC_NUM 0x2D8
+#define UFS_UTP_RX_DFX5 0x2DC
+#define UFS_DMA1_RX_DFX0 0x2F0
+#define UFS_DMA1_RX_DFX1 0x2F4
+#define UFS_DMA1_RX_DFX2 0x2F8
+#define UFS_DMA1_RX_DFX3 0x2FC
+#define UFS_DMA1_RX_AXI_ERR_ADDRL 0x300
+#define UFS_DMA1_RX_AXI_ERR_ADDRU 0x304
+#define TRP_MARB_DBR_NEW_DFX0 0x3B8
+
+#define PMIC_CLK_EN_WAIT_TIME 250 /* us */
+#define UFS_SUBSYS_DIV_MASK (0x3F << 16)
+#define UFS_SUBSYS_DIV7 6
+#define UFS_SYSCTRL_UFS_RESET 0x01FF01FF
+#define HIBERNATE_EXIT_VAL 0x1
 
 #define UFS_IS_INT_SET 0x010C
-#define IP_RST_UFS_SUBSYS              14
+#define IP_RST_UFS_SUBSYS 14
 #define IP_RST_UFS_SUBSYS_CRG 19
 /* HSDT CRG related definitions */
-//#define GT_CLK_UFS_NOC_ASYNCBRG (1 << 13)
 #define GT_CLK_UFS_NOC_ASYNCBRG 13
 #define IP_RST_UFS_NOC_ASYNCBRG 0
+#define GT_CLK_HSDTBUS		1
+#define IP_RST_HSDTBUS		1
+#define IP_RST_HSDT		5
 
 #define NOC_UFS_POWER_IDLEACK (1 << 1)
 #define NOC_UFS_POWER_IDLE (1 << 1)
 #define GT_CLK_UFS_SUBSYS (1 << 14)
 #define SOC_SCTRL_SCPERRSTEN1 0x20C
 #define SOC_SCTRL_SCPERDIS4 0x1B4
+#define SOC_SCTRL_SCISODIS 0x044
 #define NOC_UFS_POWER_IDLEREQ_MASK (1 << 17)
-#define RAM_STORE_OK 0x1
 #define MPHY_PLL_LOCK (1 << 1)
+#define MPHY_PLL_LOCK_WAIT_TIME 500
 
 /* PMC related definitions */
 #define NOC_UFS_POWER_IDLEREQ 1
 #define NOC_UFS_POWER_IDLEACK_0 (1 << 1)
 #define NOC_UFS_POWER_IDLE_0 (1 << 1)
+
+
+#define HUFS_AUTO_H8_ENABLE true
+#define HUFS_AUTO_H8_DISABLE false
+
+#define UFS_IE_KEY_KDF_EN 0x03AC
+
+#define SAVECFG_250NS 0x4
+#define PA_GRANULARITY_VAL 0x6
+#define PA_TACTIVATE_VAL 0xD
+
+enum dme_local_opc_state {
+	DME_LOCAL_OPC_SUCCESS = 0x0,
+	DME_LOCAL_OPC_BUSY = 0x9,
+};
+enum hufs_uic_reg_dump_type {
+	HUFS_UIC_HIBERNATE_ENTER,
+	HUFS_UIC_HIBERNATE_EXIT,
+	HUFS_UIC_LINKUP_FAIL,
+	HUFS_UIC_PMC_FAIL,
+};
+
+void hufs_ufs_dme_reg_dump(
+	struct ufs_hba *hba, enum hufs_uic_reg_dump_type dump_type);
+
+#define HUFS_H8_OP_ENTER true
+#define HUFS_H8_OP_EXIT false
+
+#define DL_TC0RXINITCREDITVAL 0x2002
+#define DL_TC0TXFCTHRESHOLD 0x2040
+
+#define CFG_RX_CTRL 0x9521
+#define DBG_CFG_RX 0x9580
+
+/* <<2 will be done in read/write_register functions */
+#define ATTR_MTX0(x) ((0x00 << 16) | (x))
+#define ATTR_MTX1(x) ((0x01 << 16) | (x))
+#define ATTR_MRX0(x) ((0x02 << 16) | (x))
+#define ATTR_MRX1(x) ((0x03 << 16) | (x))
+
+#define PEER_MTX0(x) ((0x00 << 16) | (x))
+#define PEER_MTX1(x) ((0x01 << 16) | (x))
+#define PEER_MRX0(x) ((0x04 << 16) | (x))
+#define PEER_MRX1(x) ((0x05 << 16) | (x))
+
+/* For backward compatible between HISI and SNPS UFS */
+#define TX0_SEL 0x0000 /* also for CB */
+#define TX1_SEL 0x0001
+#define RX0_SEL 0x0004
+#define RX1_SEL 0x0005
+#define HUFS_TX0_SEL 0x0000 /* also for CB */
+#define HUFS_TX1_SEL 0x0001
+#define HUFS_RX0_SEL 0x0002
+#define HUFS_RX1_SEL 0x0003
+#define SPEC_RX0_SEL 0x0004
+#define SPEC_RX1_SEL 0x0005
+#define UIC_SLE_MASK 0x0000FFFF
+#define UIC_ADDR_MASK 0xFFFF0000
+#define UIC_SHIFT 16
+#define INVALID_CMD 0xFFFFFFFF
+
+#define RX_R_CAL 0xe7
+#define TX_LEVEL 12
+#define R_MULTIPLIER 10
+#define R_DIVISOR 9
+#define HALF_R_DIVISOR (R_DIVISOR / 2)
+#define RX_LEVEL 9
+#define RT_LEVEL_NUM 16
+#define MAX_TX_R 0xF
+#define MAX_RX_R 0x1F
+#define MIN_TX_R 0x1
+#define MIN_RX_R 0x1
+
+#define UFS_AUTODIV_VAL 0x07E0283F
+#define UFS_AUTODIV_LPM3_BYPASS                                                \
+	BIT(SOC_SCTRL_SCUFS_AUTODIV_ufsbus_div_auto_reduce_bypass_lpm3_START)
+
+#define HUFS_UIC_ACCESS_REG_RETRIES 3
+#define HUFS_UIC_ACCESS_REG_TIMEOUT 500
+#define HUFS_DME_LINKUP_TIMEOUT 250
+#define HUFS_AUTO_H8_XFER_TIMEOUT 50
+
+#define L15_START_OFF_1 0x1500
+#define PA_PACP_FRAME_COUNT 0x15C0
+#define PA_PACP_ERROR_COUNT 0x15C1
+#define L15_END_OFF_1 0x15d6
+#define L15_START_OFF_2 0x9500
+#define L15_END_OFF_2 0x9597
+#define HCI_END_OFF 0x375
+#define HCI_OFFSET 4
+
+#define MPHY_END_OFF 0xFF
+#define MISC_START_OFF_1 0xD000
+#define MISC_END_OFF_1 0xD103
+#define MISC_START_OFF_2 0xD200
+#define MISC_END_OFF_2 0xD215
+#define MISC_START_OFF_3 0x2000
+#define MISC_END_OFF_3 0x2068
+#define MISC_START_OFF_4 0xa001
+#define MISC_END_OFF_4 0xa01c
+
+/* MPHY registers */
+#define MPHY_VCO_CTRL_I 0xAE
+#define MPHY_SET_VCO_BAND_I 0xBA
+
+#define TX_HS_CLK_EN 0x76
+
+#define RX_AFE_CTRL_III 0x13
+#define RX_AFE_CTRL_IV 0x14
+#define CDR_MANUAL_MODE BIT(0)
+#define CDR_RESET_EN BIT(2)
+
+#define TX_TRAILING_CLOCKS_REG 0x1564
+#define TX_TRAILING_CLK_NUMS 0xFA
+
+#define AFE_CONFIG_VIII 0x56
+#define TX_AFE_CONFIG_VI 0x57
+
+#define RX_ERR_STATUS 0x00C4
+#define RG_PLL_TXLS_EN 0xC8
+#define RG_PLL_EN 0xCC
+
+#define RG_PLL_PRE_DIV 0xC2
+#define RG_PLL_FBK_P 0xC3
+#define RG_PLL_FBK_S 0xC4
+#define RX_SYM_ERR_COUNTER 0xC5
+#define RX_DA_SQUELCH_EN 0xC8
+#define RG_PLL_SWC_EN 0xC9
+#define RX_RG_RX_MODE 0xCA
+#define RG_PLL_RXHSGR 0xCD
+#define RG_PLL_RXLSGR 0xCE
+#define RG_PLL_TXHSGR 0xCF
+#define RG_PLL_TXLSGR 0xD0
+#define RX_HS_DATA_VALID_TIMER_VAL 0xE9
+#define SW_RX_EQ_SEL_CTRL BIT(7)
+
+#define DATA_VALID_TIME 0x40
+#define DATA_VALID_TIME1 0x1F
+
+#ifdef CONFIG_HISI_UFS_HC_CORE_UTR
+#define QOS_MAX_LVL	7
+/* num of QOS Level, range from 0 to 7 */
+#define QOS_LVL0_DFT_OUTSTD	8
+#define QOS_LVL1_DFT_OUTSTD	8
+#define QOS_LVL2_DFT_OUTSTD	8
+#define QOS_LVL3_DFT_OUTSTD	8
+#define QOS_LVL4_DFT_OUTSTD	8
+#define QOS_LVL5_DFT_OUTSTD	32
+#define QOS_LVL6_DFT_OUTSTD	32
+#define QOS_LVL7_DFT_OUTSTD	32
+
+#define QOS_LVL0_PRMT_DFT_OUTSTD	8
+#define QOS_LVL1_PRMT_DFT_OUTSTD	8
+#define QOS_LVL2_PRMT_DFT_OUTSTD	8
+#define QOS_LVL3_PRMT_DFT_OUTSTD	8
+#define QOS_LVL4_PRMT_DFT_OUTSTD	8
+#define QOS_LVL5_PRMT_DFT_OUTSTD	32
+#define QOS_LVL6_PRMT_DFT_OUTSTD	32
+
+#define QOS_LVL0_INCRS_DFT_OUTSTD	30
+#define QOS_LVL1_INCRS_DFT_OUTSTD	30
+#define QOS_LVL2_INCRS_DFT_OUTSTD	30
+#define QOS_LVL3_INCRS_DFT_OUTSTD	30
+#define QOS_LVL4_INCRS_DFT_OUTSTD	30
+#define QOS_LVL5_INCRS_DFT_OUTSTD	16
+#define QOS_LVL6_INCRS_DFT_OUTSTD	16
+
+#define SPEC_SLOT_NUM 32
+#define CORE_SLOT_NUM 64
+#define SLOT_NUM_EACH_QOS_REG 8
+#define QOS_SLOT_8 8
+#define QOS_SLOT_16 16
+#define QOS_SLOT_24 24
+#define BITS_EACH_SLOT_QOS 4
+#define SLOT_NUM_EACH_CORE 8
+#define CORE_NUM 8
 
 #define UFS_TR_OUTSTANDING_NUM 0xD4
 #define OUTSTANDING_NUM 0x3F1F
@@ -211,480 +495,88 @@ int ufshcd_hisi_uic_change_pwr_mode(struct ufs_hba *hba, u8 mode);
 #define MASK_QOS_6 16
 #define MASK_QOS_7 24
 
-/* QOS_I_OUTSTANDING_NUM is N, then in fact num is N+1 */
-#define QOS_0_OUTSTANDING_NUM 0x0
-#define QOS_1_OUTSTANDING_NUM 0x1
-#define QOS_2_OUTSTANDING_NUM 0x2
-#define QOS_3_OUTSTANDING_NUM 0x3
-#define QOS_4_OUTSTANDING_NUM 0x4
-#define QOS_5_OUTSTANDING_NUM 0x5
-#define QOS_6_OUTSTANDING_NUM 0x6
-#define QOS_7_OUTSTANDING_NUM 0x7
+/* HUFS Qos related registers */
+#define UFS_DOORBELL_0_7_QOS 0xC4
+#define UFS_DOORBELL_8_15_QOS 0xC8
+#define UFS_DOORBELL_16_23_QOS 0xCC
+#define UFS_DOORBELL_24_31_QOS 0xD0
+#define UFS_CORE_DOORBELL_QOS(i) (0x2010 + (i)*0x80)
+#define UFS_CORE_UTRLRSR(i) (0x201C + (i) * 0x80)
+#define UFS_CORE_IS(i) (0x2000 + (i)*0x80)
+#define UFS_CORE_IE(i) (0x2004 + (i)*0x80)
+#define UFS_CORE_IS_INT_SET(i) (0x2008 + (i)*0x80)
+#define MASK_CORE_IS_IO_TIME_SIM UFS_BIT(1)
+#define MASK_CORE_IS_UTRCES_SIM UFS_BIT(0)
 
-#define QOS_0_PROMOTE_NUM 0x0 // modify
-#define QOS_1_PROMOTE_NUM 0x1
-#define QOS_2_PROMOTE_NUM 0x2
-#define QOS_3_PROMOTE_NUM 0x3
-#define QOS_4_PROMOTE_NUM 0x4
-#define QOS_5_PROMOTE_NUM 0x5
-#define QOS_6_PROMOTE_NUM 0x6
+#define UFS_CORE_UTRLDBR(i) (0x2014 + (i)*0x80)
+#define MASK_CORE_IE_IO_CMPL UFS_BIT(0)
+#define MASK_CORE_IE_IO_TIMEOUT UFS_BIT(1)
 
-#define QOS_0_INCREASE_NUM 0x0 // change this
-#define QOS_1_INCREASE_NUM 0x1
-#define QOS_2_INCREASE_NUM 0x2
-#define QOS_3_INCREASE_NUM 0x3
-#define QOS_4_INCREASE_NUM 0x4
-#define QOS_5_INCREASE_NUM 0x5
-#define QOS_6_INCREASE_NUM 0x6
+#define UFS_CORE_UTRLCLR(i) (0x2018 + (i)*0x80)
 
+#define DEFAULT_CORE_TR_TIMEOUT 500
+#define CORE_TR_TIMEOUT_STATUS(i) (0x2024 + (i)*0x80)
+#define UFS_MUTILQ_ARB_TO_THSH 0x3B0
+
+#define UTR_CORE_NUM 8
+
+#define QOS_PROMOTE_NUM 7
 #define UFS_TR_QOS_0_3_PROMOTE 0xE0
 #define UFS_TR_QOS_4_6_PROMOTE 0xE4
 
+#define QOS_INCREASE_NUM 7
 #define UFS_TR_QOS_0_3_INCREASE 0xE8
 #define UFS_TR_QOS_4_6_INCREASE 0xEC
 
-#define UFS_HISI_AUTO_H8_ENABLE true
-#define UFS_HISI_AUTO_H8_DISABLE false
+void set_core_utr_slot_qos(struct ufs_hba *hba, unsigned int task_tag, unsigned int qos);
+int config_hufs_tr_qos(struct ufs_hba *hba);
+void core_utr_qos_ctrl_init(struct ufs_hba *hba);
+u64 read_core_utr_doorbells(struct ufs_hba *hba);
+void set_core_utr_qos_starve_timeout(struct ufs_hba *hba, unsigned int timeout);
+void ufshcd_disable_core_run_stop_reg(struct ufs_hba *hba);
+void ufshcd_enable_core_run_stop_reg(struct ufs_hba *hba);
+void ufshcd_core_transfer_req_compl(struct ufs_hba *hba, unsigned int cpu);
+int request_irq_for_core_irq(struct ufs_hba *hba, struct device *dev);
+void ufshcd_enable_core_utr_intr(struct ufs_hba *hba);
+u64 read_core_utr_doorbells(struct ufs_hba *hba);
+int get_tag_per_cpu(struct ufs_hba *hba, unsigned int cpu);
+void ufshcd_irq_cpuhp_remove(struct ufs_hba *hba);
 
-#define UFS_IE_KEY_KDF_EN 0x03AC
-
-
-enum dme_local_opc_state {
-	DME_LOCAL_OPC_SUCCESS = 0x0,
-	DME_LOCAL_OPC_BUSY = 0x9,
-};
-// enum dme_unipro_state {
-// DME_UNIPRO_LINKUP,
-//};
-
-#define UFS_HISI_H8_OP_ENTER true
-#define UFS_HISI_H8_OP_EXIT false
-
-#define DL_TC0RxInitCreditVal 0x2002
-#define DL_TC0TXFCThreshold 0x2040
-
-#define CFG_RX_CTRL 0x9521
-#define DBG_CFG_RX 0x9580
-
-#define DL_IMPL_STATE 0xA011
-
-#define ATTR_MTX0(x)                                                           \
-	((0x00 << 16) |                                                        \
-		x) /* <<2 will be done in read/write_register functions*/
-#define ATTR_MTX1(x) ((0x01 << 16) | x)
-#define ATTR_MRX0(x) ((0x02 << 16) | x)
-#define ATTR_MRX1(x) ((0x03 << 16) | x)
-
-#define PEER_MTX0(x) ((0x00 << 16) | x)
-#define PEER_MTX1(x) ((0x01 << 16) | x)
-#define PEER_MRX0(x) ((0x02 << 16) | x)
-#define PEER_MRX1(x) ((0x03 << 16) | x)
-
-/*For backward compatible between HISI and SNPS UFS*/
-#define SNPS_TX0_SEL 0x0000 /*also for CB*/
-#define SNPS_TX1_SEL 0x0001
-#define SNPS_RX0_SEL 0x0004
-#define SNPS_RX1_SEL 0x0005
-#define HISI_TX0_SEL 0x0000 /*also for CB*/
-#define HISI_TX1_SEL 0x0001
-#define HISI_RX0_SEL 0x0002
-#define HISI_RX1_SEL 0x0003
-#define SPEC_RX0_SEL    0x0004
-#define SPEC_RX1_SEL    0x0005
-#define UIC_SLE_MASK 0x0000FFFF
-#define UIC_ADDR_MASK 0xFFFF0000
-#define UIC_SHIFT 16
-#define INVALID_CMD 0xFFFFFFFF
-
-#define HISI_UIC_ACCESS_REG_RETRIES 3
-#define HISI_UIC_ACCESS_REG_TIMEOUT 500
-#define HISI_UFS_DME_LINKUP_TIMEOUT 250
+#endif /* CONFIG_HISI_UFS_HC_CORE_UTR */
 
 struct ufs_attr_cfg {
 	uint32_t addr;
 	uint32_t val;
 };
-enum hisi_uic_reg_op {
-        HISI_UIC_REG_READ,
-        HISI_UIC_REG_WRITE,
+enum hufs_uic_reg_op {
+	HUFS_UIC_REG_READ,
+	HUFS_UIC_REG_WRITE,
 };
 
-struct hisi_uic_reg {
-        uint32_t reg_offset;
-        uint32_t value;
-};
-int hisi_set_each_cfg_attr(struct ufs_hba *hba, struct ufs_attr_cfg *cfg);
-
-static struct ufs_attr_cfg hisi_mphy_v200_pre_link_attr[] = {
-	{0x0000156A, 0x00000002}, /* PA_HSSeries */
-	{0x00020009, 0x00000001}, /*Rx SKP_DET_SEL, lane0 */
-	{0x00030009, 0x00000001}, /*Rx SKP_DET_SEL, lane1 */
-	{0x000000DF, 0x00000003}, /*VCO_AUTO_CHG */
-	/*FPGA can only support HS Gear 1, Gear 4 for only test chip*/
-	{0x00000023, 0x00000004}, /*TX_HSGEAR */
-	{0x00010023, 0x00000004}, /*TX_HSGEAR */
-	{0x000200a3, 0x00000004}, /*RX_HSGEAR */
-	{0x000300a3, 0x00000004}, /*RX_HSGEAR */
-	{0x000200F1, 0x00000004}, /*RX_SQ_VREF, lane0 ,RX_SQ_VREF_140mv*/
-	{0x000300F1, 0x00000004}, /*RX_SQ_VREF, lane1 ,RX_SQ_VREF_140mv*/
-	{0x00020003, 0x0000000A}, /*AD_DIF_P_LS_TIMEOUT_VAL, lane0 */
-	{0x00030003, 0x0000000A}, /*AD_DIF_P_LS_TIMEOUT_VAL, lane1 */
-	{0x00020004, 0x00000064}, /*AD_DIF_N_LS_TIMEOUT_VAL, lane0 */
-	{0x00030004, 0x00000064}, /*AD_DIF_N_LS_TIMEOUT_VAL, lane1 */
-	{0x000200cf, 0x00000002}, /*RX_STALL*/
-	{0x000300cf, 0x00000002}, /*RX_STALL*/
-	{0x000200d0, 0x00000002}, /*RX_SLEEP*/
-	{0x000300d0, 0x00000002}, /*RX_SLEEP*/
-	{0x000200F0, 0x00000001}, /*RX enable, lane0 */
-	{0x000300F0, 0x00000001}, /*RX enable, lane1 */
-	{0x00000059, 0x0000000f}, /*reg 0x59,TX0*/
-	{0x00010059, 0x0000000f}, /*reg 0x59,TX1*/
-	{0x0000005A, 0x00000000}, /*reg 0x5A,TX0*/
-	{0x0001005A, 0x00000000}, /*reg 0x5A,TX1*/
-	{0x0000005B, 0x0000000f}, /*reg 0x5B,TX0*/
-	{0x0001005B, 0x0000000f}, /*reg 0x5B,TX1*/
-	{0x0000005C, 0x00000000}, /*reg 0x5C,TX0*/
-	{0x0001005C, 0x00000000}, /*reg 0x5C,TX1*/
-	{0x0000005D, 0x00000000}, /*reg 0x5D,TX0*/
-	{0x0001005D, 0x00000000}, /*reg 0x5D,TX1*/
-	{0x0000005E, 0x0000000a}, /*reg 0x5E,TX0*/
-	{0x0001005E, 0x0000000a}, /*reg 0x5E,TX1*/
-	{0x0000005F, 0x0000000a}, /*reg 0x5F,TX0*/
-	{0x0001005F, 0x0000000a}, /*reg 0x5F,TX1*/
-	{0x0000007A, 0x00000000}, /*reg 0x7A,TX0*/
-	{0x0001007A, 0x00000000}, /*reg 0x7A,TX1*/
-	{0x0000007B, 0x00000000}, /*reg 0x7B,TX0*/
-	{0x0001007B, 0x00000000}, /*reg 0x7B,TX1*/
-	/*Tell UFS that RX can exit H8 only when host TX exits H8 first*/
-	{0x000200C3, 0x00000004}, /*RX_EXTERNAL_H8_EXIT_EN, lane0 */
-	{0x000300C3, 0x00000004}, /*RX_EXTERNAL_H8_EXIT_EN, lane1 */
-	{0x000200f6, 0x00000001}, /* RX_DLF Lane 0 */
-	{0x000300f6, 0x00000001}, /* RX_DLF Lane 1 */
-	{0x000000C7, 0x00000003}, /* measure the power, can close it */
-	{0x000000C8, 0x00000003}, /* measure the power, can close it */
-	{0x000000c5, 0x00000003}, /*RG_PLL_RXHS_EN*/
-	{0x000000c6, 0x00000003}, /*RG_PLL_RXLS_EN*/
-
-	{0x000200E9, 0x00000000}, /*RX_HS_DATA_VALID_TIMER_VAL0*/
-	{0x000300E9, 0x00000000}, /*RX_HS_DATA_VALID_TIMER_VAL0*/
-	{0x000200EA, 0x00000010}, /*RX_HS_DATA_VALID_TIMER_VAL1*/
-	{0x000300EA, 0x00000010}, /*RX_HS_DATA_VALID_TIMER_VAL1*/
-
-	/*rx_setting_better_perform*/
-	{0x000200f4, 0x00000000}, {0x000300f4, 0x00000000},
-	{0x000200f3, 0x00000000}, {0x000300f3, 0x00000000},
-	{0x000200f2, 0x00000003}, {0x000300f2, 0x00000003},
-	{0x000200f6, 0x00000002}, {0x000300f6, 0x00000002},
-	{0x000200f5, 0x00000000}, {0x000300f5, 0x00000000},
-	{0x000200fc, 0x0000001f}, {0x000300fc, 0x0000001f},
-	{0x000200fd, 0x00000000}, {0x000300fd, 0x00000000},
-	{0x000200fb, 0x00000005}, {0x000300fb, 0x00000005},
-	{0x00020011, 0x00000011}, {0x00030011, 0x00000011},
-	/*need to check the value of 0x9529 in the next version of test chip*/
-	{0x00009529, 0x00000006},	      /* VS_DebugSaveConfigTime */
-	{0x0000D014, 0x00000001}, /* update */ /*Hisi UniPro*/
-	{0, 0},
+struct hufs_uic_reg {
+	uint32_t reg_offset;
+	uint32_t value;
 };
 
-static struct ufs_attr_cfg hisi_mphy_v200_post_link_attr[] = {
-	{0x00003000, 0x00000000}, /*N_ DeviceID */
-	{0x00003001, 0x00000001}, /*N_DeviceID_valid*/
-	{0x00004020, 0x00000000}, /*T_ConnectionState*/
-	{0x00004022, 0x00000000}, /*T_PeerCPortID*/
-	{0x00004021, 0x00000001}, /*T_PeerDeviceID*/
-	{0x00004023, 0x00000000}, /*T_TrafficClass*/
-	{0x00004020, 0x00000001}, /*T_ConnectionState*/
-	{0x00002044, 0x00000000}, /* Unipro DL_AFC0CreditThreshold */
-	{0x00002045, 0x00000000}, /* Unipro DL_TC0OutAckThreshold */
-	{0x00002040, 0x00000009}, /* Unipro DL_TC0TXFCThreshold */
-	{0x0002000a, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 0 */
-	{0x0003000a, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 1 */
-	{0x000200EB, 0x00000064}, /*AD_DIF_N_TIMEOUT_VAL*/
-	{0x000300EB, 0x00000064}, /*AD_DIF_N_TIMEOUT_VAL*/
-	{0x0002000E, 0x000000F0}, /*RX_H8_EXIT_TIME*/
-	{0x0003000E, 0x000000F0}, /*RX_H8_EXIT_TIME*/
-	{0x000015a8, 0x00000005}, /*PA_TActivate*/
-	{0x000000da, 0x0000004B}, /*PLL_LOCK_TIME_VAL*/
-	{0x000000dd, 0x000000CB}, /*PLL_RSTB_TIME_VAL*/
-	/*Toshiba will send LCC during PMC*/
-	//{0x000200c2, 0x00000000},/*MC_PRESENT, Lane 0*/
-	//{0x000300c2, 0x00000000},/*MC_PRESENT, Lane 1*/
-	{0, 0},
-};
+int get_peer_rx_activate_time(struct ufs_hba *hba, u32 *value);
+int hufs_set_each_cfg_attr(struct ufs_hba *hba, struct ufs_attr_cfg *cfg);
+void hufs_error_reg_dump(struct ufs_hba *hba);
+void hufs_enable_all_irq(struct ufs_hba *hba);
+void hufs_disable_all_irq(struct ufs_hba *hba);
+void ufs_rx_eq_sel_ctrl(struct ufs_hba *hba, bool flag);
+#ifdef CONFIG_SCSI_UFS_INTR_HUB
+irqreturn_t ufshcd_ufs_intr_hub_intr(int ufs_intr_hub_irq, void *__hba);
 
-static struct ufs_attr_cfg hisi_mphy_v120_pre_link_attr[] = {
-	{0x0000156A, 0x2}, /* PA_HSSeries */
+#define INTR_HUB_LEVEL2_SEC_INFO_N(L2_GROUP) ((L2_GROUP) * 0x10 + 0x0)
+#define INTR_HUB_LEVEL2_INTR_MASK_NS_N(L2_GROUP) ((L2_GROUP) * 0x10 + 0x4)
+#define INTR_HUB_LEVEL2_INTR_STATUS_NS_N(L2_GROUP) ((L2_GROUP) * 0x10 + 0xC)
 
-	{0x00000023, 0x00000004}, {0x00010023, 0x00000004},
-	{0x000200a3, 0x00000004}, {0x000300a3, 0x00000004},
-	{0x000200f1, 0x00000004}, {0x000300f1, 0x00000004},
-	{0x00020004, 0x00000064}, {0x00030004, 0x00000064},
-	{0x00020003, 0x0000000A}, {0x00030003, 0x0000000A},
-	{0x000200f0, 0x00000001}, {0x000300f0, 0x00000001},
+#define INTR_HUB_UFS_GROUP 2
+#define INTR_UNIPRO_GIC_GROUP 2
+#define INTR_UNIPRO_GIC_BIT 0
+#define INTR_UFSHC_GIC_GROUP 2
+#define INTR_UFSHC_GIC_BIT 2
+#endif
 
-	{0x00020009, 0x00000001}, /* Rx SKP_DET_SEL, lane0 */
-	{0x00030009, 0x00000001}, /* Rx SKP_DET_SEL, lane1 */
-	{0x000000DF, 0x00000003}, /*VCO_AUTO_CHG */
-	//{0x000200F1, 0x00000002}, /*RX_SQ_VREF, lane0 ,RX_SQ_VREF_175mv */
-	//{0x000300F1, 0x00000002}, /*RX_SQ_VREF, lane1 ,RX_SQ_VREF_175mv */
-	//{0x00020003, 0x00000080}, /*AD_DIF_P_LS_TIMEOUT_VAL, lane0 */
-	//{0x00030003, 0x00000080}, /*AD_DIF_P_LS_TIMEOUT_VAL, lane1 */
-	{0x000000C7, 0x3},	/*measure the power, can close it */
-	{0x000000C8, 0x3},	/*measure the power, can close it */
-	{0x000200cf, 0x00000002}, /*RX_STALL*/
-	{0x000300cf, 0x00000002}, /*RX_STALL*/
-	{0x000200d0, 0x00000002}, /*RX_SLEEP*/
-	{0x000300d0, 0x00000002}, /*RX_SLEEP*/
-	{0x000200cc, 0x00000003}, /*RX_HS_CLK_EN*/
-	{0x000300cc, 0x00000003}, /*RX_HS_CLK_EN*/
-	{0x000200cd, 0x00000003}, /*RX_LS_CLK_EN*/
-	{0x000300cd, 0x00000003}, /*RX_LS_CLK_EN*/
-	{0x000000c5, 0x00000003}, /*RG_PLL_RXHS_EN*/
-	{0x000000c6, 0x00000003}, /*RG_PLL_RXLS_EN*/
-	{0x000200E9, 0x00000000}, /*RX_HS_DATA_VALID_TIMER_VAL0*/
-	{0x000300E9, 0x00000000}, /*RX_HS_DATA_VALID_TIMER_VAL0*/
-	{0x000200EA, 0x00000010}, /*RX_HS_DATA_VALID_TIMER_VAL1*/
-	{0x000300EA, 0x00000010}, /*RX_HS_DATA_VALID_TIMER_VAL1*/
-	{0x00001552, 0x0000004F}, /*PA_TxHsG1SyncLength*/
-	{0x00001554, 0x0000004F}, /*PA_TxHsG2SyncLength*/
-	{0x00001556, 0x0000004F}, /*PA_TxHsG3SyncLength*/
-	{0x00009509, 0x0000004F}, /**/
-	{0x0000950A, 0x0000000F}, /**/
-	{0x000200F4, 0x1},	/*RX_EQ_SEL_R*/
-	{0x000300F4, 0x1},	/*RX_EQ_SEL_R*/
-	{0x000200F2, 0x3},	/*RX_EQ_SEL_C*/
-	{0x000300F2, 0x3},	/*RX_EQ_SEL_C*/
-	{0x000200FB, 0x3},	/*RX_VSEL*/
-	{0x000300FB, 0x3},	/*RX_VSEL*/
-	{0x000200F6, 0x3},	/*RX_DLF Lane 0*/
-	{0x000300F6, 0x3},	/*RX_DLF Lane 1*/
-	{0x0002000a, 0x00000002}, /*RX H8_TIMEOUT_VAL, Lane 0*/
-	{0x0003000a, 0x00000002}, /*RX H8_TIMEOUT_VAL, Lane 1*/
-	{0x000000d4, 0x00000031}, /*RG_PLL_DMY0*/
-	{0x00000073, 0x00000004}, /*TX_PHY_CONFIG II*/
-	{0x00010073, 0x00000004}, /*TX_PHY_CONFIG II*/
-	{0x000200F0, 0x00000001}, /*RX enable, lane0 */
-	{0x000300F0, 0x00000001}, /*RX enable, lane1 */
-	{0x0000D014, 0x1},	/*Unipro VS_MphyCfgUpdt*/
-	{0, 0},
-};
-
-static struct ufs_attr_cfg hisi_mphy_v120_post_link_attr[] = {
-	{0x00003000, 0x0},	/*N_ DeviceID */
-	{0x00003001, 0x1},	/*N_DeviceID_valid*/
-	{0x00004020, 0x0},	/*T_ConnectionState*/
-	{0x00004022, 0x0},	/*T_PeerCPortID*/
-	{0x00004021, 0x1},	/*T_PeerDeviceID*/
-	{0x00004023, 0x0},	/*T_TrafficClass*/
-	{0x00004020, 0x1},	/*T_ConnectionState*/
-	{0x00002044, 0x0},	/* Unipro DL_AFC0CreditThreshold */
-	{0x00002045, 0x0},	/* Unipro DL_TC0OutAckThreshold */
-	{0x00002040, 0x9},	/* Unipro DL_TC0TXFCThreshold */
-	{0x0002000a, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 0 */
-	{0x0003000a, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 1 */
-	{0x000200EB, 0x64},       /*AD_DIF_N_TIMEOUT_VAL*/
-	{0x000300EB, 0x64},       /*AD_DIF_N_TIMEOUT_VAL*/
-	{0x0002000E, 0xF0},       /*RX_H8_EXIT_TIME*/
-	{0x0003000E, 0xF0},       /*RX_H8_EXIT_TIME*/
-	{0x000000ca, 0x3},	/**/
-	{0x000015a8, 10},	 /*PA_TActivate*/
-	{0, 0},
-};
-
-/* PMC to fast/fast auto Gear 1 */
-static struct ufs_attr_cfg hisi_mphy_V200_tc_pre_pmc_fsg1_attr[] = {
-	{0x00000050, 0x00000000}, {0x00010050, 0x00000000},
-	{0x00000051, 0x00000000}, {0x00010051, 0x00000000},
-	{0x00000052, 0x00000000}, {0x00010052, 0x00000000},
-	{0x00000056, 0x00000000}, {0x00010056, 0x00000000},
-	{0x00000057, 0x00000000}, {0x00010057, 0x00000000},
-	{0x00000058, 0x0000000F}, {0x00010058, 0x0000000F},
-	{0x000000A1, 0x00000000}, {0x000100A1, 0x00000000},
-	{0x000000A4, 0x00000000}, {0x000100A4, 0x00000000},
-	{0x000000A2, 0x0000000B}, {0x000100A2, 0x0000000B},
-	{0x000000A5, 0x00000000}, {0x000100A5, 0x00000000},
-	{0x000000A3, 0x0000001F}, {0x000100A3, 0x0000001F},
-	{0x000000A6, 0x00000009}, {0x000100A6, 0x00000009}, {0, 0},
-};
-
-/* PMC to fast/fast auto Gear 2 */
-static struct ufs_attr_cfg hisi_mphy_V200_tc_pre_pmc_fsg2_attr[] = {
-	{0x00000050, 0x00000010}, {0x00010050, 0x00000010},
-	{0x00000051, 0x00000000}, {0x00010051, 0x00000000},
-	{0x00000052, 0x00000000}, {0x00010052, 0x00000000},
-	{0x00000056, 0x00000000}, {0x00010056, 0x00000000},
-	{0x00000057, 0x00000001}, {0x00010057, 0x00000001},
-	{0x00000058, 0x0000000F}, {0x00010058, 0x0000000F},
-	{0x000000A1, 0x00000000}, {0x000100A1, 0x00000000},
-	{0x000000A4, 0x00000000}, {0x000100A4, 0x00000000},
-	{0x000000A2, 0x0000000B}, {0x000100A2, 0x0000000B},
-	{0x000000A5, 0x00000000}, {0x000100A5, 0x00000000},
-	{0x000000A3, 0x0000001F}, {0x000100A3, 0x0000001F},
-	{0x000000A6, 0x0000000D}, {0x000100A6, 0x0000000D}, {0, 0},
-};
-
-/* PMC to fast/fast auto Gear 3 */
-static struct ufs_attr_cfg hisi_mphy_V200_tc_pre_pmc_fsg3_attr[] = {
-	{0x00000050, 0x00000010}, {0x00010050, 0x00000010},
-	{0x00000051, 0x00000000}, {0x00010051, 0x00000000},
-	{0x00000052, 0x00000000}, {0x00010052, 0x00000000},
-	{0x00000056, 0x00000000}, {0x00010056, 0x00000000},
-	{0x00000057, 0x00000007}, {0x00010057, 0x00000007},
-	{0x00000058, 0x0000000F}, {0x00010058, 0x0000000F},
-	{0x000000A1, 0x00000000}, {0x000100A1, 0x00000000},
-	{0x000000A4, 0x00000002}, {0x000100A4, 0x00000002},
-	{0x000000A2, 0x0000000B}, {0x000100A2, 0x0000000B},
-	{0x000000A5, 0x00000000}, {0x000100A5, 0x00000000},
-	{0x000000A3, 0x0000001F}, {0x000100A3, 0x0000001F},
-	{0x000000A6, 0x0000001F}, {0x000100A6, 0x0000001F}, {0, 0},
-};
-
-/* PMC to fast/fast auto Gear 4 */
-static struct ufs_attr_cfg hisi_mphy_V200_tc_pre_pmc_fsg4_attr[] = {
-	{0x00000050, 0x00000010}, {0x00010050, 0x00000010},
-	{0x00000051, 0x00000000}, {0x00010051, 0x00000000},
-	{0x00000052, 0x00000000}, {0x00010052, 0x00000000},
-	{0x00000056, 0x00000000}, {0x00010056, 0x00000000},
-	{0x00000057, 0x0000001F}, {0x00010057, 0x0000001F},
-	{0x00000058, 0x0000000F}, {0x00010058, 0x0000000F},
-	{0x000000A1, 0x00000000}, {0x000100A1, 0x00000000},
-	{0x000000A4, 0x00000023}, {0x000100A4, 0x00000023},
-	{0x000000A2, 0x0000000B}, {0x000100A2, 0x0000000B},
-	{0x000000A5, 0x00000000}, {0x000100A5, 0x00000000},
-	{0x000000A3, 0x0000001F}, {0x000100A3, 0x0000001F},
-	{0x000000A6, 0x0000001F}, {0x000100A6, 0x0000001F}, {0, 0},
-};
-
-/* PMC to slow/slow */
-static struct ufs_attr_cfg hisi_mphy_V200_tc_pre_pmc_slow_attr[] = {
-	{0x00000050, 0x00000000}, {0x00010050, 0x00000000},
-	{0x00000051, 0x00000000}, {0x00010051, 0x00000000},
-	{0x00000052, 0x00000000}, {0x00010052, 0x00000000},
-	{0x00000056, 0x00000000}, {0x00010056, 0x00000000},
-	{0x00000057, 0x00000000}, {0x00010057, 0x00000000},
-	{0x00000058, 0x0000000F}, {0x00010058, 0x0000000F},
-	{0x000000A1, 0x00000000}, {0x000100A1, 0x00000000},
-	{0x000000A4, 0x00000000}, {0x000100A4, 0x00000000},
-	{0x000000A2, 0x0000000B}, {0x000100A2, 0x0000000B},
-	{0x000000A5, 0x00000000}, {0x000100A5, 0x00000000},
-	{0x000000A3, 0x0000001F}, {0x000100A3, 0x0000001F},
-	{0x000000A6, 0x0000001f}, {0x000100A6, 0x0000001f}, {0, 0},
-};
-
-/* clang-format on */
-
-/* ASIC */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_link_attr[] = {
-        {0x0000156A, 0x00000002}, /* PA_HSSeries */
-        {0x00020009, 0x00000001},/*Rx SKP_DET_SEL, lane0 */
-        {0x00030009, 0x00000001},/*Rx SKP_DET_SEL, lane1 */
-        {0x000000c5, 0x00000003},/*RG_PLL_RXHS_EN*/
-        {0x000000c6, 0x00000003},/*RG_PLL_RXLS_EN*/
-        {0x000000c7, 0x00000003},/*RG_PLL_TXHS_EN*/
-        {0x000000c8, 0x00000003},/*RG_PLL_TXLS_EN*/
-        {0x000200cf, 0x00000002}, /*RX_STALL*/
-        {0x000300cf, 0x00000002}, /*RX_STALL*/
-        {0x000200d0, 0x00000002}, /*RX_SLEEP*/
-        {0x000300d0, 0x00000002}, /*RX_SLEEP*/
-        {0x000000DF, 0x00000002},/*VCO_AUTO_CHG */
-        {0x00020003, 0x0000000A},/*AD_DIF_P_LS_TIMEOUT_VAL, lane0 */
-        {0x00030003, 0x0000000A},/*AD_DIF_P_LS_TIMEOUT_VAL, lane1 */
-        {0x00020004, 0x00000064},/*AD_DIF_N_LS_TIMEOUT_VAL, lane0 */
-        {0x00030004, 0x00000064},/*AD_DIF_N_LS_TIMEOUT_VAL, lane1 */
-        {0x00020017, 0x00000084}, /* RX_AFE_CTRL lane 0, HW calibration bit2 and 7 */
-        {0x00030017, 0x00000084}, /* RX_AFE_CTRL lane 1, HW calibration bit2 and 7 */
-        {0x000200F0, 0x00000001},/*RX enable, lane0 */
-        {0x000300F0, 0x00000001},/*RX enable, lane1 */
-        {0x0000D014, 0x00000001}, /* update *//*Hisi UniPro*/
-        {0, 0},
-};
-
-static struct ufs_attr_cfg hisi_mphy_V300_post_link_attr[] = {
-        {0x00003000, 0x00000000}, /* N_DeviceID */
-        {0x00003001, 0x00000001},/* N_DeviceID_valid */
-        {0x00004020, 0x00000000},/* T_ConnectionState */
-        {0x00004022, 0x00000000},/* T_PeerCPortID */
-        {0x00004021, 0x00000001},/* T_PeerDeviceID */
-        {0x00004023, 0x00000000},/* T_TrafficClass */
-        {0x00004020, 0x00000001},/* T_ConnectionState */
-        {0x00002044, 0x00000000},/* Unipro DL_AFC0CreditThreshold */
-        {0x00002045, 0x00000000}, /* Unipro DL_TC0OutAckThreshold */
-        {0x00002040, 0x00000009}, /* Unipro DL_TC0TXFCThreshold */
-        {0x0002000A, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 0 */
-        {0x0003000A, 0x0000001E}, /* RX H8_TIMEOUT_VAL, Lane 1*/
-        {0x000200EB, 0x00000064},/* AD_DIF_N_TIMEOUT_VAL */
-        {0x000300EB, 0x00000064},/* AD_DIF_N_TIMEOUT_VAL */
-        {0x0002000E, 0x000000F0},/*RX_H8_EXIT_TIME */
-        {0x0003000E, 0x000000F0},/* RX_H8_EXIT_TIME */
-        {0x000000DF, 0x00000003}, /* VCO_AUTO_CHG */
-        {0x000015A8, 0x00000005}, /* PA_TActivate */
-        {0x000000DA, 0x0000004B}, /* PLL_LOCK_TIME_VAL */
-        {0, 0},
-};
-
-/* PMC to Fast/Fast auto G1 */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_pmc_fsg1_attr[] = {
-        {0x00000057, 0x00000000},/* RG_TX0_SL_EN_POST[7:0] TX 0x57 */
-        {0x00010057, 0x00000000},/* RG_TX1_SL_EN_POST[7:0] TX 0x57 */
-        {0x00020013, 0x00000033},/* RX0 CDR KI/KP, RX 0x13 */
-        {0x00030013, 0x00000033},/* RX1 CDR KI/KP, RX 0x13 */
-        {0x000200F3, 0x00000000},/* RX0 RX_EQ_SEL_I, RX 0xF3 */
-        {0x000300F3, 0x00000000},/* RX1 RX_EQ_SEL_I, RX 0xF3 */
-        {0x0002000F, 0x0000000F},/* RX0 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0x0003000F, 0x0000000F},/* RX1 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0, 0},
-};
-
-/* PMC to Fast/Fast auto G2 */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_pmc_fsg2_attr[] = {
-        {0x00000057, 0x00000000},/* RG_TX0_SL_EN_POST[7:0] TX 0x57 */
-        {0x00010057, 0x00000000},/* RG_TX1_SL_EN_POST[7:0] TX 0x57 */
-        {0x00020013, 0x00000022},/* RX0 CDR KI/KP, RX 0x13 */
-        {0x00030013, 0x00000022},/* RX1 CDR KI/KP, RX 0x13 */
-        {0x000200F3, 0x00000000},/* RX0 RX_EQ_SEL_I, RX 0xF3 */
-        {0x000300F3, 0x00000000},/* RX1 RX_EQ_SEL_I, RX 0xF3 */
-        {0x0002000F, 0x0000000E},/* RX0 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0x0003000F, 0x0000000E},/* RX1 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0, 0},
-};
-
-/* PMC to Fast/Fast auto G3 */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_pmc_fsg3_attr[] = {
-        {0x00000057, 0x00000007},/* RG_TX0_SL_EN_POST[7:0] TX 0x57 */
-        {0x00010057, 0x00000007},/* RG_TX1_SL_EN_POST[7:0] TX 0x57 */
-        {0x00020013, 0x00000012},/* RX0 CDR KI/KP, RX 0x13 */
-        {0x00030013, 0x00000012},/* RX1 CDR KI/KP, RX 0x13 */
-        {0x000200F3, 0x00000000},/* RX0 RX_EQ_SEL_I, RX 0xF3 */
-        {0x000300F3, 0x00000000},/* RX1 RX_EQ_SEL_I, RX 0xF3 */
-        {0x0002000F, 0x00000001},/* RX0 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0x0003000F, 0x00000001},/* RX1 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0, 0},
-};
-
-/* PMC to Fast/Fast auto G4 */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_pmc_fsg4_attr[] = {
-        {0x00000057, 0x0000001F},/* RG_TX0_SL_EN_POST[7:0] TX 0x57 */
-        {0x00010057, 0x0000001F},/* RG_TX1_SL_EN_POST[7:0] TX 0x57 */
-        {0x00020013, 0x00000012},/* RX0 CDR KI/KP, RX 0x13 */
-        {0x00030013, 0x00000012},/* RX1 CDR KI/KP, RX 0x13 */
-        {0x000200F3, 0x00000001},/* RX0 RX_EQ_SEL_I, RX 0xF3 */
-        {0x000300F3, 0x00000001},/* RX1 RX_EQ_SEL_I, RX 0xF3 */
-        {0x0002000F, 0x00000000},/* RX0 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0x0003000F, 0x00000000},/* RX1 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0, 0},
-};
-
-/* PMC to slow/slow auto */
-static struct ufs_attr_cfg hisi_mphy_V300_pre_pmc_slow_attr[] = {
-        {0x00000057, 0x00000000},/* RG_TX0_SL_EN_POST[7:0] TX 0x57 */
-        {0x00010057, 0x00000000},/* RG_TX1_SL_EN_POST[7:0] TX 0x57 */
-        {0x00020013, 0x00000000},/* RX0 CDR KI/KP, RX 0x13 */
-        {0x00030013, 0x00000000},/* RX1 CDR KI/KP, RX 0x13 */
-        {0x000200F3, 0x00000000},/* RX0 RX_EQ_SEL_I, RX 0xF3 */
-        {0x000300F3, 0x00000000},/* RX1 RX_EQ_SEL_I, RX 0xF3 */
-        {0x0002000F, 0x00000000},/* RX0 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0x0003000F, 0x00000000},/* RX1 RG_PI_LPFI/RG_PI_LPFO, RX 0x0F */
-        {0, 0},
-};
-
-#endif /* UFS_HISI_H_ */
+#define UNUSED(x) ((void)(x))
+#endif /* HUFS_H_ */

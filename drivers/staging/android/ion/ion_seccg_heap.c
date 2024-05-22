@@ -1,52 +1,61 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: ion_seccg_heap.c
- * Description: This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation;
- * either version 2 of the License,
- * or (at your option) any later version.
+/*
+ * drivers/staging/android/ion/ion_seccg_heap.c
+ *
+ * Copyright(C) 2004-2019 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #define pr_fmt(fmt) "seccg: " fmt
 
-#include <linux/delay.h>
-#include <linux/err.h>
-#include <linux/mm.h>
-#include <linux/dma-mapping.h>
-#include <linux/dma-contiguous.h>
-#include <linux/genalloc.h>
-#include <linux/mutex.h>
-#include <linux/of_fdt.h>
-#include <linux/of_reserved_mem.h>
-#include <linux/of_address.h>
-#include <linux/platform_device.h>
-#include <linux/scatterlist.h>
-#include <linux/slab.h>
 #include <linux/cma.h>
-#include <linux/sizes.h>
-#include <linux/memblock.h>
-#include <linux/sched.h>
-#include <linux/list.h>
-#include <linux/workqueue.h>
-#include <linux/version.h>
-#include <linux/hisi/hisi_cma.h>
+#include <linux/delay.h>
+#include <linux/dma-contiguous.h>
+#include <linux/dma-mapping.h>
+#include <linux/err.h>
+#include <linux/genalloc.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/hisi/hisi_mm.h>
+#include <linux/list.h>
+#include <linux/memblock.h>
+#include <linux/mm.h>
+#include <linux/mutex.h>
+#include <linux/of_address.h>
+#include <linux/of_fdt.h>
+#include <linux/of_reserved_mem.h>
+#include <linux/platform_device.h>
+#include <linux/scatterlist.h>
+#include <linux/sched.h>
+#include <linux/sizes.h>
+#include <linux/slab.h>
+#include <linux/version.h>
+#include <linux/workqueue.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#include "mm/sec_alloc.h"
+#include "mm_ion_priv.h"
+#include "mm/ion_sec_contig.h"
+#include "mm/ion_tee_op.h"
 #include "ion.h"
-#include "hisi/ion_tee_op.h"
-#include "hisi/ion_sec_contig.h"
-#include "hisi/sec_alloc.h"
-#include "hisi_ion_priv.h"
+#ifdef CONFIG_HISI_CMA_DEBUG
+#include <linux/hisi/hisi_cma_debug.h>
+#endif
 
-static struct cma *hisi_cma;
-static struct ion_sec_cma hisi_seccg_cmas[SEC_CG_CMA_NUM];
+static struct cma *mm_cma;
+static struct ion_sec_cma mm_seccg_cmas[SEC_CG_CMA_NUM];
 static unsigned int seccg_cma_num;
 
-int hisi_sec_cma_set_up(struct reserved_mem *rmem)
+int mm_sec_cma_set_up(struct reserved_mem *rmem)
 {
 	phys_addr_t align = PAGE_SIZE << max(MAX_ORDER - 1, pageblock_order);
 	phys_addr_t mask = align - 1;
@@ -58,8 +67,8 @@ int hisi_sec_cma_set_up(struct reserved_mem *rmem)
 	int err;
 
 	if (seccg_cma_num == 0)
-		memset(hisi_seccg_cmas, 0,/* unsafe_function_ignore: memset */
-		       sizeof(hisi_seccg_cmas));
+		memset(mm_seccg_cmas, 0, /* unsafe_function_ignore: memset */
+		       sizeof(mm_seccg_cmas));
 
 	if (seccg_cma_num >= SEC_CG_CMA_NUM) {
 		pr_err("Sec cma num overflow!seccg_cma_num:%u\n",
@@ -96,44 +105,47 @@ int hisi_sec_cma_set_up(struct reserved_mem *rmem)
 			rmem->base, rmem->size);
 		return -EINVAL;
 	}
+
 	err = cma_init_reserved_mem(rmem->base, rmem->size,
 				    0, rmem->name, &cma);
 	if (err) {
 		pr_err("Reserved memory: unable to setup CMA region\n");
 		return err;
 	}
-
+#ifdef CONFIG_HISI_CMA_DEBUG
+	cma_set_flag(cma, node);
+#endif
 	set_svc_cma(svc_id, cma);
 
-	hisi_seccg_cmas[seccg_cma_num].cma_region = cma;
-	hisi_seccg_cmas[seccg_cma_num].cma_name = cma_name;
+	mm_seccg_cmas[seccg_cma_num].cma_region = cma;
+	mm_seccg_cmas[seccg_cma_num].cma_name = cma_name;
 
 	pr_err("%s init cma:rmem->base:0x%llx,size:0x%llx,cmaname:%s, seccg_cma_num:%u\n",
 	       __func__, rmem->base, rmem->size, cma_name, seccg_cma_num);
 
 	seccg_cma_num++;
 
-	if (!strcmp(cma_name, "hisi-cma-pool")) {
+	if (!strcmp(cma_name, "mm-cma-pool")) {
 		pr_err("%s,cma reg to dma_camera_cma\n", __func__);
-		hisi_cma = cma;
+		mm_cma = cma;
 		ion_register_dma_camera_cma((void *)cma);
 	}
 
 	return 0;
 }
-RESERVEDMEM_OF_DECLARE(hisi_dynamic_cma,
-		       "hisi-cma-pool",
-		       hisi_sec_cma_set_up);
-RESERVEDMEM_OF_DECLARE(hisi_iris_static_cma,
-		       "hisi-iris-sta-cma-pool",
-		       hisi_sec_cma_set_up);
-RESERVEDMEM_OF_DECLARE(hisi_algo_static_cma,
-		       "hisi-algo-sta-cma-pool",
-		       hisi_sec_cma_set_up);
+RESERVEDMEM_OF_DECLARE(mm_dynamic_cma,
+		       "mm-cma-pool",
+		       mm_sec_cma_set_up);
+RESERVEDMEM_OF_DECLARE(mm_iris_static_cma,
+		       "mm-iris-sta-cma-pool",
+		       mm_sec_cma_set_up);
+RESERVEDMEM_OF_DECLARE(mm_algo_static_cma,
+		       "mm-algo-sta-cma-pool",
+		       mm_sec_cma_set_up);
 
 struct cma *get_sec_cma(void)
 {
-	return hisi_cma;
+	return mm_cma;
 }
 
 static int __seccg_heap_input_check(struct ion_seccg_heap *seccg_heap,
@@ -223,7 +235,7 @@ static int __seccg_create_pool(struct ion_seccg_heap *seccg_heap)
 	int ret = 0;
 
 	sec_debug("into %s\n", __func__);
-	/* Allocate on 4KB boundaries (1 << ION_PBL_SHIFT)*/
+	/* Allocate on 4KB boundaries (1 << ION_PBL_SHIFT) */
 	seccg_heap->pool = gen_pool_create((int)seccg_heap->pool_shift, -1);
 
 	if (!seccg_heap->pool) {
@@ -232,7 +244,7 @@ static int __seccg_create_pool(struct ion_seccg_heap *seccg_heap)
 	}
 	gen_pool_set_algo(seccg_heap->pool, gen_pool_best_fit, NULL);
 
-	/* Add all memory to genpool first，one chunk only*/
+	/* Add all memory to genpool first, one chunk only */
 	cma_base = cma_get_base(seccg_heap->cma);
 	cma_size = cma_get_size(seccg_heap->cma);
 
@@ -328,14 +340,14 @@ static int ion_seccg_heap_allocate(struct ion_heap *heap,
 	}
 
 	/*init the TA conversion here*/
-	if (!seccg_heap->TA_init &&
+	if (!seccg_heap->ta_init &&
 	    (seccg_heap->heap_attr == HEAP_SECURE_TEE)) {
-		ret = secmem_tee_init(seccg_heap->context, seccg_heap->session);
+		ret = secmem_tee_init(seccg_heap->context, seccg_heap->session, TEE_SECMEM_NAME);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			goto out;
 		}
-		seccg_heap->TA_init = 1;
+		seccg_heap->ta_init = 1;
 	}
 
 	if (seccg_alloc(seccg_heap, buffer, size)) {
@@ -354,7 +366,7 @@ out:
 	mutex_unlock(&seccg_heap->mutex);
 
 	if (ret == -ENOMEM)
-		hisi_ion_memory_info(true);
+		mm_ion_memory_info(true);
 
 	return ret;
 }
@@ -428,6 +440,7 @@ static void __seccg_parse_dt_cma_para(struct device_node *nd,
 	const char *compatible = NULL;
 	struct device_node *phandle_node = NULL;
 	u32 cma_type = 0;
+	u32 heap_svc_id = 0;
 	int ret = 0;
 
 	phandle_node = of_parse_phandle(nd, "cma-region", 0);
@@ -441,15 +454,24 @@ static void __seccg_parse_dt_cma_para(struct device_node *nd,
 		}
 		seccg_heap->cma_name = compatible;
 	} else {
-		seccg_heap->cma_name = "hisi-cma-pool";
+		seccg_heap->cma_name = "mm-cma-pool";
 		pr_err("no cma-region phandle\n");
 	}
+
 	ret = of_property_read_u32(nd, "cma-type", &cma_type);
 	if (ret < 0) {
 		seccg_heap->cma_type = CMA_DYNAMIC;
 		pr_err("can't find prop:cma-type\n");
 	} else {
 		seccg_heap->cma_type = cma_type;
+	}
+
+	ret = of_property_read_u32(nd, "heap-svc-id", &heap_svc_id);
+	if (ret < 0) {
+		seccg_heap->heap_svc_id = -1;
+	} else {
+		seccg_heap->heap_svc_id = (int)heap_svc_id;
+		pr_err("heap svc id: %u\n", heap_svc_id);
 	}
 }
 
@@ -530,11 +552,14 @@ static struct cma *__seccg_heap_getcma(struct ion_seccg_heap *seccg_heap)
 
 	for (i = 0; i < SEC_CG_CMA_NUM; i++) {
 		if (seccg_heap->cma_name &&
-		    hisi_seccg_cmas[i].cma_name &&
+		    mm_seccg_cmas[i].cma_name &&
 		    (!strcmp(seccg_heap->cma_name,
-			     hisi_seccg_cmas[i].cma_name)))
-			return hisi_seccg_cmas[i].cma_region;
+			     mm_seccg_cmas[i].cma_name)))
+			return mm_seccg_cmas[i].cma_region;
 	}
+
+	if (seccg_heap->heap_svc_id == ISPNN_NORMAL)
+		return get_svc_cma(seccg_heap->heap_svc_id);
 
 	return NULL;
 }
@@ -572,7 +597,6 @@ struct ion_heap *ion_seccg_heap_create(struct ion_platform_heap *heap_data)
 		goto free_heap;
 
 	seccg_heap->cma = __seccg_heap_getcma(seccg_heap);
-
 	if (!seccg_heap->cma) {
 		pr_err("%s, can't get cma! cma_type:%u, cma_name:%s\n",
 		       __func__, seccg_heap->cma_type, seccg_heap->cma_name);
@@ -590,7 +614,7 @@ struct ion_heap *ion_seccg_heap_create(struct ion_platform_heap *heap_data)
 		seccg_heap->context = NULL;
 		seccg_heap->session = NULL;
 	}
-	seccg_heap->TA_init = 0;
+	seccg_heap->ta_init = 0;
 
 	ret = __seccg_create_pool(seccg_heap);
 	if (ret) {

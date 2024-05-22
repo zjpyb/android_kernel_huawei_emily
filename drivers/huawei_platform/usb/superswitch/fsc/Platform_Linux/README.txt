@@ -3,11 +3,11 @@ README.TXT
 Fairchild Semiconductor FUSB305 Linux Platform Driver Integration Notes
 _______________________________________________________________________________
 Device Tree
-Currently, the driver requires the use of Device Tree in order to 
-function with the I2C bus and the required GPIO pins. Modify the 
-following Device Tree snippet to specify resources specific to your 
-system and include them in your kernel's Device Tree. The FUSB305 
-requires a minimum of 2 GPIO pins, a valid I2C bus, and I2C slave 
+Currently, the driver requires the use of Device Tree in order to
+function with the I2C bus and the required GPIO pins. Modify the
+following Device Tree snippet to specify resources specific to your
+system and include them in your kernel's Device Tree. The FUSB305
+requires a minimum of 2 GPIO pins, a valid I2C bus, and I2C slave
 address 0x22.
 
 > kernel/arch/arm/boot/dts/qcom/msm8994.dtsi
@@ -27,8 +27,8 @@ At end of file, add:
 			fairchild,int_n = <&msm_gpio 39 8>;      //<&gpio_target gpio# ActiveLow>
 			fairchild,vbus5v = <&pm8994_gpios 4 0>;  //<&gpio_target gpio# ActiveHigh>
 			fairchild,dbg_sm = <&pmi8994_gpios 7 0>; //This is for debug out
-		}; 
-	};        
+		};
+	};    
 };
 > kernel/arch/arm/boot/dts/qcom/msm8994-pinctrl.dtsi
 
@@ -45,26 +45,26 @@ In "gpio@c600" group, change "disabled" to "okay".
 _______________________________________________________________________________
 
 Compilation/Makefile
-	You must define the preprocessor macro "FSC_PLATFORM_LINUX" in order to 
+	You must define the preprocessor macro "FSC_PLATFORM_LINUX" in order to
 	pull in the correct typedefs.
-	
-	The following example snippet is from a Makefile expecting the 
+
+	The following example snippet is from a Makefile expecting the
 	following directory structure:
-	
+
 	path/to/MakefileDir/
 		|---- Makefile
 		|---- Platform_Linux/
 		|---- core/
 			|---- vdm/
 				|---- DisplayPort/
-	
+
 	Makefile
 	/*********************************************************************/
 	# Required flag to configure the core to operate with the Linux kernel
 	ccflags-$(CONFIG_FUSB_30X) += -DFSC_PLATFORM_LINUX
 	# Optional flag to enable debug/hostcomm interface and functionality
 	ccflags-$(CONFIG_FUSB_30X) += -DFSC_DEBUG
-	
+
 	# The following flags are used to configure which features are compiled in,
 	# and the allowed combinations are:
 	#	FSC_HAVE_SRC - Source only
@@ -88,8 +88,8 @@ Compilation/Makefile
 
   obj-y += fusb3601_firmware/Platform_Linux/
 	/*********************************************************************/
-	
-_______________________________________________________________________________
+
+______________________________________________________________________________
 SysFs HostComm/Debug interface
 	When FSC_HAVE_DEBUG is defined, this driver will attempt to create sysfs files to provide
 	user-space access to driver functionality. If it is not defined, then these files will not exist.
@@ -103,7 +103,7 @@ SysFs HostComm/Debug interface
 			|---- pd_state_log (read this file to fetch and display the driver's PD State Log)
 			|---- typec_state_log (read this file to fetch and display the driver's Type-C State Log)
 			|---- reinitialize (read this file to reinitialize the FUSB305)
-			
+
 	Usage examples:
 		PD State Log:
 		$ cat pd_state_log
@@ -111,40 +111,40 @@ SysFs HostComm/Debug interface
 			[sec.ms]	State		Detail
 			[sec.ms]	State		Detail
 			...
-		
+
 		Type-C State Log:
 		$ cat typec_state_log
 			Type-C State Log has 6 entries:
 			[sec.ms]        State
 			[sec.ms]        State
 			...
-		
+
 		Reinitialize the Device:
 		$ cat reinitialize
 			FUSB305 Reinitialized!
-		
+
 		Interact with HostComm interface:
 		To use fusb30x_hostcomm, first make sure you have write permission:
 			$ sudo chmod 666 fusb30x_hostcomm
 		Then write a command to it to perform an action, and read it to get the result.
 		The expected response for most commands is the command issued as the first byte, and zeros thereafter (unless the command is supposed to return data). If the 2nd byte is 0x01, then the specified command is not supported.
-		
+
 		Send a hard reset:
 			$ echo -n "0xAE" > fusb30x_hostcomm
 			$ cat fusb30x_hostcomm
 				0xae 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-		
+
 		I2C read on register 0x01:
 			$ echo -n "0xC0 0x01" > fusb30x_hostcomm
 			$ cat fusb30x_hostcomm
 				0x80 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
-				
+
 			This I2C read returned a value of 0x80 from register 0x01 on the FUSB305.
-		
+
 		I2C write to a register (Note - example only, it's typically a bad idea to write to registers by hand):
 			Write syntax is: "Write-CMD Register NumBytes Data0 Data1 Data2..."
 			$ echo -n "0xC1 0x01 0x03 0x01 0x02 0x03" > fusb30x_hostcomm
 			$ $ cat fusb30x_hostcomm
 				First byte will be 0x00 on failure, 0x01 on success - all other bytes are 0x00.
-		
+
 		Please see Platform_Linux/hostcomm.h for the command mapping.

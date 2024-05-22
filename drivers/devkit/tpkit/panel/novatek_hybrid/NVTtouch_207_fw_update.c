@@ -21,7 +21,7 @@
 #include <linux/vmalloc.h>
 //#include <linux/fs.h>
 #include <asm/uaccess.h>
-#include <../../huawei_ts_kit.h>
+#include <huawei_ts_kit.h>
 
 #include "NVTtouch_207.h"
 
@@ -34,6 +34,7 @@
 #define NVT_HYBRID_FLASH_SECTOR_SIZE 4096
 #define NVT_HYBRID_SIZE_64KB 65536
 #define NVT_HYBRID_BLOCK_64KB_NUM 2
+#define NVT_FIRMWARE_LEN 64
 
 struct nvt_hybrid_ts_firmware {
 	size_t size;
@@ -367,9 +368,9 @@ int32_t NVT_Hybrid_Erase_Flash(void)
 		// Sector Erase
 		buf[0] = 0x00;
 		buf[1] = 0x20;    // Command : Sector Erase
-		buf[2] = ((Flash_Address >> 16) & 0xFF);
-		buf[3] = ((Flash_Address >> 8) & 0xFF);
-		buf[4] = (Flash_Address & 0xFF);
+		buf[2] = (uint32_t)(Flash_Address >> 16) & 0xFF;
+		buf[3] = (uint32_t)(Flash_Address >> 8) & 0xFF;
+		buf[4] = (uint32_t)Flash_Address & 0xFF;
 		ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_HW_Address, buf, 5);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Sector Erase error!!(%d,%d)\n", __func__, ret, i);
@@ -445,7 +446,9 @@ int32_t NVT_Hybrid_Write_Flash(void)
 	uint8_t buf[64] = {0};
 	uint32_t XDATA_Addr = 0x14002;
 	uint32_t Flash_Address = 0;
-	int32_t i = 0, j = 0, k = 0;
+	int32_t i;
+	int32_t k;
+	uint32_t j;
 	uint8_t tmpvalue = 0;
 	int32_t count = 0;
 	int32_t ret = 0;
@@ -487,7 +490,8 @@ int32_t NVT_Hybrid_Write_Flash(void)
 			}
 			ret = nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 33);
 			if (ret < 0) {
-				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, ret, j);
+				TS_LOG_ERR("%s: Write Page error!%d, j=%u\n",
+					__func__, ret, j);
 				return ret;
 			}
 		}
@@ -730,12 +734,12 @@ int g_nvt_hybrid_sd_force_update = 0;
 int32_t nvt_bybrid_fw_update_boot(char *file_name)
 {
 	int32_t ret = 0;
-	u8 firmware[64];
+	u8 firmware[NVT_FIRMWARE_LEN] = {0};
 
 	nvt_hybrid_ts->firmware_updating = true;
-	
+
 	TS_LOG_INFO("%s: file_name=%s\n", __func__, file_name);
-	snprintf(firmware, PAGE_SIZE, "ts/%s", file_name);
+	snprintf(firmware, sizeof(firmware) - 1, "ts/%s", file_name);
 
 	ret = nvt_hybrid_update_firmware_request(firmware);
 	if (ret) {

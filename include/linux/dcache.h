@@ -17,7 +17,7 @@
 struct path;
 struct vfsmount;
 
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 struct mapping_stat_t {
 	unsigned long mmap_sync_read_times;
 	unsigned long generic_sync_read_times;
@@ -121,7 +121,7 @@ struct dentry {
 	struct list_head d_child;	/* child of parent list */
 	struct list_head d_subdirs;	/* our children */
 
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 	struct mapping_stat_t mapping_stat;
 #endif
 

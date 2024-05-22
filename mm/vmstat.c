@@ -1052,6 +1052,9 @@ const char * const vmstat_text[] = {
 	"nr_mlock",
 	"nr_page_table_pages",
 	"nr_kernel_stack",
+#if IS_ENABLED(CONFIG_SHADOW_CALL_STACK)
+	"nr_shadow_call_stack_bytes",
+#endif
 	"nr_bounce",
 #if IS_ENABLED(CONFIG_ZSMALLOC)
 	"nr_zspages",
@@ -1088,9 +1091,22 @@ const char * const vmstat_text[] = {
 	"nr_slab_unreclaimable",
 	"nr_isolated_anon",
 	"nr_isolated_file",
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 	"workingset_refault",
 	"workingset_activate",
 	"workingset_restore",
+#else
+	"workingset_refault_anon",
+	"workingset_refault_file",
+	"workingset_activate_anon",
+	"workingset_activate_file",
+	"workingset_restore_anon",
+	"workingset_restore_file",
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	"workingset_anon_cost",
+	"workingset_file_cost",
+#endif
+#endif
 	"workingset_nodereclaim",
 	"nr_anon_pages",
 	"nr_mapped",
@@ -1107,7 +1123,11 @@ const char * const vmstat_text[] = {
 	"nr_vmscan_immediate_reclaim",
 	"nr_dirtied",
 	"nr_written",
-	"nr_indirectly_reclaimable",
+#ifdef CONFIG_KZEROD
+	"nr_zero_page_alloc_total",
+	"nr_zero_page_alloc_prezero",
+#endif
+	"", /* nr_indirectly_reclaimable */
 
 	/* enum writeback_stat_item counters */
 	"nr_dirty_threshold",
@@ -1240,7 +1260,38 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_SPECULATIVE_PAGE_FAULT
 	"speculative_pgfault",
 #endif
+#ifdef CONFIG_HYPERHOLD_ZSWAPD
+	"zswapd_running",
+	"zswapd_hit_refaults",
+	"zswapd_medium_press",
+	"zswapd_critical_press",
+	"zswapd_memcg_ratio_skip",
+	"zswapd_memcg_refault_skip",
+	"zswapd_swapout",
+	"zswapd_empty_round",
+	"zswapd_empty_round_skip_times",
+	"zswapd_snapshot_times",
+	"zswapd_reclaimed",
+	"zswapd_scanned",
+#endif
+#ifdef CONFIG_HYPERHOLD
+	"kswapd_reclaimed_anon",
+	"kswapd_reclaimed_file",
+	"kswapd_scan_anon",
+	"kswapd_scan_file",
+	"dr_reclaimed_anon",
+	"dr_reclaimed_file",
+	"dr_scan_anon",
+	"dr_scan_file",
+	"freeze_reclaim_times",
+	"freeze_reclaimed",
+#endif
 #endif /* CONFIG_VM_EVENTS_COUNTERS */
+#ifdef CONFIG_VM_COPY
+	"vm_copy_total_page",
+	"vm_copy_cow_page",
+	"vm_copy_free_page",
+#endif
 };
 #endif /* CONFIG_PROC_FS || CONFIG_SYSFS || CONFIG_NUMA */
 
@@ -1697,6 +1748,10 @@ static int vmstat_show(struct seq_file *m, void *arg)
 	unsigned long *l = arg;
 	unsigned long off = l - (unsigned long *)m->private;
 
+	/* Skip hidden vmstat items. */
+	if (*vmstat_text[off] == '\0')
+		return 0;
+
 	seq_puts(m, vmstat_text[off]);
 	seq_put_decimal_ull(m, " ", *l);
 	seq_putc(m, '\n');
@@ -1791,7 +1846,7 @@ int vmstat_refresh(struct ctl_table *table, int write,
 
 static void vmstat_update(struct work_struct *w)
 {
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	if (refresh_cpu_vm_stats(true) && !cpu_isolated(smp_processor_id())) {
 #else
 	if (refresh_cpu_vm_stats(true)) {
@@ -1830,12 +1885,13 @@ static bool need_update(int cpu)
 
 		/*
 		 * The fast way of checking if there are any vmstat diffs.
-		 * This works because the diffs are byte sized items.
 		 */
-		if (memchr_inv(p->vm_stat_diff, 0, NR_VM_ZONE_STAT_ITEMS))
+		if (memchr_inv(p->vm_stat_diff, 0, NR_VM_ZONE_STAT_ITEMS *
+			       sizeof(p->vm_stat_diff[0])))
 			return true;
 #ifdef CONFIG_NUMA
-		if (memchr_inv(p->vm_numa_stat_diff, 0, NR_VM_NUMA_STAT_ITEMS))
+		if (memchr_inv(p->vm_numa_stat_diff, 0, NR_VM_NUMA_STAT_ITEMS *
+			       sizeof(p->vm_numa_stat_diff[0])))
 			return true;
 #endif
 	}
@@ -1886,7 +1942,7 @@ static void vmstat_shepherd(struct work_struct *w)
 	for_each_online_cpu(cpu) {
 		struct delayed_work *dw = &per_cpu(vmstat_work, cpu);
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 		if (cpu_isolated(cpu))
 			continue;
 #endif

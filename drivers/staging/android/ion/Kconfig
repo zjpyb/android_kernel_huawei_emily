@@ -50,6 +50,13 @@ config ION_HISI
 	help
 	  Choose this option if you wish to use ion on Hisilicon Platform.
 
+config ION_HISI_CMA_HEAP
+	bool "Hisilicon ION cma heap support"
+	depends on ION_HISI && ION_CMA_HEAP
+	default n
+	help
+	  if you want to use hisi_ion cma heap, you should select this.
+
 config HISI_ION_SECSG_DEBUG
 	bool "Hisilicon ION secsg heap debug support"
 	depends on ION_HISI_SECSG
@@ -104,5 +111,10 @@ config ION_HISI_SECCM
 
 config ION_HISI_SUPPORT_4GPLUS
 	bool "Hisilicon ION can support allocation above 4G"
+	depends on ION
+	default n
+
+config ION_HISI_SUPPORT_HEAP_MERGE
+	bool "Hisilicon ION camera heap and iris heap merge"
 	depends on ION
 	default n

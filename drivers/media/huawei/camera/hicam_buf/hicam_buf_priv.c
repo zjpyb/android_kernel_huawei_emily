@@ -1,11 +1,8 @@
 /*
- * Hisilicon Kirin camera driver source file
- *
- * Copyright (C) Huawei Technology Co., Ltd.
- *
- * Author:	wenjianyue
- * Email:	wenjianyue@huawei.com
- * Date:	2018-11-28
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: Implement of hicamera buffer priv.
+ * Author: wenjianyue
+ * Create: 2018-11-28
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,12 +11,8 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <hicam_buf.h>
@@ -30,6 +23,7 @@
 #include <linux/rbtree.h>
 #include <linux/slab.h>
 #include <linux/hisi/hisi_ion.h>
+#include <linux/hisi/hisi_lb.h>
 #include <linux/dma-buf.h>
 #include <linux/kernel.h>
 
@@ -43,30 +37,32 @@ struct sgtable_node {
 
 struct priv_ion_t {
 	struct device *dev;
-
 	struct mutex sg_mutex;
 	struct list_head sg_nodes;
 };
 
-void* hicam_internal_map_kernel(struct device *dev, int fd)
+void *hicam_internal_map_kernel(struct device *dev, int fd)
 {
 	int rc;
 	void *kaddr = NULL;
-	struct dma_buf *dmabuf;
+	struct dma_buf *dmabuf = NULL;
 
+	(void)dev;
 	dmabuf = dma_buf_get(fd);
-	if (IS_ERR(dmabuf)) {
-		cam_err("%s: fail to get dma dmabuf.", __func__);
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		cam_err("%s: fail to get dma dmabuf", __FUNCTION__);
 		return NULL;
 	}
-	/* map ion buffer into kernel address space, with invalidate side effect. */
+	/* map ion buffer into kernel address space,
+	 * with invalidate side effect.
+	 */
 	rc = dma_buf_begin_cpu_access(dmabuf, DMA_FROM_DEVICE);
 	if (rc < 0) {
-		cam_err("%s: fail to map kernel.", __func__);
+		cam_err("%s: fail to map kernel", __FUNCTION__);
 		goto err_map_kernel;
 	}
 	/* dma_buf_kmap will always succeed. */
-	kaddr = dma_buf_kmap(dmabuf, /* offset in PAGE granularity */ 0);
+	kaddr = dma_buf_kmap(dmabuf, 0); /* 0: offset in PAGE granularity */
 
 err_map_kernel:
 	dma_buf_put(dmabuf);
@@ -75,48 +71,57 @@ err_map_kernel:
 
 void hicam_internal_unmap_kernel(struct device *dev, int fd)
 {
-	int rc = 0;
+	int rc;
 	struct dma_buf *dmabuf = NULL;
 
+	(void)dev;
 	dmabuf = dma_buf_get(fd);
-	if (IS_ERR(dmabuf)) {
-		cam_err("%s: fail to get dma dmabuf.", __func__);
-		return ;
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		cam_err("%s: fail to get dma dmabuf", __FUNCTION__);
+		return;
 	}
 
 	dma_buf_kunmap(dmabuf, 0, NULL); /* third param is not used. */
-	/* unmap ion buffer from kernel address space, with clean side effect. */
+	/* unmap ion buffer from kernel address space,
+	 * with clean side effect.
+	 */
 	rc = dma_buf_end_cpu_access(dmabuf, DMA_TO_DEVICE);
-	if (rc < 0) {
-		cam_err("%s: failed.", __func__);
-	}
-
+	if (rc < 0)
+		cam_err("%s: failed", __FUNCTION__);
 	dma_buf_put(dmabuf);
 }
 
-int hicam_internal_map_iommu(struct device *dev,
-		int fd, struct iommu_format *fmt)
+int hicam_internal_map_iommu(struct device *dev, int fd,
+	struct iommu_format *fmt)
 {
 	int rc = 0;
 	struct dma_buf *dmabuf = NULL;
-	unsigned long iova_addr, iova_size = 0;
-	struct priv_ion_t *ion = dev_get_drvdata(dev);
+	unsigned long iova_addr;
+	unsigned long iova_size = 0;
+	struct priv_ion_t *ion = NULL;
 
-	dmabuf = dma_buf_get(fd);
-	if (IS_ERR(dmabuf)) {
-		cam_err("%s: fail to get dma dmabuf.", __func__);
+	ion = dev_get_drvdata(dev);
+	if (!ion) {
+		cam_debug("%s: get priv ion fail", __FUNCTION__);
 		return -ENOENT;
 	}
 
-	iova_addr = hisi_iommu_map_dmabuf(ion->dev, dmabuf, fmt->prot, &iova_size);
+	dmabuf = dma_buf_get(fd);
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		cam_err("%s: fail to get dma dmabuf", __FUNCTION__);
+		return -ENOENT;
+	}
+
+	iova_addr = hisi_iommu_map_dmabuf(ion->dev, dmabuf,
+		fmt->prot, &iova_size);
 	if (!iova_addr) {
-		cam_err("%s: fail to map iommu.", __func__);
+		cam_err("%s: fail to map iommu", __FUNCTION__);
 		rc = -ENOMEM;
 		goto err_map_iommu;
 	}
 
-	cam_debug("%s: fd:%d, dmabuf:%pK iova:%#lx, size:%#lx.", __func__,
-			fd, dmabuf, iova_addr, iova_size);
+	cam_debug("%s: fd:%d, dmabuf:%pK iova:%#lx, size:%#lx", __FUNCTION__,
+		fd, dmabuf, iova_addr, iova_size);
 	fmt->iova = iova_addr;
 	fmt->size = iova_size;
 
@@ -125,37 +130,68 @@ err_map_iommu:
 	return rc;
 }
 
-void hicam_internal_unmap_iommu(struct device *dev,
-		int fd, struct iommu_format *fmt)
+void hicam_internal_unmap_iommu(struct device *dev, int fd,
+	struct iommu_format *fmt)
 {
 	int rc;
 	struct dma_buf *dmabuf = NULL;
-	struct priv_ion_t *ion = dev_get_drvdata(dev);
+	struct priv_ion_t *ion = NULL;
+
+	ion = dev_get_drvdata(dev);
+	if (!ion) {
+		cam_err("%s: get priv ion fail", __FUNCTION__);
+		return;
+	}
 
 	dmabuf = dma_buf_get(fd);
-	if (IS_ERR(dmabuf)) {
-		cam_err("%s: fail to get dma dmabuf.", __func__);
-		return ;
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		cam_err("%s: fail to get dma dmabuf", __FUNCTION__);
+		return;
 	}
 
 	rc = hisi_iommu_unmap_dmabuf(ion->dev, dmabuf, fmt->iova);
-	if (rc < 0) {
-		cam_err("%s: failed.", __func__);
-	}
+	if (rc < 0)
+		cam_err("%s: failed", __FUNCTION__);
 
-	cam_debug("%s: fd:%d, dmabuf:%pK.", __func__, fd, dmabuf);
+	cam_debug("%s: fd:%d, dmabuf:%pK", __FUNCTION__, fd, dmabuf);
 	dma_buf_put(dmabuf);
 }
 
-struct sgtable_node* find_sgtable_node_by_fd(struct priv_ion_t *ion, int fd)
+void hicam_internal_sc_available_size(struct systemcache_format *fmt)
+{
+	if (is_lb_available() == 0) {
+		fmt->size = 0;
+		return;
+	}
+
+	fmt->size = lb_get_available_size();
+}
+
+int hicam_internal_sc_wakeup(struct systemcache_format *fmt)
+{
+	int rc;
+
+	cam_info("%s: prio %u for pid %u", __FUNCTION__, fmt->prio, fmt->pid);
+	if (fmt->prio == 1)
+		rc =  lb_up_policy_prio(fmt->pid);
+	else
+		rc =  lb_down_policy_prio(fmt->pid);
+
+	if (rc < 0)
+		cam_err("%s: failed", __FUNCTION__);
+
+	return rc;
+}
+
+struct sgtable_node *find_sgtable_node_by_fd(struct priv_ion_t *ion, int fd)
 {
 	struct dma_buf *dmabuf = NULL;
 	struct sgtable_node *node = NULL;
 	struct sgtable_node *ret_node = ERR_PTR(-ENOENT);
 
 	dmabuf = dma_buf_get(fd);
-	if (IS_ERR(dmabuf)) {
-		cam_err("%s: fail to get dma buf.", __func__);
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		cam_err("%s: fail to get dma buf", __FUNCTION__);
 		return ret_node;
 	}
 
@@ -170,64 +206,67 @@ struct sgtable_node* find_sgtable_node_by_fd(struct priv_ion_t *ion, int fd)
 	return ret_node;
 }
 
-struct sgtable_node* find_sgtable_node_by_sg(struct priv_ion_t *ion,
-		struct sg_table *sgt)
+struct sgtable_node *find_sgtable_node_by_sg(struct priv_ion_t *ion,
+	struct sg_table *sgt)
 {
 	struct sgtable_node *node = NULL;
 
 	list_for_each_entry(node, &ion->sg_nodes, list) {
-		if (node->sgt == sgt) {
+		if (node->sgt == sgt)
 			return node;
-		}
 	}
 
 	return ERR_PTR(-ENOENT);
 }
 
-struct sgtable_node* create_sgtable_node(struct priv_ion_t *ion, int fd)
+struct sgtable_node *create_sgtable_node(struct priv_ion_t *ion, int fd)
 {
-	struct sgtable_node *node;
+	struct sgtable_node *node = NULL;
 
 	node = kzalloc(sizeof(*node), GFP_KERNEL);
 	if (!node) {
-		cam_err("%s: fail to alloc sgtable_node.", __func__);
+		cam_err("%s: fail to alloc sgtable_node", __FUNCTION__);
 		return ERR_PTR(-ENOMEM);
 	}
 
 	node->buf = dma_buf_get(fd);
-	if (IS_ERR(node->buf)) {
-		cam_err("%s: fail to get dma buf.", __func__);
-		goto err_get_buf;
+	if (IS_ERR_OR_NULL(node->buf)) {
+		cam_err("%s: fail to get dma buf", __FUNCTION__);
+		goto err_get_node_buf;
 	}
 
 	node->attachment = dma_buf_attach(node->buf, ion->dev);
-	if (IS_ERR(node->attachment)) {
-		cam_err("%s: fail to attach dma buf.", __func__);
-		goto err_attach_buf;
+	if (IS_ERR_OR_NULL(node->attachment)) {
+		cam_err("%s: fail to attach dma buf", __FUNCTION__);
+		goto err_attach_node_buf;
 	}
 
 	node->sgt = dma_buf_map_attachment(node->attachment, DMA_BIDIRECTIONAL);
-	if (IS_ERR(node->sgt)) {
-		cam_err("%s: fail to map attachment.", __func__);
-		goto err_map_buf;
+	if (IS_ERR_OR_NULL(node->sgt)) {
+		cam_err("%s: fail to map attachment", __FUNCTION__);
+		goto err_map_node_buf;
 	}
 
 	kref_init(&node->ref);
 	return node;
 
-err_map_buf:
+err_map_node_buf:
 	dma_buf_detach(node->buf, node->attachment);
-err_attach_buf:
+err_attach_node_buf:
 	dma_buf_put(node->buf);
-err_get_buf:
+err_get_node_buf:
 	kfree(node);
 	return ERR_PTR(-ENOENT);
 }
 
-struct sg_table* hicam_internal_get_sgtable(struct device *dev, int fd)
+struct sg_table *hicam_internal_get_sgtable(struct device *dev, int fd)
 {
 	struct sgtable_node *node = NULL;
 	struct priv_ion_t *ion = dev_get_drvdata(dev);
+	if (!ion) {
+		cam_err("%s: ion is null", __FUNCTION__);
+		return ERR_PTR(-ENODEV);
+	}
 
 	mutex_lock(&ion->sg_mutex);
 	node = find_sgtable_node_by_fd(ion, fd);
@@ -252,7 +291,8 @@ static void hicam_sgtable_deletor(struct kref *ref)
 	struct sgtable_node *node = container_of(ref, struct sgtable_node, ref);
 
 	/* release sgtable things we saved. */
-	dma_buf_unmap_attachment(node->attachment, node->sgt, DMA_BIDIRECTIONAL);
+	dma_buf_unmap_attachment(node->attachment, node->sgt,
+		DMA_BIDIRECTIONAL);
 	dma_buf_detach(node->buf, node->attachment);
 	dma_buf_put(node->buf);
 
@@ -264,10 +304,16 @@ void hicam_internal_put_sgtable(struct device *dev, struct sg_table *sgt)
 {
 	struct sgtable_node *node = NULL;
 	struct priv_ion_t *ion = dev_get_drvdata(dev);
+	if (!ion) {
+		cam_err("%s: ion is null", __FUNCTION__);
+		return;
+	}
+
 	mutex_lock(&ion->sg_mutex);
 	node = find_sgtable_node_by_sg(ion, sgt);
 	if (IS_ERR(node)) {
-		cam_err("%s: putting non-exist sg_table:%pK.", __func__, sgt);
+		cam_err("%s: putting non-exist sg_table:%pK", __FUNCTION__,
+			sgt);
 		goto err_out;
 	}
 	kref_put(&node->ref, hicam_sgtable_deletor);
@@ -278,9 +324,8 @@ err_out:
 int hicam_internal_get_phys(struct device *dev, int fd, struct phys_format *fmt)
 {
 	struct sg_table *sgt = hicam_internal_get_sgtable(dev, fd);
-	if (IS_ERR(sgt)) {
+	if (IS_ERR(sgt))
 		return PTR_ERR(sgt);
-	}
 
 	fmt->phys = sg_phys(sgt->sgl);
 	hicam_internal_put_sgtable(dev, sgt);
@@ -295,25 +340,24 @@ phys_addr_t hicam_internal_get_pgd_base(struct device *dev)
 int hicam_internal_sync(int fd, struct sync_format *fmt)
 {
 	int ret;
-	struct dma_buf *dmabuf;
+	struct dma_buf *dmabuf = NULL;
 
 	dmabuf = dma_buf_get(fd);
-	if (unlikely(IS_ERR(dmabuf))) {
-		cam_err("%s: fail to get dmabuf.", __func__);
+	if (unlikely(IS_ERR_OR_NULL(dmabuf))) {
+		cam_err("%s: fail to get dmabuf", __FUNCTION__);
 		return -EINVAL;
 	}
 
-	if (fmt->direction & HICAM_BUF_SYNC_READ) {
+	if (fmt->direction & HICAM_BUF_SYNC_READ)
 		/* invalidate transfers ownership of memory to cpu,
 		 * means the begin of cpu access. */
 		ret = dma_buf_begin_cpu_access(dmabuf, DMA_FROM_DEVICE);
-	} else if (fmt->direction & HICAM_BUF_SYNC_WRITE) {
+	else if (fmt->direction & HICAM_BUF_SYNC_WRITE)
 		/* clean transfers ownership of memory to device,
 		 * means the end of cpu access. */
 		ret = dma_buf_end_cpu_access(dmabuf, DMA_TO_DEVICE);
-	} else {
+	else
 		ret = -EINVAL;
-	}
 
 	dma_buf_put(dmabuf);
 	return ret;
@@ -321,20 +365,21 @@ int hicam_internal_sync(int fd, struct sync_format *fmt)
 
 int hicam_internal_local_sync(int fd, struct local_sync_format *fmt)
 {
-	int rc, cmd;
-	struct dma_buf *dmabuf;
+	int rc;
+	int cmd;
+	struct dma_buf *dmabuf = NULL;
 
 	dmabuf = dma_buf_get(fd);
-	if (unlikely(IS_ERR(dmabuf))) {
-		cam_err("%s: fail to get dmabuf.", __func__);
+	if (unlikely(IS_ERR_OR_NULL(dmabuf))) {
+		cam_err("%s: fail to get dmabuf", __FUNCTION__);
 		return -EINVAL;
 	}
 	cmd = fmt->direction == HICAM_BUF_SYNC_READ ?
 		ION_HISI_INV_CACHES : ION_HISI_CLEAN_CACHES;
-	rc = hisi_ion_cache_operate(fd, fmt->apva, fmt->offset, fmt->length, cmd);
-	if (rc < 0) {
-		cam_err("%s: sync failed, rc:%d", __func__, rc);
-	}
+	rc = mm_ion_cache_operate(fd, fmt->apva, fmt->offset, fmt->length,
+		cmd);
+	if (rc < 0)
+		cam_err("%s: sync failed, rc:%d", __FUNCTION__, rc);
 
 	dma_buf_put(dmabuf);
 	return 0;
@@ -344,20 +389,22 @@ void hicam_internal_dump_debug_info(struct device *dev)
 {
 	struct sgtable_node *node = NULL;
 	struct priv_ion_t *ion = dev_get_drvdata(dev);
-	cam_info("%s: dumping.....%pK", __func__, ion);
+	cam_info("%s: dumping.....%pK", __FUNCTION__, ion);
+	if (!ion)
+		return;
 
 	list_for_each_entry(node, &ion->sg_nodes, list) {
 		cam_info("%s: pending sg_table:%pK for dmabuf:%pK",
-				__func__, node->sgt, node->buf);
+			__FUNCTION__, node->sgt, node->buf);
 	}
 }
 
 int hicam_internal_init(struct device *dev)
 {
 	struct priv_ion_t *ion = devm_kzalloc(dev,
-			sizeof(struct priv_ion_t), GFP_KERNEL);
+		sizeof(struct priv_ion_t), GFP_KERNEL);
 	if (!ion) {
-		cam_err("%s: failed to allocate internal data.", __func__);
+		cam_err("%s: failed to allocate internal data", __FUNCTION__);
 		return -ENOMEM;
 	}
 
@@ -372,7 +419,7 @@ int hicam_internal_deinit(struct device *dev)
 {
 	struct priv_ion_t *ion = dev_get_drvdata(dev);
 	if (!ion) {
-		cam_err("%s: deinit before init.", __func__);
+		cam_err("%s: deinit before init", __FUNCTION__);
 		return -EINVAL;
 	}
 

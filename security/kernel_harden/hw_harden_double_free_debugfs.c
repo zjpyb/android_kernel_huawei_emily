@@ -64,7 +64,7 @@ static int slub_user_area_test(struct kmem_cache *my_cachep)
 		return -ENOMEM;
 	}
 	canary = (unsigned long *)(object + sizeof(void *));
-	*canary = (random_free ^ (unsigned long)canary) & CANARY_MASK;
+	*canary = (random_free ^ (uintptr_t)canary) & CANARY_MASK;
 	kfree(object);
 	object = NULL;
 	return 0;

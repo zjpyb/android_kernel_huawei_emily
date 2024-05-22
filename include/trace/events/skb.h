@@ -109,7 +109,7 @@ TRACE_EVENT(skb_latency,
          __entry->skb  = skb;
          __entry->len   = skb->len;
          __entry->sk    = skb->sk;
-	  __entry->uid = DELAYST_SKB_CB(skb)->android_uid;
+         __entry->uid = delayst_skb_cb(skb)->android_uid;
 
          memset(__entry->saddr, 0, sizeof(struct sockaddr_in6));
          memset(__entry->daddr, 0, sizeof(struct sockaddr_in6));
@@ -117,17 +117,17 @@ TRACE_EVENT(skb_latency,
          if (skb->sk){
 		 inet = inet_sk(skb->sk);
 		 sk = skb->sk;
-		 TP_STORE_ADDR_PORTS(__entry, inet, skb->sk);
+		 tp_store_addr_ports(__entry, inet, skb->sk);
           } else if (skbprobe_get_proto(skb) == TP_SKB_TYPE_TCP){
 		th = tcp_hdr(skb);
 		if (th)
-			TP_SKB_STORE_ADDR(__entry, skb, th->source, th->dest);
+			tp_skb_store_addr(__entry, skb, th->source, th->dest);
          } else if (skbprobe_get_proto(skb) == TP_SKB_TYPE_UDP) {
 		uh = udp_hdr(skb);
 		if (uh)
-			TP_SKB_STORE_ADDR(__entry, skb, uh->source, uh->dest);
+			tp_skb_store_addr(__entry, skb, uh->source, uh->dest);
          } else {
-             TP_SKB_STORE_ADDR(__entry, skb, 0, 0);
+             tp_skb_store_addr(__entry, skb, 0, 0);
          }
 
          switch (skbprobe_get_proto(skb)) {
@@ -142,11 +142,11 @@ TRACE_EVENT(skb_latency,
                 break;
          }
 
-         if (IS_DIRECT(skb, TP_SKB_DIRECT_RCV)) {
-          __entry->t1 = GET_TIME_FROM_SKB(skb,TP_SKB_HMAC_RX);
-	      __entry->t2 = GET_TIME_FROM_SKB(skb,TP_SKB_HMAC_UPLOAD);
-	      __entry->t3 = GET_TIME_FROM_SKB(skb,TP_SKB_IP);
-	      __entry->t4 = GET_TIME_FROM_SKB(skb,TP_SKB_RECV);
+         if (is_direct(skb, TP_SKB_DIRECT_RCV)) {
+          __entry->t1 = get_time_from_skb(skb,TP_SKB_HMAC_RX);
+	      __entry->t2 = get_time_from_skb(skb,TP_SKB_HMAC_UPLOAD);
+	      __entry->t3 = get_time_from_skb(skb,TP_SKB_IP);
+	      __entry->t4 = get_time_from_skb(skb,TP_SKB_RECV);
 	      __entry->t5 = __entry->t4;
 	      __entry->interval1 = "driver_delay";
 	      __entry->interval2 = "ip_delay";
@@ -155,11 +155,11 @@ TRACE_EVENT(skb_latency,
 	      __entry->direct = "in";
 	      __entry->seq = TCP_SKB_CB(skb)->end_seq;
          } else {
-	      __entry->t1 = GET_TIME_FROM_SKB(skb,TP_SKB_SEND);
-	      __entry->t2 = GET_TIME_FROM_SKB(skb,TP_SKB_IP);
-	      __entry->t3 = GET_TIME_FROM_SKB(skb,TP_SKB_HMAC_XMIT);
-	      __entry->t4 = GET_TIME_FROM_SKB(skb,TP_SKB_HMAC_TX);
-	      __entry->t5 = GET_TIME_FROM_SKB(skb,TP_SKB_DMAC);
+	      __entry->t1 = get_time_from_skb(skb,TP_SKB_SEND);
+	      __entry->t2 = get_time_from_skb(skb,TP_SKB_IP);
+	      __entry->t3 = get_time_from_skb(skb,TP_SKB_HMAC_XMIT);
+	      __entry->t4 = get_time_from_skb(skb,TP_SKB_HMAC_TX);
+	      __entry->t5 = get_time_from_skb(skb,TP_SKB_DMAC);
 	      __entry->interval1 = "transport_delay";
 	      __entry->interval2 = "ip_delay";
 	      __entry->interval3 = "hmac_delay";

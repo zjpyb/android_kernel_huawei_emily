@@ -24,11 +24,14 @@
 
 #define MMC_RESP_UNCARE            0
 
+#define BOOTDEVICE_FWREV_SIZE      32
+
 struct scsi_device;
 struct request;
 struct scsi_sense_hdr;
 struct mmc_card;
 struct mmc_request;
+struct mmc_command;
 
 /*
  * routines used to record storage information in ufs/emmc driver
@@ -55,6 +58,12 @@ void storage_rochk_monitor_sd_readonly(const struct scsi_device *sdp,
 void storage_rochk_monitor_mmc_readonly(const struct mmc_card *card,
 	const struct mmc_request *mrq, unsigned int status,
 	unsigned int resp);
+void storage_rofa_info_clear(void);
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK
+void storage_rochk_monitor_mmc_cmd_readonly(
+	const struct mmc_card *card,
+	const struct mmc_command *cmd);
+#endif
 
 #ifdef CONFIG_HUAWEI_STORAGE_ROFA_FAULT_INJECT
 unsigned int storage_rofi_should_inject_check_condition_sense(void);
@@ -69,26 +78,26 @@ int storage_rofi_switch_mmc_card_pwronwp(const struct mmc_card *card);
 /*
  * routines used to implement ioctl interface
  */
-struct bfmr_storage_rochk_iocb;
-struct bfmr_bootdisk_wp_status_iocb;
-struct bfmr_storage_rofa_info_iocb;
-struct bfmr_bootdevice_disk_info_iocb;
-struct bfmr_bootdevice_prod_info_iocb;
+struct storage_rochk_iocb;
+struct bootdisk_wp_status_iocb;
+struct storage_rofa_info_iocb;
+struct bootdevice_disk_info_iocb;
+struct bootdevice_prod_info_iocb;
 
 int storage_rochk_ioctl_check_bootdisk_wp(
-	struct bfmr_bootdisk_wp_status_iocb *arg);
+	struct bootdisk_wp_status_iocb *arg);
 int storage_rochk_ioctl_enable_monitor(
-	struct bfmr_storage_rochk_iocb *arg);
+	struct storage_rochk_iocb *arg);
 int storage_rochk_ioctl_run_storage_wrtry_sync(
-	struct bfmr_storage_rochk_iocb *arg);
+	struct storage_rochk_iocb *arg);
 int storage_rofa_ioctl_get_rofa_info(
-	struct bfmr_storage_rofa_info_iocb *arg);
+	struct storage_rofa_info_iocb *arg);
 int storage_rochk_ioctl_get_bootdevice_disk_count(
-	struct bfmr_storage_rochk_iocb *arg);
+	struct storage_rochk_iocb *arg);
 int storage_rochk_ioctl_get_bootdevice_disk_info(
-	struct bfmr_bootdevice_disk_info_iocb *arg);
+	struct bootdevice_disk_info_iocb *arg);
 int storage_rochk_ioctl_get_bootdevice_prod_info(
-	struct bfmr_bootdevice_prod_info_iocb *arg);
+	struct bootdevice_prod_info_iocb *arg);
 
 /*
  * "storage_rofa" boot cmdline option
@@ -98,5 +107,8 @@ int storage_rochk_ioctl_get_bootdevice_prod_info(
 #define STORAGE_ROFA_BOOTOPT_BYPASS 2
 
 unsigned int get_storage_rofa_bootopt(void);
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+unsigned int is_bopd_row_skip_part(void);
+#endif
 
 #endif // STORAGE_ROFA_PUBLIC_H

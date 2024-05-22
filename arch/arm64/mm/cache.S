@@ -25,6 +25,10 @@
 #include <asm/alternative.h>
 #include <asm/asm-uaccess.h>
 
+#ifdef CONFIG_64BIT_CCSIDR
+#define ID_AA64MMFR2_EL1    S3_0_C0_C7_2
+#endif
+
 /*
  *	__flush_dcache_all()
  *
@@ -52,6 +56,16 @@ loop1:
 	restore_irq x9
 	and	x2, x1, #7			// extract the length of the cache lines
 	add	x2, x2, #4			// add 4 (line length offset)
+#ifdef CONFIG_64BIT_CCSIDR
+	mrs	x9, ID_AA64MMFR2_EL1
+	ubfx	x9, x9, #20, #4
+	cbz	x9, ccsidr_armv8_3_bypass
+	ubfx	x4, x1, #3, #21
+	clz	w5, w4
+	ubfx	x7, x1, #32, #24
+	b	loop2
+ccsidr_armv8_3_bypass:
+#endif
 	mov	x4, #0x3ff
 	and	x4, x4, x1, lsr #3		// find maximum number on the way size
 	clz	w5, w4				// find bit position of way size increment

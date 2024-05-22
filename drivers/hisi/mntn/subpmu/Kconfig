@@ -1,4 +1,4 @@
-config HISI_SUBPMU
+config SUBPMU
     bool "subpmu module support"
     default n
     help

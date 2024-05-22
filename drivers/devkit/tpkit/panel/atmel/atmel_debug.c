@@ -5,8 +5,8 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/interrupt.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
 
 #include <linux/regulator/consumer.h>
 #include "atmel.h"
@@ -35,7 +35,7 @@ void atmel_get_average_max_min_data(struct mxt_data *data, char *buf)
 
 	i = strlen(buf);
 	if (i >= MAX_BUF_SIZE) {
-		TS_LOG_ERR("over buf limit, buf size is %ld\n", sizeof(buf));
+		TS_LOG_ERR("over buf limit, buf size is %lu\n", i);
 		return;
 	}
 	snprintf((buf + i), PAGE_SIZE,

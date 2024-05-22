@@ -60,11 +60,11 @@
  */
 #define STMVL531_CFG_NETLINK_USER 38
 
-#define STMVL53L1_MAX_CCI_XFER_SZ	256
-#define STMVL53L1_DRV_NAME	"stmvl53l1"
+#define STMVL53L1_MAX_CCI_XFER_SZ 256
+#define STMVL53L1_DRV_NAME        "stmvl53l1"
 
 #ifdef HIM_ADAPTER
-#define HW_LASER_DRV_NAME	"vl53l1_970"
+#define HW_LASER_DRV_NAME         "vl53l1_970"
 #endif
 
 /**
@@ -74,7 +74,7 @@
  */
 /* define CFG_STMVL53L1_HAVE_REGULATOR */
 
-#define DRIVER_VERSION		"12.14.0"
+#define DRIVER_VERSION            "12.18.0"
 
 /** @ingroup vl53l1_config
  * @{
@@ -82,7 +82,7 @@
 /**
  * Configure max number of device the driver can support
  */
-#define STMVL53L1_CFG_MAX_DEV	2
+#define STMVL53L1_CFG_MAX_DEV     2
 /** @} */ /* ingroup vl53l1_config */
 
 /** @ingroup vl53l1_mod_dbg
@@ -184,16 +184,16 @@ struct stmvl53l1_waiters {
  *  driver data structs
  */
 struct stmvl53l1_data {
-	int id;			/*!< multiple device id 0 based*/
-	char name[64];		/*!< misc device name */
+	int id; /*!< multiple device id 0 based*/
+	char name[64]; /*!< misc device name */
 
-	VL53L1_DevData_t stdev;	/*!<embed ST VL53L0 Dev data as "stdev" */
+	struct VL53L1_DevData_t stdev; /*!<embed ST VL53L0 Dev data as "stdev" */
 
-	void *client_object;	/*!< cci or i2c moduel i/f speficic ptr  */
-	bool is_device_remove;	/*!< true when device has been remove */
+	void *client_object; /*!< cci or i2c moduel i/f speficic ptr  */
+	bool is_device_remove; /*!< true when device has been remove */
 
 	struct mutex work_mutex; /*!< main dev mutex/lock */;
-	struct delayed_work	dwork;
+	struct delayed_work dwork;
 	/*!< work for pseudo irq polling check  */
 
 	struct input_dev *input_dev_ps;
@@ -207,25 +207,25 @@ struct stmvl53l1_data {
 	int is_first_start_done;
 
 	/* control data */
-	int poll_mode;	/*!< use poll even if interrupt line present*/
-	int poll_delay_ms;	/*!< rescheduled time use in poll mode  */
-	int enable_sensor;	/*!< actual device enabled state  */
-	struct timeval start_tv;/*!< stream start time */
+	int poll_mode; /*!< use poll even if interrupt line present*/
+	int poll_delay_ms; /*!< rescheduled time use in poll mode  */
+	int enable_sensor; /*!< actual device enabled state  */
+	struct timeval start_tv; /*!< stream start time */
 	int enable_debug;
 	bool allow_hidden_start_stop; /*!< allow stop/start sequence in bare */
 
 	/* Custom values set by app */
 
-	int preset_mode;	/*!< preset working mode of the device */
-	uint32_t timing_budget;	/*!< Timing Budget */
-	int distance_mode;	/*!< distance mode of the device */
-	int crosstalk_enable;	/*!< is crosstalk compensation is enable */
-	int output_mode;	/*!< output mode of the device */
-	bool force_device_on_en;/*!< keep device active when stopped */
-	VL53L1_Error last_error;/*!< last device internal error */
-	int offset_correction_mode;/*!< offset correction mode to apply */
-	FixPoint1616_t dmax_reflectance;/*!< reflectance use for dmax calc */
-	int dmax_mode;		/*!< Dmax mode of the device */
+	int preset_mode; /*!< preset working mode of the device */
+	uint32_t timing_budget; /*!< Timing Budget */
+	int distance_mode; /*!< distance mode of the device */
+	int crosstalk_enable; /*!< is crosstalk compensation is enable */
+	int output_mode; /*!< output mode of the device */
+	bool force_device_on_en; /*!< keep device active when stopped */
+	VL53L1_Error last_error; /*!< last device internal error */
+	int offset_correction_mode; /*!< offset correction mode to apply */
+	FixPoint1616_t dmax_reflectance; /*!< reflectance use for dmax calc */
+	int dmax_mode; /*!< Dmax mode of the device */
 	int smudge_correction_mode; /*!< smudge mode */
 
 	/* Read only values */
@@ -236,20 +236,20 @@ struct stmvl53l1_data {
 	/* PS parameters */
 
 	/* Calibration parameters */
-	bool is_calibrating;	/*!< active during calibration phases */
+	bool is_calibrating; /*!< active during calibration phases */
 
 	/* Range Data and stat */
 	struct range_t {
-		uint32_t	cnt;
-		uint32_t	intr;
-		int	poll_cnt;
-		uint32_t	err_cnt; /* on actual measurement */
-		uint32_t	err_tot; /* from start */
-		struct timeval start_tv;
-		struct timeval comp_tv;
-		VL53L1_RangingMeasurementData_t single_range_data;
-		VL53L1_MultiRangingData_t multi_range_data;
-		VL53L1_MultiRangingData_t tmp_range_data;
+		uint32_t cnt;
+		uint32_t intr;
+		int      poll_cnt;
+		uint32_t err_cnt; /* on actual measurement */
+		uint32_t err_tot; /* from start */
+		struct   timeval start_tv;
+		struct   timeval comp_tv;
+		struct   VL53L1_RangingMeasurementData_t single_range_data;
+		struct   VL53L1_MultiRangingData_t multi_range_data;
+		struct   VL53L1_MultiRangingData_t tmp_range_data;
 		VL53L1_AdditionalData_t additional_data;
 		/* non mode 1 for data agregation */
 	} meas;
@@ -276,7 +276,7 @@ struct stmvl53l1_data {
 
 	/* Recent interrupt status */
 	/* roi */
-	VL53L1_RoiConfig_t roi_cfg;
+	struct VL53L1_RoiConfig_t roi_cfg;
 
 	/* use for zone calibration / roi mismatch detection */
 	uint32_t current_roi_id;
@@ -286,7 +286,7 @@ struct stmvl53l1_data {
 
 	/* autonomous config */
 	uint32_t auto_pollingTimeInMs;
-	VL53L1_DetectionConfig_t auto_config;
+	struct VL53L1_DetectionConfig_t auto_config;
 
 	/* Debug */
 	struct ipp_data_t ipp;
@@ -331,7 +331,7 @@ extern struct stmvl53l1_data *stmvl53l1_dev_table[];
 int stmvl53l1_setup(struct stmvl53l1_data *data);
 void stmvl53l1_cleanup(struct stmvl53l1_data *data);
 int stmvl53l1_intr_handler(struct stmvl53l1_data *data);
-
+void stmvl53l1_pm_suspend_stop(struct stmvl53l1_data *data);
 
 /**
  * request ipp to abort or stop

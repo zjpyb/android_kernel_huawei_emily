@@ -852,6 +852,7 @@ void setFlashBuffer(void)
 	flash_buffer = kzalloc(FLASH_SIZE * sizeof(uint8_t), GFP_KERNEL);
 	if (!flash_buffer) {
 		TS_LOG_ERR("%s: kzalloc fail\n", __func__);
+		return;
 	}
 	memset(flash_buffer,0x00,FLASH_SIZE);
 }

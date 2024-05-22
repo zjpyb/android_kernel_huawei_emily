@@ -53,6 +53,12 @@
 	do { if (hisi_aod_msg_level > 1)  \
 		printk(KERN_INFO "[hisi_aod]%s: "msg, __func__, ## __VA_ARGS__); } while (0)
 
+#define HISI_AOD_DEBUG(msg, ...)                                 \
+	do {                                                     \
+		if (hisi_aod_msg_level > 2)                      \
+			printk(KERN_INFO "[hisi_aod]%s: "msg, __func__, ## __VA_ARGS__);  \
+	} while (0)
+
 #define AOD_IOCTL_AOD_START		_IOW(0xB2, 0x01, unsigned long)
 #define AOD_IOCTL_AOD_STOP		_IO(0xB2, 0x02)
 #define AOD_IOCTL_AOD_PAUSE 	_IOR(0xB2, 0x03, unsigned long)
@@ -69,7 +75,22 @@
 #define AOD_IOCTL_AOD_FREE_DYNAMIC_FB   _IOW(0xB2, 0x0E, unsigned long)
 #define AOD_IOCTL_AOD_SET_MAX_AND_MIN_BACKLIGHT   _IOW(0xB2, 0x0F, unsigned long)
 #define AOD_IOCTL_AOD_SET_COMMON_SENSORHUB _IOW(0xB2, 0x10, unsigned long)
+#define AOD_IOCTL_AOD_SET_GMP _IOW(0xB2, 0x14, unsigned long)
+#define AOD_IOCTL_AOD_SET_GENERAL_SENSORHUB _IOW(0xB2, 0x15, unsigned long)
+#define AOD_IOCTL_AOD_GET_DYNAMIC_FB_NEW _IOW(0xB2, 0x16, unsigned long)
+#define AOD_IOCTL_AOD_FREE_DYNAMIC_FB_NEW _IOW(0xB2, 0x17, unsigned long)
+#define AOD_IOCTL_AOD_SET_FOLD_INFO _IOW(0xB2, 0x18, unsigned long)
+#define AOD_IOCTL_AOD_PAUSE_NEW _IOR(0xB2, 0x19, unsigned long)
+#define AOD_IOCTL_AOD_GET_POS _IOW(0xB2, 0x1A, unsigned long)
+#define AOD_IOCTL_AOD_SET_MULTI_GMP _IOW(0xB2, 0x1B, unsigned long)
 
+#define HISI_AOD_OK 0
+#define HISI_AOD_FAIL (-1)
+#define STATUS_FINGER_CHECK_OK 2
+#define DISPALY_SCREEN_ON 0
+#define DISPALY_SCREEN_OFF 1
+#define SUB_CMD_TYPE 0
+#define SCREEN_STATE 1
 #define LCD_TYPE_UNKNOWN 0
 #define LCD_TYPE_SAMSUNG_S6E3HF4 1
 
@@ -81,7 +102,8 @@
 
 #define DIFF_NUMBER 1
 #define SHMEM_START_MSG_CMD_TYPE	1
-#if defined (CONFIG_HISI_FB_V510)
+#if defined(CONFIG_HISI_FB_V510) || defined(CONFIG_HISI_FB_V350) || \
+	defined(CONFIG_HISI_FB_V501) || defined(CONFIG_HISI_FB_V600)
 #define SHMEM_START_CONFIG	1
 #else
 #define SHMEM_START_CONFIG	0
@@ -109,7 +131,7 @@ enum aod_fb_pixel_format {
 	AOD_FB_PIXEL_FORMAT_YCbCr_422_SP, /* NV16 */
 	AOD_FB_PIXEL_FORMAT_YCrCb_422_SP,
 	AOD_FB_PIXEL_FORMAT_YCbCr_420_SP,
-	AOD_FB_PIXEL_FORMAT_YCrCb_420_SP, /* NV21*/
+	AOD_FB_PIXEL_FORMAT_YCrCb_420_SP, /* NV21 */
 
 	/* YUV Planar */
 	AOD_FB_PIXEL_FORMAT_YCbCr_422_P,
@@ -124,26 +146,30 @@ enum aod_fb_pixel_format {
 	AOD_FB_PIXEL_FORMAT_VYUY_422_Pkg,
 };
 
-
-typedef enum aod_dmd_type {
-	AOD_DMD_SET_POWER_MODE_RECOVERY = 0,
-	AOD_DMD_SENSORHUB_RECOVERY,
-	AOD_DMD_BUTT,
-}AOD_DMD_TYPE_T;
-
 struct aod_common_data {
 	uint32_t size;
 	uint32_t cmd_type;
 	uint32_t data[0];
 };
 
-/*aod start*/
+struct aod_general_data {
+	uint32_t size;
+	uint32_t data[0];
+};
+
+struct aod_multi_gmp_data {
+	uint32_t size;
+	uint32_t index;
+	uint32_t data[0];
+};
+
+/* aod start */
 typedef struct aod_notif {
 	size_t size;
 	unsigned int aod_events;
 } aod_notif_t;
 
-/*AP struct*/
+/* AP struct */
 typedef struct aod_start_config_ap {
 	size_t size;
 	aod_display_pos_t aod_pos;
@@ -162,7 +188,7 @@ typedef struct aod_pause_pos_data {
 	aod_display_pos_t aod_pos;
 } aod_pause_pos_data_t;
 
-/*finger down status*/
+/* finger down status */
 typedef struct aod_notify_finger_down {
 	size_t size;
 	uint32_t finger_down_status;
@@ -204,7 +230,7 @@ typedef struct aod_resume_config {
 } aod_resume_config_t;
 
 typedef struct aod_time_config_ap {
-    size_t size;
+	size_t size;
 	uint64_t curr_time;
 	int32_t time_zone;
 	int32_t sec_time_zone;
@@ -212,7 +238,7 @@ typedef struct aod_time_config_ap {
 } aod_time_config_ap_t;
 
 typedef struct aod_bitmaps_size_ap {
-    size_t size;
+	size_t size;
 	int bitmap_type_count;
 	aod_bitmap_size_t bitmap_size[MAX_BIT_MAP_SIZE];
 } aod_bitmaps_size_ap_t;
@@ -233,18 +259,27 @@ typedef struct aod_display_spaces_ap_temp {
 	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT];
 } aod_display_spaces_ap_temp_t;
 
-//add
+typedef struct aod_fold_info_config_mcu {
+	uint32_t panel_id;
+} aod_fold_info_config_mcu_t;
+
+typedef struct aod_fold_info_data {
+	uint32_t size;
+	uint32_t panel_id;
+} aod_fold_info_data_t;
+
+// add
 typedef struct aod_dss_ctrl_ap_status {
-	pkt_header_t hd;
-	uint32_t sub_cmd;  
+	struct pkt_header hd;
+	uint32_t sub_cmd;
 } aod_dss_ctrl_status_ap_t;
 
-/*sensorhub struct*/
+/* sensorhub struct */
 typedef struct aod_dss_ctrl_sh_status {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t sub_cmd;
-	uint32_t dss_on;// 1 - dss on, 0 - dss off
-	uint32_t success; //0 - on/off success, non-zero - on/off fail
+	uint32_t dss_on; // 1 - dss on, 0 - dss off
+	uint32_t success; // 0 - on/off success, non-zero - on/off fail
 } aod_dss_ctrl_status_sh_t;
 
 typedef struct aod_start_config_mcu {
@@ -269,7 +304,7 @@ typedef struct aod_start_config_mcu {
 } aod_start_config_mcu_t;
 
 typedef struct aod_info_mcu {
-	pkt_header_resp_t head;
+	struct pkt_header_resp head;
 	aod_display_pos_t aod_pos;
 } aod_info_mcu_t;
 
@@ -300,12 +335,11 @@ typedef struct aod_config_info_mcu {
 	int32_t fp_offset;
 	int32_t fp_count;
 } aod_set_config_mcu_t;
-
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	unsigned int subtype;
 	union {
-        aod_time_config_mcu_t time_param;
+		aod_time_config_mcu_t time_param;
 		aod_display_spaces_mcu_t display_param;
 		aod_set_config_mcu_t set_config_param;
 		aod_display_pos_t display_pos;
@@ -314,13 +348,13 @@ typedef struct {
 } aod_pkt_t;
 
 typedef struct {
-	pkt_header_resp_t hd;
+	struct pkt_header_resp hd;
 	uint8_t data[100];
 } aod_pkt_resp_t;
 
 typedef struct aod_ion_buf_fb {
-    uint32_t buf_size; 
-    int32_t  ion_buf_fb;
+	uint32_t buf_size;
+	int32_t ion_buf_fb;
 } aod_ion_buf_fb_t;
 typedef struct aod_dynamic_fb {
 	uint32_t dynamic_fb_count;
@@ -336,6 +370,16 @@ typedef struct aod_dynamic_fb {
 	aod_ion_buf_fb_t  str_ion_fb[MAX_DYNAMIC_ALLOC_FB_COUNT] ;
 } aod_dynamic_fb_space_t;
 
+struct fb_buf {
+	uint32_t size;
+	uint32_t addr;
+};
+struct fb_list {
+	uint32_t size;
+	uint32_t cmd_type;
+	uint32_t dynamic_fb_count;
+	struct fb_buf fb[0];
+};
 
 struct aod_data_t {
 	dev_t devno;
@@ -353,9 +397,9 @@ struct aod_data_t {
 	struct mutex ioctl_lock;
 	struct mutex mm_lock;
 	bool fb_mem_alloc_flag;
-    bool ion_dynamic_alloc_flag;
-    struct ion_client *ion_client;
-    struct ion_handle *ion_dyn_handle[MAX_DYNAMIC_ALLOC_FB_COUNT];
+	bool ion_dynamic_alloc_flag;
+	struct ion_client *ion_client;
+	struct ion_handle *ion_dyn_handle[MAX_DYNAMIC_ALLOC_FB_COUNT];
 #ifdef ION_ALLOC_BUFFER
 	struct ion_client *ion_client;
 	struct ion_handle *ion_handle;
@@ -369,6 +413,7 @@ struct aod_data_t {
 	aod_time_config_mcu_t time_config_mcu;
 	aod_bitmaps_size_mcu_t bitmaps_size_mcu;
 	aod_display_spaces_mcu_t display_spaces_mcu;
+	aod_fold_info_config_mcu_t fold_info_config_mcu;
 	aod_display_pos_t pos_data;
 	aod_notif_t aod_notify_data;
 
@@ -380,6 +425,17 @@ struct aod_data_t {
 	struct semaphore aod_status_sem;
 	struct mutex aod_lock;
 	struct wakeup_source  wlock;
-
+	// true:ap hold the aod lock; false:ap release the aod lock
+	bool aod_lock_status;
 };
+
+#pragma pack(4)
+typedef struct {
+	struct pkt_header hd;
+	uint32_t subtype;
+	union {
+		aod_fold_info_config_mcu_t fold_info_config_param;
+	};
+}aod_pkt_pack_t;
+#pragma pack()
 #endif

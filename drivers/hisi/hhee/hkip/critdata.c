@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2017 Huawei Technologies.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2021. All rights reserved.
+ * Description: hkip critdata protect
+ * Create: 2017/10/19
  */
 
 #include <asm/uaccess.h>
@@ -7,7 +9,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/hisi/hisi_hkip.h>
+#include <linux/hisi/hkip.h>
 
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
@@ -44,8 +46,10 @@ static bool hkip_compute_uid_root(const struct cred *creds)
 	return uid_eq(creds->uid, GLOBAL_ROOT_UID) ||
 		uid_eq(creds->euid, GLOBAL_ROOT_UID) ||
 		uid_eq(creds->suid, GLOBAL_ROOT_UID) ||
-	/* Note: FSUID can only change when EUID is zero. So a change of FSUID
-	 * will not affect the overall root status bit: it will remain true. */
+	/*
+	 * Note: FSUID can only change when EUID is zero. So a change of FSUID
+	 * will not affect the overall root status bit: it will remain true.
+	 */
 		!cap_isclear(creds->cap_inheritable) ||
 		!cap_isclear(creds->cap_permitted);
 }
@@ -58,10 +62,11 @@ int hkip_check_uid_root(void)
 		return 0;
 	}
 
-	/* Note: In principles, FSUID cannot be zero if EGID is non-zero.
-	 * But we check it separately anyway, in case of memory corruption. */
+	/*
+	 * Note: In principles, FSUID cannot be zero if EGID is non-zero.
+	 * But we check it separately anyway, in case of memory corruption.
+	 */
 	creds = (struct cred *)current_cred();/*lint !e666*/
-
 	if (unlikely(hkip_compute_uid_root(creds) ||
 			uid_eq(creds->fsuid, GLOBAL_ROOT_UID))) {
 		pr_alert("UID root escalation!\n");
@@ -95,7 +100,6 @@ int hkip_check_gid_root(void)
 	}
 
 	creds = (struct cred *)current_cred();/*lint !e666*/
-
 	if (unlikely(hkip_compute_gid_root(creds) ||
 			gid_eq(creds->fsgid, GLOBAL_ROOT_GID))) {
 		pr_alert("GID root escalation!\n");
@@ -128,9 +132,11 @@ EXPORT_SYMBOL(hkip_update_xid_root);
 
 void hkip_init_task(struct task_struct *task)
 {
-	/* NOTE: Taking RCU and incrementing the reference count is useless
+	/*
+	 * NOTE: Taking RCU and incrementing the reference count is useless
 	 * here, as the thread is not running yet, and credentials cannot
-	 * change. But no clean ways to avoid it. */
+	 * change. But no clean ways to avoid it.
+	 */
 	const struct cred *creds = get_task_cred(task);
 
 	hkip_set_task_bit(hkip_uid_root_bits, task,
@@ -152,6 +158,5 @@ static int __init hkip_critdata_init(void)
 }
 
 module_init(hkip_critdata_init);
-MODULE_DESCRIPTION("Huawei kernel critical data protection");
-MODULE_AUTHOR("Remi Denis-Courmont <remi.denis.courmont@huawei.com>");
+MODULE_DESCRIPTION("HKIP kernel critical data protection");
 MODULE_LICENSE("GPL");

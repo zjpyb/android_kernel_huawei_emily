@@ -26,10 +26,6 @@
 #include <linux/ctype.h>
 #include <linux/hrtimer.h>
 #include "synaptics.h"
-#if defined (CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
-#endif
-#include <../../huawei_touchscreen_chips.h>
 #include "raw_data.h"
 #define WATCHDOG_TIMEOUT_S 2
 #define FORCE_TIMEOUT_100MS 10
@@ -993,7 +989,7 @@ static void set_report_size(void)
 					       sizeof(f54->control.reg_41->
 						      data));
 			if (rc < 0) {
-				TS_LOG_INFO("Failed to read control reg_41\n");
+				ts_log_info("Failed to read control reg_41\n");
 				f54->report_size = 0;
 				break;
 			}
@@ -1041,7 +1037,6 @@ static int f54_rawimage_report(void)
 	int columns_size = 0;
 	char file_path[100] = {0};
 	char file_name[64] = {0};
-	int j;
 	int i;
 	int raw_cap_uplimit =
 	    f54->rmi4_data->synaptics_chip_data->raw_limit_buf[RAW_DATA_UP];
@@ -1053,7 +1048,7 @@ static int f54_rawimage_report(void)
 	struct ts_rawdata_limit_tab limit_tab;
 	int *rawdata_from_chip = NULL;
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("f54_rawimage_report: rx = %d, tx = %d, mmibuf_size =%d, raw_cap_uplimit = %d,raw_cap_lowlimit = %d\n",
 	     f54->rmi4_data->num_of_rx, f54->rmi4_data->num_of_tx, mmi_buf_size,
 	     raw_cap_uplimit, raw_cap_lowlimit);
@@ -1073,29 +1068,29 @@ static int f54_rawimage_report(void)
 	f54->raw_statics_data.RawimageMaxNum = RawimageMaxNum;
 	f54->raw_statics_data.RawimageMinNum = RawimageMinNum;
 
-	TS_LOG_INFO("raw_test_type:%d\n", g_ts_data.chip_data->raw_test_type);
+	ts_log_info("raw_test_type:%d\n", g_ts_data.chip_data->raw_test_type);
 	if (g_ts_data.chip_data->raw_test_type == RAW_DATA_TEST_TYPE_SINGLE_POINT) {
 
 		rows_size = f54->rmi4_data->num_of_rx;
 		columns_size = f54->rmi4_data->num_of_tx;
 
-		TS_LOG_INFO("rows:%d, columns:%d\n", rows_size, columns_size);
+		ts_log_info("rows:%d, columns:%d\n", rows_size, columns_size);
 
-		limit_tab.MutualRawMax =
+		limit_tab.mutual_raw_max =
 			(int32_t*)kzalloc((rows_size+1)*(columns_size+1)*sizeof(int32_t), GFP_KERNEL);
-		limit_tab.MutualRawMin =
+		limit_tab.mutual_raw_min =
 			(int32_t*)kzalloc((rows_size+1)*(columns_size+1)*sizeof(int32_t), GFP_KERNEL);
 		rawdata_from_chip = (int*)kzalloc((rows_size * columns_size)*sizeof(int), GFP_KERNEL);
-		if (!limit_tab.MutualRawMax || !limit_tab.MutualRawMin || !rawdata_from_chip){
-			TS_LOG_ERR("kzalloc error: MutualRawMax:%pK, MutualRawMin:%pK, rawdata_from_chip:%pK\n",
-				limit_tab.MutualRawMax, limit_tab.MutualRawMin, rawdata_from_chip);
+		if (!limit_tab.mutual_raw_max || !limit_tab.mutual_raw_min || !rawdata_from_chip){
+			ts_log_err("kzalloc error: mutual_raw_max:%pK, mutual_raw_min:%pK, rawdata_from_chip:%pK\n",
+				limit_tab.mutual_raw_max, limit_tab.mutual_raw_min, rawdata_from_chip);
 			goto error_release_mem;
 		}
 		if (!strnlen(g_ts_data.product_name, MAX_STR_LEN-1)
 			|| !strnlen(g_ts_data.chip_data->chip_name, MAX_STR_LEN-1)
 			|| !strnlen(f54->rmi4_data->rmi4_mod_info.project_id_string, SYNAPTICS_RMI4_PROJECT_ID_SIZE)
 			|| f54->rmi4_data->module_name == NULL) {
-			TS_LOG_INFO("Threshold file name is not detected\n");
+			ts_log_info("Threshold file name is not detected\n");
 			goto error_release_mem;
 		}
 		snprintf(file_name, sizeof(file_name), "%s_%s_%s_%s_raw.csv",
@@ -1108,62 +1103,8 @@ static int f54_rawimage_report(void)
 #else
 		snprintf(file_path, sizeof(file_path), "/vendor/firmware/ts/%s", file_name);
 #endif
-		TS_LOG_INFO("threshold file name:%s, rows_size=%d, columns_size=%d\n", file_path, rows_size, columns_size);
-
-		if (ts_parse_csvfile(columns_size, rows_size, &limit_tab, file_path)) {
-			TS_LOG_ERR("csv file parse fail:%s\n", file_path);
-			goto error_release_mem;
-		} else {
-			TS_LOG_INFO("rawdata compare start\n");
-			for (i = 0, j = 0; i < mmi_buf_size; i += 2, j++) {
-				rawdata_from_chip[j] = (f54->mmi_buf[i]) | (f54->mmi_buf[i + 1] << 8);
-			}
-/*
-			for (i = 0; i < rows_size; i++) {
-				for (j = 0; j < columns_size; j++) {
-					printk("\t%u", rawdata_from_chip[i*columns_size + j]);
-				}
-				printk("\n");
-			}
-*/
-
-			if (g_ts_data.chip_data->rawdata_arrange_type == TS_RAWDATA_TRANS_ABCD2CBAD
-				|| g_ts_data.chip_data->rawdata_arrange_type == TS_RAWDATA_TRANS_ABCD2ADCB) {
-				rotate_rawdata(rows_size, columns_size,
-					 rawdata_from_chip, g_ts_data.chip_data->rawdata_arrange_type);
-			}
-
-			for (i = 0; i < rows_size; i++) {
-				for (j = 0; j < columns_size; j++) {
-					TS_LOG_DEBUG("\t%u", rawdata_from_chip[i*columns_size + j]);
-				}
-				TS_LOG_DEBUG("\n");
-			}
-
-			for (i = 0; i < (mmi_buf_size / 2); i++) {
-				if (rawdata_from_chip[i] > limit_tab.MutualRawMin[i]
-					&& rawdata_from_chip[i] < limit_tab.MutualRawMax[i]){
-					Result++;
-				}else{
-					TS_LOG_ERR("error rawdata[%d]:%d out of range, min:%d, max:%d\n",
-						i, rawdata_from_chip[i], limit_tab.MutualRawMin[i], limit_tab.MutualRawMax[i]);
-				}
-			}
-
-			/* rawdata check done, release mem */
-			if (limit_tab.MutualRawMax) {
-				kfree(limit_tab.MutualRawMax);
-				limit_tab.MutualRawMax = NULL;
-			}
-			if (limit_tab.MutualRawMin) {
-				kfree(limit_tab.MutualRawMin);
-				limit_tab.MutualRawMin = NULL;
-			}
-			if (rawdata_from_chip) {
-				kfree(rawdata_from_chip);
-				rawdata_from_chip = NULL;
-			}
-		}
+		ts_log_info("threshold file name:%s, rows_size=%d, columns_size=%d\n", file_path, rows_size, columns_size);
+		goto error_release_mem;
 	}else{
 		for (i = 0; i < mmi_buf_size; i += 2) {
 			Rawimage = (f54->mmi_buf[i]) | (f54->mmi_buf[i + 1] << 8);
@@ -1175,36 +1116,26 @@ static int f54_rawimage_report(void)
 			    && (Rawimage <= raw_cap_uplimit)) {
 				Result++;
 			} else {
-				TS_LOG_INFO("[%d,%d]\n", i / 2, Rawimage);
+				ts_log_info("[%d,%d]\n", i / 2, Rawimage);
 			}
 		}
 	}
 
 	if (Result == (mmi_buf_size / 2)) {
-		TS_LOG_DEBUG("rawdata is all right, Result = %d\n", Result);
+		ts_log_debug("rawdata is all right, Result = %d\n", Result);
 		return 1;
 	} else {
-		TS_LOG_ERR("rawdata is out of range, Result = %d\n", Result);
-#if defined (CONFIG_HUAWEI_DSM)
-		if (!dsm_client_ocuppy(tp_dclient)) {
-			TS_LOG_INFO
-			    ("try to client record 20002 for rawdata \n");
-			dsm_client_record(tp_dclient,
-					  "device status for 20002 is :%d\n",
-					  Result);
-			dsm_client_notify(tp_dclient, DSM_TP_RAWDATA_ERROR_NO);
-		}
-#endif
+		ts_log_err("rawdata is out of range, Result = %d\n", Result);
 		return 0;
 	}
 error_release_mem:
-	if (limit_tab.MutualRawMax){
-		kfree(limit_tab.MutualRawMax);
-		limit_tab.MutualRawMax = NULL;
+	if (limit_tab.mutual_raw_max){
+		kfree(limit_tab.mutual_raw_max);
+		limit_tab.mutual_raw_max = NULL;
 	}
-	if (limit_tab.MutualRawMin){
-		kfree(limit_tab.MutualRawMin);
-		limit_tab.MutualRawMin = NULL;
+	if (limit_tab.mutual_raw_min){
+		kfree(limit_tab.mutual_raw_min);
+		limit_tab.mutual_raw_min = NULL;
 	}
 	if (rawdata_from_chip){
 		kfree(rawdata_from_chip);
@@ -1220,7 +1151,7 @@ static int write_to_f54_register(unsigned char report_type)
 	unsigned char ready_report = 0xFF;
 	int retry_times = 0;
 
-	TS_LOG_INFO("report type = %d\n", report_type);
+	ts_log_info("report type = %d\n", report_type);
 
 	command = report_type;
 	/*set report type */
@@ -1229,7 +1160,7 @@ static int write_to_f54_register(unsigned char report_type)
 		    f54->fn_ptr->write(f54->rmi4_data, f54->data_base_addr,
 				       &command, 1);
 		if (result < 0) {
-			TS_LOG_ERR("Could not write report type to 0x%04x\n",
+			ts_log_err("Could not write report type to 0x%04x\n",
 				   f54->data_base_addr);
 			return result;
 		}
@@ -1254,7 +1185,7 @@ retry:
 		goto retry;
 	}
 
-	TS_LOG_INFO("report is not ready, retry times: %d, ready_report: %d\n",
+	ts_log_info("report is not ready, retry times: %d, ready_report: %d\n",
 		    retry_times + 1, ready_report);
 	return result;
 }
@@ -1299,7 +1230,7 @@ static int f54_deltarawimage_report(void)
 	short DeltaRawimageMaxNum, DeltaRawimageMinNum;
 	short result = 0;
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("f54_deltarawimage_report enter, delt_cap_uplimit = %d, delt_cap_lowlimit = %d\n",
 	     delt_cap_uplimit, delt_cap_lowlimit);
 
@@ -1327,25 +1258,15 @@ static int f54_deltarawimage_report(void)
 		    && (Rawimage <= delt_cap_uplimit)) {
 			result++;
 		} else {
-			TS_LOG_INFO("[%d,%d]\n", i / 2, Rawimage);
+			ts_log_info("[%d,%d]\n", i / 2, Rawimage);
 		}
 	}
 
 	if (result == (mmi_buf_size / 2)) {
-		TS_LOG_DEBUG("deltadata is all right, Result = %d\n", result);
+		ts_log_debug("deltadata is all right, Result = %d\n", result);
 		return 1;
 	} else {
-		TS_LOG_ERR("deltadata is out of range, Result = %d\n", result);
-#if defined (CONFIG_HUAWEI_DSM)
-		if (!dsm_client_ocuppy(tp_dclient)) {
-			TS_LOG_INFO
-			    ("try to client record 20002 for noisedata \n");
-			dsm_client_record(tp_dclient,
-					  "device status for 20002 is :%d\n",
-					  result);
-			dsm_client_notify(tp_dclient, DSM_TP_RAWDATA_ERROR_NO);
-		}
-#endif
+		ts_log_err("deltadata is out of range, Result = %d\n", result);
 		return 0;
 	}
 
@@ -1356,12 +1277,12 @@ static void mmi_deltacapacitance_test(void)
 	unsigned char command;
 	int result = 0;
 	command = (unsigned char)F54_16BIT_IMAGE;
-	TS_LOG_INFO("mmi_deltacapacitance_test called\n");
+	ts_log_info("mmi_deltacapacitance_test called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, "-3F", MAX_STR_LEN);
 		return;
 	}
@@ -1369,7 +1290,7 @@ static void mmi_deltacapacitance_test(void)
 	if (1 == result) {
 		strncat(buf_f54test_result, "-3P", MAX_STR_LEN);
 	} else {
-		TS_LOG_ERR
+		ts_log_err
 		    ("deltadata test is out of range, test result is 3F\n");
 		strncat(buf_f54test_result, "-3F", MAX_STR_LEN);
 		strncpy(tp_test_failed_reason, "-panel_reason",
@@ -1383,15 +1304,15 @@ static void mmi_hybrid_raw_cap_test(void)
 	unsigned char command;
 	int result = 0;
 	command = (unsigned char)F54_HYBRID_SENSING_RAW_CAP;
-	TS_LOG_INFO("mmi_hybrid_raw_cap_test called\n");
+	ts_log_info("mmi_hybrid_raw_cap_test called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		return;
 	}
-	TS_LOG_INFO("hybrid_raw_cap_report_size = %d.\n", f54->report_size);
+	ts_log_info("hybrid_raw_cap_report_size = %d.\n", f54->report_size);
 	return;
 }
 
@@ -1400,16 +1321,16 @@ static void mmi_hybrid_abs_delta_test(void)
 	unsigned char command;
 	int result = 0;
 	command = (unsigned char)F54_HYBRID_ABS_DELTA_CAP;
-	TS_LOG_INFO("mmi_hybrid_abs_delta_test called\n");
+	ts_log_info("mmi_hybrid_abs_delta_test called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, SELFCAP_TEST_FAIL, MAX_STR_LEN);
 		return;
 	}
-	TS_LOG_INFO("hybrid_abs_delta_report_size = %d.\n", f54->report_size);
+	ts_log_info("hybrid_abs_delta_report_size = %d.\n", f54->report_size);
 	mmi_hybrid_abs_delta = f54->report_size;
 	return;
 }
@@ -1420,16 +1341,16 @@ static void mmi_trex_shorts_test(void)
 	unsigned char i;
 	int result = 0;
 	command = (unsigned char)F54_TREX_SHORTS;
-	TS_LOG_INFO("mmi_trex_shorts_test called\n");
+	ts_log_info("mmi_trex_shorts_test called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, SHORT_TEST_FAIL, MAX_STR_LEN);
 		return;
 	}
-	TS_LOG_INFO("trex_shorts_report_size = %d.\n", f54->report_size);
+	ts_log_info("trex_shorts_report_size = %d.\n", f54->report_size);
 	for(i = 0; i < f54->report_size; i++) {
 		if(f54->mmi_buf[i]) {
 			strncat(buf_f54test_result, SHORT_TEST_FAIL, MAX_STR_LEN);
@@ -1445,16 +1366,16 @@ static void mmi_trex_highresistance_test(void)
 	unsigned char command;
 	int result = 0;
 	command = (unsigned char)F54_HIGH_RESISTANCE;
-	TS_LOG_INFO("mmi_trex_resistance_test called\n");
+	ts_log_info("mmi_trex_resistance_test called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, "-8F", MAX_STR_LEN);
 		return;
 	}
-	TS_LOG_INFO("trex_highresistance_report_size = %d.\n", f54->report_size);
+	ts_log_info("trex_highresistance_report_size = %d.\n", f54->report_size);
 	return;
 }
 
@@ -1519,7 +1440,7 @@ static int f54_delta_rx_report(void)
 	int delt_cap_lowlimit =
 	    f54->rmi4_data->synaptics_chip_data->raw_limit_buf[RX_TO_RX_LOW];
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("rx = %d, tx = %d, delt_cap_uplimit = %d, delt_cap_lowlimit = %d\n",
 	     f54->rmi4_data->num_of_rx, f54->rmi4_data->num_of_tx,
 	     delt_cap_uplimit, delt_cap_lowlimit);
@@ -1537,7 +1458,7 @@ static int f54_delta_rx_report(void)
 		    && (Rawimage_rx >= delt_cap_lowlimit)) {
 			Result++;
 		} else {
-			TS_LOG_INFO("[%d,%d]\n", i / 2 - step, Rawimage_rx);
+			ts_log_info("[%d,%d]\n", i / 2 - step, Rawimage_rx);
 		}
 		j++;
 		if (j == f54->rmi4_data->num_of_rx - 1) {
@@ -1547,22 +1468,12 @@ static int f54_delta_rx_report(void)
 		}
 	}
 	if (Result == (mmi_buf_size / 2 - f54->rmi4_data->num_of_tx)) {
-		TS_LOG_DEBUG("rawdata rx diff is all right, Result = %d\n",
+		ts_log_debug("rawdata rx diff is all right, Result = %d\n",
 			     Result);
 		return 1;
 	} else {
-		TS_LOG_ERR("rawdata rx diff is out of range, Result = %d\n",
+		ts_log_err("rawdata rx diff is out of range, Result = %d\n",
 			   Result);
-#if defined (CONFIG_HUAWEI_DSM)
-		if (!dsm_client_ocuppy(tp_dclient)) {
-			TS_LOG_INFO
-			    ("try to client record 20002 for rx diff \n");
-			dsm_client_record(tp_dclient,
-					  "device status for 20002 is :%d\n",
-					  Result);
-			dsm_client_notify(tp_dclient, DSM_TP_RAWDATA_ERROR_NO);
-		}
-#endif
 		return 0;
 	}
 
@@ -1579,14 +1490,14 @@ static int f54_delta_tx_report(void)
 	int tx_to_tx_cap_lowlimit =
 	    f54->rmi4_data->synaptics_chip_data->raw_limit_buf[TX_TO_TX_LOW];
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("rx = %d, tx = %d, tx_to_tx_cap_uplimit = %d, tx_to_tx_cap_lowlimit = %d\n",
 	     f54->rmi4_data->num_of_rx, f54->rmi4_data->num_of_tx,
 	     tx_to_tx_cap_uplimit, tx_to_tx_cap_lowlimit);
 
 	Rawimage_tx = (short *)kzalloc(mmi_buf_size, GFP_KERNEL);
 	if (!Rawimage_tx) {
-		TS_LOG_ERR("Rawimage_tx kzalloc error\n");
+		ts_log_err("Rawimage_tx kzalloc error\n");
 		return 0;
 	}
 
@@ -1614,7 +1525,7 @@ static int f54_delta_tx_report(void)
 			    && (Rawimage_delta_tx >= tx_to_tx_cap_lowlimit)) {
 				Result++;
 			} else {
-				TS_LOG_INFO("[%d,%d]\n",
+				ts_log_info("[%d,%d]\n",
 					    tx_n * f54->rmi4_data->num_of_rx +
 					    rx_n, Rawimage_delta_tx);
 			}
@@ -1623,22 +1534,12 @@ static int f54_delta_tx_report(void)
 	kfree(Rawimage_tx);
 
 	if (Result == (mmi_buf_size / 2 - f54->rmi4_data->num_of_rx)) {
-		TS_LOG_DEBUG("rawdata tx diff is all right, Result = %d\n",
+		ts_log_debug("rawdata tx diff is all right, Result = %d\n",
 			     Result);
 		return 1;
 	} else {
-		TS_LOG_ERR("rawdata tx diff is out of range, Result = %d\n",
+		ts_log_err("rawdata tx diff is out of range, Result = %d\n",
 			   Result);
-#if defined (CONFIG_HUAWEI_DSM)
-		if (!dsm_client_ocuppy(tp_dclient)) {
-			TS_LOG_INFO
-			    ("try to client record 20002 for tx diff \n");
-			dsm_client_record(tp_dclient,
-					  "device status for 20002 is :%d\n",
-					  Result);
-			dsm_client_notify(tp_dclient, DSM_TP_RAWDATA_ERROR_NO);
-		}
-#endif
 		return 0;
 	}
 }
@@ -1653,13 +1554,13 @@ static void mmi_rawcapacitance_test(void)
 	else
 		command = (unsigned char)F54_RAW_16BIT_IMAGE;
 
-	TS_LOG_INFO("mmi_rawcapacitance_test called, command is %d\n", command);
+	ts_log_info("mmi_rawcapacitance_test called, command is %d\n", command);
 
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, "1F", MAX_STR_LEN);
 		return;
 	}
@@ -1667,7 +1568,7 @@ static void mmi_rawcapacitance_test(void)
 	if (1 == result) {
 		strncat(buf_f54test_result, "1P", MAX_STR_LEN);
 	} else {
-		TS_LOG_ERR("raw data is out of range, , test result is 1F\n");
+		ts_log_err("raw data is out of range, , test result is 1F\n");
 		strncat(buf_f54test_result, "1F", MAX_STR_LEN);
 		strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
@@ -1675,7 +1576,7 @@ static void mmi_rawcapacitance_test(void)
 	if (1 == (f54_delta_rx_report() && f54_delta_tx_report())) {
 		strncat(buf_f54test_result, "-2P", MAX_STR_LEN);
 	} else {
-		TS_LOG_ERR
+		ts_log_err
 		    ("raw data diff is out of range, test result is 2F\n");
 		strncat(buf_f54test_result, "-2F", MAX_STR_LEN);
 		strncpy(tp_test_failed_reason, "-panel_reason",
@@ -1758,17 +1659,10 @@ static int check_enhance_raw_capacitance(void)
 	get_capacitance_stats();
 
 	for (i = 0; i < count; i++) {
-		TS_LOG_INFO("rawdata is upper: %d, lower: %d\n", f54->rmi4_data->synaptics_chip_data->upper[i], f54->rmi4_data->synaptics_chip_data->lower[i]);
+		ts_log_info("rawdata is upper: %d, lower: %d\n", f54->rmi4_data->synaptics_chip_data->upper[i], f54->rmi4_data->synaptics_chip_data->lower[i]);
 		/* rawdatabuf[0] rawdatabuf[1] are num_of_rx and num_of_tx */
 		if ((f54->rawdatabuf[i+2] > f54->rmi4_data->synaptics_chip_data->upper[i]) || (f54->rawdatabuf[i+2] < f54->rmi4_data->synaptics_chip_data->lower[i])) {
-			TS_LOG_ERR("rawdata is out of range, failed at %d: upper: %d, lower: %d, raw: %d\n", i, f54->rmi4_data->synaptics_chip_data->upper[i], f54->rmi4_data->synaptics_chip_data->lower[i], f54->rawdatabuf[i+2]);
-#if defined (CONFIG_HUAWEI_DSM)
-			if (!dsm_client_ocuppy(tp_dclient)) {
-				TS_LOG_INFO("try to client record 20002 for rawdata \n");
-				dsm_client_record(tp_dclient, "device status for 20002 is :%d\n", i);
-				dsm_client_notify(tp_dclient, DSM_TP_RAWDATA_ERROR_NO);
-			}
-#endif
+			ts_log_err("rawdata is out of range, failed at %d: upper: %d, lower: %d, raw: %d\n", i, f54->rmi4_data->synaptics_chip_data->upper[i], f54->rmi4_data->synaptics_chip_data->lower[i], f54->rawdatabuf[i+2]);
 			return 0;
 		}
 	}
@@ -1786,13 +1680,13 @@ static void mmi_enhance_raw_capacitance_test(void)
 	else
 		command = (unsigned char)F54_RAW_16BIT_IMAGE;
 
-	TS_LOG_INFO("mmi_rawcapacitance_test called, command is %d\n", command);
+	ts_log_info("mmi_rawcapacitance_test called, command is %d\n", command);
 
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, "1F", MAX_STR_LEN);
 		return;
 	}
@@ -1803,19 +1697,19 @@ static void mmi_enhance_raw_capacitance_test(void)
 			strncat(buf_f54test_result, "1P", MAX_STR_LEN);
 		} else {
 			strncat(buf_f54test_result, "1F", MAX_STR_LEN);
-			TS_LOG_ERR("raw data is out of range, test result is 1F\n");
+			ts_log_err("raw data is out of range, test result is 1F\n");
 		}
 		if (f54_enhance_delta_rx_report() && f54_enhance_delta_tx_report()) {
 			strncat(buf_f54test_result, "-2P", MAX_STR_LEN);
 		} else {
-			TS_LOG_ERR("raw data diff is out of range, test result is 2F\n");
+			ts_log_err("raw data diff is out of range, test result is 2F\n");
 			strncat(buf_f54test_result, "-2F", MAX_STR_LEN);
 		}
 	} else {
 		if (1 == result) {
 			strncat(buf_f54test_result, "1P-2P", MAX_STR_LEN);
 		} else {
-			TS_LOG_ERR("raw data is out of range, , test result is 1F-2P\n");
+			ts_log_err("raw data is out of range, , test result is 1F-2P\n");
 			strncat(buf_f54test_result, "1F-2P", MAX_STR_LEN);
 			strncpy(tp_test_failed_reason, "-panel_reason",
 				TP_TEST_FAILED_REASON_LEN);
@@ -1827,21 +1721,21 @@ static int synaptics_f54_malloc(void)
 {
 	f54 = kzalloc(sizeof(struct synaptics_rmi4_f54_handle), GFP_KERNEL);
 	if (!f54) {
-		TS_LOG_ERR("Failed to alloc mem for f54\n");
+		ts_log_err("Failed to alloc mem for f54\n");
 		return -ENOMEM;
 	}
 
 	f54->fn_ptr =
 	    kzalloc(sizeof(struct synaptics_rmi4_exp_fn_ptr), GFP_KERNEL);
 	if (!f54->fn_ptr) {
-		TS_LOG_ERR("Failed to alloc mem for fn_ptr\n");
+		ts_log_err("Failed to alloc mem for fn_ptr\n");
 		return -ENOMEM;
 	}
 
 	f54->fn55 =
 	    kzalloc(sizeof(struct synaptics_rmi4_fn55_desc), GFP_KERNEL);
 	if (!f54->fn55) {
-		TS_LOG_ERR("Failed to alloc mem for fn55\n");
+		ts_log_err("Failed to alloc mem for fn55\n");
 		return -ENOMEM;
 	}
 
@@ -1850,7 +1744,7 @@ static int synaptics_f54_malloc(void)
 
 static void synaptics_f54_free(void)
 {
-	TS_LOG_INFO("kfree f54 memory\n");
+	ts_log_info("kfree f54 memory\n");
 	if (f54 && f54->fn_ptr)
 		kfree(f54->fn_ptr);
 	if (f54 && f54->fn55)
@@ -1967,16 +1861,16 @@ static void synaptics_change_report_rate(void)
 		} else {
 			strncat(buf_f54test_result, "-4P", MAX_STR_LEN);
 		}
-		TS_LOG_INFO("s3207 change_report_rate default pass\n");
+		ts_log_info("s3207 change_report_rate default pass\n");
 		return;
 	}
-	TS_LOG_INFO("change report rate 120 first then to 60\n");
+	ts_log_info("change report rate 120 first then to 60\n");
 	command = (unsigned char)F54_120HI_RATE;
 	rc = f54->fn_ptr->write(f54->rmi4_data,
 				f54->control_base_addr + report_rate_offset,
 				&command, 1);
 	if (rc < 0) {
-		TS_LOG_ERR("set ic to 120HZ error because of i2c error");
+		ts_log_err("set ic to 120HZ error because of i2c error");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5F", MAX_STR_LEN);
@@ -1990,7 +1884,7 @@ static void synaptics_change_report_rate(void)
 			       f54->data_base_addr + F54_READ_RATE_OFFSET,
 			       &report_rate120, 1);
 	if (rc < 0) {
-		TS_LOG_ERR("read 120HZ from ic error because of i2c error");
+		ts_log_err("read 120HZ from ic error because of i2c error");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5F", MAX_STR_LEN);
@@ -1999,14 +1893,14 @@ static void synaptics_change_report_rate(void)
 		}
 		return;
 	}
-	TS_LOG_INFO("work report_rate 120 = %d\n", report_rate120);
+	ts_log_info("work report_rate 120 = %d\n", report_rate120);
 
 	command = (unsigned char)F54_60LOW_RATE;
 	rc = f54->fn_ptr->write(f54->rmi4_data,
 				f54->control_base_addr + report_rate_offset,
 				&command, 1);
 	if (rc < 0) {
-		TS_LOG_ERR("write ic to 60HZ error because of i2c error");
+		ts_log_err("write ic to 60HZ error because of i2c error");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5F", MAX_STR_LEN);
@@ -2020,7 +1914,7 @@ static void synaptics_change_report_rate(void)
 			       f54->data_base_addr + F54_READ_RATE_OFFSET,
 			       &report_rate60, 1);
 	if (rc < 0) {
-		TS_LOG_ERR("read 60HZ from ic error because of i2c error");
+		ts_log_err("read 60HZ from ic error because of i2c error");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5F", MAX_STR_LEN);
@@ -2029,11 +1923,11 @@ static void synaptics_change_report_rate(void)
 		}
 		return;
 	}
-	TS_LOG_INFO("work report_rate 60 = %d\n", report_rate60);
+	ts_log_info("work report_rate 60 = %d\n", report_rate60);
 
 	if ((F54_DATA120_RATE == report_rate120)
 	    && (F54_DATA60_RATE == report_rate60)) {
-		TS_LOG_DEBUG("change rate success\n");
+		ts_log_debug("change rate success\n");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5P", MAX_STR_LEN);
@@ -2041,7 +1935,7 @@ static void synaptics_change_report_rate(void)
 			strncat(buf_f54test_result, "-4P", MAX_STR_LEN);
 		}
 	} else {
-		TS_LOG_ERR("change rate error");
+		ts_log_err("change rate error");
 		if (f54->rmi4_data->synaptics_chip_data->test_rawdata_normalizing
 			|| f54->rmi4_data->synaptics_chip_data->test_enhance_delta_trx) {
 			strncat(buf_f54test_result, "-5F", MAX_STR_LEN);
@@ -2050,20 +1944,6 @@ static void synaptics_change_report_rate(void)
 		}
 		strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
-#if defined (CONFIG_HUAWEI_DSM)
-		if (atomic_read(&g_ts_data.state) != TS_WORK_IN_SLEEP) {
-			if (!dsm_client_ocuppy(tp_dclient)) {
-				TS_LOG_INFO
-				    ("try to client record 20006 for change report rate error \n");
-				dsm_client_record(tp_dclient,
-						  "for 20006 report_rate120 is :%d, report_rate60 is : %d\n",
-						  report_rate120,
-						  report_rate60);
-				dsm_client_notify(tp_dclient,
-						  DSM_TP_RAWDATA_ERROR_NO);
-			}
-		}
-#endif
 	}
 	return;
 }
@@ -2076,12 +1956,12 @@ static short FindMedian(short* pdata, int num)
 	short median = 0;
 
 	if (!pdata || 0 >= num) {
-		TS_LOG_ERR("%s(%d), the parameter pdata or num is invalid\n", __func__, __LINE__);
+		ts_log_err("%s(%d), the parameter pdata or num is invalid\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 	value = (short *)kzalloc(num * sizeof(short), GFP_KERNEL);
 	if (!value) {
-		TS_LOG_ERR("%s(%d), failed to malloc\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 	for(i = 0; i < num; i++) {
@@ -2136,34 +2016,34 @@ static int td43xx_ee_short_normalize_data(signed short * image, unsigned int len
 	unsigned int left_data_size = left_size * rx_num;
 
 	if (!image) {
-		TS_LOG_ERR("%s(%d), td43xx_ee_short_data image is NULL\n", __func__, __LINE__);
+		ts_log_err("%s(%d), td43xx_ee_short_data image is NULL\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 	right_median = (signed short *) kzalloc(rx_num * sizeof(short), GFP_KERNEL);
 	if (!right_median) {
 		retval = -ENOMEM;
-		TS_LOG_ERR("%s(%d), failed to malloc right_median\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc right_median\n", __func__, __LINE__);
 		goto exit;
 	}
 
 	left_median = (signed short *) kzalloc(rx_num * sizeof(short), GFP_KERNEL);
 	if (!left_median) {
 		retval = -ENOMEM;
-		TS_LOG_ERR("%s(%d), failed to malloc left_median\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc left_median\n", __func__, __LINE__);
 		goto exit;
 	}
 
 	right_column_buf = (signed short *) kzalloc(right_data_size * sizeof(short), GFP_KERNEL);
 	if (!right_column_buf ) {
 		retval = -ENOMEM;
-		TS_LOG_ERR("%s(%d), failed to malloc right_column_buf\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc right_column_buf\n", __func__, __LINE__);
 		goto exit;
 	}
 
 	left_column_buf = (signed short *) kzalloc(left_data_size * sizeof(short), GFP_KERNEL);
 	if (!left_column_buf ) {
 		retval = -ENOMEM;
-		TS_LOG_ERR("%s(%d), failed to malloc left_column_buf\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc left_column_buf\n", __func__, __LINE__);
 		goto exit;
 	}
 
@@ -2187,12 +2067,12 @@ static int td43xx_ee_short_normalize_data(signed short * image, unsigned int len
 		right_median[i] = FindMedian(right_column_buf + i * right_size, right_size);
 		left_median[i] = FindMedian(left_column_buf + i * left_size, left_size);
 		if (-ENOMEM == right_median[i] || -ENOMEM == left_median[i]) {
-			TS_LOG_ERR("failed to get midian[%d] value\n", i);
+			ts_log_err("failed to get midian[%d] value\n", i);
 			retval = -ENOMEM;
 			goto exit;
 		}
-		TS_LOG_DEBUG("right_median[%d] = %d\n", i, right_median[i]);
-		TS_LOG_DEBUG("left_median[%d] = %d\n", i, left_median[i]);
+		ts_log_debug("right_median[%d] = %d\n", i, right_median[i]);
+		ts_log_debug("left_median[%d] = %d\n", i, left_median[i]);
 	}
 
 	for (i = 0; i < tx_num; i++) {
@@ -2207,8 +2087,8 @@ static int td43xx_ee_short_normalize_data(signed short * image, unsigned int len
 			}
 			if((i * rx_num + j) >= (long)lens)
 			{
-				TS_LOG_ERR("lens = %d", lens);
-				TS_LOG_ERR("%s(%d), no mem to store the data of short\n", __func__, __LINE__);
+				ts_log_err("lens = %d", lens);
+				ts_log_err("%s(%d), no mem to store the data of short\n", __func__, __LINE__);
 				retval = -ENOMEM;
 				goto exit;
 			}
@@ -2251,34 +2131,34 @@ static int td43xx_ee_short_report(void)
 	unsigned int tddi_ee_short_data_size = rx_num * tx_num;
 
 	if (!buffer) {
-		TS_LOG_ERR("mmi_buf data is NULL\n");
+		ts_log_err("mmi_buf data is NULL\n");
 		return TEST_FAIL;
 	}
 
-	TS_LOG_INFO("%s: report_type=%d,tx=%d,rx=%d,limit(%d, %d) #%d\n",
+	ts_log_info("%s: report_type=%d,tx=%d,rx=%d,limit(%d, %d) #%d\n",
 		__func__, f54->report_type, tx_num, rx_num, part_one_limit, part_two_limit,__LINE__);
 	if (!part_one_limit || !part_two_limit) {
-		TS_LOG_ERR("td43xx ee_short test limit is NULL\n");
+		ts_log_err("td43xx ee_short test limit is NULL\n");
 		return TEST_FAIL;
 	}
 
 	td43xx_ee_short_data = (char *)kzalloc(tddi_ee_short_data_size * sizeof(char), GFP_KERNEL);
 	if (!td43xx_ee_short_data) {
-		TS_LOG_ERR("%s(%d), failed to malloc td43xx_ee_short_data\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc td43xx_ee_short_data\n", __func__, __LINE__);
 		TestResult = TEST_FAIL;
 		goto exit;
 	}
 
 	td43xx_rt95_part_one = (signed short *)kzalloc(td43xx_rt95_report_size * sizeof(signed short), GFP_KERNEL);
 	if (!td43xx_rt95_part_one) {
-		TS_LOG_ERR("%s(%d), failed to malloc td43xx_rt95_part_one\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc td43xx_rt95_part_one\n", __func__, __LINE__);
 		TestResult = TEST_FAIL;
 		goto exit;
 	}
 
 	td43xx_rt95_part_two = (signed short *)kzalloc(td43xx_rt95_report_size * sizeof(signed short), GFP_KERNEL);
 	if (!td43xx_rt95_part_two) {
-		TS_LOG_ERR("%s(%d), failed to malloc td43xx_rt95_part_two\n", __func__, __LINE__);
+		ts_log_err("%s(%d), failed to malloc td43xx_rt95_part_two\n", __func__, __LINE__);
 		TestResult = TEST_FAIL;
 		goto exit;
 	}
@@ -2299,7 +2179,7 @@ static int td43xx_ee_short_report(void)
 
 	retval = td43xx_ee_short_normalize_data(td43xx_rt95_part_two, td43xx_rt95_report_size);
 	if (retval < 0) {
-		TS_LOG_ERR("%s(%d), td43xx_ee_short_normalize_data failed\n", __func__, __LINE__);
+		ts_log_err("%s(%d), td43xx_ee_short_normalize_data failed\n", __func__, __LINE__);
 		TestResult = TEST_FAIL;
 		goto exit;
 	}
@@ -2311,7 +2191,7 @@ static int td43xx_ee_short_report(void)
 				td43xx_rt95_part_two[ii * rx_num + jj];
 			if (0 != td43xx_ee_short_data[ii * tx_num + jj]) {
 				TestResult = TEST_FAIL;
-				TS_LOG_ERR("td43xx_ee_short_data:[%d, %d]%d\n",
+				ts_log_err("td43xx_ee_short_data:[%d, %d]%d\n",
 					ii, jj, td43xx_ee_short_data[ii * tx_num + jj]);
 			}
 		}
@@ -2334,29 +2214,29 @@ static void mmi_td43xx_ee_short_report(void)
 	int result = 0;
 	command = (unsigned char)F54_TD43XX_EE_SHORT;
 
-	TS_LOG_INFO("mmi_td43xx_ee_short_report called\n");
+	ts_log_info("mmi_td43xx_ee_short_report called\n");
 	write_to_f54_register(command);
 	f54->report_type = command;
 	result = synaptics_rmi4_f54_attention();
 	if(MAX_STR_LEN >= F54_BUF_LEN)
 	{
-		TS_LOG_ERR("Failed to copy the result of short test\n");
+		ts_log_err("Failed to copy the result of short test\n");
 		return;
 	}
 	if (result < 0) {
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		strncat(buf_f54test_result, TD43XX_EE_SHORT_TEST_FAIL, MAX_STR_LEN);
 		return;
 	}
 	result = td43xx_ee_short_report();
 	if (TEST_PASS == result) {
-		TS_LOG_INFO("tdxx_ee_short test is successed, result: 4P\n");
+		ts_log_info("tdxx_ee_short test is successed, result: 4P\n");
 		strncat(buf_f54test_result, TD43XX_EE_SHORT_TEST_PASS, MAX_STR_LEN);
 	} else {
 		strncat(buf_f54test_result, TD43XX_EE_SHORT_TEST_FAIL, MAX_STR_LEN);
 		strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
-		TS_LOG_INFO("tdxx_ee_short test is failed, result: 4F\n");
+		ts_log_info("tdxx_ee_short test is failed, result: 4F\n");
 	}
 
 	return;
@@ -2367,7 +2247,7 @@ int synaptics_get_cap_data(struct ts_rawdata_info *info)
 	int rc = NO_ERR;
 	unsigned char command;
 
-	TS_LOG_INFO("synaptics_get_cap_data called\n");
+	ts_log_info("synaptics_get_cap_data called\n");
 
 	memset(buf_f54test_result, 0, sizeof(buf_f54test_result));
 	memset(f54->rawdatabuf, 0, (rawdata_size + MMI_SHORT_BUF_SIZE + MMI_HIGHRESISTANCE_BUF_SIZE) * sizeof(int));
@@ -2376,7 +2256,7 @@ int synaptics_get_cap_data(struct ts_rawdata_info *info)
 	&& SYNAPTICS_TD4300 != f54->rmi4_data->synaptics_chip_data->ic_type) {
 		rc = f54->rmi4_data->status_save(f54->rmi4_data);
 		if (rc < 0) {
-			TS_LOG_ERR
+			ts_log_err
 				("failed to save glove/holster/palm or other status!\n");
 		}
 	}
@@ -2419,12 +2299,12 @@ int synaptics_get_cap_data(struct ts_rawdata_info *info)
 	&& SYNAPTICS_TD4300 != f54->rmi4_data->synaptics_chip_data->ic_type) {
 		rc = f54->rmi4_data->reset_device(f54->rmi4_data);
 		if (rc < 0) {
-			TS_LOG_ERR("failed to write command to f01 reset!\n");
+			ts_log_err("failed to write command to f01 reset!\n");
 			goto exit;
 		}
 		rc = f54->rmi4_data->status_resume(f54->rmi4_data);
 		if (rc < 0) {
-			TS_LOG_ERR
+			ts_log_err
 				("failed to resume glove/holster/palm or other status!\n");
 		}
 	}
@@ -2461,7 +2341,7 @@ int synaptics_get_cap_data(struct ts_rawdata_info *info)
 			       project_id_string));
 		break;
 	default:
-		TS_LOG_ERR("failed to recognize ic_ver\n");
+		ts_log_err("failed to recognize ic_ver\n");
 		break;
 	}
 
@@ -2472,8 +2352,8 @@ int synaptics_get_cap_data(struct ts_rawdata_info *info)
 		info->used_synaptics_resistance_size = MMI_HIGHRESISTANCE_BUF_SIZE;
 		info->used_synaptics_self_cap_size = mmi_hybrid_abs_delta >> 1;
 	}
-	TS_LOG_INFO("info->used_size = %d\n", info->used_size);
-	TS_LOG_INFO("info->used_synaptics_resistance_size = %d\n", info->used_synaptics_resistance_size);
+	ts_log_info("info->used_size = %d\n", info->used_size);
+	ts_log_info("info->used_synaptics_resistance_size = %d\n", info->used_synaptics_resistance_size);
 	rc = NO_ERR;
 exit:
 	synaptics_f54_free();
@@ -2492,7 +2372,7 @@ static int synaptics_rmi4_f54_attention_cust(void)
 	set_report_size();
 
 	if (f54->report_size == 0) {
-		TS_LOG_ERR("Report data size = 0\n");
+		ts_log_err("Report data size = 0\n");
 		retval = -EINVAL;
 		goto error_exit;
 	}
@@ -2504,7 +2384,7 @@ static int synaptics_rmi4_f54_attention_cust(void)
 		}
 		f54->report_data = kzalloc(f54->report_size, GFP_KERNEL);
 		if (!f54->report_data) {
-			TS_LOG_ERR("Failed to alloc mem for data buffer\n");
+			ts_log_err("Failed to alloc mem for data buffer\n");
 			f54->data_buffer_size = 0;
 			retval = -ENOMEM;
 			goto error_exit;
@@ -2526,15 +2406,15 @@ static int synaptics_rmi4_f54_attention_cust(void)
 			report_index,
 			sizeof(report_index));
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to write report data index\n");
+		ts_log_err("Failed to write report data index\n");
 		retval = -EINVAL;
 		goto error_exit;
 	}
 
 	/* Point to the block data about to transfer */
 	report_data_temp = f54->report_data;
-	TS_LOG_INFO("report_size = %d.\n",f54->report_size);
-	TS_LOG_INFO("report_times_max = %d.\n",report_times_max);
+	ts_log_info("report_size = %d.\n",f54->report_size);
+	ts_log_info("report_times_max = %d.\n",report_times_max);
 
 	for(i = 0;i < report_times_max;i ++){
 		if(i == (report_times_max - 1))
@@ -2546,13 +2426,13 @@ static int synaptics_rmi4_f54_attention_cust(void)
 			*/
 			report_size_temp = (report_size_temp != 0) ? report_size_temp : MAX_I2C_MSG_LENS;
 		}
-		TS_LOG_DEBUG("i = %d,report_size_temp = %d.\n",i,report_size_temp);
+		ts_log_debug("i = %d,report_size_temp = %d.\n",i,report_size_temp);
 		retval = f54->fn_ptr->read(f54->rmi4_data,
 			f54->data_base_addr + DATA_REPORT_DATA_OFFSET,
 			report_data_temp,
 			report_size_temp);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read report data\n",__func__);
+			ts_log_err("%s: Failed to read report data\n",__func__);
 			retval = -EINVAL;
 			//mutex_unlock(&f54->data_mutex);
 			goto error_exit;
@@ -2573,7 +2453,7 @@ int synaptics_get_calib_data(struct ts_calibration_data_info *info)
 	unsigned char command;
 	size_t infolength = 0;
 
-	TS_LOG_INFO("%s called\n", __FUNCTION__);
+	ts_log_info("%s called\n", __FUNCTION__);
 
 	command = (unsigned char) F54_CALIBRATION;
 
@@ -2581,18 +2461,18 @@ int synaptics_get_calib_data(struct ts_calibration_data_info *info)
 	f54->report_type = command;
 	rc = synaptics_rmi4_f54_attention_cust();
 	if(rc < 0){
-		TS_LOG_ERR("Failed to get data\n");
+		ts_log_err("Failed to get data\n");
 		goto exit;
 	}
 	infolength = min(sizeof(info->data),(size_t)(f54->report_size+1));
 	memcpy(info->data, f54->report_data, infolength - 1);
 
 	info->used_size = f54->report_size;
-	TS_LOG_INFO("info->used_size = %d\n", info->used_size);
+	ts_log_info("info->used_size = %d\n", info->used_size);
 	info->tx_num = f54->rmi4_data->num_of_tx;
 	info->rx_num = f54->rmi4_data->num_of_rx;
-	TS_LOG_INFO("info->tx_num = %d\n", info->tx_num);
-	TS_LOG_INFO("info->rx_num = %d\n", info->rx_num);
+	ts_log_info("info->tx_num = %d\n", info->tx_num);
+	ts_log_info("info->rx_num = %d\n", info->rx_num);
 	rc = NO_ERR;
 exit:
 	synaptics_f54_free();
@@ -2604,21 +2484,21 @@ int synaptics_get_calib_info(struct ts_calibration_info_param *info)
 	int rc = NO_ERR;
 	char calibration_state = 0;
 
-	TS_LOG_INFO("%s called\n", __FUNCTION__);
-	TS_LOG_INFO("calibration info reg offset: 0x%x\n", CALIBRATION_INFO_OFFSET);
+	ts_log_info("%s called\n", __FUNCTION__);
+	ts_log_info("calibration info reg offset: 0x%x\n", CALIBRATION_INFO_OFFSET);
 
 	rc = f54->fn_ptr->read(f54->rmi4_data,
 		f54->data_base_addr + CALIBRATION_INFO_OFFSET,
 		&calibration_state,
 		sizeof (calibration_state));
 	if(rc < 0){
-		TS_LOG_ERR("Failed to get calibration info\n");
+		ts_log_err("Failed to get calibration info\n");
 		goto exit;
 	}
-	TS_LOG_INFO("calibration_state = 0x%x\n", calibration_state);
+	ts_log_info("calibration_state = 0x%x\n", calibration_state);
 
 	info->calibration_crc = ((calibration_state >> 1) & 1);
-	TS_LOG_INFO("info->calibration_crc = %d\n", info->calibration_crc);
+	ts_log_info("info->calibration_crc = %d\n", info->calibration_crc);
 	rc = NO_ERR;
 exit:
 	synaptics_f54_free();
@@ -2630,7 +2510,7 @@ int synaptics_debug_data_test(struct ts_diff_data_info *info)
 	int rc = NO_ERR;
 	int infolength = 0;
 
-	TS_LOG_INFO("synaptics_get_debug_cap_data called\n");
+	ts_log_info("synaptics_get_debug_cap_data called\n");
 
 	memset(buf_f54test_result, 0, sizeof(buf_f54test_result));
 	memset(f54->rawdatabuf, 0, rawdata_size * sizeof(int));
@@ -2646,7 +2526,7 @@ int synaptics_debug_data_test(struct ts_diff_data_info *info)
 		put_capacitance_data(0);
 		break;
 	default:
-		TS_LOG_ERR("failed to recognize ic_ver\n");
+		ts_log_err("failed to recognize ic_ver\n");
 		break;
 	}
 	infolength = min(sizeof(info->buff),rawdata_size * sizeof(int)+1);
@@ -2671,7 +2551,7 @@ static int synaptics_rmi4_f54_attention(void)
 	set_report_size();
 
 	if (f54->report_size == 0) {
-		TS_LOG_ERR("Report data size = 0\n");
+		ts_log_err("Report data size = 0\n");
 		retval = -EINVAL;
 		goto error_exit;
 	}
@@ -2683,7 +2563,7 @@ static int synaptics_rmi4_f54_attention(void)
 		}
 		f54->report_data = kzalloc(f54->report_size, GFP_KERNEL);
 		if (!f54->report_data) {
-			TS_LOG_ERR("Failed to alloc mem for data buffer\n");
+			ts_log_err("Failed to alloc mem for data buffer\n");
 			f54->data_buffer_size = 0;
 			retval = -ENOMEM;
 			goto error_exit;
@@ -2704,15 +2584,15 @@ static int synaptics_rmi4_f54_attention(void)
 				    DATA_REPORT_INDEX_OFFSET, report_index,
 				    sizeof(report_index));
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to write report data index\n");
+		ts_log_err("Failed to write report data index\n");
 		retval = -EINVAL;
 		goto error_exit;
 	}
 
 	/* Point to the block data about to transfer */
 	report_data_temp = f54->report_data;
-	TS_LOG_INFO("report_size = %d.\n", f54->report_size);
-	TS_LOG_INFO("report_times_max = %d.\n", report_times_max);
+	ts_log_info("report_size = %d.\n", f54->report_size);
+	ts_log_info("report_times_max = %d.\n", report_times_max);
 
 	for (i = 0; i < report_times_max; i++) {
 		if (i == (report_times_max - 1)) {
@@ -2725,7 +2605,7 @@ static int synaptics_rmi4_f54_attention(void)
 			    (report_size_temp !=
 			     0) ? report_size_temp : MAX_I2C_MSG_LENS;
 		}
-		TS_LOG_DEBUG("i = %d,report_size_temp = %d.\n", i,
+		ts_log_debug("i = %d,report_size_temp = %d.\n", i,
 			     report_size_temp);
 		retval =
 		    f54->fn_ptr->read(f54->rmi4_data,
@@ -2733,7 +2613,7 @@ static int synaptics_rmi4_f54_attention(void)
 				      DATA_REPORT_DATA_OFFSET, report_data_temp,
 				      report_size_temp);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read report data\n",
+			ts_log_err("%s: Failed to read report data\n",
 				   __func__);
 			retval = -EINVAL;
 			/*mutex_unlock(&f54->data_mutex);*/
@@ -2767,7 +2647,7 @@ static int synaptics_read_f34(void)
 					   f54->bootloader_id,
 					   sizeof(f54->bootloader_id));
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read bootloader ID\n");
+			ts_log_err("Failed to read bootloader ID\n");
 			return retval;
 		}
 	} else {
@@ -2777,12 +2657,12 @@ static int synaptics_read_f34(void)
 					   f54->bootloader_id,
 					   sizeof(f54->bootloader_id));
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read bootloader ID\n");
+			ts_log_err("Failed to read bootloader ID\n");
 			return retval;
 		}
 	}
 	/*V5 V6 version is char data, as '5' '6', V7 is int data, 7 */
-	TS_LOG_INFO("bootloader_id[1] = %c, %d\n", f54->bootloader_id[1],
+	ts_log_info("bootloader_id[1] = %c, %d\n", f54->bootloader_id[1],
 		    f54->bootloader_id[1]);
 
 	switch (f54->bootloader_id[1]) {
@@ -2796,7 +2676,7 @@ static int synaptics_read_f34(void)
 		f54->bl_version = V7;
 		break;
 	default:
-		TS_LOG_ERR("unknown %d %c\n", f54->bootloader_id[1],
+		ts_log_err("unknown %d %c\n", f54->bootloader_id[1],
 			   f54->bootloader_id[1]);
 		break;
 	}
@@ -2810,7 +2690,7 @@ static int synaptics_read_f34(void)
 					      f01_ctrl_base_addr + RX_NUMBER,
 					      &f54->rmi4_data->num_of_rx, 1);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("Could not read RX value from 0x%04x\n",
 				     f54->rmi4_data->rmi4_feature.
 				     f01_ctrl_base_addr + RX_NUMBER);
@@ -2823,7 +2703,7 @@ static int synaptics_read_f34(void)
 					      f01_ctrl_base_addr + TX_NUMBER,
 					      &f54->rmi4_data->num_of_tx, 1);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("Could not read TX value from 0x%04x\n",
 				     f54->rmi4_data->rmi4_feature.
 				     f01_ctrl_base_addr + TX_NUMBER);
@@ -2837,7 +2717,7 @@ static int synaptics_read_f34(void)
 				      f11_ctrl_base_addr + RX_NUMBER_S3207,
 				      &f54->rmi4_data->num_of_rx, 1);
 		if (retval < 0) {
-			TS_LOG_ERR("Could not read RX value from 0x%04x\n",
+			ts_log_err("Could not read RX value from 0x%04x\n",
 				   f54->rmi4_data->rmi4_feature.
 				   f11_ctrl_base_addr + RX_NUMBER_S3207);
 			return -EINVAL;
@@ -2849,7 +2729,7 @@ static int synaptics_read_f34(void)
 				      f11_ctrl_base_addr + TX_NUMBER_S3207,
 				      &f54->rmi4_data->num_of_tx, 1);
 		if (retval < 0) {
-			TS_LOG_ERR("Could not read TX value from 0x%04x\n",
+			ts_log_err("Could not read TX value from 0x%04x\n",
 				   f54->rmi4_data->rmi4_feature.
 				   f11_ctrl_base_addr + TX_NUMBER_S3207);
 			return -EINVAL;
@@ -2858,7 +2738,7 @@ static int synaptics_read_f34(void)
 
 	/*used for force touch data. */
 	if (1 == f54->rmi4_data->synaptics_chip_data->support_3d_func) {
-		TS_LOG_INFO("support 3d test\n");
+		ts_log_info("support 3d test\n");
 		f54->rmi4_data->num_of_tx =
 		    (f54->rmi4_data->num_of_tx) - FORCE_NUMER;
 	}
@@ -2867,7 +2747,7 @@ static int synaptics_read_f34(void)
 	mmi_buf_size =
 	    (f54->rmi4_data->num_of_tx) * (f54->rmi4_data->num_of_rx) * 2;
 
-	TS_LOG_INFO("rx = %d, tx = %d, rawdata_size = %d, mmi_buf_size = %d\n",
+	ts_log_info("rx = %d, tx = %d, rawdata_size = %d, mmi_buf_size = %d\n",
 		    f54->rmi4_data->num_of_rx, f54->rmi4_data->num_of_tx,
 		    rawdata_size, mmi_buf_size);
 	return NO_ERR;
@@ -3105,7 +2985,7 @@ static int Synaptics_test_set_controls(void)
 	/* control 86 */
 	if ((f54->query.has_query13 == 1) && (f54->query_13.has_ctrl86 == 1)) {
 		report_rate_offset = reg_addr - f54->control_base_addr;
-		TS_LOG_INFO("%s, no 2 offset = %d, report_rate_offset = %d\n",
+		ts_log_info("%s, no 2 offset = %d, report_rate_offset = %d\n",
 			    __func__, reg_addr, report_rate_offset);
 		reg_addr += CONTROL_86_SIZE;
 	}
@@ -3127,7 +3007,7 @@ static int Synaptics_test_set_controls(void)
 	return 0;
 
 exit_no_mem:
-	TS_LOG_ERR("Failed to alloc mem for control registers\n");
+	ts_log_err("Failed to alloc mem for control registers\n");
 	return -ENOMEM;
 }
 
@@ -3212,7 +3092,7 @@ static int Synaptics_test_set_queries(void)
 
 static int match_module_name(const char *module_name)
 {
-	TS_LOG_INFO("%s: module_name = %s,product_name=%s\n", __func__,
+	ts_log_info("%s: module_name = %s,product_name=%s\n", __func__,
 		    module_name, g_ts_data.product_name);
 	if (strcmp(g_ts_data.product_name, "chm") == 0) {
 		if (strcmp(module_name, "oflim") == 0) {
@@ -3240,12 +3120,12 @@ static int match_module_name(const char *module_name)
 			TxDeltaCapLowerLimit = TxDeltaCapLowerLimit_truly_chm;
 			return NO_ERR;
 		} else {
-			TS_LOG_ERR("%s: Failed to match module_name \n",
+			ts_log_err("%s: Failed to match module_name \n",
 				   __func__);
 			return -EINVAL;
 		}
 	}else {
-		TS_LOG_ERR("%s: Failed to match module_name \n",
+		ts_log_err("%s: Failed to match module_name \n",
 				   __func__);
 		return -EINVAL;
 	}
@@ -3286,14 +3166,14 @@ int synaptics_rmi4_f54_init(struct synaptics_rmi4_data *rmi4_data,
 					      (unsigned char *)&rmi_fd,
 					      sizeof(rmi_fd));
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("i2c read error, page = %d, ii = %d\n",
 				     page, ii);
 				goto exit_free_mem;
 			}
 
 			if (!rmi_fd.fn_number) {
-				TS_LOG_INFO("!rmi_fd.fn_number,page=%d,ii=%d\n",
+				ts_log_info("!rmi_fd.fn_number,page=%d,ii=%d\n",
 					    page, ii);
 				retval = -EINVAL;
 				break;
@@ -3309,7 +3189,7 @@ int synaptics_rmi4_f54_init(struct synaptics_rmi4_data *rmi4_data,
 				    rmi_fd.data_base_addr | (page << 8);
 				f54->command_base_addr =
 				    rmi_fd.cmd_base_addr | (page << 8);
-				TS_LOG_DEBUG
+				ts_log_debug
 				    ("f54->control_base_addr = 0x%04x, f54->data_base_addr = 0x%04x, f54->query_base_addr = 0x%04x\n",
 				     f54->control_base_addr,
 				     f54->data_base_addr, f54->query_base_addr);
@@ -3330,7 +3210,7 @@ int synaptics_rmi4_f54_init(struct synaptics_rmi4_data *rmi4_data,
 			}
 
 			if (hasF54 && hasF55 && hasF34) {
-				TS_LOG_INFO("%s: goto found\n", __func__);
+				ts_log_info("%s: goto found\n", __func__);
 				goto found;
 			}
 
@@ -3340,12 +3220,12 @@ int synaptics_rmi4_f54_init(struct synaptics_rmi4_data *rmi4_data,
 		}
 	}
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("f54->control_base_addr = 0x%04x, f54->data_base_addr = 0x%04x\n",
 	     f54->control_base_addr, f54->data_base_addr);
 
 	if (!hasF54 || !hasF34) {
-		TS_LOG_ERR
+		ts_log_err
 		    ("Funtion  is not available, hasF54=%d, hasF34 = %d\n",
 		     hasF54, hasF34);
 		retval = -EINVAL;
@@ -3369,31 +3249,31 @@ found:
 	    f54->fn_ptr->read(rmi4_data, f54->query_base_addr, f54->query.data,
 			      sizeof(f54->query.data));
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read query registers\n");
+		ts_log_err("Failed to read query registers\n");
 		goto exit_free_mem;
 	}
 
 	retval = Synaptics_test_set_queries();
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to set up f54 queries registers\n");
+		ts_log_err("Failed to set up f54 queries registers\n");
 		goto exit_free_mem;
 	}
 
 	retval = Synaptics_test_set_controls();
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to set up f54 control registers\n");
+		ts_log_err("Failed to set up f54 control registers\n");
 		goto exit_free_control;
 	}
 
 	retval = synaptics_read_f34();
 	if (retval) {
-		TS_LOG_ERR("Read F34 failed, retval = %d\n", retval);
+		ts_log_err("Read F34 failed, retval = %d\n", retval);
 		goto exit_free_mem;
 	}
 
 	f54->mmi_buf = (char *)kzalloc(mmi_buf_size, GFP_KERNEL);
 	if (!f54->mmi_buf) {
-		TS_LOG_ERR("Failed to alloc mmi_buf\n");
+		ts_log_err("Failed to alloc mmi_buf\n");
 		retval = -ENOMEM;
 		goto exit_free_mem;
 	}
@@ -3401,14 +3281,14 @@ found:
 	f54->rawdatabuf =
 			(int *)kzalloc((rawdata_size + MMI_SHORT_BUF_SIZE + MMI_HIGHRESISTANCE_BUF_SIZE) * sizeof(int), GFP_KERNEL);
 	if (!f54->rawdatabuf) {
-		TS_LOG_ERR(" Failed to alloc rawdatabuf\n");
+		ts_log_err(" Failed to alloc rawdatabuf\n");
 		retval = -ENOMEM;
 		goto exit_free_mem;
 	}
 	f54->hybridbuf =
 			(u32 *)kzalloc((HYBRID_BUF_SIZE) * sizeof(int), GFP_KERNEL);
 	if (!f54->hybridbuf) {
-		TS_LOG_ERR(" Failed to alloc hybridbuf\n");
+		ts_log_err(" Failed to alloc hybridbuf\n");
 		retval = -ENOMEM;
 		goto exit_free_mem;
 	}
@@ -3431,18 +3311,18 @@ unsigned short synaptics_f54_get_calibrate_addr(struct synaptics_rmi4_data
 	u8 value = 0;
 	unsigned short addr = 0;
 
-	TS_LOG_INFO("%s called\n", __func__);
+	ts_log_info("%s called\n", __func__);
 
 	rc = synaptics_rmi4_f54_init(rmi4_data, module_name);
 	if (rc < 0) {
-		TS_LOG_ERR("Failed to init f54\n");
+		ts_log_err("Failed to init f54\n");
 		goto exit;
 	}
 
 	rc = f54->fn_ptr->read(rmi4_data, f54->query_base_addr + 0x0B, &value,
 			       sizeof(value));
 	if (rc) {
-		TS_LOG_ERR("Read F54 ESD check failed, retval = %d\n", rc);
+		ts_log_err("Read F54 ESD check failed, retval = %d\n", rc);
 		goto exit;
 	}
 
@@ -3452,7 +3332,7 @@ unsigned short synaptics_f54_get_calibrate_addr(struct synaptics_rmi4_data
 		addr += 2;
 	}
 
-	TS_LOG_INFO("%s, esd value is 0x%02x, addr is 0x%02x\n", __func__,
+	ts_log_info("%s, esd value is 0x%02x, addr is 0x%02x\n", __func__,
 		    value, addr);
 
 exit:

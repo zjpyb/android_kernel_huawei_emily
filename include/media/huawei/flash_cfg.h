@@ -1,8 +1,8 @@
 
 
 
-#ifndef __HW_ALAN_KERNEL_HWCAM_FLASH_CFG_H__
-#define __HW_ALAN_KERNEL_HWCAM_FLASH_CFG_H__
+#ifndef __HW_ALAN_KERNEL_CAM_FLASH_CFG_H__
+#define __HW_ALAN_KERNEL_CAM_FLASH_CFG_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -14,7 +14,6 @@
 #define CFG_FLASH_TURN_OFF		1
 #define CFG_FLASH_GET_FLASH_NAME	2
 #define CFG_FLASH_GET_FLASH_STATE	3
-#define CFG_FLASH_SET_POSITION		4 //use for mix flash
 #define CFG_FLASH_GET_FLASH_TYPE	5
 
 typedef enum {
@@ -30,7 +29,7 @@ typedef enum {
 
 typedef enum {
 	LED_FLASH = 0,
-	XEON_FLASH = 1,
+	XEON_FLASH =1,
 	IR_FLASH = 2,
 } flash_type;
 
@@ -48,6 +47,7 @@ struct hw_flash_cfg_data {
 	int cfgtype;
 	flash_mode mode;
 	int data;
+	int position;
 
 	union {
 	char name[32];
@@ -58,5 +58,5 @@ struct hw_flash_cfg_data {
 #define VIDIOC_HISI_FLASH_CFG	\
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 41, struct hw_flash_cfg_data)
 
-#endif // __HW_ALAN_KERNEL_HWCAM_FLASH_CFG_H__
+#endif // __HW_ALAN_KERNEL_CAM_FLASH_CFG_H__
 

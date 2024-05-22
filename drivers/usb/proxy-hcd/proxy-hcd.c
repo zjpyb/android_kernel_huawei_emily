@@ -1,40 +1,72 @@
+/*
+ * proxy-hcd.c
+ *
+ * utilityies for proxy-hcd
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include "proxy-hcd.h"
+
+#include <asm/byteorder.h>
+#include <asm/unaligned.h>
+#include <linux/dma-mapping.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/dma-mapping.h>
 #include <linux/slab.h>
-#include <asm/unaligned.h> /*lint !e7 */
-#include <asm/byteorder.h>
 #include <linux/usb.h>
-#include <linux/usb/hcd.h>
-#include <linux/usb/ch9.h>
 #include <linux/usb/ch11.h>
+#include <linux/usb/ch9.h>
+#include <linux/usb/hcd.h>
 
-#include "proxy-hcd.h"
-#include "proxy-hcd-stat.h"
 #include "client-ref.h"
 #include "proxy-hcd-debugfs.h"
+#include "proxy-hcd-stat.h"
+#include "usbaudio-monitor.h"
 
-#define DBG(format, arg...) pr_debug("[phcd][DBG][%s]" format, __func__, ##arg)
-#define INFO(format, arg...) pr_info("[phcd][INFO][%s]" format, __func__, ##arg)
-#define ERR(format, arg...) pr_err("[phcd][ERR][%s]" format, __func__, ##arg)
+#define dbg(format, arg...) pr_debug("[phcd][DBG][%s]" format, __func__, ##arg)
+#define info(format, arg...) pr_info("[phcd][INFO][%s]" format, __func__, ##arg)
+#define err(format, arg...) pr_err("[phcd][ERR][%s]" format, __func__, ##arg)
 
 static int phcd_setup(struct usb_hcd *hcd)
 {
-	DBG("+\n");
+	dbg("+\n");
 
-	hcd->self.sg_tablesize = 0;
-	hcd->self.no_sg_constraint = 0;
-	hcd->self.no_stop_on_short = 1;
+	hcd->self.sg_tablesize = 0; /* Not accept scatter-gather lists */
+	hcd->self.no_sg_constraint = 0; /* Not support to build packet from discontinuous buffers */
+	hcd->self.no_stop_on_short = 1; /* Controllers don't stop the ep queue on short packets */
 
 	hcd->speed = HCD_USB2;
 	hcd->self.root_hub->speed = USB_SPEED_HIGH;
-	hcd->has_tt = 1;
+	hcd->has_tt = 1; /* Integrated TT in root hub */
 
-	DBG("-\n");
+	dbg("-\n");
 	return 0;
+}
+
+static void reset_proxy_hcd_stat(struct proxy_hcd_stat *stat)
+{
+	stat->stat_alloc_dev = 0;
+	stat->stat_free_dev = 0;
+	stat->stat_hub_control = 0;
+	stat->stat_hub_status_data = 0;
+	stat->last_hub_control_time = 0;
+	stat->last_hub_status_data_time = 0;
+	stat->stat_bus_suspend = 0;
+	stat->stat_bus_resume = 0;
 }
 
 /*
@@ -48,20 +80,19 @@ static int phcd_start(struct usb_hcd *hcd)
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	unsigned long flags;
 
-	DBG("+\n");
+	dbg("+\n");
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-	hcd->uses_new_polling = 1;
+	spin_lock_irqsave(&phcd->lock, flags);
+	hcd->uses_new_polling = 1; /* support the new root-hub polling mechanism. */
 	phcd->hcd = hcd;
 
 	reset_proxy_hcd_stat(&phcd->stat);
 	spin_unlock_irqrestore(&phcd->lock, flags);
 
-	DBG("-\n");
+	dbg("-\n");
 
 	return 0;
 }
-
 
 /*
  * This function is called by the USB core when the HC driver is removed.
@@ -72,29 +103,29 @@ static void phcd_stop(struct usb_hcd *hcd)
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	unsigned long flags;
 
-	DBG("+\n");
+	dbg("+\n");
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 	phcd->hcd = NULL;
 	spin_unlock_irqrestore(&phcd->lock, flags);
 
-	DBG("-\n");
+	dbg("-\n");
 }
 
-/* stub */
 static int phcd_get_frame_number(struct usb_hcd *hcd)
 {
-	INFO("\n");
-	return 123;
+	info("\n");
+	return PHCD_FRAME_NUMBER;
 }
 
 static unsigned int phcd_get_ep_index(u32 pipe)
 {
 	unsigned int index;
-	if (usb_pipecontrol(pipe)) /*lint !e650 */
-		index = (unsigned int) (usb_pipeendpoint(pipe)*2);
+
+	if (usb_pipecontrol(pipe))
+		index = (unsigned int) (usb_pipeendpoint(pipe) * 2); /* 2 indicates ep directions IN and OUT */
 	else
-		index = (unsigned int) (usb_pipeendpoint(pipe)*2) +
+		index = (unsigned int) (usb_pipeendpoint(pipe) * 2) + /* 2 indicates ep directions IN and OUT */
 			(usb_pipein(pipe) ? 1 : 0) - 1;
 	return index;
 }
@@ -104,17 +135,16 @@ static int phcd_get_ep_index_from_desc(struct usb_endpoint_descriptor *desc)
 	int index;
 
 	if (usb_endpoint_xfer_control(desc)) {
-		index = (unsigned int) ((desc->bEndpointAddress & 0xf) * 2);
+		index = (unsigned int) ((desc->bEndpointAddress & 0xf) * 2); /* 2 indicates ep directions IN and OUT */
 	} else {
-
-		index = (unsigned int) ((desc->bEndpointAddress & 0xf) * 2) +
+		index = (unsigned int) ((desc->bEndpointAddress & 0xf) * 2) + /* 2 indicates ep directions IN and OUT */
 			(usb_endpoint_dir_in(desc) ? 1 : 0) - 1;
 	}
 
 	return index;
 }
 
-static struct proxy_hcd_urb* find_urb_by_buf(struct list_head *head, const void *buf)
+static struct proxy_hcd_urb *find_urb_by_buf(struct list_head *head, const void *buf)
 {
 	struct proxy_hcd_urb *pos = NULL;
 
@@ -133,19 +163,19 @@ static struct proxy_hcd_urb *find_phcd_urb(struct proxy_hcd *phcd,
 	struct proxy_hcd_urb *phcd_urb = NULL;
 
 	if (urb_msg->slot_id != phcd->phcd_udev.udev->slot_id) {
-		ERR("slot_id not match!\n");
+		err("slot_id not match!\n");
 		return NULL;
 	}
 
 	phcd_urb = find_urb_by_buf(&phcd_ep->urb_list, urb_msg->share_buf);
-	if (!phcd_urb) {
-		ERR("Can't find the urb, may be completed or dequeued already\n");
+	if (phcd_urb == NULL) {
+		err("Can't find the urb, may be completed or dequeued already\n");
 		return NULL;
 	}
 
 	/* double check */
 	if (phcd_urb->urb_msg->share_buf_dma != urb_msg->share_buf_dma) {
-		ERR("share_buf_dma NOT MATCH\n");
+		err("share_buf_dma NOT MATCH\n");
 		WARN_ON(1);
 		return NULL;
 	}
@@ -153,27 +183,25 @@ static struct proxy_hcd_urb *find_phcd_urb(struct proxy_hcd *phcd,
 	return phcd_urb;
 }
 
-/*
- * Return true means the device is not a usbaudio device.
- */
+/* Return true means the device is not a usbaudio device. */
 static bool non_usbaudio_monitor(struct usb_hcd *hcd, struct urb *urb)
 {
 	struct usb_device *udev = urb->dev;
 	struct usb_ctrlrequest *ctrl = NULL;
 	int configuration;
 
-	if (!udev->parent)
+	if (udev->parent == NULL)
 		return false;
 
-	if (udev->parent->parent)
+	if (udev->parent->parent != NULL)
 		return false;
 
 	if (!usb_endpoint_xfer_control(&urb->ep->desc))
 		return false;
 
 	ctrl = (struct usb_ctrlrequest *)urb->setup_packet;
-	if (!ctrl) {
-		ERR("req NULL\n");
+	if (ctrl == NULL) {
+		err("req NULL\n");
 		return false;
 	}
 
@@ -183,14 +211,38 @@ static bool non_usbaudio_monitor(struct usb_hcd *hcd, struct urb *urb)
 
 	if ((ctrl->bRequest == USB_REQ_SET_CONFIGURATION)
 				&& (ctrl->bRequestType == 0)) {
-		INFO("to check_non_usbaudio_device, configuration %d\n", configuration);
+		info("to check_non_usbaudio_device, configuration %d\n", configuration);
 		if (stop_hifi_usb_when_non_usbaudio(udev, configuration)) {
-			DBG("non-usbaudio device using hifiusb\n");
+			dbg("non-usbaudio device using hifiusb\n");
 			return true;
 		}
 	}
 
 	return false;
+}
+
+static void phcd_check_urb_result(struct urb *urb, struct urb_msg *urb_msg,
+				int status)
+{
+	/* check urb result */
+	if ((urb->actual_length != urb->transfer_buffer_length &&
+			(urb->transfer_flags & URB_SHORT_NOT_OK)) ||
+			((status != 0) && !usb_endpoint_xfer_isoc(&urb->ep->desc)))
+		dbg("Giveback URB: len = %u, expected = %u, status = %d\n",
+				urb->actual_length, urb->transfer_buffer_length, status);
+
+	if (urb->actual_length > PHCD_MAX_XFER_LEN) {
+		err("Too large actual_length!\n");
+		urb->actual_length = PHCD_MAX_XFER_LEN;
+	}
+}
+
+static void phcd_urb_complete_fail_proc(struct proxy_hcd *phcd, struct proxy_hcd_ep *phcd_ep)
+{
+	if (phcd_ep != NULL)
+		urb_complete_fail_add_stat(&phcd_ep->urb_stat);
+	else
+		urb_complete_pipe_err_add_stat(&phcd->phcd_udev.stat);
 }
 
 int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg)
@@ -203,49 +255,37 @@ int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg)
 	int ep_index;
 	unsigned long flags;
 
-	DBG("+\n");
+	dbg("+\n");
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 
 	ep_index = phcd_get_ep_index(urb_msg->pipe);
 	if ((ep_index < 0) || (ep_index >= PROXY_HCD_DEV_MAX_EPS)) {
-		ERR("invalid ep_index %d\n", ep_index);
-		goto error;
+		err("invalid ep_index %d\n", ep_index);
+		goto ptr_null_err;
 	}
 
 	phcd_ep = &phcd->phcd_udev.phcd_eps[ep_index];
 
 	hcd = phcd->hcd;
-	if (!hcd) {
-		ERR("hcd removed!\n");
-		goto error;
+	if (hcd == NULL) {
+		err("hcd removed!\n");
+		goto ptr_null_err;
 	}
 
-	if (!phcd->phcd_udev.udev) {
-		ERR("udev disconnected!\n");
-		goto error;
+	if (phcd->phcd_udev.udev == NULL) {
+		err("udev disconnected!\n");
+		goto ptr_null_err;
 	}
 
 	phcd_urb = find_phcd_urb(phcd, phcd_ep, urb_msg);
-	if (!phcd_urb)
-		goto error;
+	if (phcd_urb == NULL)
+		goto ptr_null_err;
 
 	urb = phcd_urb->urb;
-
 	urb->actual_length = le32_to_cpu(urb_msg->actual_length);
 	status = le32_to_cpu(urb_msg->status);
-
-	/* check urb result */
-	if ((urb->actual_length != urb->transfer_buffer_length
-				&& (urb->transfer_flags & URB_SHORT_NOT_OK)) ||
-			(status != 0 && !usb_endpoint_xfer_isoc(&urb->ep->desc)))
-		DBG("Giveback URB: len = %d, expected = %d, status = %d\n",
-				urb->actual_length, urb->transfer_buffer_length, status);
-
-	if (urb->actual_length > PHCD_MAX_XFER_LEN) {
-		ERR("Too large actual_length!\n");
-		urb->actual_length = PHCD_MAX_XFER_LEN;
-	}
+	phcd_check_urb_result(urb, urb_msg, status);
 
 	/* copy the data */
 	if (usb_urb_dir_in(urb) && (urb->actual_length != 0) && urb_msg->buf)
@@ -263,46 +303,41 @@ int phcd_urb_complete(struct proxy_hcd *phcd, struct urb_msg *urb_msg)
 	kfree(phcd_urb->urb_msg);
 	kfree(phcd_urb);
 
-	DBG("-\n");
+	dbg("-\n");
 	return 0;
 
-error:
-	if (phcd_ep)
-		urb_complete_fail_add_stat(&phcd_ep->urb_stat);
-	else
-		urb_complete_pipe_err_add_stat(&phcd->phcd_udev.stat);
+ptr_null_err:
+
+	phcd_urb_complete_fail_proc(phcd, phcd_ep);
 
 	spin_unlock_irqrestore(&phcd->lock, flags);
 	return -1;
 }
 
-/*
- * except buf related
- */
+/* except buf related */
 static void fill_phcd_urb_comm(struct urb_msg *urb_msg, struct urb *urb)
 {
-	urb_msg->urb_magic 			= __cpu_to_le64((__u64)(uintptr_t)urb);
-	urb_msg->slot_id 			= __cpu_to_le32(urb->dev->slot_id);
-	urb_msg->pipe 				= __cpu_to_le32(urb->pipe);
+	urb_msg->urb_magic			= __cpu_to_le64((__u64)(uintptr_t)urb);
+	urb_msg->slot_id			= __cpu_to_le32(urb->dev->slot_id);
+	urb_msg->pipe				= __cpu_to_le32(urb->pipe);
 
-	urb_msg->status 			= __cpu_to_le32(urb->status);
-	urb_msg->transfer_flags 		= __cpu_to_le32(urb->transfer_flags);
-	urb_msg->transfer_buffer_length 	= __cpu_to_le32(urb->transfer_buffer_length);
-	urb_msg->actual_length 			= __cpu_to_le32(urb->actual_length);
-	urb_msg->interval 			= __cpu_to_le32(urb->interval);
+	urb_msg->status				= __cpu_to_le32(urb->status);
+	urb_msg->transfer_flags		= __cpu_to_le32(urb->transfer_flags);
+	urb_msg->transfer_buffer_length	= __cpu_to_le32(urb->transfer_buffer_length);
+	urb_msg->actual_length			= __cpu_to_le32(urb->actual_length);
+	urb_msg->interval				= __cpu_to_le32(urb->interval);
 }
 
-/*
- * This function should be protected by lock.
- */
+/* This function should be protected by lock. */
 static int prepare_phcd_urb(struct proxy_hcd_urb *phcd_urb)
 {
 	struct urb *urb = phcd_urb->urb;
+	__u8 *buf = NULL;
 
 	if (usb_endpoint_xfer_control(&urb->ep->desc)) {
-		__u8 *buf = phcd_urb->urb_msg->buf;
+		buf = phcd_urb->urb_msg->buf;
 
-		if (!urb->setup_packet) {
+		if (urb->setup_packet == NULL) {
 			WARN_ON(1);
 			return -EINVAL;
 		}
@@ -321,9 +356,7 @@ static int prepare_phcd_urb(struct proxy_hcd_urb *phcd_urb)
 		/* copy the setup data */
 		if (usb_urb_dir_out(urb))
 			memcpy(buf, urb->transfer_buffer, urb->transfer_buffer_length);
-
-	} else if (usb_endpoint_xfer_bulk(&urb->ep->desc)
-				|| usb_endpoint_xfer_int(&urb->ep->desc)) {
+	} else if (usb_endpoint_xfer_bulk(&urb->ep->desc) || usb_endpoint_xfer_int(&urb->ep->desc)) {
 		if (urb->transfer_buffer_length > PHCD_MAX_XFER_LEN) {
 			WARN_ON(1);
 			return -EINVAL;
@@ -333,28 +366,27 @@ static int prepare_phcd_urb(struct proxy_hcd_urb *phcd_urb)
 
 		if (usb_urb_dir_out(urb))
 			memcpy(phcd_urb->urb_msg->buf, urb->transfer_buffer,
-						urb->transfer_buffer_length);
-
+				urb->transfer_buffer_length);
 	} else {
-		DBG("isoc xfer\n");
-		DBG("len %d, pkts %d\n", urb->transfer_buffer_length,
-						urb->number_of_packets);
+		dbg("isoc xfer\n");
+		dbg("len %u, pkts %d\n", urb->transfer_buffer_length,
+			urb->number_of_packets);
 		/* support only one packet */
 		if (urb->number_of_packets != 1) {
-			DBG("number_of_packets too large\n");
+			dbg("number_of_packets too large\n");
 			return -EPIPE;
 		}
 
 		fill_phcd_urb_comm(phcd_urb->urb_msg, urb);
 
 		if (usb_urb_dir_out(urb)) {
-			DBG("isoc out xfer\n");
+			dbg("isoc out xfer\n");
 			memcpy(phcd_urb->urb_msg->buf, urb->transfer_buffer,
-						urb->transfer_buffer_length);
+				urb->transfer_buffer_length);
 		} else {
-			DBG("isoc in xfer\n");
+			dbg("isoc in xfer\n");
 			memcpy(phcd_urb->urb_msg->buf, urb->transfer_buffer,
-						urb->transfer_buffer_length);
+				urb->transfer_buffer_length);
 		}
 	}
 
@@ -370,7 +402,7 @@ static int intercept_urb(struct usb_hcd *hcd, struct urb *urb)
 	spin_lock_irqsave(&phcd->lock, flags);
 	ret = usb_hcd_link_urb_to_ep(hcd, urb);
 	if (ret) {
-		ERR("usb_hcd_link_urb_to_ep failed, ret %d\n", ret);
+		err("usb_hcd_link_urb_to_ep failed, ret %d\n", ret);
 		spin_unlock_irqrestore(&phcd->lock, flags);
 		return ret;
 	}
@@ -389,6 +421,8 @@ static int intercept_urb(struct usb_hcd *hcd, struct urb *urb)
 static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 {
 	struct usb_ctrlrequest *ctrl = NULL;
+	char *p = NULL;
+	int i;
 	int ret;
 
 	if (!usb_endpoint_xfer_control(&urb->ep->desc))
@@ -400,11 +434,11 @@ static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 		return -1;
 	}
 
-	if ((ctrl->bRequestType == USB_RECIP_DEVICE)
-			&& ((ctrl->bRequest == USB_REQ_CLEAR_FEATURE)
-			    || (ctrl->bRequest == USB_REQ_SET_FEATURE))
-			&& (le16_to_cpu(ctrl->wValue) == USB_DEVICE_REMOTE_WAKEUP)) {
-		DBG("intercept %s remote wakeup\n", ctrl->bRequest
+	if ((ctrl->bRequestType == USB_RECIP_DEVICE) &&
+		((ctrl->bRequest == USB_REQ_CLEAR_FEATURE) ||
+		(ctrl->bRequest == USB_REQ_SET_FEATURE)) &&
+		(le16_to_cpu(ctrl->wValue) == USB_DEVICE_REMOTE_WAKEUP)) {
+		dbg("intercept %s remote wakeup\n", ctrl->bRequest
 				== USB_REQ_CLEAR_FEATURE ? "clear" : "set");
 
 		urb->actual_length = 0;
@@ -417,17 +451,14 @@ static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 		return 1;
 	}
 
+	if ((ctrl->bRequestType == (USB_RECIP_DEVICE | USB_DIR_IN)) &&
+		(ctrl->bRequest == USB_REQ_GET_STATUS)) {
+		p = (char *)urb->transfer_buffer;
 
-	if ((ctrl->bRequestType == (USB_RECIP_DEVICE | USB_DIR_IN))
-				&& (ctrl->bRequest == USB_REQ_GET_STATUS)) {
-		char *p = (char *)urb->transfer_buffer;
-		int i;
+		dbg("intercept get device status\n");
 
-		DBG("intercept get device status\n");
-
-		for (i = 0; i < ctrl->wLength; i++) {
+		for (i = 0; i < ctrl->wLength; i++)
 			p[i] = 0;
-		}
 		urb->actual_length = ctrl->wLength;
 		urb->status = 0;
 
@@ -441,21 +472,18 @@ static int intercept_some_control_msg(struct usb_hcd *hcd, struct urb *urb)
 	return 0;
 }
 
-
 static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flags)
 {
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	struct proxy_hcd_urb *phcd_urb = NULL;
 	struct proxy_hcd_ep *phcd_ep = NULL;
-	int ep_index;
-	int slot_id;
+	int ep_index, slot_id, ret;
 	unsigned long flags;
-	int ret = 0;
 
-	DBG("+\n");
+	dbg("+\n");
 
 	if (!HCD_HW_ACCESSIBLE(hcd)) {
-		ERR("hcd not hw accessible!\n");
+		err("hcd not hw accessible!\n");
 		return -ESHUTDOWN;
 	}
 
@@ -473,14 +501,14 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 		return -ENODEV; /* usbaudio monitor issured, stop enumeration */
 
 	phcd_urb = kzalloc(sizeof(*phcd_urb), mem_flags);
-	if (!phcd_urb) {
-		ERR("alloc urb_priv failed\n");
+	if (phcd_urb == NULL) {
+		err("alloc urb_priv failed\n");
 		return -ENOMEM;
 	}
 
 	phcd_urb->urb_msg = kzalloc(sizeof(*phcd_urb->urb_msg) + PHCD_MAX_XFER_LEN, mem_flags);
-	if (!phcd_urb->urb_msg) {
-		ERR("alloc urb_msg failed\n");
+	if (phcd_urb->urb_msg == NULL) {
+		err("alloc urb_msg failed\n");
 		kfree(phcd_urb);
 		return -ENOMEM;
 	}
@@ -488,15 +516,15 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 	usb_get_urb(urb);
 	phcd_urb->urb_msg->buf = (__u8 *)(phcd_urb->urb_msg + 1);
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 
 	ep_index = phcd_get_ep_index(urb->pipe);
 	phcd_ep = &phcd->phcd_udev.phcd_eps[ep_index];
-	DBG("ep %d, urb %pK enqueue\n", ep_index, urb);
+	dbg("ep %d, urb %pK enqueue\n", ep_index, urb);
 
 	slot_id = urb->dev->slot_id;
-	if (!phcd->phcd_udev.udev || (slot_id != phcd->phcd_udev.udev->slot_id)) {
-		ERR("slot_id not match\n");
+	if ((phcd->phcd_udev.udev == NULL) || (slot_id != phcd->phcd_udev.udev->slot_id)) {
+		err("slot_id not match\n");
 		ret = -ENODEV;
 		goto free_phcd_urb;
 	}
@@ -509,7 +537,7 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 
 	ret = usb_hcd_link_urb_to_ep(hcd, urb);
 	if (unlikely(ret)) {
-		ERR("usb_hcd_link_urb_to_ep failed %d\n",ret);
+		err("usb_hcd_link_urb_to_ep failed %d\n", ret);
 		goto del_phcd_urb;
 	}
 
@@ -523,19 +551,19 @@ static int phcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb, gfp_t mem_flag
 
 	ret = proxy_urb_enqueue(phcd, phcd_urb->urb_msg);
 	if (unlikely(ret)) {
-		ERR("proxy_urb_enqueue failed %d\n",ret);
-		spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+		err("proxy_urb_enqueue failed %d\n", ret);
+		spin_lock_irqsave(&phcd->lock, flags);
 		goto unlink_urb;
 	}
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 	if (urb->hcpriv == phcd_urb)
 		phcd_urb->flags &= ~PHCD_URB_ENQUEUEING;
 	urb_enqueue_add_stat(&phcd_ep->urb_stat);
 	spin_unlock_irqrestore(&phcd->lock, flags);
 
 	usb_put_urb(urb);
-	DBG("-\n");
+	dbg("-\n");
 
 	return 0;
 
@@ -543,7 +571,7 @@ unlink_urb:
 
 	/* The urb maybe already dequeued! */
 	if ((!urb->hcpriv) || (urb->hcpriv != phcd_urb)) {
-		ERR("phcd_urb was freed\n");
+		err("phcd_urb was freed\n");
 		spin_unlock_irqrestore(&phcd->lock, flags);
 		return 0;
 	}
@@ -562,49 +590,88 @@ free_phcd_urb:
 	return ret;
 }
 
+/* This function under phcd->lock */
+static int proxy_urb_dequeue_fail_proc(struct usb_hcd *hcd, struct urb *urb,
+					int status)
+{
+	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
+	struct proxy_hcd_urb *phcd_urb = NULL;
+	struct proxy_hcd_ep *phcd_ep = NULL;
+	int ep_index;
+	int ret = 0;
+
+	/* If dequeue command failed, dequeue the urb right now. */
+	err("proxy_urb_dequeue failed %d\n", ret);
+
+	phcd_urb = urb->hcpriv;
+	if (phcd_urb == NULL) {
+		WARN_ON(1);
+		ret = -ENOENT;
+		return ret;
+	}
+
+	ep_index = phcd_get_ep_index(urb->pipe);
+	phcd_ep = &phcd->phcd_udev.phcd_eps[ep_index];
+
+	urb_dequeue_giveback_add_stat(&phcd_ep->urb_stat);
+	info("client not response, giveback urb right now\n");
+	usb_hcd_unlink_urb_from_ep(hcd, urb);
+	urb->hcpriv = NULL;
+	list_del(&phcd_urb->urb_list);
+
+	usb_hcd_giveback_urb(hcd, urb, status);
+
+	kfree(phcd_urb->urb_msg);
+	kfree(phcd_urb);
+
+	client_ref_put(&phcd->client->client_ref); /* Banlance with urb enqueue. */
+
+	return ret;
+}
+
 static int phcd_urb_dequeue(struct usb_hcd *hcd, struct urb *urb, int status)
 {
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	struct proxy_hcd_urb *phcd_urb = NULL;
 	struct proxy_hcd_ep *phcd_ep = NULL;
-	unsigned long wait_enqueue_complete_count = 1000;
+	unsigned long wq_complete_count = MAX_ENQUEUE_COUNT;
 	unsigned long flags;
 	int ep_index;
 	int slot_id;
 	int ret = 0;
 
-	DBG("+\n");
+	dbg("+\n");
 
 	if (!HCD_HW_ACCESSIBLE(hcd)) {
-		ERR("hcd not hw accessible!\n");
+		err("hcd not hw accessible!\n");
 		return -ESHUTDOWN;
 	}
 
 wait_enqueue_complete:
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 
 	ep_index = phcd_get_ep_index(urb->pipe);
 	phcd_ep = &phcd->phcd_udev.phcd_eps[ep_index];
 
 	slot_id = urb->dev->slot_id;
 	if (!phcd->phcd_udev.udev || (slot_id != phcd->phcd_udev.udev->slot_id)) {
-		ERR("slot_Id not match\n");
+		err("slot_Id not match\n");
 		ret = -ESHUTDOWN;
-		goto error;
+		goto urb_dequeue_err;
 	}
 
 	phcd_urb = urb->hcpriv;
-	if (!phcd_urb) {
+	if (phcd_urb == NULL) {
 		WARN_ON(1);
 		ret = -ENOENT;
-		goto error;
+		goto urb_dequeue_err;
 	}
 
 	if (phcd_urb->flags & PHCD_URB_ENQUEUEING) {
-		if (wait_enqueue_complete_count-- == 0) {
+		if (wq_complete_count-- == 0) {
 			WARN_ON_ONCE(1);
 			ret = -EBUSY;
-			goto error;
+			goto urb_dequeue_err;
 		}
 
 		spin_unlock_irqrestore(&phcd->lock, flags);
@@ -613,22 +680,22 @@ wait_enqueue_complete:
 			mdelay(1);
 		} else {
 			might_sleep();
-			msleep(10);
+			msleep(10); /* 10ms delay */
 		}
 		goto wait_enqueue_complete;
 	}
 
-	if (wait_enqueue_complete_count != 1000)
-		INFO("wait_enqueue_complete_count (%ld)\n",
-				wait_enqueue_complete_count);
+	if (wq_complete_count != MAX_ENQUEUE_COUNT)
+		info("wq_complete_count:%lu\n",
+				wq_complete_count);
 
-	DBG("ep %d, urb %pK dequeue\n", ep_index, urb);
+	dbg("ep %d, urb %pK dequeue\n", ep_index, urb);
 
 	/* urb maybe unlinked just before here */
 	ret = usb_hcd_check_unlink_urb(hcd, urb, status);
 	if (ret) {
-		ERR("usb_hcd_check_unlink_urb error %d\n",ret);
-		goto error;
+		err("usb_hcd_check_unlink_urb urb_dequeue_err %d\n", ret);
+		goto urb_dequeue_err;
 	}
 
 	spin_unlock_irqrestore(&phcd->lock, flags);
@@ -636,59 +703,37 @@ wait_enqueue_complete:
 	/* issue dequeue command */
 	ret = proxy_urb_dequeue(phcd, phcd_urb->urb_msg);
 	if (unlikely(ret)) {
-		/* If dequeue command failed, dequeue the urb right now. */
-		ERR("proxy_urb_dequeue failed %d\n",ret);
-
-		spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-
-		phcd_urb = urb->hcpriv;
-		if (!phcd_urb) {
-			WARN_ON(1);
-			ret = -ENOENT;
-			goto error;
-		}
-
-		urb_dequeue_giveback_add_stat(&phcd_ep->urb_stat);
-		INFO("client not response, giveback urb right now\n");
-		usb_hcd_unlink_urb_from_ep(hcd, urb);
-		urb->hcpriv = NULL;
-		list_del(&phcd_urb->urb_list);
+		spin_lock_irqsave(&phcd->lock, flags);
+		ret = proxy_urb_dequeue_fail_proc(hcd, urb, status);
+		if (ret != 0)
+			goto urb_dequeue_err;
 
 		spin_unlock_irqrestore(&phcd->lock, flags);
-
-		usb_hcd_giveback_urb(hcd, urb, status);
-
-		kfree(phcd_urb->urb_msg);
-		kfree(phcd_urb);
-
-		client_ref_put(&phcd->client->client_ref); /* Banlance with urb enqueue. */
-
 		return 0;
 	}
 
 	urb_dequeue_add_stat(&phcd_ep->urb_stat);
 
-	DBG("-\n");
+	dbg("-\n");
 	return 0;
-error:
+urb_dequeue_err:
 	urb_dequeue_fail_add_stat(&phcd_ep->urb_stat);
 	spin_unlock_irqrestore(&phcd->lock, flags);
-	DBG("- ret %d\n", ret);
+	dbg("- ret %d\n", ret);
 	return ret;
 }
 
 static int phcd_map_urb_for_dma(struct usb_hcd *hcd, struct urb *urb,
 			   gfp_t mem_flags)
 {
-	DBG("+-\n");
+	dbg("+-\n");
 	return 0;
 }
 
 static void phcd_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
 {
-	DBG("+-\n");
+	dbg("+-\n");
 }
-
 
 /*
  * Called when clearing halted device. The core should have sent the control
@@ -699,20 +744,32 @@ static void phcd_unmap_urb_for_dma(struct usb_hcd *hcd, struct urb *urb)
 static void phcd_endpoint_reset(struct usb_hcd *hcd,
 		struct usb_host_endpoint *ep)
 {
-	DBG("ep addr 0x%02x\n", ep->desc.bEndpointAddress);
+	dbg("ep addr 0x%02x\n", ep->desc.bEndpointAddress);
 }
 
 static void phcd_endpoint_disable(struct usb_hcd *hcd,
 		struct usb_host_endpoint *ep)
 {
-	DBG("ep addr 0x%02x\n", ep->desc.bEndpointAddress);
+	dbg("ep addr 0x%02x\n", ep->desc.bEndpointAddress);
+}
+
+static void reset_urb_stat(struct proxy_hcd_urb_stat *stat)
+{
+	stat->stat_urb_enqueue = 0;
+	stat->stat_urb_dequeue = 0;
+	stat->stat_urb_enqueue_fail = 0;
+	stat->stat_urb_dequeue_fail = 0;
+	stat->stat_urb_dequeue_giveback = 0;
+	stat->stat_urb_giveback = 0;
+	stat->stat_urb_complete = 0;
+	stat->stat_urb_complete_fail = 0;
 }
 
 static int phcd_init_virt_device(struct proxy_hcd *phcd, struct usb_device *udev)
 {
 	int i;
 
-	if (phcd->phcd_udev.udev)
+	if (phcd->phcd_udev.udev != NULL)
 		return -EBUSY;
 
 	phcd->phcd_udev.udev = udev;
@@ -733,9 +790,10 @@ static int phcd_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 {
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	unsigned long flags;
-	int ret, slot_id = 0;
+	int ret;
+	int slot_id = 0;
 
-	DBG("+\n");
+	dbg("+\n");
 
 	might_sleep();
 	mutex_lock(&phcd->mutex);
@@ -743,24 +801,24 @@ static int phcd_alloc_dev(struct usb_hcd *hcd, struct usb_device *udev)
 	ret = proxy_alloc_dev(phcd, &slot_id);
 	if (ret != 1) {
 		mutex_unlock(&phcd->mutex);
-		pr_err("%s: proxy_alloc_dev failed, ret %d.\n", __func__, ret);
+		pr_err("%s: proxy_alloc_dev failed, ret %d\n", __func__, ret);
 		return 0;
 	}
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 	udev->slot_id = slot_id;
 	ret = phcd_init_virt_device(phcd, udev);
 	spin_unlock_irqrestore(&phcd->lock, flags);
 	if (ret) {
 		mutex_unlock(&phcd->mutex);
-		pr_err("%s: phcd_init_virt_device failed ret %d.\n", __func__, ret);
+		pr_err("%s: phcd_init_virt_device failed ret %d\n", __func__, ret);
 		return 0;
 	}
 
 	alloc_dev_add_stat(&phcd->stat);
 	mutex_unlock(&phcd->mutex);
 
-	DBG("-\n");
+	dbg("-\n");
 
 	return 1;
 }
@@ -772,17 +830,17 @@ void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 	unsigned long flags;
 	int i;
 
-	INFO("+\n");
+	info("+\n");
 
-	if (!phcd) {
-		ERR("phcd NULL\n");
+	if (phcd == NULL) {
+		err("phcd NULL\n");
 		return;
 	}
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 
 	hcd = phcd->hcd;
-	if (!hcd)
+	if (hcd == NULL)
 		goto done;
 
 	for (i = 0; i < PROXY_HCD_DEV_MAX_EPS; i++) {
@@ -795,11 +853,11 @@ void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 			phcd_urb = list_first_entry(list, struct proxy_hcd_urb, urb_list);
 			urb = phcd_urb->urb;
 
-			if (urb->unlinked) {
-				DBG("ep %d urb %pK unlinked, giveback\n", i, urb);
-			} else {
-				DBG("ep %d urb %pK not unlinked, giveback\n", i, urb);
-			}
+			if (urb->unlinked)
+				dbg("ep %d urb %pK unlinked, giveback\n", i, urb);
+			else
+				dbg("ep %d urb %pK not unlinked, giveback\n", i, urb);
+
 			list_del_init(&phcd_urb->urb_list);
 			usb_hcd_unlink_urb_from_ep(hcd, urb);
 			urb->hcpriv = NULL;
@@ -818,8 +876,7 @@ void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 done:
 	spin_unlock_irqrestore(&phcd->lock, flags);
 
-	INFO("-\n");
-	return;
+	info("-\n");
 }
 
 /*
@@ -833,28 +890,28 @@ static void phcd_free_dev(struct usb_hcd *hcd, struct usb_device *udev)
 	unsigned long flags;
 	int i;
 
-	DBG("+\n");
+	dbg("+\n");
 
 	might_sleep();
 	mutex_lock(&phcd->mutex);
 	free_dev_add_stat(&phcd->stat);
 	proxy_free_dev(phcd, udev->slot_id);
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 	phcd->phcd_udev.udev = NULL;
 
 	/* All urb must have been completed. */
 	for (i = 0; i < PROXY_HCD_DEV_MAX_EPS; i++) {
 		if (!list_empty(&phcd->phcd_udev.phcd_eps[i].urb_list)) {
 			WARN_ON(1);
-			DBG("ep%d has remaining urb\n", i);
+			dbg("ep%d has remaining urb\n", i);
 		}
 	}
 
 	spin_unlock_irqrestore(&phcd->lock, flags);
 	mutex_unlock(&phcd->mutex);
 
-	DBG("-\n");
+	dbg("-\n");
 }
 
 static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
@@ -863,16 +920,16 @@ static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 	struct proxy_hcd *phcd = NULL;
 	struct proxy_hcd_ep *phcd_ep = NULL;
 	int ep_index;
-	int ret = 0;
+	int ret;
 
-	DBG("+\n");
+	dbg("+\n");
 
-	if (!hcd || !ep || !udev) {
-		DBG("invalid args\n");
+	if ((hcd == NULL) || (ep == NULL) || (udev == NULL)) {
+		dbg("invalid args\n");
 		return -EINVAL;
 	}
-	if (!udev->parent) {
-		DBG("for root hub\n");
+	if (udev->parent == NULL) {
+		dbg("for root hub\n");
 		return 0;
 	}
 
@@ -882,7 +939,7 @@ static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	ret = proxy_add_endpoint(phcd, udev, ep);
 	if (ret < 0) {
-		ERR("proxy_add_endpoint failed %d\n", ret);
+		err("proxy_add_endpoint failed %d\n", ret);
 		return ret;
 	}
 
@@ -893,8 +950,8 @@ static int phcd_add_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 	/* Store the usb_device pointer for later use */
 	ep->hcpriv = udev;
 
-	DBG("add ep 0x%x, slot id %d\n", (unsigned int) ep->desc.bEndpointAddress, udev->slot_id);
-	DBG("-\n");
+	dbg("add ep 0x%x, slot id %d\n", (unsigned int) ep->desc.bEndpointAddress, udev->slot_id);
+	dbg("-\n");
 
 	return 0;
 }
@@ -903,12 +960,10 @@ void phcd_mark_all_endpoint_dropped(struct proxy_hcd *phcd)
 {
 	int i;
 
-	DBG("+\n");
+	dbg("+\n");
 	for (i = 0; i < PROXY_HCD_DEV_MAX_EPS; i++)
 		phcd->phcd_udev.phcd_eps[i].added = 0;
-	DBG("-\n");
-
-	return;
+	dbg("-\n");
 }
 
 __u32 phcd_current_port_status(struct proxy_hcd *phcd)
@@ -931,13 +986,13 @@ static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 	int ep_index;
 	int ret;
 
-	DBG("+\n");
-	if (!hcd || !ep || !udev) {
-		DBG("invalid args\n");
+	dbg("+\n");
+	if ((hcd == NULL) || (ep == NULL) || (udev == NULL)) {
+		dbg("invalid args\n");
 		return -EINVAL;
 	}
-	if (!udev->parent) {
-		DBG("for root hub\n");
+	if (udev->parent == NULL) {
+		dbg("for root hub\n");
 		return 0;
 	}
 
@@ -946,7 +1001,7 @@ static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 	ep_index = phcd_get_ep_index_from_desc(&ep->desc);
 	phcd_ep = &phcd->phcd_udev.phcd_eps[ep_index];
 	if (!phcd_ep->added) {
-		DBG("ep %d not added\n", ep_index);
+		dbg("ep %d not added\n", ep_index);
 		return 0;
 	}
 
@@ -954,29 +1009,29 @@ static int phcd_drop_endpoint(struct usb_hcd *hcd, struct usb_device *udev,
 
 	ret = proxy_drop_endpoint(phcd, udev, ep);
 	if (ret < 0) {
-		ERR("proxy_drop_endpoint failed %d\n", ret);
+		err("proxy_drop_endpoint failed %d\n", ret);
 		return ret;
 	}
 	phcd_ep->added = 0;
 
-	DBG("drop ep 0x%x, slot id %d\n", (unsigned int) ep->desc.bEndpointAddress, udev->slot_id);
-	DBG("-\n");
+	dbg("drop ep 0x%x, slot id %d\n", (unsigned int) ep->desc.bEndpointAddress, udev->slot_id);
+	dbg("-\n");
 
 	return 0;
 }
 
 static int phcd_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 {
-	int ret = 0;
+	int ret;
 	struct proxy_hcd *phcd = NULL;
 
-	DBG("+\n");
-	if (!hcd || !udev) {
-		DBG("invalid args\n");
+	dbg("+\n");
+	if ((hcd == NULL) || (udev == NULL)) {
+		dbg("invalid args\n");
 		return -EINVAL;
 	}
-	if (!udev->parent) {
-		DBG("for root hub\n");
+	if (udev->parent == NULL) {
+		dbg("for root hub\n");
 		return 0;
 	}
 
@@ -986,10 +1041,10 @@ static int phcd_check_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_check_bandwidth(phcd, udev->slot_id);
 	if (ret < 0) {
-		ERR("proxy_check_bandwidth failed %d\n", ret);
+		err("proxy_check_bandwidth failed %d\n", ret);
 		return ret;
 	}
-	DBG("-\n");
+	dbg("-\n");
 
 	return ret;
 }
@@ -999,13 +1054,13 @@ static void phcd_reset_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 	struct proxy_hcd *phcd = NULL;
 	int ret;
 
-	DBG("+\n");
-	if (!hcd || !udev) {
-		DBG("invalid args\n");
+	dbg("+\n");
+	if ((hcd == NULL) || (udev == NULL)) {
+		dbg("invalid args\n");
 		return;
 	}
-	if (!udev->parent) {
-		DBG("for root hub\n");
+	if (udev->parent == NULL) {
+		dbg("for root hub\n");
 		return;
 	}
 	phcd = hcd_to_phcd(hcd);
@@ -1014,8 +1069,8 @@ static void phcd_reset_bandwidth(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_reset_bandwidth(phcd, udev->slot_id);
 	if (ret < 0)
-		ERR("proxy_add_endpoint failed %d\n", ret);
-	DBG("-\n");
+		err("proxy_add_endpoint failed %d\n", ret);
+	dbg("-\n");
 }
 
 static int phcd_address_device(struct usb_hcd *hcd, struct usb_device *udev)
@@ -1023,7 +1078,7 @@ static int phcd_address_device(struct usb_hcd *hcd, struct usb_device *udev)
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	int ret;
 
-	DBG("+\n");
+	dbg("+\n");
 	if (!udev->slot_id)
 		return -EINVAL;
 
@@ -1031,8 +1086,8 @@ static int phcd_address_device(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_address_device(phcd, udev->slot_id);
 	if (ret < 0)
-		ERR("proxy_address_device failed %d\n", ret);
-	DBG("-\n");
+		err("proxy_address_device failed %d\n", ret);
+	dbg("-\n");
 	return ret;
 }
 
@@ -1041,17 +1096,17 @@ static int phcd_enable_device(struct usb_hcd *hcd, struct usb_device *udev)
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	int ret;
 
-	DBG("+\n");
+	dbg("+\n");
 	if (!udev->slot_id)
 		return -EINVAL;
 
 	might_sleep();
 
 	ret = proxy_enable_device(phcd, udev->slot_id, udev->speed,
-				udev->ep0.desc.wMaxPacketSize);
+		udev->ep0.desc.wMaxPacketSize);
 	if (ret < 0)
-		ERR("proxy_enable_device failed %d\n", ret);
-	DBG("-\n");
+		err("proxy_enable_device failed %d\n", ret);
+	dbg("-\n");
 
 	return ret;
 }
@@ -1059,10 +1114,10 @@ static int phcd_enable_device(struct usb_hcd *hcd, struct usb_device *udev)
 static int phcd_update_hub_device(struct usb_hcd *hcd, struct usb_device *hdev,
 			struct usb_tt *tt, gfp_t mem_flags)
 {
-	DBG("+\n");
-	if (!hdev->parent)
+	dbg("+\n");
+	if (hdev->parent == NULL)
 		return 0;
-	DBG("-\n");
+	dbg("-\n");
 	return -ENODEV;
 }
 
@@ -1071,19 +1126,19 @@ static int phcd_reset_device(struct usb_hcd *hcd, struct usb_device *udev)
 	int ret;
 	struct proxy_hcd *phcd = NULL;
 
-	DBG("+\n");
-	if (!hcd || !udev) {
-		DBG("invalid args\n");
+	dbg("+\n");
+	if ((hcd == NULL) || (udev == NULL)) {
+		dbg("invalid args\n");
 		return -EINVAL;
 	}
 
-	if (!udev->parent) {
-		DBG("for root hub\n");
+	if (udev->parent == NULL) {
+		dbg("for root hub\n");
 		return 0;
 	}
 
-	DBG("udev udev->route 0x%x\n", udev->route);
-	DBG("udev udev->portnum 0x%x\n", udev->portnum);
+	dbg("udev udev->route 0x%x\n", udev->route);
+	dbg("udev udev->portnum 0x%x\n", udev->portnum);
 
 	phcd = hcd_to_phcd(hcd);
 
@@ -1091,8 +1146,8 @@ static int phcd_reset_device(struct usb_hcd *hcd, struct usb_device *udev)
 
 	ret = proxy_reset_device(phcd, udev->slot_id);
 	if (ret < 0)
-		ERR("proxy_reset_device failed %d\n", ret);
-	DBG("-\n");
+		err("proxy_reset_device failed %d\n", ret);
+	dbg("-\n");
 
 	return ret;
 }
@@ -1103,21 +1158,21 @@ static int phcd_update_device(struct usb_hcd *hcd, struct usb_device *udev)
 	struct proxy_hcd *phcd = NULL;
 	int ret = 0;
 
-	DBG("+\n");
-	DBG("lpm_capable %d\n", udev->lpm_capable);
+	dbg("+\n");
+	dbg("lpm_capable %u\n", udev->lpm_capable);
 
-	if (hcd->speed == HCD_USB3 || !udev->lpm_capable)
+	if ((hcd->speed == HCD_USB3) || !udev->lpm_capable)
 		return 0;
 
 	/* we only support lpm for non-hub device connected to root hub yet */
-	if (!udev->parent || udev->parent->parent ||
-			udev->descriptor.bDeviceClass == USB_CLASS_HUB)
+	if ((udev->parent == NULL) || (udev->parent->parent != NULL) ||
+			(udev->descriptor.bDeviceClass == USB_CLASS_HUB))
 		return 0;
 
-	udev->usb2_hw_lpm_capable = 1;
-	udev->l1_params.timeout = 512;
-	udev->l1_params.besl = 4;
-	udev->usb2_hw_lpm_besl_capable = 1;
+	udev->usb2_hw_lpm_capable = 1; /* enable LPM mode */
+	udev->l1_params.timeout = 512; /* LPM default timeout value:512 */
+	udev->l1_params.besl = 4; /* indicate the latency resume from L1:4 */
+	udev->usb2_hw_lpm_besl_capable = 1; /* enable latency resume from L1 mode */
 
 	phcd = hcd_to_phcd(hcd);
 	if (udev->bos && udev->bos->ext_cap) {
@@ -1126,7 +1181,7 @@ static int phcd_update_device(struct usb_hcd *hcd, struct usb_device *udev)
 			pr_err("proxy_update_device return %d\n", ret);
 	}
 
-	DBG("-\n");
+	dbg("-\n");
 
 	return ret;
 }
@@ -1134,7 +1189,7 @@ static int phcd_update_device(struct usb_hcd *hcd, struct usb_device *udev)
 static int phcd_set_usb2_hardware_lpm(struct usb_hcd *hcd,
 			struct usb_device *udev, int enable)
 {
-	DBG("+\n");
+	dbg("+\n");
 	if (hcd->speed == HCD_USB3 || !udev->lpm_capable)
 		return -EPERM;
 
@@ -1144,7 +1199,7 @@ static int phcd_set_usb2_hardware_lpm(struct usb_hcd *hcd,
 
 	if (udev->usb2_hw_lpm_capable != 1)
 		return -EPERM;
-	DBG("-\n");
+	dbg("-\n");
 
 	return 0;
 }
@@ -1167,20 +1222,20 @@ static void phcd_usb2_hub_descriptor(struct proxy_hcd *phcd,
 {
 	u16 temp;
 
-	desc->bDescLength = USB_DT_HUB_NONVAR_SIZE + 2;
+	desc->bDescLength = USB_DT_HUB_NONVAR_SIZE + 2; /* 2 is the header length */
 	desc->bDescriptorType = USB_DT_HUB;
 
-	desc->bPwrOn2PwrGood = 0;	/* xhci section 5.4.9 says 20ms max */
+	desc->bPwrOn2PwrGood = 0; /* xhci section 5.4.9 says 20ms max */
 	desc->bHubContrCurrent = 0;
 
 	desc->bNbrPorts = 1;
 
-	temp = 0; /*lint !e63 */
+	temp = 0;
 	/* Bits 1:0 - support per-port power switching, or power always on */
-	temp |= HUB_CHAR_COMMON_LPSM; /*lint !e63 */
+	temp |= HUB_CHAR_COMMON_LPSM;
 	/* Bit  2 - root hubs are not part of a compound device */
 	/* Bits 4:3 - individual port over current protection */
-	temp |= HUB_CHAR_INDV_PORT_OCPM; /*lint !e63 */
+	temp |= HUB_CHAR_INDV_PORT_OCPM;
 	/* Bits 6:5 - no TTs in root ports */
 	/* Bit  7 - no port indicators */
 	desc->wHubCharacteristics = cpu_to_le16(temp);
@@ -1189,71 +1244,63 @@ static void phcd_usb2_hub_descriptor(struct proxy_hcd *phcd,
 	desc->u.hs.DeviceRemovable[1] = 0xff;
 }
 
-/*
- * Merge local status and new status for a port.
- */
+/* Merge local status and new status for a port. */
 void phcd_update_port_status(struct proxy_hcd *phcd, __u16 port_index,
 			__u32 status)
 {
 	__u32 old_status, new_status;
 	__u32 mask = PHCD_PORT_STATUS_MASK | PHCD_PORT_STATUS_CHANGE_MASK;
+	__u16 offset = 16;
 
 	old_status = phcd->port_status[port_index - 1];
-	new_status = (old_status & (~mask)) | (status & mask); /*lint !e502 */
+	new_status = (old_status & (~mask)) | (status & mask);
 
-	if ((new_status & USB_PORT_STAT_CONNECTION)
-			!= (old_status & USB_PORT_STAT_CONNECTION))
-		new_status |= (USB_PORT_STAT_C_CONNECTION << 16);
+	if ((new_status & USB_PORT_STAT_CONNECTION) != (old_status & USB_PORT_STAT_CONNECTION))
+		new_status |= (USB_PORT_STAT_C_CONNECTION << offset);
 
-	if ((new_status & USB_PORT_STAT_ENABLE)
-			!= (old_status & USB_PORT_STAT_ENABLE))
-		new_status |= (USB_PORT_STAT_C_ENABLE << 16);
+	if ((new_status & USB_PORT_STAT_ENABLE) != (old_status & USB_PORT_STAT_ENABLE))
+		new_status |= (USB_PORT_STAT_C_ENABLE << offset);
 
-	if ((new_status & USB_PORT_STAT_RESET)
-			!= (old_status & USB_PORT_STAT_RESET))
-		new_status |= (USB_PORT_STAT_C_RESET << 16);
+	if ((new_status & USB_PORT_STAT_RESET) != (old_status & USB_PORT_STAT_RESET))
+		new_status |= (USB_PORT_STAT_C_RESET << offset);
 
 	phcd->port_status[port_index - 1] = new_status;
-	DBG("old status 0x%x, new status 0x%x, mask 0x%x\n",
-				old_status, new_status, mask);
+	dbg("old status 0x%x, new status 0x%x, mask 0x%x\n",
+		old_status, new_status, mask);
 
 	if ((phcd->port_status[port_index - 1] & PHCD_PORT_STATUS_CHANGE_MASK) == 0) {
-		DBG("clear port_bitmap\n");
+		dbg("clear port_bitmap\n");
 		phcd->port_bitmap &= ~(1U << port_index);
 	}
 
-	DBG("port_status 0x%x\n", phcd->port_status[port_index - 1]);
+	dbg("port_status 0x%x\n", phcd->port_status[port_index - 1]);
 }
 
-/*
- * Used by hub_control, report the port status.
- */
-static __u32 phcd_get_port_status(struct proxy_hcd *phcd, __u16 wIndex)
+/* Used by hub_control, report the port status. */
+static __u32 phcd_get_port_status(struct proxy_hcd *phcd, __u16 w_index)
 {
 	u32 status = 0;
 	int retval;
 
-	DBG("+\n");
-	retval = proxy_hub_control(phcd, GetPortStatus, 0, wIndex,
-				(char *)&status, (__u16)sizeof(status));
+	dbg("+\n");
+	retval = proxy_hub_control(phcd, GetPortStatus, 0, w_index,
+		(char *)&status, (__u16)sizeof(status));
 	if (retval < 0) {
 		status = USB_PORT_STAT_POWER;
 		return status;
 	}
-	DBG("-\n");
+	dbg("-\n");
 
 	return status;
 }
 
-/*
- * Used by hub_control, clear change bits in port status.
- */
-static void phcd_clear_port_change_bit(struct proxy_hcd *phcd, __u16 wValue,
-		__u16 wIndex)
+/* Used by hub_control, clear change bits in port status. */
+static void phcd_clear_port_change_bit(struct proxy_hcd *phcd, __u16 w_value,
+		__u16 w_index)
 {
 	__u32 port_change_bits = 0;
 
-	switch (wValue) {
+	switch (w_value) {
 	case USB_PORT_FEAT_C_CONNECTION:
 		port_change_bits |= USB_PORT_STAT_C_CONNECTION;
 		break;
@@ -1274,190 +1321,225 @@ static void phcd_clear_port_change_bit(struct proxy_hcd *phcd, __u16 wValue,
 		break;
 	default:
 		/* Should never happen */
-		ERR("clear unknown change 0x%x\n", wValue);
+		err("clear unknown change 0x%x\n", w_value);
 		return;
 	}
 
-	port_change_bits <<= 16;
-	phcd->port_status[wIndex - 1] &= ~port_change_bits; /*lint !e63 !e409 !e502 */
+	port_change_bits <<= 16; /* move change bits to high word:16bits shift */
+	phcd->port_status[w_index - 1] &= ~port_change_bits;
 
-	DBG("phcd->port_status 0x%x\n", phcd->port_status[wIndex - 1]); /*lint !e409 */
+	dbg("phcd->port_status 0x%x\n", phcd->port_status[w_index - 1]);
 
-	if ((phcd->port_status[wIndex - 1] & PHCD_PORT_STATUS_CHANGE_MASK) == 0) { /*lint !e409 */
-		DBG("set port_bitmap 0\n");
-		phcd->port_bitmap = 0; /*lint !e63 */
+	if ((phcd->port_status[w_index - 1] & PHCD_PORT_STATUS_CHANGE_MASK) == 0) {
+		dbg("set port_bitmap 0\n");
+		phcd->port_bitmap = 0;
 	}
 }
 
-/*
- * This is hub_control callback.
- */
-static int phcd_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue, /*lint !e49 !e601 */
-		u16 wIndex, char *buf, u16 wLength) /*lint !e49 !e601 */
-{ /*lint !e49 !e601 */
+static int phcd_hub_set_port_feature(u16 w_value, __u16 w_index, u16 type_req,
+			u16 w_length, struct proxy_hcd *phcd, unsigned long *flags)
+{
+	u32 status;
+	__u16 offset = 16;
+	int ret = 0;
+
+	switch (w_value) {
+	case USB_PORT_FEAT_SUSPEND:
+		status = phcd->port_status[w_index - 1];
+		if ((status & USB_PORT_STAT_SUSPEND) == 0) {
+			status |= USB_PORT_STAT_SUSPEND;
+			status |= USB_PORT_STAT_C_SUSPEND << offset;
+		}
+		phcd->port_status[w_index - 1] = status;
+		break;
+
+	case USB_PORT_FEAT_POWER:
+		status = phcd->port_status[w_index - 1];
+		if ((status & USB_PORT_STAT_POWER) == 0) {
+			status |= USB_PORT_STAT_POWER;
+			dbg("enable port power\n");
+		}
+		phcd->port_status[w_index - 1] = status;
+		break;
+
+	case USB_PORT_FEAT_RESET:
+		spin_unlock_irqrestore(&phcd->lock, *flags);
+		ret = proxy_hub_control(phcd, type_req, w_value,
+			w_index, (char *)&status, w_length);
+		spin_lock_irqsave(&phcd->lock, *flags);
+		break;
+
+	default:
+		ret = -1;
+	}
+
+	return ret;
+}
+
+static int phcd_hud_clear_port_feature(u16 w_value, u16 w_index, u16 type_req,
+			u16 w_length, struct proxy_hcd *phcd, unsigned long *flags)
+{
+	u32 status;
+	__u16 offset = 16;
+	int ret = 0;
+
+	switch (w_value) {
+	case USB_PORT_FEAT_SUSPEND:
+		status = phcd->port_status[w_index - 1];
+		if ((status & USB_PORT_STAT_SUSPEND) != 0) {
+			status &= ~USB_PORT_STAT_SUSPEND;
+			status |= USB_PORT_STAT_C_SUSPEND << offset;
+		}
+		phcd->port_status[w_index - 1] = status;
+		break;
+
+	case USB_PORT_FEAT_C_CONNECTION:
+	case USB_PORT_FEAT_C_ENABLE:
+	case USB_PORT_FEAT_C_RESET:
+		spin_unlock_irqrestore(&phcd->lock, *flags);
+		ret = proxy_hub_control(phcd, type_req,
+			w_value, w_index, (char *)&status, w_length);
+		spin_lock_irqsave(&phcd->lock, *flags);
+		phcd_clear_port_change_bit(phcd, w_value, w_index);
+		break;
+	case USB_PORT_FEAT_C_SUSPEND:
+	case USB_PORT_FEAT_C_OVER_CURRENT:
+	case USB_PORT_FEAT_C_PORT_L1:
+		phcd_clear_port_change_bit(phcd, w_value, w_index);
+		break;
+
+	case USB_PORT_FEAT_ENABLE:
+		status = phcd->port_status[w_index - 1];
+		if ((status & USB_PORT_STAT_ENABLE) != 0) {
+			status &= ~USB_PORT_STAT_ENABLE;
+			status |= USB_PORT_STAT_C_ENABLE << offset;
+		}
+		phcd->port_status[w_index - 1] = status;
+		spin_unlock_irqrestore(&phcd->lock, *flags);
+		ret = proxy_hub_control(phcd, type_req,
+			w_value, w_index, (char *)&status, w_length);
+		spin_lock_irqsave(&phcd->lock, *flags);
+		break;
+
+	case USB_PORT_FEAT_POWER:
+		if ((phcd->port_status[w_index - 1] & USB_PORT_STAT_POWER) != 0)
+			phcd->port_status[w_index - 1] &= ~USB_PORT_STAT_POWER;
+		break;
+
+	default:
+		ret = -1;
+	}
+	return ret;
+}
+
+static int phcd_hub_get_port_status(struct proxy_hcd *phcd, u16 w_value, u16 w_index,
+			u16 w_length, unsigned long *flags, char *buf)
+{
+	u32 status;
+	int max_ports = phcd->port_count;
+
+	dbg("GetPortStatus\n");
+	if (!w_index || w_index > max_ports || w_value)
+		return -1;
+
+	if ((size_t)w_length < sizeof(status))
+		return -1;
+
+	spin_unlock_irqrestore(&phcd->lock, *flags);
+	status = phcd_get_port_status(phcd, w_index);
+	spin_lock_irqsave(&phcd->lock, *flags);
+
+	/* update phcd->port_status[i] by status */
+	phcd_update_port_status(phcd, w_index, status);
+	put_unaligned(cpu_to_le32(phcd->port_status[w_index - 1]), (__le32 *) buf);
+	dbg("Get port status: 0x%x\n", phcd->port_status[w_index - 1]);
+
+	return 0;
+}
+
+static void hub_control_add_stat(struct proxy_hcd_stat *stat)
+{
+	struct timespec uptime;
+
+	stat->stat_hub_control++;
+	get_monotonic_boottime(&uptime);
+	stat->last_hub_control_time = (unsigned long)uptime.tv_sec;
+}
+
+/* This is hub_control callback. */
+static int phcd_hub_control(struct usb_hcd *hcd, u16 type_req, u16 w_value, u16 w_index, char *buf, u16 w_length)
+{
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	int max_ports = phcd->port_count;
 	unsigned long flags;
-	u32 status;
-	int retval = 0;
+	int ret = 0;
 
-	DBG("+\n");
+	dbg("+\n");
 	mutex_lock(&phcd->mutex);
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 
 	hub_control_add_stat(&phcd->stat);
 
-	switch (typeReq) {
+	switch (type_req) {
 	case GetHubStatus:
-		DBG("GetHubStatus\n");
+		dbg("GetHubStatus\n");
 		/* No power source, over-current reported per port */
-		memset(buf, 0, 4);
+		memset(buf, 0, 4); /* clear buf 4bytes */
 		break;
 
 	case GetHubDescriptor:
-		DBG("GetHubDescriptor\n");
+		dbg("GetHubDescriptor\n");
 		phcd_usb2_hub_descriptor(phcd, (struct usb_hub_descriptor *) buf);
 		break;
 
 	case GetPortStatus:
-		DBG("GetPortStatus\n");
-		if (!wIndex || wIndex > max_ports)
-			goto error;
-
-		if (wValue)
-			goto error;
-
-		if ((size_t)wLength < sizeof(status)) /*lint !e49 !e601 !e42 */
-			goto error;
-
-		spin_unlock_irqrestore(&phcd->lock, flags);
-		status = phcd_get_port_status(phcd, wIndex);
-		spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-
-		/* update phcd->port_status[i] by status */
-		phcd_update_port_status(phcd, wIndex, status);
-
-		/*lint -save -e131 -e689 */
-		put_unaligned(cpu_to_le32(phcd->port_status[wIndex - 1]), (__le32 *) buf);
-		/*lint -restore */
-		DBG("Get port status: 0x%x\n", phcd->port_status[wIndex - 1]);
-
+		ret = phcd_hub_get_port_status(phcd, w_value, w_index, w_length, &flags, buf);
+		if (ret != 0)
+			goto port_proc_err;
 		break;
 
 	case SetPortFeature:
-		DBG("SetPortFeature, wValue %d\n", wValue);
+		dbg("SetPortFeature, w_value %u\n", w_value);
+		w_index &= 0xff;
+		if (!w_index || w_index > max_ports)
+			goto port_proc_err;
 
-		wIndex &= 0xff;  /*lint !e63 */
-		if (!wIndex || wIndex > max_ports)
-			goto error;
-
-		switch (wValue) {
-		case USB_PORT_FEAT_SUSPEND:
-			status = phcd->port_status[wIndex - 1];
-			if ((status & USB_PORT_STAT_SUSPEND) == 0) {
-				status |= USB_PORT_STAT_SUSPEND;
-				status |= USB_PORT_STAT_C_SUSPEND << 16;
-			}
-			phcd->port_status[wIndex - 1] = status; /*lint !e63 */
-
-			break;
-
-		case USB_PORT_FEAT_POWER:
-			status = phcd->port_status[wIndex - 1];
-			if ((status & USB_PORT_STAT_POWER) == 0) {
-				status |= USB_PORT_STAT_POWER;
-				DBG("enable port power\n");
-			}
-			phcd->port_status[wIndex - 1] = status; /*lint !e63 */
-
-			break;
-
-		case USB_PORT_FEAT_RESET:
-			spin_unlock_irqrestore(&phcd->lock, flags);
-			retval = proxy_hub_control(phcd, typeReq, wValue,
-					wIndex, (char *)&status, wLength); /*lint !e119 */
-			spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-
-			break;
-
-		default:
-			goto error;
-		}
-
+		ret = phcd_hub_set_port_feature(w_value, w_index, type_req, w_length, phcd, &flags);
+		if (ret == -1)
+			goto port_proc_err;
 		break;
 
 	case ClearPortFeature:
-		DBG("ClearPortFeature, wValue %d\n", wValue);
+		dbg("ClearPortFeature, w_value %u\n", w_value);
+		if (!w_index || w_index > max_ports || w_length)
+			goto port_proc_err;
 
-		if (!wIndex || wIndex > max_ports)
-			goto error;
-
-		if (wLength)
-			goto error;
-
-		switch (wValue) {
-		case USB_PORT_FEAT_SUSPEND:
-			status = phcd->port_status[wIndex - 1];
-			if ((status & USB_PORT_STAT_SUSPEND) != 0) {
-				status &= ~USB_PORT_STAT_SUSPEND;
-				status |= USB_PORT_STAT_C_SUSPEND << 16;
-			}
-			phcd->port_status[wIndex - 1] = status; /*lint !e63 */
-
-			break;
-
-		case USB_PORT_FEAT_C_CONNECTION:
-		case USB_PORT_FEAT_C_ENABLE:
-		case USB_PORT_FEAT_C_RESET:
-			spin_unlock_irqrestore(&phcd->lock, flags);
-			retval = proxy_hub_control(phcd, typeReq,
-				    wValue, wIndex, (char *)&status, wLength); /*lint !e119 */
-			spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-
-			phcd_clear_port_change_bit(phcd, wValue, wIndex);
-			break;
-		case USB_PORT_FEAT_C_SUSPEND:
-		case USB_PORT_FEAT_C_OVER_CURRENT:
-		case USB_PORT_FEAT_C_PORT_L1:
-			phcd_clear_port_change_bit(phcd, wValue, wIndex);
-			break;
-		case USB_PORT_FEAT_ENABLE:
-			status = phcd->port_status[wIndex - 1];
-			if ((status & USB_PORT_STAT_ENABLE) != 0) {
-				status &= ~USB_PORT_STAT_ENABLE;
-				status |= USB_PORT_STAT_C_ENABLE << 16;
-			}
-			phcd->port_status[wIndex - 1] = status; /*lint !e63 */
-
-			spin_unlock_irqrestore(&phcd->lock, flags);
-			retval = proxy_hub_control(phcd, typeReq,
-				    wValue, wIndex, (char *)&status, wLength); /*lint !e119 */
-			spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
-
-			break;
-
-		case USB_PORT_FEAT_POWER:
-			if ((phcd->port_status[wIndex - 1] & USB_PORT_STAT_POWER) != 0) {
-				phcd->port_status[wIndex - 1] &= ~USB_PORT_STAT_POWER; /*lint !e63 */
-			}
-			break;
-
-		default:
-			goto error;
-		}
+		ret = phcd_hud_clear_port_feature(w_value, w_index, type_req, w_length, phcd, &flags);
+		if (ret == -1)
+			goto port_proc_err;
 		break;
+
 	default:
-error:
-		ERR("Error! typeReq 0x%04x, wValue 0x%04x, wIndex 0x%04x, wLength 0x%04x\n",
-				typeReq, wValue, wIndex, wLength);
+port_proc_err:
+		err("Error! type_req 0x%04x, w_value 0x%04x, w_index 0x%04x, w_length 0x%04x\n",
+				type_req, w_value, w_index, w_length);
 		/* "stall" on error */
-		retval = -EPIPE;
+		ret = -EPIPE;
 	}
 	spin_unlock_irqrestore(&phcd->lock, flags);
 	mutex_unlock(&phcd->mutex);
-	DBG("ret %d\n", retval);
-	DBG("-\n");
-	return retval;
+	dbg("ret %d\n", ret);
+	dbg("-\n");
+	return ret;
+}
+
+static void hub_status_data_add_stat(struct proxy_hcd_stat *stat)
+{
+	struct timespec uptime;
+
+	stat->stat_hub_status_data++;
+	get_monotonic_boottime(&uptime);
+	stat->last_hub_status_data_time = (unsigned long)uptime.tv_sec;
 }
 
 /*
@@ -1476,12 +1558,13 @@ static int phcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 	unsigned long flags;
 	int retval;
 	unsigned int i;
+	u32 status;
 
-	DBG("+\n");
+	dbg("+\n");
 
-	spin_lock_irqsave(&phcd->lock, flags); /*lint !e666 */
+	spin_lock_irqsave(&phcd->lock, flags);
 	for (i = 0; ((i < phcd->port_count) && (i < PROXY_HCD_MAX_PORTS)); i++) {
-		u32 status = phcd->port_status[i];
+		status = phcd->port_status[i];
 		if ((status & PHCD_PORT_STATUS_CHANGE_MASK) != 0)
 			phcd->port_bitmap |= (1 << (i + 1));
 	}
@@ -1495,8 +1578,8 @@ static int phcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 	hub_status_data_add_stat(&phcd->stat);
 	spin_unlock_irqrestore(&phcd->lock, flags);
 
-	DBG("retval %d, buf 0x%x\n", retval, *buf);
-	DBG("-\n");
+	dbg("retval %d, buf 0x%x\n", retval, *buf);
+	dbg("-\n");
 
 	return retval;
 }
@@ -1504,45 +1587,36 @@ static int phcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 #ifdef CONFIG_PM
 static int phcd_bus_suspend(struct usb_hcd *hcd)
 {
-	DBG("+\n");
+	dbg("+\n");
 	bus_suspend_add_stat(&hcd_to_phcd(hcd)->stat);
-	DBG("-\n");
+	dbg("-\n");
 	return 0;
 }
 
 static int phcd_bus_resume(struct usb_hcd *hcd)
 {
-	DBG("+\n");
+	dbg("+\n");
 	bus_resume_add_stat(&hcd_to_phcd(hcd)->stat);
-	DBG("-\n");
+	dbg("-\n");
 	return 0;
 }
-#else
-#define phcd_bus_suspend NULL
-#define phcd_bus_resume NULL
-#endif	/* CONFIG_PM */
+#endif /* CONFIG_PM */
 
 struct hc_driver phcd_hc_driver = {
 	.description =		"proxy-hcd",
 	.product_desc =		"Proxy Host Controller",
 	.hcd_priv_size =	sizeof(struct proxy_hcd *),
 
-	/*
-	 * generic hardware linkage
-	 */
+	/* generic hardware linkage */
 	.irq =			NULL,
 	.flags =		HCD_MEMORY | HCD_USB2,
 
-	/*
-	 * basic lifecycle operations
-	 */
+	/* basic lifecycle operations */
 	.reset =		phcd_setup,
 	.start =		phcd_start,
 	.stop =			phcd_stop,
 
-	/*
-	 * managing i/o requests and associated device resources
-	 */
+	/* managing i/o requests and associated device resources */
 	.get_frame_number =	phcd_get_frame_number,
 	.urb_enqueue =		phcd_urb_enqueue,
 	.urb_dequeue =		phcd_urb_dequeue,
@@ -1566,17 +1640,18 @@ struct hc_driver phcd_hc_driver = {
 	.update_hub_device =	phcd_update_hub_device,
 	.reset_device =		phcd_reset_device,
 
-	/*
-	 * root hub support
-	 */
+	/* root hub support */
 	.hub_control =		phcd_hub_control,
 	.hub_status_data =	phcd_hub_status_data,
+#ifdef CONFIG_PM
 	.bus_suspend =		phcd_bus_suspend,
 	.bus_resume =		phcd_bus_resume,
+#else
+	.bus_suspend =		NULL,
+	.bus_resume =		NULL,
+#endif /* CONFIG_PM */
 
-	/*
-	 * call back when device connected and addressed
-	 */
+	/* call back when device connected and addressed */
 	.update_device =        phcd_update_device,
 	.set_usb2_hw_lpm =	phcd_set_usb2_hardware_lpm,
 };
@@ -1587,7 +1662,7 @@ static int phcd_client_init(struct proxy_hcd_client *client,
 	client_ref_init(&client->client_ref);
 	client->phcd = phcd;
 
-	if (client->client_init)
+	if (client->client_init != NULL)
 		return client->client_init(client);
 
 	return 0;
@@ -1595,7 +1670,7 @@ static int phcd_client_init(struct proxy_hcd_client *client,
 
 static void phcd_client_exit(struct proxy_hcd_client *client)
 {
-	if (client->client_exit)
+	if (client->client_exit != NULL)
 		client->client_exit(client);
 
 	client->phcd = NULL;
@@ -1626,7 +1701,7 @@ struct proxy_hcd_client *find_client_by_name(const char *name)
 {
 	struct proxy_hcd_client *client = NULL;
 
-	if (!name)
+	if (name == NULL)
 		return NULL;
 
 	spin_lock(&phcd_client_list_lock);
@@ -1643,24 +1718,6 @@ struct proxy_hcd_client *find_client_by_name(const char *name)
 	return NULL;
 }
 
-enum hibernation_policy phcd_get_hibernation_policy(struct proxy_hcd_client *client)
-{
-	struct proxy_hcd *phcd = client_to_phcd(client);
-	struct platform_device *pdev = phcd->pdev;
-	const char *hibernation_policy = NULL;
-	int err;
-
-	err = device_property_read_string(&pdev->dev, "hibernation-policy", &hibernation_policy);
-	if (err < 0)
-		return HIFI_USB_HIBERNATION_ALLOW;
-
-	if (strncmp(hibernation_policy, "forbid", sizeof("forbid") - 1) == 0) {
-		INFO("forbid hibernation\n");
-		return HIFI_USB_HIBERNATION_FORBID;
-	} else
-		return HIFI_USB_HIBERNATION_ALLOW;
-}
-
 #ifdef CONFIG_OF
 static const struct of_device_id phcd_of_match[] = {
 	{
@@ -1674,58 +1731,14 @@ static const struct of_device_id phcd_of_match[] = {
 MODULE_DEVICE_TABLE(of, phcd_of_match);
 #endif
 
-static int phcd_plat_probe(struct platform_device *pdev)
+static int phcd_plat_hcd_create_register(struct platform_device *pdev,
+					struct proxy_hcd *phcd)
 {
 	struct usb_hcd *hcd = NULL;
-	struct proxy_hcd *phcd = NULL;
-	const struct of_device_id *match = NULL;
 	int ret;
 
-	INFO("+\n");
-	if (usb_disabled())
-		return -ENODEV;
-
-	phcd = kzalloc(sizeof(struct proxy_hcd), GFP_KERNEL);
-	if (!phcd)
-		return -ENOMEM;
-
-	spin_lock_init(&phcd->lock);
-	mutex_init(&phcd->mutex);
-	phcd->port_count = PROXY_HCD_MAX_PORTS;
-	phcd->pdev = pdev;
-
-	match = of_match_device(phcd_of_match, &pdev->dev);
-	if (match)
-		phcd->client = find_client_by_name(match->compatible);
-	else
-		phcd->client = NULL;
-	if (!phcd->client) {
-		ERR("no client!!!\n");
-		kfree(phcd);
-		return -ENODEV;
-	}
-
-	if (!pdev->dev.dma_mask)
-		ret = dma_coerce_mask_and_coherent(&pdev->dev,
-				DMA_BIT_MASK(64));
-	else
-		ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
-	if (ret) {
-		ERR("set dmamask to MASK 64 failed\n");
-		kfree(phcd);
-		return ret;
-	}
-
-	ret = phcd_client_init(phcd->client, phcd);
-	if (ret) {
-		ERR("phcd_client_init failed\n");
-		kfree(phcd);
-		return ret;
-	}
-
-	/* create usb_hcd */
 	hcd = usb_create_hcd(&phcd_hc_driver, &pdev->dev, dev_name(&pdev->dev));
-	if (!hcd) {
+	if (hcd == NULL) {
 		phcd_client_exit(phcd->client);
 		kfree(phcd);
 		return -ENOMEM;
@@ -1739,13 +1752,68 @@ static int phcd_plat_probe(struct platform_device *pdev)
 		usb_put_hcd(hcd);
 		phcd_client_exit(phcd->client);
 		kfree(phcd);
+	}
+
+	return ret;
+}
+
+static int phcd_plat_probe(struct platform_device *pdev)
+{
+	struct proxy_hcd *phcd = NULL;
+	const struct of_device_id *match = NULL;
+	int ret;
+
+	info("+\n");
+	if (usb_disabled())
+		return -ENODEV;
+
+	phcd = kzalloc(sizeof(struct proxy_hcd), GFP_KERNEL);
+	if (phcd == NULL)
+		return -ENOMEM;
+
+	spin_lock_init(&phcd->lock);
+	mutex_init(&phcd->mutex);
+	phcd->port_count = PROXY_HCD_MAX_PORTS;
+	phcd->pdev = pdev;
+
+	match = of_match_device(phcd_of_match, &pdev->dev);
+	if (match != NULL)
+		phcd->client = find_client_by_name(match->compatible);
+	else
+		phcd->client = NULL;
+	if (phcd->client == NULL) {
+		err("no client!!!\n");
+		kfree(phcd);
+		return -ENODEV;
+	}
+
+	if (!pdev->dev.dma_mask)
+		ret = dma_coerce_mask_and_coherent(&pdev->dev,
+			DMA_BIT_MASK(64)); /* mask all 64bits */
+	else
+		ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)); /* mask all 64bits */
+	if (ret) {
+		err("set dmamask to MASK 64 failed\n");
+		kfree(phcd);
 		return ret;
 	}
 
-	if (phcd_debugfs_init(phcd))
-		DBG("phcd_debugfs_init failed\n");
+	ret = phcd_client_init(phcd->client, phcd);
+	if (ret) {
+		err("phcd_client_init failed\n");
+		kfree(phcd);
+		return ret;
+	}
 
-	INFO("-\n");
+	/* create & register usb_hcd */
+	ret = phcd_plat_hcd_create_register(pdev, phcd);
+	if (ret != 0)
+		return ret;
+
+	if (phcd_debugfs_init(phcd))
+		dbg("phcd_debugfs_init failed\n");
+
+	info("-\n");
 
 	return 0;
 }
@@ -1753,9 +1821,9 @@ static int phcd_plat_probe(struct platform_device *pdev)
 static int phcd_plat_remove(struct platform_device *dev)
 {
 	struct usb_hcd *hcd = platform_get_drvdata(dev);
-	struct proxy_hcd *phcd = hcd_to_phcd(hcd);;
+	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 
-	INFO("+\n");
+	info("+\n");
 
 	phcd_debugfs_exit(phcd);
 	usb_remove_hcd(hcd);
@@ -1763,22 +1831,19 @@ static int phcd_plat_remove(struct platform_device *dev)
 	phcd_client_exit(phcd->client);
 	kfree(phcd);
 
-	INFO("-\n");
+	info("-\n");
 
 	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP
-
-extern void mailbox_usb_suspend(bool is_suspend);
-
 static int phcd_plat_suspend(struct device *dev)
 {
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 	int ret;
 
-	INFO("+\n");
+	info("+\n");
 
 	/* barrier from alloc_dev and free_dev */
 	mutex_lock(&phcd->mutex);
@@ -1790,7 +1855,7 @@ static int phcd_plat_suspend(struct device *dev)
 
 	mailbox_usb_suspend(false);
 
-	INFO("-\n");
+	info("-\n");
 	return ret;
 }
 
@@ -1799,7 +1864,7 @@ static int phcd_plat_resume(struct device *dev)
 	struct usb_hcd *hcd = dev_get_drvdata(dev);
 	struct proxy_hcd *phcd = hcd_to_phcd(hcd);
 
-	INFO("+\n");
+	info("+\n");
 
 	/* barrier from alloc_dev and free_dev */
 	mutex_lock(&phcd->mutex);
@@ -1807,33 +1872,33 @@ static int phcd_plat_resume(struct device *dev)
 		phcd->client->client_resume(phcd->client);
 	mutex_unlock(&phcd->mutex);
 
-	INFO("-\n");
+	info("-\n");
 	return 0;
 }
 
 int phcd_plat_prepare(struct device *dev)
 {
-	INFO("+\n");
+	info("+\n");
 	mailbox_usb_suspend(true);
-	INFO("-\n");
+	info("-\n");
 	return 0;
 }
 void phcd_plat_complete(struct device *dev)
 {
-	INFO("+\n");
-	INFO("-\n");
+	info("+\n");
+	info("-\n");
 }
 
 int phcd_plat_suspend_late(struct device *dev)
 {
-	DBG("+\n");
-	DBG("-\n");
+	dbg("+\n");
+	dbg("-\n");
 	return 0;
 }
 int phcd_plat_resume_early(struct device *dev)
 {
-	DBG("+\n");
-	DBG("-\n");
+	dbg("+\n");
+	dbg("-\n");
 	return 0;
 }
 
@@ -1872,5 +1937,5 @@ static void __exit phcd_plat_exit(void)
 module_init(phcd_plat_init);
 module_exit(phcd_plat_exit);
 
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("proxy HCD");
-MODULE_LICENSE("GPL");

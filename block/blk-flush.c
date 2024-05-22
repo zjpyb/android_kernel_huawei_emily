@@ -184,11 +184,11 @@ static bool blk_flush_complete_seq(struct request *rq,
 	switch (seq) {
 	case REQ_FSEQ_PREFLUSH:
 	case REQ_FSEQ_POSTFLUSH:
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		if (seq == REQ_FSEQ_PREFLUSH)
-			hisi_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_PREFLUSH);
+			mas_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_PREFLUSH);
 		else
-			hisi_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_POSTFLUSH);
+			mas_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_POSTFLUSH);
 #endif
 		/* queue for flush */
 		if (list_empty(pending))
@@ -197,16 +197,16 @@ static bool blk_flush_complete_seq(struct request *rq,
 		break;
 
 	case REQ_FSEQ_DATA:
-#ifdef CONFIG_HISI_BLK
-		hisi_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_DATA);
+#ifdef CONFIG_MAS_BLK
+		mas_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_DATA);
 #endif
 		list_move_tail(&rq->flush.list, &fq->flush_data_in_flight);
 		queued = blk_flush_queue_rq(rq, true);
 		break;
 
 	case REQ_FSEQ_DONE:
-#ifdef CONFIG_HISI_BLK
-		hisi_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_DONE);
+#ifdef CONFIG_MAS_BLK
+		mas_blk_latency_req_check(rq, REQ_PROC_STAGE_FSEQ_DONE);
 #endif
 		/*
 		 * @rq was previously adjusted by blk_flush_issue() for
@@ -331,8 +331,8 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq)
 	fq->flush_pending_idx ^= 1;
 
 	blk_rq_init(q, flush_rq);
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_latency_req_check(flush_rq, REQ_PROC_STAGE_INIT_FROM_BIO);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_latency_req_check(flush_rq, REQ_PROC_STAGE_INIT_FROM_BIO);
 #endif
 	/*
 	 * Borrow tag from the first request since they can't
@@ -343,6 +343,9 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq)
 		struct blk_mq_hw_ctx *hctx;
 
 		flush_rq->mq_ctx = first_rq->mq_ctx;
+#ifdef CONFIG_MAS_BLK
+		flush_rq->mas_req.mq_ctx_generate = first_rq->mq_ctx;
+#endif
 		flush_rq->tag = first_rq->tag;
 		fq->orig_rq = first_rq;
 
@@ -354,7 +357,7 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq)
 	flush_rq->rq_flags |= RQF_FLUSH_SEQ;
 	flush_rq->rq_disk = first_rq->rq_disk;
 	flush_rq->end_io = flush_end_io;
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	flush_rq->cmd_flags |= REQ_SYNC;
 #endif
 

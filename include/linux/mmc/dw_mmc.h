@@ -31,7 +31,7 @@
 #include <linux/mutex.h>
 #include <linux/ratelimit.h>
 
-/* austin k3v5 platform dw emmc controller use as wifi usage with id = 0 */
+/* kv3_5 platform dw emmc controller use as wifi usage with id = 0 */
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 #undef CONFIG_HUAWEI_EMMC_DSM
 #endif
@@ -40,7 +40,7 @@
 #include <linux/mmc/dsm_emmc.h>
 #endif
 
-/* austin k3v5 platform dw emmc controller use as wifi usage with id = 0 */
+/* kv3_5 platform dw emmc controller use as wifi usage with id = 0 */
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 #undef CONFIG_HUAWEI_EMMC_DSM
 #endif
@@ -320,6 +320,14 @@ struct dw_mci {
 #define DWMMC_IN_TUNING		(1 << 5)	/* Host is doing tuning */
 #define DWMMC_TUNING_DONE	(1 << 6)	/* Host initialization tuning done */
 #define DWMMC_HPD_IRQ		(1 << 7)	/* pheonix enable hpd irq */
+#define NANO_GPIO_POWER		(1 << 8)	/* cancel cw io and device power by gpio */
+#define SLOW_IOCTL		(1 << 9)	/* host support slow ioctl */
+#define SD_SUPPORT_1135		(1 << 10) /* for libra sd support 1135 */
+#define TIMEOUT_ENABLE_PIO	(1 << 11)	/* for sdio data timeout and can reset restore */
+#define OUTLDO_GPIO_POWER	(1 << 12)	/* TETON io and device power by gpio */
+
+#define WIFI_ONLY_GPIO_NP		(1 << 13) /* WIFI only when plug out set gpio to sd idle state(GPIO TO NP) */
+#define SIMCARD_CMD_PD			(1 << 14) /* levershift no sd insert set cmd gpio to Pull down */
 
 #ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
 	int						tuning_flag_all_pass;
@@ -357,6 +365,8 @@ struct dw_mci {
 	struct timer_list       cto_timer;
 	struct timer_list       dto_timer;
 	int                     is_reset_after_retry;
+	unsigned int            lever_shift;
+	unsigned int            timeout_cnt;
 };
 
 /* DMA ops for Internal/External DMAC interface */

@@ -26,6 +26,7 @@
 #include <linux/list.h>
 #include <linux/dma-mapping.h>
 
+#include <linux/hisi/usb/chip_usb_log.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/composite.h>
@@ -642,7 +643,10 @@ static int dwc3_ep0_delegate_req(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 	int ret;
 
 	spin_unlock(&dwc->lock);
-	ret = dwc->gadget_driver->setup(&dwc->gadget, ctrl);
+	if (dwc->pullups_connected)
+		ret = dwc->gadget_driver->setup(&dwc->gadget, ctrl);
+	else
+		ret = -ENOENT;
 	spin_lock(&dwc->lock);
 	return ret;
 }
@@ -651,6 +655,20 @@ static void dwc3_setconfig_notify(enum usb_device_speed speed)
 {
     atomic_notifier_call_chain(&device_event_nh, DEVICE_EVENT_SETCONFIG,
             (void *)&speed);
+}
+
+static void dwc3_set_lpm_cap(struct dwc3 *dwc)
+{
+	u32 reg;
+
+	if ((dwc->revision > DWC3_REVISION_194A) &&
+	    (dwc->speed != DWC3_DCFG_SUPERSPEED) &&
+	    (dwc->speed != DWC3_DCFG_SUPERSPEED_PLUS) &&
+	    !dwc->dis_dcfg_lpm) {
+		reg = dwc3_readl(dwc->regs, DWC3_DCFG);
+		reg |= DWC3_DCFG_LPM_CAP;
+		dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+	}
 }
 
 static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
@@ -691,13 +709,7 @@ static int dwc3_ep0_set_config(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 				dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 			}
 
-			if ((dwc->revision > DWC3_REVISION_194A) &&
-			    (dwc->speed != DWC3_DCFG_SUPERSPEED) &&
-			    (dwc->speed != DWC3_DCFG_SUPERSPEED_PLUS)) {
-				reg = dwc3_readl(dwc->regs, DWC3_DCFG);
-				reg |= DWC3_DCFG_LPM_CAP;
-				dwc3_writel(dwc->regs, DWC3_DCFG, reg);
-			}
+			dwc3_set_lpm_cap(dwc);
 
 			pr_info("USB SET CONFIGURED\n");
 			dwc3_setconfig_notify(dwc->gadget.speed);
@@ -839,9 +851,11 @@ static int dwc3_ep0_std_request(struct dwc3 *dwc, struct usb_ctrlrequest *ctrl)
 		ret = dwc3_ep0_handle_feature(dwc, ctrl, 1);
 		break;
 	case USB_REQ_SET_ADDRESS:
+		hiusb_dev_info(dwc->dev, "set_address\n");
 		ret = dwc3_ep0_set_address(dwc, ctrl);
 		break;
 	case USB_REQ_SET_CONFIGURATION:
+		hiusb_dev_info(dwc->dev, "set_configuration\n");
 		ret = dwc3_ep0_set_config(dwc, ctrl);
 		break;
 	case USB_REQ_SET_SEL:
@@ -899,6 +913,9 @@ static void dwc3_ep0_inspect_setup(struct dwc3 *dwc,
 		}
 	}
 
+	hiusb_dev_info(dwc->dev,"ctrl: %02x %02x %04x %04x %04x\n",
+			    ctrl->bRequestType, ctrl->bRequest,
+			    ctrl->wValue, ctrl->wIndex, ctrl->wLength);
 out:
 	if (ret < 0) {
 		dev_err(dwc->dev, "ep0 setup error, ret %d!\n", ret);
@@ -1043,12 +1060,16 @@ static void dwc3_ep0_xfer_complete(struct dwc3 *dwc,
 static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
 		struct dwc3_ep *dep, struct dwc3_request *req)
 {
+	unsigned int		trb_length = 0;
 	int			ret;
 
 	req->direction = !!dep->number;
 
 	if (req->request.length == 0) {
-		dwc3_ep0_prepare_one_trb(dep, dwc->ep0_trb_addr, 0,
+		if (!req->direction)
+			trb_length = dep->endpoint.maxpacket;
+
+		dwc3_ep0_prepare_one_trb(dep, dwc->bounce_addr, trb_length,
 				DWC3_TRBCTL_CONTROL_DATA, false);
 		ret = dwc3_ep0_start_trans(dep);
 	} else if (!IS_ALIGNED(req->request.length, dep->endpoint.maxpacket)
@@ -1100,9 +1121,12 @@ static void __dwc3_ep0_do_control_data(struct dwc3 *dwc,
 
 		req->trb = &dwc->ep0_trb[dep->trb_enqueue - 1];
 
+		if (!req->direction)
+			trb_length = dep->endpoint.maxpacket;
+
 		/* Now prepare one extra TRB to align transfer size */
 		dwc3_ep0_prepare_one_trb(dep, dwc->bounce_addr,
-					 0, DWC3_TRBCTL_CONTROL_DATA,
+					 trb_length, DWC3_TRBCTL_CONTROL_DATA,
 					 false);
 		ret = dwc3_ep0_start_trans(dep);
 	} else {
@@ -1226,6 +1250,9 @@ static void dwc3_ep0_xfernotready(struct dwc3 *dwc,
 void dwc3_ep0_interrupt(struct dwc3 *dwc,
 		const struct dwc3_event_depevt *event)
 {
+	struct dwc3_ep	*dep = dwc->eps[event->endpoint_number];
+	u8		cmd;
+
 	switch (event->endpoint_event) {
 	case DWC3_DEPEVT_XFERCOMPLETE:
 		dwc3_ep0_xfer_complete(dwc, event);
@@ -1238,7 +1265,12 @@ void dwc3_ep0_interrupt(struct dwc3 *dwc,
 	case DWC3_DEPEVT_XFERINPROGRESS:
 	case DWC3_DEPEVT_RXTXFIFOEVT:
 	case DWC3_DEPEVT_STREAMEVT:
+		break;
 	case DWC3_DEPEVT_EPCMDCMPLT:
+		cmd = DEPEVT_PARAMETER_CMD(event->parameters);
+
+		if (cmd == DWC3_DEPCMD_ENDTRANSFER)
+			dep->flags &= ~DWC3_EP_TRANSFER_STARTED;
 		break;
 	}
 }

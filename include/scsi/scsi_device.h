@@ -203,6 +203,7 @@ struct scsi_device {
 	struct list_head event_list;	/* asserted events */
 	struct work_struct event_work;
 
+	unsigned int is_visible_bak;
 	unsigned int max_device_blocked; /* what device_blocked counts down from  */
 #define SCSI_DEFAULT_DEVICE_BLOCKED	3
 
@@ -436,6 +437,17 @@ static inline int scsi_execute_req(struct scsi_device *sdev,
 	return scsi_execute(sdev, cmd, data_direction, buffer,
 		bufflen, NULL, sshdr, timeout, retries,  0, 0, resid);
 }
+
+static inline int
+scsi_execute_req_with_flags(struct scsi_device *sdev, const unsigned char *cmd,
+			    int data_direction, void *buffer, unsigned bufflen,
+			    struct scsi_sense_hdr *sshdr, int timeout,
+			    int retries, u64 flags, int *resid)
+{
+	return scsi_execute(sdev, cmd, data_direction, buffer, bufflen, NULL,
+			    sshdr, timeout, retries, flags, 0, resid);
+}
+
 extern void sdev_disable_disk_events(struct scsi_device *sdev);
 extern void sdev_enable_disk_events(struct scsi_device *sdev);
 extern int scsi_vpd_lun_id(struct scsi_device *, char *, size_t);

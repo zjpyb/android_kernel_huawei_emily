@@ -1,8 +1,9 @@
 /*
 * Copyright (c) 2017, STMicroelectronics - All Rights Reserved
 *
-* This file is part of VL53L1 Core and is dual licensed, either
-* 'STMicroelectronics Proprietary license'
+* This file is part of VL53L1 Core and is dual licensed,
+* either 'STMicroelectronics
+* Proprietary license'
 * or 'BSD 3-clause "New" or "Revised" License' , at your option.
 *
 ********************************************************************************
@@ -12,7 +13,7 @@
 ********************************************************************************
 *
 * License terms: STMicroelectronics Proprietary in accordance with licensing
-*  terms at www.st.com/sla0044
+* terms at www.st.com/sla0081
 *
 * STMicroelectronics confidential
 * Reproduction and Communication of this document is strictly prohibited unless
@@ -23,8 +24,7 @@
 *
 * Alternatively, VL53L1 Core may be distributed under the terms of
 * 'BSD 3-clause "New" or "Revised" License', in which case the following
-*  provisions apply instead of the ones
-* mentioned above :
+* provisions apply instead of the ones mentioned above :
 *
 ********************************************************************************
 *
@@ -71,6 +71,16 @@ extern "C"
 {
 #endif
 
+#if !defined(VL53L1DevDataGet)
+#warning "PALDevDataGet is deprecated define VL53L1DevDataGet instead"
+#define VL53L1DevDataGet(Dev, field) (Dev->Data.field)
+#endif
+
+#if !defined(VL53L1DevDataSet)
+#warning "PALDevDataSet is deprecated define VL53L1DevDataSet instead"
+#define VL53L1DevDataSet(Dev, field, data) ((Dev->Data.field) = (data))
+#endif
+
 /** @defgroup VL53L1_cut11_group VL53L1 cut1.1 Function Definition
  *  @brief    VL53L1 cut1.1 Function Definition
  *  @{
@@ -90,7 +100,7 @@ extern "C"
  * @return  VL53L1_ERROR_NONE     Success
  * @return  "Other error code"    See ::VL53L1_Error
  */
-VL53L1_Error VL53L1_GetVersion(VL53L1_Version_t *pVersion);
+VL53L1_Error VL53L1_GetVersion(struct VL53L1_Version_t *pVersion);
 
 /**
  * @brief Reads the Product Revision for a for given Device
@@ -119,7 +129,7 @@ VL53L1_Error VL53L1_GetProductRevision(VL53L1_DEV Dev,
  * @return  "Other error code"  See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_GetDeviceInfo(VL53L1_DEV Dev,
-	VL53L1_DeviceInfo_t *pVL53L1_DeviceInfo);
+	struct VL53L1_DeviceInfo_t *pVL53L1_DeviceInfo);
 
 /**
  * @brief Human readable Range Status string for a given RangeStatus
@@ -194,6 +204,9 @@ VL53L1_Error VL53L1_GetPalState(VL53L1_DEV Dev,
  * This function should be called when several devices are used in parallel
  * before start programming the sensor.
  * When a single device us used, there is no need to call this function.
+ *
+ * When it is requested for multi devices system this function MUST be called
+ * prior to VL53L1_DataInit()
  *
  * @note This function Access to the device
  *
@@ -451,6 +464,9 @@ VL53L1_Error VL53L1_GetMeasurementTimingBudgetMicroSeconds(
  *
  * @param   Dev                                  Device Handle
  * @param   InterMeasurementPeriodMilliSeconds   Inter-Measurement Period in ms.
+ *  this value should be greater than the duration set in
+ *  @a VL53L1_SetMeasurementTimingBudgetMicroSeconds() to ensure smooth ranging
+ *  operation.
  * @return  VL53L1_ERROR_NONE            Success
  * @return  "Other error code"           See ::VL53L1_Error
  */
@@ -758,7 +774,7 @@ VL53L1_Error VL53L1_GetMaxNumberOfROI(VL53L1_DEV Dev,
  * @return  "Other error code"           See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_SetROI(VL53L1_DEV Dev,
-		VL53L1_RoiConfig_t *pRoiConfig);
+	struct VL53L1_RoiConfig_t *pRoiConfig);
 
 /**
  * @brief Get the ROI managed by the Device
@@ -773,7 +789,7 @@ VL53L1_Error VL53L1_SetROI(VL53L1_DEV Dev,
  * @return  "Other error code"           See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_GetROI(VL53L1_DEV Dev,
-		VL53L1_RoiConfig_t *pRoiConfig);
+	struct VL53L1_RoiConfig_t *pRoiConfig);
 
 /** @} VL53L1_ROI_group */
 
@@ -886,8 +902,12 @@ VL53L1_Error VL53L1_GetSequenceStepEnable(VL53L1_DEV Dev,
  * @return  VL53L1_ERROR_NONE                  Success
  * @return  VL53L1_ERROR_MODE_NOT_SUPPORTED    This error occurs when
  * PresetMode programmed with @a VL53L1_SetPresetMode
- *
  * @return  VL53L1_ERROR_TIME_OUT    Time out on start measurement
+ * @return  VL53L1_ERROR_INVALID_PARAMS This error might occur in timed mode
+ * when inter measurement period is smaller or too close to the timing budget.
+ * In such case measurements are not started and user must correct the timings
+ * passed to @a VL53L1_SetMeasurementTimingBudgetMicroSeconds() and
+ * @a VL53L1_SetInterMeasurementPeriodMilliSeconds() functions.
  * @return  "Other error code"   See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_StartMeasurement(VL53L1_DEV Dev);
@@ -988,7 +1008,7 @@ VL53L1_Error VL53L1_WaitMeasurementDataReady(VL53L1_DEV Dev);
  * @return  "Other error code"       See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_GetRangingMeasurementData(VL53L1_DEV Dev,
-	VL53L1_RangingMeasurementData_t *pRangingMeasurementData);
+	struct VL53L1_RangingMeasurementData_t *pRangingMeasurementData);
 
 /**
  * @brief Retrieve all ROI's measurements from device for a given setup
@@ -1016,7 +1036,7 @@ VL53L1_Error VL53L1_GetRangingMeasurementData(VL53L1_DEV Dev,
  * @return  "Other error code"       See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_GetMultiRangingData(VL53L1_DEV Dev,
-		VL53L1_MultiRangingData_t *pMultiRangingData);
+	struct VL53L1_MultiRangingData_t *pMultiRangingData);
 
 /**
  * @brief Get Additional Data
@@ -1175,6 +1195,15 @@ VL53L1_Error VL53L1_GetXTalkCompensationEnable(VL53L1_DEV Dev,
  * User must call @a VL53L1_SetPresetMode() again after calibration to set the
  * desired one. during this calibration mode no object must be put below a 80cm
  * distance from the target
+ * @li VL53L1_XTALKCALIBRATIONMODE_FULL_ROI the calibration sets appropriate
+ * preset and distance mode and thus override existing ones<br>
+ * User must call @a VL53L1_SetPresetMode() again after calibration to set the
+ * desired one.
+ * The ROI settings must define a single 16x16 ROI before to launch this
+ * function.
+ * The calibration uses a target which should be located at least @60cm from the
+ * device. The actual location of the target shall be passed
+ * through the bare driver tuning parameters table
  *
  * @return  VL53L1_ERROR_NONE    Success
  * @return  "Other error code"   See ::VL53L1_Error
@@ -1291,7 +1320,7 @@ VL53L1_Error VL53L1_PerformOffsetSimpleCalibration(VL53L1_DEV Dev,
  * @return  "Other error code"           See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_SetCalibrationData(VL53L1_DEV Dev,
-		VL53L1_CalibrationData_t *pCalibrationData);
+	struct VL53L1_CalibrationData_t *pCalibrationData);
 
 /**
  * @brief Gets the Calibration Data.
@@ -1310,7 +1339,7 @@ VL53L1_Error VL53L1_SetCalibrationData(VL53L1_DEV Dev,
  * @return  "Other error code"           See ::VL53L1_Error
  */
 VL53L1_Error VL53L1_GetCalibrationData(VL53L1_DEV Dev,
-		VL53L1_CalibrationData_t  *pCalibrationData);
+	struct VL53L1_CalibrationData_t  *pCalibrationData);
 
 /**
  * @brief Sets the Zone Calibration Data.
@@ -1384,7 +1413,7 @@ VL53L1_Error VL53L1_GetOpticalCenter(VL53L1_DEV Dev,
 */
 
 VL53L1_Error VL53L1_SetThresholdConfig(VL53L1_DEV Dev,
-		VL53L1_DetectionConfig_t *pConfig);
+	struct VL53L1_DetectionConfig_t *pConfig);
 
 /**
 * @brief Retrieves the interrupt config structure currently programmed
@@ -1395,7 +1424,7 @@ VL53L1_Error VL53L1_SetThresholdConfig(VL53L1_DEV Dev,
 */
 
 VL53L1_Error VL53L1_GetThresholdConfig(VL53L1_DEV Dev,
-		VL53L1_DetectionConfig_t *pConfig);
+	struct VL53L1_DetectionConfig_t *pConfig);
 
 
 /** @} VL53L1_Thresholds_group */

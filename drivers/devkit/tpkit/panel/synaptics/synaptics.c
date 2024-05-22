@@ -10,9 +10,9 @@
 
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_api.h"
 #include <lcdkit_tp.h>
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -20,8 +20,8 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit.h"
-#include "../../../lcdkit/lcdkit1.0/include/lcdkit_panel.h"
+#include "huawei_ts_kit.h"
+#include "lcdkit_panel.h"
 
 #define SYNAPTICS_CHIP_INFO  "synaptics-"
 #define SYNAPTICS_VENDER_NAME  "synaptics"
@@ -724,28 +724,6 @@ static int rmi_f11_read_finger_state(struct ts_fingers *info)
 }
 #endif
 
-static void synaptics_ghost_detect(int value){
-	if (GHOST_OPERATE_TOO_FAST & value){
-		TS_LOG_INFO("%s operate too fast\n", __func__);
-	}else if (GHOST_OPERATE_IN_XY_AXIS & value){
-		TS_LOG_INFO("%s operate in same xy asix\n", __func__);
-	}else if (GHOST_OPERATE_IN_SAME_POSITION & value){
-		TS_LOG_INFO("%s operate in same position\n", __func__);
-	}
-	//DMD report
-
-	if(rmi4_data->synaptics_chip_data->enable_ghost_dmd_report == 0) {
-#if defined (CONFIG_HUAWEI_DSM)
-		ts_dmd_report(DSM_TP_GHOST_TOUCH_ERROR_NO, "noise record number: %d.noise_record_num is %d.frequency_selection is %d\n",
-			value,rmi4_data->synaptics_chip_data->noise_record_num,
-			rmi4_data->synaptics_chip_data->frequency_selection_reg);
-#endif
-		rmi4_data->synaptics_chip_data->enable_ghost_dmd_report++;
-	}
-
-	rmi4_data->synaptics_chip_data->noise_record_num = 0;
-}
-
 static bool synaptics_read_crc_value(struct synaptics_rmi4_f01_device_status *status, unsigned short ic_status_reg)
 {
 	int ret;
@@ -1200,7 +1178,6 @@ struct ts_device_ops ts_kit_synaptics_ops = {
 #endif
 	.chip_wrong_touch = synaptics_wrong_touch,
 	.chip_work_after_input = synaptics_work_after_input_kit,
-	.chip_ghost_detect = synaptics_ghost_detect,
 	.chip_check_status = synaptics_chip_check_status,
 	.chip_touch_switch = synaptics_chip_touch_switch,
 };
@@ -2543,11 +2520,11 @@ static int synaptics_parse_LDO29_dts(struct device_node *device,
 	int value = 0;
 	retval = of_property_read_u32(device, LDO29_980_DEFAULT_ON_FLAG, &value);
 	if (retval) {
-		chip_data->LDO29_980_default_on_flag= 0;
+		chip_data->ldo29_980_default_on_flag= 0;
 		TS_LOG_ERR("Not define  device LDO29_980_default_on_flag in Dts, use fault value\n");
 	}else{
-		chip_data->LDO29_980_default_on_flag = value;
-		TS_LOG_INFO("get device LDO29_980_default_on_flag =%d,\n",chip_data->LDO29_980_default_on_flag );
+		chip_data->ldo29_980_default_on_flag = value;
+		TS_LOG_INFO("get device LDO29_980_default_on_flag =%d,\n",chip_data->ldo29_980_default_on_flag );
 	}
 	return NO_ERR;
 }
@@ -2582,11 +2559,11 @@ static int synaptics_parse_dts(struct device_node *device,
 
 	retval = of_property_read_u32(device, SYNA_3718_TP_PRESSURE_FLAG, &value);
 	if (retval) {
-		chip_data->synaptics3718_Tp_Pressure_flag= 0;
+		chip_data->synaptics3718_tp_pressure_flag= 0;
 		TS_LOG_ERR("Not define synaptics3718_Tp_Pressure_flag in Dts, use fault value\n");
 	}else{
-		chip_data->synaptics3718_Tp_Pressure_flag = value;
-		TS_LOG_INFO("get device synaptics3718_Tp_Pressure_flag =%d,\n",chip_data->synaptics3718_Tp_Pressure_flag );
+		chip_data->synaptics3718_tp_pressure_flag = value;
+		TS_LOG_INFO("get device synaptics3718_Tp_Pressure_flag =%d,\n",chip_data->synaptics3718_tp_pressure_flag );
 	}
 	synaptics_parse_LDO29_dts(device,chip_data);
 
@@ -2848,19 +2825,6 @@ static int synaptics_parse_dts(struct device_node *device,
 	if (retval) {
 		chip_data->delay_for_erase_fw = 800;
 		TS_LOG_INFO("device delay_for_erase_fw not found,use default value.\n");
-	}
-
-	retval = of_property_read_u32(device, GHOST_DETECT_SUPPORT, &chip_data->ghost_detect_support);
-	if (retval) {
-		chip_data->ghost_detect_support = 0;
-		TS_LOG_ERR("%s:%s device %s not exit,use default value.\n",
-			__func__, GHOST_LOG_TAG, GHOST_DETECT_SUPPORT);
-	}else{
-		TS_LOG_INFO("%s:%s get device %s : %d\n",
-			__func__, GHOST_LOG_TAG, GHOST_DETECT_SUPPORT, chip_data->ghost_detect_support);
-		if (chip_data->ghost_detect_support){
-			ts_kit_algo_det_ght_init();
-		}
 	}
 
 	retval = of_property_read_u32(device, "check_status_watchdog_timeout", &chip_data->check_status_watchdog_timeout);
@@ -6320,7 +6284,7 @@ static int synaptics_rmi4_f12_init(struct synaptics_rmi4_data *rmi4_data,
 		    query_8.data34_is_present + query_8.data35_is_present;
 	}
 
-	if(rmi4_data->synaptics_chip_data->synaptics3718_Tp_Pressure_flag == 1){
+	if(rmi4_data->synaptics_chip_data->synaptics3718_tp_pressure_flag == 1){
 		if ((size_of_query8 >= 5) && (query_8.data29_is_present)) {
 			TS_LOG_INFO("f12_data29_is_present\n");
 			extra_data->data29_offset = query_8.data0_is_present +
@@ -6641,10 +6605,10 @@ static int synaptics_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);
@@ -6874,38 +6838,38 @@ static int synaptics_rmi4_key_gesture_report(struct synaptics_rmi4_data
 		TS_LOG_INFO("@@@SPECIFIC_LETTER_DETECTED detected!@@@\n");
 		switch (get_gesture_wakeup_data[2]) {
 		case SPECIFIC_LETTER_c:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_c detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_c;
+				reprot_gesture_key_value = TS_LETTER_C;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_e:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_e detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_e;
+				reprot_gesture_key_value = TS_LETTER_E;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_m:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_m detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_m;
+				reprot_gesture_key_value = TS_LETTER_M;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_w:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO
 				    ("@@@SPECIFIC_LETTER_w detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_w;
+				reprot_gesture_key_value = TS_LETTER_W;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;

@@ -15,49 +15,40 @@
 #include "hisi_dp.h"
 #include <linux/device.h>
 
-int hisi_dp_hpd_register(struct hisi_fb_data_type *hisifd)
+int hisi_dp_hpd_register(struct dpu_fb_data_type *dpufd)
 {
 	int ret = 0;
 	struct dp_ctrl *dptx = NULL;
 
-	if (hisifd == NULL) {
-		HISI_FB_ERR("[DP] hisifd is NULL!\n");
+	if (dpufd == NULL) {
+		DPU_FB_ERR("[DP] dpufd is NULL!\n");
 		return -EINVAL;
 	}
 
-	dptx = &(hisifd->dp);
-	if (hisifd->pdev == NULL) {
+	dptx = &(dpufd->dp);
+	if (dpufd->pdev == NULL)
 		return -EINVAL;
-	}
-	if (dptx == NULL) {
-		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
-		return -EINVAL;
-	}
-
-	//if (hisifd->sysfs_attrs_append_fnc) {
-	//	hisifd->sysfs_attrs_append_fnc(hisifd, &dev_attr_dp_hpd.attr);
-	//}
 
 	dptx->hpd_state = HPD_OFF;
 
 	return ret;
 }
 
-void hisi_dp_hpd_unregister(struct hisi_fb_data_type *hisifd)
+void hisi_dp_hpd_unregister(struct dpu_fb_data_type *dpufd)
 {
 	struct dp_ctrl *dptx = NULL;
 
-	if (hisifd == NULL) {
-		HISI_FB_ERR("[DP] hisifd is NULL!\n");
+	if (dpufd == NULL) {
+		DPU_FB_ERR("[DP] dpufd is NULL!\n");
 		return;
 	}
 
-	if (hisifd->pdev == NULL) {
+	if (dpufd->pdev == NULL)
 		return;
-	}
-	dptx = &(hisifd->dp);
+
+	dptx = &(dpufd->dp);
 	if (dptx == NULL) {
-		dev_err(&hisifd->pdev->dev, "invalid dptx!\n");
+		dev_err(&dpufd->pdev->dev, "invalid dptx!\n");
 		return;
 	}
 

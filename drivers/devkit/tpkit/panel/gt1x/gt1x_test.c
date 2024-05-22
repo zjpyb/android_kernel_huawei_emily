@@ -20,7 +20,7 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include "gt1x.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define SHORT_TO_GND_RESISTER(sig)  (div_s64(5266285, (sig) & (~0x8000)) - 40 * 100)	/* 52662.85/code-40 */
 /*36864 /code-40 */
@@ -388,7 +388,7 @@ static void gt1x_test_noisedata(struct gt1x_ts_test *ts_test)
 	int fail_cnt;
 	u32 find_bad_node = 0;
 	u8 buf[1] = {0x00};
-	u8 *data_buf;
+	u8 *data_buf = NULL;
 	u32 noisedata_addr = 0;
 
 	ts_test->noisedata.size = 0;

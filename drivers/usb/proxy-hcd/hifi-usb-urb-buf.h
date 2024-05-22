@@ -1,5 +1,25 @@
+/*
+ * hifi-usb-urb-buf.h
+ *
+ * utilityies for operating urb buffers
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef _HIFI_USB_URB_BUF_H_
 #define _HIFI_USB_URB_BUF_H_
+
+#include <linux/types.h>
 
 #define URB_BUF_NUM 8
 

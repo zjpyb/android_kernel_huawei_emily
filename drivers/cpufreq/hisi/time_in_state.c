@@ -3,7 +3,7 @@
  *
  * counting different C-state time in each freq
  *
- * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -25,6 +25,9 @@
 #include <linux/cpufreq.h>
 #include <linux/cpumask.h>
 #include <linux/cpuidle.h>
+#include <linux/cpufreq_perf_ctrl.h>
+
+#define KHZ_PER_MHZ 1000
 
 struct time_in_state {
 	spinlock_t lock;
@@ -62,7 +65,7 @@ ssize_t hisi_time_in_state_show(int cpu, char *buf)
 	ssize_t len = 0;
 	struct time_in_state *icpu = NULL;
 
-	if (cpu < 0 || cpu >= nr_cpu_ids || buf == NULL) //lint !e574
+	if (cpu < 0 || cpu >= nr_cpu_ids || buf == NULL)
 		return -EINVAL;
 
 	icpu = per_cpu_ptr(&stats_info, cpu);
@@ -74,10 +77,12 @@ ssize_t hisi_time_in_state_show(int cpu, char *buf)
 	spin_unlock(&icpu->lock);
 
 	for (i = 0; i < icpu->max_freq_state; i++) {
-		len += scnprintf(buf + len, PAGE_SIZE - len, "%u", icpu->freq_table[i]);
+		len += scnprintf(buf + len, PAGE_SIZE - len,
+				 "%u", icpu->freq_table[i]);
 		for (j = 0; j < icpu->max_idle_state; j++) {
 			pos = j * icpu->max_freq_state + i;
-			len += scnprintf(buf + len, PAGE_SIZE - len, " %llu", icpu->time[pos]);
+			len += scnprintf(buf + len, PAGE_SIZE - len,
+					 " %llu", icpu->time[pos]);
 		}
 
 		len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
@@ -85,6 +90,54 @@ ssize_t hisi_time_in_state_show(int cpu, char *buf)
 
 	return len;
 }
+
+#ifdef CONFIG_PERF_CTRL
+static int hisi_time_adj_freq_get(int cpu, u64 *timeadjfreq)
+{
+	unsigned int i;
+	struct time_in_state *icpu = per_cpu_ptr(&stats_info, cpu);
+
+	if (!icpu->initialized)
+		return -ENODEV;
+
+	spin_lock(&icpu->lock);
+	update_cur_state(icpu);
+	spin_unlock(&icpu->lock);
+
+	*timeadjfreq = 0;
+	for (i = 0; i < icpu->max_freq_state; i++)
+		*timeadjfreq += (icpu->freq_table[i] / KHZ_PER_MHZ) *
+			div_u64(icpu->time[i], NSEC_PER_USEC);
+
+	return 0;
+}
+
+int perf_ctrl_get_cpu_busy_time(void __user *uarg)
+{
+	struct cpu_busy_time busy_time;
+	int i;
+	int ret = 0;
+
+	if (uarg == NULL)
+		return -EINVAL;
+
+	busy_time.cpu_count = nr_cpu_ids;
+	if (busy_time.cpu_count > NR_CPUS)
+		return -EFAULT;
+
+	for (i = 0; i < busy_time.cpu_count; i++) {
+		ret = hisi_time_adj_freq_get(i, &busy_time.time_adj_freq[i]);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (copy_to_user(uarg, &busy_time, sizeof(struct cpu_busy_time))) {
+		pr_err("get busy time copy_to_user fail.\n");
+		return -EFAULT;
+	}
+	return 0;
+}
+#endif
 
 int hisi_time_in_freq_get(int cpu, u64 *freqs, int freqs_len)
 {
@@ -119,7 +172,7 @@ void time_in_state_update_idle(int cpu, unsigned int new_idle_index)
 {
 	struct time_in_state *icpu = NULL;
 
-	if (cpu < 0 || cpu >= nr_cpu_ids) //lint !e574
+	if (cpu < 0 || cpu >= nr_cpu_ids)
 		return;
 
 	icpu = per_cpu_ptr(&stats_info, cpu);
@@ -133,7 +186,8 @@ void time_in_state_update_idle(int cpu, unsigned int new_idle_index)
 }
 
 /* update the time of old freq when freq change */
-void time_in_state_update_freq(struct cpumask *cpus, unsigned int new_freq_index)
+void time_in_state_update_freq(struct cpumask *cpus,
+			       unsigned int new_freq_index)
 {
 	int cpu;
 	struct time_in_state *icpu = NULL;
@@ -141,10 +195,10 @@ void time_in_state_update_freq(struct cpumask *cpus, unsigned int new_freq_index
 	if (cpus == NULL || cpumask_empty(cpus))
 		return;
 
-	for_each_cpu(cpu, cpus) { //lint !e574
+	for_each_cpu(cpu, cpus) {
 		icpu = per_cpu_ptr(&stats_info, cpu);
-
-		if (!icpu->initialized || new_freq_index >= icpu->max_freq_state)
+		if (!icpu->initialized ||
+		    new_freq_index >= icpu->max_freq_state)
 			continue;
 
 		spin_lock(&icpu->lock);
@@ -164,9 +218,8 @@ static int __init time_in_state_init(void)
 	unsigned int alloc_size, i;
 	struct cpufreq_frequency_table *pos = NULL;
 
-	for_each_online_cpu(cpu) { //lint !e574
+	for_each_online_cpu(cpu) {
 		icpu = per_cpu_ptr(&stats_info, cpu);
-
 		if (icpu->initialized)
 			continue;
 
@@ -189,7 +242,8 @@ static int __init time_in_state_init(void)
 			continue;
 
 		icpu->max_freq_state = i;
-		alloc_size = i * sizeof(int) + (icpu->max_idle_state * i * sizeof(u64)); //lint !e647
+		alloc_size = i * sizeof(int) +
+			     (icpu->max_idle_state * i * sizeof(u64));
 		icpu->freq_table = kzalloc(alloc_size, GFP_KERNEL);
 		if (icpu->freq_table == NULL) {
 			pr_err("time in stats alloc fail for cpu:%d\n", cpu);
@@ -201,7 +255,8 @@ static int __init time_in_state_init(void)
 		cpufreq_for_each_valid_entry(pos, policy.freq_table)
 			icpu->freq_table[i++] = pos->frequency;
 
-		freq_index = cpufreq_frequency_table_target(&policy, policy.cur, CPUFREQ_RELATION_C);
+		freq_index = cpufreq_frequency_table_target(&policy, policy.cur,
+							    CPUFREQ_RELATION_C);
 		if (freq_index < 0)
 			continue;
 		icpu->cur_freq_idx = freq_index;
@@ -214,7 +269,7 @@ static int __init time_in_state_init(void)
 	return 0;
 
 err_out:
-	for_each_online_cpu(cpu) { //lint !e574
+	for_each_online_cpu(cpu) {
 		icpu = per_cpu_ptr(&stats_info, cpu);
 
 		if (!icpu->initialized)
@@ -225,6 +280,6 @@ err_out:
 		icpu->freq_table = NULL;
 	}
 
-	return 0;
+	return -ENOMEM;
 }
 late_initcall(time_in_state_init);

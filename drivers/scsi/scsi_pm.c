@@ -53,7 +53,7 @@ static int scsi_dev_type_suspend(struct device *dev,
 {
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int err;
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	struct scsi_device *sdev = to_scsi_device(dev);
 	struct Scsi_Host *shost = sdev->host;
 #endif
@@ -61,7 +61,7 @@ static int scsi_dev_type_suspend(struct device *dev,
 	/* flush pending in-flight resume operations, suspend is synchronous */
 	async_synchronize_full_domain(&scsi_sd_pm_domain);
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	if (shost && (shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD)))
 		err = 0;
 	else
@@ -81,13 +81,13 @@ static int scsi_dev_type_resume(struct device *dev,
 {
 	const struct dev_pm_ops *pm = dev->driver ? dev->driver->pm : NULL;
 	int err = 0;
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	struct scsi_device *sdev = to_scsi_device(dev);
 	struct Scsi_Host *shost = sdev->host;
 #endif
 
 	err = cb(dev, pm);
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	if (!shost || (!(shost->queue_quirk_flag & SHOST_QUIRK(SHOST_QUIRK_SCSI_QUIESCE_IN_LLD))))
 #endif
 	scsi_device_resume(to_scsi_device(dev));

@@ -1,8 +1,24 @@
+/*
+ * fs/proc/hisi/lmkd_dbg_trigger.c
+ *
+ * Copyright(C) 2004-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #undef TRACE_SYSTEM
+#define TRACE_SYSTEM hisi_lowmem
 /*lint -e773*/
 #define TRACE_INCLUDE_PATH ../../drivers/hisi/hisi_lmk
 /*lint +e773*/
-#define TRACE_SYSTEM hisi_lowmem
 #define TRACE_INCLUDE_FILE lowmem_trace
 
 #if !defined(_TRACE_HISI_LOWMEM_H) || defined(TRACE_HEADER_MULTI_READ)
@@ -10,7 +26,8 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(lowmem_tune,/* [false alarm] */
+/*lint -e548*/
+TRACE_EVENT(lowmem_tune, /* [false alarm] */
 	TP_PROTO(int nzones, gfp_t gfp_mask, int other_free, int other_file,
 		 int tune_free, int tune_file),
 
@@ -39,6 +56,7 @@ TRACE_EVENT(lowmem_tune,/* [false alarm] */
 		__entry->nzones, __entry->gfp_mask, __entry->other_free,
 		__entry->other_file, __entry->tune_free, __entry->tune_file)
 );
+/*lint +e548*/
 
 #endif
 

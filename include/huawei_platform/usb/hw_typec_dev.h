@@ -3,7 +3,7 @@
  *
  * header file for typec driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,7 +21,8 @@
 
 #include <linux/device.h>
 #include <linux/pm_wakeup.h>
-#include <huawei_platform/power/power_dts.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
+#include <chipset_common/hwpower/common_module/power_gpio.h>
 
 /* type-c protocol current when charging other devices */
 enum typec_output_current {
@@ -72,10 +73,6 @@ enum typec_attach_status {
 	TYPEC_STATUS_NOT_READY,
 };
 
-enum typec_notify_type {
-	TYPEC_CURRENT_CHANGE = 0,
-};
-
 struct typec_device_ops {
 	int (*clean_int_mask)(void);
 	int (*detect_attachment_status)(void);
@@ -121,8 +118,6 @@ struct typec_device_info {
 	bool trysnk_attempt;
 	int reverse_state;
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
-
-	struct blocking_notifier_head typec_current_nh;
 };
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
@@ -136,6 +131,5 @@ struct typec_device_info {
 struct typec_device_info *typec_chip_register(
 	struct typec_device_info *device_info,
 	struct typec_device_ops *ops, struct module *owner);
-struct class *hw_typec_get_class(void);
 
 #endif /* _HW_TYPEC_DEV_H_ */

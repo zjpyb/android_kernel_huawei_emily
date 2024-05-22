@@ -35,10 +35,10 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-#include <../../huawei_ts_kit.h>
+#include <huawei_ts_kit.h>
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -1040,7 +1040,8 @@ void nvt_hybrid_get_fw_ver(void)
 	//---read fw info---
 	buf[0] = 0x78;
 	nvt_hybrid_ts_i2c_read(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 2);
-	snprintf(nvt_hybrid_ts->chip_data->version_name, PAGE_SIZE, "%02X", buf[1]);
+	snprintf(nvt_hybrid_ts->chip_data->version_name,
+		MAX_STR_LEN - 1, "%02X", buf[1]);
 	TS_LOG_INFO("%s: fwver is %s\n", __func__, nvt_hybrid_ts->chip_data->version_name);
 }
 
@@ -1250,7 +1251,9 @@ static int nvt_hybrid_parse_dts(struct device_node *device,
 	if (retval) {
 		TS_LOG_INFO
 		    ("get device NVT_HYBRID_TEST_TYPE not exist, use default value\n");
-		strncpy(chip_data->tp_test_type, "Normalize_type:judge_last_result", TS_CAP_TEST_TYPE_LEN);
+		strncpy(chip_data->tp_test_type,
+			"Normalize_type:judge_last_result",
+			TS_CAP_TEST_TYPE_LEN - 1);
 	}
 	else {
 		snprintf(chip_data->tp_test_type, PAGE_SIZE, "%s", raw_data_dts);
@@ -1263,7 +1266,8 @@ static int nvt_hybrid_parse_dts(struct device_node *device,
 	if (retval) {
 		TS_LOG_INFO
 		    ("get device NVT_HYBRID_MP_SELFTEST_MODE not exist, use default value\n");
-		strncpy(nvt_hybrid_ts->mp_selftest_mode, "firmware", NVT_HYBRID_MP_SELFTEST_MODE_LEN);
+		strncpy(nvt_hybrid_ts->mp_selftest_mode, "firmware",
+			NVT_HYBRID_MP_SELFTEST_MODE_LEN - 1);
 	}
 	else {
 		snprintf(nvt_hybrid_ts->mp_selftest_mode, PAGE_SIZE, "%s", mp_selftest_mode_dts);
@@ -1301,20 +1305,6 @@ static int nvt_hybrid_parse_dts(struct device_node *device,
 	if (retval) {
 		chip_data->bootloader_update_enable = 0;
 		TS_LOG_INFO("get device bootloader_update_enable fail\n");
-	}
-
-
-	retval = of_property_read_u32(device, GHOST_DETECT_SUPPORT, &chip_data->ghost_detect_support);
-	if (retval) {
-		chip_data->ghost_detect_support = 0;
-		TS_LOG_ERR("%s:%s device %s not exit,use default value.\n",
-			__func__, GHOST_LOG_TAG, GHOST_DETECT_SUPPORT);
-	}else{
-		TS_LOG_INFO("%s:%s get device %s : %d\n",
-			__func__, GHOST_LOG_TAG, GHOST_DETECT_SUPPORT, chip_data->ghost_detect_support);
-		if (chip_data->ghost_detect_support){
-			ts_kit_algo_det_ght_init();
-		}
 	}
 
 	/* get holster mode value */
@@ -2188,7 +2178,9 @@ int32_t nvt_hybrid_read_projectid(void)
 	
 	nvt_hybrid_bootloader_reset();
 
-	snprintf(nvt_hybrid_ts->chip_data->chip_name, PAGE_SIZE, nvt_hybrid_vendor_name);
+	snprintf(nvt_hybrid_ts->chip_data->chip_name,
+		MAX_STR_LEN - 1,
+		nvt_hybrid_vendor_name);
 	//snprintf(nvt_hybrid_ts->chip_data->module_name, PAGE_SIZE, "ctc");
 
 	return retval;

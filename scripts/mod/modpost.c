@@ -645,7 +645,7 @@ static void handle_modversions(struct module *mod, struct elf_info *info,
 			       info->sechdrs[sym->st_shndx].sh_offset -
 			       (info->hdr->e_type != ET_REL ?
 				info->sechdrs[sym->st_shndx].sh_addr : 0);
-			crc = *crcp;
+			crc = TO_NATIVE(*crcp);
 		}
 		sym_update_crc(symname + strlen(CRC_PFX), mod, crc,
 				export);
@@ -1174,6 +1174,16 @@ static const struct sectioncheck *section_mismatch(
  *   tosec   = init section
  *   fromsec = text section
  *   refsymname = *.constprop.*
+ *
+ * Pattern 6:
+ *   With CONFIG_CFI_CLANG, clang appends .cfi to all indirectly called
+ *   functions and creates a function stub with the original name. This
+ *   stub is always placed in .text, even if the actual function with the
+ *   .cfi postfix is in .init.text or .exit.text.
+ *   This pattern is identified by
+ *   tosec   = init or exit section
+ *   fromsec = text section
+ *   tosym   = *.cfi
  *
  **/
 static int secref_whitelist(const struct sectioncheck *mismatch,

@@ -41,11 +41,12 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_ring.h>
 #include <asm/byteorder.h>
-#ifdef CONFIG_HISI_REMOTEPROC
+#ifdef CONFIG_HISP_REMOTEPROC
 #include <asm/cacheflush.h>
 #include <linux/hisi-iommu.h>
 #include <linux/rproc_share.h>
-#include <linux/platform_data/remoteproc-hisi.h>
+#include <linux/platform_data/remoteproc_hisp.h>
+#include <linux/platform_data/hisp.h>
 #endif
 
 #include "remoteproc_internal.h"
@@ -101,9 +102,6 @@ static int rproc_iommu_fault(struct iommu_domain *domain, struct device *dev,
 
 static int rproc_enable_iommu(struct rproc *rproc)
 {
-#ifdef CONFIG_HISI_REMOTEPROC
-    return hisp_rproc_enable_iommu(rproc, rproc_iommu_fault);
-#else
 	struct iommu_domain *domain;
 	struct device *dev = rproc->dev.parent;
 	int ret;
@@ -112,6 +110,11 @@ static int rproc_enable_iommu(struct rproc *rproc)
 		dev_dbg(dev, "iommu not present\n");
 		return 0;
 	}
+
+#ifdef CONFIG_HISP_REMOTEPROC
+	if (rproc->ops->enable_iommu)
+		return rproc->ops->enable_iommu(rproc);
+#endif
 
 	domain = iommu_domain_alloc(dev->bus);
 	if (!domain) {
@@ -134,24 +137,25 @@ static int rproc_enable_iommu(struct rproc *rproc)
 free_domain:
 	iommu_domain_free(domain);
 	return ret;
-#endif
 }
 
 static void rproc_disable_iommu(struct rproc *rproc)
 {
-#ifdef CONFIG_HISI_REMOTEPROC
-    //hisp_rproc_disable_iommu(rproc);
-	return;
-#else
 	struct iommu_domain *domain = rproc->domain;
 	struct device *dev = rproc->dev.parent;
 
 	if (!domain)
 		return;
 
+#ifdef CONFIG_HISP_REMOTEPROC
+	if (rproc->ops->disable_iommu) {
+		rproc->ops->disable_iommu(rproc);
+		return;
+	}
+#endif
+
 	iommu_detach_device(domain, dev);
 	iommu_domain_free(domain);
-#endif
 }
 
 /**
@@ -232,8 +236,11 @@ int rproc_alloc_vring(struct rproc_vdev *rvdev, int i)
 	 * Allocate non-cacheable memory for the vring. In the future
 	 * this call will also configure the IOMMU for us
 	 */
-#ifdef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
-	va = get_vring_dma_addr(&dma, size, i);
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+	if (rproc_mem_alloc_beforehand(rproc))
+		va = get_vring_dma_addr(&dma, size, i);
+	else
+		va = dma_alloc_coherent(dev->parent, size, &dma, GFP_KERNEL);
 #else
 	va = dma_alloc_coherent(dev->parent, size, &dma, GFP_KERNEL);
 #endif
@@ -250,7 +257,12 @@ int rproc_alloc_vring(struct rproc_vdev *rvdev, int i)
 	ret = idr_alloc(&rproc->notifyids, rvring, 0, 0, GFP_KERNEL);
 	if (ret < 0) {
 		dev_err(dev, "idr_alloc failed: %d\n", ret);
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+		if (!rproc_mem_alloc_beforehand(rproc))
+			dma_free_coherent(dev->parent, size, va, dma);
+#else
 		dma_free_coherent(dev->parent, size, va, dma);
+#endif
 		return ret;
 	}
 	notifyid = ret;
@@ -273,9 +285,6 @@ int rproc_alloc_vring(struct rproc_vdev *rvdev, int i)
 	 * hold the physical address and not the device address.
 	 */
 	rsc = (void *)rproc->table_ptr + rvdev->rsc_offset;
-#ifdef CONFIG_HISI_REMOTEPROC
-    rvring->da = rsc->vring[i].da;
-#endif
 	rsc->vring[i].da = dma;
 	rsc->vring[i].notifyid = notifyid;
 	return 0;
@@ -308,13 +317,16 @@ rproc_parse_vring(struct rproc_vdev *rvdev, struct fw_rsc_vdev *rsc, int i)
 
 void rproc_free_vring(struct rproc_vring *rvring)
 {
-#ifndef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
-	int size = PAGE_ALIGN(vring_size(rvring->len, rvring->align));
-#endif
+	int size = PAGE_ALIGN(vring_size(rvring->len, rvring->align)); /*lint !e666 */
 	struct rproc *rproc = rvring->rvdev->rproc;
-	int idx = rvring->rvdev->vring - rvring;
+	int idx = rvring - rvring->rvdev->vring;
 	struct fw_rsc_vdev *rsc;
-#ifndef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
+
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+	if (!rproc_mem_alloc_beforehand(rproc))
+		dma_free_coherent(rproc->dev.parent, size,
+				  rvring->va, rvring->dma);
+#else
 	dma_free_coherent(rproc->dev.parent, size, rvring->va, rvring->dma);
 #endif
 	idr_remove(&rproc->notifyids, rvring->notifyid);
@@ -776,26 +788,7 @@ free_carv:
 	kfree(carveout);
 	return ret;
 }
-#ifdef CONFIG_HISI_REMOTEPROC
-static int rproc_count_vrings(struct rproc *rproc, struct fw_rsc_hdr *hdr,
-			      int offset, int avail)
-{
-	struct device *dev = &rproc->dev;
-	struct fw_rsc_vdev *rsc;
 
-	/* make sure hdr isn't NULL */
-	if (hdr == NULL) {
-		dev_err(dev, "hdr is NULL\n");
-		return -EINVAL;
-	}
-	rsc = (struct fw_rsc_vdev *)((void *)hdr + sizeof(*hdr));
-
-	/* Summarize the number of notification IDs */
-	rproc->max_notifyid += rsc->num_of_vrings;
-
-	return 0;
-}
-#endif
 /*
  * A lookup table for resource handlers. The indices are defined in
  * enum fw_resource_type.
@@ -805,25 +798,13 @@ static rproc_handle_resource_t rproc_loading_handlers[RSC_LAST] = {
 	[RSC_DEVMEM] = (rproc_handle_resource_t)rproc_handle_devmem,
 	[RSC_TRACE] = (rproc_handle_resource_t)rproc_handle_trace,
 	[RSC_VDEV] = (rproc_handle_resource_t)rproc_handle_vdev,
-#ifdef CONFIG_HISI_REMOTEPROC
-	[RSC_VERSION]           = (rproc_handle_resource_t)rproc_handle_version,
-	[RSC_RDR_MEMORY]        = (rproc_handle_resource_t)rproc_handle_rdr_memory,
-	[RSC_DYNAMIC_MEMORY]    = (rproc_handle_resource_t)rproc_handle_dynamic_memory,
-	[RSC_RESERVED_MEMORY]   = (rproc_handle_resource_t)rproc_handle_reserved_memory,
-	[RSC_CDA]               = (rproc_handle_resource_t)rproc_handle_cda,
-	[RSC_SHARED_PARA]       = (rproc_handle_resource_t)rproc_handle_shared_memory,
+#ifdef CONFIG_HISP_REMOTEPROC
+	[RSC_VERSION] = (rproc_handle_resource_t)rproc_handle_version,
+	[RSC_RDRMEM] = (rproc_handle_resource_t)rproc_handle_rdr_memory,
+	[RSC_DYNMEM] = (rproc_handle_resource_t)rproc_handle_dynamic_memory,
+	[RSC_SHARED_PARA] = (rproc_handle_resource_t)rproc_handle_shared_memory,
 #endif
 };
-
-#ifdef CONFIG_HISI_REMOTEPROC
-static rproc_handle_resource_t rproc_vdev_handler[RSC_LAST] = {
-	[RSC_VDEV] = (rproc_handle_resource_t)rproc_handle_vdev,
-};
-
-static rproc_handle_resource_t rproc_count_vrings_handler[RSC_LAST] = {
-	[RSC_VDEV] = (rproc_handle_resource_t)rproc_count_vrings,
-};
-#endif
 
 /* handle firmware resource entries before booting the remote processor */
 static int rproc_handle_resources(struct rproc *rproc, int len,
@@ -863,10 +844,7 @@ static int rproc_handle_resources(struct rproc *rproc, int len,
 	return ret;
 }
 
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-int rproc_probe_subdevices(struct rproc *rproc)
+static int rproc_probe_subdevices(struct rproc *rproc)
 {
 	struct rproc_subdev *subdev;
 	int ret;
@@ -886,10 +864,7 @@ unroll_registration:
 	return ret;
 }
 
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-void rproc_remove_subdevices(struct rproc *rproc)
+static void rproc_remove_subdevices(struct rproc *rproc)
 {
 	struct rproc_subdev *subdev;
 
@@ -904,10 +879,7 @@ void rproc_remove_subdevices(struct rproc *rproc)
  * This function will free all resources acquired for @rproc, and it
  * is called whenever @rproc either shuts down or fails to boot.
  */
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-void rproc_resource_cleanup(struct rproc *rproc)
+static void rproc_resource_cleanup(struct rproc *rproc)
 {
 	struct rproc_mem_entry *entry, *tmp;
 	struct rproc_vdev *rvdev, *rvtmp;
@@ -924,8 +896,15 @@ void rproc_resource_cleanup(struct rproc *rproc)
 	/* clean up iommu mapping entries */
 	list_for_each_entry_safe(entry, tmp, &rproc->mappings, node) {
 		size_t unmapped;
-
+#ifdef CONFIG_HISP_REMOTEPROC
+		if (rproc->ops->unmap_iommu)
+			unmapped = rproc->ops->unmap_iommu(rproc, entry);
+		else
+			unmapped = iommu_unmap(rproc->domain,
+					entry->da, entry->len);
+#else
 		unmapped = iommu_unmap(rproc->domain, entry->da, entry->len);
+#endif
 		if (unmapped != entry->len) {
 			/* nothing much to do besides complaining */
 			dev_err(dev, "failed to unmap %u/%zu\n", entry->len,
@@ -948,8 +927,9 @@ void rproc_resource_cleanup(struct rproc *rproc)
 	list_for_each_entry_safe(rvdev, rvtmp, &rproc->rvdevs, node)
 		kref_put(&rvdev->refcount, rproc_vdev_release);
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	hisp_rproc_resource_cleanup(rproc);
+#ifdef CONFIG_HISP_REMOTEPROC
+	if (rproc->ops->resource_cleanup)
+		rproc->ops->resource_cleanup(rproc);
 #endif
 }
 
@@ -973,14 +953,6 @@ static int rproc_start(struct rproc *rproc, const struct firmware *fw)
 		return ret;
 	}
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	/* set shared parameters for rproc*/
-	ret = rproc_set_shared_para();
-	if (ret) {
-		dev_err(dev, "Failed to set bootware parameters...: %d\n", ret);
-		return ret;
-	}
-#endif
 	/*
 	 * The starting device has been given the rproc->cached_table as the
 	 * resource table. The address of the vring along with the other
@@ -1021,10 +993,7 @@ static int rproc_start(struct rproc *rproc, const struct firmware *fw)
 /*
  * take a firmware and boot a remote processor with it.
  */
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw)
+static int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw)
 {
 	struct device *dev = &rproc->dev;
 	const char *name = rproc->firmware;
@@ -1035,7 +1004,11 @@ int rproc_fw_boot(struct rproc *rproc, const struct firmware *fw)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_HISP_REMOTEPROC
+	dev_info(dev, "Booting fw image %s\n", name);
+#else
 	dev_info(dev, "Booting fw image %s, size %zd\n", name, fw->size);
+#endif
 
 	/*
 	 * if enabling an IOMMU isn't relevant for this rproc, this is
@@ -1096,182 +1069,6 @@ clean_up:
 	return ret;
 }
 
-#ifdef CONFIG_HISI_REMOTEPROC
-int rproc_handle_resources_secisp(const struct firmware *fw, void *context)
-{
-	struct rproc *rproc = context;
-	struct resource_table *table;
-	int ret = -1, tablesz = 0;
-
-	pr_info("[%s] +\n", __func__);
-	if (rproc_fw_sanity_check(rproc, fw) < 0) {
-		pr_err("%s: rproc_fw_sanity_check failed.\n", __func__);
-		goto out;
-	}
-
-	/* look for the resource table */
-	table = rproc_find_rsc_table(rproc, fw,  &tablesz);
-	if (!table) {
-		pr_err("%s: rproc_find_rsc_table failed.\n", __func__);
-		goto out;
-	}
-
-	rproc->table_csum = crc32(0, table, tablesz);
-
-	/*
-	 * Create a copy of the resource table. When a virtio device starts
-	 * and calls vring_new_virtqueue() the address of the allocated vring
-	 * will be stored in the cached_table. Before the device is started,
-	 * cached_table will be copied into devic memory.
-	 */
-	rproc->cached_table = kmemdup(table, tablesz, GFP_KERNEL);
-	if (!rproc->cached_table) {
-		pr_err("%s: kmalloc failed.\n", __func__);
-		goto out;
-	}
-
-	rproc->table_ptr = rproc->cached_table;
-
-	/* count the number of notify-ids */
-	rproc->max_notifyid = -1;
-	ret = rproc_handle_resources(rproc, tablesz,
-	                 rproc_count_vrings_handler);
-	if (ret) {
-		pr_err("%s: rproc_handle_resources failed, ret = %d\n", __func__, ret);
-		goto out;
-	}
-
-	/* look for virtio devices and register them */
-	ret = rproc_handle_resources(rproc, tablesz, rproc_vdev_handler);
-
-out:
-	return ret;
-}
-
-/*
- * take a firmware and boot a remote processor with it.
- */
-int nonsec_rproc_boot(struct rproc *rproc)
-{
-	struct device *dev = &rproc->dev;
-	struct resource_table *table, *loaded_table;
-	int ret, tablesz;
-
-	ret = rproc_fw_sanity_check(rproc, NULL);
-	if (ret)
-		return ret;
-
-	/*
-	 * if enabling an IOMMU isn't relevant for this rproc, this is
-	 * just a nop
-	 */
-	ret = rproc_enable_iommu(rproc);
-	if (ret) {
-		dev_err(dev, "can't enable iommu: %d\n", ret);
-		return ret;
-	}
-
-	rproc->bootaddr = rproc_get_boot_addr(rproc, NULL);
-	ret = -EINVAL;
-
-	/* look for the resource table */
-	table = rproc_find_rsc_table(rproc, NULL, &tablesz);
-	if (!table) {
-		dev_err(dev, "Failed to find resource table\n");
-		goto clean_up;
-	}
-
-	/*
-	 * Create a copy of the resource table. When a virtio device starts
-	 * and calls vring_new_virtqueue() the address of the allocated vring
-	 * will be stored in the cached_table. Before the device is started,
-	 * cached_table will be copied into device memory.
-	 */
-	rproc->cached_table = kmemdup(table, tablesz, GFP_KERNEL);
-	if (!rproc->cached_table)
-		goto clean_up;
-
-	rproc->table_ptr = rproc->cached_table;
-
-	/* reset max_notifyid */
-	rproc->max_notifyid = -1;
-
-	/* look for virtio devices and register them */
-#if 0
-    ret = rproc_handle_resources(rproc, tablesz, rproc_vdev_handler);
-	if (ret) {
-		dev_err(dev, "Failed to handle vdev resources: %d\n", ret);
-		goto clean_up;
-	}
-#endif
-	/* handle fw resources which are required to boot rproc */
-	ret = rproc_handle_resources(rproc, tablesz, rproc_loading_handlers);
-	if (ret) {
-		dev_err(dev, "Failed to process resources: %d\n", ret);
-		goto clean_up_resources;
-	}
-
-	/* load the ELF segments to memory */
-	ret = rproc_load_segments(rproc, NULL);
-	if (ret) {
-		dev_err(dev, "Failed to load program segments: %d\n", ret);
-		goto clean_up_resources;
-	}
-	/* set shared parameters for rproc*/
-	ret = rproc_set_shared_para();
-	if (ret) {
-		dev_err(dev, "Failed to set bootware parameters...: %d\n", ret);
-		goto clean_up;
-	}
-
-	/*
-	 * The starting device has been given the rproc->cached_table as the
-	 * resource table. The address of the vring along with the other
-	 * allocated resources (carveouts etc) is stored in cached_table.
-	 * In order to pass this information to the remote device we must copy
-	 * this information to device memory. We also update the table_ptr so
-	 * that any subsequent changes will be applied to the loaded version.
-	 */
-	loaded_table = rproc_find_loaded_rsc_table(rproc, NULL);
-	if (loaded_table) {
-		memcpy(loaded_table, rproc->cached_table, tablesz);
-		rproc->table_ptr = loaded_table;
-	}
-
-	/* power up the remote processor */
-	ret = rproc->ops->start(rproc);
-	if (ret) {
-		dev_err(dev, "can't start rproc %s: %d\n", rproc->name, ret);
-		goto clean_up_resources;
-	}
-
-	/* probe any subdevices for the remote processor */
-	ret = rproc_probe_subdevices(rproc);
-	if (ret) {
-		dev_err(dev, "failed to probe subdevices for %s: %d\n",
-			rproc->name, ret);
-		rproc->ops->stop(rproc);
-		goto clean_up_resources;
-	}
-
-	rproc->state = RPROC_RUNNING;
-
-	dev_info(dev, "remote processor %s is now up\n", rproc->name);
-
-	return 0;
-
-clean_up_resources:
-	rproc_resource_cleanup(rproc);
-clean_up:
-	kfree(rproc->cached_table);
-	rproc->cached_table = NULL;
-	rproc->table_ptr = NULL;
-
-	rproc_disable_iommu(rproc);
-	return ret;
-}
-#endif
-
 /*
  * take a firmware and boot it up.
  *
@@ -1280,39 +1077,19 @@ clean_up:
  * to unregister the device. one other option is just to use kref here,
  * that might be cleaner).
  */
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-void rproc_auto_boot_callback(const struct firmware *fw, void *context)
+static void rproc_auto_boot_callback(const struct firmware *fw, void *context)
 {
 	struct rproc *rproc = context;
 
-#ifdef CONFIG_HISI_REMOTEPROC
-    int ret = 0;
-    if (use_sec_isp()) {
-        if ((ret= rproc_handle_resources_secisp(fw, context)) < 0) {
-            pr_err("[%s] Failed : rproc_handle_resources_secisp.%d\n", __func__, ret);
-        }
-    }
-#endif
 	rproc_boot(rproc);
 
 	release_firmware(fw);
-#ifdef CONFIG_HISI_REMOTEPROC
-	hisp_virtio_boot_complete(rproc, ret);
-#endif
 }
 
-#ifndef CONFIG_HISI_REMOTEPROC
-static
-#endif
-int rproc_trigger_auto_boot(struct rproc *rproc)
+static int rproc_trigger_auto_boot(struct rproc *rproc)
 {
 	int ret;
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	ret = hisi_firmware_load_func(rproc);
-#else
 	/*
 	 * We're initiating an asynchronous firmware loading, so we can
 	 * be built-in kernel code, without hanging the boot process.
@@ -1320,7 +1097,6 @@ int rproc_trigger_auto_boot(struct rproc *rproc)
 	ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
 				      rproc->firmware, &rproc->dev, GFP_KERNEL,
 				      rproc, rproc_auto_boot_callback);
-#endif
 	if (ret < 0)
 		dev_err(&rproc->dev, "request_firmware_nowait err: %d\n", ret);
 
@@ -1454,11 +1230,6 @@ int rproc_boot(struct rproc *rproc)
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_HISI_REMOTEPROC
-    if ((ret = hisp_rproc_boot(rproc)) < 0)
-        pr_err("[%s] Failed : hisp_rproc_boot.%d\n", __func__, ret);
-    return ret;
-#endif
 	dev = &rproc->dev;/*lint !e527 */
 
 	ret = mutex_lock_interruptible(&rproc->lock);
@@ -1482,7 +1253,14 @@ int rproc_boot(struct rproc *rproc)
 	dev_info(dev, "powering up %s\n", rproc->name);
 
 	/* load firmware */
+#ifdef CONFIG_HISP_REMOTEPROC
+	if (rproc->ops->request_image)
+		ret = rproc->ops->request_image(rproc, &firmware_p, dev);
+	else
+		ret = request_firmware(&firmware_p, rproc->firmware, dev);
+#else
 	ret = request_firmware(&firmware_p, rproc->firmware, dev);
+#endif
 	if (ret < 0) {
 		dev_err(dev, "request_firmware failed: %d\n", ret);
 		goto downref_rproc;
@@ -1490,7 +1268,16 @@ int rproc_boot(struct rproc *rproc)
 
 	ret = rproc_fw_boot(rproc, firmware_p);
 
+#ifdef CONFIG_HISP_REMOTEPROC
+	if (rproc->ops->request_image)
+		rproc->ops->release_image(firmware_p);
+	else
+		release_firmware(firmware_p);
+	if (ret)
+		dev_err(dev, "release_image failed: %d\n", ret);
+#else
 	release_firmware(firmware_p);
+#endif
 
 downref_rproc:
 	if (ret)
@@ -1638,7 +1425,6 @@ int rproc_add(struct rproc *rproc)
 
 	/* create debugfs entries */
 	rproc_create_debug_dir(rproc);
-#ifndef CONFIG_HISI_REMOTEPROC
 	/* if rproc is marked always-on, request it to boot */
 	if (rproc->auto_boot) {
 		ret = rproc_trigger_auto_boot(rproc);
@@ -1650,7 +1436,7 @@ int rproc_add(struct rproc *rproc)
 	mutex_lock(&rproc_list_mutex);
 	list_add(&rproc->node, &rproc_list);
 	mutex_unlock(&rproc_list_mutex);
-#endif
+
 	return 0;
 }
 EXPORT_SYMBOL(rproc_add);
@@ -1751,6 +1537,7 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	rproc->dev.type = &rproc_type;
 	rproc->dev.class = &rproc_class;
 	rproc->dev.driver_data = rproc;
+	idr_init(&rproc->notifyids);
 
 	/* Assign a unique device index and name */
 	rproc->index = ida_simple_get(&rproc_dev_index, 0, 0, GFP_KERNEL);
@@ -1765,14 +1552,8 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	atomic_set(&rproc->power, 0);
 
 	/* Set ELF as the default fw_ops handler */
-#ifdef CONFIG_HISI_REMOTEPROC
-    hisp_rproc_init(rproc);
-#else
 	rproc->fw_ops = &rproc_elf_fw_ops;
-#endif
 	mutex_init(&rproc->lock);
-
-	idr_init(&rproc->notifyids);
 
 	INIT_LIST_HEAD(&rproc->carveouts);
 	INIT_LIST_HEAD(&rproc->mappings);
@@ -1942,7 +1723,7 @@ static int __init remoteproc_init(void)
 
 	return 0;
 }
-module_init(remoteproc_init);
+subsys_initcall(remoteproc_init);
 
 static void __exit remoteproc_exit(void)
 {

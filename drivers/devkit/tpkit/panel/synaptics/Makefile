@@ -5,3 +5,5 @@ EXTRA_CFLAGS += -Iarch/arm/mach-hisi
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
 EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit1.0/core/common
+EXTRA_CFLAGS += -Idrivers/devkit/tpkit
+EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit1.0/include

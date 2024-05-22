@@ -1,323 +1,209 @@
-#include <linux/types.h>
+/*
+ * Copyright (C) 2018 HUAWEI, Inc.
+ *             http://www.huawei.com/
+ *
+ * Original code taken from 'lz4_compress.c'
+ */
+/*
+ * LZ4 - Fast LZ compression algorithm
+ * Copyright (C) 2011 - 2016, Yann Collet.
+ * BSD 2 - Clause License (http://www.opensource.org/licenses/bsd - license.php)
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
+ *	* Redistributions of source code must retain the above copyright
+ *	  notice, this list of conditions and the following disclaimer.
+ *	* Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * You can contact the author at :
+ *	- LZ4 homepage : http://www.lz4.org
+ *	- LZ4 source repository : https://github.com/lz4/lz4
+ *
+ *	Changed for kernel usage by:
+ *	Sven Schmidt <4sschmid@informatik.uni-hamburg.de>
+ */
+
 #include <linux/lz4m.h>
+#include <linux/types.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
 
-#define memcpy __builtin_memcpy
-#define USHRT_MAX 4096U
+#define FORCE_INLINE __always_inline
 
-#define LZ4M_MATCH_SEARCH_LOOP_SIZE 4
-
-
-void store2(void *ptr, uint16_t data)
+static FORCE_INLINE uint32_t lz4m_hash(uint32_t x)
 {
-	uint16_t *ptr1 = (uint16_t *)ptr;
-	*ptr1 = data;
+	return ((x * 2654435761U) >> (32 - LZ4M_HASH_BITS));
 }
 
-void store4(void *ptr, uint32_t data)
+/*
+ * The length of latteral and match are measured in 4 bytes.
+ * The length of dst is measured in 1 bytes.
+ */
+static FORCE_INLINE uint8_t *encode_sequence(
+	uint16_t l_len, uint16_t m_len,
+	uint16_t offset, const uint32_t *literal,
+	uint8_t *dst, uint32_t dst_len)
 {
-	uint32_t *ptr1 = (uint32_t *)ptr;
-	*ptr1 = data;
-}
+	uint32_t len;
 
-void store8(void *ptr, uint64_t data)
-{
-	uint64_t *ptr1 = (uint64_t *)ptr;
-	*ptr1 = data;
-}
+	//If dst buffer not enough, avoiding overflows, return NULL
+	if (LZ4M_TOKEN_LEN + LZ4M_MAX_PART2_LEN + (l_len << 2) > dst_len)
+		return NULL;
 
-uint16_t load2(const void *ptr)
-{
-	uint16_t data;
+	//token
+	*(uint16_t *)dst =
+		(((l_len >= LZ4M_LMASK) ? LZ4M_LMASK : l_len) << LZ4M_LSHIFT) |
+		(((m_len >= LZ4M_MMASK) ? LZ4M_MMASK : m_len) << LZ4M_MSHIFT) |
+		(offset & LZ4M_DMASK);
+	dst += LZ4M_TOKEN_LEN;
 
-	data = (uint16_t)*(uint16_t *)ptr;
-	return data;
-}
-
-uint32_t load4(const void *ptr)
-{
-	uint32_t data;
-
-	data = (uint32_t)*(uint32_t *)ptr;
-	return data;
-}
-
-uint64_t load8(const void *ptr)
-{
-	uint64_t data;
-
-	data = (uint64_t)*(uint64_t *)ptr;
-	return data;
-}
-
-void copy16(void *dst, const void *src) { memcpy(dst, src, 16); }
-void copy32(void *dst, const void *src) { memcpy(dst, src, 32); }
-
-static inline uint32_t clamp(uint32_t x, uint32_t max)
-{
-	return x > max ? max : x;
-}
-
-static inline uint32_t lz4m_hash(uint32_t x)
-{
-	return (x * 2654435761U) >> (32 - LZ4M_COMPRESS_HASH_BITS);
-}
-
-static inline uint8_t *copy_literal(uint8_t *dst,
-		const uint8_t *__restrict src, uint32_t L) {
-	uint8_t *end = dst + L;
-
-	copy16(dst, src);
-	dst += 16;
-	src += 16;
-
-	while (dst < end) {
-		copy32(dst, src);
-		dst += 32;
-		src += 32;
+	//latteral length part2
+	if (l_len >= LZ4M_LMASK) {
+		for (len = l_len - LZ4M_LMASK; len >= 255; len -= 255)
+			*dst++ = 255;
+		*dst++ = (uint8_t)len;
 	}
 
-	return end;
-}
+	//letterals
+	if (l_len > 0) {
+		uint64_t *d = (uint64_t *)dst;
+		uint64_t *s = (uint64_t *)literal;
 
-static inline void lz4m_fill16(uint8_t *ptr)
-{
-	store8(ptr, -1);
-	store8(ptr + 8, -1);
-}
-
-static inline uint8_t *lz4m_store_length(uint8_t *dst,
-		const uint8_t * const end, uint32_t L) {
-	(void)end;
-	while (L >= 17 * 255) {
-		lz4m_fill16(dst);
-		dst += 16;
-		L -= 16 * 255;
+		for (len = 1; len < l_len; len += 2)
+			*d++ = *s++;
+		if (len == l_len)
+			*(uint32_t *)d = *(uint32_t *)s;
+		dst += (l_len << 2);
 	}
-	lz4m_fill16(dst);
-	dst += L / 255;
-	*dst++ = L % 255;
+
+	//match length part2
+	if (m_len >= LZ4M_MMASK) {
+		for (len = m_len - LZ4M_MMASK; len >= 255; len -= 255)
+			*dst++ = 255;
+		*dst++ = (uint8_t)len;
+	}
+
 	return dst;
 }
 
-
-
-static uint8_t *lz4m_emit_match(uint32_t L, uint32_t M, uint32_t D,
-		uint8_t *__restrict dst,
-		const uint8_t *const end,
-		const uint8_t *__restrict src)
-{
-	uint32_t token = 0;
-
-	L /= 4;
-	M /= 4;
-	D /= 4;
-
-	token = (clamp(L, LZ4M_LMASK) << LZ4M_LSHIFT) |
-		(clamp(M, LZ4M_MMASK) << LZ4M_MSHIFT) | D;
-	store2(dst, token);
-	dst += 2;
-	if (L >= LZ4M_LMASK) {
-		dst = lz4m_store_length(dst, end, L - LZ4M_LMASK);
-		if (dst == 0 || dst + L >= end)
-			return NULL;
-	}
-	dst = copy_literal(dst, src, L<<2);
-	if (M >= LZ4M_MMASK) {
-		dst = lz4m_store_length(dst, end, M - LZ4M_MMASK);
-		if (dst == 0)
-			return NULL;
-	}
-	return dst;
-}
-
-static void _lz4m_encode(uint8_t **dst_ptr,
-		size_t dst_size,
-		unsigned char **src_ptr,
-		const unsigned char *src_begin,
-		size_t src_size,
-		lz4m_hash_entry_t hash_table[LZ4M_COMPRESS_HASH_ENTRIES],
-		int skip_final_literals)
-{
-	uint8_t *dst = *dst_ptr;
-	uint8_t *end = dst + dst_size - LZ4M_GOFAST_SAFETY_MARGIN;
-
-	const uint8_t *src = *src_ptr;
-	const uint8_t *src_end = src + src_size - LZ4M_GOFAST_SAFETY_MARGIN;
-	const uint8_t *match_begin = 0;
-	const uint8_t *match_end = 0;
-
-	while (dst < end) {
-		ptrdiff_t match_distance = 0;
-
-		uint64_t this;
-		int tmp;
-		uint32_t hashx;
-		uint32_t token = 0;
-		size_t src_remaining = 0;
-
-		for (match_begin = src; match_begin < src_end;
-				match_begin += 8) {
-			int pos = (int)(match_begin - src_begin);
-
-			this = load8(match_begin);
-			tmp = this&0xffffffff;
-			hashx = lz4m_hash(tmp);
-			if (hash_table[hashx].word == tmp &&
-				hash_table[hashx].offset != 0x80000000) {
-
-				match_distance = pos - hash_table[hashx].offset;
-				hash_table[hashx].offset = pos;
-				hash_table[hashx].word = tmp;
-				match_end = match_begin + 4;
-				goto GOT_MATCH;
-			}
-			hash_table[hashx].offset = pos;
-			hash_table[hashx].word = tmp;
-			tmp = this >> 32;
-			hashx = lz4m_hash(tmp);
-			pos += 4;
-
-			if (hash_table[hashx].word == tmp &&
-				hash_table[hashx].offset != 0x80000000) {
-
-				match_distance = pos - hash_table[hashx].offset;
-				hash_table[hashx].offset = pos;
-				hash_table[hashx].word = tmp;
-				match_begin += 4;
-				match_end = match_begin + 4;
-				goto GOT_MATCH;
-			}
-			hash_table[hashx].offset = pos;
-			hash_table[hashx].word = tmp;
-		}
-
-		if (skip_final_literals) {
-			*src_ptr = (uint8_t *) src;
-			*dst_ptr = dst;
-			return;
-		}
-
-		src_remaining = src_end + LZ4M_GOFAST_SAFETY_MARGIN - src;
-		token = 0;
-		src_remaining = (src_remaining >> 2);
-		if (src_remaining < LZ4M_LMASK) {
-			token |= src_remaining << LZ4M_LSHIFT;
-			store2(dst, token);
-			dst += 2;
-			src_remaining <<= 2;
-			memcpy(dst, src, src_remaining);
-			dst += src_remaining;
-		} else {
-			token |= LZ4M_LMASK << LZ4M_LSHIFT;
-			store2(dst, token);
-			dst += 2;
-			dst = lz4m_store_length(dst, end,
-					(uint32_t)(src_remaining - LZ4M_LMASK));
-			src_remaining <<= 2;
-			if (dst == 0 || dst + src_remaining >= end)
-				return;
-
-			memcpy(dst, src, src_remaining);
-			dst += src_remaining;
-		}
-		*dst_ptr = dst;
-		*src_ptr = (uint8_t *)src + src_remaining;
-
-		return;
-
-GOT_MATCH:
-		{
-			const uint8_t *ref_end = match_end - match_distance;
-			const uint8_t *match_begin_min = src_begin +
-				match_distance;
-			const uint8_t *ref_begin = match_begin -
-				match_distance;
-
-			match_begin_min = (match_begin_min < src) ?
-				src : match_begin_min;
-
-			while (match_end < src_end) {
-				uint32_t ref_value = load4(ref_end);
-				uint32_t matchend_value = load4(match_end);
-
-				if (ref_value != matchend_value)
-					break;
-				match_end += LZ4M_MATCH_SEARCH_LOOP_SIZE;
-				ref_end += LZ4M_MATCH_SEARCH_LOOP_SIZE;
-			}
-
-			while (match_begin > match_begin_min+4
-				&& load4(ref_begin-4) == load4(match_begin-4)) {
-				match_begin -= LZ4M_MATCH_SEARCH_LOOP_SIZE;
-				ref_begin -= LZ4M_MATCH_SEARCH_LOOP_SIZE;
-			}
-		}
-		dst = lz4m_emit_match((uint32_t)(match_begin - src),
-				(uint32_t)(match_end - match_begin),
-				(uint32_t)match_distance, dst, end, src);
-		if (!dst)
-			return;
-
-		src = match_end;
-
-		*dst_ptr = dst;
-		*src_ptr = (uint8_t *)src;
-	}
-}
-
-
-size_t lz4m_fast_encode(const unsigned char *src_buffer, size_t src_size,
+/*
+ * The @src_size no larger than 4K, and 4 byte aligned
+ */
+size_t lz4m_compress(const unsigned char *src_buffer, size_t src_size,
 		unsigned char *dst_buffer, size_t *dst_size,
-		lz4m_hash_entry_t hash_table[LZ4M_COMPRESS_HASH_ENTRIES])
+		uint16_t hash_table[LZ4M_HASH_SIZE])
 {
-	const lz4m_hash_entry_t HASH_FILL = {	.offset = 0x80000000,
-						.word = 0x0 };
-	const unsigned char *src = src_buffer;
-	unsigned char *dst = dst_buffer;
-	const size_t BLOCK_SIZE = 0x7ffff000;
-	int i;
-	unsigned long src_to_encode;
-	size_t  dst_used, src_used;
-	unsigned char *dst_start;
-	unsigned char *src_start;
+	const uint32_t *src_base = (uint32_t *)src_buffer;
+	const uint32_t *src_end = (uint32_t *)(src_buffer + src_size);
+	const uint32_t *src = (uint32_t *)src_buffer;
+	uint8_t *dst = (uint8_t *)dst_buffer;
+	uint8_t *dst_end = dst_buffer + *dst_size;
+	const uint32_t *src_anchor = NULL; //last time encoded source pos
+	const uint32_t *match = NULL; //matched pos
+	uint16_t offset;
+	uint32_t hash;
 
-	if (src_size % 4096 != 0)
+
+	if ((src_buffer == NULL) || (dst_buffer == NULL) || (dst_size == NULL))
 		return -1;
 
-	while (src_size > 0) {
-		for (i = 0; i < LZ4M_COMPRESS_HASH_ENTRIES;) {
-			hash_table[i++] = HASH_FILL;
-			hash_table[i++] = HASH_FILL;
-			hash_table[i++] = HASH_FILL;
-			hash_table[i++] = HASH_FILL;
+	if ((src_size & 0x3) || (src_size > LZ4M_PAGE_SIZE) ||
+		(*dst_size < LZ4M_DST_BUF_MIN_SIZE))
+		return -1;
+
+	{//same as memset(hash_table, 0, sizeof(uint16_t) * LZ4M_HASH_SIZE);
+		uint64_t *h_t = (uint64_t *)hash_table;
+		int i;
+
+		for (i = 0; i < (LZ4M_HASH_SIZE >> 2);) {
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
+			h_t[i++] = 0;
 		}
-
-		src_to_encode = src_size > BLOCK_SIZE ? BLOCK_SIZE : src_size;
-
-		dst_start = dst;
-		src_start = (unsigned char *)src;
-		_lz4m_encode(&dst, *dst_size, (unsigned char **)&src,
-				src, src_to_encode, hash_table,
-				src_to_encode < src_size);
-
-		//src_to_encode: size of content to compress this time
-		//src_used: size of content after this compression process
-
-		dst_used = dst - dst_start;
-		src_used = (size_t)(src - src_start);
-		//src_to_encode == src_size means the last block to compress;
-
-		if (src_to_encode == src_size && src_used < src_to_encode)
-			return -1;
-
-		if (src_to_encode < src_size &&
-				src_to_encode - src_used >= (1<<16))
-			return -2;
-		// Update counters (SRC and DST already have been updated)
-		src_size -= src_used;
-		*dst_size -= dst_used;
 	}
 
-	*dst_size = (size_t)(dst - dst_buffer); // bytes produced
+	hash = lz4m_hash(*src);
+	hash_table[hash] = (uint16_t)(src - src_base);
+	src_anchor = src++;
+	src_end -= LZ4M_MFLIMIT;
+
+	while (dst < dst_end) {
+		const uint32_t *src_exp = NULL;
+
+		if (src >= src_end) {
+			//the last sequence
+			dst = encode_sequence(
+				(uint32_t)(src_end + LZ4M_MFLIMIT - src_anchor),
+				0, 0, src_anchor, dst,
+				(uint32_t)(dst_end - dst));
+			if (dst == NULL)
+				return -1;
+			break;
+		}
+
+		//Get a match
+		do {
+			hash = lz4m_hash(*src);
+			match = src_base + hash_table[hash];
+			hash_table[hash] = (uint16_t)(src - src_base);
+			if (*src == *match)
+				break;
+			src++;
+		} while (src < src_end);
+
+		//Did not match, go to encode the last sequence
+		if (src >= src_end)
+			continue;
+
+		offset = src - match;//Get offset
+
+		//Expand the match string and get the match length
+		src_exp = src + 1;
+		match++;
+		while ((src_exp < src_end) && (*src_exp == *match)) {
+			src_exp++;
+			match++;
+		}
+		match = src - offset;
+		while ((src > src_anchor) && (match > src_base) &&
+			(*(src - 1) == *(match - 1))) {
+			src--;
+			match--;
+		}
+
+		//Encode sequence
+		dst = encode_sequence((uint16_t)(src - src_anchor),
+			(uint16_t)(src_exp - src), offset, src_anchor,
+			dst, (uint32_t)(dst_end - dst));
+		if (dst == NULL)
+			return -1;
+
+		src = src_exp;
+		src_anchor = src;
+	}
+
+	*dst_size = (size_t)(dst - dst_buffer);
 	return 0;
 }
+EXPORT_SYMBOL(lz4m_compress);
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("LZ4M compressor");

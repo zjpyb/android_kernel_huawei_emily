@@ -1,3 +1,21 @@
+/*
+ * switch_fsa9685.h
+ *
+ * header file for switch_fsa9685 driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef _SWITCH_FSA9685_H_
 #define _SWITCH_FSA9685_H_
 
@@ -7,16 +25,11 @@
 #define FSA9685_RD_BUF_SIZE               (32)
 #define FSA9685_WR_BUF_SIZE               (64)
 
-/* jig pin control for battery cut test */
-#define JIG_PULL_DEFAULT_DOWN             (0)
-#define JIG_PULL_UP                       (1)
-
 /* usb state */
 #define FSA9685_OPEN                      (0)
 #define FSA9685_USB1_ID_TO_IDBYPASS       (1)
 #define FSA9685_USB2_ID_TO_IDBYPASS       (2)
 #define FSA9685_UART_ID_TO_IDBYPASS       (3)
-#define FSA9685_MHL_ID_TO_CBUS            (4)
 #define FSA9685_USB1_ID_TO_VBAT           (5)
 
 enum err_oprt_reg_num {
@@ -41,10 +54,8 @@ struct fsa9685_device_info {
 	struct notifier_block usb_nb;
 #endif
 
-	u32 usbid_enable;
 	u32 fcp_support;
 	u32 scp_support;
-	u32 mhl_detect_disable;
 	u32 two_switch_flag; /* disable for two switch */
 	u32 pd_support;
 	u32 dcd_timeout_force_enable;
@@ -53,22 +64,15 @@ struct fsa9685_device_info {
 
 struct fsa9685_device_ops {
 	int (*dump_regs)(char *buf);
-	int (*jigpin_ctrl_store)(struct i2c_client *client, int jig_val);
-	int (*jigpin_ctrl_show)(char *buf);
 	int (*switchctrl_store)(struct i2c_client *client, int action);
 	int (*switchctrl_show)(char *buf);
-
 	int (*manual_switch)(int input_select);
-
 	void (*detach_work)(void);
 };
 
-extern struct fsa9685_device_ops* usbswitch_fsa9685_get_device_ops(void);
-extern struct fsa9685_device_ops* usbswitch_rt8979_get_device_ops(void);
-
-extern int fsa9685_common_write_reg(int reg, int val);
-extern int fsa9685_common_read_reg(int reg);
-extern int fsa9685_common_write_reg_mask(int reg, int value, int mask);
+extern struct fsa9685_device_ops *usbswitch_fsa9685_get_device_ops(void);
+extern struct fsa9685_device_ops *usbswitch_rt8979_get_device_ops(void);
+struct fsa9685_device_info *switch_get_dev_info(void);
 
 #define ADAPTOR_BC12_TYPE_MAX_CHECK_TIME 100
 #define WAIT_FOR_BC12_DELAY 5

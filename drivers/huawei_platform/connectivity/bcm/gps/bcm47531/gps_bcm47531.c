@@ -72,13 +72,13 @@ static GPS_BCM_INFO *g_gps_bcm;
 
 #define HOST_WAKE_MODULE_NAME "gps_geofence_wake"
 struct gps_geofence_wake {
-	/*irq from gpio_to_irq()*/
+	/* irq from gpio_to_irq() */
 	int irq;
-	/*HOST_WAKE_GPIO*/
+	/* HOST_WAKE_GPIO */
 	int host_req_pin;
-	/*misc driver structure*/
+	/* misc driver structure */
 	struct miscdevice misc;
-	/*wake_lock*/
+	/* wake_lock */
 	struct wakeup_source wake_lock;
 };
 static struct gps_geofence_wake g_geofence_wake;
@@ -108,12 +108,12 @@ static const struct file_operations gps_geofence_wake_fops = {
 	.unlocked_ioctl = gps_geofence_wake_ioctl
 };
 
-/*set/reset wake lock by HOST_WAKE level
- \param gpio the value of HOST_WAKE_GPIO*/
+/* set/reset wake lock by HOST_WAKE level
+ \param gpio the value of HOST_WAKE_GPIO */
 static void gps_geofence_wake_lock(int gpio)
 {
 	struct gps_geofence_wake *ac_data = &g_geofence_wake;
-	/*we need to use wake_lock_timeout instead of wake_unlock*/
+	/* we need to use wake_lock_timeout instead of wake_unlock */
 	__pm_wakeup_event(&ac_data->wake_lock, jiffies_to_msecs(5 * HZ));
 }
 
@@ -127,7 +127,7 @@ static irqreturn_t gps_host_wake_isr(int irq, void *dev)
 
 	gpio_value = gpio_get_value(gps_host_wake);
 
-	/*wake_lock*/
+	/* wake_lock */
 	gps_geofence_wake_lock(gpio_value);
 
 	return IRQ_HANDLED;
@@ -135,17 +135,17 @@ static irqreturn_t gps_host_wake_isr(int irq, void *dev)
 
 /* initialize GPIO and IRQ
  \param gpio the GPIO of HOST_WAKE
- \return if SUCCESS, return the id of IRQ, if FAIL, return -EIO*/
+ \return if SUCCESS, return the id of IRQ, if FAIL, return -EIO */
 static int gps_gpio_irq_init(int gpio)
 {
 	int ret = 0;
 	int irq = 0;
 
 	pr_info("[gps]%s\n", __func__);
-	/*1. Set GPIO*/
+	/* 1. Set GPIO */
 	if ((gpio_request(gpio, "gps_host_wake"))) {
-		pr_info("[gps]Can't request HOST_REQ GPIO %d.It may be already registered in init.xyz.3rdparty.rc/init.xyz.rc\n",
-		     gpio);
+		pr_info("[gps]Can't request HOST_REQ GPIO %d.It may be already registered\n",
+			gpio);
 		return -EIO;
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
@@ -155,7 +155,7 @@ static int gps_gpio_irq_init(int gpio)
 #endif
 	gpio_direction_input(gpio);
 
-	/*2. Set IRQ*/
+	/* 2. Set IRQ */
 	irq = gpio_to_irq(gpio);
 	if (irq < 0) {
 		pr_info("[gps]Could not get HOST_WAKE_GPIO = %d!, err = %d\n",
@@ -179,14 +179,13 @@ static int gps_gpio_irq_init(int gpio)
 	return irq;
 }
 
-/*cleanup GPIO and IRQ*/
+/* cleanup GPIO and IRQ */
 static void gps_gpio_irq_cleanup(int gpio, int irq)
 {
 	pr_debug("[gps]%s\n", __func__);
 	gpio_free(gpio);
 	free_irq(irq, NULL);
 }
-
 
 static ssize_t gps_write_proc_nstandby(struct file *filp,
 				       const char __user *buffer, size_t len,
@@ -195,20 +194,17 @@ static ssize_t gps_write_proc_nstandby(struct file *filp,
 	char gps_nstandby = '0';
 	pr_info("[GPS] gps_write_proc_nstandby\n");
 
-	if(buffer == NULL )
-	{
+	if (buffer == NULL) {
 		pr_err("[GPS]NULL Pointer to platform device\n");
 		return -EINVAL;
 	}
-	if ((len < 1) || (NULL == g_gps_bcm)) {
-		pr_err(
-		       "[GPS] gps_write_proc_nstandby g_gps_bcm is NULL or read length = 0.\n");
+	if ((len < 1) || (g_gps_bcm == NULL)) {
+		pr_err("[GPS] gps_write_proc_nstandby g_gps_bcm is NULL or read length = 0\n");
 		return -EINVAL;
 	}
 
 	if (copy_from_user(&gps_nstandby, buffer, sizeof(gps_nstandby))) {
-		pr_err(
-		       "[GPS] gps_write_proc_nstandby copy_from_user failed!\n");
+		pr_err("[GPS] gps_write_proc_nstandby copy_from_user failed!\n");
 		return -EFAULT;
 	}
 
@@ -231,17 +227,15 @@ static ssize_t gps_read_proc_nstandby(struct file *filp,
 				      loff_t *off)
 {
 	int gps_nstandby = 0;
-	char tmp[2];
-	if(buffer == NULL )
-	{
+	char tmp[2] = {0};
+	if (buffer == NULL) {
 		pr_err("[GPS]NULL Pointer to platform device\n");
 		return -EINVAL;
 	}
-	memset(tmp, 0, sizeof(tmp));
+
 	pr_info("[GPS] gps_read_proc_nstandby\n");
-	if (len < 1 || NULL == g_gps_bcm) {
-		pr_err(
-		       "[GPS] gps_read_proc_nstandby g_gps_bcm is NULL or read length = 0.\n");
+	if (len < 1 || g_gps_bcm == NULL) {
+		pr_err("[GPS] gps_read_proc_nstandby g_gps_bcm is NULL or read length = 0.\n");
 		return -EINVAL;
 	}
 	len = 1;
@@ -251,12 +245,16 @@ static ssize_t gps_read_proc_nstandby(struct file *filp,
 		return 0;
 	}
 	gps_nstandby = gpio_get_value(g_gps_bcm->gpioid_en.gpio);
-	sprintf(tmp, "%d", gps_nstandby);
+	if (gps_nstandby  == 0) {
+		tmp[0] = '0';
+	} else if (gps_nstandby == 1) {
+		tmp[0] = '1';
+	}
+
 	pr_info("[GPS] gps nstandby status[%s]\n", tmp);
 
 	if (copy_to_user(buffer, tmp, len)) {
-		pr_err(
-		       "[GPS] gps_read_proc_nstandby copy_to_user failed!\n");
+		pr_err("[GPS] gps_read_proc_nstandby copy_to_user failed!\n");
 		return -EFAULT;
 	}
 	*off += len;
@@ -294,11 +292,9 @@ static int create_gps_proc_file(void)
 	return ret;
 }
 
-
 static int k3_gps_bcm_probe(struct platform_device *pdev)
 {
-	if(pdev == NULL )
-	{
+	if (pdev == NULL) {
 		pr_err("[GPS]NULL Pointer to platform device\n");
 		return -ENOMEM;
 	}
@@ -327,8 +323,7 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 
 	ret = gpio_request(gps_bcm->gpioid_en.gpio, "gps_enbale");
 	if (ret) {
-		pr_err(
-		       "[GPS] gpio_direction_output %d failed, ret:%d\n",
+		pr_err("[GPS] gpio_direction_output %d failed, ret:%d\n",
 		       gps_bcm->gpioid_en.gpio, ret);
 		goto err_free_gps_en;
 	}
@@ -337,16 +332,13 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 #else
 	ret = gpio_export(gps_bcm->gpioid_en.gpio, false);
 #endif
-	if (ret) {
+	if (ret)
 		pr_err("[GPS] gpio_export %d failed, ret:%d\n",
 		       gps_bcm->gpioid_en.gpio, ret);
-		/*goto err_free_gps_en;*/
-	}
 
 	ret = gpio_direction_output(gps_bcm->gpioid_en.gpio, 0);
 	if (ret) {
-		pr_err(
-		       "[GPS] gpio_direction_output %d failed, ret:%d\n",
+		pr_err("[GPS] gpio_direction_output %d failed, ret:%d\n",
 		       gps_bcm->gpioid_en.gpio, ret);
 		goto err_free_gps_en;
 	}
@@ -358,8 +350,6 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 		goto err_free_gps_en;
 	}
 
-
-
 	gps_bcm->gpioid_hostwake.gpio =
 	    of_get_named_gpio(np, "huawei,gps_hostwake", 0);
 	if (!gpio_is_valid(gps_bcm->gpioid_hostwake.gpio)) {
@@ -367,32 +357,32 @@ static int k3_gps_bcm_probe(struct platform_device *pdev)
 		pr_err("[GPS] get huawei,gps_hostwake failed.\n");
 		goto err_free_gps_en;
 	}
-	/*1. Init GPIO and IRQ for HOST_WAKE*/
+	/* 1. Init GPIO and IRQ for HOST_WAKE */
 	pr_info("[gps]%s,gps_bcm->gpioid_hostwake.gpio=%d\n", __func__,
 	       gps_bcm->gpioid_hostwake.gpio);
 
-	/*2. Register Driver*/
+	/* 2. Register Driver */
 	memset(ac_data, 0, sizeof(struct gps_geofence_wake));
 
-	/*2.1 Misc device setup*/
+	/* 2.1 Misc device setup */
 	ac_data->misc.minor = MISC_DYNAMIC_MINOR;
 	ac_data->misc.name = HOST_WAKE_MODULE_NAME;
 	ac_data->misc.fops = &gps_geofence_wake_fops;
 
-	/*2.2 Information that be used later*/
+	/* 2.2 Information that be used later */
 	ac_data->irq = irq;
 	ac_data->host_req_pin = gps_bcm->gpioid_hostwake.gpio;
 
 	pr_info("[gps]misc register, name %s, irq %d, host req pin num %d\n",
 	       ac_data->misc.name, irq, ac_data->host_req_pin);
-	/*2.3 Register misc driver*/
+	/* 2.3 Register misc driver */
 	ret = misc_register(&ac_data->misc);
-	if (0 != ret) {
-		pr_info("[gps]cannot register gps geofence wake miscdev on minor=%d (%d)\n",
+	if (ret != 0) {
+		pr_info("[gps]cannot register gps geofence wake miscdev on minor = %d ret = %d\n",
 		     MISC_DYNAMIC_MINOR, ret);
 		goto err_free_host_wake;
 	}
-	/*3. Init wake_lock*/
+	/* 3. Init wake_lock */
 	wakeup_source_init(&ac_data->wake_lock,
 		       "gps_geofence_wakelock");
 	pr_info("[gps]wake_lock_init done\n");
@@ -489,10 +479,9 @@ err_free_gps:
 
 static void K3_gps_bcm_shutdown(struct platform_device *pdev)
 {
-	if(pdev == NULL )
-	{
+	if (pdev == NULL) {
 		pr_err("[GPS]NULL Pointer to platform device\n");
-		return -EINVAL;
+		return;
 	}
 	GPS_BCM_INFO *gps_bcm = platform_get_drvdata(pdev);
 
@@ -512,7 +501,7 @@ static void K3_gps_bcm_shutdown(struct platform_device *pdev)
 
 static const struct of_device_id gps_power_match_table[] = {
 	{
-	 .compatible = DTS_COMP_GPS_POWER_NAME,	/*compatible must match with which defined in dts*/
+	 .compatible = DTS_COMP_GPS_POWER_NAME, /* compatible must match with which defined in dts */
 	 .data = NULL,
 	 },
 	{
@@ -529,31 +518,28 @@ static struct platform_driver k3_gps_bcm_driver = {
 	.driver = {
 		   .name = "huawei,gps_power_47531",
 		   .owner = THIS_MODULE,
-		   .of_match_table = of_match_ptr(gps_power_match_table),	/*dts required code*/
+		   .of_match_table = of_match_ptr(gps_power_match_table), /* dts required code */
 		   },
 };
 
 static int __init k3_gps_bcm_init(void)
 {
 #ifdef CONFIG_HWCONNECTIVITY
-	/*For OneTrack, we need check it's the right chip type or not.
-	 If it's not the right chip type, don't init the driver*/
+	/* For OneTrack, we need check it's the right chip type or not.
+	 If it's not the right chip type, don't init the driver */
 	if (!isMyConnectivityChip(CHIP_TYPE_BCM)) {
 		pr_err("gps chip type is not match, skip driver init");
 		return -EINVAL;
 	} else {
-		pr_info(
-		       "gps chip type is matched with Broadcom, continue");
+		pr_info("gps chip type is matched with Broadcom, continue");
 	}
 #endif
 
-	if (GPS_IC_TYPE_47531 != get_gps_ic_type()) {
-		pr_info(
-		       "gps chip type is matched with Broadcom, but is not 47531");
+	if (get_gps_ic_type() != GPS_IC_TYPE_47531) {
+		pr_info("gps chip type is matched with Broadcom, but is not 47531");
 		return -EINVAL;
 	}
-	pr_info(
-	       "gps chip type is matched with Broadcom, and it is 47531\n");
+	pr_info("gps chip type is matched with Broadcom, and it is 47531\n");
 	return platform_driver_register(&k3_gps_bcm_driver);
 }
 
@@ -566,7 +552,7 @@ int set_gps_ref_clk_enable_bcm47531(bool enable)
 {
 	int ret = 0;
 
-	pr_info("[GPS] set_gps_ref_clk_enable(%d)\n", enable);
+	pr_info("[GPS] set_gps_ref_clk_enable %d\n", enable);
 	if (IS_ERR(gps_ref_clk)) {
 		pr_err("[GPS] ERROR: refclk is invalid!\n");
 		return -1;
@@ -575,8 +561,7 @@ int set_gps_ref_clk_enable_bcm47531(bool enable)
 	if (enable) {
 		ret = clk_prepare_enable(gps_ref_clk);
 		if (ret < 0) {
-			pr_err(
-			       "[GPS] ERROR: refclk enable failed!\n");
+			pr_err("[GPS] ERROR: refclk enable failed!\n");
 			return -1;
 		}
 	} else {
@@ -586,7 +571,6 @@ int set_gps_ref_clk_enable_bcm47531(bool enable)
 
 	return 0;
 }
-
 
 module_init(k3_gps_bcm_init);
 module_exit(k3_gps_bcm_exit);

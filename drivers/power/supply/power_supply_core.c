@@ -22,7 +22,7 @@
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
 #include "power_supply.h"
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 #include <linux/thermal.h>
 #endif
 
@@ -714,7 +714,7 @@ static int power_supply_read_temp(struct thermal_zone_device *tzd,
 	return ret;
 }
 
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 
 enum battery_trip_type {
 	BATTERY_TRIP_THROTTLING = 0,
@@ -811,7 +811,7 @@ static int battery_tz_get_trip_temp(struct thermal_zone_device *thermal,
 
 static struct thermal_zone_device_ops psy_tzd_ops = {
 	.get_temp = power_supply_read_temp,
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 	.get_trip_type = battery_tz_get_trip_type,
 	.get_trip_temp = battery_tz_get_trip_temp,
 #endif
@@ -827,7 +827,7 @@ static int psy_register_thermal(struct power_supply *psy)
 	/* Register battery zone device psy reports temperature */
 	for (i = 0; i < psy->desc->num_properties; i++) {
 		if (psy->desc->properties[i] == POWER_SUPPLY_PROP_TEMP) {
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 			psy->tzd = thermal_zone_device_register(psy->desc->name,
 					psy->trip_num, psy->trip_mask, psy, &psy_tzd_ops, NULL, 0, 0);
 #else
@@ -981,7 +981,7 @@ __power_supply_register(struct device *parent,
 		psy->of_node = cfg->of_node;
 		psy->supplied_to = cfg->supplied_to;
 		psy->num_supplicants = cfg->num_supplicants;
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 		if (parent)
 			psy_battery_parse_trip(parent->of_node, psy);
 #endif
@@ -1002,13 +1002,13 @@ __power_supply_register(struct device *parent,
 	}
 
 	spin_lock_init(&psy->changed_lock);
-	rc = device_init_wakeup(dev, ws);
-	if (rc)
-		goto wakeup_init_failed;
-
 	rc = device_add(dev);
 	if (rc)
 		goto device_add_failed;
+
+	rc = device_init_wakeup(dev, ws);
+	if (rc)
+		goto wakeup_init_failed;
 
 	rc = psy_register_thermal(psy);
 	if (rc)
@@ -1046,8 +1046,8 @@ register_cooler_failed:
 	psy_unregister_thermal(psy);
 register_thermal_failed:
 	device_del(dev);
-device_add_failed:
 wakeup_init_failed:
+device_add_failed:
 check_supplies_failed:
 dev_set_name_failed:
 	put_device(dev);

@@ -39,12 +39,14 @@
 #include <linux/platform_device.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/ioctl.h>
+#include "securec.h"
 
 #define LOG_TAG "boxid"
 
 #define DEVICEBOX_ID_NAME          "deviceboxID"
 #define PAGE_SIZE_MAX              1024
 #define NAME_LEN_MAX               32
+#define ELECTRIC_LEVEL_INVALID     (-1)
 #define ELECTRIC_LEVEL_LOW         0
 #define ELECTRIC_LEVEL_HIGH        1
 #define ELECTRIC_LEVEL_TRISTATE    2
@@ -54,6 +56,11 @@
 #define GPIO_ID_FAIL               (-1)
 #define BOXID_VDD_MIN_UV           1800000
 #define BOXID_VDD_MAX_UV           1800000
+
+#define SPKID_CHANNEL_DEFAULT      12
+#define HKADC_MIN_VOL_DEFAULT      900
+#define HKADC_MID_VOL_DEFAULT      1500
+#define HKADC_MAX_VOL_DEFAULT      1900
 
 enum box_vendor {
 	BOX_NAME_DEFAULT = 0,
@@ -75,10 +82,12 @@ static char *boxtable[BOX_VENDOR_MAX] = {
 enum {
 	DEVICEBOX_ID_MODE_USE_GPIO = 0x0,
 	DEVICEBOX_ID_MODE_USE_ADC = 0x1,
+	DEVICEBOX_ID_MODE_USE_HKADC = 0x2,
 };
 
 enum {
-	USE_ONE_GPIO = 1, /* default value */
+	USE_NO_GPIO = 0, /* default value */
+	USE_ONE_GPIO = 1,
 	USE_TWO_GPIO = 2,
 };
 
@@ -98,6 +107,10 @@ static const char * const gpio_name_table[BOX_NUM_MAX] = {
 	[RECEIVER_ID] = "gpio_receiverID",
 	[BOX_3RD_ID] = "gpio_3rdboxID",
 	[BOX_4TH_ID] = "gpio_4thboxID",
+	[BOX_5FIF_ID] = "gpio_5fifboxID",
+	[BOX_6SIX_ID] = "gpio_6sixboxID",
+	[BOX_7SEV_ID] = "gpio_7sevboxID",
+	[BOX_8EIG_ID] = "gpio_8eigboxID",
 };
 
 static const char * const box_map_table[BOX_NUM_MAX] = {
@@ -105,6 +118,50 @@ static const char * const box_map_table[BOX_NUM_MAX] = {
 	[RECEIVER_ID] = "receiver_map",
 	[BOX_3RD_ID] = "box3rd_map",
 	[BOX_4TH_ID] = "box4th_map",
+	[BOX_5FIF_ID] = "box5fif_map",
+	[BOX_6SIX_ID] = "box6six_map",
+	[BOX_7SEV_ID] = "box7sev_map",
+	[BOX_8EIG_ID] = "box8eig_map",
+};
+
+struct box_hkadc_info {
+	unsigned int hkadc_channel;
+	unsigned int hkadc_min_voltage;
+	unsigned int hkadc_mid_voltage;
+	unsigned int hkadc_max_voltage;
+};
+
+struct actual_box_group {
+	unsigned int num;
+	int *share_spkid;
+};
+
+struct boxid_share_info {
+	bool share_support;
+	unsigned int actual_boxid_num;
+	unsigned int *actual_boxid;
+	struct actual_box_group box_group[BOX_NUM_MAX];
+};
+
+enum consistent_test_result {
+	BOX_CONSISTENT_TEST_FAILED = 0,
+	BOX_CONSISTENT_TEST_PASS
+};
+
+enum {
+	BOX_CONSISTENT_NOT_SUPPORT = 0,
+	BOX_CONSISTENT_SUPPORT,
+};
+
+struct boxs_vendor_test_groups {
+	unsigned int num;
+	int *boxid;
+};
+
+struct box_consistent_test {
+	bool test_support;
+	unsigned int group_num;
+	struct boxs_vendor_test_groups groups[BOX_NUM_MAX];
 };
 
 struct box_info_st {
@@ -113,6 +170,7 @@ struct box_info_st {
 	int gpio_id[SUPPORT_GPIO_NUM_MAX];
 	int gpio_req_flag[SUPPORT_GPIO_NUM_MAX];
 	int gpio_status[SUPPORT_GPIO_NUM_MAX];
+	int voltage_status;
 	int box_map[VENDOR][VENDOR];
 };
 
@@ -121,11 +179,22 @@ struct out_audio_device_id {
 	int box_num;
 	int tristate_mode;
 	bool gpio_extra_pull_up_enable;
+	bool is_ext_gpio;
 	struct regulator *pull_up_vdd;
 	struct box_info_st box_info[BOX_NUM_MAX];
+	struct box_hkadc_info spkbox_hkadc_info;
+	struct box_consistent_test consistent_test;
 };
 
 struct out_audio_device_id device_boxid = {-1};
+
+#define boxid_kfree_ops(p) \
+do {\
+	if (p != NULL) { \
+		kfree(p); \
+		p = NULL; \
+	} \
+} while (0)
 
 int boxid_read(int id)
 {
@@ -133,8 +202,8 @@ int boxid_read(int id)
 	int vendor = BOX_NAME_DEFAULT;
 	int status0, status1;
 
-	if (id > BOX_4TH_ID) {
-		pr_err("%s: out_id is invalid\n", __func__);
+	if (id > BOX_NUM_MAX) {
+		pr_err("%s: out_id:%d is invalid\n", __func__, id);
 		return -EINVAL;
 	}
 
@@ -149,6 +218,12 @@ int boxid_read(int id)
 		}
 	}
 
+	if (device_boxid.check_mode == DEVICEBOX_ID_MODE_USE_HKADC &&
+		id == SPEAKER_ID) {
+		status0 = info[id].voltage_status;
+		vendor = status0 < 0 ? BOX_NAME_DEFAULT : info[id].box_map[0][status0];
+	}
+
 	pr_info("%s box_id:%d vendor:%d\n", __func__, id, vendor);
 	return vendor;
 }
@@ -156,11 +231,72 @@ EXPORT_SYMBOL(boxid_read);
 
 static inline int boxid_put_user(int id, unsigned int __user *p_user)
 {
-	unsigned int value = BOX_NAME_DEFAULT;
+	int value = BOX_NAME_DEFAULT;
 
 	if (device_boxid.box_info[id].box_enable)
 		value = boxid_read(id);
 
+	return put_user(value, p_user);
+}
+
+static int box_consistent_support_put_user(unsigned int __user *p_user)
+{
+	unsigned int value = BOX_CONSISTENT_NOT_SUPPORT;
+
+	if (device_boxid.consistent_test.test_support)
+		value = BOX_CONSISTENT_SUPPORT;
+
+	return put_user(value, p_user);
+}
+
+static int box_consistent_put_user(unsigned int __user *p_user)
+{
+	unsigned int value;
+	unsigned int i;
+	unsigned int j;
+	int value1;
+	int value2;
+	unsigned int boxid1;
+	unsigned int boxid2;
+
+	struct box_consistent_test *test =
+		(struct box_consistent_test *)&(device_boxid.consistent_test);
+
+	struct boxs_vendor_test_groups *group = NULL;
+	struct box_info_st *info = device_boxid.box_info;
+
+	if (!test->test_support) {
+		pr_err("%s: not support consistent test\n", __func__);
+		value = BOX_CONSISTENT_TEST_FAILED;
+		return put_user(value, p_user);
+	}
+
+	for (i = 0; i < test->group_num; i++) {
+		group = (struct boxs_vendor_test_groups *)(&test->groups[i]);
+		for (j = 1; j < group->num; j++) {
+			boxid1 = group->boxid[j - 1];
+			boxid2 = group->boxid[j];
+			if (info[boxid1].box_enable != BOX_ID_ENABLED ||
+				info[boxid2].box_enable != BOX_ID_ENABLED) {
+				pr_err("%s:group[%d] boxid[%d],[%d] disabled\n",
+					__func__, i, boxid1, boxid2);
+				value = BOX_CONSISTENT_TEST_FAILED;
+				return put_user(value, p_user);
+			}
+
+			value1 = boxid_read(boxid1);
+			value2 = boxid_read(boxid2);
+			if (value1 != value2) {
+				pr_err("%s:group[%d],[%d:%d],[%d:%d] is diff\n",
+					__func__, i, boxid1, value1,
+					boxid2, value2);
+				value = BOX_CONSISTENT_TEST_FAILED;
+				return put_user(value, p_user);
+			}
+		}
+	}
+
+	value = BOX_CONSISTENT_TEST_PASS;
 	return put_user(value, p_user);
 }
 
@@ -188,6 +324,24 @@ static long boxid_do_ioctl(struct file *file, unsigned int cmd,
 	case DEVICEBOX_ID_GET_4THBOX:
 		ret = boxid_put_user(BOX_4TH_ID, p_user);
 		break;
+	case DEVICEBOX_ID_GET_5THBOX:
+		ret = boxid_put_user(BOX_5FIF_ID, p_user);
+		break;
+	case DEVICEBOX_ID_GET_6THBOX:
+		ret = boxid_put_user(BOX_6SIX_ID, p_user);
+		break;
+	case DEVICEBOX_ID_GET_7THBOX:
+		ret = boxid_put_user(BOX_7SEV_ID, p_user);
+		break;
+	case DEVICEBOX_ID_GET_8THBOX:
+		ret = boxid_put_user(BOX_8EIG_ID, p_user);
+		break;
+	case DEVICEBOX_ID_GET_CONSISTENT_SUPPORT:
+		ret = box_consistent_support_put_user(p_user);
+		break;
+	case DEVICEBOX_ID_GET_CONSISTENT_TEST:
+		ret = box_consistent_put_user(p_user);
+		break;
 	case DEVICEBOX_ID_GET_BOX_NUM:
 		ret = put_user(device_boxid.box_num, p_user);
 		break;
@@ -206,7 +360,7 @@ static long boxid_ioctl(struct file *file, unsigned int command,
 	 * The use of parameters "0" is to meet format of linux driver,
 	 * it has no practical significance.
 	 */
-	return boxid_do_ioctl(file, command, (void __user *)arg, 0);
+	return boxid_do_ioctl(file, command, (void __user *)(uintptr_t)arg, 0);
 }
 
 static long boxid_compat_ioctl(struct file *file, unsigned int command,
@@ -260,18 +414,24 @@ static ssize_t boxid_info_show(struct device *dev,
 		return 0;
 	}
 
-	snprintf(buf, PAGE_SIZE_MAX, "---boxid info begin---\n");
+	if (snprintf_s(buf, PAGE_SIZE_MAX, PAGE_SIZE_MAX - 1,
+		"---boxid info begin---\n") < 0)
+		pr_err("%s: snprintf_s is failed\n", __func__);
 
-	snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-		 "GPIO_STATUS:\n");
+	if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+		PAGE_SIZE_MAX - strlen(buf) - 1, "GPIO_STATUS:\n") < 0)
+		pr_err("%s: snprintf_s is failed\n", __func__);
+
 	for (i = 0; i < device_boxid.box_num; i++) {
 		if (info[i].box_enable != BOX_ID_ENABLED)
 			continue;
 
 		for (j = 0; j < info[i].gpio_num; j++) {
-			snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-				 "	  box[%d].gpio[%d].status:%d\n", i, j,
-				 info[i].gpio_status[j]);
+			if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+				PAGE_SIZE_MAX - strlen(buf) - 1,
+				"   box[%d].gpio[%d].status:%d\n", i, j,
+				 info[i].gpio_status[j]) < 0)
+				pr_err("%s: snprintf_s is failed\n", __func__);
 		}
 	}
 
@@ -279,38 +439,52 @@ static ssize_t boxid_info_show(struct device *dev,
 		if (info[i].box_enable != BOX_ID_ENABLED)
 			continue;
 
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "Box[%d]_MAP:\n", i);
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  -----------------\n");
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  |  %s  |  %s  |  %s  |\n",
+		if (i > BOX_4TH_ID)
+			continue;
+
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "Box[%d]_MAP:\n", i) < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   -----------------\n") < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   |  %s  |  %s  |  %s  |\n",
 			 get_box_name(info[i].box_map[0][0]),
 			 get_box_name(info[i].box_map[0][1]),
-			 get_box_name(info[i].box_map[0][2]));
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  -----------------\n");
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  |  %s  |  %s  |  %s  |\n",
+			 get_box_name(info[i].box_map[0][2])) < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   -----------------\n") < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   |  %s  |  %s  |  %s  |\n",
 			 get_box_name(info[i].box_map[1][0]),
 			 get_box_name(info[i].box_map[1][1]),
-			 get_box_name(info[i].box_map[1][2]));
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  -----------------\n");
+			 get_box_name(info[i].box_map[1][2])) < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   -----------------\n") < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
 	}
 
-	snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf), "Box_NAME:\n");
+	if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+		PAGE_SIZE_MAX - strlen(buf) - 1, "Box_NAME:\n") < 0)
+		pr_err("%s: snprintf_s is failed\n", __func__);
 	for (i = 0; i < device_boxid.box_num; i++) {
 		if (info[i].box_enable != BOX_ID_ENABLED)
 			continue;
 
 		vendor = boxid_read(i);
-		snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-			 "	  box[%d]  :  %s\n", i, get_box_name(vendor));
+		if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+			PAGE_SIZE_MAX - strlen(buf) - 1, "   box[%d]  :  %s\n",
+			i, get_box_name(vendor)) < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
 	}
 
-	snprintf(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
-		 "---boxid info end---\n");
+	if (snprintf_s(buf + strlen(buf), PAGE_SIZE_MAX - strlen(buf),
+		PAGE_SIZE_MAX - strlen(buf) - 1, "---boxid info end---\n") < 0)
+		pr_err("%s: snprintf_s is failed\n", __func__);
 
 	return strlen(buf);
 }
@@ -342,6 +516,9 @@ static int get_check_mode(struct device_node *node)
 
 	if (!strncmp(mode, "gpio", strlen("gpio")))
 		return DEVICEBOX_ID_MODE_USE_GPIO;
+
+	if (!strncmp(mode, "hkadc", strlen("hkadc")))
+		return DEVICEBOX_ID_MODE_USE_HKADC;
 
 	return DEVICEBOX_ID_MODE_USE_ADC;
 }
@@ -393,10 +570,12 @@ static void get_gpio_tristate(struct pinctrl *pin, struct device_node *node,
 
 	if (status == ELECTRIC_LEVEL_LOW)
 		return;
-	ret = boxid_pinctrl_select_state(pin, "default");
-	if (ret) {
-		pr_info("%s: select state error %d\n", __func__, ret);
-		return;
+	if (!device_boxid.is_ext_gpio) {
+		ret = boxid_pinctrl_select_state(pin, "default");
+		if (ret) {
+			pr_info("%s: select state error %d\n", __func__, ret);
+			return;
+		}
 	}
 	mdelay(1);
 	value = gpio_get_value_cansleep(gpio_id);
@@ -440,10 +619,9 @@ static int get_gpio_status(struct pinctrl *pin, struct device_node *node,
 
 	/* set gpio to input status */
 	ret = gpio_direction_input(info[boxid].gpio_id[index]);
-	if (ret) {
+	if (ret)
 		pr_err("%s: set gpio to input status error! ret is %d\n",
 		       __func__, ret);
-	}
 
 	info[boxid].gpio_status[index] =
 	    gpio_get_value_cansleep(info[boxid].gpio_id[index]);
@@ -477,6 +655,18 @@ static bool get_boxid_extra_pull_up_enable(struct device_node *node)
 	return false;
 }
 
+static bool get_boxid_is_extgpio(struct device_node *node)
+{
+	if (of_property_read_bool(node, "boxid_is_extgpio")) {
+		pr_info("%s: boxid is extgpio from pca953x IC, without pinctrl\n",
+			__func__);
+		return true;
+	}
+
+	pr_info("%s: boxid is soc gpio\n", __func__);
+	return false;
+}
+
 static struct regulator *get_boxid_gpio_vdd(struct device *dev)
 {
 	struct regulator *vdd = NULL;
@@ -505,6 +695,8 @@ static int get_boxid_info(struct device_node *node)
 
 	device_boxid.gpio_extra_pull_up_enable =
 	    get_boxid_extra_pull_up_enable(node);
+
+	device_boxid.is_ext_gpio = get_boxid_is_extgpio(node);
 
 	for (i = 0; i < device_boxid.box_num; i++) {
 		if (!of_property_read_u32_index(node, "enable_boxID", i, &temp))
@@ -537,24 +729,30 @@ static int get_boxid_map_priv(struct device_node *node, const char *propname,
 	int ret = 0;
 	int temp = 0;
 	int i;
+	unsigned int index1;
+	unsigned int index2;
 
 	pr_debug("%s, propname=%s, box_index=%d, gpio_num=%d\n", __func__,
 		 propname, id, info[id].gpio_num);
 
 	if (info[id].gpio_num == USE_ONE_GPIO ||
-	    info[id].gpio_num == USE_TWO_GPIO) {
+		info[id].gpio_num == USE_TWO_GPIO ||
+		info[id].gpio_num == USE_NO_GPIO) {
 		for (i = 0; i < (VENDOR * VENDOR); i++) {
 			if (!of_property_read_u32_index (node,
-				propname, i, &temp))
-				info[id].box_map[0][i] = temp;
-			else
+				propname, i, &temp)) {
+				index1 = i / VENDOR;
+				index2 = i % VENDOR;
+				info[id].box_map[index1][index2] = temp;
+				pr_info("%s, read index=%d, value=%d\n",
+					__func__, i, temp);
+			} else {
 				break;
-			pr_info("%s, read index=%d, value=%d\n", __func__, i,
-				info[id].box_map[0][i]);
+			}
 		}
 	} else {
 		pr_err("gpio_num out of range,box[%d].gpio_num:%d\n", id,
-		       info[id].gpio_num);
+			info[id].gpio_num);
 		ret = -ENOENT;
 	}
 
@@ -572,11 +770,14 @@ static int get_boxid_map(struct device_node *node)
 		if (device_boxid.box_info[i].box_enable != BOX_ID_ENABLED)
 			continue;
 
-		strncpy(map_name, box_map_table[i], NAME_LEN_MAX - 1);
+		if (strncpy_s(map_name, NAME_LEN_MAX, box_map_table[i],
+			NAME_LEN_MAX - 1) != EOK)
+			pr_err("%s: strncpy_s is failed\n", __func__);
 		ret = get_boxid_map_priv(node, map_name, i);
 		if (ret)
 			return ret;
-		memset(map_name, 0, NAME_LEN_MAX);
+		if (memset_s(map_name, NAME_LEN_MAX, 0, NAME_LEN_MAX) != EOK)
+			pr_err("%s: memset_s is failed\n", __func__);
 	}
 
 	return ret;
@@ -597,13 +798,16 @@ static int get_boxid_gpio_status(struct pinctrl *pin, struct device_node *node)
 		if (device_boxid.box_info[i].box_enable != BOX_ID_ENABLED)
 			continue;
 
-		strncpy(gpio_name, gpio_name_table[i], NAME_LEN_MAX - 1);
+		if (strncpy_s(gpio_name, NAME_LEN_MAX, gpio_name_table[i],
+			NAME_LEN_MAX - 1) != EOK)
+			pr_err("%s: strncpy_s is failed\n", __func__);
 		for (j = 0; j < device_boxid.box_info[i].gpio_num; j++) {
 			ret = get_gpio_status(pin, node, gpio_name, i, j);
 			if (ret != 0)
 				return ret;
 		}
-		memset(gpio_name, 0, NAME_LEN_MAX);
+		if (memset_s(gpio_name, NAME_LEN_MAX, 0, NAME_LEN_MAX) != EOK)
+			pr_err("%s: memset_s is failed\n", __func__);
 	}
 
 	return 0;
@@ -705,9 +909,11 @@ static void boxid_gpio_free(void)
 			if (info[i].gpio_req_flag[j] != GPIO_REQ_SUCCESS)
 				continue;
 
-			gpio_free(info[i].gpio_id[j]);
-			info[i].gpio_id[j] = GPIO_ID_FAIL;
-			info[i].gpio_req_flag[j] = GPIO_REQ_FAIL;
+			if (gpio_is_valid(info[i].gpio_id[j])) {
+				gpio_free(info[i].gpio_id[j]);
+				info[i].gpio_id[j] = GPIO_ID_FAIL;
+				info[i].gpio_req_flag[j] = GPIO_REQ_FAIL;
+			}
 		}
 	}
 }
@@ -747,16 +953,18 @@ static int boxid_probe_use_gpio(struct platform_device *pdev)
 	struct pinctrl *p = NULL;
 	int ret;
 
-	p = devm_pinctrl_get(&pdev->dev);
-	if (IS_ERR(p)) {
-		pr_err("%s: could not get pinctrl\n", __func__);
-		return -ENOENT;
-	}
-
-	if (!device_boxid.tristate_mode) {
-		ret = boxid_pinctrl_select_state(p, "default");
-		if (ret)
+	if (!device_boxid.is_ext_gpio) {
+		p = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(p)) {
+			pr_err("%s: could not get pinctrl\n", __func__);
 			return -ENOENT;
+		}
+
+		if (!device_boxid.tristate_mode) {
+			ret = boxid_pinctrl_select_state(p, "default");
+			if (ret)
+				return -ENOENT;
+		}
 	}
 
 	ret = boxid_regulator_config(device_boxid.pull_up_vdd, true);
@@ -784,9 +992,11 @@ static int boxid_probe_use_gpio(struct platform_device *pdev)
 	boxid_regulator_config(device_boxid.pull_up_vdd, false);
 
 	/* reset gpio to NP status for saving power */
-	ret = boxid_pinctrl_select_state(p, "idle");
-	if (ret)
-		goto err_get_gpio_status;
+	if (!device_boxid.is_ext_gpio) {
+		ret = boxid_pinctrl_select_state(p, "idle");
+		if (ret)
+			goto err_get_gpio_status;
+	}
 
 	ret = boxid_probe_init_fs(pdev);
 	if (ret)
@@ -797,6 +1007,455 @@ static int boxid_probe_use_gpio(struct platform_device *pdev)
 err_get_gpio_status:
 	boxid_gpio_free();
 	return ret;
+}
+
+static void update_spkbox_voltage_status(int voltage)
+{
+	struct box_info_st *info = device_boxid.box_info;
+	struct box_hkadc_info *box_hkadc_info = &device_boxid.spkbox_hkadc_info;
+
+	if (voltage >= box_hkadc_info->hkadc_min_voltage &&
+		voltage < box_hkadc_info->hkadc_mid_voltage)
+		info[SPEAKER_ID].voltage_status = ELECTRIC_LEVEL_LOW;
+	else if (voltage >= box_hkadc_info->hkadc_mid_voltage &&
+		voltage <= box_hkadc_info->hkadc_max_voltage)
+		info[SPEAKER_ID].voltage_status = ELECTRIC_LEVEL_HIGH;
+	else
+		info[SPEAKER_ID].voltage_status = ELECTRIC_LEVEL_INVALID;
+
+	pr_info("hkadc voltage = %d, spkbox_voltage_status = %d\n",
+		voltage, info[SPEAKER_ID].voltage_status);
+}
+
+__attribute__((weak))int hisi_adc_get_value(int adc_channel)
+{
+	pr_info("%s:use weak func, channel = %d\n", __func__, adc_channel);
+	return 0;
+}
+
+static int get_hkadc_voltage(unsigned int hkadc_channel)
+{
+	return hisi_adc_get_value(hkadc_channel);
+}
+
+static int boxid_probe_use_hkadc(struct platform_device *pdev)
+{
+	unsigned int temp = 0;
+	int hkadc_voltage;
+	struct device_node *node = pdev->dev.of_node;
+	struct box_hkadc_info *box_hkadc_info = &device_boxid.spkbox_hkadc_info;
+
+	box_hkadc_info->hkadc_channel = SPKID_CHANNEL_DEFAULT;
+	box_hkadc_info->hkadc_min_voltage = HKADC_MIN_VOL_DEFAULT;
+	box_hkadc_info->hkadc_mid_voltage = HKADC_MID_VOL_DEFAULT;
+	box_hkadc_info->hkadc_max_voltage = HKADC_MAX_VOL_DEFAULT;
+
+	if (!of_property_read_u32(node, "spkid_hkadc_channel", &temp))
+		box_hkadc_info->hkadc_channel = temp;
+
+	if (!of_property_read_u32(node, "hkadc_min_voltage", &temp))
+		box_hkadc_info->hkadc_min_voltage = temp;
+
+	if (!of_property_read_u32(node, "hkadc_mid_voltage", &temp))
+		box_hkadc_info->hkadc_mid_voltage = temp;
+
+	if (!of_property_read_u32(node, "hkadc_max_voltage", &temp))
+		box_hkadc_info->hkadc_max_voltage = temp;
+
+	pr_debug("hkadc_spk_channel %u, hkadc_min_voltage %u,"
+		" hkadc_mid_voltage %u, hkadc_max_voltage %u\n",
+		box_hkadc_info->hkadc_channel,
+		box_hkadc_info->hkadc_min_voltage,
+		box_hkadc_info->hkadc_mid_voltage,
+		box_hkadc_info->hkadc_max_voltage);
+
+	hkadc_voltage = get_hkadc_voltage(box_hkadc_info->hkadc_channel);
+	if (hkadc_voltage < 0) {
+		pr_err("hkadc_voltage = %d, out of range\n", hkadc_voltage);
+		return -ERANGE;
+	}
+
+	update_spkbox_voltage_status(hkadc_voltage);
+	return boxid_probe_init_fs(pdev);
+}
+
+int boxid_get_prop_of_u32_array(struct device_node *node,
+	const char *propname, u32 **value, unsigned int *num)
+{
+	u32 *array = NULL;
+	int ret;
+	int count = 0;
+
+	if ((node == NULL) || (propname == NULL) || (value == NULL) ||
+		(num == NULL)) {
+		pr_err("%s: invalid argument\n", __func__);
+		return -EINVAL;
+	}
+
+	if (of_property_read_bool(node, propname))
+		count = of_property_count_elems_of_size(node,
+				propname, (int)sizeof(u32));
+
+	if (count == 0) {
+		pr_info("%s: %s not existed, skip\n", __func__, propname);
+		*num = 0;
+		return 0;
+	}
+
+	array = kzalloc(sizeof(u32) * count, GFP_KERNEL);
+	if (array == NULL)
+		return -ENOMEM;
+
+	ret = of_property_read_u32_array(node, propname, array,
+			(size_t)(long)count);
+	if (ret < 0) {
+		pr_err("%s: get %s array failed\n", __func__, propname);
+		ret = -EFAULT;
+		goto get_prop_of_u32_array_err;
+	}
+
+	*value = array;
+	*num = count;
+	return 0;
+
+get_prop_of_u32_array_err:
+	boxid_kfree_ops(array);
+	return ret;
+}
+
+static void boxid_copy_actual_box_info(struct actual_box_group *box_group,
+	int actual_id)
+{
+	unsigned int i;
+	int copy_id;
+	struct box_info_st *copy_info = NULL;
+	struct box_info_st *actual_info = NULL;
+
+	if (box_group == NULL)
+		return;
+
+	actual_info =
+		(struct box_info_st *)&(device_boxid.box_info[actual_id]);
+	for (i = 0; i < box_group->num; i++) {
+		copy_id = box_group->share_spkid[i];
+		pr_info("%s: copy id:%d to id:%d\n", __func__,
+			actual_id, copy_id);
+		copy_info =
+			(struct box_info_st *)&(device_boxid.box_info[copy_id]);
+		if (memcpy_s(copy_info, sizeof(*copy_info), actual_info,
+			sizeof(*copy_info)) != EOK)
+			pr_err("%s: memcpy_s is failed\n", __func__);
+	}
+}
+
+static void boxid_get_share_box_info(struct boxid_share_info *share_info)
+{
+	struct actual_box_group *box_group = NULL;
+	unsigned int i;
+	int actual_id;
+
+	for (i = 0; i < share_info->actual_boxid_num; i++) {
+		box_group =
+			(struct actual_box_group *)&(share_info->box_group[i]);
+
+		actual_id = share_info->actual_boxid[i];
+		pr_info("%s: actual_boxid num = %d, box_grup->num =%d\n",
+			__func__, share_info->actual_boxid_num, box_group->num);
+		boxid_copy_actual_box_info(box_group, actual_id);
+	}
+}
+
+static int boxid_check_share_spkid(struct actual_box_group *box_group)
+{
+	unsigned int i;
+
+	if (box_group == NULL) {
+		pr_err("%s:box_group is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	for (i = 0; i < box_group->num; i++) {
+		if (box_group->share_spkid[i] < 0 ||
+			box_group->share_spkid[i] >= BOX_NUM_MAX) {
+			pr_err("%s: invail spkid%d = %d\n",
+				__func__, i,
+				box_group->share_spkid[i]);
+			return -EFAULT;
+		}
+	}
+
+	return 0;
+}
+
+static int boxid_parse_actual_boxid_groups(struct device_node *node,
+	struct boxid_share_info *share_info)
+{
+	int ret;
+	unsigned int i;
+	char group_name[NAME_LEN_MAX] = { 0 };
+	struct actual_box_group *box_group = NULL;
+
+	if (share_info == NULL || node == NULL) {
+		pr_err("%s: node or share_info is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	if (share_info->actual_boxid_num > BOX_NUM_MAX) {
+		pr_err("%s: actual_boxid_num: %d is error\n",
+			__func__, share_info->actual_boxid_num);
+		return -EFAULT;
+	}
+
+	for (i = 0; i < share_info->actual_boxid_num; i++) {
+		box_group =
+			(struct actual_box_group *)&(share_info->box_group[i]);
+		if (memset_s(group_name, NAME_LEN_MAX, 0, NAME_LEN_MAX) != EOK)
+			pr_err("%s: memset_s is failed\n", __func__);
+
+		if (snprintf_s(group_name,
+			(unsigned long)NAME_LEN_MAX, (unsigned long)NAME_LEN_MAX - 1,
+			"actual_boxid%d_group", i) < 0)
+			pr_err("%s: snprintf_s is failed\n", __func__);
+
+		ret = boxid_get_prop_of_u32_array(node, group_name,
+			(u32 **)&(box_group->share_spkid), &box_group->num);
+		/* not return negative value, actual group may be not exist */
+		if ((box_group->num == 0) || (ret < 0)) {
+			box_group->num = 0;
+			pr_info("%s: get actual boxid:%d group:%d error\n",
+				__func__, i, box_group->num);
+		}
+	}
+
+	for (i = 0; i < share_info->actual_boxid_num; i++) {
+		box_group =
+			(struct actual_box_group *)&(share_info->box_group[i]);
+		ret = boxid_check_share_spkid(box_group);
+		if (ret) {
+			pr_err("%s: invaild spkid in boxid_group num:%d\n",
+				__func__, box_group->num);
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static int boxid_parse_actual_boxid_num(struct device_node *node,
+	struct boxid_share_info *share_info)
+{
+	int ret;
+	unsigned int i;
+	const char *actual_boxid_num_str = "actual_boxid_num";
+
+	if (share_info == NULL || node == NULL) {
+		pr_err("%s: node or share_info is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	ret = boxid_get_prop_of_u32_array(node, actual_boxid_num_str,
+		(u32 **)&(share_info->actual_boxid),
+		&share_info->actual_boxid_num);
+	if ((share_info->actual_boxid_num == 0 ||
+		share_info->actual_boxid_num > BOX_NUM_MAX) || (ret < 0)) {
+		pr_err("%s: actual_boxid_num:%d, or ret:%d, is error\n",
+			__func__, share_info->actual_boxid_num, ret);
+		return -EFAULT;
+	}
+
+	pr_info("%s: actual_boxid_num = %d\n",
+		__func__, share_info->actual_boxid_num);
+	for (i = 0; i < share_info->actual_boxid_num; i++) {
+		if (share_info->actual_boxid[i] >= BOX_NUM_MAX) {
+			pr_info("%s: actual_boxid[%d] = %d is invaild\n",
+				__func__, i, share_info->actual_boxid[i]);
+			return -EFAULT;
+		}
+	}
+	return 0;
+}
+
+
+static void boxid_free_share_info(
+	struct boxid_share_info *share_info)
+{
+	unsigned int i;
+	struct actual_box_group *box_group = NULL;
+
+	if (share_info == NULL)
+		return;
+
+	for (i = 0; i < share_info->actual_boxid_num; i++) {
+		if (i >= BOX_NUM_MAX)
+			break;
+
+		box_group =
+			(struct actual_box_group *)&(share_info->box_group[i]);
+		if (box_group != NULL)
+			boxid_kfree_ops(box_group->share_spkid);
+	}
+
+	boxid_kfree_ops(share_info->actual_boxid);
+	boxid_kfree_ops(share_info);
+	share_info = NULL;
+}
+
+
+static int boxid_parse_dt_share_info(struct platform_device *pdev)
+{
+	const char *share_info_str = "boxid_share_info";
+	const char *support_share_str = "hardware_support_share";
+	struct device_node *node = NULL;
+	struct boxid_share_info *share_info = NULL;
+	int ret;
+
+	if (pdev == NULL) {
+		pr_err("%s: pdev is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	node = of_get_child_by_name(pdev->dev.of_node, share_info_str);
+	if (node == NULL) {
+		pr_info("%s: boxid_share_info not existed, skip\n", __func__);
+		return 0;
+	}
+
+	share_info = kzalloc(sizeof(*share_info), GFP_KERNEL);
+	if (share_info == NULL)
+		return -ENOMEM;
+
+	share_info->actual_boxid_num = 0;
+	share_info->share_support = of_property_read_bool(node,
+		support_share_str);
+	if (!share_info->share_support) {
+		pr_info("%s: boxID not support share\n", __func__);
+		goto err_parse_dt_share_info;
+	}
+
+	ret = boxid_parse_actual_boxid_num(node, share_info);
+	if (ret < 0)
+		goto err_parse_dt_share_info;
+
+	ret = boxid_parse_actual_boxid_groups(node, share_info);
+	if (ret < 0)
+		goto err_parse_dt_share_info;
+
+	boxid_get_share_box_info(share_info);
+
+err_parse_dt_share_info:
+	boxid_free_share_info(share_info);
+	return 0;
+}
+
+static void boxid_free_consistent_test_info(
+	struct box_consistent_test *test)
+{
+	unsigned int i;
+	struct boxs_vendor_test_groups *groups = NULL;
+
+	/* not support consistent, it not kzalloc box_consistent_test */
+	if (device_boxid.consistent_test.test_support == false)
+		return;
+
+	if (test == NULL)
+		return;
+
+	for (i = 0; i < test->group_num; i++) {
+		if (i >= BOX_NUM_MAX)
+			break;
+
+		groups = (struct boxs_vendor_test_groups *)&(test->groups[i]);
+		if (groups != NULL)
+			boxid_kfree_ops(groups->boxid);
+	}
+
+	test = NULL;
+}
+
+static void box_consistent_test_check(struct box_consistent_test *test,
+			struct device_node *node)
+{
+	unsigned int i;
+	unsigned int j;
+	int ret;
+	const char *test_groups = "consistent_test_groups";
+
+	if (test == NULL || node == NULL) {
+		pr_err("%s: test or share_info is NULL\n", __func__);
+		return;
+	}
+
+	for (i = 0; i < test->group_num; i++) {
+		ret = boxid_get_prop_of_u32_array(node, test_groups,
+			(u32 **)&(test->groups[i].boxid),
+			&(test->groups[i].num));
+		if ((test->groups[i].num == 0 ||
+			test->groups[i].num > BOX_NUM_MAX) || (ret < 0)) {
+			pr_err("%s: groups[i].num:%d, or ret:%d, is error\n",
+				__func__, test->groups[i].num, ret);
+			boxid_free_consistent_test_info(test);
+			test->group_num = 0;
+			test->test_support = false;
+			return;
+		}
+
+		for (j = 0; j < test->groups[i].num; j++) {
+			if (test->groups[i].boxid[j] < 0 ||
+				test->groups[i].boxid[j] >= BOX_NUM_MAX) {
+				pr_err("%s:groups[%d].boxid[%d]:%d, is error\n",
+					__func__, i, j,
+					test->groups[i].boxid[j]);
+				boxid_free_consistent_test_info(test);
+				test->group_num = 0;
+				test->test_support = false;
+				return;
+			}
+		}
+	}
+}
+
+static void box_parse_dt_consistent_test_info(struct platform_device *pdev)
+{
+	const char *test_info = "box_consistent_test_info";
+	const char *consistent_test_support = "consistent_test_support";
+
+	struct device_node *node = NULL;
+	struct box_consistent_test *test = NULL;
+	int ret;
+
+	if (pdev == NULL) {
+		pr_err("%s: pdev is NULL\n", __func__);
+		return;
+	}
+
+	test = (struct box_consistent_test *)&(device_boxid.consistent_test);
+	if (memset_s(test, sizeof(*test), 0, sizeof(*test)) != EOK)
+		pr_err("%s: memset_s is failed\n", __func__);
+
+	node = of_get_child_by_name(pdev->dev.of_node, test_info);
+	if (node == NULL) {
+		pr_info("%s:consistent test info not exist, skip\n", __func__);
+		return;
+	}
+
+	test->test_support = of_property_read_bool(node,
+		consistent_test_support);
+	if (!test->test_support) {
+		pr_info("%s: consistent_test not support\n", __func__);
+		return;
+	}
+
+	ret = of_property_read_u32(node, "test_group_num",
+		(u32 *)(&test->group_num));
+	if (ret < 0 || test->group_num > BOX_NUM_MAX) {
+		pr_err("%s: get test_group_num:%d or ret:%d failed\n",
+			__func__, test->group_num, ret);
+		test->group_num = 0;
+		test->test_support = false;
+		return;
+	}
+
+	pr_info("%s: test->group_num = %d\n", __func__, test->group_num);
+	box_consistent_test_check(test, node);
 }
 
 static int boxid_probe(struct platform_device *pdev)
@@ -858,6 +1517,15 @@ static int boxid_probe(struct platform_device *pdev)
 		}
 	}
 
+	if (device_boxid.check_mode == DEVICEBOX_ID_MODE_USE_HKADC) {
+		ret = boxid_probe_use_hkadc(pdev);
+		if (ret < 0) {
+			pr_err("%s failed\n", __func__);
+			return ret;
+		}
+	}
+	boxid_parse_dt_share_info(pdev);
+	box_parse_dt_consistent_test_info(pdev);
 	pr_info("%s --\n", __func__);
 	return 0;
 }
@@ -876,6 +1544,10 @@ static int boxid_remove(struct platform_device *pdev)
 #endif
 		misc_deregister(&boxid_device);
 	}
+
+	boxid_free_consistent_test_info(
+		(struct box_consistent_test *)&device_boxid.consistent_test);
+
 	return 0;
 }
 

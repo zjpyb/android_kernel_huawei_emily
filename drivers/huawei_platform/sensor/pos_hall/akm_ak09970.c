@@ -149,8 +149,6 @@ HWLOG_REGIST();
 #define AK09970_RETCODE_FST_VAR_L_FAIL (-9)
 #define AK09970_RETCODE_FST_VAR_H_FAILED (-10)
 #define AK09970_RETCODE_NULL_POINT_ERR (-11)
-#define AK09970_OPEN_SELF_ERR (-12)
-#define AK09970_CLOSE_SELF_ERR (-13)
 
 #define AK09970_CNTL1_CONFIG (AK09970_DRDY_PIN_CONFIG | \
 	AK09970_SW_FUNC_CONFIG | AK09970_ERRXY_CONFIG | \
@@ -203,7 +201,13 @@ HWLOG_REGIST();
 #define AK09970_FST_STEP_2_8 0x0208
 #define AK09970_FST_STEP_2_9 0x0209
 #define AK09970_FST_STEP_2_A 0x020A
-#define AK09970_SELF_TEST_PARA_COUNT 6
+#define AK09970_HALL_SELF_PARA_NUM 6
+enum AK09970_HALL_SELF_RESULT {
+	AK09970_HALL_SELF_OPEN_FAIL_CLOSE_FAIL = 0,
+	AK09970_HALL_SELF_OPEN_SUC_CLOSE_SUC,
+	AK09970_HALL_SELF_OPEN_FAIL_CLOSE_SUC,
+	AK09970_HALL_SELF_OPEN_SUC_CLOSE_FAIL
+};
 
 struct type_nv_data {
 	int close_x;
@@ -256,16 +260,12 @@ struct type_calibration_info {
 	int step_avg_mag[STEP_COUNT][AXIS_COUNT];
 };
 
-struct self_test_info {
-	/* 0 is fail, 1 is success, 2 is open fail, 3 is close fail */
-	int open_result;
-	int close_result;
-	int open_self_flag;
-	int close_self_flag;
-	int close_diff[AXIS_COUNT];
+struct hall_self_info {
+	bool open_result;
+	bool close_result;
 	int open_diff[AXIS_COUNT];
+	int close_diff[AXIS_COUNT];
 };
-static struct self_test_info self_test_data;
 
 #ifdef CONFIG_HUAWEI_DSM
 static struct dsm_dev dsm_vibrator = {
@@ -282,6 +282,7 @@ struct dsm_client *vibrator_dclient = NULL;
 static struct type_device_data *ak09970_dev_data = NULL;
 static int ak09970_gpio_rst;
 static struct type_calibration_info ak09970_calibration_info;
+static struct hall_self_info ak09970_self_data;
 static int self_test_threshold[STEP_COUNT][AXIS_COUNT] = {
 	{ 3000, 3000, 3000 },
 	{ 3000, 3000, 3000 },
@@ -1081,6 +1082,7 @@ static int check_calibration_data(
 	int ret;
 	int i;
 	bool check_result = true;
+	bool has_threshold = true;
 
 	if (akm_ak09970 == NULL || info == NULL) {
 		hwlog_err("%s: invalid value\n", __func__);
@@ -1089,8 +1091,8 @@ static int check_calibration_data(
 
 	ret = get_calibration_threshold_info(akm_ak09970, info);
 	if (ret < 0) {
-		hwlog_err("%s: get_threshold_info fail", __func__);
-		return AK09970_RETCODE_COMMON_ERR;
+		hwlog_info("%s: get_threshold_info fail", __func__);
+		has_threshold = false;
 	}
 
 	for (i = 0; i < AXIS_COUNT; i++) {
@@ -1114,7 +1116,7 @@ static int check_calibration_data(
 			check_result = false;
 		}
 	}
-	if (check_result == false) {
+	if (has_threshold && check_result == false) {
 		hwlog_err("%s: check data is error", __func__);
 		return AK09970_RETCODE_COMMON_ERR;
 	}
@@ -1289,9 +1291,7 @@ static int self_test_process(struct type_device_data *akm_ak09970,
 	int i;
 	struct type_nv_data nv_para;
 	static bool get_threashold;
-
-	self_test_data.open_self_flag = 0;
-	self_test_data.close_self_flag = 0;
+	bool result = true;
 
 	if (akm_ak09970 == NULL || step > STEP_COUNT) {
 		hwlog_err("%s: invalid value\n", __func__);
@@ -1318,73 +1318,63 @@ static int self_test_process(struct type_device_data *akm_ak09970,
 
 	switch (step) {
 	case STEP_START_CLOSE:
-		//fall through
 	case STEP_STOP_CLOSE:
-		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] - nv_para.close_x);
-		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] - nv_para.close_y);
-		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] - nv_para.close_z);
-
-		memset(self_test_data.close_diff, 0,
-			sizeof(self_test_data.close_diff));
-		memcpy(self_test_data.close_diff, mag_gap_data,
-			sizeof(mag_gap_data));
-		self_test_data.close_self_flag = 1; // close hall self
+		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] -
+			nv_para.close_x) / THRESHOLD_SCALE;
+		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] -
+			nv_para.close_y) / THRESHOLD_SCALE;
+		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] -
+			nv_para.close_z) / THRESHOLD_SCALE;
 		break;
 	case STEP_INTER_OPEN:
-		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] - nv_para.open_x);
-		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] - nv_para.open_y);
-		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] - nv_para.open_z);
-
-		memset(self_test_data.open_diff, 0,
-			sizeof(self_test_data.open_diff));
-		memcpy(self_test_data.open_diff,
-			mag_gap_data, sizeof(mag_gap_data));
-		self_test_data.open_self_flag = 1; // open hall self
+		mag_gap_data[AXIS_X] = fabs(mag_data[AXIS_X] -
+			nv_para.open_x) / THRESHOLD_SCALE;
+		mag_gap_data[AXIS_Y] = fabs(mag_data[AXIS_Y] -
+			nv_para.open_y) / THRESHOLD_SCALE;
+		mag_gap_data[AXIS_Z] = fabs(mag_data[AXIS_Z] -
+			nv_para.open_z) / THRESHOLD_SCALE;
 		break;
-	}
-	for (i = 0; i < AXIS_COUNT; i++) {
-		hwlog_info("%s: self_test_data.open_diff_%d = %d\n",
-			__func__, i, self_test_data.open_diff[i] / THRESHOLD_SCALE);
-		hwlog_info("%s: self_test_data.close_diff_%d = %d\n",
-			__func__, i, self_test_data.close_diff[i] / THRESHOLD_SCALE);
+	default:
+		hwlog_err("%s, invalid para\n", __func__);
+		return AK09970_RETCODE_COMMON_ERR;
 	}
 
 	for (i = 0; i < AXIS_COUNT; i++) {
 		hwlog_info("%s: mag_data = %d, mag_gap_data = %d, threshold = %d\n",
 			__func__,
 			mag_data[i] / THRESHOLD_SCALE,
-			mag_gap_data[i] / THRESHOLD_SCALE,
+			mag_gap_data[i],
 			self_test_threshold[step][i]);
-		if (self_test_data.open_self_flag) {
-			self_test_data.open_self_flag = 0;
-			// open hall self success
-			self_test_data.open_result = 1;
-			if ((mag_gap_data[i] / THRESHOLD_SCALE) >
-				self_test_threshold[step][i]) {
-				hwlog_err("%s: check open self threshold failed\n",
-					__func__);
-				self_test_data.open_result =
-					AK09970_OPEN_SELF_ERR;
-				return AK09970_RETCODE_COMMON_ERR;
-			}
-		}
-		if (self_test_data.close_self_flag) {
-			self_test_data.close_self_flag = 0;
-			// close hall self success
-			self_test_data.close_result = 1;
-			if ((mag_gap_data[i] / THRESHOLD_SCALE) >
-				self_test_threshold[step][i]) {
-				hwlog_err("%s: check close self threshold failed\n",
-					__func__);
-				self_test_data.close_result =
-					AK09970_CLOSE_SELF_ERR;
-				return AK09970_RETCODE_COMMON_ERR;
-			}
+		if (mag_gap_data[i] > self_test_threshold[step][i]) {
+			hwlog_err("%s: check self threshold failed\n",
+				__func__);
+			result = false;
+			break;
 		}
 	}
-	hwlog_info("%s: step_hall self test succ! step = %ld\n",
-		__func__, step);
-	return AK09970_RETCODE_SUCCESS;
+
+	switch (step) {
+	case STEP_START_CLOSE:
+	case STEP_STOP_CLOSE:
+		ak09970_self_data.close_diff[AXIS_X] = mag_gap_data[AXIS_X];
+		ak09970_self_data.close_diff[AXIS_Y] = mag_gap_data[AXIS_Y];
+		ak09970_self_data.close_diff[AXIS_Z] = mag_gap_data[AXIS_Z];
+		ak09970_self_data.close_result = result;
+		break;
+	case STEP_INTER_OPEN:
+		ak09970_self_data.open_diff[AXIS_X] = mag_gap_data[AXIS_X];
+		ak09970_self_data.open_diff[AXIS_Y] = mag_gap_data[AXIS_Y];
+		ak09970_self_data.open_diff[AXIS_Z] = mag_gap_data[AXIS_Z];
+		ak09970_self_data.open_result = result;
+		break;
+	default:
+		hwlog_err("%s, invalid para\n", __func__);
+		return AK09970_RETCODE_COMMON_ERR;
+	}
+
+	hwlog_info("%s: step_hall self test end! step = %lu, result = %u\n",
+		__func__, step, result);
+	return result ? AK09970_RETCODE_SUCCESS : AK09970_RETCODE_COMMON_ERR;
 }
 static ssize_t ak09970_enable_show(struct device *dev,
 	struct device_attribute *attr,
@@ -1564,38 +1554,34 @@ static ssize_t ak09970_self_test_show(struct device *dev,
 	struct device_attribute *attr,
 	char *buf)
 {
-	int self_result = 1; // hall self success
-	struct self_test_info info;
+	int hall_self_result;
+	struct hall_self_info info;
 
 	if ((dev == NULL) || (attr == NULL) || (buf == NULL)) {
 		hwlog_err("%s: input NULL!!\n", __func__);
 		return -EINVAL;
 	}
 
-	memcpy(&info, &self_test_data, sizeof(self_test_data));
-	if ((self_test_data.open_result <= 0) &&
-		(self_test_data.close_result <= 0)) {
-		self_result = 0; // hall self fail
-		memset(&info, 0, sizeof(info));
-	} else if ((self_test_data.open_result == AK09970_OPEN_SELF_ERR) &&
-		(self_test_data.close_result == 1)) {
-		self_result = 2; // open hall self fail
-		memset(info.open_diff, 0, sizeof(info.open_diff));
-	} else if ((self_test_data.open_result == 1) &&
-		(self_test_data.close_result == AK09970_CLOSE_SELF_ERR)) {
-		self_result = 3; // close hall self fail
-		memset(info.close_diff, 0, sizeof(info.close_diff));
-	}
-	memset(&self_test_data, 0, sizeof(self_test_data));
+	memcpy(&info, &ak09970_self_data, sizeof(ak09970_self_data));
+	if (info.open_result == true && info.close_result == true)
+		hall_self_result = AK09970_HALL_SELF_OPEN_SUC_CLOSE_SUC;
+	else if (info.open_result == true)
+		hall_self_result = AK09970_HALL_SELF_OPEN_SUC_CLOSE_FAIL;
+	else if (info.close_result == true)
+		hall_self_result = AK09970_HALL_SELF_OPEN_FAIL_CLOSE_SUC;
+	else
+		hall_self_result = AK09970_HALL_SELF_OPEN_FAIL_CLOSE_FAIL;
+
+	memset(&ak09970_self_data, 0, sizeof(ak09970_self_data));
 	return scnprintf(buf, PAGE_SIZE,
 		"%d, %d, %d, %d, %d, %d, %d, %d\n",
-		self_result, AK09970_SELF_TEST_PARA_COUNT,
-		info.open_diff[AXIS_X] / THRESHOLD_SCALE,
-		info.open_diff[AXIS_Y] / THRESHOLD_SCALE,
-		info.open_diff[AXIS_Z] / THRESHOLD_SCALE,
-		info.close_diff[AXIS_X] / THRESHOLD_SCALE,
-		info.close_diff[AXIS_Y] / THRESHOLD_SCALE,
-		info.close_diff[AXIS_Z] / THRESHOLD_SCALE);
+		hall_self_result, AK09970_HALL_SELF_PARA_NUM,
+		info.open_diff[AXIS_X],
+		info.open_diff[AXIS_Y],
+		info.open_diff[AXIS_Z],
+		info.close_diff[AXIS_X],
+		info.close_diff[AXIS_Y],
+		info.close_diff[AXIS_Z]);
 }
 
 static ssize_t ak09970_self_test_store(struct device *dev,
@@ -1781,6 +1767,32 @@ static ssize_t ak09970_calibration_store(struct device *dev,
 	return size;
 }
 
+static ssize_t ak09970_algo_param_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	struct type_device_data *akm_ak09970 = NULL;
+	struct device_node *dp = NULL;
+	uint32_t temp = 0;
+	int ret;
+
+	if ((dev == NULL) || (attr == NULL) || (buf == NULL)) {
+		hwlog_err("%s: input NULL\n", __func__);
+		return -EINVAL;
+	}
+	akm_ak09970 = dev_get_drvdata(dev);
+	if ((akm_ak09970 == NULL) || (akm_ak09970->i2c == NULL)) {
+		hwlog_err("%s: akm_ak09970 or i2c NULL\n", __func__);
+		return -EINVAL;
+	}
+	dp = akm_ak09970->i2c->dev.of_node;
+	ret = of_property_read_u32(dp, "support_odm_algo", &temp);
+	if (ret != 0) {
+		hwlog_err("%s: read support_odm_algo fail\n", __func__);
+		temp = 0; // not support
+	}
+	return scnprintf(buf, PAGE_SIZE, "%d\n", temp);
+}
 
 DEVICE_ATTR(ak09970_enable, 0660,
 	ak09970_enable_show, ak09970_enable_store);
@@ -1794,6 +1806,8 @@ DEVICE_ATTR(ak09970_nv_data, 0660,
 	ak09970_nv_data_show, ak09970_nv_data_store);
 DEVICE_ATTR(ak09970_calibration, 0660,
 	ak09970_calibration_show, ak09970_calibration_store);
+DEVICE_ATTR(ak09970_algo_param, 0440,
+	ak09970_algo_param_show, NULL);
 
 static struct attribute *ak09970_attributes[] = {
 	&dev_attr_ak09970_enable.attr,
@@ -1802,6 +1816,7 @@ static struct attribute *ak09970_attributes[] = {
 	&dev_attr_ak09970_self_test.attr,
 	&dev_attr_ak09970_nv_data.attr,
 	&dev_attr_ak09970_calibration.attr,
+	&dev_attr_ak09970_algo_param.attr,
 	NULL,
 };
 

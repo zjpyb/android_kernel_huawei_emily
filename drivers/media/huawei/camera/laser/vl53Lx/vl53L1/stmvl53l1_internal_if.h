@@ -73,7 +73,7 @@ struct stmvl53l1_register_flexi {
 #define VL53L1_IOCTL_REGISTER   _IOWR('p', 0x0c, struct stmvl53l1_register)
 
 struct stmvl53l1_data_with_additional {
-	VL53L1_MultiRangingData_t data;
+	struct VL53L1_MultiRangingData_t data;
 	VL53L1_AdditionalData_t additional_data;
 };
 

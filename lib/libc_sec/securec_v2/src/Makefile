@@ -13,7 +13,7 @@ SECURE_LDFLAG_FOR_SHARED_LIBRARY += -Wl,-z,relro,-z,now,-z,noexecstack
 #This option ensure forced links to functions in the library. If these functions are already contained in other libraries, cross-calls will occur
 #SECURE_LDFLAG_FOR_SHARED_LIBRARY += -Wl,-Bsymbolic
 
-GCC_HAVE_STRONG=$(shell $(CC) -fstack-protector-strong -E -dM - < /dev/null 2>&1 |grep error >/dev/null ;if [ $$? -ne 0 ] ;then echo yes;fi)
+GCC_HAVE_STRONG=$(shell $(CC) -fstack-protector-strong -E -dM - < /dev/null 2>&1 |grep -- "fstack-protector-strong" >/dev/null ;if [ $$? -ne 0 ] ;then echo yes;fi)
 ifeq ($(GCC_HAVE_STRONG),yes)
 SECURE_CFLAG_FOR_SHARED_LIBRARY  += -fstack-protector-strong
 else
@@ -25,7 +25,7 @@ endif
 #SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL += -fvisibility=hidden
 
 #-ftrapv -D_FORTIFY_SOURCE=2 -fstack-check May result in performance degradation after opening
-#SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL += -D_FORTIFY_SOURCE=2 -O2
+SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL += -D_FORTIFY_SOURCE=2 -O2
 #SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL += -ftrapv
 #SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL += -fstack-check
 
@@ -59,8 +59,9 @@ PRODUCT_OPTION += -Wmissing-prototypes
 PRODUCT_OPTION += -Wstrict-overflow=1
 PRODUCT_OPTION += -Wstrict-aliasing=2
 PRODUCT_OPTION += -Wswitch -Wswitch-default
-PRODUCT_OPTION += #-fno-inline-small-functions -fno-indirect-inlining -fno-inline-functions-called-once -fno-early-inlining -fno-inline
-PRODUCT_OPTION += #-Wframe-larger-than=1024
+PRODUCT_OPTION += # -fno-inline-small-functions -fno-indirect-inlining -fno-inline-functions-called-once -fno-early-inlining -fno-inline
+PRODUCT_OPTION += # -Wframe-larger-than=1024
+PRODUCT_OPTION += # -ftrapv
 
 CFLAG   =  -Wall  -s -DNDEBUG -O2 $(SECURE_CFLAG_FOR_SHARED_LIBRARY) $(SECURE_CFLAG_FOR_EXE) $(SECURE_CFLAG_FOR_SHARED_LIBRARY_OPTIONAL) $(SECUREC_CODE_STANDARD_OPTION) $(PRODUCT_OPTION)
 #CFLAG += -DSECUREC_VXWORKS_PLATFORM
@@ -100,15 +101,15 @@ LD_FLAG ?= $(SECURE_LDFLAG_FOR_SHARED_LIBRARY) $(SECURE_CFLAG_FOR_SHARED_LIBRARY
 AR ?=ar
 RANLIB ?=ranlib
 
-$(PROJECT):$(OBJECTS)
+$(PROJECT): note_msg $(OBJECTS)
 	@mkdir -p ../obj
 	mkdir -p ../lib
-	$(CC)  -shared -o ../lib/$@ $(patsubst %.o,../obj/%.o,$^) $(LD_FLAG)
+	$(CC)  -shared -o ../lib/$@ $(patsubst %.o,../obj/%.o,$(OBJECTS)) $(LD_FLAG)
 	@echo "finish $(PROJECT)"
 	#you may add you custom commands here
 
-lib:$(OBJECTS)
-	$(AR) crv libsecurec.a $(patsubst %.o,../obj/%.o,$^)
+lib: note_msg $(OBJECTS)
+	$(AR) crv libsecurec.a $(patsubst %.o,../obj/%.o,$(OBJECTS))
 	$(RANLIB) libsecurec.a
 	-mkdir -p ../lib
 	-cp libsecurec.a ../lib
@@ -139,9 +140,17 @@ endif
 else
     KERNELDIR := /lib/modules/$(shell uname -r)/build
     PWD := $(shell pwd)
-kernel:
+kernel: note_msg
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) INCDIR=$(PWD)/../include modules
 endif
+
+NOTE_MSG:='\n'
+NOTE_MSG+='---------------------------------------------------------\n'
+NOTE_MSG+='+ This Makefile is a sample file, do not use in product +\n'
+NOTE_MSG+='---------------------------------------------------------\n'
+
+note_msg:
+	-@echo  -e $(NOTE_MSG)
 
 clean:
 	echo "cleaning ...."

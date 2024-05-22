@@ -55,9 +55,9 @@ static int checkroot_risk_id(int curr_id, unsigned int flag)
 
 	if ((curr_id < ANDROID_THIRD_PART_APK_UID) && (curr_id != AID_SHELL))
 		return 0;
-
-	pr_emerg("check_root: Uid %d, Gid %d, try to Privilege Escalate\n",
-		now->uid.val, now->gid.val);
+	if (now)
+		pr_emerg("check_root:Uid %d,Gid %d,try to Privilege Escalate\n",
+			now->uid.val, now->gid.val);
 
 #ifdef CONFIG_CHECKROOT_FORCE_STOP
 	if (curr_id >= ANDROID_THIRD_PART_APK_UID) {
@@ -100,26 +100,26 @@ int checkroot_setresgid(gid_t gid)
 static int checkroot_readline(struct file *filp, char *buf, int len)
 {
 	int ret;
-	int readlen = 0;
-	mm_segment_t oldfs;
+	int read_len = 0;
+	mm_segment_t old_fs;
 
 	if (!filp)
 		return -EINVAL;
 
-	oldfs = get_fs();
+	old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	for (; readlen < len; buf++, readlen++) {
+	for (; read_len < len; buf++, read_len++) {
 		ret = vfs_read(filp, buf, 1, &filp->f_pos);
 		if (ret <= 0)
 			break;
 		if (*buf == '\n') {
 			*buf = 0;
-			readlen++;
+			read_len++;
 			break;
 		}
 	}
-	set_fs(oldfs);
-	return (ret < 0) ? ret : readlen;
+	set_fs(old_fs);
+	return (ret < 0) ? ret : read_len;
 }
 
 static int checkroot_check_hosts(char *info, uint info_len, uint offset)
@@ -140,12 +140,12 @@ static int checkroot_check_hosts(char *info, uint info_len, uint offset)
 			!strstr(line, HOSTS_ENT_LOCAL6)) {
 			pr_err("unknown host %s\n", line);
 			status = STP_RISK;
-			if (info && ((strlen(line) + strlen(info) + 1) <
-				info_len)) {
+			if (info &&
+			    ((strlen(line) + strlen(info) + 1) < info_len)) {
 				(void)strcat(info, line);
 				(void)strcat(info, " ");
+			}
 		}
-	}
 	}
 	filp_close(filp, NULL);
 	return status;

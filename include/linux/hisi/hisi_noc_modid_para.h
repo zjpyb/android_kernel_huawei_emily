@@ -1,12 +1,23 @@
-/*noc err bus*/
-enum noc_error_bus {
-	 NOC_ERRBUS_SYS_CONFIG,
-	 NOC_ERRBUS_VCODEC,
-	 NOC_ERRBUS_VIVO,
-	 NOC_ERRBUS_NPU,
-	 NOC_ERRBUS_FCM,
-	 NOC_ERRBUS_BOTTOM,
-};
+/*
+ *
+ * noc modid register.
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+#ifndef __DFX_NOC_MODID_PARA_H__
+#define __DFX_NOC_MODID_PARA_H__
+
+#include <noc_modid_para.h>
 
 struct noc_err_para_s {
 	u32 masterid;
@@ -18,7 +29,8 @@ struct noc_mid_modid_trans_s {
 	struct list_head s_list;
 	struct noc_err_para_s err_info_para;
 	u32 modid;
-	void* reserve_p;
+	void *reserve_p;
 };
-void noc_modid_register(struct noc_err_para_s noc_err_info,u32 modid);
+void noc_modid_register(struct noc_err_para_s noc_err_info, u32 modid);
 
+#endif

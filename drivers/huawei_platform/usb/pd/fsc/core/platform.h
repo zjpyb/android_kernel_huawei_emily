@@ -1,17 +1,21 @@
-/* platform.h
+/*
+ * platform.h
  *
- * THIS FILE DEFINES EVERY PLATFORM-DEPENDENT ELEMENT THAT THE CORE REQUIRES.
+ * platform driver
  *
- * INSTRUCTIONS FOR THIS FILE:
- * 1. Modify this file with a definition of Generic Type Definitions
- * (FSC_S8, FSC_U32, etc) Either by include or putting directly in this file.
- * 2. Include this as a header file for your platform.c and implement the
- * function headers as defined below.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- * It is the driver-writer's responsibility to implement each function
- * stub and to allocate/initialize/reserve sufficient system resources.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
+
 #ifndef _FSC_PLATFORM_H_
 #define _FSC_PLATFORM_H_
 
@@ -302,6 +306,7 @@ FSC_BOOL platform_discover_mode_supported(void);
 FSC_BOOL platform_enter_mode_supported(void);
 FSC_BOOL platform_discover_svid_supported(void);
 FSC_U32 platform_sink_pdo_number(void);
+u32 platform_get_wait_goodcrc_timeout_en(void);
 void platform_double_56k_cable(void);
 
 #endif  // _FSC_PLATFORM_H_

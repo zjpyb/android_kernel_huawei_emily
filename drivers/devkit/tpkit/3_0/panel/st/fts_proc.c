@@ -224,7 +224,8 @@ static void *fts_seq_start(struct seq_file *s, loff_t *pos)
 		chunk = limit - *pos;
 
 	memset(buf_chunk, 0, CHUNK_PROC);
-	memcpy(buf_chunk, &driver_test_buff[(int)*pos], chunk);
+	if (driver_test_buff != NULL)
+		memcpy(buf_chunk, &driver_test_buff[(int)*pos], chunk);
 	mutex_unlock(&proc_touch_lock);
 	return buf_chunk;
 }

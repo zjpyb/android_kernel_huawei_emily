@@ -1,42 +1,33 @@
 /*
- * drivers/inputhub/contexthub_ext_log.c
- *
- * functions for sensorhub ext log
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub ext log source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
-#include <linux/err.h>
-#include "linux/spinlock_types.h"
-#include <linux/types.h>
-#include <linux/init.h>
+#include "contexthub_ext_log.h"
+
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/err.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
-#include <linux/sched.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
-#include "contexthub_route.h"
-#include "contexthub_ext_log.h"
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include "linux/spinlock_types.h"
+#include <linux/types.h>
+
 #include <huawei_platform/log/hw_log.h>
 
+#include "contexthub_route.h"
 
 static struct inputhub_ext_log_notifier inputhub_ext_log_mag;
 static bool inited;
 
 int inputhub_ext_log_register_handler(int tag,
-		int (*notify)(const pkt_header_t *head))
+		int (*notify)(const struct pkt_header *head))
 {
-	struct inputhub_ext_notifier_node *pnode, *n;
+	struct inputhub_ext_notifier_node *pnode = NULL;
+	struct inputhub_ext_notifier_node *n = NULL;
 	int ret = 0;
 	unsigned long flags = 0;
 
@@ -60,7 +51,6 @@ int inputhub_ext_log_register_handler(int tag,
 
 	/* make mcu_notifier_node */
 	pnode = kzalloc(sizeof(struct inputhub_ext_notifier_node), GFP_ATOMIC);
-
 	if (!pnode) {
 		ret = -ENOMEM;
 		goto out;
@@ -77,18 +67,19 @@ out:
 	return ret;
 }
 
-int is_inputhub_ext_log_notify(const pkt_header_t *head)
+int is_inputhub_ext_log_notify(const struct pkt_header *head)
 {
 	return (head->tag == TAG_LOG_BUFF) &&
 			(head->cmd == CMD_EXT_LOG_FLUSH);
 }
 
-static int inputhub_ext_log_process(const pkt_header_t *head)
+static int inputhub_ext_log_process(const struct pkt_header *head)
 {
 	int found = 0;
 	ext_logger_req_t *pkt_ext = (ext_logger_req_t *)head;
 	/* search mcu_notifier, call all call_backs */
-	struct inputhub_ext_notifier_node *pos, *n;
+	struct inputhub_ext_notifier_node *pos = NULL;
+	struct inputhub_ext_notifier_node *n = NULL;
 
 	list_for_each_entry_safe(pos, n, &inputhub_ext_log_mag.head, entry) {
 		if (pos->tag == pkt_ext->tag && pos->notify) {

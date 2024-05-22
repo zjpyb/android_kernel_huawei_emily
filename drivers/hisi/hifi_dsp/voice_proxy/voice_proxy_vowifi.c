@@ -154,7 +154,6 @@ static void vowifi_get_rx_data(int8_t *data, uint32_t *size)
 		if (*size < (uint32_t)node->list_data.size) {
 			AUDIO_LOGE("Size is invalid, size = %d, list_data.size = %d", *size, node->list_data.size);
 			kfree(node);
-			node = NULL;
 			*size = 0;
 			spin_unlock_bh(&priv.vowifi_write_lock);
 			return;
@@ -164,7 +163,6 @@ static void vowifi_get_rx_data(int8_t *data, uint32_t *size)
 		memcpy(data, node->list_data.data, (size_t)*size); /* unsafe_function_ignore: memcpy */
 
 		kfree(node);
-		node = NULL;
 		spin_unlock_bh(&priv.vowifi_write_lock);
 
 		priv.first_vowifi_rx = false;
@@ -211,20 +209,20 @@ static void vowifi_receive_ajb_om_tx_ntf(int8_t *rev_buf, uint32_t buf_size)
 
 static void vowifi_receive_status_ntf(int8_t *rev_buf, uint32_t buf_size)
 {
-	struct hifi_proxy_wifi_status_ind *status_ind = NULL;
+	struct dsp_proxy_wifi_status_ind *status_ind = NULL;
 
 	if (!rev_buf) {
 		AUDIO_LOGE("vowifi:status notify param rev_buf is NULL");
 		return;
 	}
 
-	if (buf_size < sizeof(struct hifi_proxy_wifi_status_ind)) {
+	if (buf_size < sizeof(struct dsp_proxy_wifi_status_ind)) {
 		AUDIO_LOGE("vowifi:status indication msg size is error,actually is %u, the expection not less than %ld",
-			buf_size, sizeof(struct hifi_proxy_wifi_status_ind));
+			buf_size, sizeof(struct dsp_proxy_wifi_status_ind));
 		return;
 	}
 
-	status_ind = (struct hifi_proxy_wifi_status_ind *)rev_buf;
+	status_ind = (struct dsp_proxy_wifi_status_ind *)rev_buf;
 
 	spin_lock_bh(&priv.vowifi_read_lock);
 	if (status_ind->status == STATUS_OPEN) {
@@ -358,10 +356,9 @@ static ssize_t vowifi_read(struct file *file, char __user *user_buf, size_t size
 		if (priv.vowifi_tx_cnt > 0)
 			priv.vowifi_tx_cnt--;
 
-		if (size < node->list_data.size) { /*lint !e574 !e737*/
-			AUDIO_LOGE("size(%zd) < node->list_data.size(%d)", size, node->list_data.size);
+		if (user_buf == NULL || size < node->list_data.size) { /*lint !e574 !e737*/
+			AUDIO_LOGE("user_buf == NULL or size(%zd) < node->list_data.size(%d)", size, node->list_data.size);
 			kfree(node);
-			node = NULL;
 			spin_unlock_bh(&priv.vowifi_read_lock);
 			return -EAGAIN; /* lint !e438 */
 		}
@@ -373,7 +370,6 @@ static ssize_t vowifi_read(struct file *file, char __user *user_buf, size_t size
 			ret = node->list_data.size;
 		}
 		kfree(node);
-		node = NULL;
 		spin_unlock_bh(&priv.vowifi_read_lock);
 	} else {
 		spin_unlock_bh(&priv.vowifi_read_lock);
@@ -418,8 +414,8 @@ static ssize_t vowifi_write(struct file *filp, const char __user *buff, size_t s
 	UNUSED_PARAMETER(filp);
 	UNUSED_PARAMETER(offp);
 
-	if (size > WIFI_RX_DATA_SIZE) {
-		AUDIO_LOGE("para error, size:%zd(>%ld)", size, WIFI_RX_DATA_SIZE);
+	if (buff == NULL || size > WIFI_RX_DATA_SIZE) {
+		AUDIO_LOGE("buff == NULL or para error, size:%zd(>%ld)", size, WIFI_RX_DATA_SIZE);
 		return -EINVAL;
 	}
 
@@ -608,6 +604,5 @@ module_init(vowifi_init);
 module_exit(vowifi_exit);
 
 MODULE_DESCRIPTION("voice proxy vowifi driver");
-MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
 MODULE_LICENSE("GPL");
 

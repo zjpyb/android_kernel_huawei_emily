@@ -1,10 +1,20 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2015-2020. All rights reserved.
+ * Description: hifi USB mailbox
+ * Create: 2015
+ *
+ * This software is distributed under the terms of the GNU General
+ * Public License ("GPL") as published by the Free Software Foundation,
+ * either version 2 of that License or (at your option) any later version.
+ */
+
 #ifndef _HIFI_USB_MAIL_H
 #define _HIFI_USB_MAIL_H
 
 #include <linux/kernel.h>
 #include <linux/usb/ch9.h>
 #include "drv_mailbox_msg.h"
-#include "hifi_lpp.h"
+#include "dsp_misc.h"
 
 /*
  *
@@ -33,9 +43,9 @@ enum hifi_usb_opcode {
 	AP_HIFI_USB_RESET_DEV,
 	AP_HIFI_USB_ADDRESS_DEV,
 	AP_HIFI_USB_UPDATE_DEV,
-	AP_HIFI_USB_URB_ENQUEUE,	/* AP to HIFI */
+	AP_HIFI_USB_URB_ENQUEUE, /* AP to HIFI */
 
-	HIFI_AP_USB_URB_COMPL,		/* HIFI to AP */
+	HIFI_AP_USB_URB_COMPL, /* HIFI to AP */
 
 	AP_HIFI_USB_URB_DEQUEUE,
 	AP_HIFI_USB_ADD_ENDPOINT,
@@ -88,8 +98,8 @@ struct hifi_usb_test_debug_print_data {
 #define USB_PRINT_DEBUG_MASK (0xF)
 	union {
 		struct {
-			__u32 usbcore_print_dbg:1;
-			__u32 xhci_print_dbg:1;
+			__u32 usbcore_print_dbg : 1;
+			__u32 xhci_print_dbg : 1;
 		};
 		__u32 flags;
 	};
@@ -122,12 +132,12 @@ struct hifi_usb_test_msg {
 
 /* for hub_control */
 struct usb_hub_control_data {
-	__u16 typeReq;
-	__u16 wValue;
-	__u16 wIndex;
-	__u16 wLength;
+	__u16 type_req;
+	__u16 w_value;
+	__u16 w_index;
+	__u16 w_length;
 	__u8 buf[4];
-}/* __attribute__ ((packed)) */;
+}; /* __attribute__ ((packed)) */
 
 /*
  * for alloc_dev, free_dev
@@ -135,26 +145,26 @@ struct usb_hub_control_data {
  */
 struct usb_dev_control_data {
 	__u16 slot_id;
-	__u16 speed;	/* enum usb_device_speed */
-	__u16 state;	/* enum usb_device_state */
+	__u16 speed; /* enum usb_device_speed */
+	__u16 state; /* enum usb_device_state */
 	__u16 ep0_mps;
-}/* __attribute__ ((packed)) */;
+}; /* __attribute__ ((packed)) */
 
 /* for add_endpoint and drop_endpoint */
 struct usb_ep_control_data {
 	struct usb_endpoint_descriptor ep_desc;
 	__u16 slot_id;
-}/* __attribute__ ((packed)) */;
+}; /* __attribute__ ((packed)) */
 
 /*
  * This is the data structure in share memory.
  */
 struct hifi_urb_msg {
-	__s32 status;			/* (return) non-ISO status */
-	__u32 transfer_flags;		/* (in) URB_SHORT_NOT_OK | ...*/
-	__u32 transfer_buffer_length;	/* (in) data buffer length */
-	__u32 actual_length;		/* (return) actual transfer length */
-	__s32 interval;			/* (modify) transfer interval */
+	__s32 status; /* (return) non-ISO status */
+	__u32 transfer_flags; /* (in) URB_SHORT_NOT_OK | ... */
+	__u32 transfer_buffer_length; /* (in) data buffer length */
+	__u32 actual_length; /* (return) actual transfer length */
+	__s32 interval; /* (modify) transfer interval */
 	__u32 reserved;
 	__u32 reserved_2;
 	__u32 reserved_3;
@@ -166,7 +176,7 @@ struct hifi_urb_msg {
 		};
 		__u8 buf[0];
 	};
-}/* __attribute__ ((packed)) */;
+}; /* __attribute__ ((packed)) */
 
 /*
  * for urb transfer.
@@ -219,7 +229,7 @@ struct hifi_usb_op_msg {
 		struct usb_port_status_change_data port_data;
 		struct usb_update_device_data bos_data;
 	};
-} /*__attribute__ ((packed))*/;
+}; /* __attribute__ ((packed)) */
 
 struct hifi_usb_runstop_msg {
 	u16 mesg_id;
@@ -237,11 +247,14 @@ struct hifi_usb_init_msg {
 #ifdef CONFIG_HIFI_MAILBOX
 int hifi_usb_mailbox_init(void);
 void hifi_usb_mailbox_exit(void);
-int hifi_usb_send_mailbox(const void *op_msg, unsigned int len);
+int hifi_usb_send_mailbox(const struct hifi_usb_op_msg *op_msg, unsigned int len);
 #else
-static inline int hifi_usb_mailbox_init(void) {return -ENOENT;}
+static inline int hifi_usb_mailbox_init(void)
+{
+	return -ENOENT;
+}
 static inline void hifi_usb_mailbox_exit(void) {}
-static inline int hifi_usb_send_mailbox(const void *op_msg, unsigned int len)
+static inline int hifi_usb_send_mailbox(const struct hifi_usb_op_msg *op_msg, unsigned int len)
 {
 	return -ENOENT;
 }

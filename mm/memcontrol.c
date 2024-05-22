@@ -36,6 +36,7 @@
 #include <linux/cgroup.h>
 #include <linux/mm.h>
 #include <linux/sched/mm.h>
+#include <linux/sched/signal.h>
 #include <linux/shmem_fs.h>
 #include <linux/hugetlb.h>
 #include <linux/pagemap.h>
@@ -69,27 +70,40 @@
 #include <net/sock.h>
 #include <net/ip.h>
 #include "slab.h"
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+#include <linux/protect_lru.h>
+#endif
 
 #include <linux/uaccess.h>
 
 #include <trace/events/vmscan.h>
+
+#ifdef CONFIG_HYPERHOLD
+#include <linux/hyperhold_inf.h>
+#include <linux/memcg_policy.h>
+#endif
 
 struct cgroup_subsys memory_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(memory_cgrp_subsys);
 
 struct mem_cgroup *root_mem_cgroup __read_mostly;
 
-#ifdef CONFIG_MEMCG_PROTECT_LRU
-struct mem_cgroup *prot_mem_cgroup[PROTECT_MEMCG_MAX] = {0, 0, 0};
-#endif
-
 #define MEM_CGROUP_RECLAIM_RETRIES	5
 
+#ifdef CONFIG_HYPERHOLD
+/* Socket memory accounting disabled? */
+static bool cgroup_memory_nosocket = true;
+
+/* Kernel memory accounting disabled? */
+static bool cgroup_memory_nokmem = true;
+#else
 /* Socket memory accounting disabled? */
 static bool cgroup_memory_nosocket;
 
 /* Kernel memory accounting disabled? */
 static bool cgroup_memory_nokmem;
+#endif
+
 
 /* Whether the swap controller is active */
 #ifdef CONFIG_MEMCG_SWAP
@@ -362,13 +376,6 @@ ino_t page_cgroup_ino(struct page *page)
 	return ino;
 }
 
-#ifdef CONFIG_MEMCG_PROTECT_LRU
-static struct cgroup_subsys_state *mem_cgroup_css(struct mem_cgroup *memcg)
-{
-	return &memcg->css;
-}
-#endif
-
 static struct mem_cgroup_per_node *
 mem_cgroup_page_nodeinfo(struct mem_cgroup *memcg, struct page *page)
 {
@@ -456,7 +463,15 @@ static void mem_cgroup_remove_exceeded(struct mem_cgroup_per_node *mz,
 
 static unsigned long soft_limit_excess(struct mem_cgroup *memcg)
 {
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	struct mem_cgroup_per_node *mz = mem_cgroup_nodeinfo(memcg, 0);
+	struct lruvec *lruvec = &mz->lruvec;
+	unsigned long nr_pages = lruvec_lru_size(lruvec, LRU_ACTIVE_ANON,
+		MAX_NR_ZONES) + lruvec_lru_size(lruvec, LRU_INACTIVE_ANON,
+		MAX_NR_ZONES);
+#else
 	unsigned long nr_pages = page_counter_read(&memcg->memory);
+#endif
 	unsigned long soft_limit = READ_ONCE(memcg->soft_limit);
 	unsigned long excess = 0;
 
@@ -736,7 +751,7 @@ static struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm)
 			if (unlikely(!memcg))
 				memcg = root_mem_cgroup;
 		}
-	} while (!css_tryget_online(&memcg->css));
+	} while (!css_tryget(&memcg->css));
 	rcu_read_unlock();
 	return memcg;
 }
@@ -882,9 +897,9 @@ void mem_cgroup_iter_break(struct mem_cgroup *root,
 		css_put(&prev->css);
 }
 
-static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
+static void __invalidate_reclaim_iterators(struct mem_cgroup *from,
+					struct mem_cgroup *dead_memcg)
 {
-	struct mem_cgroup *memcg = dead_memcg;
 	struct mem_cgroup_reclaim_iter *iter;
 	struct mem_cgroup_per_node *mz;
 	int nid;
@@ -896,16 +911,35 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
 	priority = DEF_PRIORITY;
 #endif
 
-	for (; memcg; memcg = parent_mem_cgroup(memcg)) {
-		for_each_node(nid) {
-			mz = mem_cgroup_nodeinfo(memcg, nid);
-			for (i = 0; i <= priority; i++) {
-				iter = &mz->iter[i];
-				cmpxchg(&iter->position,
-					dead_memcg, NULL);
-			}
+	for_each_node(nid) {
+		mz = mem_cgroup_nodeinfo(from, nid);
+		for (i = 0; i <= priority; i++) {
+			iter = &mz->iter[i];
+			cmpxchg(&iter->position,
+				dead_memcg, NULL);
 		}
 	}
+}
+
+static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
+{
+	struct mem_cgroup *memcg = dead_memcg;
+	struct mem_cgroup *last;
+
+	do {
+		__invalidate_reclaim_iterators(memcg, dead_memcg);
+		last = memcg;
+	} while ((memcg = parent_mem_cgroup(memcg)));
+
+	/*
+	 * When cgruop1 non-hierarchy mode is used,
+	 * parent_mem_cgroup() does not walk all the way up to the
+	 * cgroup root (root_mem_cgroup). So we have to handle
+	 * dead_memcg from cgroup root separately.
+	 */
+	if (last != root_mem_cgroup)
+		__invalidate_reclaim_iterators(root_mem_cgroup,
+						dead_memcg);
 }
 
 /*
@@ -979,7 +1013,13 @@ struct lruvec *mem_cgroup_page_lruvec(struct page *page, struct pglist_data *pgd
 		lruvec = &pgdat->lruvec;
 		goto out;
 	}
-
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	if (is_file_lru(page_lru(page)) &&
+		!is_prot_page(page)) {
+		lruvec = &pgdat->lruvec;
+		goto out;
+	}
+#endif
 	memcg = page->mem_cgroup;
 	/*
 	 * Swapcache readahead pages are added to the LRU - and
@@ -1021,6 +1061,10 @@ void mem_cgroup_update_lru_size(struct lruvec *lruvec, enum lru_list lru,
 
 	if (mem_cgroup_disabled())
 		return;
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+	if (is_node_lruvec(lruvec))
+		return;
+#endif
 
 	mz = container_of(lruvec, struct mem_cgroup_per_node, lruvec);
 	lru_size = &mz->lru_zone_size[zid][lru];
@@ -2358,6 +2402,16 @@ int memcg_kmem_charge_memcg(struct page *page, gfp_t gfp, int order,
 
 	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
 	    !page_counter_try_charge(&memcg->kmem, nr_pages, &counter)) {
+
+		/*
+		 * Enforce __GFP_NOFAIL allocation because callers are not
+		 * prepared to see failures and likely do not have any failure
+		 * handling code.
+		 */
+		if (gfp & __GFP_NOFAIL) {
+			page_counter_charge(&memcg->kmem, nr_pages);
+			return 0;
+		}
 		cancel_charge(memcg, nr_pages);
 		return -ENOMEM;
 	}
@@ -2609,8 +2663,14 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 	unsigned long excess;
 	unsigned long nr_scanned;
 
+#ifdef CONFIG_HYPERHOLD
+#define SFT_LIMIT_COSTLY_ORDER 8
+	if (order > SFT_LIMIT_COSTLY_ORDER)
+		return 0;
+#else
 	if (order > 0)
 		return 0;
+#endif
 
 	mctz = soft_limit_tree_node(pgdat->node_id);
 
@@ -3270,6 +3330,7 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 	{
 		pg_data_t *pgdat;
 		struct mem_cgroup_per_node *mz;
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 		struct zone_reclaim_stat *rstat;
 		unsigned long recent_rotated[2] = {0, 0};
 		unsigned long recent_scanned[2] = {0, 0};
@@ -3287,9 +3348,30 @@ static int memcg_stat_show(struct seq_file *m, void *v)
 		seq_printf(m, "recent_rotated_file %lu\n", recent_rotated[1]);
 		seq_printf(m, "recent_scanned_anon %lu\n", recent_scanned[0]);
 		seq_printf(m, "recent_scanned_file %lu\n", recent_scanned[1]);
+#else
+		unsigned long anon_cost = 0;
+		unsigned long file_cost = 0;
+
+		for_each_online_pgdat(pgdat) {
+			mz = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+			anon_cost += lruvec_page_state(&mz->lruvec,
+						      WORKINGSET_ANON_COST);
+			file_cost += lruvec_page_state(&mz->lruvec,
+						      WORKINGSET_FILE_COST);
+#else
+			anon_cost += mz->lruvec.anon_cost;
+			file_cost += mz->lruvec.file_cost;
+#endif
+		}
+		seq_printf(m, "anon_cost %lu\n", anon_cost);
+		seq_printf(m, "file_cost %lu\n", file_cost);
+#endif
 	}
 #endif
-
+#ifdef CONFIG_HYPERHOLD_DEBUG
+	memcg_eswap_info_show(m);
+#endif
 	return 0;
 }
 
@@ -3306,7 +3388,8 @@ static int mem_cgroup_swappiness_write(struct cgroup_subsys_state *css,
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
-	if (val > 100)
+	/** system swappiness is not more than 200 **/
+	if (val > 200)
 		return -EINVAL;
 
 	if (css->parent)
@@ -3514,7 +3597,7 @@ static void __mem_cgroup_usage_unregister_event(struct mem_cgroup *memcg,
 	struct mem_cgroup_thresholds *thresholds;
 	struct mem_cgroup_threshold_ary *new;
 	unsigned long usage;
-	int i, j, size;
+	int i, j, size, entries;
 
 	mutex_lock(&memcg->thresholds_lock);
 
@@ -3534,13 +3617,19 @@ static void __mem_cgroup_usage_unregister_event(struct mem_cgroup *memcg,
 	__mem_cgroup_threshold(memcg, type == _MEMSWAP);
 
 	/* Calculate new number of threshold */
-	size = 0;
+	size = entries = 0;
 	for (i = 0; i < thresholds->primary->size; i++) {
 		if (thresholds->primary->entries[i].eventfd != eventfd)
 			size++;
+		else
+			entries++;
 	}
 
 	new = thresholds->spare;
+
+	/* If no items related to eventfd have been cleared, nothing to do */
+	if (!entries)
+		goto unlock;
 
 	/* Set thresholds array to NULL if we don't have thresholds */
 	if (!size) {
@@ -4153,7 +4242,9 @@ static void mem_cgroup_id_put_many(struct mem_cgroup *memcg, unsigned int n)
 {
 	VM_BUG_ON(atomic_read(&memcg->id.ref) < n);
 	if (atomic_sub_and_test(n, &memcg->id.ref)) {
+#ifndef CONFIG_HYPERHOLD
 		mem_cgroup_id_remove(memcg);
+#endif
 
 		/* Memcg ID pins CSS */
 		css_put(&memcg->css);
@@ -4279,6 +4370,16 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	spin_lock_init(&memcg->move_lock);
 	vmpressure_init(&memcg->vmpressure);
 	INIT_LIST_HEAD(&memcg->event_list);
+#ifdef CONFIG_HYPERHOLD
+	if (unlikely(!score_head_inited)) {
+		INIT_LIST_HEAD(&score_head);
+		score_head_inited = true;
+	}
+	INIT_LIST_HEAD(&memcg->score_node);
+#ifdef CONFIG_HP_CORE
+	spin_lock_init(&memcg->zram_init_lock);
+#endif
+#endif
 	spin_lock_init(&memcg->event_list_lock);
 	memcg->socket_pressure = jiffies;
 #ifndef CONFIG_SLOB
@@ -4305,7 +4406,15 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	memcg = mem_cgroup_alloc();
 	if (!memcg)
 		return ERR_PTR(error);
-
+#ifdef CONFIG_HYPERHOLD
+	atomic64_set(&memcg->memcg_reclaimed.app_score, 300);
+	atomic64_set(&memcg->memcg_reclaimed.ub_ufs2zram_ratio, 100);
+#ifdef CONFIG_HYPERHOLD_ZSWAPD
+	atomic_set(&memcg->memcg_reclaimed.ub_zram2ufs_ratio, 10);
+	atomic_set(&memcg->memcg_reclaimed.ub_mem2zram_ratio, 60);
+	atomic_set(&memcg->memcg_reclaimed.refault_threshold, 50);
+#endif
+#endif
 	memcg->high = PAGE_COUNTER_MAX;
 	memcg->soft_limit = PAGE_COUNTER_MAX;
 	if (parent) {
@@ -4358,27 +4467,15 @@ static int mem_cgroup_css_online(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 #ifdef CONFIG_MEMCG_PROTECT_LRU
-	struct mem_cgroup *parent = mem_cgroup_from_css(css->parent);
-	int num;
+	int ret = protect_memcg_css_online(css, memcg);
 
-	/* Do not create a child memcg under protect memcg. */
-	if (is_prot_memcg(parent, true))
-		return -EINVAL;
-
-	/* Protect memcg could only be created under the root memcg. */
-	num = is_prot_memcg(memcg, true);
-	if (num && parent != root_mem_cgroup)
-		return -EINVAL;
-
-	/* Init protect memcg ptr. */
-	if (num) {
-		WARN_ON(prot_mem_cgroup[num - 1]);
-		prot_mem_cgroup[num - 1] = memcg;
-		pr_info("protect_lru: online memcg,
-					name=protect_lru_%d\n", num);
-	}
+	if (ret)
+		return ret;
 #endif
-
+#ifdef CONFIG_HYPERHOLD
+	memcg_app_score_update(memcg);
+	css_get(css);
+#endif
 	/* Online state pins memcg ID, memcg ID pins CSS */
 	atomic_set(&memcg->id.ref, 1);
 	css_get(css);
@@ -4389,27 +4486,19 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 	struct mem_cgroup_event *event, *tmp;
-#ifdef CONFIG_MEMCG_PROTECT_LRU
-	int num;
-	unsigned long prot_file;
 
-	num = is_prot_memcg(memcg, false);
-	if (num) {
-		/* Empty the protect memcg */
-		do {
-			lru_add_drain_all();
-			shrink_prot_memcg(memcg);
-			prot_file = memcg_page_state(memcg, MEMCG_CACHE);
-			cond_resched();
-		} while (prot_file);
+#ifdef CONFIG_HYPERHOLD
+	unsigned long flags;
 
-		WARN_ON(!prot_mem_cgroup[num - 1]);
-		prot_mem_cgroup[num - 1] = NULL;
-		pr_info("protect_lru: offline memcg,
-					name=protect_lru_%d\n", num);
-	}
+	spin_lock_irqsave(&score_list_lock, flags);
+	list_del_init(&memcg->score_node);
+	spin_unlock_irqrestore(&score_list_lock, flags);
+	css_put(css);
 #endif
 
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+	protect_memcg_css_offline(memcg);
+#endif
 	/*
 	 * Unregister events and notify userspace.
 	 * Notify userspace about cgroup removing only after rmdir of cgroup
@@ -4440,7 +4529,12 @@ static void mem_cgroup_css_released(struct cgroup_subsys_state *css)
 static void mem_cgroup_css_free(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
-
+#ifdef CONFIG_HYPERHOLD
+#ifdef CONFIG_HP_CORE
+	hyperhold_mem_cgroup_remove(memcg);
+#endif
+	mem_cgroup_id_remove(memcg);
+#endif
 	if (cgroup_subsys_on_dfl(memory_cgrp_subsys) && !cgroup_memory_nosocket)
 		static_branch_dec(&memcg_sockets_enabled_key);
 
@@ -4545,7 +4639,7 @@ static struct page *mc_handle_swap_pte(struct vm_area_struct *vma,
 	struct page *page = NULL;
 	swp_entry_t ent = pte_to_swp_entry(ptent);
 
-	if (!(mc.flags & MOVE_ANON) || non_swap_entry(ent))
+	if (!(mc.flags & MOVE_ANON))
 		return NULL;
 
 	/*
@@ -4563,6 +4657,9 @@ static struct page *mc_handle_swap_pte(struct vm_area_struct *vma,
 			return NULL;
 		return page;
 	}
+
+	if (non_swap_entry(ent))
+		return NULL;
 
 	/*
 	 * Because lookup_swap_cache() updates some statistics counter,
@@ -4697,12 +4794,20 @@ static int mem_cgroup_move_account(struct page *page,
 
 	ret = 0;
 
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+	local_irq_save(flags);
+#else
 	local_irq_disable();
+#endif
 	mem_cgroup_charge_statistics(to, page, compound, nr_pages);
 	memcg_check_events(to, page);
 	mem_cgroup_charge_statistics(from, page, compound, -nr_pages);
 	memcg_check_events(from, page);
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+	local_irq_restore(flags);
+#else
 	local_irq_enable();
+#endif
 out_unlock:
 	unlock_page(page);
 out:
@@ -4923,7 +5028,6 @@ static void __mem_cgroup_clear_mc(void)
 		if (!mem_cgroup_is_root(mc.to))
 			page_counter_uncharge(&mc.to->memory, mc.moved_swap);
 
-		mem_cgroup_id_get_many(mc.to, mc.moved_swap);
 		css_put_many(&mc.to->css, mc.moved_swap);
 
 		mc.moved_swap = 0;
@@ -5114,7 +5218,8 @@ put:			/* get_mctgt_type() gets the page */
 			ent = target.ent;
 			if (!mem_cgroup_move_swap_account(ent, mc.from, mc.to)) {
 				mc.precharge--;
-				/* we fixup refcnts and charges later. */
+				mem_cgroup_id_get_many(mc.to, 1);
+				/* we fixup other refcnts and charges later. */
 				mc.moved_swap++;
 			}
 			break;
@@ -5438,10 +5543,25 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "pglazyfree %lu\n", events[PGLAZYFREE]);
 	seq_printf(m, "pglazyfreed %lu\n", events[PGLAZYFREED]);
 
+#ifndef CONFIG_REFAULT_IO_VMSCAN
 	seq_printf(m, "workingset_refault %lu\n",
 		   stat[WORKINGSET_REFAULT]);
 	seq_printf(m, "workingset_activate %lu\n",
 		   stat[WORKINGSET_ACTIVATE]);
+#else
+	seq_printf(m, "workingset_refault_anon %lu\n",
+		   stat[WORKINGSET_REFAULT_ANON]);
+	seq_printf(m, "workingset_refault_file %lu\n",
+		   stat[WORKINGSET_REFAULT_FILE]);
+	seq_printf(m, "workingset_activate_anon %lu\n",
+		   stat[WORKINGSET_ACTIVATE_ANON]);
+	seq_printf(m, "workingset_activate_file %lu\n",
+		   stat[WORKINGSET_ACTIVATE_FILE]);
+	seq_printf(m, "workingset_restore %lu\n",
+		   stat[WORKINGSET_RESTORE_ANON]);
+	seq_printf(m, "workingset_restore %lu\n",
+		   stat[WORKINGSET_RESTORE_FILE]);
+#endif
 	seq_printf(m, "workingset_nodereclaim %lu\n",
 		   stat[WORKINGSET_NODERECLAIM]);
 
@@ -5572,8 +5692,7 @@ bool mem_cgroup_low(struct mem_cgroup *root, struct mem_cgroup *memcg)
  * with mem_cgroup_cancel_charge() in case page instantiation fails.
  */
 int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
-			  gfp_t gfp_mask, struct mem_cgroup **memcgp,
-			  bool compound)
+			  gfp_t gfp_mask, struct mem_cgroup **memcgp, bool compound)
 {
 	struct mem_cgroup *memcg = NULL;
 	unsigned int nr_pages = compound ? hpage_nr_pages(page) : 1;
@@ -5606,17 +5725,8 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 		}
 	}
 #ifdef CONFIG_MEMCG_PROTECT_LRU
-	if (PageProtect(page)) {
-		WARN_ON(PageSwapCache(page));
-		WARN_ON(!page->mem_cgroup ||
-				page->mem_cgroup == root_mem_cgroup);
-
-		rcu_read_lock();
-		memcg = page->mem_cgroup;
-		if (memcg && !css_tryget_online(&memcg->css))
-			memcg = NULL;
-		rcu_read_unlock();
-	}
+	if (PageProtect(page))
+		memcg = get_protect_memcg(page, memcgp);
 #endif
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
@@ -6027,241 +6137,6 @@ static int __init cgroup_memory(char *s)
 }
 __setup("cgroup.memory=", cgroup_memory);
 
-#ifdef CONFIG_MEMCG_PROTECT_LRU
-/*
- * The value means num of protect file pages is no more than num of all
- * file pages * ratio%.
- */
-int protect_reclaim_ratio = 50;
-
-/*
- * Return 0 for non protect memcg, return num for protect memcg.
- */
-int is_prot_memcg(struct mem_cgroup *memcg, bool boot)
-{
-	static char memcg_name[NAME_MAX + 1];
-	static char prot_memcg_name[NAME_MAX + 1];
-	struct cgroup_subsys_state *css;
-	int i;
-
-	if (!memcg)
-		return 0;
-
-	if (mem_cgroup_disabled())
-		return 0;
-
-	if (boot) {
-		css = mem_cgroup_css(memcg);
-		cgroup_name(css->cgroup, memcg_name, sizeof(memcg_name));
-
-		for (i = 0; i < PROTECT_MEMCG_MAX; i++) {
-			sprintf(prot_memcg_name, "protect_lru_%d", i + 1);
-			if (!strncmp(memcg_name, prot_memcg_name,
-						 strlen(prot_memcg_name)))
-				return i + 1;
-		}
-	} else {
-		for (i = 0; i < PROTECT_MEMCG_MAX; i++) {
-			if (prot_mem_cgroup[i] && memcg == prot_mem_cgroup[i])
-				return i + 1;
-		}
-	}
-
-	return 0;
-}
-
-static bool is_prot_memcg_overlimit(struct mem_cgroup *memcg)
-{
-	struct page_counter *counter;
-	unsigned long val, limit;
-
-	counter = &memcg->memory;
-	val = page_counter_read(counter);
-	limit = counter->limit;
-
-	if (val + SWAP_CLUSTER_MAX > limit)
-		return true;
-
-	return false;
-}
-
-static bool is_prot_memcg_overratio(void)
-{
-	unsigned long prot_file = 0, all_file = 0;
-	struct mem_cgroup *memcg;
-	struct zone *zone;
-	int i;
-
-	for (i = 0; i < PROTECT_MEMCG_MAX; i++) {
-		if (!prot_mem_cgroup[i])
-			continue;
-		memcg = prot_mem_cgroup[i];
-		prot_file += memcg_page_state(memcg, MEMCG_CACHE);
-	}
-
-	if (!prot_file)
-		return false;
-
-	for_each_populated_zone(zone) {
-		all_file += zone_page_state(zone, NR_ACTIVE_FILE)
-			+ zone_page_state(zone, NR_INACTIVE_FILE);
-	}
-
-	if (!protect_reclaim_ratio
-	    || (prot_file * 100 / all_file > protect_reclaim_ratio))
-		return true;
-
-	return false;
-}
-
-static int move_prot_memcg_page(struct mem_cgroup *from, struct mem_cgroup *to,
-				struct page *page)
-{
-	struct pglist_data *pnode;
-	struct lruvec *lruvec;
-	int lru, ret = -EBUSY;
-
-	/* Skip if it is a non lru page. */
-	if (!PageLRU(page))
-		return ret;
-
-	/* Skip if it is a free page. */
-	if (!get_page_unless_zero(page))
-		return ret;
-
-	/* Isolate form lru list. */
-	pnode = page_pgdat(page);
-	lruvec = mem_cgroup_page_lruvec(page, pnode);
-	lru = page_lru(page);
-
-	get_page(page);
-	ClearPageLRU(page);
-	del_page_from_lru_list(page, lruvec, lru);
-
-	/* Move to a new memcg. */
-	if (!mem_cgroup_move_account(page, 0, from, to)) {
-		ret = 0;
-		WARN_ON(page->mem_cgroup != root_mem_cgroup);
-		ClearPageProtect(page);
-	}
-
-	/* Putback to lru list. */
-	spin_unlock_irq(&pnode->lru_lock);
-	putback_lru_page(page);
-	spin_lock_irq(&pnode->lru_lock);
-
-	put_page(page);
-
-	return ret;
-}
-
-int shrink_prot_memcg(struct mem_cgroup *memcg)
-{
-	struct mem_cgroup *from, *to;
-	struct lruvec *lruvec;
-	struct list_head *head;
-	struct page *page;
-	int scan, nid, moved = 0;
-
-	from = memcg;
-	to = root_mem_cgroup;
-
-	/*
-	 * A memcg includes at least one lru list, so we may shrink the lru
-	 * which have added pages just now.
-	 */
-	for_each_node_state(nid, N_MEMORY) {
-		spin_lock_irq(&NODE_DATA(nid)->lru_lock);
-		lruvec = mem_cgroup_lruvec(NODE_DATA(nid), memcg);
-		head = &lruvec->lists[LRU_INACTIVE_FILE];
-		/* Shrink inactive list first. */
-		if (list_empty(head))
-			head = &lruvec->lists[LRU_ACTIVE_FILE];
-
-		/*
-		 * As move to the root memcg, so there is
-		 * no need to call precharge.
-		 */
-		for (scan = 0; scan < SWAP_CLUSTER_MAX &&
-					!list_empty(head); scan++) {
-			page = list_entry(head->prev, struct page, lru);
-			if (!move_prot_memcg_page(from, to, page))
-				moved++;
-		}
-
-		/*
-		 * We can not sched here, because it
-		 * may be called from atomic opt.
-		 */
-		spin_unlock_irq(&NODE_DATA(nid)->lru_lock);
-	}
-
-	cancel_charge(from, moved);
-
-	return moved;
-}
-
-void shrink_prot_memcg_by_overlimit(struct mem_cgroup *memcg)
-{
-	if (mem_cgroup_disabled())
-		return;
-
-	if (!is_prot_memcg(memcg, false))
-		return;
-
-	while (is_prot_memcg_overlimit(memcg))
-		shrink_prot_memcg(memcg);
-}
-
-void shrink_prot_memcg_by_overratio(void)
-{
-	struct mem_cgroup *memcg;
-	int i;
-
-	if (mem_cgroup_disabled())
-		return;
-
-	while (is_prot_memcg_overratio()) {
-		for (i = 0; i < PROTECT_MEMCG_MAX; i++) {
-			if (!prot_mem_cgroup[i])
-				continue;
-			memcg = prot_mem_cgroup[i];
-			shrink_prot_memcg(memcg);
-		}
-	}
-}
-
-int protect_reclaim_ratio_handler(struct ctl_table *table, int write,
-			void __user *buffer, size_t *length, loff_t *ppos)
-{
-	struct mem_cgroup *memcg;
-	int ret, i;
-
-	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
-	if (ret)
-		return ret;
-
-	if (write) {
-		if (mem_cgroup_disabled())
-			return ret;
-
-		/* Shrink until reach the protect file ratio. */
-		while (is_prot_memcg_overratio()) {
-			lru_add_drain_all();
-			for (i = 0; i < PROTECT_MEMCG_MAX; i++) {
-				if (!prot_mem_cgroup[i])
-					continue;
-				memcg = prot_mem_cgroup[i];
-				shrink_prot_memcg(memcg);
-			}
-			cond_resched();
-		}
-	}
-
-	return ret;
-}
-#endif
-
 /*
  * subsys_initcall() for memory controller.
  *
@@ -6484,6 +6359,10 @@ bool mem_cgroup_swap_full(struct page *page)
 
 	VM_BUG_ON_PAGE(!PageLocked(page), page);
 
+#ifdef CONFIG_FREE_SWAPCACHE_AGGRESSIVELY
+	if (free_swapcache_aggressively)
+		return true;
+#endif
 	if (vm_swap_full())
 		return true;
 	if (!do_swap_account || !cgroup_subsys_on_dfl(memory_cgrp_subsys))
@@ -6615,3 +6494,44 @@ static int __init mem_cgroup_swap_init(void)
 subsys_initcall(mem_cgroup_swap_init);
 
 #endif /* CONFIG_MEMCG_SWAP */
+
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+void protect_memcg_drain_all_stock(struct mem_cgroup *root_memcg)
+{
+	if (is_prot_memcg(root_memcg, false))
+		drain_all_stock(root_memcg);
+}
+
+void protect_memcg_cancel_charge(
+	struct mem_cgroup *memcg, unsigned int nr_pages)
+{
+	if (is_prot_memcg(memcg, false))
+		cancel_charge(memcg, nr_pages);
+}
+
+int protect_memcg_move_account(
+	struct page *page, bool compound,
+	struct mem_cgroup *from, struct mem_cgroup *to)
+{
+	if (is_prot_memcg(from, false))
+		return mem_cgroup_move_account(page, compound, from, to);
+	else
+		return -EINVAL;
+}
+
+int protect_memcg_resize_limit(struct mem_cgroup *memcg, unsigned long limit)
+{
+	if (is_prot_memcg(memcg, false))
+		return mem_cgroup_resize_limit(memcg, limit);
+	else
+		return -EINVAL;
+}
+
+unsigned long protect_memcg_usage(struct mem_cgroup *memcg, bool swap)
+{
+	if (is_prot_memcg(memcg, false))
+		return mem_cgroup_usage(memcg, swap);
+	else
+		return 0;
+}
+#endif /* CONFIG_MEMCG_PROTECT_LRU */

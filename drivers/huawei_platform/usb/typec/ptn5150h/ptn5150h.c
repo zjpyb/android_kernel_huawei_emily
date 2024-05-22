@@ -3,7 +3,7 @@
  *
  * driver file for Nxp ptn5150h typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,37 +16,37 @@
  *
  */
 
-#include <linux/i2c.h>
+#include "ptn5150h.h"
 #include <linux/delay.h>
-#include <linux/gpio.h>
-#include <linux/timer.h>
-#include <linux/param.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/fs.h>
+#include <linux/gpio.h>
+#include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <asm/irq.h>
+#include <linux/param.h>
+#include <linux/platform_device.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/workqueue.h>
+#include <linux/slab.h>
+#include <linux/timer.h>
 #include <linux/uaccess.h>
-#include <linux/fs.h>
+#include <asm/irq.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/power/power_devices_info.h>
+#include <huawei_platform/usb/hw_typec_dev.h>
+#include <huawei_platform/usb/hw_typec_platform.h>
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#include <huawei_platform/usb/hw_typec_dev.h>
-#include <huawei_platform/usb/hw_typec_platform.h>
-#include "ptn5150h.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -55,7 +55,7 @@
 #define HWLOG_TAG typec_ptn5150h
 HWLOG_REGIST();
 
-struct typec_device_info *g_ptn5150h_dev;
+static struct typec_device_info *g_ptn5150h_dev;
 static int input_current = -1;
 
 static int ptn5150h_detect_input_current(void);
@@ -378,7 +378,7 @@ static int ptn5150h_ctrl_port_mode(int value)
 			/* clear interrupt */
 			ptn5150h_read_reg(PTN5150H_REG_INT_STATUS, &val3);
 
-			mdelay(PTN5150H_UFP_DELAY);/* 20160510 */
+			mdelay(PTN5150H_UFP_DELAY);
 			/* force to ufp */
 			ptn5150h_write_reg(PTN5150H_REG_CONTROL,
 			PTN5150H_REG_RP_DEFAULT);
@@ -579,7 +579,7 @@ static int ptn5150h_detect_input_current(void)
 	return di->dev_st.input_current;
 }
 
-struct typec_device_ops ptn5150h_ops = {
+static struct typec_device_ops ptn5150h_ops = {
 	.clean_int_mask = ptn5150h_clean_mask,
 	.detect_attachment_status = ptn5150h_detect_attachment_status,
 	.detect_cc_orientation = ptn5150h_detect_cc_orientation,
@@ -588,40 +588,6 @@ struct typec_device_ops ptn5150h_ops = {
 	.ctrl_output_current = ptn5150h_ctrl_output_current,
 	.ctrl_port_mode = ptn5150h_ctrl_port_mode,
 };
-
-static struct attribute *ptn5150h_attributes[] = {
-	NULL,
-};
-
-static const struct attribute_group ptn5150h_attr_group = {
-	.attrs = ptn5150h_attributes,
-};
-
-static int ptn5150h_create_sysfs(void)
-{
-	int ret = 0;
-	struct class *typec_class = NULL;
-	struct device *new_dev = NULL;
-
-	typec_class = hw_typec_get_class();
-	if (typec_class) {
-		new_dev = device_create(typec_class, NULL, 0, NULL, "ptn5150h");
-		if (IS_ERR(new_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			return PTR_ERR(new_dev);
-		}
-
-		ret = sysfs_create_group(&new_dev->kobj, &ptn5150h_attr_group);
-		if (ret)
-			hwlog_err("sysfs group create failed\n");
-	}
-
-	return ret;
-}
-
-static void ptn5150h_remove_sysfs(struct typec_device_info *di)
-{
-}
 
 static irqreturn_t ptn5150h_irq_handler(int irq, void *dev_id)
 {
@@ -697,15 +663,13 @@ static void ptn5150h_initialization(void)
 static int ptn5150h_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret;
+	int ret = -1;
 	u32 gpio_enb_val = 1;
 	struct typec_device_info *di = NULL;
 	struct typec_device_info *pdi = NULL;
 	struct device_node *node = NULL;
 	struct power_devices_info_data *power_dev_info = NULL;
 	u32 typec_trigger_otg = 0;
-
-	hwlog_info("probe begin\n");
 
 	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
@@ -720,29 +684,15 @@ static int ptn5150h_probe(struct i2c_client *client,
 	node = di->dev->of_node;
 	i2c_set_clientdata(client, di);
 
-	di->gpio_enb = of_get_named_gpio(node, "ptn5150h_typec,gpio_enb", 0);
-	hwlog_info("gpio_enb=%d\n", di->gpio_enb);
-
-	if (!gpio_is_valid(di->gpio_enb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"ptn5150h_gpio_enb", &gpio_enb_val, 0))
 		goto fail_check_i2c;
-	}
 
-	ret = gpio_request(di->gpio_enb, "ptn5150h_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
+	ret = power_gpio_config_output(node,
+		"ptn5150h_typec,gpio_enb", "ptn5150h_en",
+		&di->gpio_enb, gpio_enb_val);
+	if (ret)
 		goto fail_check_i2c;
-	}
-
-	if (power_dts_read_u32(node, "ptn5150h_gpio_enb", &gpio_enb_val, 0))
-		goto fail_free_gpio_enb;
-
-	ret = gpio_direction_output(di->gpio_enb, gpio_enb_val);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		goto fail_free_gpio_enb;
-	}
 
 	ret = ptn5150h_device_check();
 	if (ret) {
@@ -750,59 +700,33 @@ static int ptn5150h_probe(struct i2c_client *client,
 		goto fail_free_gpio_enb;
 	}
 
-	(void)power_dts_read_u32(node, "typec_trigger_otg",
-		&typec_trigger_otg, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"typec_trigger_otg", &typec_trigger_otg, 0);
 	di->typec_trigger_otg = !!typec_trigger_otg;
 
-	di->gpio_intb = of_get_named_gpio(node, "ptn5150h_typec,gpio_intb", 0);
-	hwlog_info("gpio_intb=%d\n", di->gpio_intb);
-
-	if (!gpio_is_valid(di->gpio_intb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	ret = power_gpio_config_interrupt(node,
+		"ptn5150h_typec,gpio_intb", "ptn5150h_int",
+		&di->gpio_intb, &di->irq_intb);
+	if (ret)
 		goto fail_free_gpio_enb;
-	}
 
 	pdi = typec_chip_register(di, &ptn5150h_ops, THIS_MODULE);
 	if (!pdi) {
 		hwlog_err("typec register chip error\n");
 		ret = -EINVAL;
-		goto fail_free_gpio_enb;
-	}
-
-	ret = gpio_request(di->gpio_intb, "ptn5150h_int");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		goto fail_free_gpio_enb;
-	}
-
-	di->irq_intb = gpio_to_irq(di->gpio_intb);
-	if (di->irq_intb < 0) {
-		hwlog_err("gpio map to irq fail\n");
-		ret = -EINVAL;
-		goto fail_free_gpio_intb;
-	}
-
-	ret = gpio_direction_input(di->gpio_intb);
-	if (ret) {
-		hwlog_err("gpio set input fail\n");
 		goto fail_free_gpio_intb;
 	}
 
 	ptn5150h_initialization();
 
 	ret = request_irq(di->irq_intb, ptn5150h_irq_handler,
-			IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
-			"ptn5150h_int", pdi);
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
+		"ptn5150h_int", pdi);
 	if (ret) {
 		hwlog_err("gpio irq request fail\n");
 		di->irq_intb = -1;
 		goto fail_free_gpio_intb;
 	}
-
-	ret = ptn5150h_create_sysfs();
-	if (ret)
-		goto fail_create_sysfs;
 
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
@@ -816,12 +740,8 @@ static int ptn5150h_probe(struct i2c_client *client,
 	set_hw_dev_flag(DEV_I2C_TYPEC);
 #endif /* CONFIG_HUAWEI_HW_DEV_DCT */
 
-	hwlog_info("probe end\n");
 	return 0;
 
-fail_create_sysfs:
-	ptn5150h_remove_sysfs(di);
-	free_irq(di->gpio_intb, di);
 fail_free_gpio_intb:
 	gpio_free(di->gpio_intb);
 fail_free_gpio_enb:
@@ -837,12 +757,9 @@ static int ptn5150h_remove(struct i2c_client *client)
 {
 	struct typec_device_info *di = i2c_get_clientdata(client);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	ptn5150h_remove_sysfs(di);
 	free_irq(di->irq_intb, di);
 	gpio_set_value(di->gpio_enb, 1);
 	gpio_free(di->gpio_enb);
@@ -850,7 +767,6 @@ static int ptn5150h_remove(struct i2c_client *client)
 	g_ptn5150h_dev = NULL;
 	devm_kfree(&client->dev, di);
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

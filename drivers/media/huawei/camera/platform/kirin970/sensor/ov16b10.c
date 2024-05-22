@@ -9,7 +9,7 @@
 #include <linux/rpmsg.h>
 #include "hwsensor.h"
 #include "sensor_commom.h"
-#include "hw_csi.h"
+
 #include "../pmic/hw_pmic.h"
 
 //lint -save -e846 -e866 -e826 -e785 -e838 -e715 -e747 -e774 -e778 -e732 -e731

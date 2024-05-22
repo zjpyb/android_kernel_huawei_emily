@@ -755,7 +755,7 @@ struct blk_throtl_io_limit {
 
 static inline void blk_throtl_io_limit_init(struct blk_throtl_io_limit *limit)
 {
-	struct throtl_io_limit *lmt;
+	struct throtl_io_limit *lmt = NULL;
 	int i;
 
 	limit->max_inflights = 0;
@@ -785,9 +785,9 @@ void blk_throtl_update_limit(struct blk_throtl_io_limit *io_limit,
 static inline struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
 					     struct block_device *bdev)
 {
-	struct request_queue *q;
-	struct blkcg *blkcg;
-	struct blkcg_gq *blkg;
+	struct request_queue *q = NULL;
+	struct blkcg *blkcg = NULL;
+	struct blkcg_gq *blkg = NULL;
 
 	if (!bdev)
 		return NULL;
@@ -804,7 +804,7 @@ static inline struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
 static inline struct blkcg_gq *task_blkg_get(struct task_struct *tsk,
 					     struct block_device *bdev)
 {
-	struct blkcg_gq *blkg;
+	struct blkcg_gq *blkg = NULL;
 
 	rcu_read_lock();
 	blkg = task_blkcg_gq(tsk, bdev);

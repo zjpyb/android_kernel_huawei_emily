@@ -29,7 +29,7 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#include <linux/hisi/hisi_leds.h>
+#include <linux/hisi/leds_pmic.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/touthscreen/huawei_tp_color.h>
 
@@ -46,7 +46,7 @@ extern int tp_project_id_provider(char *name, uint8_t len);
 static int led_config_parse_current_setting(struct led_config_data *data);
 static int get_led_iset_immediately(void);
 
-void led_config_get_current_setting(struct hisi_led_platform_data *hisi_leds)
+void led_config_get_current_setting(struct led_spmi_platform_data *hisi_leds)
 {
 	int ret;
 

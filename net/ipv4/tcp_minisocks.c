@@ -106,7 +106,8 @@ tcp_timewait_state_process(struct inet_timewait_sock *tw, struct sk_buff *skb,
 	    (tcptw->tw_ts_recent_stamp || tcptw->mptcp_tw)) {
 		mptcp_init_mp_opt(&mopt);
 
-		tcp_parse_options(twsk_net(tw), skb, &tmp_opt, &mopt, 0, NULL, NULL);
+		tcp_parse_options(twsk_net(tw), skb, &tmp_opt,
+			&mopt, 0, NULL, NULL);
 
 		if (tmp_opt.saw_tstamp) {
 			if (tmp_opt.rcv_tsecr)
@@ -517,6 +518,7 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 		newtp->snd_nxt = newtp->snd_up = treq->snt_isn + 1;
 
 		INIT_LIST_HEAD(&newtp->tsq_node);
+		INIT_LIST_HEAD(&newtp->tcs_node);
 
 		tcp_init_wl(newtp, treq->rcv_isn);
 
@@ -645,8 +647,9 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 #ifdef CONFIG_MPTCP
 	mptcp_init_mp_opt(&mopt);
 
-	if (th->doff > (sizeof(struct tcphdr)>>2)) {
-		tcp_parse_options(sock_net(sk), skb, &tmp_opt, &mopt, 0, NULL, NULL);
+	if (th->doff > (sizeof(struct tcphdr) >> 2)) {
+		tcp_parse_options(sock_net(sk), skb,
+			&tmp_opt, &mopt, 0, NULL, NULL);
 #else
 	if (th->doff > (sizeof(struct tcphdr)>>2)) {
 		tcp_parse_options(sock_net(sk), skb, &tmp_opt, 0, NULL);
@@ -851,7 +854,7 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 		goto listen_overflow;
 #ifdef CONFIG_MPTCP
 	if (own_req && !is_meta_sk(sk)) {
-		int ret = mptcp_check_req_master(sk, child, req, skb, 1);
+		int ret = mptcp_check_req_master(sk, child, req, skb, 1, 0);
 
 		if (ret < 0)
 			goto listen_overflow;

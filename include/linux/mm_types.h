@@ -14,6 +14,7 @@
 #include <linux/uprobes.h>
 #include <linux/page-flags-layout.h>
 #include <linux/workqueue.h>
+#include <linux/xreclaimer_types.h>
 
 #include <asm/mmu.h>
 
@@ -300,7 +301,9 @@ struct vm_area_struct {
 	struct mm_struct *vm_mm;	/* The address space we belong to. */
 	pgprot_t vm_page_prot;		/* Access permissions of this VMA. */
 	unsigned long vm_flags;		/* Flags, see mm.h. */
-
+#ifdef CONFIG_VM_COPY
+	unsigned long ext_flags;	/* VM_COPY flags */
+#endif
 	/*
 	 * For areas with an address space and backing store,
 	 * linkage into the address_space->i_mmap interval tree.
@@ -450,6 +453,9 @@ struct mm_struct {
 	mm_context_t context;
 
 	unsigned long flags; /* Must use atomic bitops to access the bits */
+#ifdef CONFIG_MEMORY_AFFINITY
+	u32 dma_zone_tag; /* memory affinity tag */
+#endif
 
 	struct core_state *core_state; /* coredumping support */
 #ifdef CONFIG_MEMBARRIER
@@ -517,6 +523,10 @@ struct mm_struct {
 	atomic_long_t hugetlb_usage;
 #endif
 	struct work_struct async_put_work;
+
+#ifdef CONFIG_HW_XRECLAIMER
+	struct xreclaimer_mm mm_xreclaimer;
+#endif
 
 #if IS_ENABLED(CONFIG_HMM)
 	/* HMM needs to track a few things per mm */

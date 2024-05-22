@@ -9,7 +9,7 @@
 #include <linux/printk.h>
 #include <linux/time.h>
 
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 #include <huawei_platform/log/log_jank.h>
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -17,7 +17,9 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-
+#if defined CONFIG_HUAWEI_DEVKIT_HISI
+#include "lcdkit_ext.h"
+#endif
 /*Gesture register(0xd0) value*/
 #define DOUBLE_CLICK_WAKEUP  		(0x24)
 #define SPECIFIC_LETTER_W  			(0x31)
@@ -37,7 +39,9 @@
 #define FTS_CHECK_FLOW_COUNT	5
 #define TOUCH_DATA_START_ADDR		0x00
 #define TOUCH_DATA_START_ADDR_SPI   0x71
-
+#define TOUCH_DATA_START_ADDR_SPI_8756 0x01
+#define WAIT_FOR_SPI_BUS_READ_DELAY 5
+#define GESTURE_EVENT_RETRY_TIME 20
 #define ADDR_X_H_POS			(3 - TOUCH_DATA_START_ADDR)
 #define ADDR_X_L_POS			(4 - TOUCH_DATA_START_ADDR)
 #define ADDR_Y_H_POS			(5 - TOUCH_DATA_START_ADDR)
@@ -82,6 +86,37 @@
 #define focal_print_bulk(buf, len, width) _focal_print_bulk(__func__, buf, len, width)
 #define FOCAL_FM_OPEN		1
 #define FOCAL_FM_CLOSE		0
+#define REAL_PROJECT_ID_LEN 10
+
+#define ESDCHECK "esdcheck_algorithm"
+#define CORE_MODULE_INIT "core_module_init"
+#define POWER_CONTROL "power_control"
+#define HARDWARE_RESET "hardware_reset"
+#define CHIP_DETECT "chip_detect"
+#define INIT_CHIP "init_chip"
+#define GET_FWNAME "get_fwname"
+#define SET_GLOVE_SWITCH "set_glove_switch"
+#define GLOVE_SWITCH "glove_switch"
+#define FOCAL_READ "read"
+#define FOCAL_WRITE "write"
+#define PINCTRL_SELECT "pinctrl_select_suspend"
+#define ROI_SWITCH "roi_switch"
+#define GET_ROI_SWITCH "get_roi_switch"
+#define SET_FINGER_NUMBER "set_finger_number"
+#define UDTATE_MODEL "update_model"
+#define CHECK_GESTURE "check_gesture"
+#define SET_ROI_SWEITCH "set_roi_switch"
+#define AFTER_RESUME "after_resume"
+#define PINCTRL_SELECT_NORMAL "pinctrl_select_normal"
+#define GET_RAW_DATA_ALL "get_raw_data_all"
+#define READ_TOUCH_DATA "read_touch_data"
+#define IRQ_BOTTOM_HALF "irq_bottom_half"
+#define ESDCHECK_CHIP_ID "esdcheck_chip_id"
+#define ESDCHECK_FLOW_COUNT "esdcheck_flow_count"
+#define CHIP_TOUCH_SWITCH "chip_touch_switch"
+#define PUT_DEVICE_INTO_EAST_WAKEUP "put_device_into_easy_wakeup"
+#define SCENE_SWITCH "scene_switch"
+
 
 #define U8_STR_LEN			5
 #ifndef NULL
@@ -89,6 +124,8 @@
 #endif
 
 #define PRINT_COUNT    3
+#define ESD_NOTIFY_LCD_CNT 3
+#define ESD_NOTIFY_LCD_FLAG 2
 
 #if defined (CONFIG_TEE_TUI)
 extern struct ts_tui_data tee_tui_data;
@@ -100,6 +137,7 @@ static u8 focal_FM_status = FOCAL_FM_CLOSE;
 struct fts_esdcheck_st fts_esdcheck_data;
 static struct mutex wrong_touch_lock;
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
+static int notify_lcd_esd_flag;
 
 struct ts_scene_switch_info focal_scene_sw_info;
 
@@ -152,6 +190,10 @@ static void focal_chip_touch_switch(void);
 static int focal_get_raw_data_all(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
 static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info *info,
 					int range_size, int row_size);
+static int rawdata_focal_printf(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size);
+static int rawdata_proc_focal_printf_new(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size);
 static void focal_pinctrl_select_normal(void);
 static void focal_pinctrl_select_suspend(void);
 static void focal_scene_switch(unsigned int scene, unsigned int oper);
@@ -196,7 +238,7 @@ struct ts_device_ops ts_focal_ops = {
 #endif
 	.chip_wrong_touch = focal_wrong_touch,
 	.chip_touch_switch = focal_chip_touch_switch,
-	.chip_special_rawdata_proc_printf = rawdata_proc_focal_printf,
+	.chip_special_rawdata_proc_printf = rawdata_focal_printf,
 };
 
 static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info *info,
@@ -213,61 +255,177 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 	for (index = 0; row_size * index + 2 < (2+row_size*range_size * FTS_8201_MAX_CAP_TEST_NUM); index++) {
 		/*index =0,0~29 row data is rawdata,rawdata array printf tag*/
 		if (0 == index) {
-			seq_printf(m, "rawdata begin\n");	/*print the title */
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+				seq_printf(m, "cb data begin\n"); /*print the title */
+			else
+				seq_printf(m, "rawdata begin\n"); /*print the title */
 		}
 		for (index1 = 0; index1 < row_size; index1++) {
 			indexsum = 2 + row_size * index + index1;
-			seq_printf(m, "%d,", info->buff[indexsum]);	/*print oneline */
+			seq_printf(m, "%d,", info->buff[indexsum]); /*print oneline */
 		}
 		/*index1 = 0;*/
 		seq_printf(m, "\n ");
 		/*index =29,29~58 row data is shortdata,shortdata array printf tag*/
 		if ((range_size - 1) == index) {
-			seq_printf(m, "rawdata end\n");
-			seq_printf(m, "shortdata begin\n");
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "cb data end\n"); /*print the title */
+				seq_printf(m, "rawdata begin\n");
+			} else {
+				seq_printf(m, "rawdata end\n");
+				seq_printf(m, "shortdata begin\n");
+			}
 		/*index =59,59~87 row data is cbdata,cbdata array printf tag*/
-		} else if ((range_size*2 - 1) == index){
-			seq_printf(m, "shortdata end\n");
-			seq_printf(m, "cbdata begin\n");
+		} else if ((range_size*2 - 1) == index) {
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "rawdata end\n"); /*print the title */
+				seq_printf(m, "rx delta begin\n");
+			} else {
+				seq_printf(m, "shortdata end\n");
+				seq_printf(m, "cbdata begin\n");
+			}
 		/*index =89,89~128 row data is cb uniformity x data,cb uniformity x data array printf tag*/
-		} else if ((range_size*3 - 1) == index){
-			seq_printf(m, "cbdata end\n");
-			seq_printf(m, "cb uniformity x arry begin\n");
+		} else if ((range_size*3 - 1) == index) {
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "rx delta end\n"); /*print the title */
+				seq_printf(m, "tx delta begin\n");
+			} else {
+				seq_printf(m, "cbdata end\n");
+				seq_printf(m, "cb uniformity x arry begin\n");
+			}
 		/*index =129,129~158 row data is cb uniformity y data,cb uniformity y data array printf tag*/
-		} else if ((range_size*4 - 1) == index){
-			seq_printf(m, "cb uniformity x arry end\n");
-			seq_printf(m, "cb uniformity y arry begin\n");
+		} else if ((range_size*4 - 1) == index) {
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "tx delta end\n"); /*print the title */
+				seq_printf(m, "noise data begin\n");
+			} else {
+				seq_printf(m, "cb uniformity x arry end\n");
+				seq_printf(m, "cb uniformity y arry begin\n");
+			}
 		/*index =159,159~188 row data is noise data,noise data array printf tag*/
-		} else if ((range_size*5 - 1) == index){
-			seq_printf(m, "cb uniformity y arry end\n");
-			seq_printf(m, "noise begin\n");
+		} else if ((range_size*5 - 1) == index) {
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "noise data end\n"); /*print the title */
+				seq_printf(m, "open data begin\n");
+			} else {
+				seq_printf(m, "cb uniformity y arry end\n");
+				seq_printf(m, "noise begin\n");
+			}
 		/*index =189,189~218 row data is CB increase data,cb increase data array printf tag*/
-		} else if ((range_size*6 - 1) == index){
-			seq_printf(m, "noise end\n");
-			seq_printf(m, "cb increase data begin\n");
+		} else if ((range_size*6 - 1) == index) {
+			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				seq_printf(m, "open data end\n"); /*print the title */
+				seq_printf(m, "short circuit begin\n");
+			} else {
+				seq_printf(m, "noise end\n");
+				seq_printf(m, "cb increase data begin\n");
+			}
 		}
 	}
 	/*index =219,cb increase array printf tag*/
-	seq_printf(m, "cb increase data  end\n");
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		seq_printf(m, "short circuit end\n");
+	} else {
+		seq_printf(m, "cb increase data  end\n");
+	}
+
 	return NO_ERR;
+}
+
+static int rawdata_proc_focal_printf_new(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size)
+{
+	int index;
+	int index1;
+	int indexsum;
+
+	if ((range_size == DATA_0) || (row_size == DATA_0) || (!info)) {
+		TS_LOG_ERR("%s:range OR row is 0 OR info is NULL\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	for (index = DATA_0; row_size * index + DATA_2 <
+		(DATA_2 + row_size * range_size * FTS_8201_MAX_CAP_TEST_NUM);
+		index++) {
+		if (index == DATA_0)
+			seq_puts(m, "Short_test begin\n");
+
+		for (index1 = DATA_0; index1 < row_size; index1++) {
+			indexsum = DATA_2 + row_size * index + index1;
+			seq_printf(m, "%d,", info->buff[indexsum]);
+		}
+		seq_puts(m, "\n ");
+		if ((range_size - DATA_1) == index) {
+			seq_puts(m, "Short_test end\n");
+			seq_puts(m, "Open_test begin\n");
+		} else if ((range_size * DATA_2 - DATA_1) == index) {
+			seq_puts(m, "Open_test end\n");
+			seq_puts(m, "CB begin\n");
+		} else if ((range_size * DATA_3 - DATA_1) == index) {
+			seq_puts(m, "CB end\n");
+			seq_puts(m, "CB uniformity x arry begin\n");
+		} else if ((range_size * DATA_4 - DATA_1) == index) {
+			seq_puts(m, "CB uniformity x arry end\n");
+			seq_puts(m, "Rawdata begin\n");
+		} else if ((range_size * DATA_5 - DATA_1) == index) {
+			seq_puts(m, "Rawdata end\n");
+			seq_puts(m, "Noise begin\n");
+		} else if ((range_size * DATA_6 - DATA_1) == index) {
+			seq_puts(m, "Noise end\n");
+			seq_puts(m, "CB increase data begin\n");
+		}
+	}
+	seq_puts(m, "CB increase data end\n");
+
+	return NO_ERR;
+}
+
+static int rawdata_focal_printf(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size)
+{
+	int ret;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if ((range_size == DATA_0) || (row_size == DATA_0) || (!info)) {
+		TS_LOG_ERR("%s:range OR row is 0 OR info is NULL\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	if (g_focal_pdata->capa_test_sequence)
+		ret = rawdata_proc_focal_printf_new(m, info,
+			range_size, row_size);
+	else
+		ret = rawdata_proc_focal_printf(m, info,
+			range_size, row_size);
+	if (ret)
+		TS_LOG_ERR("%s: rawdata proc printf fail\n", __func__);
+
+	return ret;
 }
 
 static int focal_get_raw_data_all(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd)
 {
 	int retval = NO_ERR;
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", GET_RAW_DATA_ALL);
 	if (!info) {
-		TS_LOG_ERR("%s: info is Null\n", __func__);
+		TS_LOG_ERR("%s: info is Null\n", GET_RAW_DATA_ALL);
 		return -ENOMEM;
 	}
 	if (!out_cmd) {
-		TS_LOG_ERR("%s: out_cmd is Null\n", __func__);
+		TS_LOG_ERR("%s: out_cmd is Null\n", GET_RAW_DATA_ALL);
 		return -ENOMEM;
 	}
-	if (FOCAL_FT8201 == g_focal_dev_data->ic_type)
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201) {
 		retval = focal_8201_get_raw_data(info, out_cmd);
-	else
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		fts_enter_test_environment(true);
 		retval = focal_get_raw_data(info, out_cmd);
+		fts_enter_test_environment(false);
+	} else {
+		retval = focal_get_raw_data(info, out_cmd);
+	}
 	if (retval < 0)
 		TS_LOG_ERR("failed to get rawdata\n");
 
@@ -313,7 +471,7 @@ static void focal_print_u8_array(u8 *data, u32 size)
 	str_print = NULL;
 }
 
-char *focal_strncat(char *dest, char *src, size_t dest_size)
+char *focal_strncat(char *dest, const char *src, size_t dest_size)
 {
 	size_t dest_len = 0;
 	char *start_index = NULL;
@@ -324,7 +482,8 @@ char *focal_strncat(char *dest, char *src, size_t dest_size)
 	return strncat(&dest[dest_len], src, (dest_size > dest_len ? (dest_size - dest_len - 1) : 0));
 }
 
-char *focal_strncatint(char *dest, int src, char *format, size_t dest_size)
+char *focal_strncatint(char *dest, int src, const char *format,
+	size_t dest_size)
 {
 	char src_str[16] = {0};
 
@@ -349,10 +508,14 @@ int focal_read(u8 *addrs, u16 addr_size, u8 *values, u16 values_size)
 	if (TS_BUS_I2C == bops->btype) {
 		ret = bops->bus_read(addrs, addr_size, values, values_size);/*i2c*/
 	} else {
-		ret = fts_read(addrs, addr_size, values, values_size);/* spi */
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+			ret = fts_read_8756(addrs, addr_size,
+				values, values_size); /* spi */
+		else
+			ret = fts_read(addrs, addr_size, values, values_size);
 	}
 	if (ret) {
-		TS_LOG_ERR("%s:fail, addrs:", __func__);
+		TS_LOG_ERR("%s:fail, addrs:", FOCAL_READ);
 		focal_print_u8_array(addrs, addr_size);
 	}
 
@@ -384,10 +547,13 @@ int focal_write(u8 *values, u16 values_size)
 	if (TS_BUS_I2C == bops->btype) {
 		ret = bops->bus_write(values, values_size);/* i2c */
 	} else {
-		ret = fts_write(values, values_size);/* spi */
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+			ret = fts_write_8756(values, values_size);
+		else
+			ret = fts_write(values, values_size);/* spi */
 	}
 	if (ret) {
-		TS_LOG_ERR("%s:fail, addrs:", __func__);
+		TS_LOG_ERR("%s:fail, addrs:", FOCAL_WRITE);
 		focal_print_u8_array(values, values_size);
 	}
 
@@ -450,13 +616,16 @@ int focal_hardware_reset(int model)
 	ret = focal_gpio_reset();
 	if(ret){
 		TS_LOG_ERR("%s:gpio_reset fail, ret=%d\n",
-				   __func__, ret);
+			HARDWARE_RESET, ret);
 		return ret;
 	}
 
 	switch (model) {
 	case FTS_MODEL_BOOTLOADER:
-		reset_enable_delay = 6;
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+			reset_enable_delay = 8;
+		else
+			reset_enable_delay = 6;
 		break;
 	case FTS_MODEL_FIRST_START:
 		reset_enable_delay = 240;
@@ -468,8 +637,10 @@ int focal_hardware_reset(int model)
 		reset_enable_delay = 240;
 	}
 
-	TS_LOG_INFO("%s:reset enable delay:%d\n", __func__, reset_enable_delay);
-	if(FOCAL_FT8006U == g_focal_dev_data->ic_type){
+	TS_LOG_INFO("%s:reset enable delay:%d\n",
+		HARDWARE_RESET, reset_enable_delay);
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
 		/*ft8006 need accurate delay(6-26ms),the mdelay() is more accurate than msleep()*/
 		mdelay(reset_enable_delay);
 	}else{
@@ -541,10 +712,11 @@ int focal_hardware_reset_to_rom_update_model(void)
 
 		mdelay(FOCAL_AFTER_WRITE_55_DELAY_TIME);
 		ret = focal_read_chip_id_(&g_focal_pdata->chip_id);
-		TS_LOG_INFO("%s:ret = %d , g_focal_pdata->chip_id=%x\n",__func__, ret ,g_focal_pdata->chip_id);
-		if (ret|| (g_focal_pdata->chip_id == 0) ){
+		TS_LOG_INFO("%s:ret = %d , g_pdata->chip_id=%x\n",
+			UDTATE_MODEL, ret, g_focal_pdata->chip_id);
+		if (ret || (g_focal_pdata->chip_id == 0)) {
 			TS_LOG_INFO("%s:chip id read fail, retry=%d\n",
-				__func__, i);
+				UDTATE_MODEL, i);
 
 			delay_time += 2;
 			continue;
@@ -755,7 +927,7 @@ static int _focal_print_bulk(const u8 *head, u8 *buf, u32 len, u8 width)
 
 static int focal_print_diff(u8 *buf, u32 len)
 {
-	int i = 0;
+	unsigned int i;
 	int j = 0;
 	int n = 0;
 	short diff[FTS_DIFF_DATA_HEIGHT*FTS_DIFF_DATA_WIDTH] = { 0 };
@@ -810,50 +982,60 @@ static int focal_read_touch_data(struct ts_event *event_data)
 		if(TS_MT_MODE_ON && g_focal_pdata->read_debug_reg_and_differ) {
 			if(FTS_GET_DBG_ON == focal_diff_flag) {
 				focal_diff_flag = FTS_GET_DBG_OFF;
-				TS_LOG_INFO("%s:--- get all dbg frame data 1st--- \n", __func__);
+				TS_LOG_INFO("%s:--- get all dbg frame data 1st---\n",
+					READ_TOUCH_DATA);
 				ret = focal_read(NULL, 0, buf + 1,
 						FTS_REPORT_DATA_ALL_LEN + FTS_DBG_DATA_SIZE + FTS_DIFF_DATA_SIZE);
 				focal_print_dbg(buf);
 			} else {
 				ret = focal_read(NULL, 0, buf + 1, FTS_REPORT_DATA_ALL_LEN);
 				if (ret < 0) {
-					TS_LOG_ERR("%s:read touchdata 1st failed, ret=%d.\n", __func__, ret);
+					TS_LOG_ERR("%s:read touchdata 1st failed, ret=%d\n",
+						READ_TOUCH_DATA, ret);
 					return ret;
 				}
 				if(FTS_ALL_FIGURE_UP == buf[ADDR_FINGER_ALLUP]) {
-					TS_LOG_INFO("%s:--- get all dbg frame data 2nd--- \n", __func__);
+					TS_LOG_INFO("%s:--- get all dbg frame data 2nd---\n",
+						READ_TOUCH_DATA);
 					ret = focal_read(NULL, 0, buf + 1,
 							FTS_REPORT_DATA_ALL_LEN + FTS_DBG_DATA_SIZE + FTS_DIFF_DATA_SIZE);
 					focal_print_dbg(buf);
 				}
 			}
+		} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+			buf[0] = TOUCH_DATA_START_ADDR_SPI_8756;
+			ret = focal_read(buf, 1, buf + 1,
+				FTS_REPORT_DATA_ALL_LEN);
 		} else {
 			ret = focal_read(NULL, 0, buf + 1, FTS_REPORT_DATA_ALL_LEN);
 		}
 
 		if (ret < 0) {
-			TS_LOG_ERR("%s:read touchdata failed, ret=%d.\n",
-				__func__, ret);
+			TS_LOG_ERR("%s:read touchdata failed, ret=%d\n",
+				READ_TOUCH_DATA, ret);
 			return ret;
 		}
 		if ((buf[2] == FTS_FW_STATE_ERROR) && (buf[3] == FTS_FW_STATE_ERROR) && (buf[4] == FTS_FW_STATE_ERROR)) {
 			if(true == g_focal_pdata->fw_is_running){
 				ret = focal_fw_update_boot_recovery();
 				if (!ret) {
-					TS_LOG_INFO("%s:boot recovery pass\n", __func__);
+					TS_LOG_INFO("%s:boot recovery pass\n",
+						READ_TOUCH_DATA);
 				}
 			}
 			return -EIO;
 		}
 
 		if(buf[1] == FTS_REPROT_IDLE_STATE) {
-			TS_LOG_ERR("%s:byte1 of touchdata is 0x01,return\n", __func__);
+			TS_LOG_ERR("%s:byte1 of touchdata is 0x01,return\n",
+				READ_TOUCH_DATA);
 			return -EIO;
 		}
 
 		if (TS_MT_MODE_ON  && g_focal_pdata->read_debug_reg_and_differ &&(FTS_FIGURE_DOWN == buf[ADDR_FINGER_DOWN])){
 			focal_diff_flag = FTS_GET_DBG_ON;
-			TS_LOG_INFO("%s:--- print dbg diff flag : %d for next frame --- \n", __func__, focal_diff_flag);
+			TS_LOG_INFO("%s:--- print dbg diff flag : %d for next frame ---\n",
+				READ_TOUCH_DATA, focal_diff_flag);
 		}
 		/* check if need recovery fw */
 		if (g_focal_pdata->enable_edge_touch) {
@@ -862,19 +1044,28 @@ static int focal_read_touch_data(struct ts_event *event_data)
 		if(g_focal_dev_data->ts_platform_data->feature_info.roi_info.roi_switch
 			&& g_focal_dev_data->ts_platform_data->feature_info.roi_info.roi_supported) {
 			if(ROI_DATA_READY == buf[FTS_ROI_DATA_OFF - 1]) {
-				memcpy(focal_roi_data, &buf[FTS_ROI_DATA_OFF + 1], ROI_DATA_READ_LENGTH);
+				if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+					memcpy(focal_roi_data,
+						&buf[FTS_ROI_DATA_OFF - 1],
+						ROI_DATA_READ_LENGTH);
+				else
+					memcpy(focal_roi_data,
+						&buf[FTS_ROI_DATA_OFF + 1],
+						ROI_DATA_READ_LENGTH);
 			} else if(ROI_DATA_NOT_NEET_READ== buf[FTS_ROI_DATA_OFF - 1]) {
-				TS_LOG_DEBUG("%s: roi data not neet read . \n",__func__);
+				TS_LOG_DEBUG("%s: roi data not neet read\n",
+					READ_TOUCH_DATA);
 			} else {
-				TS_LOG_ERR("%s: roi data not ready. \n",__func__);
+				TS_LOG_ERR("%s: roi data not ready\n",
+					READ_TOUCH_DATA);
 			}
 		}
 	} else {
 		buf[0] = TOUCH_DATA_START_ADDR;
 		ret = focal_read(buf, 1, buf, FTS_TOUCH_DATA_LEN);
 		if (ret < 0) {
-			TS_LOG_ERR("%s:read touchdata failed, ret=%d.\n",
-				__func__, ret);
+			TS_LOG_ERR("%s:read touchdata failed, ret=%d\n",
+				READ_TOUCH_DATA, ret);
 			return ret;
 		}
 
@@ -889,7 +1080,7 @@ static int focal_read_touch_data(struct ts_event *event_data)
 			buf_edge[0] = g_focal_pdata->edge_data_addr;
 			ret = focal_read(buf_edge, 1, buf_edge, fts_edge_data_len);
 			if (ret < 0) {
-				TS_LOG_ERR("%s  failed.\n", __func__);
+				TS_LOG_ERR("%s: failed\n", READ_TOUCH_DATA);
 				return ret;
 			}
 		}
@@ -897,9 +1088,11 @@ static int focal_read_touch_data(struct ts_event *event_data)
 	memset(event_data, 0, sizeof(struct ts_event));
 	event_data->touch_point = 0;
 	event_data->touch_point_num = buf[ADDR_POINT_NUM] & 0x0F;
-	if(g_focal_pdata->palm_iron_support){
+	if (g_focal_pdata->palm_iron_support ||
+		g_focal_pdata->palm_esd_support) {
 		event_data->palm_iron_num = buf[ADDR_PALM_NUM];
-		TS_LOG_DEBUG("%s: palm_num = (0x%02x)\n", __func__, event_data->palm_iron_num);
+		TS_LOG_DEBUG("%s: palm_num = (0x%02x)\n",
+			READ_TOUCH_DATA, event_data->palm_iron_num);
 	}
 
 	for (i = 0; i < FTS_MAX_TOUCH_POINTS; i++) {
@@ -1001,6 +1194,15 @@ static int spi_communicate_check(struct ts_kit_platform_data *focal_pdata)
 	mutex_init(&g_focal_pdata->spilock);
 	cmd = FTS_REG_BOOT_CHIP_ID;
 	for (i = 0; i < FTS_DETECT_SPI_RETRY_TIMES; i++) {
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+			ret = focal_write_default(FTS_UPGRADE_55);
+			if (ret < 0) {
+				TS_LOG_ERR("%s:write cmd 0x55 fail, ret=%d\n",
+					__func__, ret);
+				continue;
+			}
+			mdelay(FOCAL_AFTER_WRITE_55_DELAY_TIME);
+		}
 		ret = focal_read(&cmd, FTS_COMMON_COMMAND_LENGTH, &reg_val, FTS_COMMON_COMMAND_VALUE);
 		if ((reg_val != 0x00) && (reg_val != 0xFF) && (reg_val != 0xEF)) {/*0x00 0xFF:spi bus error.0xEF:ic error*/
 			TS_LOG_INFO("%s:chip id read success, chip id:0x%X\n",
@@ -1088,18 +1290,21 @@ static int focal_esdcheck_chip_id(void)
 		cmd = FTS_REG_CHIP_ID_H;
 		err = focal_read(&cmd, 1, &reg_value, 1);
 		if ( err < 0 ){
-			TS_LOG_ERR("%s:[ESD] Read Reg 0xA3 failed ret = %d \n", __func__, err);
+			TS_LOG_ERR("%s:[ESD] Read Reg 0xA3 failed ret = %d\n",
+				ESDCHECK_CHIP_ID, err);
 			continue;
 		}
 
 		if ( (reg_value == chipid_high) || (reg_value == FTS_REG_SPECIAL_VALUEl) ){ /* Upgrade sometimes can't detect */
-			TS_LOG_DEBUG("%s:chip id read success, chip id:0x%X, i=%d\n",__func__, reg_value,i);
+			TS_LOG_DEBUG("%s:chip id read success, chip id:0x%X, i=%d\n",
+				ESDCHECK_CHIP_ID, reg_value, i);
 			break;
 		}
 	}
 
 	if(FTS_ESD_MAX_TIMES == i){
-		TS_LOG_ERR("%s:chip id read fail, reg_value=%d, i=%d, chipid_high=%d, \n",__func__, reg_value, i, chipid_high);
+		TS_LOG_ERR("%s:chip id read fail, reg_value=%d, i=%d, chipid_high=%d,\n",
+			ESDCHECK_CHIP_ID, reg_value, i, chipid_high);
 		return -EINVAL;
 	}
 
@@ -1170,10 +1375,12 @@ static int focal_esdcheck_flow_count(void)
 	cmd = FTS_REG_FLOW_WORK_CNT;
 	err = focal_read(&cmd, 1, &reg_value, 1);
 	if (err < 0){
-		TS_LOG_ERR("%s:[ESD]: Read Reg 0x91 failed ret = %d \n", __func__, err);
+		TS_LOG_ERR("%s:[ESD]: Read Reg 0x91 failed ret = %d\n",
+			ESDCHECK_FLOW_COUNT, err);
 		err = focal_esdcheck_chip_id();
 		if(err < 0){
-			TS_LOG_ERR("%s:[ESD]: read chip id failed ret = %d \n", __func__, err);
+			TS_LOG_ERR("%s:[ESD]: read chip id failed ret = %d\n",
+				ESDCHECK_FLOW_COUNT, err);
 			return -EINVAL;
 		}
 	}else{
@@ -1181,17 +1388,26 @@ static int focal_esdcheck_flow_count(void)
 			fts_esdcheck_data.flow_work_hold_cnt++;
 		}else{
 			fts_esdcheck_data.flow_work_hold_cnt = 0;
+			notify_lcd_esd_flag = 0;
 			fts_esdcheck_data.flow_work_cnt_last = reg_value;
 		}
 	}
-
+	if ((g_focal_pdata->notify_lcd_esd_support) &&
+		(fts_esdcheck_data.flow_work_hold_cnt >= ESD_NOTIFY_LCD_CNT)) {
+		notify_lcd_esd_flag++;
+		TS_LOG_INFO("%s:[ESD]: reg0x91 fix 3 times, need reset\n",
+			ESDCHECK_FLOW_COUNT);
+		return -EINVAL;
+	}
 	/* if read flow work cnt 5 times and the value are all the same, then need hardware_reset */
 	if (fts_esdcheck_data.flow_work_hold_cnt >= FTS_CHECK_FLOW_COUNT){
-		TS_LOG_INFO("%s:[ESD]: Flow Work Cnt(reg0x91) keep a value for 5 times, need execute TP reset \n", __func__);
+		TS_LOG_INFO("%s:[ESD]: Flow Work Cnt(reg0x91) keep a value for 5 times, need execute TP reset\n",
+			ESDCHECK_FLOW_COUNT);
 		return -EINVAL;
 	}
 
-	TS_LOG_DEBUG("%s:[ESD]: check flow count no need reset ret = %d \n", __func__, err);
+	TS_LOG_DEBUG("%s:[ESD]: check flow count no need reset ret = %d\n",
+		ESDCHECK_FLOW_COUNT, err);
 	return 0;
 }
 
@@ -1209,17 +1425,19 @@ static int focal_esdcheck_algorithm(void)
 	u8 cmd = 0;
 	int hardware_reset = 0;
 
-	TS_LOG_DEBUG("%s: Enter!\n", __func__);
+	TS_LOG_DEBUG("%s: Enter!\n", ESDCHECK);
 
 	/* 1. esdcheck is interrupt, then return */
 	if (true == fts_esdcheck_data.intr){
-		TS_LOG_INFO("%s:[ESD]: In interrupt state, not check esd, return immediately! \n", __func__);
+		TS_LOG_INFO("%s:[ESD]: In interrupt state, not check esd, return immediately!\n",
+			ESDCHECK);
 		return 0;
 	}
 
 	/* 2. check power state, if suspend, no need check esd */
 	if (true == fts_esdcheck_data.suspend){
-		TS_LOG_INFO("%s:[ESD]: In suspend, not check esd, return immediately!\n", __func__);
+		TS_LOG_INFO("%s:[ESD]: In suspend, not check esd, return immediately!\n",
+			ESDCHECK);
 		/* because in suspend state, adb can be used, when upgrade FW, will active ESD check(active = 1)
 		*  But in suspend, then will don't queue_delayed_work, when resume, don't check ESD again
 		*/
@@ -1229,7 +1447,8 @@ static int focal_esdcheck_algorithm(void)
 
 	/* 3. In boot upgrade mode , can't check esd */
 	if (true == fts_esdcheck_data.boot_upgrade){
-		TS_LOG_INFO("%s:[ESD]: In boot upgrade state, not check esd, return immediately! \n", __func__);
+		TS_LOG_INFO("%s:[ESD]: In boot upgrade state, not check esd, return immediately!\n",
+			ESDCHECK);
 		return 0;
 	}
 
@@ -1237,10 +1456,11 @@ static int focal_esdcheck_algorithm(void)
 	cmd = FTS_REG_WORKMODE;
 	ret= focal_read(&cmd, 1, &reg_value, 1);
 	if ( ret < 0 ){
-		TS_LOG_ERR("%s : focal read FTS_REG_WORKMODE error\n", __func__);
-	}
-	else if ( (reg_value & FTS_REG_WORKMODE_FACTORY_OFFSET) ==  FTS_REG_WORKMODE_FACTORY_VALUE){
-		TS_LOG_INFO("%s: [ESD]: In factory mode, not check esd, return immediately!!\n", __func__);
+		TS_LOG_ERR("%s : focal read FTS_REG_WORKMODE error\n",
+			ESDCHECK);
+	} else if ((reg_value & FTS_REG_WORKMODE_FACTORY_OFFSET) == FTS_REG_WORKMODE_FACTORY_VALUE) {
+		TS_LOG_INFO("%s: [ESD]: In factory mode, not check esd, return immediately!!\n",
+			ESDCHECK);
 		return 0;
 	}
 
@@ -1249,21 +1469,29 @@ static int focal_esdcheck_algorithm(void)
 
 	/* 6. get Flow work cnt: 0x91 If no change for 5 times, then ESD and reset */
 	if (0 == hardware_reset){
-		TS_LOG_DEBUG("%s : check flow count begin hardware_reset = %d\n", __func__, hardware_reset);
+		TS_LOG_DEBUG("%s : check flow count begin hardware_reset = %d\n",
+			ESDCHECK, hardware_reset);
 		hardware_reset = focal_esdcheck_flow_count();
 	}
 
 	/* 7. If need hardware reset, then handle it here */
-	TS_LOG_DEBUG("%s : esd reset begin hardware_reset = %d \n", __func__, hardware_reset);
+	TS_LOG_DEBUG("%s: esd reset begin hardware_reset = %d\n",
+		ESDCHECK, hardware_reset);
 	if (hardware_reset < 0){
+		if ((g_focal_pdata->notify_lcd_esd_support) &&
+			(notify_lcd_esd_flag == ESD_NOTIFY_LCD_FLAG)) {
+			ret = lcdkit_set_lcd_reset_low();
+			if (ret < 0)
+				TS_LOG_ERR("%s : lcd reset failed\n", ESDCHECK);
+		}
 		ret = focal_esdcheck_tp_reset();
 		if (ret < 0){
-			TS_LOG_ERR("%s : esd reset failed\n", __func__);
+			TS_LOG_ERR("%s : esd reset failed\n", ESDCHECK);
 			return ret;
 		}
 	}
 
-	TS_LOG_DEBUG("%s : esd reset end\n", __func__);
+	TS_LOG_DEBUG("%s : esd reset end\n", ESDCHECK);
 	return 0;
 }
 
@@ -1366,14 +1594,14 @@ static int focal_set_finger_number(struct ts_fingers *info,
 		info->cur_finger_number = 0;
 
 		TS_LOG_DEBUG("%s:%s=%d, %s=%d, %s=%d\n",
-				__func__,
+				SET_FINGER_NUMBER,
 				"current finger id", touch_data->finger_id[0],
 				"last count", last_data->touch_point,
 				"current cound", touch_data->touch_point);
-		
+
 		for (i = 0; i < last_data->touch_point; i++) {
 			TS_LOG_DEBUG("%s:last finger id:%d\n",
-				__func__, last_data->finger_id[i]);
+				SET_FINGER_NUMBER, last_data->finger_id[i]);
 			if (last_data->finger_id[i] == touch_data->finger_id[0]) {
 				index = i;
 				break;
@@ -1382,10 +1610,11 @@ static int focal_set_finger_number(struct ts_fingers *info,
 
 		if (index < 0) {
 			TS_LOG_ERR("%s:touch data error, %s\n",
-				__func__, "please close FTS_REPORT_BTN_TOUCH");
+				SET_FINGER_NUMBER,
+				"please close FTS_REPORT_BTN_TOUCH");
 			return -EIO;
 		}
-		
+
 		if (last_data->position_x[index] == touch_data->position_x[0]
 		&& last_data->position_y[index] == touch_data->position_y[0]) {
 			check_result = true;
@@ -1393,7 +1622,8 @@ static int focal_set_finger_number(struct ts_fingers *info,
 
 		if (!check_result) {
 			TS_LOG_ERR("%s:not support BTN_TOUCH report, %s\n",
-				__func__, "please close FTS_REPORT_BTN_TOUCH");
+				SET_FINGER_NUMBER,
+				"please close FTS_REPORT_BTN_TOUCH");
 		}
 	} else {
 		info->cur_finger_number = touch_data->touch_point;
@@ -1411,8 +1641,8 @@ static int focal_easy_wakeup_gesture_report_coordinate(unsigned int
 		reprot_gesture_point_num, struct ts_fingers *info, unsigned char *buf)
 {
 	int retval = 0;
-	int x = 0;
-	int y = 0;
+	unsigned int x;
+	unsigned int y;
 	unsigned int i = 0;
 	int x_pos_0 = 0;
 	int x_pos_1 = 0;
@@ -1425,8 +1655,10 @@ static int focal_easy_wakeup_gesture_report_coordinate(unsigned int
 			x_pos_1 = 3 + (4 * i);
 			y_pos_0 = 4 + (4 * i);
 			y_pos_1 = 5 + (4 * i);
-			x = (((s16)buf[x_pos_0]) & 0x0F) << 8 | (((s16) buf[x_pos_1])& 0xFF);
-			y = (((s16)buf[y_pos_0]) & 0x0F) << 8 | (((s16) buf[y_pos_1])& 0xFF);
+			x = (((unsigned int)buf[x_pos_0] & 0x0F) << 8) |
+				(buf[x_pos_1] & 0xFF);
+			y = (((unsigned int)buf[y_pos_0] & 0x0F) << 8) |
+				((buf[y_pos_1]) & 0xFF);
 			TS_LOG_INFO("%s: Gesture Repot Point %d \n", __func__, i);
 			g_focal_dev_data->easy_wakeup_info.easywake_position[i] = (x << 16) | y;
 			TS_LOG_INFO("easywake_position[%d] = 0x%04x\n", i, g_focal_dev_data->easy_wakeup_info.easywake_position[i]);
@@ -1455,34 +1687,34 @@ static int focal_check_key_gesture_report(struct ts_fingers *info,
 			}
 			break;
 		case SPECIFIC_LETTER_C:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO("@@@SPECIFIC_LETTER_c detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_c;
+				reprot_gesture_key_value = TS_LETTER_C;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_E:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO("@@@SPECIFIC_LETTER_e detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_e;
+				reprot_gesture_key_value = TS_LETTER_E;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_M:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO("@@@SPECIFIC_LETTER_m detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_m;
+				reprot_gesture_key_value = TS_LETTER_M;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_W:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_INFO("@@@SPECIFIC_LETTER_w detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_w;
+				reprot_gesture_key_value = TS_LETTER_W;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
@@ -1575,6 +1807,7 @@ static int focal_read_gestrue_data(struct ts_fingers *info,
 static int focal_check_gesture(struct ts_fingers *info)
 {
 	int retval = 0;
+	int i;
 	unsigned char state = 0;
 	unsigned char state_reg = 0;
 	u8 buf[FTS_TOUCH_DATA_LEN] = {0};
@@ -1586,28 +1819,35 @@ static int focal_check_gesture(struct ts_fingers *info)
 	}
 
 	buf[0] = TOUCH_DATA_START_ADDR;
-	retval = focal_read(buf, FTS_READ_REG_LEN, buf, FTS_TOUCH_DATA_LEN);
-	if (retval < 0) {
-		TS_LOG_ERR("%s:read touchdata failed, ret=%d.\n",__func__, retval);
-		return RESULT_ERR;
+	/* wait spi bus resume */
+	for (i = 0; i < GESTURE_EVENT_RETRY_TIME; i++) {
+		retval = focal_read(buf, FTS_READ_REG_LEN, buf,
+			FTS_TOUCH_DATA_LEN);
+		if (retval < 0) {
+			TS_LOG_ERR("%s:read touchdata failed, ret=%d\n",
+				CHECK_GESTURE, retval);
+			msleep(WAIT_FOR_SPI_BUS_READ_DELAY);
+		} else {
+			break;
+		}
 	}
-
 	/*get gesture wake up value, read status register 0xd0 */
 	state_reg = FTS_REG_GESTURE_EN;
 	retval = focal_read_reg(state_reg,&state);
 	if (retval < 0) {
-		TS_LOG_ERR("%s read state fail \n",__func__);
+		TS_LOG_ERR("%s read state fail\n", CHECK_GESTURE);
 		return RESULT_ERR;
 	}
 
 	if(state == FTS_GESTURE_EANBLE){
 		retval = focal_read_gestrue_data(info, gesture_report_info);
 		if(retval != NO_ERR){
-			TS_LOG_ERR("%s, %d: have error\n", __func__, __LINE__);
+			TS_LOG_ERR("%s, %d: have error\n",
+				CHECK_GESTURE, __LINE__);
 			return RESULT_ERR;
 		}
 	}else{
-		TS_LOG_ERR("%s read state:%d \n",__func__, state);
+		TS_LOG_ERR("%s read state:%d\n", CHECK_GESTURE, state);
 		return RESULT_ERR;
 	}
 
@@ -1622,6 +1862,19 @@ static int focal_palm_iron_report(unsigned int *key, struct ts_event *event_data
 			return NO_ERR;
        }
        return RESULT_ERR;
+}
+
+static int focal_palm_esd_report(unsigned int *key,
+	struct ts_event *event_data)
+{
+	if (event_data->palm_iron_num == FTS_ESD_HARDWARE_MARK ||
+		event_data->palm_iron_num == FTS_ESD_NOISE_MARK) {
+		TS_LOG_DEBUG("%s: is called,palm_iron_num is %d!\n",
+			__func__, event_data->palm_iron_num);
+		*key = TS_KEY_IRON;
+		return NO_ERR;
+	}
+	return RESULT_ERR;
 }
 
 static void focal_get_debug_info_FT3528(void)
@@ -1686,7 +1939,7 @@ static int focal_irq_bottom_half(struct ts_cmd_node *in_cmd,
 
 	out_cmd->command = TS_INPUT_ALGO;
 	algo_p->algo_order = g_focal_dev_data->algo_id;
-	TS_LOG_DEBUG("%s:algo_order:%d\n", __func__, algo_p->algo_order);
+	TS_LOG_DEBUG("%s:algo_order:%d\n", IRQ_BOTTOM_HALF, algo_p->algo_order);
 
 	if(true == g_focal_dev_data->need_wd_check_status){
 		fts_esdcheck_data.intr = true;
@@ -1701,6 +1954,16 @@ static int focal_irq_bottom_half(struct ts_cmd_node *in_cmd,
 	ret = focal_read_touch_data(&st_touch_data);
 	if (ret){
 		goto error;
+	}
+
+	if (g_focal_pdata->palm_esd_support) {
+		TS_LOG_DEBUG("%s: palm_esd_support\n", __func__);
+		ret = focal_palm_esd_report(ts_palm_key, &st_touch_data);
+		if (!ret) {
+			TS_LOG_INFO("focal palm esd test success\n");
+			out_cmd->command = TS_PALM_KEY;
+			goto error;
+		}
 	}
 
 	if(g_focal_pdata->palm_iron_support){
@@ -1754,8 +2017,7 @@ static int focal_irq_bottom_half(struct ts_cmd_node *in_cmd,
 
 		touch_count++;
 
-		TS_LOG_DEBUG("%s: wx = %d; wy = %d\n",
-			 __func__, wx, wy);
+		TS_LOG_DEBUG("%s: wx = %d; wy = %d\n", IRQ_BOTTOM_HALF, wx, wy);
 	}
 #ifdef ROI
 	if (TS_BUS_I2C == g_focal_dev_data->ts_platform_data->bops->btype) {
@@ -1764,12 +2026,14 @@ static int focal_irq_bottom_half(struct ts_cmd_node *in_cmd,
 			if (g_focal_pdata->roi_pkg_num_addr) {
 				ret = focal_read_reg((u8)(g_focal_pdata->roi_pkg_num_addr), &roi_package_num);
 				if (ret) {
-					TS_LOG_ERR("%s: read reg roi pkg num addr\n", __func__);
+					TS_LOG_ERR("%s: read reg roi pkg num addr\n",
+						IRQ_BOTTOM_HALF);
 				}
 			} else {
 				ret = focal_read_reg(FTS_ROI_PACKAGE_NUM, &roi_package_num);
 				if (ret) {
-					TS_LOG_ERR("%s: read roi pkg num addr\n", __func__);
+					TS_LOG_ERR("%s: read roi pkg num addr\n",
+						IRQ_BOTTOM_HALF);
 				}
 			}
 
@@ -1782,7 +2046,7 @@ static int focal_irq_bottom_half(struct ts_cmd_node *in_cmd,
 #endif
 	//info->cur_finger_number = touch_count;
 	focal_set_finger_number(info, &st_touch_data);
-	TS_LOG_DEBUG("%s:touch_count = %d\n", __func__, touch_count);
+	TS_LOG_DEBUG("%s:touch_count = %d\n", IRQ_BOTTOM_HALF, touch_count);
 
 error:
 	if(true == g_focal_dev_data->need_wd_check_status){
@@ -1816,6 +2080,7 @@ static int focal_fw_update_boot_recovery(void)
 {
 	int ret = 0;
 	u8 boot_state = 0;
+	u8 fw_download_mode = FTS_FW_DOWNLOAD_MODE;
 
 	TS_LOG_INFO("%s:check if boot recovery\n", __func__);
 
@@ -1826,7 +2091,9 @@ static int focal_fw_update_boot_recovery(void)
 		return ret;
 	}
 
-	if (boot_state != FTS_FW_DOWNLOAD_MODE) {
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+		fw_download_mode = FTS_FW_DOWNLOAD_MODE_FT8756;
+	if (boot_state != fw_download_mode) {
 		TS_LOG_INFO("%s:not in download mode,exit\n", __func__);
 		return -EIO;
 	}
@@ -1880,7 +2147,8 @@ static int focal_chip_get_info(struct ts_chip_info_param *info)
 
 	ic_vendor_size = CHIP_INFO_LENGTH * 2;
 	if(!focal_pdata->focal_device_data->ts_platform_data->hide_plain_id) {
-		strncpy(info->ic_vendor, FTS_CHIP_NAME, ic_vendor_size - 1);
+		strncpy(info->ic_vendor, FTS_CHIP_NAME,
+			sizeof(info->ic_vendor) - 1);
 		focal_strncat(info->ic_vendor, "-", ic_vendor_size);
 		focal_strncat(info->ic_vendor, focal_pdata->project_id, ic_vendor_size);
 	} else {
@@ -1890,7 +2158,8 @@ static int focal_chip_get_info(struct ts_chip_info_param *info)
 				sizeof(focal_pdata->project_id));
 	}
 
-	strncpy(info->mod_vendor, focal_pdata->vendor_name, CHIP_INFO_LENGTH);
+	strncpy(info->mod_vendor, focal_pdata->vendor_name,
+		sizeof(info->mod_vendor) - 1);
 
 	fw_vendor_size = CHIP_INFO_LENGTH * 2;
 	snprintf(info->fw_vendor, fw_vendor_size, "%d", focal_pdata->fw_ver);
@@ -1924,68 +2193,69 @@ static void focal_sleep_mode_in(void)
 static void focal_put_device_into_easy_wakeup(void)
 {
 	int retval = 0;
-	unsigned char write_addr, write_data;
+	unsigned char write_reg;
+	unsigned char write_data;
 
 	struct ts_easy_wakeup_info *info = &g_focal_dev_data->easy_wakeup_info;
-	TS_LOG_DEBUG("focal_put_device_into_easy_wakeup  info->easy_wakeup_flag =%x \n",
-	     			info->easy_wakeup_flag);
+	TS_LOG_DEBUG("put_device_into_easy_wakeup  info->easy_wakeup_flag =%x\n",
+		info->easy_wakeup_flag);
 	/*if the sleep_gesture_flag is ture,it presents that  the tp is at sleep state*/
 
 	if (g_focal_dev_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value == false ||
 		true == info->easy_wakeup_flag) {
-		TS_LOG_INFO
-		    ("focal_put_device_into_easy_wakeup  info->easy_wakeup_flag =%x \n",
-		     info->easy_wakeup_flag);
+		TS_LOG_INFO("put_device_into_easy_wakeup  info->easy_wakeup_flag =%x\n",
+			info->easy_wakeup_flag);
 		return;
 	}
 
 	/*Wakeup Gesture reg (d0) set enable 1 */
-	write_addr = FTS_REG_GESTURE_EN;
+	write_reg = FTS_REG_GESTURE_EN;
 	write_data = 0x01;
-	retval = focal_write_reg(write_addr, write_data);
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval){
 		goto write_reg_exit;
 	}
 
 	//reg 0x d1-d8 is gesture id, write 0xff for open this function
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D1;
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D1;
 	write_data = FTS_REG_GESTURE_OPEN_FF;
-	retval = focal_write_reg(write_addr, write_data);
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval){
 		goto write_reg_exit;
 	}
 
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D2;
-	retval = focal_write_reg(write_addr, write_data);
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D2;
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval){
 		goto write_reg_exit;
 	}
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D5;
-	retval = focal_write_reg(write_addr, write_data);
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D5;
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval)
 		goto write_reg_exit;
 
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D6;
-	retval = focal_write_reg(write_addr, write_data);
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D6;
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval)
 		goto write_reg_exit;
 
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D7;
-	retval = focal_write_reg(write_addr, write_data);
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D7;
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval)
 		goto write_reg_exit;
 
-	write_addr = FTS_REG_GESTURE_OUTPUT_ADDRESS_D8;
-	retval = focal_write_reg(write_addr, write_data);
+	write_reg = FTS_REG_GESTURE_OUTPUT_ADDRESS_D8;
+	retval = focal_write_reg(write_reg, write_data);
 	if(retval)
 		goto write_reg_exit;
 
 write_reg_exit:
 	if (retval < 0) {
-		TS_LOG_ERR("easy wake up suspend write Wakeup Gesture Only reg fail addr %0d!\n",write_addr);
+		TS_LOG_ERR("%s: write failed, reg = 0x%02x\n",
+			PUT_DEVICE_INTO_EAST_WAKEUP, write_reg);
 	} else {
-		TS_LOG_INFO("easy wake up suspend write Wakeup Gesture Only reg OK address(0x%02x) valve(0x%02x)\n",
-		     write_addr, write_data);
+		TS_LOG_INFO("%s: write OK, reg = 0x%02x, valve = 0x%02x\n",
+			PUT_DEVICE_INTO_EAST_WAKEUP, write_reg, write_data);
 	}
 
 	info->easy_wakeup_flag = true;
@@ -1996,13 +2266,26 @@ write_reg_exit:
 static int focal_suspend(void)
 {
 	int ret = 0;
+	struct ts_easy_wakeup_info *info = NULL;
 	int reset_gpio = 0;
+	struct ts_feature_info *feature_info = NULL;
 
+	info = &g_focal_dev_data->easy_wakeup_info;
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+		info->easy_wakeup_flag = false;
 	reset_gpio = g_focal_dev_data->ts_platform_data->reset_gpio;
 
 	if(true == g_focal_dev_data->need_wd_check_status){
 		fts_esdcheck_data.suspend = true;
 	}
+
+	if (g_focal_pdata->fts_8201_support) {
+		feature_info = &g_focal_dev_data->ts_platform_data->feature_info;
+		feature_info->wakeup_gesture_enable_info.switch_value = true;
+	}
+
+	if (g_focal_pdata->fts_control_cs_gpio)
+		gpio_direction_output(g_ts_kit_platform_data.cs_gpio, 0);
 	if(true == g_focal_dev_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value){
 		switch(g_focal_dev_data->easy_wakeup_info.sleep_mode){
 		case TS_POWER_OFF_MODE:
@@ -2010,6 +2293,11 @@ static int focal_suspend(void)
 				gpio_direction_output(reset_gpio, 0);
 				udelay(FT5X46_RESET_KEEP_LOW_TIME);
 				focal_power_off();
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				gpio_direction_output(reset_gpio, 0);
+			} else if (g_focal_pdata->fts_8201_support) {
+				/* ft8201 suspend just need set rst low */
+				gpio_direction_output(reset_gpio, SET_OFF);
 			} else {
 				/*goto sleep mode*/
 				focal_sleep_mode_in();
@@ -2066,7 +2354,8 @@ static void focal_put_device_outof_easy_wakeup(void)
 	int retval = 0;
 	struct ts_easy_wakeup_info *info = &g_focal_dev_data->easy_wakeup_info;
 
-	TS_LOG_DEBUG("focal_put_device_outof_easy_wakeup  info->easy_wakeup_flag =%d\n", info->easy_wakeup_flag);
+	TS_LOG_DEBUG("put_device_outof_easy_wakeup  info->easy_wakeup_flag =%d\n",
+		info->easy_wakeup_flag);
 
 	if (false == info->easy_wakeup_flag) {
 		return;
@@ -2089,7 +2378,10 @@ static int focal_resume(void)
 {
 	int ret = NO_ERR;
 	int reset_gpio = 0;
+	struct ts_feature_info *feature_info = NULL;
+	struct ts_easy_wakeup_info *info = NULL;
 
+	info = &g_focal_dev_data->easy_wakeup_info;
 	reset_gpio = g_focal_dev_data->ts_platform_data->reset_gpio;
 	focal_pinctrl_select_normal();
 
@@ -2101,14 +2393,25 @@ static int focal_resume(void)
 		}
 	}
 
+	if (g_focal_pdata->fts_control_cs_gpio)
+		gpio_direction_output(g_ts_kit_platform_data.cs_gpio, 1);
 	/*ft8201 lcd need tp to set reset gpio high,so need enter resume logic*/
-	if((FOCAL_FT5X46 != g_focal_dev_data->ic_type) &&
-		(FOCAL_FT5422U != g_focal_dev_data->ic_type) &&
-		(FOCAL_FT8201 != g_focal_dev_data->ic_type) &&
-		(FOCAL_FT3528 != g_focal_dev_data->ic_type)){
-		TS_LOG_INFO("%s: tp ic isn't FT5X46/FT5422U/FT8201/FT3528, resume needn't do nothing\n", __func__);
+	if ((g_focal_dev_data->ic_type != FOCAL_FT5X46) &&
+		(g_focal_dev_data->ic_type != FOCAL_FT5422U) &&
+		(g_focal_dev_data->ic_type != FOCAL_FT8201) &&
+		(g_focal_dev_data->ic_type != FOCAL_FT3528) &&
+		(g_focal_dev_data->ic_type != FOCAL_FT8756)) {
+		TS_LOG_INFO("%s: not the 5 ic do nothing\n",
+			__func__);
 		return ret;
 	}
+
+	if (g_focal_pdata->fts_8201_support) {
+		feature_info = &g_focal_dev_data->ts_platform_data->feature_info;
+		feature_info->wakeup_gesture_enable_info.switch_value = true;
+	}
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+		info->easy_wakeup_flag = true;
 
 	if(true == g_focal_dev_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value){
 		switch (g_focal_pdata->focal_device_data->easy_wakeup_info.sleep_mode) {
@@ -2118,6 +2421,11 @@ static int focal_resume(void)
 				focal_power_on();
 				udelay(FT5X46_RESET_KEEP_LOW_TIME);
 				gpio_direction_output(reset_gpio, 1);
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				gpio_direction_output(reset_gpio, 1);
+			} else if (g_focal_pdata->fts_8201_support) {
+				/* 8201 power off mode resume set rst high */
+				gpio_direction_output(reset_gpio, SET_ON);
 			} else {
 				/*exit sleep mode*/
 				ret = focal_gpio_reset();
@@ -2128,6 +2436,10 @@ static int focal_resume(void)
 			break;
 		case TS_GESTURE_MODE:
 			focal_put_device_outof_easy_wakeup();
+			/* 8201 gesture mode lcd ctr tp rst */
+			if (g_focal_pdata->fts_8201_support)
+				return NO_ERR;
+
 			ret = focal_gpio_reset();
 			if(NO_ERR != ret){
 				TS_LOG_DEBUG("%s: have error\n", __func__);
@@ -2235,6 +2547,10 @@ static int focal_after_resume(void *feature_info)
 		msleep(FTS_SLEEP_TIME_265);
 	}
 
+	if (g_focal_pdata->notify_lcd_esd_support &&
+		(g_focal_dev_data->need_wd_check_status == true))
+		fts_esdcheck_data.suspend = false;
+
 	if (TS_BUS_SPI == g_focal_dev_data->ts_platform_data->bops->btype) {
 		gpio_direction_output(g_ts_kit_platform_data.cs_gpio, GPIO_HIGH);
 
@@ -2248,18 +2564,21 @@ static int focal_after_resume(void *feature_info)
 #if defined (CONFIG_HUAWEI_DSM)
 				ts_dmd_report( DSM_TP_FWUPDATE_OVERTIME_ERROR_NO,
 						"error.%s:for spi:fw update time too long. duration(%d.%d) = %ld ums\n",
-						__func__, time_duration.tv_sec, time_duration.tv_usec,
+						AFTER_RESUME,
+						time_duration.tv_sec,
+						time_duration.tv_usec,
 						time_duration.tv_sec * 1000000 + time_duration.tv_usec);
 #endif
 			}
 		}
 
 		if (ret < 0) {
-			TS_LOG_ERR("%s:fw update from resume fail,ret=%d", __func__, ret);
+			TS_LOG_ERR("%s:fw update from resume fail,ret=%d",
+				AFTER_RESUME, ret);
 			return ret;
 		}
 		TS_LOG_INFO("%s:fw update from resume for sip, check_threshold(%u ums).duration(%ld.%ld) = %ld ums\n",
-				__func__, fw_update_duration_check * 1000,
+				AFTER_RESUME, fw_update_duration_check * 1000,
 				time_duration.tv_sec, time_duration.tv_usec,
 				time_duration.tv_sec * 1000000 + time_duration.tv_usec);
 
@@ -2268,29 +2587,32 @@ static int focal_after_resume(void *feature_info)
 	{
 		ret = focal_read(&cmd, 1, &reg_val, 1);
 		if ((reg_val  == chipid_high) || (reg_val  == FTS_FT86XX_HIGH)) {
-			TS_LOG_INFO("%s:chip id read success, chip id:0x%X, i=%d\n",__func__, reg_val,i);
+			TS_LOG_INFO("%s:chip id read success, chip id:0x%X, i=%d\n",
+				AFTER_RESUME, reg_val, i);
 			break;
 		}
 		else{
-			TS_LOG_ERR("%s:chip id read fail, reg_val=%d, chipid_high=%d, i=%d\n",__func__, reg_val, chipid_high, i);
+			TS_LOG_ERR("%s:chip id read fail, reg_val=%d, chipid_high=%d, i=%d\n",
+				AFTER_RESUME, reg_val, chipid_high, i);
 			msleep(15);
 		}
 	}
 	if(i == FTS_RESUME_MAX_TIMES)
 	{
-		TS_LOG_ERR("%s:chip id read fail, ret=%d, i=%d\n",__func__, reg_val, i);
+		TS_LOG_ERR("%s:chip id read fail, ret=%d, i=%d\n",
+			AFTER_RESUME, reg_val, i);
 		return -EINVAL;
 	}
 	ret = focal_status_resume();
 	if (ret < 0)
 	{
-		TS_LOG_ERR("%s: failed to resume status\n", __func__);
+		TS_LOG_ERR("%s: failed to resume status\n", AFTER_RESUME);
 		return -EINVAL;
 	}
 
-	if(true == g_focal_dev_data->need_wd_check_status){
+	if (!g_focal_pdata->notify_lcd_esd_support &&
+		(g_focal_dev_data->need_wd_check_status == true))
 		fts_esdcheck_data.suspend = false;
-	}
 
 	return ret;
 }
@@ -2329,10 +2651,10 @@ static int focal_input_config(struct input_dev *input_dev)
 	set_bit(BTN_TOOL_FINGER, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 	set_bit(TS_DOUBLE_CLICK, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_KEY_IRON, input_dev->keybit);
 
 #ifdef INPUT_PROP_DIRECT
@@ -2381,7 +2703,7 @@ static int focal_glove_switch(struct ts_glove_info *info)
 	int ret = 0;
 
 	if (!info) {
-		TS_LOG_ERR("%s:info is null\n", __func__);
+		TS_LOG_ERR("%s:info is null\n", GLOVE_SWITCH);
 		ret = -ENOMEM;
 		return ret;
 	}
@@ -2391,28 +2713,28 @@ static int focal_glove_switch(struct ts_glove_info *info)
 		ret = focal_get_glove_switch(&info->glove_switch);
 		if (ret) {
 			TS_LOG_ERR("%s:get glove switch fail,ret=%d\n",
-				__func__, ret);
+				GLOVE_SWITCH, ret);
 			return ret;
 		} else {
 			TS_LOG_INFO("%s:glove switch=%d\n",
-				__func__, info->glove_switch);
+				GLOVE_SWITCH, info->glove_switch);
 		}
 
 		break;
 	case TS_ACTION_WRITE:
 		TS_LOG_INFO("%s:glove switch=%d\n",
-			__func__, info->glove_switch);
+			GLOVE_SWITCH, info->glove_switch);
 		ret = focal_set_glove_switch(!!info->glove_switch);
 		if (ret) {
 			TS_LOG_ERR("%s:set glove switch fail, ret=%d\n",
-				__func__, ret);
+				GLOVE_SWITCH, ret);
 			return ret;
 		}
 
 		break;
 	default:
 		TS_LOG_ERR("%s:invalid op action:%d\n",
-			__func__, info->op_action);
+			GLOVE_SWITCH, info->op_action);
 		return -EINVAL;
 	}
 
@@ -2474,10 +2796,11 @@ static int focal_set_glove_switch(u8 glove_switch)
 	glove_info = focal_get_glove_info(g_focal_dev_data);
 	glove_enable_addr = glove_info->glove_switch_addr;
 
-	TS_LOG_INFO("%s:glove_enable_addr=%d\n", __func__, glove_enable_addr);
+	TS_LOG_INFO("%s:glove_enable_addr=%d\n",
+		SET_GLOVE_SWITCH, glove_enable_addr);
 	if (!glove_enable_addr) {
 		TS_LOG_ERR("%s:glove_enable_addr is 0, not support glove.\n",
-			__func__);
+			SET_GLOVE_SWITCH);
 
 		return -ENOTSUPP;
 	}
@@ -2493,7 +2816,7 @@ static int focal_set_glove_switch(u8 glove_switch)
 	ret = focal_write(cmd, 2);
 	if (ret) {
 		TS_LOG_ERR("%s:write glove switch fail, ret=%d\n",
-			__func__, ret);
+			SET_GLOVE_SWITCH, ret);
 		return ret;
 	}
 
@@ -2676,11 +2999,11 @@ static int focal_set_roi_switch(u8 roi_switch)
 	roi_info = focal_get_roi_info(g_focal_dev_data);
 	roi_switch_addr = roi_info->roi_control_addr;
 
-	TS_LOG_INFO("%s:roi_switch_addr=%d\n", __func__, roi_switch_addr);
+	TS_LOG_INFO("%s:roi_switch_addr=%d\n",
+		SET_ROI_SWEITCH, roi_switch_addr);
 	if (!roi_switch_addr) {
-		TS_LOG_ERR("%s:roi_switch_addr is 0, not support roi.\n",
-			__func__);
-
+		TS_LOG_ERR("%s:roi_switch_addr is 0, not support roi\n",
+			SET_ROI_SWEITCH);
 		return -ENOTSUPP;
 	}
 
@@ -2695,7 +3018,7 @@ static int focal_set_roi_switch(u8 roi_switch)
 	ret = focal_write(cmd, 2);
 	if (ret) {
 		TS_LOG_ERR("%s:write holster switch fail, ret=%d\n",
-			__func__, ret);
+			SET_ROI_SWEITCH, ret);
 		return ret;
 	}
 #endif
@@ -2715,10 +3038,11 @@ static int focal_get_roi_switch(u8 *roi_switch)
 	roi_info = focal_get_roi_info(g_focal_dev_data);
 	roi_switch_addr = roi_info->roi_control_addr;
 
-	TS_LOG_INFO("%s:roi_switch_addr=%d\n", __func__, roi_switch_addr);
+	TS_LOG_INFO("%s:roi_switch_addr = %d\n",
+		GET_ROI_SWITCH, roi_switch_addr);
 	if (!roi_switch_addr) {
 		TS_LOG_ERR("%s:roi_switch_addr is 0, not support roi.\n",
-			__func__);
+			 GET_ROI_SWITCH);
 
 		return -ENOTSUPP;
 	}
@@ -2728,13 +3052,13 @@ static int focal_get_roi_switch(u8 *roi_switch)
 	ret = focal_read_reg(cmd, &roi_value);
 	if (ret) {
 		TS_LOG_ERR("%s:read roi  switch fail, ret=%d\n",
-			__func__, ret);
+			 GET_ROI_SWITCH, ret);
 		return ret;
 	}
 
 	*roi_switch = roi_value;
 
-	TS_LOG_INFO("%s: roi_value=%d\n", __func__, *roi_switch);
+	TS_LOG_INFO("%s: roi_value=%d\n",  GET_ROI_SWITCH, *roi_switch);
 #endif
 	return ret;
 }
@@ -2743,9 +3067,9 @@ static int focal_roi_switch(struct ts_roi_info *info)
 	int ret = 0;
 	int i=0;
 #ifdef ROI
-	TS_LOG_INFO("%s: Enter!\n", __func__);
+	TS_LOG_INFO("%s: Enter!\n", ROI_SWITCH);
 	if (!info) {
-		TS_LOG_ERR("%s:info is null\n", __func__);
+		TS_LOG_ERR("%s:info is null\n", ROI_SWITCH);
 		ret = -ENOMEM;
 		return ret;
 	}
@@ -2755,21 +3079,21 @@ static int focal_roi_switch(struct ts_roi_info *info)
 		ret = focal_get_roi_switch(&info->roi_switch);
 		if (ret) {
 			TS_LOG_ERR("%s:get roi switch fail,ret=%d\n",
-				__func__, ret);
+				ROI_SWITCH, ret);
 			return ret;
 		} else {
 			TS_LOG_INFO("%s:roi switch=%d\n",
-				__func__, info->roi_switch);
+				ROI_SWITCH, info->roi_switch);
 		}
 
 		break;
 	case TS_ACTION_WRITE:
 		TS_LOG_INFO("%s:roi switch=%d\n",
-			__func__, info->roi_switch);
+			ROI_SWITCH, info->roi_switch);
 		ret = focal_set_roi_switch(!!info->roi_switch);
 		if (ret) {
 			TS_LOG_ERR("%s:set roi switch fail, ret=%d\n",
-				__func__, ret);
+				ROI_SWITCH, ret);
 			return ret;
 		}
 		if(!info->roi_switch){
@@ -2781,7 +3105,7 @@ static int focal_roi_switch(struct ts_roi_info *info)
 		break;
 	default:
 		TS_LOG_ERR("%s:invalid op action:%d\n",
-			__func__, info->op_action);
+			GET_ROI_SWITCH, info->op_action);
 		return -EINVAL;
 	}
 #endif
@@ -2804,27 +3128,33 @@ static void focal_scene_switch(unsigned int scene, unsigned int oper)
 	struct ts_kit_device_data *focal_dev_data = g_focal_dev_data;
 
 	if (TS_SWITCH_TYPE_SCENE != (focal_dev_data->touch_switch_flag & TS_SWITCH_TYPE_SCENE)) {
-		TS_LOG_ERR("%s, scene switch does not suppored by this chip\n",__func__);
+		TS_LOG_ERR("%s, scene switch does not suppored by this chip\n",
+			SCENE_SWITCH);
 		goto out;
 	}
 
 	switch (oper) {
 		case TS_SWITCH_SCENE_ENTER:
-			TS_LOG_INFO("%s: enter scene %d, reg: 0x%x\n", __func__, scene, focal_pdata->touch_switch_scene_reg);
+			TS_LOG_INFO("%s: enter scene %d, reg: 0x%x\n",
+				SCENE_SWITCH, scene, focal_pdata->touch_switch_scene_reg);
 			error = focal_write_reg(focal_pdata->touch_switch_scene_reg, scene);
 			if(error){
-				TS_LOG_ERR("%s: Switch to scene %d mode Failed: error%d\n", __func__, scene, error);
+				TS_LOG_ERR("%s: Switch to scene %d mode Failed: error%d\n",
+					SCENE_SWITCH, scene, error);
 			}
 			break;
 		case TS_SWITCH_SCENE_EXIT:
-			TS_LOG_INFO("%s: enter normal scene, reg: 0x%x\n", __func__, focal_pdata->touch_switch_scene_reg);
+			TS_LOG_INFO("%s: enter normal scene, reg: 0x%x\n",
+				SCENE_SWITCH, focal_pdata->touch_switch_scene_reg);
 			error = focal_write_reg(focal_pdata->touch_switch_scene_reg, 0);
 			if(error){
-				TS_LOG_ERR("%s: enter normal scene Failed: error%d\n", __func__, error);
+				TS_LOG_ERR("%s: enter normal scene Failed: error%d\n",
+					SCENE_SWITCH, error);
 			}
 			break;
 		default:
-			TS_LOG_ERR("%s: soper unknown:%d, invalid\n", __func__, oper);
+			TS_LOG_ERR("%s: soper unknown:%d, invalid\n",
+				SCENE_SWITCH, oper);
 			break;
 	}
 
@@ -2890,32 +3220,34 @@ static void focal_chip_touch_switch(void)
 	struct ts_kit_device_data *focal_dev_data = g_focal_dev_data;
 	struct focal_platform_data *focal_pdata = g_focal_pdata;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", CHIP_TOUCH_SWITCH);
 
 	if (NULL == focal_dev_data){
-		TS_LOG_ERR("%s, error chip data\n",__func__);
+		TS_LOG_ERR("%s, error chip data\n", CHIP_TOUCH_SWITCH);
 		goto out;
 	}
 
 	/* SWITCH_OPER,ENABLE_DISABLE,PARAM */
 	memcpy(in_data, focal_dev_data->touch_switch_info, MAX_STR_LEN -1);
-	TS_LOG_INFO("%s, in_data:%s\n",__func__, in_data);
+	TS_LOG_INFO("%s, in_data:%s\n", CHIP_TOUCH_SWITCH, in_data);
 	for(i = 0; i < strlen(in_data) && (in_data[i] != '\n'); i++){
 		if(in_data[i] == ','){
 			cnt++;
 		}else if(!isdigit(in_data[i])){
-			TS_LOG_ERR("%s: input format error!!\n", __func__);
+			TS_LOG_ERR("%s: input format error\n",
+				CHIP_TOUCH_SWITCH);
 			goto out;
 		}
 	}
 	if(cnt != FTS_DOZE_MAX_INPUT_SEPARATE_NUM){
-		TS_LOG_ERR("%s: input format error[separation_cnt=%d]!!\n", __func__, cnt);
+		TS_LOG_ERR("%s: input format error[separation_cnt=%d]\n",
+			CHIP_TOUCH_SWITCH, cnt);
 		goto out;
 	}
 
 	error = sscanf(in_data, "%u,%u,%u", &stype, &soper, &time);
 	if(error <= 0){
-		TS_LOG_ERR("%s: sscanf error\n", __func__);
+		TS_LOG_ERR("%s: sscanf error\n", CHIP_TOUCH_SWITCH);
 		goto out;
 	}
 	TS_LOG_DEBUG("stype=%u,soper=%u,param=%u\n", stype, soper, time);
@@ -2930,7 +3262,8 @@ static void focal_chip_touch_switch(void)
 	switch (stype) {
 		case TS_SWITCH_TYPE_DOZE:
 			if (TS_SWITCH_TYPE_DOZE != (focal_dev_data->touch_switch_flag & TS_SWITCH_TYPE_DOZE)){
-				TS_LOG_ERR("%s, doze mode does not suppored by this chip\n",__func__);
+				TS_LOG_ERR("%s, doze mode does not suppored by this chip\n",
+					CHIP_TOUCH_SWITCH);
 				goto out;
 			}
 
@@ -2940,32 +3273,39 @@ static void focal_chip_touch_switch(void)
 
 			switch (soper){
 				case TS_SWITCH_DOZE_ENABLE:
-					TS_LOG_INFO("%s:enter doze_mode[param:%d]\n", __func__, param);
+					TS_LOG_INFO("%s:enter doze_mode[param:%d]\n",
+						CHIP_TOUCH_SWITCH, param);
 					error = focal_write_reg(FTS_REG_DOZE_EN, FTS_DOZE_ENABLE);
 					if(error){
-						TS_LOG_ERR("%s: Failed enable doze_mode: error%d\n", __func__, error);
+						TS_LOG_ERR("%s: Failed enable doze_mode: error%d\n",
+							CHIP_TOUCH_SWITCH, error);
 						goto out;
 					}
 					error = focal_write_reg(FTS_REG_DOZE_HOLDOFF_TIME, param);
 					if(error){
-						TS_LOG_ERR("%s: Failed set holdoff time: error%d\n", __func__, error);
+						TS_LOG_ERR("%s: Failed set holdoff time: error%d\n",
+							CHIP_TOUCH_SWITCH, error);
 					}
 					break;
 				case TS_SWITCH_DOZE_DISABLE:
-					TS_LOG_INFO("%s:exit doze_mode\n", __func__);
+					TS_LOG_INFO("%s:exit doze_mode\n",
+						CHIP_TOUCH_SWITCH);
 					error = focal_write_reg(FTS_REG_DOZE_EN, FTS_DOZE_DISABLE);
 					if(error){
-						TS_LOG_ERR("%s: Failed disable doze_mode : error%d\n", __func__, error);
+						TS_LOG_ERR("%s: Failed disable doze_mode : error%d\n",
+							CHIP_TOUCH_SWITCH, error);
 					}
 					break;
 				default:
-					TS_LOG_ERR("%s: soper unknown:%d, invalid\n", __func__, soper);
+					TS_LOG_ERR("%s: soper unknown:%d, invalid\n",
+						CHIP_TOUCH_SWITCH, soper);
 					break;
 			}
 			break;
 		case TS_SWITCH_TYPE_GAME:
 			if (TS_SWITCH_TYPE_GAME != (focal_dev_data->touch_switch_flag & TS_SWITCH_TYPE_GAME)){
-				TS_LOG_ERR("%s, game mode does not suppored by this chip\n",__func__);
+				TS_LOG_ERR("%s, game mode does not suppored by this chip\n",
+					CHIP_TOUCH_SWITCH);
 				goto out;
 			}
 
@@ -2974,27 +3314,33 @@ static void focal_chip_touch_switch(void)
 			}
 
 			if (!focal_pdata) {
-					TS_LOG_ERR("%s, Eroor focal paltform data\n",__func__);
+				TS_LOG_ERR("%s, Eroor focal paltform data\n",
+					CHIP_TOUCH_SWITCH);
 					goto out;
 			}
 
 			switch (soper){
 				case TS_SWITCH_GAME_ENABLE:
-					TS_LOG_INFO("%s: enter game_mode\n", __func__);
+					TS_LOG_INFO("%s: enter game_mode\n",
+						CHIP_TOUCH_SWITCH);
 					error = focal_write_reg(focal_pdata->touch_switch_game_reg, 1);
 					if(error){
-						TS_LOG_ERR("%s: Switch to game mode Failed: error%d\n", __func__, error);
+						TS_LOG_ERR("%s: Switch to game mode Failed: error%d\n",
+							CHIP_TOUCH_SWITCH, error);
 					}
 					break;
 				case TS_SWITCH_GAME_DISABLE:
-					TS_LOG_INFO("%s: exit game_mode\n", __func__);
+					TS_LOG_INFO("%s: exit game_mode\n",
+						CHIP_TOUCH_SWITCH);
 					error = focal_write_reg(focal_pdata->touch_switch_game_reg, 0);
 					if (error) {
-						TS_LOG_ERR("%s: Switch to normal mode Failed: error%d\n", __func__, error);
+						TS_LOG_ERR("%s: Switch to normal mode Failed: error%d\n",
+							CHIP_TOUCH_SWITCH, error);
 					}
 					break;
 				default:
-					TS_LOG_ERR("%s: soper unknown:%d, invalid\n", __func__, soper);
+					TS_LOG_ERR("%s: soper unknown:%d, invalid\n",
+						CHIP_TOUCH_SWITCH, soper);
 					break;
 			}
 			break;
@@ -3030,7 +3376,8 @@ static void focal_chip_touch_switch(void)
 			focal_fm_switch(soper);
 			break;
 		default:
-			TS_LOG_ERR("%s: stype unknown:%u, invalid\n", __func__, stype);
+			TS_LOG_ERR("%s: stype unknown:%u, invalid\n",
+				CHIP_TOUCH_SWITCH, stype);
 			break;
 	}
 
@@ -3089,8 +3436,12 @@ static int focal_param_init(struct focal_platform_data *focal_pdata)
 	if (ret) {
 		TS_LOG_ERR("%s:read project id fail, ret=%d,hope update fw to recovery!\n", __func__, ret);
 //		memset(focal_pdata->project_id,0,FTS_PROJECT_ID_LEN);
-		return ret;
+
+		if (g_focal_dev_data->ic_type != FOCAL_FT8756)
+			return ret;
 	}
+	strncpy (g_focal_dev_data->project_id, focal_pdata->project_id,
+		REAL_PROJECT_ID_LEN - 1);
 	ret = focal_get_vendor_name_from_dts(focal_pdata->project_id,
 		focal_pdata->vendor_name, FTS_VENDOR_NAME_LEN);
 	if (ret) {
@@ -3116,6 +3467,16 @@ static int focal_param_init(struct focal_platform_data *focal_pdata)
 	} else {
 		focal_pdata->fw_ver = fw_ver;
 		snprintf(g_focal_dev_data->version_name,MAX_STR_LEN-1,"%d",g_focal_pdata->fw_ver);
+	}
+	/* if tp color supported,read tp color from ic reg */
+	if (focal_pdata->support_get_tp_color &&
+		focal_pdata->get_tp_color_from_reg) {
+		ret = touch_driver_get_tpcolor_from_reg();
+		if (ret) {
+			TS_LOG_ERR("%s: read tp color fail, ret = %d\n",
+				__func__, ret);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -3172,14 +3533,16 @@ static void focal_pinctrl_select_normal(void)
 	struct focal_platform_data *pdata = g_focal_pdata;
 
 	if (!pdata->fts_use_pinctrl) {
-		TS_LOG_INFO("%s, pinctrl is not in use.\n", __func__);
+		TS_LOG_INFO("%s, pinctrl is not in use\n",
+			PINCTRL_SELECT_NORMAL);
 		return;
 	}
 
 	if (pdata->pctrl && pdata->pins_default) {
 		ret = pinctrl_select_state(pdata->pctrl , pdata->pins_default);
 		if (ret < 0)
-			TS_LOG_ERR("%s:Set normal pin state error:%d\n", __func__, ret);
+			TS_LOG_ERR("%s:Set normal pin state error:%d\n",
+				PINCTRL_SELECT_NORMAL, ret);
 	}
 	return;
 }
@@ -3193,14 +3556,15 @@ static void focal_pinctrl_select_suspend(void)
 	struct focal_platform_data *pdata = g_focal_pdata;
 
 	if (!pdata->fts_use_pinctrl) {
-		TS_LOG_INFO("%s, pinctrl is not in use.\n", __func__);
+		TS_LOG_INFO("%s, pinctrl is not in use.\n", PINCTRL_SELECT);
 		return;
 	}
 
 	if (pdata->pctrl && pdata->pins_idle){
 		ret = pinctrl_select_state(pdata->pctrl, pdata->pins_idle);
 		if (ret < 0)
-			TS_LOG_ERR("%s:Set suspend pin state error:%d\n", __func__, ret);
+			TS_LOG_ERR("%s:Set suspend pin state error:%d\n",
+				PINCTRL_SELECT, ret);
 	}
 	return;
 }
@@ -3212,7 +3576,7 @@ static int focal_get_fwname(struct focal_platform_data *focal_pdata){
 	ts_platform_data = g_focal_dev_data->ts_platform_data;
 
 	if((strlen(ts_platform_data->product_name) + strlen(ts_platform_data->chip_data->chip_name) + 2*sizeof(char)) > MAX_STR_LEN) {
-		TS_LOG_ERR("%s invalid fwname\n", __func__);
+		TS_LOG_ERR("%s invalid fwname\n", GET_FWNAME);
 		return -EINVAL;
 	}
 
@@ -3221,7 +3585,7 @@ static int focal_get_fwname(struct focal_platform_data *focal_pdata){
 	strncat(fwname, &joint_chr, sizeof(char));
 	strncat(fwname, ts_platform_data->chip_data->chip_name, MAX_STR_LEN - 1);
 	strncat(fwname, &joint_chr, sizeof(char));
-	TS_LOG_INFO("%s fw name prefix:%s", __func__, fwname);
+	TS_LOG_INFO("%s fw name prefix:%s", GET_FWNAME, fwname);
 	return 0;
 }
 
@@ -3251,7 +3615,7 @@ static int focal_init_chip(void)
 	delay_time = kzalloc(sizeof(struct focal_delay_time), GFP_KERNEL);
 	if (!delay_time) {
 		TS_LOG_ERR("%s:allocate memory for delay_time fail\n",
-			__func__);
+			INIT_CHIP);
 		ret = -ENOMEM;
 		goto free_focal_pdata;
 	}
@@ -3262,7 +3626,7 @@ static int focal_init_chip(void)
 
 	ret = focal_parse_dts(focal_dev_data->cnode, focal_pdata);
 	if (ret) {
-		TS_LOG_ERR("%s:parse dts fail, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:parse dts fail, ret=%d\n", INIT_CHIP, ret);
 		goto free_delay_time;
 	}
 
@@ -3281,25 +3645,26 @@ static int focal_init_chip(void)
 
 	ret = focal_gpio_request(focal_dev_data);
 	if (ret < 0) {
-		TS_LOG_ERR("%s:gpio reauest fail, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:gpio reauest fail, ret=%d\n", INIT_CHIP, ret);
 		goto free_delay_time;
 	}
 	ret = focal_apk_node_init();
 	if (ret < 0) {
-		TS_LOG_ERR("%s:apk_node_init error, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:apk_node_init error, ret=%d\n", INIT_CHIP, ret);
 		goto free_delay_time;
 	}
 
 	ret = focal_param_init(focal_pdata);
 	if (ret) {
-		TS_LOG_ERR("%s:init param fail, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:init param fail, ret=%d\n", INIT_CHIP, ret);
 		goto apk_node_exit;
 	}
 	/*provide panel_id for sensor*/
-	g_focal_dev_data->ts_platform_data->panel_id = 
-		(focal_pdata->project_id[FTS_PANEL_ID_START_BIT] - '0') * 10 + 
+	g_focal_dev_data->ts_platform_data->panel_id =
+		(focal_pdata->project_id[FTS_PANEL_ID_START_BIT] - '0') * 10 +
 		focal_pdata->project_id[FTS_PANEL_ID_START_BIT + 1] - '0';
-	TS_LOG_INFO("%s: panel_id=%d\n", __func__, g_focal_dev_data->ts_platform_data->panel_id);
+	TS_LOG_INFO("%s: panel_id=%d\n", INIT_CHIP,
+		g_focal_dev_data->ts_platform_data->panel_id);
 /*
        ret = focal_pinctrl_init();
 	if (ret) {
@@ -3316,12 +3681,12 @@ static int focal_init_chip(void)
 	if (TS_BUS_SPI == g_focal_pdata->focal_device_data->ts_platform_data->bops->btype) {
 		ret = focal_get_fwname(focal_pdata);
 		if(ret) {
-			TS_LOG_ERR("%s:focal get fwname fail\n",__func__);
+			TS_LOG_ERR("%s:focal get fwname fail\n", INIT_CHIP);
 			goto free_focal_pdata;
 		}
 	}
 
-	TS_LOG_INFO("%s:init chip success.\n", __func__);
+	TS_LOG_INFO("%s:init chip success.\n", INIT_CHIP);
 	return NO_ERR;
 
 apk_node_exit:
@@ -3331,7 +3696,7 @@ free_delay_time:
 	//kfree(focal_pdata->delay_time);
 free_focal_pdata:
 	//don't free focal_pdata,firmware upgrade will use this parameter
-	TS_LOG_ERR("%s:focal init chip error.\n", __func__);
+	TS_LOG_ERR("%s:focal init chip error.\n", INIT_CHIP);
 
 	return ret;
 }
@@ -3473,25 +3838,28 @@ static int focal_power_control(void)
 	int ret = 0;
 
 	if (FTS_SELF_CTRL_POWER == g_focal_pdata->self_ctrl_power) {
-		TS_LOG_INFO("%s, power control by touch ic\n",__func__);
+		TS_LOG_INFO("%s, power control by touch ic\n", POWER_CONTROL);
 		if (FTS_VCI_LDO_POWER == g_focal_dev_data->vci_regulator_type &&
 			FTS_VDDIO_LDO_POWER == g_focal_dev_data->vddio_regulator_type) {
 
 			ret = focal_power_parameter_config();
 			if (ret < 0) {
-				TS_LOG_ERR("%s: power config failed\n", __func__);
+				TS_LOG_ERR("%s: power config failed\n",
+					POWER_CONTROL);
 				goto exit_power_config;
 			}
 
 			/*power on*/
 			ret = focal_power_on();
 			if (ret < 0) {
-				TS_LOG_ERR("%s: fts power on failed\n", __func__);
+				TS_LOG_ERR("%s: fts power on failed\n",
+					POWER_CONTROL);
 				goto exit_regulator_put;
 			}
 		}
 	} else {
-		TS_LOG_INFO("%s, power control by LCD, nothing to do\n",__func__);
+		TS_LOG_INFO("%s, power control by LCD, nothing to do\n",
+			POWER_CONTROL);
 	}
 
 	return 0;
@@ -3511,7 +3879,8 @@ static int focal_chip_detect(struct ts_kit_platform_data *pdata)
 	reset_gpio = g_focal_dev_data->ts_platform_data->reset_gpio;
 
 	if ((!pdata) &&(!pdata->ts_dev)){
-		TS_LOG_ERR("%s device, ts_kit_platform_data *data or data->ts_dev is NULL \n", __func__);
+		TS_LOG_ERR("%s device, ts_kit_platform_data*data or data->ts_dev is NULL\n",
+			CHIP_DETECT);
 		ret = -ENOMEM;
 		goto exit;
 	}
@@ -3525,7 +3894,7 @@ static int focal_chip_detect(struct ts_kit_platform_data *pdata)
 	ret = focal_prase_ic_config_dts(g_focal_dev_data->cnode, g_focal_dev_data);
 	if (ret) {
 		TS_LOG_ERR("%s:parse ic config dts fail, ret=%d\n",
-			__func__, ret);
+			CHIP_DETECT, ret);
 		goto exit;
 	}
 
@@ -3536,21 +3905,35 @@ static int focal_chip_detect(struct ts_kit_platform_data *pdata)
 
 	ret = focal_power_control();
 	if (ret < 0) {
-		TS_LOG_ERR("%s: fts power control failed\n", __func__);
+		TS_LOG_ERR("%s: fts power control failed\n", CHIP_DETECT);
 		goto exit;
 	}
 
 	ret = focal_pinctrl_init();
 	if (ret < 0) {
-		TS_LOG_ERR("%s: focal_pinctrl_init error\n", __func__);
+		TS_LOG_ERR("%s: focal_pinctrl_init error\n", CHIP_DETECT);
 		//goto pinctrl_get_err;
 	}
 
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		ret = fts_bus_init();
+		if (ret) {
+			TS_LOG_ERR("fts bus init fail\n");
+			fts_bus_exit();
+			goto exit;
+		}
+	}
 	if (FOCAL_FT5X46 == g_focal_dev_data->ic_type || FOCAL_FT5422U == g_focal_dev_data->ic_type || FOCAL_FT3528 == g_focal_dev_data->ic_type) {
 		ret = focal_ft5x46_chip_reset();
 		if (ret) {
 			TS_LOG_ERR("%s:reset pull up failed, ret=%d\n",
-				__func__, ret);
+				CHIP_DETECT, ret);
+			goto exit_power_off;
+		}
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		ret = focal_hardware_reset(FTS_MODEL_BOOTLOADER);
+		if (ret) {
+			TS_LOG_ERR("hardware reset fail, ret=%d\n", ret);
 			goto exit_power_off;
 		}
 	} else {
@@ -3558,7 +3941,7 @@ static int focal_chip_detect(struct ts_kit_platform_data *pdata)
 			ret = focal_hardware_reset(FTS_MODEL_FIRST_START);
 			if (ret) {
 				TS_LOG_ERR("%s:hardware reset fail, ret=%d\n",
-					__func__, ret);
+					CHIP_DETECT, ret);
 				goto exit_power_off;
 			}
 		}
@@ -3566,14 +3949,16 @@ static int focal_chip_detect(struct ts_kit_platform_data *pdata)
 
 	ret = communicate_check(pdata);
 	if (ret < 0) {
-		TS_LOG_ERR("%s:not find focal device, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:not find  device, ret=%d\n",
+			CHIP_DETECT, ret);
 		goto exit_power_off;
 	} else {
-		TS_LOG_INFO("%s:find focal device\n", __func__);
+		TS_LOG_INFO("%s:find  device\n", CHIP_DETECT);
 
-		strncpy(g_focal_dev_data->chip_name, FTS_CHIP_NAME, MAX_STR_LEN);
+		strncpy(g_focal_dev_data->chip_name, FTS_CHIP_NAME,
+			MAX_STR_LEN - 1);
 	}
-	TS_LOG_INFO("%s:focal chip detect success\n", __func__);
+	TS_LOG_INFO("%s:chip detect success\n", CHIP_DETECT);
 
 	return 0;
 
@@ -3592,22 +3977,23 @@ exit:
 		g_focal_pdata = NULL;
 	}
 
-	TS_LOG_INFO("%s:focal chip detect fail\n", __func__);
+	TS_LOG_INFO("%s:focal chip detect fail\n", CHIP_DETECT);
 	return ret;
 }
 
-static int __init focal_core_module_init(void)
+static int __init touch_driver_core_module_init(void)
 {
 	int ret = NO_ERR;
 	bool found = false;
 	struct device_node *child = NULL;
 	struct device_node *root = NULL;
 
-	TS_LOG_INFO("%s: called\n", __func__);
+	TS_LOG_INFO("%s: called\n", CORE_MODULE_INIT);
 
 	g_focal_pdata = kzalloc(sizeof(struct focal_platform_data), GFP_KERNEL);
 	if (NULL == g_focal_pdata) {
-		TS_LOG_ERR("%s:alloc mem for device data fail\n", __func__);
+		TS_LOG_ERR("%s:alloc mem for device data fail\n",
+			CORE_MODULE_INIT);
 		ret = -ENOMEM;
 		goto error_exit;
 	}
@@ -3615,14 +4001,15 @@ static int __init focal_core_module_init(void)
 	g_focal_dev_data =
 		kzalloc(sizeof(struct ts_kit_device_data), GFP_KERNEL);
 	if (NULL == g_focal_dev_data) {
-		TS_LOG_ERR("%s:alloc mem for device data fail\n", __func__);
+		TS_LOG_ERR("%s:alloc mem for device data fail\n",
+			CORE_MODULE_INIT);
 		ret = -ENOMEM;
 		goto error_exit;
 	}
 
 	root = of_find_compatible_node(NULL, NULL, HUAWEI_TS_KIT);
 	if (!root) {
-		TS_LOG_ERR("%s:find_compatible_node error\n", __func__);
+		TS_LOG_ERR("%s:find_compatible_node error\n", CORE_MODULE_INIT);
 		ret = -EINVAL;
 		goto error_exit;
 	}
@@ -3636,7 +4023,7 @@ static int __init focal_core_module_init(void)
 
 	if (!found) {
 		TS_LOG_ERR("%s:device tree node not found, name=%s\n",
-			__func__, FTS_CHIP_NAME);
+			CORE_MODULE_INIT, FTS_CHIP_NAME);
 		ret = -EINVAL;
 		goto error_exit;
 	}
@@ -3645,11 +4032,12 @@ static int __init focal_core_module_init(void)
 	g_focal_dev_data->ops = &ts_focal_ops;
 	ret = huawei_ts_chip_register(g_focal_dev_data);
 	if (ret) {
-		TS_LOG_ERR("%s:chip register fail, ret=%d\n", __func__, ret);
+		TS_LOG_ERR("%s:chip register fail, ret=%d\n",
+			CORE_MODULE_INIT, ret);
 		goto error_exit;
 	}
 
-	TS_LOG_INFO("%s:success\n", __func__);
+	TS_LOG_INFO("%s:success\n", CORE_MODULE_INIT);
 	return 0;
 
 error_exit:
@@ -3664,12 +4052,13 @@ error_exit:
 		g_focal_pdata = NULL;
 	}
 
-	TS_LOG_INFO("%s:fail\n", __func__);
+	TS_LOG_INFO("%s:fail\n", CORE_MODULE_INIT);
 	return ret;
 }
 
-static void __exit focal_ts_module_exit(void)
+static void __exit touch_driver_core_module_exit(void)
 {
+	fts_bus_exit();
 	kfree(g_focal_pdata);
 	g_focal_pdata = NULL;
 
@@ -3681,8 +4070,8 @@ static void __exit focal_ts_module_exit(void)
 	return;
 }
 
-late_initcall(focal_core_module_init);
-module_exit(focal_ts_module_exit);
+late_initcall(touch_driver_core_module_init);
+module_exit(touch_driver_core_module_exit);
 MODULE_AUTHOR("Huawei Device Company");
 MODULE_DESCRIPTION("Huawei TouchScreen Driver");
 MODULE_LICENSE("GPL");

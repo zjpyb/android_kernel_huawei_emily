@@ -40,9 +40,9 @@
 
 #include "synaptics_tcm_core.h"
 
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_api.h"
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -50,7 +50,7 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define ABNORMAL_STATE_LEN 9
 static int syna_tcm_hdl_get_state(void);
@@ -148,7 +148,7 @@ static int syna_tcm_charger_switch(struct ts_charger_info *info);
 static int syna_tcm_glove_switch(struct ts_glove_info *info);
 static int syna_tcm_status_resume(void);
 #if defined (CONFIG_HUAWEI_DEVKIT_HISI)
-extern int hostprocessing_get_project_id(char *out);
+extern int hostprocessing_get_project_id(char *out, int len);
 #endif
 static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info);
 static void synaptics_tcm_chip_touch_switch(void);
@@ -185,18 +185,6 @@ struct ts_device_ops ts_kit_syna_tcm_ops = {
 	.chip_holster_switch = syna_tcm_holster_switch,
 	.chip_roi_switch = syna_tcm_roi_switch,
 	.chip_roi_rawdata = syna_tcm_roi_rawdata,
-//	.chip_palm_switch = synaptics_palm_switch,
-//	.chip_regs_operate = synaptics_regs_operate,
-//	.chip_calibrate = synaptics_calibrate,
-//	.chip_calibrate_wakeup_gesture = synaptics_calibrate_wakeup_gesture,
-//	.chip_reset = synaptics_reset_device,
-//#ifdef HUAWEI_TOUCHSCREEN_TEST
-//	.chip_test = test_dbg_cmd_test,
-//#endif
-//	.chip_wrong_touch = synaptics_wrong_touch,
-//	.chip_work_after_input = synaptics_work_after_input_kit,
-//	.chip_ghost_detect = synaptics_ghost_detect,
-//	.chip_check_status = synaptics_chip_check_status,
 	.chip_touch_switch = synaptics_tcm_chip_touch_switch,
 };
 
@@ -443,7 +431,7 @@ static int synaptics_tcm_get_project_id(char *project_id)
 		projectid_lenth = PROJECT_ID_FW_LEN;
 	}
 #if defined (CONFIG_HUAWEI_DEVKIT_HISI)
-	retval = hostprocessing_get_project_id(project_id);
+	retval = hostprocessing_get_project_id(project_id, CHIP_INFO_LENGTH);
 #endif
 	if (bdata->default_project_id) {
 		if (strncmp(project_id, bdata->default_project_id, PRODUCT_ID_FW_LEN-1)) {
@@ -2793,10 +2781,10 @@ static int syna_tcm_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);
 	set_bit(TS_TOUCHPLUS_KEY1, input_dev->keybit);
@@ -3257,7 +3245,7 @@ static void syna_tcm_parse_feature_dts(struct device_node *np, struct ts_kit_dev
 		TS_LOG_INFO("get device SYNAPTICS_TEST_TYPE not exit,use default value\n");
 		strncpy(chip_data->tp_test_type,
 				"Normalize_type:judge_different_reslut",
-				TS_CAP_TEST_TYPE_LEN);
+				TS_CAP_TEST_TYPE_LEN - 1);
 	} else {
 		strncpy(chip_data->tp_test_type,
 				name,

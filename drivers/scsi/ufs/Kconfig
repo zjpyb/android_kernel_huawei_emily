@@ -55,6 +55,12 @@ config HISI_UFS_HC
 	---help---
 	This selects use Hisilicon UFS host controller.
 
+config HISI_UFS_HC_CORE_UTR
+	depends on HISI_UFS_HC
+	tristate "Hisilicon UFS Host Controller Core Utrs Instead Of Spec Utrs"
+	---help---
+	This selects use Hisilicon UFS host controller Core Utr.
+
 config FS_PER_FILE_PER_KEY
 	tristate "F2FS file system encrypto per file per key"
 	depends on HISI_UFS_HC
@@ -172,11 +178,21 @@ config SCSI_UFS_PISCES
 
 	  If unsure, say N.
 
-config SCSI_UFS_UTRD_EXTENSION
-	  tristate "UFS UTRD length extension"
+config SCSI_UFS_SCORPIO
+	  tristate "UFS Host SCORPIO Controller Driver"
 	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
 	  ---help---
-	  This selects the UFS UTRD length extension.
+	  This selects the UFS SCORPIO host controller driver.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config SCSI_UFS_INTR_HUB
+	  tristate "UFS Host Intr Hub Support"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	  ---help---
+	  This selects the hisi intr hub.
 
 	  If you have a controller with this interface, say Y or M here.
 
@@ -211,6 +227,36 @@ config SCSI_UFS_LEO
 	 If you have a controller with this interface, say Y or M here.
 
 	 If unsure, say N.
+
+config SCSI_UFS_AQUARIUS
+	 tristate "UFS Host AQUARIUS Controller Driver"
+	 depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	 ---help---
+	 This selects the UFS AQUARIUS host controller driver.
+
+	 If you have a controller with this interface, say Y or M here.
+
+	 If unsure, say N.
+
+config SCSI_UFS_VIRGO
+	 tristate "UFS Host VIRGO Controller Driver"
+	 depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	 ---help---
+	 This selects the UFS VIRGO host controller driver.
+
+	 If you have a controller with this interface, say Y or M here.
+
+	 If unsure, say N.
+
+config SCSI_UFS_SGR
+	  tristate "UFS Host SGR Controller Driver"
+	  depends on SCSI_UFSHCD && SCSI_UFSHCD_PLATFORM && SCSI_UFS_KIRIN
+	  ---help---
+	  This selects the UFS SGR host controller driver.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
 
 config SCSI_UFS_KIRIN_LINERESET_CHECK
 	  bool "UFS background thread to check line-reset"
@@ -281,6 +327,20 @@ config SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
 
 	If unsure, say N.
 
+config SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	tristate "UFS inline crytpo driver based on Kirin UFS Host Controller (enhanced v3)"
+	depends on FILE_BASED_ENCRYPTO
+	depends on SCSI_UFS_ENHANCED_INLINE_CRYPTO_V2
+
+	---help---
+	This selects the Kirin UFS inline enhanced crypto driver V3.
+
+	Select this if you want to use Hardware Crypto Engine
+	and using its KDF function for some special cryto func.
+	Otherwise, if you love my driver code, say Y or M here.
+
+	If unsure, say N.
+
 config SCSI_UFS_HS_ERROR_RECOVER
 	tristate "UFS use this config to recover ufs hs error"
 	depends on SCSI_UFSHCD && SCSI_UFS_KIRIN
@@ -302,8 +362,12 @@ config SCSI_UFS_BLOCK_TEST
 	be chosen to be the active I/O scheduler.
 
 config HUAWEI_UFS_DSM
-       bool "Listen UFS Kernel Error"
-       depends on SCSI_UFSHCD
+	bool "Listen UFS Kernel Error"
+	depends on SCSI_UFSHCD
+
+config HUAWEI_UFS_TRACE
+	bool "Trace UFS kernel Error"
+	depends on SCSI_UFSHCD
 
 config SCSI_UFS_HI1861_VCMD
 	bool "UFS Hi1861 Device Vendor Command"
@@ -314,7 +378,7 @@ config SCSI_UFS_HI1861_VCMD
 
 config HISI_UFS_MANUAL_BKOPS
        bool "hisi manual BKOPS support for UFS"
-       depends on HISI_BKOPS && SCSI_UFSHCD
+       depends on MAS_BKOPS && SCSI_UFSHCD
        default n
 
 config HUAWEI_UFS_VENDOR_MODE
@@ -339,3 +403,26 @@ config HISI_SCSI_UFS_DUMP
 	bool "hisi ufs_dump support"
 	depends on  SCSI_UFSHCD
 	default n
+
+config HISI_UFS_REG_DUMP
+	bool "hisi ufs_reg_dump support"
+	depends on  SCSI_UFSHCD && HISI_UFS_HC
+	default n
+
+config SCSI_UFS_LUN_PROTECT
+	bool "enable Lun Write Protect in UFS"
+	depends on SCSI_UFSHCD
+	default n
+	---help---
+	This enable Lun Write Protect in UFS.
+config SCSI_UFS_SYNCCACHE_RECORD
+	bool "UFS sync cache status record"
+	depends on SCSI_UFSHCD
+
+config SCSI_UFS_UNISTORE
+	bool "enable unistore in UFS"
+	depends on SCSI_UFSHCD && SCSI_UFS_HI1861_VCMD
+	default n
+	---help---
+	This enable unistore in UFS.
+

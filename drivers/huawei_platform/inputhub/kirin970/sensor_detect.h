@@ -240,7 +240,6 @@ struct airpress_platform_data {
 
 struct tof_platform_data {
 	struct sensor_combo_cfg cfg;
-	//int offset;
 };
 
 struct handpress_platform_data {
@@ -303,7 +302,6 @@ union sar_data {
 	struct cypress_sar_data cypress_data;
 	struct adux_sar_data	adux_data;
 	struct semteck_sar_data	semteck_data;
-	//add the others here
 };
 
 /*
@@ -425,7 +423,7 @@ struct sensor_detect_manager{
 	uint8_t detect_result;
 	int tag;
 	const void *spara;
-    	int cfg_data_length;
+	int cfg_data_length;
 };
 
 #define MAX_REDETECT_NUM 100

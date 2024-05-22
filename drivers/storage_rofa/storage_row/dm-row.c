@@ -21,6 +21,7 @@
 #include <linux/device-mapper.h>
 #include <linux/fs.h>
 #include <linux/kdev_t.h>
+#include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/vmalloc.h>
@@ -29,6 +30,10 @@
 #include <linux/version.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 #include <linux/dax.h>
+#endif
+
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+#include <chipset_common/storage_rofa/storage_rofa.h>
 #endif
 
 #define DM_MSG_PREFIX "row"
@@ -263,22 +268,85 @@ static void row_detach_queue(struct dm_row *row)
 static void row_fix_bio_uieinfo(struct bio *bio, const struct bio *base_bio)
 {
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
+#if !defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && !defined(CONFIG_BOOT_DETECTOR_QCOM)
 	unsigned int bvec_off;
 	sector_t sec_downrnd;
 
-	bio->hisi_bio.ci_key = base_bio->hisi_bio.ci_key;
-	bio->hisi_bio.ci_key_len = base_bio->hisi_bio.ci_key_len;
-	bio->hisi_bio.ci_key_index = base_bio->hisi_bio.ci_key_index;
-	bio->hisi_bio.index = 0;
+	bio->ci_key = base_bio->ci_key;
+	bio->ci_key_len = base_bio->ci_key_len;
+	bio->ci_key_index = base_bio->ci_key_index;
+	bio->index = 0;
+	bio->ci_metadata = base_bio->ci_metadata;
 
-	if (base_bio->hisi_bio.ci_key_len && base_bio->hisi_bio.ci_key) {
+	if (base_bio->ci_key_len && base_bio->ci_key) {
 		/* bio vector offset, bio ci index is page aligned */
 		sec_downrnd = base_bio->bi_iter.bi_sector & ~0x07;
 		bvec_off = (bio->bi_iter.bi_sector - sec_downrnd) >> 3;
-		bio->hisi_bio.index = base_bio->hisi_bio.index + bvec_off;
+		bio->index = base_bio->index + bvec_off;
 	}
 #endif
+#endif
 }
+
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+static int should_skip_row(struct bio *bio)
+{
+	int i;
+	int ret;
+	int num;
+	struct hd_struct *part = NULL;
+	static const char * const skip_partitions[] = {
+		"log",
+		"misc",
+		"rrecord",
+		"splash2",
+		"bootfail_info",
+	};
+
+	if (!is_bopd_row_skip_part())
+		return 0;
+
+	if ((bio->bi_opf & REQ_OP_WRITE) &&
+		(bio->bi_opf & REQ_PREFLUSH) &&
+		!bio->bi_iter.bi_size) {
+		DMINFO("send flush to disk");
+		return 1;
+	}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!bio->bi_partno && bio->bi_orig_partno)
+		part = disk_get_part(bio->bi_disk, bio->bi_orig_partno);
+	else
+		part = disk_get_part(bio->bi_disk, bio->bi_partno);
+#else
+	part = bio->bi_bdev->bd_part;
+#endif
+
+	ret = 0;
+	if (unlikely(!part || !part->info)) {
+		DMERR("%s:get part of %s %d %d failed",
+			__func__, bio->bi_disk->disk_name,
+			bio->bi_partno, bio->bi_orig_partno);
+		dump_stack();
+		goto out;
+	}
+
+	num = ARRAY_SIZE(skip_partitions);
+	for (i = 0; i < num; i++) {
+		if (!strcmp(part->info->volname, skip_partitions[i])) {
+			ret = 1;
+			DMINFO("write to %s on disk", skip_partitions[i]);
+			goto out;
+		}
+	}
+
+out:
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	disk_put_part(part);
+#endif
+	return ret;
+}
+#endif
 
 /*
  * Origin device's make_request_fn replacer as bio transfer
@@ -298,6 +366,21 @@ static blk_qc_t row_make_request(struct request_queue *q, struct bio *bio)
 	s = lookup_row(bio->bi_disk);
 #else
 	s = lookup_row(bio->bi_bdev->bd_contains->bd_disk);
+#endif
+
+	if (s == NULL) {
+		DMERR("Lookup failed");
+		return BLK_QC_T_NONE; // lint !e501
+	}
+
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+	if (should_skip_row(bio)) {
+		if (likely(s->mrfn))
+			s->mrfn(q, bio);
+		else
+			DMERR("no mrfn\n");
+		return BLK_QC_T_NONE;
+	}
 #endif
 
 	dm_q = bdev_get_queue(s->bdev_self);
@@ -462,14 +545,13 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		err = -EINVAL;
 		goto bad_mapinfo;
 	}
-	s->wr_bitmap = kcalloc(bmp_len, sizeof(long), GFP_KERNEL);
+	s->wr_bitmap = vzalloc(bmp_len * sizeof(long));
 	if (!s->wr_bitmap) {
 		ti->error = "Could not allocate block mapping bitmap";
 		DMERR("Could not allocate block mapping bitmap");
 		err = -ENOMEM;
 		goto bad_mapinfo;
 	}
-
 	s->bdev_self = NULL;
 	s->mrfn_hook = 0;
 
@@ -503,7 +585,7 @@ invalid_chunk_size:
 	unregister_row(s);
 
 exist_origin:
-	kfree(s->wr_bitmap);
+	vfree(s->wr_bitmap);
 
 bad_mapinfo:
 	dm_put_device(ti, s->cow);
@@ -637,7 +719,7 @@ static void row_dtr(struct dm_target *ti)
 	 */
 	smp_mb();
 
-	kfree(s->wr_bitmap);
+	vfree(s->wr_bitmap);
 
 	dm_put_device(ti, s->cow);
 
@@ -653,10 +735,17 @@ static void row_dtr(struct dm_target *ti)
 	kfree(s);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+static int row_message(struct dm_target *ti, unsigned int argc, char **argv, char *result, unsigned maxlen)
+#else
 static int row_message(struct dm_target *ti, unsigned int argc, char **argv)
+#endif
 {
 	struct dm_row *s = ti->private;
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
+	(void *)(result);
+	(void)(maxlen);
+#endif
 	DMINFO("%s: Message row mapped-device", __func__);
 
 	if (argc != 1) {
@@ -840,7 +929,11 @@ static int row_read_fill_chunk(struct dm_row *s, struct bio *ref)
 	/* write to cow device */
 	bio_reset(bio);
 	bio_set_dev(bio, s->cow->bdev);
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK
+	bio->bi_opf = REQ_OP_WRITE | REQ_SYNC;
+#else
 	bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_NOIDLE;
+#endif
 	bio->bi_iter.bi_sector = sector;
 	bio->bi_iter.bi_size = pg_cnt * PAGE_SIZE;
 

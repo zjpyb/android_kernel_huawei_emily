@@ -1,32 +1,21 @@
-/****************************************************************************
- * Company:         Fairchild Semiconductor
+/*
+ * vdm.c
  *
- * Author           Date          Comment
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * G. Noblesmith
+ * vdm driver
  *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * Software License Agreement:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * The software supplied herewith by Fairchild Semiconductor (the “Company”)
- * is supplied to you, the Company's customer, for exclusive use with its
- * USB Type C / USB PD products.  The software is owned by the Company and/or
- * its supplier, and is protected under applicable copyright laws.
- * All rights are reserved. Any use in violation of the foregoing restrictions
- * may subject the user to criminal sanctions under applicable laws, as well
- * as to civil liability for the breach of the terms and conditions of this
- * license.
- *
- * THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
- * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
- * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
- * IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
- * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
- *
- *****************************************************************************/
+ */
+
 #ifdef FSC_HAVE_VDM
 
 #include <linux/string.h>
@@ -221,10 +210,10 @@ FSC_S32 requestSendAttention(SopType sop, FSC_U16 svid, FSC_U8 mode) {
 FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
     doDataObject_t  __vdmh_in = {0};
     doDataObject_t	__vdmh_out = {0};
-    IdHeader		__idh;
-    CertStatVdo		__csvdo;
+	struct pd_id_header __idh;
+	struct pd_cert_stat_vdo __csvdo;
     Identity        __id;
-    ProductVdo      __pvdo;
+	struct pd_product_vdo __pvdo;
     FSC_U32				__arr[7] = {0};
     FSC_U32          __length;
     FSC_BOOL            __result;
@@ -240,8 +229,6 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
         if(PolicyIsDFP == TRUE) return -1;
-
-        //if(!Responds_To_Discov_SOP) return 0;
 
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
 		originalPolicyState = PolicyState;
@@ -284,37 +271,38 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
             // put test ID into Cert Stat VDO Object
             __csvdo = __id.cert_stat_vdo;
 
-            __arr[1] = getBitsForIdHeader(__idh);
+		__arr[1] = get_bits_id_header(__idh);
             __length++;
-            __arr[2] = getBitsForCertStatVdo(__csvdo);
+		/* 2:cert stat vdo index */
+		__arr[2] = get_bits_cert_stat_vdo(__csvdo);
             __length++;
 
             // Product VDO should be sent for all
             __pvdo = __id.product_vdo;
-            __arr[__length] = getBitsForProductVdo(__pvdo);
+		__arr[__length] = get_bits_product_vdo(__pvdo);
             __length++;
 
             // Cable VDO should be sent when we are a Passive Cable or Active Cable
             if ((__idh.product_type == PASSIVE_CABLE)	|| (__idh.product_type == ACTIVE_CABLE)) {
-                CableVdo cvdo_out;
+			struct pd_cable_vdo cvdo_out;
+
                 cvdo_out = __id.cable_vdo;
-                __arr[__length] = getBitsForCableVdo(cvdo_out);
+			__arr[__length] = get_bits_cable_vdo(cvdo_out);
                 __length++;
             }
 
             // AMA VDO should be sent when we are an AMA!
             if (__idh.product_type == AMA) {
-			AmaVdo amavdo_out;
+			struct pd_ama_vdo amavdo_out;
+
 			amavdo_out = __id.ama_vdo;
 
-			__arr[__length] = getBitsForAmaVdo(amavdo_out);
+			__arr[__length] = get_bits_ama_vdo(amavdo_out);
 			__length++;
 		}
         }
 
         sendVdmMessage(sop, __arr, __length, originalPolicyState);
-        //PolicyState = originalPolicyState;
-        //PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
         return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
 
@@ -345,25 +333,29 @@ FSC_S32 processDiscoverIdentity(SopType sop, FSC_U32* arr_in, FSC_U32 length_in)
 		}
 
 		if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
-			__id.id_header =		getIdHeader(arr_in[1]);
-			__id.cert_stat_vdo =	getCertStatVdo(arr_in[2]);
+			__id.id_header = get_id_header(arr_in[1]);
+			/* 2:cert stat vdo index */
+			__id.cert_stat_vdo = get_cert_stat_vdo(arr_in[2]);
 
 			if ((__id.id_header.product_type == HUB)		||
 				(__id.id_header.product_type == PERIPHERAL)	||
 				(__id.id_header.product_type == AMA)) {
 				__id.has_product_vdo = TRUE;
-				__id.product_vdo = getProductVdo(arr_in[3]); // !!! assuming it is before AMA VDO
+				/* assuming before AMA VDO,3:product vdo index */
+				__id.product_vdo = get_product_vdo(arr_in[3]);
             }
 
 			if ((__id.id_header.product_type == PASSIVE_CABLE)	||
 				(__id.id_header.product_type == ACTIVE_CABLE)) {
 				__id.has_cable_vdo = TRUE;
-				__id.cable_vdo = getCableVdo(arr_in[3]);
+				/* 3:cable vdo index */
+				__id.cable_vdo = get_cable_vdo(arr_in[3]);
 			}
 
 			if (__id.id_header.product_type == AMA) {
 				__id.has_ama_vdo = TRUE;
-				__id.ama_vdo = getAmaVdo(arr_in[4]); // !!! assuming it is after Product VDO
+				/* assuming after Product VDO,4:ama vdo index */
+				__id.ama_vdo = get_ama_vdo(arr_in[4]);
 			}
 
 			if ((__id.id_header.product_type == PERIPHERAL) ||
@@ -419,7 +411,6 @@ FSC_S32 processDiscoverSvids(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 			originalPolicyState = PolicyState;
 			// assuming that the splitting of SVID info is done outside this block
             __svid_info = vdmm.req_svid_info();
-			PolicyState = peUfpVdmGetSvids;
 			PolicyState = peUfpVdmSendSvids;
 		} else if ((sop == SOP_TYPE_SOP1) && (PolicyState == peCblReady)) {
 			originalPolicyState = PolicyState;
@@ -478,8 +469,6 @@ FSC_S32 processDiscoverSvids(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		}
 
 		sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		//PolicyState = originalPolicyState;
-		//PolicySendDataNoReset(DMTVenderDefined, __length, __arr, originalPolicyState, 0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
         __svid_info.num_svids = 0;
@@ -543,11 +532,10 @@ FSC_S32 processDiscoverModes(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
     __vdmh_in.object = arr_in[0];
     if (__vdmh_in.SVDM.CommandType == INITIATOR) {
 	    if(PolicyIsDFP == TRUE) return -1;
- 
+
         if ((sop == SOP_TYPE_SOP) && ((PolicyState == peSourceReady) || (PolicyState == peSinkReady))) {
             originalPolicyState = PolicyState;
             __modes_info = vdmm.req_modes_info(__vdmh_in.SVDM.SVID);
-            PolicyState = peUfpVdmGetModes;
             PolicyState = peUfpVdmSendModes;
         } else if ((sop == SOP_TYPE_SOP1) && (PolicyState == peCblReady)) {
             originalPolicyState = PolicyState;
@@ -590,8 +578,6 @@ FSC_S32 processDiscoverModes(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		}
 
 		sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		//PolicyState = originalPolicyState;
-		//PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
         if (__vdmh_in.SVDM.CommandType == RESPONDER_ACK) {
@@ -667,8 +653,6 @@ FSC_S32 processEnterMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		__length_out = 1;
 
 		sendVdmMessage(sop, __arr_out, __length_out, originalPolicyState);
-		//PolicyState = originalPolicyState;
-		//PolicySendDataNoReset(DMTVenderDefined,__length_out,__arr_out,originalPolicyState,0);
 		return 0;
     } else { /* Incoming responses, ACKs, NAKs, BUSYs */
 		if(!ExpectingVdmResponse){
@@ -741,8 +725,6 @@ FSC_S32 processExitMode(SopType sop, FSC_U32* arr_in, FSC_U32 length_in) {
 		__length = 1;
 
         sendVdmMessage(sop, __arr, __length, originalPolicyState);
-		//PolicyState = originalPolicyState;
-		//PolicySendDataNoReset(DMTVenderDefined,__length,__arr,originalPolicyState,0);
 		return 0;
     } else {
 		if (__vdmh_in.SVDM.CommandType != RESPONDER_ACK) {

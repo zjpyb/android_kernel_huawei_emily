@@ -50,4 +50,4 @@ static inline void mmc_lock_remove_sysfs(struct mmc_card *card)
 
 #endif
 
-#endif 
+#endif

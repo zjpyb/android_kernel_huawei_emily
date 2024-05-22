@@ -1,8 +1,19 @@
 /*
- * File:   vendor_info.h
- * Author: W0017688
+ * vendor_info.h
  *
- * Created on June 2, 2016, 11:17 AM
+ * vendor_info driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifndef VENDOR_INFO_H

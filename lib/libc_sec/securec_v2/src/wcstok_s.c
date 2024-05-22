@@ -7,7 +7,6 @@
 
 #include "securecutil.h"
 
-
 SECUREC_INLINE int SecIsInDelimitW(wchar_t ch, const wchar_t *strDelimit)
 {
     const wchar_t *ctl = strDelimit;
@@ -25,7 +24,7 @@ SECUREC_INLINE wchar_t *SecFindBeginW(wchar_t *strToken, const wchar_t *strDelim
 {
     wchar_t *token = strToken;
     while (*token != L'\0') {
-        if (SecIsInDelimitW(*token, strDelimit)) {
+        if (SecIsInDelimitW(*token, strDelimit) != 0) {
             ++token;
             continue;
         }
@@ -42,7 +41,7 @@ SECUREC_INLINE wchar_t *SecFindRestW(wchar_t *strToken, const wchar_t *strDelimi
 {
     wchar_t *token = strToken;
     while (*token != L'\0') {
-        if (SecIsInDelimitW(*token, strDelimit)) {
+        if (SecIsInDelimitW(*token, strDelimit) != 0) {
             /* Find a delimiter, set string termintor */
             *token = L'\0';
             ++token;
@@ -58,12 +57,10 @@ SECUREC_INLINE wchar_t *SecFindRestW(wchar_t *strToken, const wchar_t *strDelimi
  */
 SECUREC_INLINE wchar_t *SecUpdateTokenW(wchar_t *strToken, const wchar_t *strDelimit, wchar_t **context)
 {
-    /* Point to updated position */
-    wchar_t *token = SecFindRestW(strToken, strDelimit);
-    /* Update the context */
-    *context = token;
-    /* Determine if a token has been found. */
-    if (token == strToken) {
+    /* Point to updated position.  Record string position for next search in the context */
+    *context = SecFindRestW(strToken, strDelimit);
+    /* Determine if a token has been found */
+    if (*context == strToken) {
         return NULL;
     }
     return strToken;

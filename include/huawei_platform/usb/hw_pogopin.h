@@ -3,7 +3,7 @@
  *
  * huawei pogopin driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -37,7 +37,11 @@
 #define POGOPIN_5PIN               1
 
 #define POGOPIN_TIMEOUT_50MS       50
+#define POGOPIN_MOS_DELAYED        120 /* mos open has 120 delay */
+#define POGOPIN_TIME_DELAYE_200MS  200
+#define POGOPIN_TIME_DELAYE_300MS  300
 #define POGOPIN_TIMEOUT_500MS      500
+#define CHECK_TIMES                5
 
 #define POGOPIN_HISHOW_ADC_MIN     270
 #define POGOPIN_HISHOW_ADC_MAX     450
@@ -48,7 +52,20 @@
 #define POGOPIN_IIN_CURRENT        2000
 #define POGOPIN_ICHG_CURRENT       2100
 
-#define POGOPIN_MOS_DELAYED        120 /* mos open has 120ms delay */
+#define POGOPIN_DETECT_GPIO_DELAY  50
+
+enum pogo_status {
+	POGO_NONE = 0,
+	POGO_CHARGER,
+	POGO_OTG,
+	POGO_STATUS_END,
+};
+
+#define STATE_ON                   1
+#define STATE_OFF                  0
+
+#define ATTACH_RESTORE             0
+#define ATTACH_ENABLE              1
 
 struct pogopin_info {
 	struct platform_device *pdev;
@@ -65,6 +82,8 @@ struct pogopin_info {
 	int pogopin_support;
 	struct completion dev_off_completion;
 	u32 pin_num; /* some not contians D+,D-line */
+	u32 is_hw_pd;
+	int typec_state;
 	u32 typecvbus_from_pd; /* some not have typec vbus int gpio */
 	bool fcp_support;
 	bool hishow_support;
@@ -75,8 +94,19 @@ struct pogopin_info {
 	int pogo_vbus_mos_ctrl_gpio;
 	int keyboard_ldo_gpio;
 	bool keyboard_connect;
+	bool typec_vbus_unctrl;
+	bool pogopin_int_debounce;
+	bool vbus_detect;
 	struct notifier_block tcpc_nb;
 	struct delayed_work dpm_notify_work;
+	u32 charge_otg_ctl;
+	int typec_int_irq;
+	struct work_struct typec_int_work;
+	int typec_chg_ana_audio_suport;
+	int audio_switch_control;
+	enum pogo_status pogo_insert_status;
+	bool ana_audio_status;
+	int pogopin_pmic_vbus_attach_enable;
 };
 
 struct pogopin_cc_ops {
@@ -97,6 +127,15 @@ enum current_working_interface {
 	POGOPIN_INTERFACE_END,
 };
 
+enum pogopin_event {
+	POGOPIN_EVENT_START = 0,
+	POGOPIN_OTG_AND_CHG_START, /* start typec charging when pogopin otg */
+	POGOPIN_OTG_AND_CHG_STOP, /* stop typec charging when pogopin otg */
+	POGOPIN_SAVE_CHARGER_TYPE, /* save charger type when typec gpio low */
+	POGOPIN_CHARGER_OUT_COMPLETE, /* notify pogopin charger out */
+	POGOPIN_EVENT_END,
+};
+
 #ifdef CONFIG_POGO_PIN
 extern void pogopin_cc_register_ops(struct pogopin_cc_ops *ops);
 extern bool pogopin_is_support(void);
@@ -115,6 +154,19 @@ extern int pogopin_3pin_register_pogo_vbus_notifier(struct notifier_block *nb);
 extern bool pogopin_3pin_ignore_pogo_vbus_in_event(void);
 extern int pogopin_3pin_get_input_current(void);
 extern int pogopin_3pin_get_charger_current(void);
+extern int pogopin_event_notifier_register(struct notifier_block *nb);
+extern int pogopin_event_notifier_unregister(struct notifier_block *nb);
+extern void pogopin_event_notify(enum pogopin_event event);
+extern bool pogopin_is_charging(void);
+extern void pogopin_otg_status_change_process(uint8_t value);
+extern bool pogopin_typec_chg_ana_audio_support(void);
+extern void pogopin_set_typec_state(int typec_state);
+extern void pogopin_5pin_set_pogo_status(enum pogo_status status);
+extern enum pogo_status pogopin_5pin_get_pogo_status(void);
+extern void pogopin_5pin_set_ana_audio_status(bool status);
+extern bool pogopin_5pin_get_ana_audio_status(void);
+extern int pogopin_get_pmic_vbus_irq_enable(void);
+extern void pogopin_set_buck_boost_gpio(int value);
 #else
 static inline void pogopin_cc_register_ops(struct pogopin_cc_ops *ops)
 {
@@ -193,6 +245,65 @@ static inline int pogopin_3pin_get_input_current(void)
 static inline int pogopin_3pin_get_charger_current(void)
 {
 	return 0;
+}
+
+static inline int pogopin_event_notifier_register(struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline int pogopin_event_notifier_unregister(struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline void pogopin_event_notify(enum pogopin_event event)
+{
+}
+
+static inline bool pogopin_is_charging(void)
+{
+	return false;
+}
+
+static inline void pogopin_otg_status_change_process(uint8_t value)
+{
+}
+
+static inline bool pogopin_typec_chg_ana_audio_support(void)
+{
+	return false;
+}
+
+static inline void pogopin_set_typec_state(int typec_state)
+{
+}
+
+static inline void pogopin_5pin_set_pogo_status(enum pogo_status status)
+{
+}
+
+static inline enum pogo_status pogopin_5pin_get_pogo_status(void)
+{
+	return POGO_NONE;
+}
+
+static inline void pogopin_5pin_set_ana_audio_status(bool status)
+{
+}
+
+static inline bool pogopin_5pin_get_ana_audio_status(void)
+{
+	return false;
+}
+
+static inline int pogopin_get_pmic_vbus_irq_enable(void)
+{
+	return ATTACH_RESTORE;
+}
+
+static inline void pogopin_set_buck_boost_gpio(int value)
+{
 }
 #endif /* CONFIG_POGO_PIN */
 

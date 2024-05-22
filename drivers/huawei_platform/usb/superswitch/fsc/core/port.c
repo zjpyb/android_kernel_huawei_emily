@@ -15,7 +15,7 @@
 #include "../Platform_Linux/fusb3601_global.h"
 #include "../Platform_Linux/platform_helpers.h"
 
-#include <huawei_platform/power/power_dsm.h>
+#include <chipset_common/hwpower/common_module/power_dsm.h>
 
 /* Initialize
  *
@@ -75,7 +75,7 @@ void superswitch_dsm_report(int num)
 		strncat(dsm_buff, buf, strlen(buf));
 	}
 
-	power_dsm_dmd_report(POWER_DSM_SUPERSWITCH, num, dsm_buff);
+	power_dsm_report_dmd(POWER_DSM_SUPERSWITCH, num, dsm_buff);
 
 	kfree(dsm_buff);
 }

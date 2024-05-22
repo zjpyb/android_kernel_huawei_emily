@@ -3,7 +3,7 @@
  *
  * this is for ic ds28el15
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,7 +17,7 @@
  */
 
 #include <huawei_platform/power/batt_info_pub.h>
-#include <huawei_platform/power/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 
 #include "ds28el15.h"
 
@@ -80,13 +80,13 @@ static void set_sched_affinity_to_current(void)
 	current_cpu = smp_processor_id();
 	preempt_enable();
 	retval = sched_setaffinity(CURRENT_DS28EL15_TASK,
-				   cpumask_of(current_cpu));
+		cpumask_of(current_cpu));
 	if (retval)
-		hwlog_info("Set cpu af to current cpu failed(%ld) in %s\n",
-			   retval, __func__);
+		hwlog_info("Set cpu af to current cpu failed %ld in %s\n",
+			retval, __func__);
 	else
-		hwlog_info("Set cpu af to current cpu(%d) in %s\n", current_cpu,
-			   __func__);
+		hwlog_info("Set cpu af to current cpu %d in %s\n", current_cpu,
+			__func__);
 }
 
 static void set_sched_affinity_to_all(void)
@@ -97,8 +97,8 @@ static void set_sched_affinity_to_all(void)
 	cpumask_setall(&dstp);
 	retval = sched_setaffinity(CURRENT_DS28EL15_TASK, &dstp);
 	if (retval)
-		hwlog_info("Set cpu af to all valid cpus failed(%ld) in %s\n",
-			   retval, __func__);
+		hwlog_info("Set cpu af to all valid cpus failed %ld in %s\n",
+			retval, __func__);
 	else
 		hwlog_info("Set cpu af to all valid cpus in %s\n", __func__);
 }
@@ -115,7 +115,7 @@ static int ds28el15_check_ic_status(struct platform_device *pdev)
 	while (!(mom->validity_rom_id)) {
 		hwlog_info("ds28el15 read rom id communication start\n");
 		ret = mops->get_rom_id(&ds28el15.ic_des);
-		DS28EL15_COMMUNICATION_INFO(ret, "get_rom_id");
+		ds28el15_communication_info(ret, "get_rom_id");
 		i++;
 		if (ret)
 			err_num[GET_ROM_ID_INDEX]++;
@@ -143,7 +143,7 @@ static int ds28el15_check_ic_status(struct platform_device *pdev)
 			hwlog_info("read block status communication start\n");
 			i++;
 			ret = mops->get_status(&ds28el15.ic_des);
-			DS28EL15_COMMUNICATION_INFO(ret, "get_status");
+			ds28el15_communication_info(ret, "get_status");
 		}
 		if (mom->validity_status)
 			break;
@@ -157,42 +157,44 @@ static int ds28el15_check_ic_status(struct platform_device *pdev)
 	mom->block_status[BATT_ID_BLOCK] &= DS28EL15_PROT_MASK;
 	mom->block_status[BATT_PCB_BLOCK] &= DS28EL15_PROT_MASK;
 
-	if (mom->block_status[INFO_BLOCK0] != DS28EL15_AUT_PROT &&
-	    mom->block_status[INFO_BLOCK0] != DS28EL15_EMPTY_PROT) {
-		hwlog_err("Information block0 status was wrong(%02X)\n",
-			  mom->block_status[INFO_BLOCK0]);
+	if ((mom->block_status[INFO_BLOCK0] != DS28EL15_AUT_PROT) &&
+		(mom->block_status[INFO_BLOCK0] != DS28EL15_EMPTY_PROT)) {
+		hwlog_err("Information block0 status was wrong %02X\n",
+			mom->block_status[INFO_BLOCK0]);
 		submem_cr[0] = DS28EL15_FAIL;
 	} else {
 		hwlog_info("Information block0 status was %02X\n",
-			   mom->block_status[INFO_BLOCK0]);
+			mom->block_status[INFO_BLOCK0]);
 	}
-	if (mom->block_status[INFO_BLOCK1] != DS28EL15_AUT_PROT &&
-	    mom->block_status[INFO_BLOCK1] != DS28EL15_EMPTY_PROT) {
-		hwlog_err("Information block1 status was wrong(%02X)\n",
-			  mom->block_status[INFO_BLOCK1]);
+	if ((mom->block_status[INFO_BLOCK1] != DS28EL15_AUT_PROT) &&
+		(mom->block_status[INFO_BLOCK1] != DS28EL15_EMPTY_PROT)) {
+		hwlog_err("Information block1 status was wrong %02X\n",
+			mom->block_status[INFO_BLOCK1]);
 		submem_cr[1] = DS28EL15_FAIL;
 	} else {
 		hwlog_info("Information block1 status was %02X\n",
-			   mom->block_status[INFO_BLOCK1]);
+			mom->block_status[INFO_BLOCK1]);
 	}
-	if (mom->block_status[BATT_ID_BLOCK] !=
-	    DS28EL15_EMPTY_PROT &&
-	    mom->block_status[BATT_ID_BLOCK] != DS28EL15_WRT_PROT) {
-		hwlog_err("Battery vendor block status was wrong(%02X)\n",
-			  mom->block_status[BATT_ID_BLOCK]);
+	if ((mom->block_status[BATT_ID_BLOCK] !=
+		DS28EL15_EMPTY_PROT) &&
+		(mom->block_status[BATT_ID_BLOCK] != DS28EL15_WRT_PROT)) {
+		hwlog_err("Battery vendor block status was wrong %02X\n",
+			mom->block_status[BATT_ID_BLOCK]);
+		/* submem_cr[2] : array ordinal */
 		submem_cr[2] = DS28EL15_FAIL;
 	} else {
 		hwlog_info("Battery vendor block status was %02X\n",
-			   mom->block_status[BATT_ID_BLOCK]);
+			mom->block_status[BATT_ID_BLOCK]);
 	}
-	if (mom->block_status[BATT_PCB_BLOCK] != DS28EL15_EMPTY_PROT &&
-	    mom->block_status[BATT_PCB_BLOCK] != DS28EL15_WRT_PROT) {
+	if ((mom->block_status[BATT_PCB_BLOCK] != DS28EL15_EMPTY_PROT) &&
+		(mom->block_status[BATT_PCB_BLOCK] != DS28EL15_WRT_PROT)) {
 		hwlog_err("pcb vendor block status was %02X\n",
-			  mom->block_status[BATT_PCB_BLOCK]);
+			mom->block_status[BATT_PCB_BLOCK]);
+		/* submem_cr[3] : array ordinal */
 		submem_cr[3] = DS28EL15_FAIL;
 	} else {
 		hwlog_info("pcb vendor block status was %02X\n",
-			   mom->block_status[BATT_PCB_BLOCK]);
+			mom->block_status[BATT_PCB_BLOCK]);
 	}
 
 	for (i = 0; i < DS28EL15_INFO_BLOCK_NUM; i++) {
@@ -204,7 +206,7 @@ static int ds28el15_check_ic_status(struct platform_device *pdev)
 }
 
 static int ds28el15_certification(struct platform_device *pdev,
-				  struct batt_res *res, enum key_cr *result)
+	struct power_genl_attr *res, enum key_cr *result)
 {
 	int ret;
 	int i, j;
@@ -223,7 +225,7 @@ static int ds28el15_certification(struct platform_device *pdev,
 		return DS28EL15_FAIL;
 	}
 	if (data_len != mom->mac_length) {
-		hwlog_err("cert data length(%d) not correct\n", data_len);
+		hwlog_err("cert data length %u not correct\n", data_len);
 		return DS28EL15_FAIL;
 	}
 
@@ -233,9 +235,9 @@ static int ds28el15_certification(struct platform_device *pdev,
 			for (i = 0; i < SET_SRAM_RETRY; i++) {
 				if (!(mom->validity_sram)) {
 					ret = mops->set_sram(&ds28el15.ic_des,
-							     random_bytes);
-					DS28EL15_COMMUNICATION_INFO(ret,
-								    "set_sram");
+						random_bytes);
+					ds28el15_communication_info(ret,
+						"set_sram");
 				}
 				if (mom->validity_sram)
 					break;
@@ -243,23 +245,24 @@ static int ds28el15_certification(struct platform_device *pdev,
 			}
 
 			if (!(mom->validity_sram)) {
-				hwlog_info("Set random failed(%d@%d) in %s\n",
-					   j, GET_MAC_RETRY, __func__);
+				hwlog_info("Set random failed %d@%d in %s\n",
+					j, GET_MAC_RETRY, __func__);
 				msleep(200); /* wait ic 200ms for next op */
 				continue;
 			}
 
 			ret = mops->get_mac(&ds28el15.ic_des, !ANONYMOUS_MODE,
-					    page);
-			DS28EL15_COMMUNICATION_INFO(ret, "get_mac");
+				page);
+			ds28el15_communication_info(ret, "get_mac");
 		}
 
 		if (mom->validity_mac) {
 			if (memcmp(mom->mac, data, data_len)) {
 				*result = KEY_FAIL_UNMATCH;
 				hwlog_err("mac unmatch\n");
-			} else
+			} else {
 				*result = KEY_PASS;
+			}
 			set_sched_affinity_to_all();
 			return DS28EL15_SUCCESS;
 		}
@@ -270,8 +273,8 @@ static int ds28el15_certification(struct platform_device *pdev,
 	return DS28EL15_SUCCESS;
 }
 
-static int ds28el15_get_sn(struct platform_device *pdev, struct batt_res *res,
-			   const unsigned char **sn, unsigned int *sn_size)
+static int ds28el15_get_sn(struct platform_device *pdev, struct power_genl_attr *res,
+	const unsigned char **sn, unsigned int *sn_size)
 {
 	int ret;
 	int i;
@@ -288,20 +291,17 @@ static int ds28el15_get_sn(struct platform_device *pdev, struct batt_res *res,
 		for (i = 0; i < GET_USER_MEMORY_RETRY; i++) {
 			if (!mom->validity_page[mom->sn_page]) {
 				ret = mops->get_user_memory(&ds28el15.ic_des,
-							    mom->sn_page, 0,
-							    MAXIM_SEGMENT_NUM);
-				DS28EL15_COMMUNICATION_INFO(ret,
-							    "get_user_memory");
+					mom->sn_page, 0, MAXIM_SEGMENT_NUM);
+				ds28el15_communication_info(ret,
+					"get_user_memory");
 			}
 			if (mom->validity_page[mom->sn_page])
 				break;
-
-			else
-				err_num[GET_USER_MEMORY_INDEX]++;
+			err_num[GET_USER_MEMORY_INDEX]++;
 		}
 		if (!mom->validity_page[mom->sn_page]) {
 			hwlog_err("Get page0 failed so get mac stop in %s\n",
-				  __func__);
+				__func__);
 			goto get_sn_err;
 		}
 		set_sched_affinity_to_all();
@@ -314,12 +314,17 @@ static int ds28el15_get_sn(struct platform_device *pdev, struct batt_res *res,
 				sn_printable[i] = sn_to_print[i];
 			sn_to_print += SN_CHAR_PRINT_SIZE;
 			for (i = 0; i < SN_HEX_PRINT_SIZE; i++) {
-				if (IS_ODD(i))
+				/*
+				 * 2 : sn_to_print size
+				 * 0x0f : hex_print bits
+				 * 0xf0 : hex_print bits
+				 * 4 : binary shift right 4 bits
+				 */
+				if (is_odd(i))
 					hex_print = (sn_to_print[i / 2] & 0x0f);
 				else
-					hex_print =
-					    ((sn_to_print[i / 2] & 0xf0) >> 4) &
-					    0x0f;
+					hex_print = ((sn_to_print[i / 2] &
+						0xf0) >> 4) & 0x0f;
 				sprintf(sn_printable + i + SN_CHAR_PRINT_SIZE,
 					"%X", hex_print);
 			}
@@ -337,8 +342,7 @@ get_sn_err:
 }
 
 static int ds28el15_get_batt_type(struct platform_device *pdev,
-				  const unsigned char **type,
-				  unsigned int *type_len)
+	const unsigned char **type, unsigned int *type_len)
 {
 	const unsigned char *sn = NULL;
 	unsigned int sn_size;
@@ -355,13 +359,13 @@ static int ds28el15_get_batt_type(struct platform_device *pdev,
 	batt_type[0] = sn_printable[BATTERY_PACK_FACTORY];
 	batt_type[1] = sn_printable[BATTERY_CELL_FACTORY];
 	*type = batt_type;
-	*type_len = 2;
+	*type_len = 2; /* 2 : type_len length */
 
 	return DS28EL15_SUCCESS;
 }
 
 static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
-			    struct batt_res *res)
+	struct power_genl_attr *res)
 {
 	int ret;
 	int i;
@@ -383,13 +387,11 @@ static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
 		for (i = 0; i < GET_ROM_ID_RETRY; i++) {
 			if (!(mom->validity_rom_id)) {
 				ret = mops->get_rom_id(&ds28el15.ic_des);
-				DS28EL15_COMMUNICATION_INFO(ret, "get_rom_id");
+				ds28el15_communication_info(ret, "get_rom_id");
 			}
 			if (mom->validity_rom_id)
 				break;
-
-			else
-				err_num[GET_ROM_ID_INDEX]++;
+			err_num[GET_ROM_ID_INDEX]++;
 		}
 		if (!(mom->validity_rom_id)) {
 			hwlog_err("Stop(get rom id failed) in %s\n", __func__);
@@ -399,8 +401,8 @@ static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
 		for (i = 0; i < GET_PERSONALITY_RETRY; i++) {
 			if (!(mom->validity_personality)) {
 				ret = mops->get_personality(&ds28el15.ic_des);
-				DS28EL15_COMMUNICATION_INFO(ret,
-							    "get_personality");
+				ds28el15_communication_info(ret,
+					"get_personality");
 			}
 			if (mom->validity_personality)
 				break;
@@ -410,17 +412,16 @@ static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
 		}
 		if (!mom->validity_personality) {
 			hwlog_err("Stop(get personality failed) in %s\n",
-				  __func__);
+				__func__);
 			goto get_ct_src_fatal_err;
 		}
 
 		for (i = 0; i < GET_USER_MEMORY_RETRY; i++) {
 			if (!mom->validity_page[page]) {
 				ret = mops->get_user_memory(&ds28el15.ic_des,
-							    page, 0,
-							    MAXIM_SEGMENT_NUM);
-				DS28EL15_COMMUNICATION_INFO(ret,
-							    "get_user_memory");
+					page, 0, MAXIM_SEGMENT_NUM);
+				ds28el15_communication_info(ret,
+					"get_user_memory");
 			}
 			if (mom->validity_page[page])
 				break;
@@ -428,22 +429,22 @@ static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
 		}
 		if (!mom->validity_page[page]) {
 			hwlog_err("Stop(get user memory page0 failed) in %s\n",
-				  __func__);
+				__func__);
 			goto get_ct_src_fatal_err;
 		}
 		set_sched_affinity_to_all();
 
 		memset(mac_datum, 0, MAX_MAC_SOURCE_SIZE);
 		memcpy(mac_datum + AUTH_MAC_ROM_ID_OFFSET, mom->rom_id,
-		       mom->rom_id_len);
+			mom->rom_id_len);
 		memcpy(mac_datum + AUTH_MAC_PAGE_OFFSET,
-		       mom->user_memory + page_offset, mom->page_size);
+			mom->user_memory + page_offset, mom->page_size);
 		memcpy(mac_datum + AUTH_MAC_SRAM_OFFSET, random_bytes,
-		       mom->sram_length);
+			mom->sram_length);
 		mac_datum[AUTH_MAC_PAGE_NUM_OFFSET] = page;
 		memcpy(mac_datum + AUTH_MAC_MAN_ID_OFFSET,
-		       mom->personality + MAXIM_MAN_ID_OFFSET,
-		       MAXIM_MAN_ID_SIZE);
+			mom->personality + MAXIM_MAN_ID_OFFSET,
+			MAXIM_MAN_ID_SIZE);
 		res->data = mac_datum;
 		res->len = DS28EL15_CT_MAC_SIZE;
 		return DS28EL15_SUCCESS;
@@ -452,8 +453,8 @@ static int ds28el15_prepare(struct platform_device *pdev, enum res_type type,
 		res->len = 0;
 		return DS28EL15_SUCCESS;
 	default:
-		hwlog_err("Wrong mac resource type(%ud) requred in %s\n",
-			  type, __func__);
+		hwlog_err("Wrong mac resource type %u requred in %s\n",
+			type, __func__);
 		break;
 	}
 
@@ -465,7 +466,7 @@ get_ct_src_fatal_err:
 }
 
 static int ds28el15_set_batt_safe_info(struct platform_device *pdev,
-				       enum batt_safe_info_t type, void *value)
+	enum batt_safe_info_t type, void *value)
 {
 	int i;
 	struct maxim_ow_mem *mom = &ds28el15.ic_des.memory;
@@ -474,6 +475,7 @@ static int ds28el15_set_batt_safe_info(struct platform_device *pdev,
 	int ret;
 
 	mutex_lock(&batt_safe_info_lock);
+	/* 5s */
 	__pm_wakeup_event(&ds28el15.write_lock, jiffies_to_msecs(5 * HZ));
 	switch (type) {
 	case BATT_MATCH_ABILITY:
@@ -481,8 +483,9 @@ static int ds28el15_set_batt_safe_info(struct platform_device *pdev,
 			break;
 		if (*(enum batt_match_type *)value == BATTERY_REMATCHABLE)
 			break;
-		if ((mom->validity_status) &&
-		    (mom->block_status[BATT_ID_BLOCK] & DS28EL15_WRT_PROT)) {
+		if (mom->validity_status &&
+			(mom->block_status[BATT_ID_BLOCK] &
+			DS28EL15_WRT_PROT)) {
 			ret_val = DS28EL15_SUCCESS;
 			hwlog_info("already write protection\n");
 			break;
@@ -491,11 +494,11 @@ static int ds28el15_set_batt_safe_info(struct platform_device *pdev,
 		set_sched_affinity_to_current();
 		for (i = 0; i < SET_BLOCK_STATUS_RETRY; i++) {
 			ret = mops->set_status(&ds28el15.ic_des, BATT_ID_BLOCK,
-					       DS28EL15_WRT_PROT);
-			DS28EL15_COMMUNICATION_INFO(ret, "set_status");
+				DS28EL15_WRT_PROT);
+			ds28el15_communication_info(ret, "set_status");
 			if (mom->validity_status) {
 				mom->block_status[BATT_ID_BLOCK] |=
-				    DS28EL15_WRT_PROT;
+					DS28EL15_WRT_PROT;
 				ret_val = DS28EL15_SUCCESS;
 				break;
 			}
@@ -514,7 +517,7 @@ static int ds28el15_set_batt_safe_info(struct platform_device *pdev,
 }
 
 static int ds28el15_get_batt_safe_info(struct platform_device *pdev,
-				       enum batt_safe_info_t type, void *value)
+	enum batt_safe_info_t type, void *value)
 {
 	struct maxim_ow_mem *mom = &ds28el15.ic_des.memory;
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
@@ -533,13 +536,11 @@ static int ds28el15_get_batt_safe_info(struct platform_device *pdev,
 				hwlog_info("read block status start\n");
 				i++;
 				ret = mops->get_status(&ds28el15.ic_des);
-				DS28EL15_COMMUNICATION_INFO(ret, "get_status");
+				ds28el15_communication_info(ret, "get_status");
 			}
 			if (mom->validity_status)
 				break;
-
-			else
-				err_num[GET_BLOCK_STATUS_INDEX]++;
+			err_num[GET_BLOCK_STATUS_INDEX]++;
 		}
 		if (i)
 			set_sched_affinity_to_all();
@@ -566,7 +567,7 @@ static enum batt_ic_type ds28el15_get_ic_type(void)
 #ifdef ONEWIRE_STABILITY_DEBUG
 
 static ssize_t get_rom_id_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -575,11 +576,11 @@ static ssize_t get_rom_id_show(struct device *dev,
 	total_com[DEBUG_ROM_ID]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_ROM_ID],
-			total_com[DEBUG_ROM_ID]);
+		total_com[DEBUG_ROM_ID]);
 }
 
 static ssize_t get_personality_show(struct device *dev,
-				    struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -588,39 +589,39 @@ static ssize_t get_personality_show(struct device *dev,
 	total_com[DEBUG_PERSONALITY]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_PERSONALITY],
-			total_com[DEBUG_PERSONALITY]);
+		total_com[DEBUG_PERSONALITY]);
 }
 
 static ssize_t get_eeprom_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
 	if (mops->get_user_memory(&ds28el15.ic_des, MAXIM_PAGE0,
-				  0, MAXIM_SEGMENT_NUM))
+		0, MAXIM_SEGMENT_NUM))
 		com_err[DEBUG_GET_EEPROM]++;
 	total_com[DEBUG_GET_EEPROM]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_GET_EEPROM],
-			total_com[DEBUG_GET_EEPROM]);
+		total_com[DEBUG_GET_EEPROM]);
 }
 
 static ssize_t set_eeprom_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
 	if (mops->set_user_memory(&ds28el15.ic_des, "1234", MAXIM_PAGE0,
-				  MAXIM_SEGMENT0))
+		MAXIM_SEGMENT0))
 		com_err[DEBUG_SET_EEPROM]++;
 	total_com[DEBUG_SET_EEPROM]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_SET_EEPROM],
-			total_com[DEBUG_SET_EEPROM]);
+		total_com[DEBUG_SET_EEPROM]);
 }
 
 static ssize_t get_sram_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+	char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -629,11 +630,11 @@ static ssize_t get_sram_show(struct device *dev, struct device_attribute *attr,
 	total_com[DEBUG_GET_SRAM]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_GET_SRAM],
-			total_com[DEBUG_GET_SRAM]);
+		total_com[DEBUG_GET_SRAM]);
 }
 
 static ssize_t set_sram_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+	char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -642,11 +643,11 @@ static ssize_t set_sram_show(struct device *dev, struct device_attribute *attr,
 	total_com[DEBUG_SET_SRAM]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_SET_SRAM],
-			total_com[DEBUG_SET_SRAM]);
+		total_com[DEBUG_SET_SRAM]);
 }
 
 static ssize_t get_mac_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+	char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -655,11 +656,11 @@ static ssize_t get_mac_show(struct device *dev, struct device_attribute *attr,
 	total_com[DEBUG_GET_MAC]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_GET_MAC],
-			total_com[DEBUG_GET_MAC]);
+		total_com[DEBUG_GET_MAC]);
 }
 
 static ssize_t eeprom_status_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -668,7 +669,7 @@ static ssize_t eeprom_status_show(struct device *dev,
 	total_com[DEBUG_EEPROM_STATUS]++;
 
 	return snprintf(buf, PAGE_SIZE, "%d@%d", com_err[DEBUG_EEPROM_STATUS],
-			total_com[DEBUG_EEPROM_STATUS]);
+		total_com[DEBUG_EEPROM_STATUS]);
 }
 
 static DEVICE_ATTR_RO(get_rom_id);
@@ -692,14 +693,14 @@ static const char * const err_str[] = {
 };
 
 static ssize_t err_num_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+	char *buf)
 {
 	int val = 0;
 	int i;
 
 	for (i = 0; i < __MAX_COM_ERR_NUM; i++)
 		val += snprintf(buf + val, PAGE_SIZE, "%s failed:%d times\n",
-				err_str[i], err_num[i]);
+			err_str[i], err_num[i]);
 
 	return val;
 }
@@ -718,11 +719,11 @@ static struct attribute *ds28el15_attrs[] = {
 	&dev_attr_eeprom_status.attr,
 #endif
 	&dev_attr_err_num.attr,
-	NULL,			/* sysfs_create_files need last one be NULL */
+	NULL, /* sysfs_create_files need last one be NULL */
 };
 
 int ds28el15_ct_ops_register(struct platform_device *pdev,
-			     struct batt_ct_ops *bco)
+	struct batt_ct_ops *bco)
 {
 	struct maxim_mem_ops *mops = &ds28el15.ic_des.mem_ops;
 
@@ -758,32 +759,27 @@ static int batt_cons_init(struct platform_device *pdev)
 
 	/* Allocate memory for battery constraint infomation */
 	batt_cons.id_mask = devm_kzalloc(&pdev->dev,
-					 ds28el15.ic_des.memory.rom_id_len,
-					 GFP_KERNEL);
+		ds28el15.ic_des.memory.rom_id_len, GFP_KERNEL);
 	if (!batt_cons.id_mask)
 		return DS28EL15_FAIL;
 	batt_cons.id_example = devm_kzalloc(&pdev->dev,
-					    ds28el15.ic_des.memory.rom_id_len,
-					    GFP_KERNEL);
+		ds28el15.ic_des.memory.rom_id_len, GFP_KERNEL);
 	if (!batt_cons.id_example)
 		return DS28EL15_FAIL;
 	batt_cons.id_chk = devm_kzalloc(&pdev->dev,
-					ds28el15.ic_des.memory.rom_id_len,
-					GFP_KERNEL);
+		ds28el15.ic_des.memory.rom_id_len, GFP_KERNEL);
 	if (!batt_cons.id_chk)
 		return DS28EL15_FAIL;
 
 	/* Get battery id mask & id example */
 	ret = of_property_read_u8_array(pdev->dev.of_node, "id-mask",
-					batt_cons.id_mask,
-					ds28el15.ic_des.memory.rom_id_len);
+		batt_cons.id_mask, ds28el15.ic_des.memory.rom_id_len);
 	if (ret) {
 		hwlog_err("DTS:id-mask needed in %s\n", __func__);
 		return DS28EL15_FAIL;
 	}
 	ret = of_property_read_u8_array(pdev->dev.of_node, "id-example",
-					batt_cons.id_example,
-					ds28el15.ic_des.memory.rom_id_len);
+		batt_cons.id_example, ds28el15.ic_des.memory.rom_id_len);
 	if (ret) {
 		hwlog_err("DTS:id-example needed in %s\n", __func__);
 		return DS28EL15_FAIL;
@@ -794,10 +790,10 @@ static int batt_cons_init(struct platform_device *pdev)
 static int dev_sys_node_init(struct platform_device *pdev)
 {
 	ds28el15.attr_group = devm_kzalloc(&pdev->dev,
-					   sizeof(*ds28el15.attr_group),
-					   GFP_KERNEL);
+		sizeof(*ds28el15.attr_group), GFP_KERNEL);
 	if (!ds28el15.attr_group)
 		return DS28EL15_FAIL;
+	/* expansion */
 	ds28el15.attr_groups = devm_kzalloc(&pdev->dev,
 		2 * sizeof(struct attribute_group *), GFP_KERNEL);
 	if (!ds28el15.attr_groups)
@@ -845,26 +841,25 @@ static int ds28el15_driver_probe(struct platform_device *pdev)
 		goto ds28el15_probe_fail;
 	mom->sn_length_bits = SN_LENGTH_BITS;
 	ret = of_property_read_u32(batt_ic_np, "sn-offset-bits",
-				   &(mom->sn_offset_bits));
+		&(mom->sn_offset_bits));
 	if (ret) {
 		hwlog_err("Read SN offset in bits failed in %s\n", __func__);
 		goto ds28el15_probe_fail;
-	} else if (NOT_MUTI8(mom->sn_offset_bits)) {
-		hwlog_err("Illegal SN offset(%u) found in %s\n",
-			  mom->sn_offset_bits, __func__);
+	} else if (not_muti8(mom->sn_offset_bits)) {
+		hwlog_err("Illegal SN offset %u found in %s\n",
+			mom->sn_offset_bits, __func__);
 		goto ds28el15_probe_fail;
 	}
-	if (mom->sn_length_bits > BYTES2BITS(mom->page_size) ||
-	    mom->sn_offset_bits > BYTES2BITS(mom->page_size) ||
-	    mom->sn_length_bits + mom->sn_offset_bits >
-	    BYTES2BITS(mom->page_size)) {
-		hwlog_err("sn len(%u) or off(%u) is illegal found in %s\n",
-			  mom->sn_length_bits, mom->sn_offset_bits, __func__);
-	}
+	if ((mom->sn_length_bits > bytes2bits(mom->page_size)) ||
+		(mom->sn_offset_bits > bytes2bits(mom->page_size)) ||
+		(mom->sn_length_bits + mom->sn_offset_bits >
+		bytes2bits(mom->page_size)))
+		hwlog_err("sn len %u or off %u is illegal found in %s\n",
+			mom->sn_length_bits, mom->sn_offset_bits, __func__);
 	ret = of_property_read_u32(batt_ic_np, "sn-page", &(mom->sn_page));
-	if (ret || mom->sn_page >= mom->page_number)
-		hwlog_err("Illegal SN page(%u) readed by %s\n", mom->sn_page,
-			  __func__);
+	if (ret || (mom->sn_page >= mom->page_number))
+		hwlog_err("Illegal SN page %u readed by %s\n", mom->sn_page,
+			__func__);
 
 	/* add ds28el15_ct_ops_register to struct batt_ct_ops_list */
 	ds28el15_ct_node.ic_memory_release = NULL;

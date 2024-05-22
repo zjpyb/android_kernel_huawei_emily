@@ -3,7 +3,7 @@
  *
  * maxim onewire head file
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -89,7 +89,7 @@ struct maxim_ow_ic_des {
 	struct ow_phy_ops phy_ops;
 };
 
-#define DOUBLE(x)                            ((x) << 1)
+#define double(x)                            ((x) << 1)
 
 /* Maxim ROM */
 #define MAXIM_ROM_SIZE                       8
@@ -99,7 +99,7 @@ struct maxim_ow_ic_des {
 #define MAXIM_PAGE_SIZE                      32
 
 /* Slave presence signal is low */
-#define NO_SLAVE_RESPONSE(x)                 ((x) != 0)
+#define no_slave_response(x)                 ((x) != 0)
 
 /* MAXIM 1-wire memory and SHA function command */
 #define WRITE_MEMORY                         0x55
@@ -148,7 +148,7 @@ struct maxim_ow_ic_des {
 #define MAXIM_SEGMENT7                       7
 #define MAXIM_MAN_ID_SIZE                    2
 #define MAXIM_MAN_ID_OFFSET                  2
-#define MAXIM_SEGMENTS2BYTES(x)              ((x) << 2)
+#define maxim_segments2bytes(x)              ((x) << 2)
 
 /* Command success response */
 #define MAXIM_ONEWIRE_COMMAND_SUCCESS        0xAA

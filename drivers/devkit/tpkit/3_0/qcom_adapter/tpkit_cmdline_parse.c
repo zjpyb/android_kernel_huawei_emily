@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,11 +18,10 @@
 #include <linux/platform_device.h>
 #include <linux/err.h>
 #include <linux/module.h>
-
 #include <huawei_platform/log/hw_log.h>
+
 #define HWLOG_TAG TS_KIT
 HWLOG_REGIST();
-
 
 static unsigned int enter_recovery_flag;
 static unsigned int pd_charge_flag;
@@ -31,12 +30,12 @@ static unsigned int pd_charge_flag;
 
 /*
  * parse huawei_bootmode cmdline which is passed from lk
- * Format : //androidboot.huawei_bootmode=recovery
+ * Format :  androidboot.huawei_bootmode = recovery
  */
 static int __init early_parse_enterrecovery_cmdline(char *bootmode)
 {
 	if (bootmode && !strncmp(bootmode, CMDLINE_RECOVERY_MODE,
-			strlen(CMDLINE_RECOVERY_MODE)))
+		strlen(CMDLINE_RECOVERY_MODE)))
 		enter_recovery_flag = true;
 
 	hwlog_info("boot mode cmdline: [%s], enter_recovery_flag [%d]\n",
@@ -52,10 +51,9 @@ unsigned int get_boot_into_recovery_flag(void)
 }
 
 /*
- * parse huawei_chrager cmdline which is passed from lk *
- * Format : //androidboot.mode=charger *
+ * parse huawei_chrager cmdline which is passed from lk
+ * Format :  androidboot.mode = charger
  */
-
 static int __init early_parse_pdcharge_cmdline(char *p)
 {
 	if (p) {

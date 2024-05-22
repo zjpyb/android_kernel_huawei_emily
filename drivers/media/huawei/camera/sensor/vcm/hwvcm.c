@@ -1,11 +1,9 @@
 /*
- *  Hisilicon K3 SOC camera driver source file
+ * hwvcm.c
  *
- *  Copyright (C) Huawei Technology Co., Ltd.
+ * driver for hwvcm
  *
- * Author:
- * Email:
- * Date:	  2014-11-15
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +20,6 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-
 #include <linux/compiler.h>
 #include <linux/gpio.h>
 #include <linux/of_device.h>
@@ -35,15 +32,15 @@
 #include <media/huawei/camera.h>
 #include <media/v4l2-subdev.h>
 #include "hwvcm.h"
+#include "securec.h"
 
-//lint -save -e429
-#define SD2Vcm(sd) container_of(sd, hw_vcm_t, subdev)
+#define sd_to_vcm(sd) container_of(sd, struct hw_vcm_t, subdev)
 
-int hw_vcm_get_dt_data(struct platform_device *pdev, vcm_t *vcm)
+int hw_vcm_get_dt_data(struct platform_device *pdev, struct vcm_t *vcm)
 {
 	struct device_node *dev_node = pdev->dev.of_node;
 	struct hw_vcm_info *vcm_info = NULL;
-	int rc = 0;
+	int rc;
 
 	vcm_info = kzalloc(sizeof(struct hw_vcm_info), GFP_KERNEL);
 	if (!vcm_info) {
@@ -52,65 +49,78 @@ int hw_vcm_get_dt_data(struct platform_device *pdev, vcm_t *vcm)
 	}
 	vcm->vcm_info = vcm_info;
 
-	rc = of_property_read_string(dev_node, "hisi,vcm-name", &vcm_info->vcm_name);
-	cam_info("%s hisi,vcm-name %s, rc %d\n", __func__, vcm_info->vcm_name, rc);
+	rc = of_property_read_string(dev_node, "hisi,vcm-name",
+		&vcm_info->vcm_name);
+	cam_info("%s hisi, vcm-name %s, rc %d\n", __func__,
+		vcm_info->vcm_name, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 
-	rc = of_property_read_u32(dev_node, "hisi,vcm-index", (u32 *)&vcm_info->index);
-	cam_info("%s hisi,vcm-index %d, rc %d\n", __func__, vcm_info->index, rc);
+	rc = of_property_read_u32(dev_node, "hisi,vcm-index",
+		(u32 *)&vcm_info->index);
+	cam_info("%s hisi, vcm-index %d, rc %d\n", __func__,
+		vcm_info->index, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 
-	rc = of_property_read_u32(dev_node, "hisi,slave-addr", &vcm_info->slave_address);
-	cam_info("%s hisi,slave-addr 0x%x, rc %d\n", __func__, vcm_info->slave_address, rc);
+	rc = of_property_read_u32(dev_node, "hisi,slave-addr",
+		&vcm_info->slave_address);
+	cam_info("%s hisi, slave-addr 0x%x, rc %d\n", __func__,
+		vcm_info->slave_address, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 
-	rc = of_property_read_u32(dev_node, "hisi,data-type", (u32 *)&vcm_info->data_type);
-	cam_info("%s hisi,data-type 0x%x, rc %d\n", __func__, vcm_info->data_type, rc);
+	rc = of_property_read_u32(dev_node, "hisi,data-type",
+		(u32 *)&vcm_info->data_type);
+	cam_info("%s hisi, data-type 0x%x, rc %d\n", __func__,
+		vcm_info->data_type, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 	return rc;
 fail:
-	cam_err("%s can not read vcm info exit.\n", __func__);
+	cam_err("%s can not read vcm info exit\n", __func__);
 	kfree(vcm_info);
 	vcm_info = NULL;
 	return rc;
 }
 
-int hw_vcm_config(hw_vcm_t *hw_vcm, void *arg)
+int hw_vcm_config(struct hw_vcm_t *hw_vcm, void *arg)
 {
 	int rc = 0;
 	struct hw_vcm_cfg_data *cdata = (struct hw_vcm_cfg_data *)arg;
 
-	if (NULL == cdata) {
-		cam_debug("%s, arg is NULL.\n", __func__);
-		return -EINVAL;	
+	if (!cdata) {
+		cam_debug("%s, arg is NULL\n", __func__);
+		return -EINVAL;
 	}
 
-	cam_debug("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
+	cam_debug("%s enter cfgtype = %d\n", __func__, cdata->cfgtype);
 
 	mutex_lock(&hw_vcm->lock);
 
 	switch (cdata->cfgtype) {
 	case CFG_VCM_I2C_READ:
-		rc = hw_vcm->intf->vtbl->vcm_i2c_read(hw_vcm->intf, arg);
+		rc = hw_vcm->intf->vtbl->vcm_i2c_read(hw_vcm->intf,
+			arg);
 		break;
 	case CFG_VCM_I2C_WRITE:
-		rc = hw_vcm->intf->vtbl->vcm_i2c_write(hw_vcm->intf, arg);
+		rc = hw_vcm->intf->vtbl->vcm_i2c_write(hw_vcm->intf,
+			arg);
 		break;
 	case CFG_VCM_GET_VCM_NAME:
-		strncpy(cdata->cfg.name, hw_vcm->vcm_info->vcm_name,
+		rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1,
+			hw_vcm->vcm_info->vcm_name,
 			sizeof(cdata->cfg.name) - 1);
+		if (rc != 0)
+			cam_err("%s ois name copy fail\n", __func__);
 		break;
 	default:
 		rc = hw_vcm->intf->vtbl->vcm_ioctl(hw_vcm->intf, arg);
@@ -122,87 +132,73 @@ int hw_vcm_config(hw_vcm_t *hw_vcm, void *arg)
 	return rc;
 }
 
-static long
-hw_vcm_subdev_ioctl(
-		struct v4l2_subdev *sd,
-		unsigned int cmd,
-		void *arg)
+static long hw_vcm_subdev_ioctl(struct v4l2_subdev *sd,
+	unsigned int cmd, void *arg)
 {
 	long rc = -EINVAL;
-	hw_vcm_t* s = NULL;
+	struct hw_vcm_t *s = NULL;
 
-	if (arg == NULL) {
-		cam_err("%s, the parameters is a null pointer!", __func__);
-	}
+	if (!arg)
+		cam_err("%s, the parameters is a null pointer", __func__);
 
-	s = SD2Vcm(sd);
-	cam_debug("hw vcm cmd = %x",cmd);
+	s = sd_to_vcm(sd);
+	cam_debug("hw vcm cmd = %x", cmd);
 
-	switch (cmd)
-	{
+	switch (cmd) {
 	case VIDIOC_HISI_VCM_CFG:
 		rc = s->intf->vtbl->vcm_config(s, arg);
 		break;
 	default:
-		cam_err("%s, invalid IOCTL CMD(%d)! \n", __func__, cmd);
+		cam_err("%s, invalid IOCTL CMD %d\n", __func__, cmd);
 		break;
 	}
 	return rc;
 }
 
-static int hw_vcm_subdev_open(
-		struct v4l2_subdev *sd,
-		struct v4l2_subdev_fh *fh)
+static int hw_vcm_subdev_open(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
 {
-	cam_notice("hw_vcm_sbudev open! \n");
+	cam_notice("hw_vcm_sbudev open\n");
 	return 0;
 }
 
-static int
-hw_vcm_subdev_close(
-		struct v4l2_subdev *sd,
-		struct v4l2_subdev_fh *fh)
+static int hw_vcm_subdev_close(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
 {
-	cam_notice("hw_vcm_sbudev close! \n");
+	cam_notice("hw_vcm_sbudev close\n");
 	return 0;
 }
 
-static struct v4l2_subdev_internal_ops
-s_subdev_internal_ops_hw_vcm =
-{
+static struct v4l2_subdev_internal_ops s_subdev_internal_ops_hw_vcm = {
 	.open = hw_vcm_subdev_open,
 	.close = hw_vcm_subdev_close,
 };
 
-static struct v4l2_subdev_core_ops
-s_subdev_core_ops_hw_vcm =
-{
+static struct v4l2_subdev_core_ops s_subdev_core_ops_hw_vcm = {
 	.ioctl = hw_vcm_subdev_ioctl,
 };
 
-static struct v4l2_subdev_ops
-s_subdev_ops_hw_vcm =
-{
+static struct v4l2_subdev_ops s_subdev_ops_hw_vcm = {
 	.core = &s_subdev_core_ops_hw_vcm,
 };
 
-int hw_vcm_register(struct platform_device *pdev,
-		hw_vcm_intf_t* intf, struct hw_vcm_info *hw_vcm_info)
+int hw_vcm_register(struct platform_device *pdev, struct hw_vcm_intf_t *intf,
+	struct hw_vcm_info *hw_vcm_info)
 {
 	int rc = 0;
-	hw_vcm_t *hw_vcm = NULL;
+	struct hw_vcm_t *hw_vcm = NULL;
 	struct v4l2_subdev *subdev = NULL;
 
-	if (intf == NULL || pdev == NULL || hw_vcm_info == NULL) {
+	if (!intf || !pdev || !hw_vcm_info) {
 		rc = -ENOMEM;
-		cam_err("%s, the parameters is a null pointer!", __func__);
+		cam_err("%s, the parameters is a null pointer", __func__);
 		goto register_fail;
 	}
 
-	hw_vcm = (hw_vcm_t*)kzalloc(sizeof(hw_vcm_t), GFP_KERNEL);
-	if (hw_vcm == NULL) {
+	hw_vcm = (struct hw_vcm_t *)kzalloc(sizeof(struct hw_vcm_t), GFP_KERNEL);
+	if (!hw_vcm) {
 		rc = -ENOMEM;
-		cam_err("%s, vcm is null!!", __func__);
+		cam_err("%s, vcm is null", __func__);
 		goto register_fail;
 	}
 
@@ -211,14 +207,20 @@ int hw_vcm_register(struct platform_device *pdev,
 
 	v4l2_subdev_init(subdev, &s_subdev_ops_hw_vcm);
 	subdev->internal_ops = &s_subdev_internal_ops_hw_vcm;
-	snprintf(subdev->name, sizeof(subdev->name),
-			"%s", hw_vcm_info->vcm_name);
+	rc = snprintf_s(subdev->name, sizeof(subdev->name),
+		sizeof(subdev->name) - 1, "%s", hw_vcm_info->vcm_name);
+	if (rc <= 0) {
+		cam_err("%s snprintf_s failed", __func__);
+		return -EINVAL;
+	}
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	v4l2_set_subdevdata(subdev, pdev);
 
-	init_subdev_media_entity(subdev,hw_vcm_info->index ? HWCAM_SUBDEV_VCM1 : HWCAM_SUBDEV_VCM0);
-	hwcam_cfgdev_register_subdev(subdev,hw_vcm_info->index ? HWCAM_SUBDEV_VCM1 : HWCAM_SUBDEV_VCM0);
-    intf->subdev = subdev;
+	init_subdev_media_entity(subdev, hw_vcm_info->index ?
+		CAM_SUBDEV_VCM1 : CAM_SUBDEV_VCM0);
+	cam_cfgdev_register_subdev(subdev, hw_vcm_info->index ?
+		CAM_SUBDEV_VCM1 : CAM_SUBDEV_VCM0);
+	intf->subdev = subdev;
 	hw_vcm->intf = intf;
 	hw_vcm->vcm_info = hw_vcm_info;
 	hw_vcm->pdev = pdev;
@@ -227,15 +229,14 @@ register_fail:
 	return rc;
 }
 
-void hw_vcm_unregister(struct v4l2_subdev* subdev)
+void hw_vcm_unregister(struct v4l2_subdev *subdev)
 {
-    hw_vcm_t* hw_vcm = SD2Vcm(subdev);
+	struct hw_vcm_t *hw_vcm = sd_to_vcm(subdev);
 
-    media_entity_cleanup(&subdev->entity);
-    hwcam_cfgdev_unregister_subdev(subdev);
+	media_entity_cleanup(&subdev->entity);
+	cam_cfgdev_unregister_subdev(subdev);
 
-    kzfree(hw_vcm->vcm_info);
-    kzfree(hw_vcm);
+	kzfree(hw_vcm->vcm_info);
+	kzfree(hw_vcm);
 }
 
-//lint -restore

@@ -20,9 +20,11 @@
 #include <net/route.h>
 #include <net/tcp_states.h>
 #ifdef CONFIG_MPTCP_EPC
-#include <net/mptcp_epc.h>
+#include <net/hw_mptcp_epc.h>
 #endif
-
+#ifdef CONFIG_HW_NETWORK_SLICE
+#include <hwnet/booster/network_slice_route.h>
+#endif
 
 int __ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
@@ -83,7 +85,7 @@ int __ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len
 	inet->inet_dport = usin->sin_port;
 	sk->sk_state = TCP_ESTABLISHED;
 	sk_set_txhash(sk);
-	inet->inet_id = jiffies;
+	inet->inet_id = prandom_u32();
 
 	sk_dst_set(sk, &rt->dst);
 	err = 0;
@@ -95,6 +97,11 @@ EXPORT_SYMBOL(__ip4_datagram_connect);
 int ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	int res;
+
+#ifdef CONFIG_HW_NETWORK_SLICE
+	if (sk)
+		slice_rules_lookup(sk, uaddr, sk->sk_protocol);
+#endif
 
 	lock_sock(sk);
 	res = __ip4_datagram_connect(sk, uaddr, addr_len);

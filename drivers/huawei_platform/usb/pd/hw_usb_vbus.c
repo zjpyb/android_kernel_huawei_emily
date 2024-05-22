@@ -1,30 +1,29 @@
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
+#include <linux/mfd/hisi_pmic.h>
 #include <linux/module.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
-#include <linux/interrupt.h>
-#ifdef CONFIG_CONTEXTHUB_PD
-#include <linux/hisi/contexthub/tca.h>
-#endif
-#include <linux/hisi/usb/hisi_usb.h>
-#include <linux/mfd/hisi_pmic.h>
-#include <pmic_interface.h>
-#include <huawei_platform/log/log_jank.h>
+#include <chipset_common/hwpower/hardware_channel/wired_channel_switch.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/power/direct_charger.h>
+#include <huawei_platform/log/log_jank.h>
 #include <huawei_platform/power/huawei_charger.h>
-#ifdef CONFIG_TCPC_CLASS
+#include <huawei_platform/usb/hw_pogopin.h>
+#include <pmic_interface.h>
+
+#ifdef CONFIG_CONTEXTHUB_PD
+#include <linux/hisi/usb/tca.h>
+#endif
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
 #include <huawei_platform/usb/hw_pd_dev.h>
 int support_pd = 0;
 #endif
 #ifdef CONFIG_WIRELESS_CHARGER
-#include <huawei_platform/power/wireless_charger.h>
+#include <huawei_platform/power/wireless/wireless_charger.h>
+#include <huawei_platform/power/wireless/wireless_transmitter.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_status.h>
 #endif
-#ifdef CONFIG_POGO_PIN
-#include <huawei_platform/usb/hw_pogopin.h>
-#endif
-#include <huawei_platform/power/wired_channel_switch.h>
-
 #ifdef CONFIG_SUPERSWITCH_FSC
 bool FUSB3601_in_factory_mode(void);
 #endif
@@ -37,21 +36,22 @@ HWLOG_REGIST();
 #define PMIC_VBUS_DISCONNECT_TIMEOUT  600 /* ms */
 
 static int pmic_vbus_attach_enable = 1;
+static int g_attach_en_tmp_flag;
 static int hw_vbus_connect_irq, hw_vbus_disconnect_irq;
 static bool cc_change = false;
 static bool cc_exist = false;
-static bool wait_finish = true; /*initial value should be true*/
+static bool wait_finish = true; /* inital value should be true */
 static bool direct_charge_flag = false;
 static bool g_cc_normal;
 struct delayed_work g_disconnect_work;
 struct delayed_work g_connect_work;
 extern struct completion pd_get_typec_state_completion;
 #ifdef CONFIG_CONTEXTHUB_PD
-extern bool hisi_dptx_ready(void);
 static int support_dp = 1;
 #endif
 static int g_connected;
 static int g_pmic_vbus_enable;
+static unsigned int g_enable_wired_channel;
 
 static int g_typec_complete_type = NOT_COMPLETE;
 static struct wakeup_source hwusb_lock;
@@ -60,10 +60,11 @@ extern struct mutex typec_wait_lock;
 extern int g_cur_usb_event;
 extern int pd_dpm_vbus_notifier_call(struct pd_dpm_info *di, unsigned long event, void *data);
 extern struct pd_dpm_info *g_pd_di;
+
 int pmic_vbus_irq_is_enabled(void)
 {
 	static int need_update_from_dt = 1;
-	struct device_node *dn;
+	struct device_node *dn = NULL;
 
 	if (!need_update_from_dt)
 		return pmic_vbus_attach_enable;
@@ -71,17 +72,32 @@ int pmic_vbus_irq_is_enabled(void)
 	dn = of_find_compatible_node(NULL, NULL, "huawei,usbvbus");
 	if (dn) {
 		if(of_property_read_u32(dn, "pmic_vbus_attach_enable", &pmic_vbus_attach_enable))
-		{
 			hwlog_err("get pmic_vbus_attach_enable fail!\n");
-		}
 
 		hwlog_info("pmic_vbus_attach_enable = %d \n",pmic_vbus_attach_enable);
 	} else {
 		hwlog_err("get device_node fail!\n");
 	}
 	need_update_from_dt = 0;
+
+	/* enable pmic vbus attach when plug in pogo charger */
+	if (pogopin_get_pmic_vbus_irq_enable()) {
+		if (pogopin_5pin_get_pogo_status() == POGO_CHARGER)
+			pmic_vbus_attach_enable = ATTACH_ENABLE;
+		hwlog_info("%s : %d\n", __func__, pmic_vbus_attach_enable);
+	}
+
 	return pmic_vbus_attach_enable;
 }
+
+void pogopin_set_pmic_vbus_irq_enable(int enable)
+{
+	if (enable)
+		pmic_vbus_attach_enable = enable;
+	else
+		pmic_vbus_attach_enable = g_attach_en_tmp_flag;
+}
+
 static void hwusb_wake_lock(void)
 {
 	if (!hwusb_lock.active) {
@@ -102,9 +118,9 @@ void hw_pd_wait_dptx_ready(void)
 	int count = 10;
 
 	do {
-		if(true == hisi_dptx_ready() || !support_dp)
+		if (hisi_dptx_ready() || !support_dp)
 			break;
-		msleep(100);
+		msleep(100); /* 100: sleep 100 ms */
 		count--;
 	} while(count);
 
@@ -146,7 +162,7 @@ static void send_charger_connect_event(void)
 
 	pd_dpm_handle_combphy_event(event);
 #else
-	hisi_usb_otg_event(CHARGER_CONNECT_EVENT);
+	chip_usb_otg_event(CHARGER_CONNECT_EVENT);
 #endif
 }
 
@@ -161,21 +177,21 @@ static void send_charger_disconnect_event(void)
 	pd_dpm_handle_combphy_event(event);
 
 #else
-	hisi_usb_otg_event(CHARGER_DISCONNECT_EVENT);
+	chip_usb_otg_event(CHARGER_DISCONNECT_EVENT);
 #endif
 }
 static irqreturn_t charger_connect_interrupt(int irq, void *p)
 {
 	hwlog_info("%s: start\n", __func__);
-#ifdef CONFIG_TCPC_CLASS
-	/*bugfix for digital headset issue*/
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
+	/* bugfix for digital headset issue */
 	if (support_pd && pd_dpm_ignore_vbuson_event()) {
 		hwlog_info("%s ignore_vbus_on_event\n", __func__);
 		pd_dpm_set_ignore_vbuson_event(false);
 		hwlog_info("%s: end\n", __func__);
 		return IRQ_HANDLED;
 	}
-	/*ignore vbus event when pd pwr swap happen*/
+	/* ignore vbus when pd pwr swap happen */
 	if (support_pd && pd_dpm_get_pd_finish_flag()) {
 		hwlog_info("%s ignore vbus connect event when pd contract is established\n", __func__);
 		hwlog_info("%s: end\n", __func__);
@@ -236,6 +252,7 @@ static void vbus_connect_work(struct work_struct *w)
 	cc_change = false;
 	cc_exist = false;
 	wait_finish = false;
+	/* 200: delay 200 ms */
 	timeout = wait_for_completion_timeout(&pd_get_typec_state_completion, msecs_to_jiffies(200));
 	mutex_lock(&typec_wait_lock);
 	wait_finish = true;
@@ -267,11 +284,7 @@ static void vbus_connect_work(struct work_struct *w)
 	} else {
 		cc_change = false;
 		pd_dpm_get_typec_state(&typec_state);
-		if (PD_DPM_USB_TYPEC_DETACHED == typec_state) {
-			cc_exist = false; /* cable without cc, need to send connect event*/
-		} else {
-			cc_exist = true; /*cable with cc, 1.direct_charge,2.pwr swap,3.hardreset*/
-		}
+		cc_exist = (typec_state != PD_DPM_USB_TYPEC_DETACHED);
 		send_charger_connect_event();
 		mutex_unlock(&typec_wait_lock);
 		hwlog_info("%s: end\n", __func__);
@@ -282,15 +295,15 @@ static void vbus_connect_work(struct work_struct *w)
 static irqreturn_t charger_disconnect_interrupt(int irq, void *p)
 {
 	hwlog_info("%s: start\n", __func__);
-#ifdef CONFIG_TCPC_CLASS
-	/*bugfix for digital headset issue*/
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
+	/* bugfix for digital headset issue */
 	if (support_pd && pd_dpm_ignore_vbusoff_event()) {
 		hwlog_info("%s ignore_vbus_off_event\n", __func__);
 		pd_dpm_set_ignore_vbusoff_event(false);
 		hwlog_info("%s: end\n", __func__);
 		return IRQ_HANDLED;
 	}
-	/*ignore vbus event when pd pwr swap happen*/
+	/* ignore vbus event when pd pwr swap happen */
 	if (support_pd && pd_dpm_get_pd_finish_flag()) {
 		hwlog_info("%s ignore vbus disconnect event when pd contract is established\n", __func__);
 		hwlog_info("%s: end\n", __func__);
@@ -310,6 +323,10 @@ static void vbus_disconnect_work(struct work_struct *w)
 #ifdef CONFIG_CONTEXTHUB_PD
 	hw_pd_wait_dptx_ready();
 #endif
+#ifdef CONFIG_WIRELESS_CHARGER
+	wireless_charger_pmic_vbus_handler(false);
+#endif
+
 	if (!pmic_vbus_attach_enable) {
 #ifdef CONFIG_SUPERSWITCH_FSC
 		if (!FUSB3601_in_factory_mode()) {
@@ -394,7 +411,7 @@ static void wait_cc_timeout(void)
 	if (timeout || g_cc_normal) {
 		cc_change = true;
 		cc_exist = true;
-		hwlog_info("cc change, timeout is %ld\n", timeout);
+		hwlog_info("%s: cc change, timeout is %ld\n", __func__, timeout);
 	} else {
 		cc_change = false;
 		pd_dpm_get_typec_state(&typec_state);
@@ -411,19 +428,28 @@ static void wait_cc_timeout(void)
 			cc_exist = true;
 
 #ifdef CONFIG_WIRELESS_CHARGER
-		if (wireless_charge_get_wireless_channel_state() ==
-			WIRELESS_CHANNEL_ON) {
-			hwlog_info("%s: wireless channel on\n", __func__);
+		if (charge_get_charger_type() == CHARGER_TYPE_WIRELESS) {
+			hwlog_info("%s: wireless charging, ignore cc status\n", __func__);
 			goto end;
 		}
-#endif /* CONFIG_WIRELESS_CHARGER */
 
-		wired_chsw_set_wired_channel(WIRED_CHANNEL_RESTORE);
+		if (wireless_tx_get_tx_open_flag()) {
+			hwlog_info("%s: wireless tx channel on\n", __func__);
+			goto end;
+		}
+
+#endif /* CONFIG_WIRELESS_CHARGER */
+		if (!g_enable_wired_channel)
+			wired_chsw_set_wired_channel(WIRED_CHANNEL_MAIN, WIRED_CHANNEL_RESTORE);
+
 		charge_set_charger_type(CHARGER_TYPE_USB);
 		vbus = charge_get_vbus();
 		hwlog_info("%s: vbus = %d\n", __func__, vbus);
 		if (vbus < PMIC_VBUS_DET_THRESHOLD) {
 			charge_set_charger_type(CHARGER_REMOVED);
+			if (!g_enable_wired_channel)
+				wired_chsw_set_wired_channel(WIRED_CHANNEL_ALL, WIRED_CHANNEL_CUTOFF);
+
 			goto end;
 		}
 
@@ -505,8 +531,7 @@ static void alt_vbus_disconnect_work(struct work_struct *w)
 		goto wake_unlock_tag;
 
 #ifdef CONFIG_WIRELESS_CHARGER
-	if (wireless_charge_get_wireless_channel_state() ==
-		WIRELESS_CHANNEL_ON) {
+	if (wlrx_get_wireless_channel_state() == WIRELESS_CHANNEL_ON) {
 		hwlog_info("%s: wireless channel on\n", __func__);
 		goto wake_unlock_tag;
 	}
@@ -525,7 +550,9 @@ static void alt_vbus_disconnect_work(struct work_struct *w)
 
 	g_connected = false;
 	pd_dpm_set_source_sink_state(STOP_SINK);
-	wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
+	if (!g_enable_wired_channel)
+		wired_chsw_set_wired_channel(WIRED_CHANNEL_ALL, WIRED_CHANNEL_CUTOFF);
+
 	send_charger_disconnect_event();
 
 mutex_unlock_tag:
@@ -541,7 +568,9 @@ void pmic_vbus_disconnect_process(void)
 	if (g_pmic_vbus_enable) {
 		g_connected = false;
 		pd_dpm_set_source_sink_state(STOP_SINK);
-		wired_chsw_set_wired_channel(WIRED_CHANNEL_CUTOFF);
+		if (!g_enable_wired_channel)
+			wired_chsw_set_wired_channel(WIRED_CHANNEL_ALL, WIRED_CHANNEL_CUTOFF);
+
 		send_charger_disconnect_event();
 	}
 }
@@ -572,6 +601,10 @@ static irqreturn_t disconnect_interrupt(int irq, void *p)
 
 static void connect_work(struct work_struct *w)
 {
+	if (pogopin_typec_chg_ana_audio_support() &&
+		pogopin_is_charging())
+		return;
+
 	if (g_pmic_vbus_enable)
 		alt_vbus_connect_work(w);
 	else
@@ -580,6 +613,10 @@ static void connect_work(struct work_struct *w)
 
 static void disconnect_work(struct work_struct *w)
 {
+	if (pogopin_typec_chg_ana_audio_support() &&
+		pogopin_is_charging())
+		return;
+
 	if (g_pmic_vbus_enable)
 		alt_vbus_disconnect_work(w);
 	else
@@ -589,13 +626,13 @@ static void disconnect_work(struct work_struct *w)
 static int hisi_usb_vbus_probe(struct platform_device *pdev)
 {
 	int ret = 0;
-#ifdef CONFIG_TCPC_CLASS
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
 	struct device_node *np = NULL;
-	struct device* dev;
+	struct device *dev = NULL;
 #endif
 	hwlog_info("[%s]+\n", __func__);
 
-#ifdef CONFIG_TCPC_CLASS
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
 	dev = &pdev->dev;
 	np = dev->of_node;
 	ret = of_property_read_u32(np, "support_pd", &support_pd);
@@ -610,9 +647,8 @@ static int hisi_usb_vbus_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_CONTEXTHUB_PD
 	ret = of_property_read_u32(np, "support_dp", &support_dp);
-	if (ret) {
+	if (ret)
 		hwlog_err("get support_dp failed\n");
-	}
 	hwlog_info("support_dp = %d\n", support_dp);
 
 #endif
@@ -621,6 +657,7 @@ static int hisi_usb_vbus_probe(struct platform_device *pdev)
 		hwlog_err("get pmic_vbus_attach_enable failed\n");
 		pmic_vbus_attach_enable = 1;
 	}
+	g_attach_en_tmp_flag = pmic_vbus_attach_enable;
 	hwlog_info("pmic_vbus_attach_enable = %d\n", pmic_vbus_attach_enable);
 
 	ret = of_property_read_u32(np, "pmic_vbus_enable", &g_pmic_vbus_enable);
@@ -630,20 +667,26 @@ static int hisi_usb_vbus_probe(struct platform_device *pdev)
 	}
 	hwlog_info("pmic_vbus_enable = %d\n", g_pmic_vbus_enable);
 
+	ret = of_property_read_u32(np, "enable_wired_channel", &g_enable_wired_channel);
+	if (ret) {
+		hwlog_err("get enable_wired_channel failed\n");
+		g_enable_wired_channel = 0;
+	}
+	hwlog_info("enable_wired_channel = %d\n", g_enable_wired_channel);
+
 	wakeup_source_init(&hwusb_lock, "hwusb_wakelock");
-	hw_vbus_connect_irq = hisi_get_pmic_irq_byname(VBUS_CONNECT);
-	if (0 == hw_vbus_connect_irq) {
+	hw_vbus_connect_irq = pmic_get_irq_byname(VBUS_CONNECT);
+	if (hw_vbus_connect_irq == 0) {
 		hwlog_err("failed to get connect irq\n");
 		wakeup_source_trash(&hwusb_lock);
 		return -ENOENT;
 	}
-	hw_vbus_disconnect_irq = hisi_get_pmic_irq_byname(VBUS_DISCONNECT);
-	if (0 == hw_vbus_disconnect_irq) {
+	hw_vbus_disconnect_irq = pmic_get_irq_byname(VBUS_DISCONNECT);
+	if (hw_vbus_disconnect_irq == 0) {
 		hwlog_err("failed to get disconnect irq\n");
 		wakeup_source_trash(&hwusb_lock);
 		return -ENOENT;
 	}
-
 	hwlog_info("hw_vbus_connect_irq: %d, hw_vbus_disconnect_irq: %d\n",
 			hw_vbus_connect_irq, hw_vbus_disconnect_irq);
 
@@ -664,28 +707,23 @@ static int hisi_usb_vbus_probe(struct platform_device *pdev)
 		hwlog_err("request charger connect irq failed, irq: %d!\n", hw_vbus_disconnect_irq);
 	}
 
-
 	/* avoid lose intrrupt */
-	if (hisi_pmic_get_vbus_status()) {
+	if (pmic_get_vbus_status()) {
 		hwlog_info("%s: vbus high, issue a charger connect event\n", __func__);
-		/*call combphy switch until dp probe finish*/
-		#ifdef CONFIG_TCPC_CLASS
-		if (!(support_pd && pd_dpm_ignore_vbuson_event()) && !(support_pd && pd_dpm_get_pd_finish_flag())) {
-		#endif
+		/* call combphy switch until dp probe finish */
+#if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
+		if (!(support_pd && pd_dpm_ignore_vbuson_event()) &&
+			!(support_pd && pd_dpm_get_pd_finish_flag()))
+#endif
 			schedule_delayed_work(&g_connect_work,
 				msecs_to_jiffies(PMIC_VBUS_CONNECT_TIMEOUT));
-		#ifdef CONFIG_TCPC_CLASS
-		}
-		#endif
 	} else {
 		if (!g_pd_di->pd_source_vbus) {
-			if (pmic_vbus_attach_enable) {
+			if (pmic_vbus_attach_enable)
 				pd_dpm_vbus_notifier_call(g_pd_di, CHARGER_TYPE_NONE, NULL);
-			}
 			hwlog_info("%s: vbus low, issue a charger disconnect event\n", __func__);
 		}
 	}
-
 	hwlog_info("[%s] probe ok -\n", __func__);
 
 	return ret;
@@ -716,12 +754,12 @@ static struct platform_driver hisi_usb_vbus_drv = {
 
 static int __init huawei_usb_vbus_init(void)
 {
-    return platform_driver_register(&hisi_usb_vbus_drv);
+	return platform_driver_register(&hisi_usb_vbus_drv);
 }
 
 static void __exit huawei_usb_vbus_exit(void)
 {
-    platform_driver_unregister(&hisi_usb_vbus_drv);
+	platform_driver_unregister(&hisi_usb_vbus_drv);
 }
 
 late_initcall_sync(huawei_usb_vbus_init);

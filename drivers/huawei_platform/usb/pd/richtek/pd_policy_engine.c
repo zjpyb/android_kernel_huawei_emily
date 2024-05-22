@@ -404,11 +404,6 @@ typedef struct __pe_state_actions {
 /*
  * Policy Engine General State Activity
  */
-
-/*
-extern int rt1711_set_bist_carrier_mode(
-	struct tcpc_device *tcpc_dev, uint8_t pattern);
-*/
 static void pe_idle_reset_data(pd_port_t *pd_port)
 {
 	pd_reset_pe_timer(pd_port);

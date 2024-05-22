@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,7 +17,7 @@
 #include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <huawei_ts_kit.h>
 
 #define SUPPORT_UNIQUE_TEST 1
@@ -43,22 +43,23 @@ static void copy_this_line(char *dest, char *src)
 
 static void goto_next_line(char **ptr)
 {
-	do {
+	do
 		*ptr = *ptr + 1;
-	} while (**ptr != '\n' && **ptr != '\0');
+	while (**ptr != '\n' && **ptr != '\0');
 	if (**ptr == '\0')
 		return;
 	*ptr = *ptr + 1;
 }
 
 static void parse_valid_data(const char *buf_start, loff_t buf_size,
-				char *ptr, int32_t* data, int rows)
+	char *ptr, int32_t *data, int rows)
 {
 	int i;
 	int j = 0;
 	char *token = NULL;
 	char *tok_ptr = NULL;
 	char *row_data = NULL;
+	long int value = 0;
 
 	if (!ptr) {
 		TS_LOG_ERR("%s, ptr is NULL\n", __func__);
@@ -75,7 +76,7 @@ static void parse_valid_data(const char *buf_start, loff_t buf_size,
 	}
 
 	for (i = 0; i < rows; i++) {
-		// copy this line to row_data buffer
+		/* copy this line to row_data buffer */
 		memset(row_data, 0, MAX_ROW_SIZE * sizeof(char));
 		copy_this_line(row_data, ptr);
 		tok_ptr = row_data;
@@ -83,10 +84,12 @@ static void parse_valid_data(const char *buf_start, loff_t buf_size,
 			if (strlen(token) == 0)
 				continue;
 
-			data[j] = (int32_t)simple_strtol(token, NULL, STRTOL_LEN);
-			j ++;
+			data[j] = 0;
+			if (kstrtol(token, STRTOL_LEN, &value) == 0)
+				data[j] = value;
+			j++;
 		}
-		goto_next_line(&ptr);	// next row
+		goto_next_line(&ptr); /* next row */
 		if (!ptr || (strlen(ptr) == 0) ||
 			(ptr >= (buf_start + buf_size))) {
 			TS_LOG_INFO("invalid ptr, return\n");
@@ -95,10 +98,10 @@ static void parse_valid_data(const char *buf_start, loff_t buf_size,
 	}
 	kfree(row_data);
 	row_data = NULL;
-	return;
 }
 
-static void print_data(char *target_name, int32_t *data, int rows, int columns)
+static void print_data(const char *target_name, int32_t *data,
+	int rows, int columns)
 {
 	int i;
 	int j;
@@ -117,8 +120,8 @@ static void print_data(char *target_name, int32_t *data, int rows, int columns)
 }
 
 /*lint -save -e* */
-int ts_kit_parse_csvfile(char *file_path, char *target_name,
-			int32_t *data, int rows, int columns)
+int ts_kit_parse_csvfile(char *file_path, char *target_name, int32_t *data,
+	int rows, int columns)
 {
 	struct file *fp = NULL;
 	struct kstat stat;
@@ -162,7 +165,7 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name,
 		goto exit_free;
 	}
 
-	buf = (char *)kzalloc(stat.size + 1, GFP_KERNEL);
+	buf = kzalloc(stat.size + 1, GFP_KERNEL);
 	if (buf == NULL) {
 		TS_LOG_ERR("%s: kzalloc %lld bytes failed\n",
 			__func__, stat.size);
@@ -207,7 +210,7 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name,
 		goto exit_free;
 	}
 	ret = 0;
- exit_free:
+exit_free:
 	TS_LOG_INFO("%s exit free\n", __func__);
 	set_fs(org_fs);
 	if (buf) {
@@ -215,7 +218,10 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name,
 		kfree(buf);
 		buf = NULL;
 	}
-/* fp open fail not means fp is NULL, so free fp may cause Uncertainty */
+	/*
+	 * fp open fail not means fp is NULL,
+	 * so free fp may cause Uncertainty
+	 */
 	if (!IS_ERR_OR_NULL(fp)) {
 		TS_LOG_INFO("filp close\n");
 		filp_close(fp, NULL);
@@ -223,6 +229,5 @@ int ts_kit_parse_csvfile(char *file_path, char *target_name,
 	}
 	return ret;
 }
-
 EXPORT_SYMBOL(ts_kit_parse_csvfile);
-/* lint -restore */
+/*lint -restore */

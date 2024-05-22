@@ -20,7 +20,7 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include "gt1x.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define SHORT_TO_GND_RESISTER(sig)  (div_s64(5266285, (sig) & (~0x8000)) - 40 * 100)	/* 52662.85/code-40 */
 #define SHORT_TO_VDD_RESISTER(sig, value) (div_s64((s64)(36864 * ((value) - 9)) * 100, (((sig) & (~0x8000)) * 7)) - 40 * 100)
@@ -823,25 +823,7 @@ static void gt1x_put_test_result_newformat(
 	else
 		gt1x_strncat(info->i2cinfo, "0P", sizeof(info->i2cinfo));
 
-	/********************************************************************/
-	/*                                enum ts_raw_data_type
-	/*   							  {
-	/*   								 RAW_DATA_TYPE_IC = 0,
-	/*   #define GTP_CAP_TEST	1        RAW_DATA_TYPE_CAPRAWDATA,
-	/*   #define GTP_DELTA_TEST	2        RAW_DATA_TYPE_TrxDelta,
-	/*   #define GTP_NOISE_TEST	3        RAW_DATA_TYPE_Noise,
-	/*                                   RAW_DATA_TYPE_FreShift,
-	/*   #define GTP_SHORT_TEST	5        RAW_DATA_TYPE_OpenShort,
-	/*								     RAW_DATA_TYPE_SelfCap,
-	/*									 RAW_DATA_TYPE_CbCctest,
-	/*									 RAW_DATA_TYPE_highResistance,
-	/*									 RAW_DATA_TYPE_SelfNoisetest,
-	/*									 RAW_DATA_END,
-	/*								  };
-	/*  value is same 
-	**********************************************************************/
-	/* CAP data info */ 
-
+	/* CAP data info */
 	pts_node = (struct ts_rawdata_newnodeinfo *)kzalloc(sizeof(struct ts_rawdata_newnodeinfo), GFP_KERNEL);
 	if (!pts_node) {
 		TS_LOG_ERR("malloc failed\n");
@@ -937,7 +919,8 @@ static void gt1x_put_test_result(
 	if (gt1x_ts->dev_data->ts_platform_data->chip_data->rawdata_newformatflag == TS_RAWDATA_NEWFORMAT){
 		gt1x_put_test_result_newformat((struct ts_rawdata_info_new *)info,ts_test);
 	}else{
-		TS_LOG_ERR("%s : Not support old capacitance data format !!\n");
+		TS_LOG_ERR("%s: Not support old capacitance data format\n",
+			__func__);
 	}
 
 	return ;

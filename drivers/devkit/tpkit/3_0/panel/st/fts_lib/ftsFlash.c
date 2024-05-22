@@ -67,7 +67,7 @@ int getFWdata(const char *pathToFile, u8 **data, int *size)
 //	struct device *dev = NULL;
 	int res = 0, from = 0;
 	char *path = (char *)pathToFile;
-	struct fts_ts_info *fts_info;
+	struct fts_ts_info *fts_info = NULL;
 
 	TS_LOG_ERR( "%s getFWdata starting ...\n", __func__);
 

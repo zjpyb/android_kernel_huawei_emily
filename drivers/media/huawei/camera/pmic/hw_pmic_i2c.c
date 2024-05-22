@@ -88,4 +88,3 @@ struct hisi_pmic_i2c_fn_t hisi_pmic_i2c_func_tbl = {
 	.i2c_write = hisi_pmic_i2c_write,
 };
 
-

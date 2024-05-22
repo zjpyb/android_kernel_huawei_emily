@@ -34,10 +34,10 @@
 #include <asm/memory.h>
 #include <asm/compiler.h>
 #include <asm/extable.h>
-#include <linux/hisi/hisi_hkip.h>
+#include <linux/hisi/hkip.h>
 #define get_ds()	(KERNEL_DS)
 
-#ifndef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
+#ifndef CONFIG_HKIP_ADDR_LIMIT_PROTECTION
 #define get_fs()	(current_thread_info()->addr_limit)
 #else
 #define get_fs()	(mm_segment_t)hkip_get_fs()
@@ -46,7 +46,7 @@
 static inline void set_fs(mm_segment_t fs)
 {
 	current_thread_info()->addr_limit = fs;
-#ifdef CONFIG_HISI_HHEE_ADDR_LIMIT_PROTECTION
+#ifdef CONFIG_HKIP_ADDR_LIMIT_PROTECTION
 	hkip_set_fs(fs);
 #endif
 	/*
@@ -103,13 +103,6 @@ static inline unsigned long __range_ok(unsigned long addr, unsigned long size)
 
 	return addr;
 }
-
-/*
- * When dealing with data aborts, watchpoints, or instruction traps we may end
- * up with a tagged userland pointer. Clear the tag to get a sane pointer to
- * pass on to access_ok(), for instance.
- */
-#define untagged_addr(addr)		sign_extend64(addr, 55)
 
 #define access_ok(type, addr, size)	__range_ok((unsigned long)(addr), size)
 #define user_addr_max			get_fs

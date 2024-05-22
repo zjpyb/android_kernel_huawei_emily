@@ -54,7 +54,7 @@ struct mcu_notifier_work {
 struct mcu_notifier_node {
 	int tag;
 	int cmd;
-	int (*notify) (const pkt_header_t *data);
+	int (*notify) (const struct pkt_header *data);
 	struct list_head entry;
 };
 
@@ -128,7 +128,7 @@ typedef struct {
 } t_head;
 
 struct type_record {
-	const pkt_header_t *pkt_info;
+	const struct pkt_header *pkt_info;
 	struct read_info *rd;
 	struct completion resp_complete;
 	struct mutex lock_mutex;
@@ -158,18 +158,18 @@ struct inputhub_route_table {
 	spinlock_t buffer_spin_lock;	/*for read write buffer*/
 };
 
-typedef struct write_info {
+struct write_info {
 	int tag;
 	int cmd;
 	const void *wr_buf;	/*maybe NULL*/
 	int wr_len;		/*maybe zero*/
-} write_info_t;
+};
 
-typedef struct read_info {
+struct read_info {
 	int errno;
 	int data_length;
 	char data[MAX_PKT_LENGTH];
-} read_info_t;
+};
 
 typedef struct sensor_operation {
 	int (*enable) (bool enable);
@@ -181,7 +181,7 @@ typedef struct ap_sensor_ops_record {
 	bool work_on_ap;
 } t_ap_sensor_ops_record;
 
-typedef bool(*t_match) (void *priv, const pkt_header_t *pkt);
+typedef bool(*t_match) (void *priv, const struct pkt_header *pkt);
 struct mcu_event_waiter {
 	struct completion complete;
 	t_match match;
@@ -196,9 +196,9 @@ struct iom7_charging_work {
 	struct work_struct charging_work;
 };
 
-static inline bool match_tag_cmd(void *priv, const pkt_header_t *recv)
+static inline bool match_tag_cmd(void *priv, const struct pkt_header *recv)
 {
-	pkt_header_t *send = (pkt_header_t *) priv;
+	struct pkt_header *send = (struct pkt_header *) priv;
 	return (send->tag == recv->tag) && ((send->cmd + 1) == recv->cmd) && (send->tranid == recv->tranid);
 }
 
@@ -235,8 +235,8 @@ extern ssize_t inputhub_route_write(unsigned short port, char *buf, size_t count
 extern int inputhub_route_recv_mcu_data(const char *buf, unsigned int length);
 
 extern int write_customize_cmd(const struct write_info *wr, struct read_info *rd, bool is_lock);
-extern int register_mcu_event_notifier(int tag, int cmd, int (*notify) (const pkt_header_t *head));
-extern int unregister_mcu_event_notifier(int tag, int cmd, int (*notify) (const pkt_header_t *head));
+extern int register_mcu_event_notifier(int tag, int cmd, int (*notify) (const struct pkt_header *head));
+extern int unregister_mcu_event_notifier(int tag, int cmd, int (*notify) (const struct pkt_header *head));
 extern int inputhub_sensor_enable(int tag, bool enable);
 extern int inputhub_sensor_enable_stepcounter(bool enable, type_step_counter_t steptype);
 extern int inputhub_sensor_setdelay(int tag, interval_param_t *interval_param);

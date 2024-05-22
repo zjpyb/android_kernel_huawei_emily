@@ -29,9 +29,6 @@
 #include <linux/pm_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 //#include <huawei_platform/power/huawei_charger.h>
-#ifdef CONFIG_DIRECT_CHARGER
-//#include <huawei_platform/power/direct_charger.h>
-#endif
 #include "fusb3601.h"
 #include "FSCTypes.h"
 #include "platform_helpers.h"
@@ -62,8 +59,14 @@ int fusb3601_scp_cmd_transfer_check(void)
 	do {
 		msleep(10);
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_1,&reg_val1);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_2,&reg_val2);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_3,&reg_val3);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		i++;
 	} while(i < 10 && reg_val1 == 0 && reg_val2 == 0 && reg_val3 == 0);
 
@@ -112,14 +115,28 @@ int fusb3601_accp_adapter_reg_read(int* val, int reg)
 	{
 		/*before send cmd, read and clear accp interrupt registers */
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_1,&reg_val1);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_2,&reg_val2);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_3,&reg_val3);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 
 		ret = fusb_I2C_WriteData(FUSB3601_REG_ACCP_ADDR, 1, reg);
+		if (!ret)
+			hwlog_err("i2c write failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_REG_ACCP_ADDR,val1);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		hwlog_err("%s:FUSB3601_REG_ACCP_ADDR = 0x%x,ret = %d\n",__func__,val1,ret);
 		ret = fusb_I2C_WriteData(FUSB3601_REG_ACCP_CMD, 1, FUSB3601_CMD_SBRRD);
+		if (!ret)
+			hwlog_err("i2c write failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_REG_ACCP_CMD,val1);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		hwlog_err("%s:FUSB3601_REG_ACCP_CMD = 0x%x\n",__func__,val1);
 		//ret |= fusb3601_write_reg_mask(FUSB3601_REG_ACCP_CNTL, FUSB3601_ACCP_IS_ENABLE | FAS9685_ACCP_SENDCMD,FAS9685_ACCP_CNTL_MASK);
 		//if(ret)
@@ -166,8 +183,14 @@ int fusb3601_accp_adapter_reg_write(int val, int reg)
 	{
 		/*before send cmd, clear accp interrupt registers */
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_1,&reg_val1);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_2,&reg_val2);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 		ret = fusb_I2C_ReadData(FUSB3601_SCP_EVENT_3,&reg_val3);
+		if (!ret)
+			hwlog_err("i2c read failure\n");
 
 		//ret |=fusb3601_write_reg(FUSB3601_REG_ACCP_CMD,FUSB3601_CMD_SBRWR);
 		//ret |=fusb3601_write_reg(FUSB3601_REG_ACCP_ADDR, reg);

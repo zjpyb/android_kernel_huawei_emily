@@ -100,7 +100,7 @@
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
-#ifdef CONFIG_HISI_RTG_DEBUG
+#ifdef CONFIG_SCHED_RTG_DEBUG
 #include <linux/hisi_rtg.h>
 #endif
 
@@ -115,6 +115,9 @@
 #include "hwrtg/iaware_rtg.h"
 #endif
 
+#ifdef CONFIG_HP_CORE
+#include <linux/hyperhold_inf.h>
+#endif
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
  *	certainly an error.  Permission checks need to happen during
@@ -502,7 +505,7 @@ static int proc_pid_schedstat(struct seq_file *m, struct pid_namespace *ns,
 }
 #endif
 
-#ifdef CONFIG_HISI_TASK_RAVG_SUM
+#ifdef CONFIG_TASK_RAVG_SUM
 /*
  * Provides /proc/PID/ravg_sum
  */
@@ -1020,6 +1023,59 @@ static const struct file_operations proc_static_vip_operations = {
 
 #endif
 
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+static int hisi_vip_prio_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p = NULL;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	seq_printf(m, "%u\n", p->vip_prio);
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static int hisi_vip_prio_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hisi_vip_prio_show, inode);
+}
+
+static ssize_t hisi_vip_prio_write(struct file *file, const char __user *buf,
+						size_t count, loff_t *offset)
+{
+	struct task_struct *p = NULL;
+	unsigned int prio;
+	int err;
+
+	err = kstrtouint_from_user(buf, count, 0, &prio);
+	if (err)
+		return err;
+
+	p = get_proc_task(file_inode(file));
+	if (!p)
+		return -ESRCH;
+
+	err = set_vip_prio(p, prio);
+
+	put_task_struct(p);
+
+	return err < 0 ? err : count;
+}
+
+static const struct file_operations proc_hisi_vip_prio_operations = {
+	.open       = hisi_vip_prio_open,
+	.read       = seq_read,
+	.write      = hisi_vip_prio_write,
+	.llseek     = seq_lseek,
+	.release    = single_release,
+};
+#endif
+
 static int environ_open(struct inode *inode, struct file *file)
 {
 	return __mem_open(inode, file, PTRACE_MODE_READ);
@@ -1144,7 +1200,6 @@ static ssize_t oom_adj_read(struct file *file, char __user *buf, size_t count,
 
 static int __set_oom_adj(struct file *file, int oom_adj, bool legacy)
 {
-	static DEFINE_MUTEX(oom_adj_mutex);
 	struct mm_struct *mm = NULL;
 	struct task_struct *task;
 	int err = 0;
@@ -1184,7 +1239,7 @@ static int __set_oom_adj(struct file *file, int oom_adj, bool legacy)
 		struct task_struct *p = find_lock_task_mm(task);
 
 		if (p) {
-			if (atomic_read(&p->mm->mm_users) > 1) {
+			if (test_bit(MMF_MULTIPROCESS, &p->mm->flags)) {
 				mm = p->mm;
 				mmgrab(mm);
 			}
@@ -1736,7 +1791,7 @@ static const struct file_operations proc_pid_sched_autogroup_operations = {
 
 #endif /* CONFIG_SCHED_AUTOGROUP */
 
-#ifdef CONFIG_HISI_RTG_DEBUG
+#ifdef CONFIG_SCHED_RTG_DEBUG
 static int sched_group_id_show(struct seq_file *m, void *v)
 {
 	struct inode *inode = m->private;
@@ -1797,6 +1852,39 @@ static const struct file_operations proc_pid_sched_group_id_operations = {
 	.write		= sched_group_id_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
+};
+#endif
+
+#if defined(CONFIG_MEMORY_AFFINITY) && defined(CONFIG_HISI_DEBUG_FS)
+static ssize_t task_mm_zone_tags_read(struct file *file, char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	struct task_struct *task;
+	struct mm_struct *mm;
+	char buffer[PROC_NUMBUF];
+	size_t len;
+
+	task = get_proc_task(file_inode(file));
+	if (!task)
+		return -ESRCH;
+
+	mm = get_task_mm(task);
+	if (!mm) {
+		put_task_struct(task);
+		return -EINVAL;
+	}
+
+	len = snprintf(buffer, sizeof(buffer), "%lu\n", mm->dma_zone_tag);
+
+	mmput(mm);
+	put_task_struct(task);
+
+	return simple_read_from_buffer(buf, count, ppos, buffer, len);
+}
+
+static const struct file_operations proc_task_mm_zone_tags_operations = {
+	.read		= task_mm_zone_tags_read,
+	.llseek		= default_llseek,
 };
 #endif
 
@@ -3235,6 +3323,12 @@ static int proc_pid_patch_state(struct seq_file *m, struct pid_namespace *ns,
 }
 #endif /* CONFIG_LIVEPATCH */
 
+#ifdef CONFIG_HP_CORE
+struct task_struct *get_task_from_proc(struct inode *inode)
+{
+	return get_pid_task(proc_pid(inode), PIDTYPE_PID);
+}
+#endif
 /*
  * Thread groups
  */
@@ -3261,7 +3355,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_SCHED_AUTOGROUP
 	REG("autogroup",  S_IRUGO|S_IWUSR, proc_pid_sched_autogroup_operations),
 #endif
-#ifdef CONFIG_HISI_RTG_DEBUG
+#ifdef CONFIG_SCHED_RTG_DEBUG
 	REG("sched_group_id",      S_IRUGO|S_IWUGO, proc_pid_sched_group_id_operations),
 #endif
 	REG("comm",      S_IRUGO|S_IWUSR, proc_pid_set_comm_operations),
@@ -3283,11 +3377,17 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("mountinfo",  S_IRUGO, proc_mountinfo_operations),
 	REG("mountstats", S_IRUSR, proc_mountstats_operations),
 #ifdef CONFIG_PROCESS_RECLAIM
+#ifdef CONFIG_HISI_PROCESS_RECLAIM_ACCESS
+	REG("reclaim", S_IWUGO, proc_reclaim_operations),
+#else
 	REG("reclaim", S_IWUSR, proc_reclaim_operations),
+#endif
 #ifdef CONFIG_HISI_SWAP_ZDATA
 	ONE("reclaim_result", S_IRUSR|S_IRGRP, process_reclaim_result_read),
 #endif
-
+#if defined(CONFIG_HP_CORE) && defined(CONFIG_HISI_DEBUG_FS)
+	REG("hyperhold", S_IWUSR, proc_hyperhold_operations),
+#endif
 #endif
 #ifdef CONFIG_PROC_PAGE_MONITOR
 	REG("clear_refs", S_IWUSR, proc_clear_refs_operations),
@@ -3308,7 +3408,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_SCHED_INFO
 	ONE("schedstat",  S_IRUGO, proc_pid_schedstat),
 #endif
-#ifdef CONFIG_HISI_TASK_RAVG_SUM
+#ifdef CONFIG_TASK_RAVG_SUM
 	ONE("ravg_sum",  S_IRUGO, proc_pid_ravg_sum),
 #endif
 #ifdef CONFIG_LATENCYTOP
@@ -3359,10 +3459,16 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("time_in_state", 0444, proc_time_in_state_show),
 #endif
 #ifdef CONFIG_HW_DIE_CATCH
-	REG("unexpected_die_catch", S_IRUGO|S_IWUSR, proc_unexpected_die_catch_operations),
+	REG("unexpected_die_catch", S_IRUGO|S_IWUGO, proc_unexpected_die_catch_operations),
 #endif
 #ifdef CONFIG_HW_RTG_SCHED
 	REG("rtg", S_IRUGO|S_IWUSR, proc_rtg_operations),
+#endif
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	REG("hisi_vip_prio", S_IRUSR|S_IWUSR, proc_hisi_vip_prio_operations),
+#endif
+#if defined(CONFIG_MEMORY_AFFINITY) && defined(CONFIG_HISI_DEBUG_FS)
+	REG("zone_tag", S_IRUSR, proc_task_mm_zone_tags_operations),
 #endif
 };
 
@@ -3759,6 +3865,12 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_HW_VIP_THREAD
 	REG("static_vip", S_IRUGO | S_IWGRP, proc_static_vip_operations),
+#endif
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	REG("hisi_vip_prio", S_IRUSR|S_IWUSR, proc_hisi_vip_prio_operations),
+#endif
+#if defined(CONFIG_MEMORY_AFFINITY) && defined(CONFIG_HISI_DEBUG_FS)
+	REG("zone_tag", S_IRUSR, proc_task_mm_zone_tags_operations),
 #endif
 };
 

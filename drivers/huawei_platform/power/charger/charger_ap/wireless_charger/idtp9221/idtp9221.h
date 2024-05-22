@@ -3,7 +3,7 @@
  *
  * idtp9221 macro, addr etc.
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,7 +32,7 @@
 #define IDT9221_RX_TO_TX_CMD_ADDR             0x0051
 #define IDT9221_RX_TO_TX_DATA_ADDR            0x0052
 #define IDT9221_RX_TO_TX_DATA_LEN             4
-/* RX2TX: bit(0): header;  bit(1) : command;  bit(2,3,4,5) : data */
+/* RX2TX: bit(0): header, bit(1): command, bit(2,3,4,5): data */
 #define IDT9221_RX_TO_TX_PACKET_LEN           6
 #define IDT9221_RX_TO_TX_PACKET_BUFF_LEN      8
 #define IDT9221_RX_TO_TX_PACKET_STR_LEN       64
@@ -144,7 +144,7 @@
 /* FOD COEF register */
 #define IDT9221_RX_FOD_COEF_STSRT_ADDR        0x0068
 #define IDT9221_RX_FOD_COEF_LEN               8
-#define IDT9221_RX_FOD_COEF_STRING_LEN        64
+#define IDT9221_RX_FOD_TMP_STR_LEN            8
 /* LDO register */
 #define IDT9221_LDO_ADDR                      0x3404
 /* vrect coef register */
@@ -282,64 +282,17 @@
 /*
  * idtp9221 command
  */
-#define IDT9221_CMD_SET_TX_FOP                0x03
-#define IDT9221_CMD_GET_TX_FOP                0x04
-#define IDT9221_CMD_GET_TX_VERSION            0x05
-#define IDT9221_CMD_GET_TX_IIN                0x06
-#define IDT9221_CMD_GET_TX_VIN                0x07
-#define IDT9221_CMD_GET_TX_ADAPTER_TYPE       0x0b
-#define IDT9221_CMD_SEND_READY                0x0F
-#define IDT9221_CMD_SEND_SN                   0x12
-#define IDT9221_CMD_SEND_BATT_TEMP            0x16
-#define IDT9221_CMD_SEND_BATT_CAPACITY        0x17
 #define IDT9221_CMD_SET_CURRENT_LIMIT         0x18
 #define IDT9221_CMD_START_SAMPLE              0x1d
 #define IDT9221_CMD_STOP_SAMPLE               0x1e
-#define IDT9221_CMD_RX_BOOST_SUCC             0x1f
-#define IDT9221_CMD_CERT_SUCC                 0x20
-#define IDT9221_CMD_CERT_FAIL                 0x21
-#define IDT9221_CMD_START_CERT                0x36
-#define IDT9221_CMD_GET_HASH                  0x38
-#define IDT9221_CMD_GET_TX_ID                 0x3b
-#define IDT9221_CMD_GET_TX_CAP                0x41
-#define IDT9221_CMD_GET_TX_EXTRA_CAP          0x49
-
-#define IDT9221_CMD_SEND_CHRG_STATE           0x43
-#define IDT9221_CMD_FIX_TX_FOP                0x44
-#define IDT9221_CMD_UNFIX_TX_FOP              0x45
-#define IDT9221_CMD_SEND_QVAL                 0x48
-
 #define IDT9221_CMD_ACK                       0xff
 #define IDT9221_CMD_ACK_HEAD                  0x1e
 
-/* cmd: 0x41 */
-#define IDT9221_TX_CAP_VOUT_STEP              100
-#define IDT9221_TX_CAP_IOUT_STEP              100
-#define IDT9221_TX_CAP_CABLE_OK_MASK          BIT(0)
-#define IDT9221_TX_CAP_CAN_BOOST_MASK         BIT(1)
-#define IDT9221_TX_CAP_EXT_TYPE_MASK          (BIT(2) | BIT(3))
-#define IDT9221_TX_CAP_NO_NEED_CERT_MASK      BIT(4)
-#define IDT9221_TX_CAP_SUPPORT_SCP_MASK       BIT(5)
-#define IDT9221_TX_CAP_SUPPORT_12V_MASK       BIT(6)
-#define IDT9221_TX_CAP_SUPPORT_EXTRA_BIT_MASK BIT(7)
-
-/* cmd: 0x49 */
-#define IDT9221_TX_CAP_SUPPORT_FAN_MASK       BIT(2)
-#define IDT9221_TX_CAP_SUPPORT_TEC_MASK       BIT(3)
-#define IDT9221_TX_CAP_SUPPORT_QVAL_MASK      BIT(4)
-
-#define IDT9221_TX_FOP_LEN                    2
-#define IDT9221_FIXED_FOP_MAX                 148
-#define IDT9221_FIXED_FOP_MIN                 120
-
-#define IDT9221_TX_ADAPTER_TYPE_LEN           2
 #define IDT9221_TX_ID_LEN                     3
 #define IDT9221_LIMIT_CURRENT_TIME            500
 #define IDT9221_BATT_CAPACITY_LEN             2
 #define IDT9221_BATT_TEMP_LEN                 1
 #define IDT9221_BATT_TEMP_MAX                 127
-#define IDT9221_CHRG_STATE_LEN                1
-#define IDT9221_QVAL_LEN                      2
 
 #define IDT9221_SHUTDOWN_SLEEP_TIME           200
 #define IDT9221_RCV_MSG_SLEEP_TIME            100
@@ -348,9 +301,6 @@
 #define IDT9221_WAIT_FOR_ACK_RETRY_CNT        5
 #define IDT9221_SNED_MSG_RETRY_CNT            2
 #define IDT9221_GET_TX_PARA_RETRY_CNT         2
-
-#define IDT9221_TX_FW_VERSION_LEN             4
-#define IDT9221_TX_FW_VERSION_STRING_LEN      32
 
 #define IDT9221_RX_TMP_BUFF_LEN               32
 
@@ -406,7 +356,7 @@
 #define IDT9221_TX_STATUS_GET_SS              0x04 /* get signal strength */
 #define IDT9221_TX_STATUS_GET_ID              0x08 /* get id packet */
 #define IDT9221_TX_STATUS_GET_CFG             0x10 /* get configure packet */
-#define IDT9221_TX_STATUS_GET_PPP             0x20 /* get ppp*/
+#define IDT9221_TX_STATUS_GET_PPP             0x20 /* get ppp */
 /* TX EPT type register */
 #define IDT9221_TX_EPT_TYPE_ADDR              0X0074
 #define IDT9221_TX_EPT_CMD                    0x0001
@@ -428,8 +378,6 @@
 /* TX FOD th register */
 #define IDT9221_TX_FOD_THD0_ADDR              0x00B2
 #define IDT9221_TX_FOD_THD0_VAL               300
-
-#define IDT9221_QI_SIGNAL_STRENGTH            0x01
 
 #define IDT9221_TX_ADAPTER_OTG                0x09
 #define IDT9221_TX_ADAPTER_OTG_MAX_VOL        50

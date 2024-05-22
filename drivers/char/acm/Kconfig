@@ -23,16 +23,6 @@ config ACM_DSM
 	  file type, video file or picture. We watched very carefully not to
 	  record user privacy information.
 
-config ACM_DEBUG
-	bool "Enable ACM debug features"
-	depends on ACM
-	default n
-	---help---
-	  Enable debug info print and debugfs features for ACM. When
-	  turn on this feature, some debugfs files will be created in
-	  the /sys/debug direcotry. You can cat these files to test
-	  different part of the ACM.
-
 config ACM_TIME_COST
 	bool "Enable ACM time measurement"
 	depends on ACM

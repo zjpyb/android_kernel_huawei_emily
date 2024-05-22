@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the hw_rscan_scanner.c for kernel space root scan
  * Author: likun <quentin.lee@huawei.com>
  *         likan <likan82@huawei.com>
@@ -11,7 +11,6 @@
 #include "./include/hw_rscan_utils.h"
 #include "./include/hw_rscan_whitelist.h"
 
-#define VAR_NOT_USED(variable)  do { (void)(variable); } while (0)
 #define KCODE_OFFSET 0
 #define SYSCALL_OFFSET 1
 #define SEHOOKS_OFFSET 2
@@ -21,7 +20,7 @@ static DEFINE_MUTEX(scanner_lock);      /* lint -save -e64 -e785 -e708 -e570 */
 static DEFINE_MUTEX(whitelist_lock);    /* lint -save -e64 -e785 -e708 -e570 */
 static const char *TAG = "hw_rscan_scanner";
 static const char *DEFAULT_PROC = "/init";
-static char *g_whitelist_proc = RPROC_WHITE_LIST_STR;
+static char *g_trustlist_proc = RPROC_WHITE_LIST_STR;
 static int g_rs_data_init = RSCAN_UNINIT;
 static int g_root_scan_hot_fix;
 
@@ -85,12 +84,22 @@ struct fault_private {
 };
 #endif
 
-static uint rscan_trigger_by_stp(char *upload_rootproc)
+bool get_xom_enable(void)
+{
+#ifdef CONFIG_HKIP_XOM_CODE
+	return true;
+#else
+	return false;
+#endif
+}
+
+static uint rscan_trigger_by_stp(char *upload_rootproc, int upload_rootproc_len)
 {
 	int scan_err_code = 0;
 	uint root_masks;
 	int dynamic_ops;
 	int root_proc_length;
+	int ret;
 	struct rscan_result_dynamic *scan_result_buf = NULL;
 
 	scan_result_buf = vmalloc(sizeof(struct rscan_result_dynamic));
@@ -98,7 +107,14 @@ static uint rscan_trigger_by_stp(char *upload_rootproc)
 		RSLogError(TAG, "no enough space for scan_result_buf");
 		return -ENOSPC;
 	}
-	memset(scan_result_buf, 0, sizeof(struct rscan_result_dynamic));
+
+	ret = memset_s(scan_result_buf, sizeof(struct rscan_result_dynamic),
+			0, sizeof(struct rscan_result_dynamic));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		vfree(scan_result_buf);
+		return -ENOMEM;
+	}
 
 	dynamic_ops = RSOPID_ALL;
 	mutex_lock(&scanner_lock);
@@ -115,8 +131,14 @@ static uint rscan_trigger_by_stp(char *upload_rootproc)
 			root_proc_length = RPROC_VALUE_LEN_MAX - 1;
 			scan_result_buf->rprocs[root_proc_length] = '\0';
 		}
-		strncpy(upload_rootproc, scan_result_buf->rprocs,
-				RPROC_VALUE_LEN_MAX);
+
+		ret = strncpy_s(upload_rootproc, upload_rootproc_len,
+				scan_result_buf->rprocs, RPROC_VALUE_LEN_MAX);
+		if (ret != EOK) {
+			RSLogError(TAG, "strncpy_s fail\n");
+			vfree(scan_result_buf);
+			return -ENOMEM;
+		}
 	}
 
 	vfree(scan_result_buf);
@@ -145,6 +167,23 @@ static int need_to_upload(unsigned int masks, unsigned int mask,
 	return 0;
 }
 
+static void get_kcode_info(int *item_credible,
+				int *item_status,
+				int item_tee_status, int idx)
+{
+	bool xom_enable = false;
+
+	if ((idx == KCODE) && (*item_credible == STP_REFERENCE) &&
+		(g_root_scan_hot_fix != 0))
+		*item_credible = STP_CREDIBLE;
+
+	xom_enable = get_xom_enable();
+	if ((xom_enable == true) && (idx == KCODE)) {
+		*item_status = item_tee_status;
+		*item_credible = STP_CREDIBLE;
+	}
+}
+
 /* flag = 0, just upload the abnormal items; flag = 1, upload all items */
 static void upload_to_stp(uint ree_status, uint tee_status,
 			const char *rootproc, unsigned int mask, int flag)
@@ -155,6 +194,7 @@ static void upload_to_stp(uint ree_status, uint tee_status,
 	int item_tee_status;
 	int need_upload;
 	int i;
+	int ret;
 
 	const struct stp_item_info *stp_item_info = NULL;
 	struct stp_item item = { 0 };
@@ -178,9 +218,7 @@ static void upload_to_stp(uint ree_status, uint tee_status,
 		if ((i == ROOT_PROCS) || (i == SE_HOOK))
 			item_credible = STP_REFERENCE;
 
-		if ((i == KCODE) && (item_credible == STP_REFERENCE) &&
-				(g_root_scan_hot_fix != 0))
-			item_credible = STP_CREDIBLE;
+		get_kcode_info(&item_credible, &item_status, item_tee_status, i);
 
 		item.id = stp_item_info->id;
 		item.status = item_status;
@@ -192,14 +230,20 @@ static void upload_to_stp(uint ree_status, uint tee_status,
 				stp_item_info->name);
 			return;
 		}
-		strncpy(item.name, stp_item_info->name, STP_ITEM_NAME_LEN - 1);
+
+		ret = strncpy_s(item.name, STP_ITEM_NAME_LEN - 1,
+				stp_item_info->name, STP_ITEM_NAME_LEN - 1);
+		if (ret != EOK) {
+			RSLogError(TAG, "strncpy_s fail\n");
+			return;
+		}
+
 		item.name[STP_ITEM_NAME_LEN - 1] = '\0';
 
-		if (i == ROOT_PROCS) {
+		if (i == ROOT_PROCS)
 			(void)kernel_stp_upload(item, rootproc);
-		} else {
+		else
 			(void)kernel_stp_upload(item, NULL);
-		}
 	}
 
 	return;
@@ -217,7 +261,7 @@ int stp_rscan_trigger(void)
 		return -ENOSPC;
 	}
 
-	ree_status = rscan_trigger_by_stp(upload_rootproc);
+	ree_status = rscan_trigger_by_stp(upload_rootproc, RPROC_VALUE_LEN_MAX);
 	tee_status = get_tee_status();
 
 	/* 1 is flag, 1 mean upload all items */
@@ -228,6 +272,45 @@ int stp_rscan_trigger(void)
 	return 0;
 }
 
+static void scan_rprocs(struct rscan_result_dynamic *result, uint *error_code)
+{
+	int ret;
+#ifdef CONFIG_RSCAN_SKIP_RPROCS
+	ret = strncpy_s(result->rprocs, sizeof(result->rprocs),
+			DEFAULT_PROC, strlen(DEFAULT_PROC) + 1);
+	if (ret != EOK) {
+		RSLogError(TAG, "strncpy_s fail\n");
+		*error_code |= D_RSOPID_RRPOCS;
+		RSLogError(TAG, "root processes scan failed!");
+		return;
+	}
+#else
+	ret = get_root_procs(result->rprocs, sizeof(result->rprocs));
+	if (ret == 0) {
+		*error_code |= D_RSOPID_RRPOCS;
+		RSLogError(TAG, "root processes scan failed!");
+	}
+#endif
+}
+
+#ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
+static void print_scan_item_info(void)
+{
+	if (g_r_p_flag == 1) {
+		if (g_rscan_skip_flag.skip_kcode == SKIP)
+			RSLogDebug(TAG, "skip kcode scan");
+		if (g_rscan_skip_flag.skip_syscall == SKIP)
+			RSLogDebug(TAG, "skip syscall scan");
+		if (g_rscan_skip_flag.skip_se_hooks == SKIP)
+			RSLogDebug(TAG, "skip se hooks scan");
+		if (g_rscan_skip_flag.skip_se_status == SKIP)
+			RSLogDebug(TAG, "skip se status scan");
+		if (g_rscan_skip_flag.skip_setid == SKIP)
+			RSLogDebug(TAG, "skip setid scan");
+	}
+}
+#endif
+
 static uint rscan_dynamic_raw_unlock(uint op_mask,
 				struct rscan_result_dynamic *result)
 {
@@ -235,22 +318,11 @@ static uint rscan_dynamic_raw_unlock(uint op_mask,
 	uint error_code = 0;
 
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
-	if (g_r_p_flag == 1) {
-		if (g_rscan_skip_flag.skip_kcode == SKIP)
-			RSLogDebug(TAG, "skip kcode scan.");
-		if (g_rscan_skip_flag.skip_syscall == SKIP)
-			RSLogDebug(TAG, "skip syscall scan.");
-		if (g_rscan_skip_flag.skip_se_hooks == SKIP)
-			RSLogDebug(TAG, "skip se hooks scan.");
-		if (g_rscan_skip_flag.skip_se_status == SKIP)
-			RSLogDebug(TAG, "skip se status scan.");
-		if (g_rscan_skip_flag.skip_setid == SKIP)
-			RSLogDebug(TAG, "skip setid scan.");
-	}
+	print_scan_item_info();
 #endif
 
 	if (op_mask & D_RSOPID_KCODE) {
-		ret = kcode_scan(result->kcode);
+		ret = kcode_scan(result->kcode, sizeof(result->kcode));
 		if (ret != 0) {
 			error_code |= D_RSOPID_KCODE;
 			RSLogError(TAG, "kcode_scan failed");
@@ -258,7 +330,8 @@ static uint rscan_dynamic_raw_unlock(uint op_mask,
 	}
 
 	if (op_mask & D_RSOPID_SYS_CALL) {
-		ret = kcode_syscall_scan(result->syscalls);
+		ret = kcode_syscall_scan(result->syscalls,
+					sizeof(result->syscalls));
 		if (ret != 0) {
 			error_code |= D_RSOPID_SYS_CALL;
 			RSLogError(TAG, "kcode system call scan failed");
@@ -266,7 +339,8 @@ static uint rscan_dynamic_raw_unlock(uint op_mask,
 	}
 
 	if (op_mask & D_RSOPID_SE_HOOKS) {
-		ret = sescan_hookhash(result->sehooks);
+		ret = sescan_hookhash(result->sehooks,
+				sizeof(result->sehooks));
 		if (ret != 0) {
 			error_code |= D_RSOPID_SE_HOOKS;
 			RSLogError(TAG, "sescan_hookhash scan failed");
@@ -276,17 +350,8 @@ static uint rscan_dynamic_raw_unlock(uint op_mask,
 	if (op_mask & D_RSOPID_SE_STATUS)
 		result->seenforcing = get_selinux_enforcing();
 
-	if (op_mask & D_RSOPID_RRPOCS) {
-#ifdef CONFIG_RSCAN_SKIP_RPROCS
-		strncpy(result->rprocs, "/init", sizeof(result->rprocs));
-#else
-		ret = get_root_procs(result->rprocs, sizeof(result->rprocs));
-		if (ret == 0) {
-			error_code |= D_RSOPID_RRPOCS;
-			RSLogError(TAG, "root processes scan failed!");
-		}
-#endif
-	}
+	if (op_mask & D_RSOPID_RRPOCS)
+		scan_rprocs(result, &error_code);
 
 	if (op_mask & D_RSOPID_SETID)
 		result->setid = get_setids();
@@ -343,7 +408,7 @@ uint rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 
 	if ((op_mask & D_RSOPID_RRPOCS) &&
 			(g_rscan_skip_flag.skip_rprocs == NOT_SKIP)) {
-		rprocs_strip_whitelist(result->rprocs,
+		rprocs_strip_trustlist(result->rprocs,
 				(ssize_t)sizeof(result->rprocs));
 		if (result->rprocs[0]) {
 			bad_mask |= D_RSOPID_RRPOCS;
@@ -355,10 +420,10 @@ uint rscan_dynamic(uint op_mask, struct rscan_result_dynamic *result,
 			(g_rscan_skip_flag.skip_se_status == NOT_SKIP) &&
 			(result->setid != g_rscan_clean_scan_result.setid)) {
 		bad_mask |= D_RSOPID_SETID;
-		RSLogDebug(TAG, "SeLinux enforcing status is abnormal");
+		RSLogDebug(TAG, "setid status is abnormal");
 	}
 
-	RSLogTrace(TAG, "root scan finished.");
+	RSLogTrace(TAG, "root scan finished");
 	return bad_mask;
 }
 
@@ -397,7 +462,6 @@ int rscan_dynamic_raw_and_upload(uint op_mask,
 	mutex_unlock(&scanner_lock);
 
 	tee_status = get_tee_status();
-
 	/* 0 in upload_to_stp mean just upload abnormal items */
 	if ((ree_status != 0) || (tee_status != 0))
 		upload_to_stp(ree_status, tee_status, NULL, op_mask, 0);
@@ -416,15 +480,13 @@ int get_battery_status(int *is_charging, int *percentage)
 		return -EINVAL;
 
 	if (is_charging &&
-		!psy->get_property(psy, POWER_SUPPLY_PROP_STATUS, &status)) {
+		!psy->get_property(psy, POWER_SUPPLY_PROP_STATUS, &status))
 		*is_charging = (status.intval == POWER_SUPPLY_STATUS_CHARGING) ||
 				(status.intval == POWER_SUPPLY_STATUS_FULL);
-	}
 
 	if (percentage &&
-		!psy->get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &capacity)) {
+		!psy->get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &capacity))
 		*percentage = capacity.intval;
-	}
 
 	return 0;
 }
@@ -445,10 +507,9 @@ int get_battery_status(int *is_charging, int *percentage)
 		return -1;
 
 	/* is_charging never be NULL because of input parameters check */
-	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_STATUS, &status)) {
+	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_STATUS, &status))
 		*is_charging = (status.intval == POWER_SUPPLY_STATUS_CHARGING) ||
 				(status.intval == POWER_SUPPLY_STATUS_FULL);
-	}
 
 	/* percentage never be NULL because of input parameters check */
 	if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &capacity))
@@ -489,24 +550,29 @@ int rscan_get_status(struct rscan_status *status)
 	return result;
 }
 
-int load_rproc_whitelist(char *whitelist, size_t len)
+int load_rproc_trustlist(char *trustlist, size_t len)
 {
-	size_t min_len = strlen(g_whitelist_proc);
+	size_t min_len = strlen(g_trustlist_proc);
+	int ret;
 
-	if (whitelist == NULL) {
+	if (trustlist == NULL) {
 		RSLogError(TAG, "input parameter is invalid");
 		return -EINVAL;
 	}
 
 	if (min_len >= len) {
-		RSLogWarning(TAG, "The g_whitelist_proc lenth is too long");
+		RSLogWarning(TAG, "The g_trustlist_proc lenth is too long");
 		return -1;
 	} else if (min_len <= 0) {
-		RSLogWarning(TAG, "g_whitelist_proc is null");
+		RSLogWarning(TAG, "g_trustlist_proc is null");
 		return -1;
 	} else {
-		strncpy(whitelist, g_whitelist_proc, min_len);
-		whitelist[min_len] = '\0';
+		ret = strncpy_s(trustlist, len, g_trustlist_proc, min_len);
+		if (ret != EOK) {
+			RSLogError(TAG, "strncpy_s fail\n");
+			return -1;
+		}
+		trustlist[min_len] = '\0';
 	}
 
 	return 0;
@@ -518,18 +584,34 @@ int rscan_init_data(void)
 	uint error_code;
 
 	/* initialize g_rscan_clean_scan_result */
-	memset(&g_rscan_clean_scan_result, 0, sizeof(struct rscan_result_dynamic));
+	ret = memset_s(&g_rscan_clean_scan_result, sizeof(struct rscan_result_dynamic),
+			0, sizeof(struct rscan_result_dynamic));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		return -1;
+	}
 
 	/* 1:selinux closed  0:selinux opened */
 	g_rscan_clean_scan_result.seenforcing = 1;
 	g_rscan_clean_scan_result.setid = get_setids();
 
-	ret = load_rproc_whitelist(g_rscan_clean_scan_result.rprocs,
+	ret = load_rproc_trustlist(g_rscan_clean_scan_result.rprocs,
 				sizeof(g_rscan_clean_scan_result.rprocs));
-	if ((ret != 0) || (!init_rprocs_whitelist(g_rscan_clean_scan_result.rprocs))) {
-		RSLogError(TAG, "load root whitelist failed, rproc will skip");
-		strncpy(g_rscan_clean_scan_result.rprocs, DEFAULT_PROC,
-			strlen(DEFAULT_PROC));
+	if ((ret != 0) || (!init_rprocs_trustlist(g_rscan_clean_scan_result.rprocs))) {
+		RSLogError(TAG, "load root trustlist failed, rproc will skip");
+		if (sizeof(g_rscan_clean_scan_result.rprocs) < strlen(DEFAULT_PROC)) {
+			RSLogError(TAG, "%s length is overlong", DEFAULT_PROC);
+			return -1;
+		}
+
+		ret = strncpy_s(g_rscan_clean_scan_result.rprocs,
+				MAX_RPROC_SIZE, DEFAULT_PROC,
+				strlen(DEFAULT_PROC) + 1);
+		if (ret != EOK) {
+			RSLogError(TAG, "strncpy_s fail\n");
+			return -1;
+		}
+
 		g_rscan_skip_flag.skip_rprocs = SKIP;
 	}
 
@@ -594,7 +676,7 @@ static uint dynamic_call(unsigned int mask)
 /* @reserved is reserved parameters for external module */
 static int __root_scan_pause(unsigned int op_mask, const void *reserved)
 {
-	VAR_NOT_USED(reserved);
+	var_not_used(reserved);
 
 	g_rscan_skip_flag.skip_kcode     = SKIP &
 			((op_mask & D_RSOPID_KCODE) >> KCODE_OFFSET);
@@ -619,36 +701,32 @@ static int __root_scan_resume(unsigned int op_mask, void *reserved)
 {
 	unsigned int resume_mask = 0;
 
-	VAR_NOT_USED(reserved);
+	var_not_used(reserved);
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
 	g_r_p_flag = 0;
 #endif
 
 	if ((op_mask & D_RSOPID_KCODE) &&
-			(g_rscan_skip_flag.skip_kcode == SKIP)) {
+			(g_rscan_skip_flag.skip_kcode == SKIP))
 		resume_mask |= D_RSOPID_KCODE;
-	}
 
 	if ((op_mask & D_RSOPID_SYS_CALL) &&
-			(g_rscan_skip_flag.skip_syscall == SKIP)) {
+			(g_rscan_skip_flag.skip_syscall == SKIP))
 		resume_mask |= D_RSOPID_SYS_CALL;
-	}
 
 	if ((op_mask & D_RSOPID_SE_HOOKS) &&
-			(g_rscan_skip_flag.skip_se_hooks == SKIP)) {
+			(g_rscan_skip_flag.skip_se_hooks == SKIP))
 		resume_mask |= D_RSOPID_SE_HOOKS;
-	}
 
 	if ((op_mask & D_RSOPID_SE_STATUS) &&
-			(g_rscan_skip_flag.skip_se_status == SKIP)) {
+			(g_rscan_skip_flag.skip_se_status == SKIP))
 		resume_mask |= D_RSOPID_SE_STATUS;
-	}
 
 	return dynamic_call(resume_mask);
 }
 
 /* @reserved is reserved parameters for external module */
-int root_scan_pause(unsigned int op_mask, void *reserved)
+int root_scan_pause(unsigned int op_mask, const void *reserved)
 {
 	int scan_err_code = 0;
 	int result = 0;
@@ -657,7 +735,7 @@ int root_scan_pause(unsigned int op_mask, void *reserved)
 	struct rscan_result_dynamic *scan_result_buf = NULL;
 	struct timeval tv;
 
-	VAR_NOT_USED(reserved);
+	var_not_used(reserved);
 
 	do_gettimeofday(&tv);
 	RSLogTrace(TAG, "pause item:%u, time:%ld:%ld",
@@ -670,7 +748,15 @@ int root_scan_pause(unsigned int op_mask, void *reserved)
 		mutex_unlock(&scanner_lock);
 		return -ENOSPC;
 	}
-	memset(scan_result_buf, 0, sizeof(struct rscan_result_dynamic));
+
+	result = memset_s(scan_result_buf, sizeof(struct rscan_result_dynamic),
+			0, sizeof(struct rscan_result_dynamic));
+	if (result != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		mutex_unlock(&scanner_lock);
+		vfree(scan_result_buf);
+		return -1;
+	}
 
 	/* do scan before pause rootscan */
 	dynamic_ops = D_RSOPID_KCODE | D_RSOPID_SYS_CALL |
@@ -680,7 +766,7 @@ int root_scan_pause(unsigned int op_mask, void *reserved)
 		RSLogTrace(TAG, "environment clean ,pause root scan go");
 		result = __root_scan_pause(op_mask, reserved);
 	} else {
-		RSLogTrace(TAG, "already rooted, skip pause.");
+		RSLogTrace(TAG, "already rooted, skip pause");
 		result = root_status;
 	}
 	mutex_unlock(&scanner_lock);
@@ -697,7 +783,7 @@ int root_scan_resume(unsigned int op_mask, void *reserved)
 	struct timeval tv;
 	int result;
 
-	VAR_NOT_USED(reserved);
+	var_not_used(reserved);
 
 	g_root_scan_hot_fix = 1;    /* have been done HotFix */
 
@@ -739,18 +825,30 @@ static ssize_t copy_private_data_to_user(struct file *file,
 static int open_private_file(struct file *file, const char *strBuf)
 {
 	struct fault_private *priv = NULL;
+	int ret;
 
 	WARN_ON(file->private_data);
 	priv = vmalloc(sizeof(struct fault_private));
 	if (priv == NULL)
 		return -ENOMEM;
 	file->private_data = priv;
-	memset(priv, 0, sizeof(struct fault_private));
+
+	ret = memset_s(priv, sizeof(struct fault_private),
+			0, sizeof(struct fault_private));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		return -ENOMEM;
+	}
+
 	priv->len = strlen(strBuf);
 	if (priv->len >= FAULT_PRIVATE_LENTH)
 		return -EINVAL;
 
-	strncpy(priv->buf, strBuf, priv->len);
+	ret = strncpy_s(priv->buf, sizeof(priv->buf), strBuf, priv->len);
+	if (ret != EOK) {
+		RSLogError(TAG, "strncpy_s fail\n");
+		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -766,8 +864,16 @@ static int kcode_open(struct inode *inode, struct file *file)
 static ssize_t kcode_read(struct file *file, char __user *buf,
 			size_t count, loff_t *offp)
 {
-	memset(g_rscan_clean_scan_result.kcode, 0,
-		sizeof(g_rscan_clean_scan_result.kcode));
+	int ret;
+
+	ret = memset_s(g_rscan_clean_scan_result.kcode,
+			sizeof(g_rscan_clean_scan_result.kcode),
+			0, sizeof(g_rscan_clean_scan_result.kcode));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		return -1;
+	}
+
 	RSLogDebug(TAG, "rootscan: dead_code injected\n");
 	return copy_private_data_to_user(file, buf, count, offp);
 }
@@ -846,8 +952,16 @@ static int rev_kcode_open(struct inode *inode, struct file *file)
 static ssize_t rev_kcode_read(struct file *file, char __user *buf,
 			size_t count, loff_t *offp)
 {
-	memcpy(g_rscan_clean_scan_result.kcode,
-		g_rscan_orig_result.kcode, sizeof(g_rscan_orig_result.kcode));
+	int ret;
+
+	ret = memcpy_s(g_rscan_clean_scan_result.kcode,
+			sizeof(g_rscan_clean_scan_result.kcode),
+			g_rscan_orig_result.kcode,
+			sizeof(g_rscan_orig_result.kcode));
+	if (ret != EOK) {
+		RSLogError(TAG, "memcpy_s fail\n");
+		return -1;
+	}
 
 	RSLogDebug(TAG, "revert rootscan: dead_code reverted\n");
 	return copy_private_data_to_user(file, buf, count, offp);
@@ -895,8 +1009,16 @@ static int syscall_open(struct inode *inode, struct file *file)
 static ssize_t syscall_read(struct file *file, char __user *buf,
 			size_t count, loff_t *offp)
 {
-	memset(g_rscan_clean_scan_result.syscalls, 0,
-		sizeof(g_rscan_clean_scan_result.syscalls));
+	int ret;
+
+	ret = memset_s(g_rscan_clean_scan_result.syscalls,
+			sizeof(g_rscan_clean_scan_result.syscalls),
+			0, sizeof(g_rscan_clean_scan_result.syscalls));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		return -1;
+	}
+
 	RSLogDebug(TAG, "rootscan: syscall injected\n");
 	return copy_private_data_to_user(file, buf, count, offp);
 }
@@ -926,8 +1048,16 @@ static int sehooks_open(struct inode *inode, struct file *file)
 static ssize_t sehooks_read(struct file *file, char __user *buf,
 			size_t count, loff_t *offp)
 {
-	memset(g_rscan_clean_scan_result.sehooks, 0,
-		sizeof(g_rscan_clean_scan_result.sehooks));
+	int ret;
+
+	ret = memset_s(g_rscan_clean_scan_result.sehooks,
+			sizeof(g_rscan_clean_scan_result.sehooks),
+			0, sizeof(g_rscan_clean_scan_result.sehooks));
+	if (ret != EOK) {
+		RSLogError(TAG, "memset_s fail\n");
+		return -1;
+	}
+
 	RSLogDebug(TAG, "rootscan: sec->sem_semctl injected");
 	return copy_private_data_to_user(file, buf, count, offp);
 }
@@ -951,8 +1081,16 @@ static int rev_syscall_open(struct inode *inode, struct file *file)
 static ssize_t rev_syscall_read(struct file *file, char __user *buf,
 				size_t count, loff_t *offp)
 {
-	memcpy(g_rscan_clean_scan_result.syscalls,
-		g_rscan_orig_result.syscalls, sizeof(g_rscan_orig_result.syscalls));
+	int ret;
+
+	ret = memcpy_s(g_rscan_clean_scan_result.syscalls,
+			sizeof(g_rscan_clean_scan_result.syscalls),
+			g_rscan_orig_result.syscalls,
+			sizeof(g_rscan_orig_result.syscalls));
+	if (ret != EOK) {
+		RSLogError(TAG, "memcpy_s fail\n");
+		return -1;
+	}
 
 	RSLogDebug(TAG, "revert rootscan: syscall reverted");
 	return copy_private_data_to_user(file, buf, count, offp);
@@ -983,8 +1121,16 @@ static int rev_sehooks_open(struct inode *inode, struct file *file)
 static ssize_t rev_sehooks_read(struct file *file, char __user *buf,
 				size_t count, loff_t *offp)
 {
-	memcpy(g_rscan_clean_scan_result.sehooks,
-		g_rscan_orig_result.sehooks, sizeof(g_rscan_orig_result.sehooks));
+	int ret;
+
+	ret = memcpy_s(g_rscan_clean_scan_result.sehooks,
+			sizeof(g_rscan_clean_scan_result.sehooks),
+			g_rscan_orig_result.sehooks,
+			sizeof(g_rscan_orig_result.sehooks));
+	if (ret != EOK) {
+		RSLogError(TAG, "memcpy_s fail\n");
+		return -1;
+	}
 
 	RSLogDebug(TAG, "revert root scan test, sehooks reverted");
 	return copy_private_data_to_user(file, buf, count, offp);

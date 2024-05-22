@@ -27,7 +27,7 @@
 #endif
 
 #include "nt36xxx_mem_map.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 //---GPIO number---
 #define NVTTOUCH_RST_PIN 980
 #define NVTTOUCH_INT_PIN 943
@@ -169,6 +169,7 @@ struct nvt_ts_data {
 	int in_suspend;
 	int rawdate_pointer_to_pointer;
 	enum ts_bus_type btype;
+	uint32_t bus_transfer_len;
 };
 
 #if NVT_TOUCH_PROC
@@ -200,11 +201,26 @@ typedef enum {
 
 #define DUMMY_BYTES (1)
 #define NVT_TANSFER_LEN		(PAGE_SIZE << 4)
+#define NVT_TANSFER_LEN_63KB (63 * 1024)
 
 typedef enum {
 	NVTWRITE = 0,
 	NVTREAD  = 1
 } NVT_SPI_RW;
+
+#define F2C_RW_READ 0x00
+#define F2C_RW_WRITE 0x01
+#define BIT_F2C_EN 0
+#define BIT_F2C_RW 1
+#define BIT_CPU_IF_ADDR_INC 2
+#define BIT_CPU_POLLING_EN 5
+#define FFM2CPU_CTL 0x3F280
+#define F2C_LENGTH 0x3F283
+#define CPU_IF_ADDR 0x3F284
+#define FFM_ADDR 0x3F286
+#define CP_TP_CPU_REQ 0x3F291
+#define TOUCH_DATA_ADDR 0x25198
+#define SET_FFM2CPU_CTL_RETRY 40
 
 #define LOW_EIGHT_BITS(x)			((x)&0xFF)
 #define MIDDLE_EIGHT_BITS(x)		(((x)&0xFF00)>>8)
@@ -269,6 +285,9 @@ enum {
 	BIT14_RESERVED,
 	BIT15_RESERVED,
 	BIT_MAX,
+};
+enum nvt_ic_type {
+	NT36675 = 3,
 };
 
 struct dmd_report_charger_status{

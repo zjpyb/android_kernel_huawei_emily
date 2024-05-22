@@ -47,8 +47,8 @@
 #include <linux/cdev.h>
 #include <linux/dma-mapping.h>
 #include <huawei_platform/log/hw_log.h>
-#include "../../huawei_ts_kit.h"
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -300,7 +300,8 @@ struct goodix_ts_ops {
  *		be used by firmware in holster state
  * @roi: finger sense data structure
  * @max_x/@max_y: max resolution in x/y direction
- * @vdd_value: analog voltage value
+ * @vdd_value
+: analog voltage value
  * @vio_value: digital voltage value
  * @flip_x/@flip_y: coordinates transformation
  * @rawdiff_mode: rawdiff mode, this mode is mainly used by

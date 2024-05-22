@@ -53,22 +53,24 @@ errno_t strncpy_error(char *strDest, size_t destMax, const char *strSrc, size_t 
     if (destMax == 0 || destMax > SECUREC_STRING_MAX_LEN) {
         SECUREC_ERROR_INVALID_RANGE("strncpy_s");
         return ERANGE;
-    } else if (strDest == NULL || strSrc == NULL) {
+    }
+    if (strDest == NULL || strSrc == NULL) {
         SECUREC_ERROR_INVALID_PARAMTER("strncpy_s");
         if (strDest != NULL) {
             strDest[0] = '\0';
             return EINVAL_AND_RESET;
         }
         return EINVAL;
-    } else if (count > SECUREC_STRING_MAX_LEN) {
+    }
+    if (count > SECUREC_STRING_MAX_LEN) {
         strDest[0] = '\0';      /* Clear dest string */
         SECUREC_ERROR_INVALID_RANGE("strncpy_s");
         return ERANGE_AND_RESET;
-    } else if (count == 0) {
+    }
+    if (count == 0) {
         strDest[0] = '\0';
         return EOK;
     }
-
     return CheckSrcCountRange(strDest, destMax, strSrc, count);
 }
 

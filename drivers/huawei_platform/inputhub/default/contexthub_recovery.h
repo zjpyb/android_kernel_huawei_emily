@@ -1,29 +1,25 @@
-﻿/*
- * drivers/inputhub/contexthub_recovery.h
- *
- * sensors sysfs header
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub recovery header file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
+
 #ifndef __LINUX_RECOVERY_H__
 #define __LINUX_RECOVERY_H__
-#include <linux/hisi/rdr_pub.h>
-#include <iomcu_ddr_map.h>
+
+#ifdef CONFIG_INPUTHUB_30
+#include <linux/hisi/contexthub/iomcu_dump.h>
+#endif
 #include <linux/hisi/hisi_rproc.h>
-#include "contexthub_boot.h"
+#include <linux/hisi/rdr_pub.h>
+
+#include <iomcu_ddr_map.h>
+
 #include "protocol.h"
 #include "sensor_detect.h"
 
+#ifndef CONFIG_INPUTHUB_30
 #define IOM3_RECOVERY_UNINIT		0
 #define IOM3_RECOVERY_IDLE			(IOM3_RECOVERY_UNINIT + 1)
 #define IOM3_RECOVERY_START			(IOM3_RECOVERY_IDLE + 1)
@@ -53,6 +49,8 @@
 #define SENSORHUB_USER_MODID     (HISI_BB_MOD_IOM_START + 1)
 #define SENSORHUB_FDUL_MODID     (HISI_BB_MOD_IOM_START + 2)
 #define SENSORHUB_MODID_END      HISI_BB_MOD_IOM_END
+/* it need to add to modid_react_dump when adding new SENSORHUB MOID to avoid twice dump in sh_dump */
+#define modid_react_dump(modid)  ((modid) != SENSORHUB_MODID && (modid) != SENSORHUB_USER_MODID)
 #define SENSORHUB_DUMP_BUFF_ADDR DDR_LOG_BUFF_ADDR_AP
 #define SENSORHUB_DUMP_BUFF_SIZE DDR_LOG_BUFF_SIZE
 
@@ -78,7 +76,7 @@
 #define SH_DUMP_START 1
 #define SH_DUMP_FINISH 2
 
-typedef enum {
+enum exp_source {
 	SH_FAULT_HARDFAULT = 0,
 	SH_FAULT_BUSFAULT,
 	SH_FAULT_USAGEFAULT,
@@ -94,31 +92,62 @@ typedef enum {
 	SH_FAULT_REDETECT,
 	SH_FAULT_PANIC,
 	SH_FAULT_NOC,
+	SH_FAULT_REACT,
 	SH_FAULT_EXP_BOTTOM,
-} exp_source_t;
+};
 
-typedef struct {
+struct dump_zone_head {
 	uint32_t cnt;
 	uint32_t len;
 	uint32_t tuncate;
-} dump_zone_head_t;
+};
+
+struct dump_zone_element_t {
+	uint32_t base;
+	uint32_t size;
+};
+
+enum m7_register_name {
+	SOURCE,
+	R0, R1, R2, R3,
+	R4, R5, R6, R7,
+	R8, R9, R10, R11,
+	R12, EXP_SP, EXP_LR, EXP_PC,
+	SAVED_PSR, CFSR, HFSR,
+	DFSR, MMFAR, BFAR, AFSR, PSP, MSP,
+	ARADDR_CHK, AWADDR_CHK,
+	PERI_USED, AO_CNT, MAGIC,
+};
 
 extern char *rdr_get_timestamp(void);
 #ifdef CONFIG_HISI_BB
 extern u64 rdr_get_tick(void);
 #endif
 extern int g_sensorhub_wdt_irq;
-extern int g_iom3_state;
 extern uint32_t need_reset_io_power;
 extern uint32_t need_set_3v_io_power;
+extern uint32_t need_set_3_1v_io_power;
 extern uint32_t need_set_3_2v_io_power;
 extern struct regulator *sensorhub_vddio;
-extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
-extern struct CONFIG_ON_DDR *pConfigOnDDr;
-extern int key_state;
-extern struct notifier_block charge_recovery_notify;
-extern rproc_id_t ipc_ap_to_iom_mbx;
-extern rproc_id_t ipc_ap_to_lpm_mbx;
+#endif
+
+#define SENSORHUB_TRACK_SIZE 32
+#define IPC_DBG_MSG_SIZE 8
+#define NS_INTERVAL 1000000000
+
+struct ipc_dbg_msg {
+	uint8_t dir;
+	uint64_t clock;
+	struct pkt_header hd;
+	char info[IPC_DBG_MSG_SIZE];
+};
+
+struct ipc_dbg_msg_track {
+	struct ipc_dbg_msg msg[SENSORHUB_TRACK_SIZE];
+	int cur_site;
+};
+
+extern struct config_on_ddr *g_config_on_ddr;
 extern struct type_record type_record;
 
 extern void disable_fingerprint_when_sysreboot(void);
@@ -126,15 +155,16 @@ extern void disable_fingerprint_ud_when_sysreboot(void);
 extern void rdr_system_error(u32 modid, u32 arg1, u32 arg2);
 extern void emg_flush_logbuff(void);
 extern void reset_logbuff(void);
-extern void disable_motions_when_sysreboot(void);
 extern void disable_cas_when_sysreboot(void);
 extern void __disable_irq(struct irq_desc *desc, unsigned int irq, bool suspend);
 extern void __enable_irq(struct irq_desc *desc, unsigned int irq, bool resume);
-extern int bbox_chown(const char *path, uid_t user, gid_t group, bool recursion);
 
 int thp_prox_event_report(int value[], int length);
-extern int iom3_need_recovery(int modid, exp_source_t f);
-extern int recovery_init(void);
-extern int register_iom3_recovery_notifier(struct notifier_block *nb);
-extern int iom3_rec_sys_callback(const pkt_header_t *head);
+void ipc_dbg_record(uint8_t dir, struct pkt_header *hd, const char *info);
+int iom3_need_recovery(int modid, enum exp_source f);
+int recovery_init(void);
+int register_iom3_recovery_notifier(struct notifier_block *nb);
+int get_iom3_state(void);
+int iom3_rec_sys_callback(const struct pkt_header *head);
+void enable_key_when_recovery_iom3(void);
 #endif /* __LINUX_RECOVERY_H__ */

@@ -3,7 +3,7 @@
  *
  * battery information head file
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,17 +34,22 @@
 #include <linux/of_platform.h>
 #include <linux/workqueue.h>
 #include <linux/list.h>
+#include <linux/spinlock.h>
 #include <linux/timekeeping.h>
 
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
-#include <linux/mtd/hisi_nve_interface.h>
+#include <linux/power/hisi/coul/coul_drv.h>
 
-#include <dsm/dsm_pub.h>
-
-#include <huawei_platform/power/power_mesg.h>
-#include <huawei_platform/power/power_dsm.h>
-#include <huawei_platform/power/power_cmdline.h>
+#include <huawei_platform/power/power_mesg_srv.h>
+#include <chipset_common/hwpower/common_module/power_genl.h>
+#include <chipset_common/hwpower/common_module/power_dsm.h>
+#include <chipset_common/hwpower/common_module/power_cmdline.h>
 #include <huawei_platform/power/batt_info_pub.h>
+#include <huawei_platform/hwpower/common_module/power_platform.h>
+#include <chipset_common/hwpower/common_module/power_nv.h>
+
+#include <chipset_common/hwpower/battery/battery_soh.h>
+#include <chipset_common/hwpower/common_module/power_common.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
 
 #include "batt_aut_checker.h"
 #include "batt_info_util.h"
@@ -60,6 +65,16 @@ enum batt_info_type {
 	DMD_NV_ERROR,
 	DMD_SERVICE_ERROR,
 	DMD_UNMATCH_BATTS,
+	DMD_OLD_NV_SN_ERROR,
+	DMD_CHECK_PASS
+};
+
+enum check_strategy {
+	CHECK_STRATEGY_INVALID = 0,
+	CHECK_STRATEGY_DEBUG = 1,
+	CHECK_STRATEGY_BOOTING = 2,
+	CHECK_STRATEGY_PERIOD = 3,
+	CHECK_STRATEGY_MAX_NO = CHECK_STRATEGY_PERIOD,
 };
 
 enum {
@@ -96,6 +111,7 @@ struct batt_info {
 	char sn_buff[MAX_SN_LEN];
 	int dmd_retry;
 	int dmd_no;
+	int nv_sn_old;
 	unsigned int sn_version;
 	unsigned int sn_len;
 	unsigned int total_checkers;
@@ -103,7 +119,21 @@ struct batt_info {
 	struct delayed_work dmd_report_dw;
 	struct work_struct check_work;
 	final_sn_checker_t sn_checker;
+	struct batt_chk_rslt last_result;
 	struct batt_chk_rslt result;
+	spinlock_t request_lock;
+	bool is_checking;
+	bool can_check_in_running;
+	bool is_first_check_done;
+	int check_strategy_no;
+	struct wakeup_source checking_wakelock;
+};
+
+enum powerct_error_code {
+	ERROR_CODE_START,
+	ERROR_CODE_DEFAULT = ERROR_CODE_START,
+	ERROR_CODE_IS_PROHIBITED_ID,
+	ERROR_CODE_END = ERROR_CODE_IS_PROHIBITED_ID,
 };
 
 #endif /* _BATT_INFO_H_ */

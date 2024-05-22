@@ -37,6 +37,8 @@ struct pl061 {
 	struct amba_device *adev;
 };
 
+unsigned int get_gpio_hwspinlock_status(void);
+
 int pl061_check_security_status(struct pl061 *chip);
 #else
 struct pl061_gpio {
@@ -54,6 +56,8 @@ struct pl061_gpio {
 int pl061_check_security_status(struct pl061_gpio *chip);
 #endif
 int pl061_parse_gpio_base(struct device *dev);
+extern int gpiochip_hi6502_request(struct gpio_chip *chip, unsigned int offset);
+extern void gpiochip_hi6502_free(struct gpio_chip *chip, unsigned int offset);
 #ifdef CONFIG_HISI_TUI_PL061
 int pl061_tui_request(struct device *dev);
 int pl061_tui_release(struct device *dev);

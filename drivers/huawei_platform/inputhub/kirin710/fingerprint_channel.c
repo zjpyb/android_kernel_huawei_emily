@@ -3,7 +3,7 @@
  *
  * Fingerprint Hub Channel driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,26 +15,26 @@
  * GNU General Public License for more details.
  *
  */
-
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
-#include <linux/uaccess.h>
-#include <huawei_platform/inputhub/fingerprinthub.h>
+#include <linux/module.h>
 #include <linux/poll.h>
-#include "contexthub_route.h"
+#include <linux/slab.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+
+#include <huawei_platform/inputhub/fingerprinthub.h>
+
 #include "contexthub_boot.h"
+#include "contexthub_route.h"
 #include "protocol.h"
+#include "sensor_info.h"
 
 static int fp_ref_cnt;
 static bool fingerprint_status[FINGERPRINT_TYPE_END];
-
-extern int flag_for_sensor_test;
 
 extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
 extern int send_app_config_cmd_with_resp(int tag,
@@ -46,15 +46,13 @@ struct fingerprint_cmd_map {
 	int fhb_ioctl_app_cmd;
 	int ca_type;
 	int tag;
-	obj_cmd_t cmd;
+	enum obj_cmd cmd;
 };
 
 #define CA_TYPE_DEFAULT (-1)
 static const struct fingerprint_cmd_map fingerprint_cmd_map_tab[] = {
-	{ FHB_IOCTL_FP_START,       CA_TYPE_DEFAULT, TAG_FP,
-		CMD_CMN_OPEN_REQ },
-	{ FHB_IOCTL_FP_STOP,        CA_TYPE_DEFAULT, TAG_FP,
-		CMD_CMN_CLOSE_REQ },
+	{ FHB_IOCTL_FP_START, CA_TYPE_DEFAULT, TAG_FP, CMD_CMN_OPEN_REQ },
+	{ FHB_IOCTL_FP_STOP, CA_TYPE_DEFAULT, TAG_FP, CMD_CMN_CLOSE_REQ },
 	{ FHB_IOCTL_FP_DISABLE_SET, CA_TYPE_DEFAULT, TAG_FP,
 		FHB_IOCTL_FP_DISABLE_SET_CMD },
 };
@@ -65,7 +63,7 @@ void fingerprint_ipc_cgbe_abort_handle(void)
 	wake_up_interruptible_sync_poll(&ipc_wait, POLLIN);
 }
 
-static void update_fingerprint_info(obj_cmd_t cmd, fingerprint_type_t type)
+static void update_fingerprint_info(enum obj_cmd cmd, fingerprint_type_t type)
 {
 	switch (cmd) {
 	case CMD_CMN_OPEN_REQ:
@@ -100,7 +98,7 @@ static void fingerprint_report(void)
 		sizeof(fingerprint_upload.data));
 }
 
-static int send_fingerprint_cmd_internal(int tag, obj_cmd_t cmd,
+static int send_fingerprint_cmd_internal(int tag, enum obj_cmd cmd,
 	fingerprint_type_t type, bool use_lock)
 {
 	interval_param_t interval_param;
@@ -157,7 +155,7 @@ static int send_fingerprint_cmd(unsigned int cmd, unsigned long arg)
 	int i;
 	const int len = ARRAY_SIZE(fingerprint_cmd_map_tab);
 
-	if (flag_for_sensor_test)
+	if (get_flag_for_sensor_test())
 		return 0;
 
 	hwlog_info("fingerprint:%s enter\n", __func__);
@@ -234,7 +232,7 @@ static ssize_t fhb_write(struct file *file, const char __user *data,
 {
 	fingerprint_req_t fp_pkt;
 	int ret;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 
 	memset(&fp_pkt, 0, sizeof(fp_pkt));
 	memset(&pkg_ap, 0, sizeof(pkg_ap));

@@ -69,8 +69,10 @@ static int avc_readline(struct file *filp, char *buf, int len)
 			break;
 		}
 	}
-	if (!readlen)
+	if (!readlen) {
+		set_fs(oldfs);
 		return AVC_FILE_ERR;
+	}
 	set_fs(oldfs);
 	pr_info("avc_readline completed\n");
 	return 0;

@@ -169,10 +169,6 @@ struct pinctrl_sec_name {
 /*lint -save -e754 -specific(-e754)*/
 struct pinctrl_sec_soc_data {
 	unsigned flags;
-//	int irq;
-//	unsigned irq_enable_mask;/*lint !e754 */
-//	unsigned irq_status_mask;/*lint !e754 */
-//	void (*rearm)(void);/*lint !e754 */
 };
 /*lint -restore*/
 
@@ -237,13 +233,9 @@ struct pinctrl_sec_device {
 	struct list_head pingroups;
 	struct list_head functions;
 	struct list_head gpiofuncs;
-//	struct list_head irqs;
-//	struct irq_chip chip;
-//	struct irq_domain *domain;
 	unsigned ngroups;
 	unsigned nfuncs;
 	struct pinctrl_desc desc;
-//	unsigned (*read)(void __iomem *reg);
 	void (*write)(int val, int pin_id, int mask);
 };
 
@@ -295,7 +287,7 @@ static int pinctrl_sec_get_groups_count(struct pinctrl_dev *pctldev)
 	return (int)pinctrl_sec->ngroups;
 }
 
-static char *pinctrl_sec_get_group_name(struct pinctrl_dev *pctldev,
+static const char *pinctrl_sec_get_group_name(struct pinctrl_dev *pctldev,
 					unsigned gselector)
 {
 	struct pinctrl_sec_device *pinctrl_sec = NULL;
@@ -355,8 +347,7 @@ static int pinctrl_sec_dt_node_to_map(struct pinctrl_dev *pctldev,
 
 static const struct pinctrl_ops pinctrl_sec_pinctrl_ops = {
 	.get_groups_count = pinctrl_sec_get_groups_count,
-	.get_group_name = (const char *(*)(struct pinctrl_dev *, unsigned int)
-					)pinctrl_sec_get_group_name,
+	.get_group_name = pinctrl_sec_get_group_name,
 	.get_group_pins = pinctrl_sec_get_group_pins,
 	.dt_node_to_map = pinctrl_sec_dt_node_to_map,
 	.dt_free_map = pinctrl_sec_dt_free_map,
@@ -516,7 +507,7 @@ static int pinctrl_sec_pinconf_set(struct pinctrl_dev *pctldev,
 	unsigned shift = 0, i, data = 0, sec_mask = 0;
 	u16 arg;
 	int j, pin_id, ret;
-	char *name = NULL;
+	const char *name = NULL;
 
 	ret = pinctrl_sec_get_function(pctldev, pin, &func);
 	if (ret)
@@ -1328,33 +1319,11 @@ static void pinctrl_sec_free_pingroups(struct pinctrl_sec_device *pinctrl_sec)
 }
 
 /**
- * pinctrl_sec_irq_free() - free interrupt
- * @pinctrl_sec: pinctrl_sec driver instance
- */
-/*static void pinctrl_sec_irq_free(struct pinctrl_sec_device *pinctrl_sec)
-{
-	struct pinctrl_sec_soc_data *pinctrl_sec_soc = &pinctrl_sec->socdata;
-
-	if (pinctrl_sec_soc->irq < 0)
-		return;
-
-	if (pinctrl_sec->domain)
-		irq_domain_remove(pinctrl_sec->domain);
-
-	if (PCS_QUIRK_HAS_SHARED_IRQ)
-		free_irq(pinctrl_sec_soc->irq, pinctrl_sec_soc);
-	else
-		irq_set_chained_handler(pinctrl_sec_soc->irq, NULL);
-}*/
-
-/**
  * pinctrl_sec_free_resources() - free memory used by this driver
  * @pinctrl_sec: pinctrl_sec driver instance
  */
 static void pinctrl_sec_free_resources(struct pinctrl_sec_device *pinctrl_sec)
 {
-/*	pinctrl_sec_irq_free(pinctrl_sec);*/
-
 	if (pinctrl_sec->pctl)
 		pinctrl_unregister(pinctrl_sec->pctl);
 

@@ -42,6 +42,9 @@
 #include "gp2ap01vt.h"
 #include "stmvl53l0.h"
 
+#define LASER_ALWAYS_ON 1
+#define LASER_POWER_OFF 0
+
 enum{
     XSDN,
     INTR,
@@ -212,98 +215,109 @@ no_gpio:
 
 static int laser_power_on_off(struct i2c_data *i2cdata, int is_on)
 {
-    int rc = 0;
-    if(NULL != i2cdata) {
-        laser_info("laser power, on_off=%d\n", is_on);
-        rc = gpio_direction_output(i2cdata->xsdn_gpio, is_on);
-        if (rc) {
-            laser_err("fail to power control laser %d\n", rc);
-        }
-        msleep(POWER_SLEEP_TIME);
-    }else {
-        laser_err("param is NULL");
-        rc = -EINVAL;
-    }
-    return rc;
+	int rc = 0;
+	if (!i2cdata) {
+		laser_err("param is NULL");
+		return -EINVAL;
+	}
+
+	laser_info("laser power, on_off=%d\n", is_on);
+	if (is_on == LASER_POWER_OFF && i2cdata->laser_state == LASER_ALWAYS_ON) {
+		laser_info("laser xsdn always on\n");
+		return 0;
+	}
+
+	rc = gpio_direction_output(i2cdata->xsdn_gpio, is_on);
+	if (rc)
+		laser_err("fail to power control laser %d\n", rc);
+
+	msleep(POWER_SLEEP_TIME);
+
+	return rc;
 }
 
 static int laser_parse_tree(struct device *dev, struct i2c_data *i2c_data)
 {
-    struct device_node *of_node = NULL;
-    int rc = 0;
-    char *gpio_tag = NULL;
-    const char *gpio_ctrl_types[GPIO_MAX] = {"xsdn","intr"};
-    int gpio[GPIO_MAX];
-    int index = 0;
-    int i = 0;
-    int gpio_num = 0;
-    if(dev == NULL) {
-        return -EFAULT;
-    }
-    of_node = dev->of_node;
-    if(of_node == NULL) {
-        laser_err("%s of node get fail", __func__);
-        return -EINVAL;
-    }
+	struct device_node *of_node = NULL;
+	int rc;
+	char *gpio_tag = NULL;
+	const char *gpio_ctrl_types[GPIO_MAX] = {"xsdn","intr"};
+	int gpio[GPIO_MAX];
+	int index;
+	int i;
+	int gpio_num;
+	if(!dev || !i2c_data)
+		return -EFAULT;
 
-    laser_info("enter %s", __func__);
-    i2c_data->ldo_avdd.supply = "avdd";
-    rc = devm_regulator_bulk_get(dev, 1, &(i2c_data->ldo_avdd));
-    if (rc < 0) {
-        laser_err("%s failed %d", __func__, __LINE__);
-        i2c_data->ldo_avdd.consumer = NULL; /* always on */
-    }
+	of_node = dev->of_node;
+	if (!of_node) {
+		laser_err("%s of node get fail", __func__);
+		return -EINVAL;
+	}
 
-    gpio_num = of_gpio_count(of_node);
-    if(gpio_num < 0 ) {
-        laser_err("%s failed %d, ret is %d", __func__, __LINE__, gpio_num);
-        goto fail;
-    }
-    laser_info("laser gpio num = %d", gpio_num);
-    for(index = 0;index < gpio_num;index++)
-    {
-        rc = of_property_read_string_index(of_node, "huawei,gpio-ctrl-types", index, (const char **)&gpio_tag);
-        if(rc < 0) {
-        laser_err("%s failed %d", __func__, __LINE__);
-        goto fail;
-        }
-        for(i = 0; i < GPIO_MAX; i++)
-        {
-            if(!strcmp(gpio_ctrl_types[i], gpio_tag))
-            gpio[index] = of_get_gpio(of_node, index);
-        }
-        laser_info("gpio ctrl types: %s gpio = %d", gpio_tag, gpio[index]);
-    }
+	laser_info("enter %s", __func__);
+	i2c_data->ldo_avdd.supply = "avdd";
+	rc = devm_regulator_bulk_get(dev, 1, &(i2c_data->ldo_avdd));
+	if (rc < 0) {
+		laser_err("%s failed %d", __func__, __LINE__);
+		i2c_data->ldo_avdd.consumer = NULL; /* always on */
+	}
 
-    i2c_data->pinctrl = devm_pinctrl_get(dev);
-    if (IS_ERR(i2c_data->pinctrl)) {
-        laser_err("could not get pinctrl");
-        goto fail;
-    }
-    i2c_data->pins_default = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_DEFAULT);
-    if (IS_ERR(i2c_data->pins_default))
-        laser_err("could not get default pinstate");
-    i2c_data->pins_idle = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_IDLE);
-    if (IS_ERR(i2c_data->pins_idle))
-        laser_err("could not get idle pinstate");
-   
-    i2c_data->xsdn_gpio = gpio[XSDN];
-    i2c_data->intr_gpio = gpio[INTR];
-    rc = get_xsdn(dev, i2c_data);
-    if (rc)
-        goto no_xsdn;
-    rc = get_intr(dev, i2c_data);
-    if (rc)
-        goto no_intr;
-    return rc;
+	rc = of_property_read_u32(of_node, "laser_state", &(i2c_data->laser_state));
+	if (rc < 0) {
+		i2c_data->laser_state = 0;
+		rc = 0;
+	}
+
+	gpio_num = of_gpio_count(of_node);
+	if (gpio_num < 0 ) {
+		laser_err("%s failed %d, ret is %d", __func__, __LINE__, gpio_num);
+		goto fail;
+	}
+	laser_info("laser gpio num = %d", gpio_num);
+	for (index = 0; index < gpio_num; index++) {
+		rc = of_property_read_string_index(of_node, "huawei,gpio-ctrl-types",
+			index, (const char **)&gpio_tag);
+		if (rc < 0) {
+			laser_err("%s failed %d", __func__, __LINE__);
+			goto fail;
+		}
+		for (i = 0; i < GPIO_MAX; i++) {
+			if(!strcmp(gpio_ctrl_types[i], gpio_tag))
+				gpio[index] = of_get_gpio(of_node, index);
+		}
+		laser_info("gpio ctrl types: %s gpio = %d", gpio_tag, gpio[index]);
+	}
+
+	i2c_data->pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR(i2c_data->pinctrl)) {
+		laser_err("could not get pinctrl");
+		goto fail;
+	}
+	i2c_data->pins_default = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_DEFAULT);
+	if (IS_ERR(i2c_data->pins_default))
+		laser_err("could not get default pinstate");
+	i2c_data->pins_idle = pinctrl_lookup_state(i2c_data->pinctrl, PINCTRL_STATE_IDLE);
+	if (IS_ERR(i2c_data->pins_idle))
+		laser_err("could not get idle pinstate");
+
+	i2c_data->xsdn_gpio = gpio[XSDN];
+	i2c_data->intr_gpio = gpio[INTR];
+	rc = get_xsdn(dev, i2c_data);
+	if (rc)
+		goto no_xsdn;
+	rc = get_intr(dev, i2c_data);
+	if (rc)
+		goto no_intr;
+	return rc;
 fail:
-    laser_err("%s can not read laser info exit.", __func__);
-    return rc;
+	laser_err("%s can not read laser info exit", __func__);
+	return rc;
 no_intr:
-    put_intr(i2c_data);
+	put_intr(i2c_data);
 no_xsdn:
-    put_xsdn(i2c_data);
-return rc;
+	put_xsdn(i2c_data);
+	return rc;
 }
 
 int laser_match_id(struct i2c_data * i2cdata)

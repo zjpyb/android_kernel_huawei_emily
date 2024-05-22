@@ -36,8 +36,8 @@
 #include <linux/of_device.h>
 
 #include "rpmsg_internal.h"
-#ifdef CONFIG_HISI_REMOTEPROC
-#include <linux/platform_data/remoteproc-hisi.h>
+#ifdef CONFIG_HISP_REMOTEPROC
+#include <linux/platform_data/remoteproc_hisp.h>
 #endif
 /**
  * struct virtproc_info - virtual remote processor state
@@ -205,7 +205,6 @@ static const struct rpmsg_endpoint_ops virtio_endpoint_ops = {
  * An internal function filling scatterlist according to virtual address
  * location (in vmalloc or in kernel).
  */
-#ifndef CONFIG_HISI_REMOTEPROC
 static void
 rpmsg_sg_init(struct scatterlist *sg, void *cpu_addr, unsigned int len)
 {
@@ -218,7 +217,6 @@ rpmsg_sg_init(struct scatterlist *sg, void *cpu_addr, unsigned int len)
 		sg_init_one(sg, cpu_addr, len);
 	}
 }
-#endif
 /**
  * __ept_release() - deallocate an rpmsg endpoint
  * @kref: the ept's reference count
@@ -445,11 +443,6 @@ static struct rpmsg_device *rpmsg_create_channel(struct virtproc_info *vrp,
 	if (ret)
 		return NULL;/*lint !e429*/
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	complete(&channel_sync);
-	rproc_set_sync_flag(true);
-#endif
-
 	return rpdev;/*lint !e429*/
 }
 
@@ -567,10 +560,7 @@ static void rpmsg_downref_sleepers(struct virtproc_info *vrp)
  *
  * Returns 0 on success and an appropriate error value on failure.
  */
-#ifdef CONFIG_HISI_REMOTEPROC
-static
-#endif
-int rpmsg_send_offchannel_raw(struct rpmsg_device *rpdev,
+static int rpmsg_send_offchannel_raw(struct rpmsg_device *rpdev,
 				     u32 src, u32 dst,
 				     void *data, int len, bool wait)
 {
@@ -579,9 +569,6 @@ int rpmsg_send_offchannel_raw(struct rpmsg_device *rpdev,
 	struct device *dev = &rpdev->dev;
 	struct scatterlist sg;
 	struct rpmsg_hdr *msg;
-#ifdef CONFIG_HISI_REMOTEPROC
-    dma_addr_t dma;
-#endif
 	int err;
 
 	/* bcasting isn't allowed */
@@ -648,12 +635,7 @@ int rpmsg_send_offchannel_raw(struct rpmsg_device *rpdev,
 			 msg, sizeof(*msg) + msg->len, true);
 #endif
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	dma = vrp->bufs_dma + (unsigned int)((void *)msg - (void *)vrp->rbufs);
-	virtqueue_sg_init(&sg, (void *)msg, dma, MAX_RPMSG_BUF_SIZE);
-#else
 	rpmsg_sg_init(&sg, msg, sizeof(*msg) + len);
-#endif
 	mutex_lock(&vrp->tx_lock);
 
 	/* add message to the remote processor's virtqueue */
@@ -730,9 +712,6 @@ static int rpmsg_recv_single(struct virtproc_info *vrp, struct device *dev,
 {
 	struct rpmsg_endpoint *ept;
 	struct scatterlist sg;
-#ifdef CONFIG_HISI_REMOTEPROC
-	dma_addr_t dma;
-#endif
 	int err;
 
 	dev_dbg(dev, "From: 0x%x, To: 0x%x, Len: %d, Flags: %d, Reserved: %d\n",
@@ -766,9 +745,6 @@ static int rpmsg_recv_single(struct virtproc_info *vrp, struct device *dev,
 	if (ept) {
 		/* make sure ept->cb doesn't go away while we use it */
 		mutex_lock(&ept->cb_lock);
-#ifdef CONFIG_HISI_REMOTEPROC
-		hisp_recvin((void *)msg->data);
-#endif
 		if (ept->cb)
 			ept->cb(ept->rpdev, msg->data, msg->len, ept->priv,
 				msg->src);
@@ -781,12 +757,7 @@ static int rpmsg_recv_single(struct virtproc_info *vrp, struct device *dev,
 		dev_warn(dev, "msg received with no recipient\n");
 
 	/* publish the real size of the buffer */
-#ifdef CONFIG_HISI_REMOTEPROC
-	dma = vrp->bufs_dma + (unsigned int)((void *)msg - (void *)vrp->rbufs);
-	virtqueue_sg_init(&sg, (void *)msg, dma, MAX_RPMSG_BUF_SIZE);
-#else
 	rpmsg_sg_init(&sg, msg, vrp->buf_size);
-#endif
 
 	/* add the buffer back to the remote processor's virtqueue */
 	err = virtqueue_add_inbuf(vrp->rvq, &sg, 1, msg, GFP_KERNEL);
@@ -890,11 +861,6 @@ static int rpmsg_ns_cb(struct rpmsg_device *rpdev, void *data, int len,
 	chinfo.src = RPMSG_ADDR_ANY;
 	chinfo.dst = msg->addr;
 
-#ifdef CONFIG_HISI_REMOTEPROC
-	if (ISP_DEBUG_RPMSG_CLIENT == rpmsg_client_debug)
-		strncpy(chinfo.name, "rpmsg-isp-debug", sizeof(chinfo.name));
-#endif
-
 	if (msg->flags & RPMSG_NS_DESTROY) {
 		ret = rpmsg_unregister_device(&vrp->vdev->dev, &chinfo);
 		if (ret)
@@ -919,9 +885,6 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	size_t total_buf_space;
 	bool notify;
 
-#ifdef CONFIG_HISI_REMOTEPROC
-    set_rpmsg_status(0);
-#endif
 	vrp = kzalloc(sizeof(*vrp), GFP_KERNEL);
 	if (!vrp)
 		return -ENOMEM;
@@ -943,7 +906,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 
 	/* we expect symmetric tx/rx vrings */
 	WARN_ON(virtqueue_get_vring_size(vrp->rvq) != /*lint !e146 !e665*/
-		virtqueue_get_vring_size(vrp->svq)); /*lint !e146 !e665 */
+		virtqueue_get_vring_size(vrp->svq));
 
 	/* we need less buffers if vrings are small */
 	if (virtqueue_get_vring_size(vrp->rvq) < MAX_RPMSG_NUM_BUFS / 2)
@@ -956,8 +919,13 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	total_buf_space = vrp->num_bufs * vrp->buf_size;/*lint !e647*/
 
 	/* allocate coherent memory for the buffers */
-#ifdef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
-	bufs_va = get_vring_dma_addr(&vrp->bufs_dma, total_buf_space, 2);
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+	if (rpmsg_mem_alloc_beforehand(vdev))
+		bufs_va = get_vring_dma_addr(&vrp->bufs_dma, total_buf_space, 2);
+	else
+		bufs_va = dma_alloc_coherent(vdev->dev.parent->parent,
+					     total_buf_space, &vrp->bufs_dma,
+					     GFP_KERNEL);
 #else
 	bufs_va = dma_alloc_coherent(vdev->dev.parent->parent,
 				     total_buf_space, &vrp->bufs_dma,
@@ -967,10 +935,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		err = -ENOMEM;
 		goto vqs_del;
 	}
-#ifdef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
-    vqs[0]->dma_base = vrp->bufs_dma;
-	vqs[1]->dma_base = vrp->bufs_dma;
-#endif
+
 	dev_dbg(&vdev->dev, "buffers: va %pK, dma %pad\n",
 		bufs_va, &vrp->bufs_dma);
 
@@ -985,12 +950,7 @@ static int rpmsg_probe(struct virtio_device *vdev)
 		struct scatterlist sg;
 		void *cpu_addr = vrp->rbufs + i * vrp->buf_size;/*lint !e679*/
 
-#ifdef CONFIG_HISI_REMOTEPROC
-		dma_addr_t dma = (dma_addr_t)(vrp->bufs_dma + i * MAX_RPMSG_BUF_SIZE);/*lint !e647 */
-		virtqueue_sg_init(&sg, cpu_addr, dma, MAX_RPMSG_BUF_SIZE);
-#else
 		rpmsg_sg_init(&sg, cpu_addr, vrp->buf_size);
-#endif
 		err = virtqueue_add_inbuf(vrp->rvq, &sg, 1, cpu_addr,
 					  GFP_KERNEL);
 		WARN_ON(err); /* sanity check; this can't really happen */ /*lint !e146 !e665*/
@@ -1027,26 +987,19 @@ static int rpmsg_probe(struct virtio_device *vdev)
 	 * this might be concurrent with callbacks, but we are only
 	 * doing notify, not a full kick here, so that's ok.
 	 */
-#ifndef CONFIG_HISI_REMOTEPROC
 	if (notify)
 		virtqueue_notify(vrp->rvq);
-#endif
-
-#ifdef CONFIG_HISI_REMOTEPROC
-	err = rpmsg_vdev_map_resource(vdev, vrp->bufs_dma, MAX_RPMSG_NUM_BUFS * MAX_RPMSG_BUF_SIZE);
-	if (err) {
-		pr_err("[%s]iommu map failed!\n", __func__);
-		goto free_coherent;
-	}
-	set_rpmsg_status(1);
-#endif
 
 	dev_info(&vdev->dev, "rpmsg host is online\n");
 
 	return 0;
 
 free_coherent:
-#ifndef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+	if (!rpmsg_mem_alloc_beforehand(vdev))
+		dma_free_coherent(vdev->dev.parent->parent, total_buf_space,
+				  bufs_va, vrp->bufs_dma);
+#else
 	dma_free_coherent(vdev->dev.parent->parent, total_buf_space,
 			  bufs_va, vrp->bufs_dma);
 #endif
@@ -1067,9 +1020,7 @@ static int rpmsg_remove_device(struct device *dev, void *data)
 static void rpmsg_remove(struct virtio_device *vdev)
 {
 	struct virtproc_info *vrp = vdev->priv;
-#ifndef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
 	size_t total_buf_space = vrp->num_bufs * vrp->buf_size;/*lint !e647*/
-#endif
 	int ret;
 
 	vdev->config->reset(vdev);
@@ -1084,14 +1035,15 @@ static void rpmsg_remove(struct virtio_device *vdev)
 	idr_destroy(&vrp->endpoints);
 
 	vdev->config->del_vqs(vrp->vdev);
-#ifndef CONFIG_HISI_REMOTEPROC_DMAALLOC_DEBUG
+#ifdef CONFIG_HISP_REMOTEPROC_DMAALLOC_DEBUG
+	if (!rpmsg_mem_alloc_beforehand(vdev))
+		dma_free_coherent(vdev->dev.parent->parent, total_buf_space,
+				  vrp->rbufs, vrp->bufs_dma);
+#else
 	dma_free_coherent(vdev->dev.parent->parent, total_buf_space,
 			  vrp->rbufs, vrp->bufs_dma);
 #endif
 	kfree(vrp);
-#ifdef CONFIG_HISI_REMOTEPROC
-    set_rpmsg_status(0);
-#endif
 }
 
 static struct virtio_device_id id_table[] = {
@@ -1116,9 +1068,7 @@ static struct virtio_driver virtio_ipc_driver = {
 static int __init rpmsg_init(void)
 {
 	int ret;
-#ifdef CONFIG_HISI_REMOTEPROC
-    init_completion(&channel_sync);
-#endif
+
 	ret = register_virtio_driver(&virtio_ipc_driver);
 	if (ret)
 		pr_err("failed to register virtio driver: %d\n", ret);

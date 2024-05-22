@@ -3,7 +3,7 @@
  *
  * huawei dual series battery capacity
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,22 +27,21 @@
 #include <linux/types.h>
 #include <linux/timekeeping.h>
 #include <linux/workqueue.h>
-#include <linux/power_supply.h>
-#include <linux/power/hisi/hisi_bci_battery.h>
-#include <linux/mtd/hisi_nve_interface.h>
+#include <linux/power/hisi/bci_battery.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_battery_capacity.h>
 #include <huawei_platform/power/battery_voltage.h>
 #include <huawei_platform/power/battery_balance.h>
-#include <huawei_platform/power/huawei_battery_temp.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
+#include <chipset_common/hwpower/battery/battery_temp.h>
+#include <chipset_common/hwpower/common_module/power_nv.h>
 #ifdef CONFIG_DIRECT_CHARGER
-#include <huawei_platform/power/direct_charger.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
 #endif
 
 #define HWLOG_TAG series_batt_cap
 HWLOG_REGIST();
 
-#define SERCAP_NV_NUM             418
 #define SERCAP_DEF_TEMP           25
 #define SERCAP_DEF_RATIO          1000
 #define SERCAP_BAT_ID0            0
@@ -51,8 +50,8 @@ HWLOG_REGIST();
 #define SERCAP_FULL_CAP           1000
 #define SERCAP_SOC_FAST           100
 #define SERCAP_LOW_VOL            3530
-#define SERCAP_SHUTDOWN           2700
-#define SERCAP_PRE_SHUTDOWN       300
+#define SERCAP_SHUTDOWN           2750
+#define SERCAP_PRE_SHUTDOWN       ((SERCAP_SHUTDOWN) + 300)
 #define SERCAP_TENTH              10
 #define SERCAP_INTERVAL_NOR       (15 * 1000)
 #define SERCAP_INTERVAL_S1        (10 * 1000)
@@ -60,6 +59,7 @@ HWLOG_REGIST();
 #define SERCAP_PER_1              10
 #define SERCAP_PER_2              20
 #define SERCAP_PER_3              30
+#define sercap_per_x(x)           ((x) * (SERCAP_PER_1))
 #define SERCAP_CURRENT_LIMIT      150
 #define SERCAP_TRACK_DONE_CURRENT 200
 #define SERCAP_OCV_TEMP_LIMIT     5
@@ -79,11 +79,13 @@ HWLOG_REGIST();
 #define SERCAP_TRACK_SOC_LOW      30
 #define SERCAP_TRACK_TEMP         10
 #define SERCAP_TRACK_VOL_LOW      3600
-#define SERCAP_RATIO_VALID        300
+#define SERCAP_RATIO_VALID        200
 #define SERCAP_UV2MV              1000
 #define SERCAP_RECHG_PROTECT      150
 #define SERCAP_CAP_2              2
 #define SERCAP_CAP_3              3
+#define SERCAP_FCC_RATIO_LOW      850
+#define SERCAP_FCC_RATIO_HI       1010
 
 enum sercap_track_type {
 	TRACK_TYPE_DIS,
@@ -151,12 +153,18 @@ static struct sercap_xy sercap_low_vol[] = {
 	{ SERCAP_TEMP_LOW, SERCAP_TEMP_LOW_SHUTDOWN },
 };
 
+static struct sercap_xy sercap_vol_soc[] = {
+	{ SERCAP_SHUTDOWN, 0 },
+	{ SERCAP_PRE_SHUTDOWN, SERCAP_PER_1 },
+	{ 3440, sercap_per_x(4) },
+};
+
 static int sercap_interpolate(struct sercap_xy *tab, int size, int x)
 {
 	int i;
 	int x1, x2, y1, y2;
 
-	if (size <= 0 || !tab)
+	if ((size <= 0) || !tab)
 		return 0;
 
 	if (x >= tab[0].x)
@@ -208,14 +216,16 @@ static int sercap_get_cmdline_vol(int *vol0, int *vol1)
 {
 	int v0, v1;
 
-	/* low 16bit = voltage1, high 16bit = voltage0 */
+	/* low 16bit = voltage1 */
 	v1 = cmdline_vol & 0xFFFF;
+	/* high 16bit = voltage0 */
 	v0 = (cmdline_vol >> 16) & 0xFFFF;
 
-	/* v0, v1 must be higher 2000mv and lower 5000mv */
-	if (v0 < 2000 || v0 > 5000)
+	/* the range of v0: 2000mv to 5000mv */
+	if ((v0 < 2000) || (v0 > 5000))
 		return -EIO;
-	if (v1 < 2000 || v1 > 5000)
+	/* the range of v1: 2000mv to 5000mv */
+	if ((v1 < 2000) || (v1 > 5000))
 		return -EIO;
 	*vol0 = v0;
 	*vol1 = v1;
@@ -252,21 +262,13 @@ static int sercap_vbat1_voltage(void)
 
 static int sercap_get_batt_state(void)
 {
-	int ret;
-	struct power_supply *psy = NULL;
-	union power_supply_propval val;
+	int val = POWER_SUPPLY_STATUS_UNKNOWN;
 
-	psy = power_supply_get_by_name("Battery");
-	if (!psy)
+	if (power_supply_get_int_property_value("Battery",
+		POWER_SUPPLY_PROP_STATUS, &val))
 		return POWER_SUPPLY_STATUS_UNKNOWN;
 
-	ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_STATUS, &val);
-
-	power_supply_put(psy);
-	if (ret)
-		return POWER_SUPPLY_STATUS_UNKNOWN;
-
-	return val.intval;
+	return val;
 }
 
 static int sercap_adjust_cap(struct series_capacity *di, int state, int cap)
@@ -280,50 +282,57 @@ static int sercap_adjust_cap(struct series_capacity *di, int state, int cap)
 		out = SERCAP_FULL_CAP;
 
 	switch (state) {
-	/* fall-through */
 	case POWER_SUPPLY_STATUS_DISCHARGING:
 	case POWER_SUPPLY_STATUS_NOT_CHARGING:
 		if (out > di->mixed_cap) {
 			hwlog_info("discharge out=%d > mixed_cap\n", out);
 			out = di->mixed_cap;
 		}
-		if (di->bat1_cap == 0 || di->bat0_cap == 0) {
+		if ((di->bat1_cap == 0) || (di->bat0_cap == 0)) {
 			hwlog_info("discharge bat0 or bat1 is 0\n");
 			out = 0;
 		}
 
-		if (out < di->bat0_cap && out < di->bat1_cap) {
+		if ((out < di->bat0_cap) && (out < di->bat1_cap)) {
 			hwlog_info("dischg out=%d < all cap\n", out);
 			out = di->bat0_cap < di->bat1_cap ?
 				di->bat0_cap : di->bat1_cap;
 		}
 		break;
 	case POWER_SUPPLY_STATUS_CHARGING:
-		if (out < di->mixed_cap && di->avg_i > 0) {
+		if ((out < di->mixed_cap) && (di->avg_i > 0)) {
 			hwlog_info("charge out=%d < mixed_cap\n", out);
 			out = di->mixed_cap;
 		}
-		if (di->bat1_cap == SERCAP_FULL_CAP ||
-			di->bat0_cap == SERCAP_FULL_CAP) {
+		if ((di->bat1_cap == SERCAP_FULL_CAP) ||
+			(di->bat0_cap == SERCAP_FULL_CAP)) {
 			hwlog_info("charging bat0 or bat1 is 100\n");
 			out = SERCAP_FULL_CAP;
 		}
 
-		if (out < di->bat0_cap && out < di->bat1_cap) {
+		if ((out < di->bat0_cap) && (out < di->bat1_cap)) {
 			hwlog_info("chg out=%d < all cap\n", out);
 			out = di->bat0_cap < di->bat1_cap ?
 				di->bat0_cap : di->bat1_cap;
-		} else if (out > di->bat0_cap && out > di->bat1_cap) {
+		} else if ((out > di->bat0_cap) && (out > di->bat1_cap)) {
 			hwlog_info("chg out=%d > all cap\n", out);
 			out = di->bat0_cap > di->bat1_cap ?
 				di->bat0_cap : di->bat1_cap;
 		}
+
+		if ((di->avg_i < 0) && (di->cur < 0) && (out > 0) &&
+			((di->bat0_cap == 0) || (di->bat1_cap == 0))) {
+			out -= SERCAP_PER_1;
+			if (out < 0)
+				out = 0;
+			hwlog_info("chg i < 0, batx = 0,out:%d\n", out);
+		}
 		break;
 	case POWER_SUPPLY_STATUS_FULL:
-		if (hisi_battery_current_avg() >= 0) {
+		if (coul_drv_battery_current_avg() >= 0) {
 			/* if multi battery, get MAX voltage */
 			if (hw_battery_voltage(BAT_ID_MAX) >=
-				(hisi_battery_vbat_max() -
+				(coul_drv_battery_vbat_max() -
 				SERCAP_RECHG_PROTECT)) {
 				out = SERCAP_FULL_CAP;
 				hwlog_info("force soc 100\n");
@@ -342,8 +351,7 @@ static void sercap_calc_first_empty(struct series_capacity *di,
 	int id, start, ratio;
 
 	/* is_bat1_first_empty */
-	if (di->bat1_cap * di->fcc_ratio / SERCAP_DEF_RATIO <=
-	    di->bat0_cap) {
+	if ((di->bat1_cap * di->fcc_ratio / SERCAP_DEF_RATIO) <= di->bat0_cap) {
 		id = SERCAP_BAT_ID1;
 		start = di->bat1_cap;
 	} else {
@@ -368,8 +376,8 @@ static void sercap_calc_first_full(struct series_capacity *di,
 
 	/* is_bat1_first_full */
 	if ((SERCAP_FULL_CAP - di->bat1_cap) *
-	    di->fcc_ratio / SERCAP_DEF_RATIO <=
-	    (SERCAP_FULL_CAP - di->bat0_cap)) {
+		di->fcc_ratio / SERCAP_DEF_RATIO <=
+		(SERCAP_FULL_CAP - di->bat0_cap)) {
 		id = SERCAP_BAT_ID1;
 		start = di->bat1_cap;
 	} else {
@@ -393,15 +401,16 @@ static void sercap_adjust_uiratio(struct series_capacity *di, int state)
 	int id = di->ui_base_bat;
 	int start = di->ui_bat_start;
 	int ratio = di->ui_ratio;
+	int delta;
 
 	switch (state) {
-	/* fall-through */
 	case POWER_SUPPLY_STATUS_DISCHARGING:
 	case POWER_SUPPLY_STATUS_NOT_CHARGING:
 		sercap_calc_first_empty(di, &id, &start, &ratio);
 		break;
 	case POWER_SUPPLY_STATUS_CHARGING:
-		if (di->pre_bat0_cap > di->bat0_cap || di->avg_i < 0) {
+		if ((di->pre_bat0_cap > di->bat0_cap) ||
+			((di->avg_i < 0) && (di->cur < 0))) {
 			hwlog_info("cap decrease when chg pre:%d,cap:%d\n",
 				di->pre_bat0_cap, di->bat0_cap);
 			sercap_calc_first_empty(di, &id, &start, &ratio);
@@ -426,7 +435,17 @@ static void sercap_adjust_uiratio(struct series_capacity *di, int state)
 		break;
 	}
 
-	if (di->ui_base_bat != id || di->psy_state != state) {
+	if (di->ui_base_bat == id)
+		delta = start - di->ui_bat_start;
+	else
+		delta = 0;
+
+	hwlog_info("cur ratio:%d,start:%d,delta:%d,id:%d\n",
+		ratio, start, delta, id);
+	/* if soc change > 5%, also update ratio */
+	if ((di->ui_base_bat != id) || (di->psy_state != state) ||
+		(abs(delta) > sercap_per_x(5)) ||
+		((start == 0) && (di->ui_mixed_start != 0))) {
 		di->ui_base_bat = id;
 		di->ui_mixed_start = di->mixed_cap;
 		di->ui_bat_start = start;
@@ -450,9 +469,9 @@ static int sercap_bal_query_info(void)
 	return (int)info.sum_gauge;
 }
 
-static inline int sercap_get_bat0_cap(struct series_capacity *di)
+static int sercap_get_bat0_cap(struct series_capacity *di)
 {
-	int cap = hisi_battery_capacity() * SERCAP_TENTH;
+	int cap = coul_drv_battery_capacity() * SERCAP_TENTH;
 
 	if (cap < 0)
 		cap = 0;
@@ -463,7 +482,7 @@ static inline int sercap_get_bat0_cap(struct series_capacity *di)
 	return cap;
 }
 
-static inline int sercap_get_bat1_cap(struct series_capacity *di)
+static int sercap_get_bat1_cap(struct series_capacity *di)
 {
 	int cap;
 
@@ -478,11 +497,11 @@ static inline int sercap_get_bat1_cap(struct series_capacity *di)
 	return cap;
 }
 
-static inline bool sercap_is_dense_area(struct series_capacity *di)
+static bool sercap_is_dense_area(struct series_capacity *di)
 {
 	int vol = sercap_vol2ocv(di->bat1_vol, di->cur);
 
-	if (vol > SERCAP_DENSE_L0 && vol < SERCAP_DENSE_H0)
+	if ((vol > SERCAP_DENSE_L0) && (vol < SERCAP_DENSE_H0))
 		return true;
 	return false;
 }
@@ -492,12 +511,12 @@ static int sercap_try_adjust_by_ocv(struct series_capacity *di, int in_soc)
 	int soc = in_soc;
 	int v0, v1, ocv, soc_by_ocv;
 
-	if (di->bat0_temp < SERCAP_OCV_TEMP_LIMIT ||
-		di->bat1_temp < SERCAP_OCV_TEMP_LIMIT)
+	if ((di->bat0_temp < SERCAP_OCV_TEMP_LIMIT) ||
+		(di->bat1_temp < SERCAP_OCV_TEMP_LIMIT))
 		return soc;
 
-	if (abs(di->avg_i) > SERCAP_CURRENT_LIMIT ||
-		abs(di->cur) > SERCAP_CURRENT_LIMIT)
+	if ((abs(di->avg_i) > SERCAP_CURRENT_LIMIT) ||
+		(abs(di->cur) > SERCAP_CURRENT_LIMIT))
 		return soc;
 
 	if (sercap_is_dense_area(di))
@@ -508,14 +527,13 @@ static int sercap_try_adjust_by_ocv(struct series_capacity *di, int in_soc)
 	v1 = sercap_vbat1_voltage();
 	v0 = hw_battery_voltage(BAT_ID_0);
 	/* current is jumping */
-	if (abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT)
+	if ((abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT))
 		return soc;
-	/* average voltage */
-	v0 = (v0 + di->bat0_vol) / 2;
-	v1 = (v1 + di->bat1_vol) / 2;
+	v0 = (v0 + di->bat0_vol) / 2; /* 2: average voltage of v0 */
+	v1 = (v1 + di->bat1_vol) / 2; /* 2: average voltage of v1 */
 	ocv = di->bat0_ocv + v1 - v0;
-	soc_by_ocv = hisi_coul_get_soc_by_ocv(di->bat1_temp, ocv);
+	soc_by_ocv = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv);
 	hwlog_info("soc_by_ocv:%d\n", soc_by_ocv);
 
 	if (abs(soc_by_ocv - soc) > SERCAP_UPDATE_SOC_OCV) {
@@ -536,37 +554,35 @@ static int sercap_try_adjust_by_vol(struct series_capacity *di, int in_soc)
 	if (di->bat1_temp < SERCAP_VOL_TEMP_LIMIT)
 		return soc;
 
-	if (abs(di->avg_i) > SERCAP_VOL_CUR_LIMIT ||
-		abs(di->cur) > SERCAP_VOL_CUR_LIMIT)
+	if ((abs(di->avg_i) > SERCAP_VOL_CUR_LIMIT) ||
+		(abs(di->cur) > SERCAP_VOL_CUR_LIMIT))
 		return soc;
 
 	if (sercap_is_dense_area(di))
 		return soc;
 
-	soc_by_ocv = hisi_coul_get_soc_by_ocv(di->bat1_temp, ocv);
-
+	soc_by_ocv = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv);
 	if (abs(soc_by_ocv - soc) < SERCAP_UPDATE_SOC_VOL)
 		return soc;
 	/* wait a moment, check voltage again */
 	msleep(SERCAP_DEBOUNCE);
 	v1 = sercap_vbat1_voltage();
-	cur = -hisi_battery_current();
+	cur = -coul_drv_battery_current();
 	/* current is jumping */
-	if (abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(di->cur) > SERCAP_VOL_CUR_LIMIT)
+	if ((abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(di->cur) > SERCAP_VOL_CUR_LIMIT))
 		return soc;
-	/* average voltage and current */
-	cur = (cur + di->cur) / 2;
-	v1 = (v1 + di->bat0_vol) / 2;
+	cur = (cur + di->cur) / 2; /* 2: average current */
+	v1 = (v1 + di->bat0_vol) / 2; /* 2: average voltage */
 	ocv = sercap_vol2ocv(v1, cur);
-	soc_by_ocv = hisi_coul_get_soc_by_ocv(di->bat1_temp, ocv);
+	soc_by_ocv = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv);
 	hwlog_info("soc_by_vol:%d\n", soc_by_ocv);
 
 	if (abs(soc_by_ocv - soc) > SERCAP_UPDATE_SOC_VOL) {
 		hwlog_info("soc1 change by vol\n");
 		hwlog_info("cur:%d,v1:%d,ocv0:%d,ocv1:%d,soc:%d,soc_new:%d\n",
 			cur, v1, di->bat0_ocv, ocv, soc, soc_by_ocv);
-		/* average soc for new */
+		/* 2: average soc for new */
 		soc = (soc_by_ocv + soc) / 2;
 	}
 	return soc;
@@ -574,27 +590,23 @@ static int sercap_try_adjust_by_vol(struct series_capacity *di, int in_soc)
 
 static bool sercap_bat1_chg_is_full(struct series_capacity *di)
 {
-	AGING_SAFE_POLICY_TYPE basp = { 0 };
-	int full_vol = hisi_battery_vbat_max();
+	int full_vol = (int)charge_get_bsoh_vterm();
 	struct bal_info info = { 0 };
 	enum bal_state bal_state;
 
-	if (full_vol <= 0)
+	if (!full_vol)
 		full_vol = SERCAP_DEF_FULL_VOL;
 
-	if (!hisi_battery_aging_safe_policy(&basp))
-		full_vol -= basp.nondc_volt_dec;
 	full_vol -= SERCAP_VOL_FULL_DELTA;
 
 	if (batt_bal_get_info(&info))
 		bal_state = BAL_STATE_IDLE;
 	else
 		bal_state = info.bal_state;
-	if (di->chg_state == VCHRG_CHARGE_DONE_EVENT &&
-		di->bat1_vol > full_vol &&
-		abs(di->avg_i) < SERCAP_CURRENT_LIMIT &&
-		(bal_state == BAL_STATE_IDLE ||
-		(bal_state != BAL_STATE_IDLE && info.bat_id != BATT_ID_0)))
+	if ((di->chg_state == VCHRG_CHARGE_DONE_EVENT) &&
+		(di->bat1_vol > full_vol) &&
+		(abs(di->avg_i) < SERCAP_CURRENT_LIMIT) &&
+		((bal_state == BAL_STATE_IDLE) || (info.bat_id != BATT_ID_0)))
 		return true;
 
 	return false;
@@ -602,27 +614,23 @@ static bool sercap_bat1_chg_is_full(struct series_capacity *di)
 
 static bool sercap_bat0_chg_is_full(struct series_capacity *di)
 {
-	AGING_SAFE_POLICY_TYPE basp = { 0 };
-	int full_vol = hisi_battery_vbat_max();
+	int full_vol = (int)charge_get_bsoh_vterm();
 	struct bal_info info = { 0 };
 	enum bal_state bal_state;
 
-	if (full_vol <= 0)
+	if (!full_vol)
 		full_vol = SERCAP_DEF_FULL_VOL;
 
-	if (!hisi_battery_aging_safe_policy(&basp))
-		full_vol -= basp.nondc_volt_dec;
 	full_vol -= SERCAP_VOL_FULL_DELTA;
 
 	if (batt_bal_get_info(&info))
 		bal_state = BAL_STATE_IDLE;
 	else
 		bal_state = info.bal_state;
-	if (di->chg_state == VCHRG_CHARGE_DONE_EVENT &&
-		di->bat0_vol > full_vol &&
-		abs(di->avg_i) < SERCAP_CURRENT_LIMIT &&
-		(bal_state == BAL_STATE_IDLE ||
-		(bal_state != BAL_STATE_IDLE && info.bat_id != BATT_ID_1)))
+	if ((di->chg_state == VCHRG_CHARGE_DONE_EVENT) &&
+		(di->bat0_vol > full_vol) &&
+		(abs(di->avg_i) < SERCAP_CURRENT_LIMIT) &&
+		((bal_state == BAL_STATE_IDLE) || (info.bat_id != BATT_ID_1)))
 		return true;
 
 	return false;
@@ -632,11 +640,106 @@ static int sercap_try_adjust_by_chg(struct series_capacity *di, int in_soc)
 {
 	int soc = in_soc;
 
-	if (sercap_bat1_chg_is_full(di) && soc < SERCAP_FULL_CAP) {
-		/* battery is full */
-		hwlog_info("bat1 charge full, soc is 100\n");
-		soc = SERCAP_FULL_CAP;
+	if (sercap_bat1_chg_is_full(di) && (soc < SERCAP_FULL_CAP)) {
+		if (sercap_bat0_chg_is_full(di)) {
+			soc = di->bat0_soc;
+			hwlog_info("bat0,bat1 charge full, soc:%d\n", soc);
+		} else {
+			/* battery is full */
+			hwlog_info("bat1 charge full, soc is 100\n");
+			soc = SERCAP_FULL_CAP;
+		}
 	}
+	return soc;
+}
+
+/* if vol0 > val1 and soc0 < soc1, force soc 0 <= soc1 */
+static int sercap_try_adjust_by_bat0(struct series_capacity *di, int in_soc)
+{
+	int soc = in_soc;
+	int v0, v1, ocv0, ocv1;
+	int soc0, soc1, delta;
+
+	if ((di->bat0_temp < SERCAP_OCV_TEMP_LIMIT) ||
+		(di->bat1_temp < SERCAP_OCV_TEMP_LIMIT))
+		return soc;
+
+	if (di->bat0_soc >= di->bat1_soc)
+		return soc;
+
+	ocv1 =  sercap_vol2ocv(di->bat1_vol, di->cur);
+	if (ocv1 > SERCAP_DENSE_L0)
+		return soc;
+
+	ocv0 = sercap_vol2ocv(di->bat0_vol, di->cur);
+	if (ocv1 > (ocv0 - SERCAP_VOL_DIFF_LIMIT))
+		return soc;
+
+	/* wait a moment, check voltage again */
+	msleep(SERCAP_DEBOUNCE);
+	v1 = sercap_vbat1_voltage();
+	v0 = hw_battery_voltage(BAT_ID_0);
+	/* current is jumping */
+	if ((abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT))
+		return soc;
+
+	ocv1 = sercap_vol2ocv(v1, di->cur);
+	ocv0 = sercap_vol2ocv(v0, di->cur);
+	if (ocv1 > (ocv0 - SERCAP_VOL_DIFF_LIMIT))
+		return soc;
+
+	soc1 = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv1);
+	soc0 = coul_drv_get_soc_by_ocv(di->bat0_temp, ocv0);
+
+	hwlog_info("soc1 %d soc0 %d\n", soc1, soc0);
+
+	delta = soc0 - soc1;
+	if (delta < 0)
+		delta = 0;
+
+	/* use di->soc0 - delta/2 to adjust soc1 */
+	delta /= 2;
+
+	hwlog_info("adjust_by_bat0:soc %d soc0 %d v0 %d v1 %d delta %d\n",
+		soc, di->bat0_soc, v0, v1, delta);
+
+	soc = di->bat0_soc - delta;
+
+	return soc;
+}
+
+static int sercap_adjust_by_low_vol(struct series_capacity *di, int in_soc)
+{
+	int soc = in_soc;
+	int vbat1 = di->bat1_vol;
+	int cnt = SERCAP_VOL_CNT;
+	int len = ARRAY_SIZE(sercap_vol_soc);
+	int i;
+
+	for (i = 0; i < len; i++) {
+		if (vbat1 < sercap_vol_soc[i].x)
+			break;
+	}
+
+	if (i >= len)
+		return soc;
+
+	if (soc <= sercap_vol_soc[i].y)
+		return soc;
+
+	/* confirm it is real low power */
+	hwlog_info("low power vol:%d %d\n", vbat1, sercap_vol_soc[i].x);
+	do {
+		msleep(SERCAP_DEBOUNCE);
+		vbat1 = sercap_vbat1_voltage();
+	} while (vbat1 < sercap_vol_soc[i].x && --cnt > 0);
+
+	if (cnt <= 0) {
+		soc = sercap_vol_soc[i].y;
+		hwlog_info("low power true:%d %d\n", vbat1, soc);
+	}
+
 	return soc;
 }
 
@@ -645,8 +748,7 @@ static int sercap_adjust_bat1_soc(struct series_capacity *di, int bat1_soc)
 	int soc = bat1_soc;
 	int vbat1 = di->bat1_vol;
 	int low_vol;
-
-	int ocv = hisi_coul_get_ocv() / SERCAP_UV2MV;
+	int ocv = coul_drv_get_ocv() / SERCAP_UV2MV;
 
 	if (ocv != di->bat0_ocv) {
 		hwlog_info("bat0_ocv change:%d->%d\n", di->bat0_ocv, ocv);
@@ -655,63 +757,48 @@ static int sercap_adjust_bat1_soc(struct series_capacity *di, int bat1_soc)
 	}
 
 	soc = sercap_try_adjust_by_vol(di, soc);
-
 	soc = sercap_try_adjust_by_chg(di, soc);
 
-	if (di->psy_state == POWER_SUPPLY_STATUS_CHARGING ||
-		di->psy_state == POWER_SUPPLY_STATUS_FULL)
+	if ((di->psy_state == POWER_SUPPLY_STATUS_CHARGING) ||
+		(di->psy_state == POWER_SUPPLY_STATUS_FULL)) {
+		if ((vbat1 < SERCAP_PRE_SHUTDOWN) &&
+			(soc > 0)) {
+			hwlog_info("charge soc hi vol:%d,soc;%d\n",
+				vbat1, soc);
+			msleep(SERCAP_DEBOUNCE);
+			vbat1 = sercap_vbat1_voltage();
+			if (vbat1 < SERCAP_PRE_SHUTDOWN) {
+				hwlog_info("keep soc 0 vol:%d\n", vbat1);
+				soc = 0;
+			}
+		}
 		return soc;
+	}
+
+	soc = sercap_try_adjust_by_bat0(di, soc);
 
 	low_vol = sercap_interpolate(sercap_low_vol,
-			sizeof(sercap_low_vol) / sizeof(struct sercap_xy),
-			di->bat1_temp);
-
+		sizeof(sercap_low_vol) / sizeof(struct sercap_xy),
+		di->bat1_temp);
 	if (low_vol <= 0)
 		low_vol = SERCAP_LOW_VOL;
 
 	hwlog_info("low_vol level:%d\n", low_vol);
-	if (vbat1 > low_vol && soc < SERCAP_PER_3) {
+	if ((vbat1 > low_vol) && (soc < SERCAP_PER_3)) {
 		hwlog_info("soc is low,vol:%d, low_vol:%d\n", vbat1, low_vol);
 		soc = SERCAP_PER_3;
-	} else if ((vbat1 < SERCAP_PRE_SHUTDOWN + SERCAP_SHUTDOWN) &&
-		soc > SERCAP_PER_1) {
-		int cnt = SERCAP_VOL_CNT;
-
-		hwlog_info("pre shut down:%d\n", vbat1);
-		/* confirm it is true low power */
-		do {
-			msleep(SERCAP_DEBOUNCE);
-			vbat1 = sercap_vbat1_voltage();
-		} while (vbat1 < (SERCAP_PRE_SHUTDOWN + SERCAP_SHUTDOWN) &&
-			--cnt > 0);
-		if (cnt <= 0) {
-			hwlog_info("pre shut down true:%d\n", vbat1);
-			di->interval = SERCAP_INTERVAL_S1;
-			soc = SERCAP_PER_1;
-		}
-	} else if (vbat1 < SERCAP_SHUTDOWN) {
-		int cnt = SERCAP_VOL_CNT;
-		/* confirm it is true low power */
-		hwlog_info("shut down:%d\n", vbat1);
-		do {
-			msleep(SERCAP_DEBOUNCE);
-			vbat1 = sercap_vbat1_voltage();
-		} while (vbat1 < SERCAP_SHUTDOWN && --cnt > 0);
-		if (cnt <= 0) {
-			di->interval = SERCAP_INTERVAL_S1;
-			soc = 0;
-			hwlog_info("shut down true:%d\n", vbat1);
-		}
+	} else {
+		soc = sercap_adjust_by_low_vol(di, soc);
 	}
 
 	return soc;
 }
 
-static inline int sercap_calc_bat1_soc(struct series_capacity *di)
+static int sercap_calc_bat1_soc(struct series_capacity *di)
 {
 	int soc;
 	int cc = sercap_bal_query_info();
-	int fcc = hisi_battery_fcc();
+	int fcc = coul_drv_battery_fcc();
 	int bal_soc = 0;
 
 	if (di->fcc_ratio == 0)
@@ -739,8 +826,10 @@ static int sercap_cap_smooth(struct series_capacity *di, int cap)
 
 static void sercap_select_work_interval(struct series_capacity *di, int cap)
 {
-	/* discharge */
-	if (cap < di->mixed_cap && cap < SERCAP_SOC_FAST)
+	/* select polling interval by SOC */
+	if (di->bat1_soc <= sercap_per_x(4))
+		di->interval = SERCAP_INTERVAL_S1;
+	else if ((cap < di->mixed_cap) && (cap < SERCAP_SOC_FAST))
 		di->interval = SERCAP_INTERVAL_S1;
 	else
 		di->interval = SERCAP_INTERVAL_NOR;
@@ -751,12 +840,12 @@ void sercap_get_base_info(struct series_capacity *di)
 	int temp0 = SERCAP_DEF_TEMP;
 	int temp1 = SERCAP_DEF_TEMP;
 
-	di->avg_i = hisi_battery_current_avg();
-	di->cur = -hisi_battery_current();
+	di->avg_i = coul_drv_battery_current_avg();
+	di->cur = -coul_drv_battery_current();
 	di->bat1_vol = sercap_vbat1_voltage();
 	di->bat0_vol = hw_battery_voltage(BAT_ID_0);
-	huawei_battery_temp(BAT_TEMP_0, &temp0);
-	huawei_battery_temp(BAT_TEMP_1, &temp1);
+	bat_temp_get_temperature(BAT_TEMP_0, &temp0);
+	bat_temp_get_temperature(BAT_TEMP_1, &temp1);
 	di->bat0_temp = temp0;
 	di->bat1_temp = temp1;
 }
@@ -766,14 +855,14 @@ static int sercap_calc_cap(struct series_capacity *di)
 	int state = sercap_get_batt_state();
 	int cap, mixed_cap, adj_soc, soc;
 
-	if (!is_hisi_battery_exist()) {
+	if (!coul_drv_is_battery_exist()) {
 		di->mixed_cap = sercap_get_bat0_cap(di);
 		return di->mixed_cap;
 	}
 
 	sercap_get_base_info(di);
 
-	di->bat0_soc = hisi_coul_battery_ufcapacity_tenth();
+	di->bat0_soc = coul_drv_battery_ufcapacity_tenth();
 	soc = sercap_calc_bat1_soc(di);
 
 	adj_soc = sercap_adjust_bat1_soc(di, soc);
@@ -798,10 +887,10 @@ static int sercap_calc_cap(struct series_capacity *di)
 
 	di->mixed_cap = sercap_cap_smooth(di, mixed_cap);
 
-	if (state != di->psy_state &&
-		state == POWER_SUPPLY_STATUS_DISCHARGING) {
+	if ((state != di->psy_state) &&
+		(state == POWER_SUPPLY_STATUS_DISCHARGING)) {
 		int cc = sercap_bal_query_info();
-		int fcc = hisi_battery_fcc();
+		int fcc = coul_drv_battery_fcc();
 
 		hwlog_info("psy discharge reset bal info\n");
 		if (fcc != 0)
@@ -840,8 +929,9 @@ static int sercap_bal_notifier(struct notifier_block *nb,
 
 static int sercap_nv_read(struct series_capacity *di, int *ratio)
 {
-	/* if cmdline_ratio < 30% or > 300% is invalid */
-	if (cmdline_ratio < 300 || cmdline_ratio > 3000)
+	/* if cmdline_ratio < 85% or > 101% is invalid */
+	if ((cmdline_ratio < SERCAP_FCC_RATIO_LOW) ||
+		(cmdline_ratio > SERCAP_FCC_RATIO_HI))
 		return -EIO;
 
 	*ratio = (int)cmdline_ratio;
@@ -850,20 +940,8 @@ static int sercap_nv_read(struct series_capacity *di, int *ratio)
 
 static void sercap_nv_write(struct series_capacity *di)
 {
-	struct hisi_nve_info_user nvinfo;
-
-	memset(&nvinfo, 0, sizeof(nvinfo));
-	nvinfo.nv_operation = NV_WRITE;
-	nvinfo.nv_number = SERCAP_NV_NUM;
-	strncpy(nvinfo.nv_name, "BATCAP", sizeof(nvinfo.nv_name));
-	nvinfo.valid_size = sizeof(di->fcc_ratio);
-
-	if (nvinfo.valid_size > sizeof(nvinfo.nv_data))
-		return;
-
-	memcpy(&nvinfo.nv_data, &di->fcc_ratio, sizeof(di->fcc_ratio));
-	if (hisi_nve_direct_access(&nvinfo))
-		hwlog_err("save nv fail\n");
+	power_nv_write(POWER_NV_BATCAP,
+		&di->fcc_ratio, sizeof(di->fcc_ratio));
 }
 
 static void sercap_data_init(struct series_capacity *di)
@@ -881,7 +959,7 @@ static void sercap_init_ui_cap(struct series_capacity *di)
 	int id = SERCAP_BAT_ID0;
 	int start = di->bat0_cap;
 	int ratio = SERCAP_DEF_RATIO;
-	int last_soc = hisi_coul_get_last_powerdown_soc() * SERCAP_TENTH;
+	int last_soc = coul_drv_get_last_powerdown_soc() * SERCAP_TENTH;
 
 	/* if last powerdown soc is valid, use it to init ui cap */
 	if (last_soc >= 0) {
@@ -896,7 +974,7 @@ static void sercap_init_ui_cap(struct series_capacity *di)
 	}
 
 	/* if battery capacity > 50%, use large capacity to init ui cap */
-	if (di->bat0_cap > 500 && di->bat1_cap > 500) {
+	if ((di->bat0_cap > 500) && (di->bat1_cap > 500)) {
 		if (di->bat0_cap > di->bat1_cap)
 			id = SERCAP_BAT_ID0;
 		else
@@ -926,7 +1004,7 @@ static void sercap_info_init(struct series_capacity *di)
 {
 	int bat0_vol;
 	int bat1_vol;
-	int bat0_soc = hisi_coul_battery_ufcapacity_tenth();
+	int bat0_soc = coul_drv_battery_ufcapacity_tenth();
 	int delta_vol, ocv;
 
 	if (bat0_soc > SERCAP_FULL_CAP)
@@ -936,13 +1014,13 @@ static void sercap_info_init(struct series_capacity *di)
 		bat1_vol = sercap_vbat1_voltage();
 	}
 
-	if (bat0_vol <= 0 || bat1_vol <= 0 || !is_hisi_battery_exist()) {
+	if ((bat0_vol <= 0) || (bat1_vol <= 0) || !coul_drv_is_battery_exist()) {
 		di->bat1_soc = bat0_soc;
 	} else {
 		delta_vol = bat1_vol - bat0_vol;
-		ocv = hisi_coul_get_ocv_by_soc(SERCAP_DEF_TEMP, bat0_soc);
+		ocv = coul_drv_get_ocv_by_soc(SERCAP_DEF_TEMP, bat0_soc);
 		ocv += delta_vol; /* batter1 ocv */
-		di->bat1_soc = hisi_coul_get_soc_by_ocv(SERCAP_DEF_TEMP, ocv);
+		di->bat1_soc = coul_drv_get_soc_by_ocv(SERCAP_DEF_TEMP, ocv);
 	}
 	di->bat0_soc = bat0_soc;
 	di->bat0_start = di->bat0_soc;
@@ -952,7 +1030,7 @@ static void sercap_info_init(struct series_capacity *di)
 	di->pre_bat0_cap = di->bat0_cap;
 	di->bat1_cap = sercap_get_bat1_cap(di);
 
-	di->bat0_ocv = hisi_coul_get_ocv() / SERCAP_UV2MV;
+	di->bat0_ocv = coul_drv_get_ocv() / SERCAP_UV2MV;
 	di->interval = SERCAP_INTERVAL_NOR;
 	di->track.state = SERCAP_TRACK_IDLE;
 	di->psy_state = POWER_SUPPLY_STATUS_UNKNOWN;
@@ -981,44 +1059,40 @@ static bool sercap_track_check_chg_start(struct series_capacity *di)
 	if (di->psy_state != POWER_SUPPLY_STATUS_DISCHARGING)
 		return false;
 
-	if (di->bat0_temp < SERCAP_TRACK_TEMP ||
-		di->bat1_temp < SERCAP_TRACK_TEMP)
+	if ((di->bat0_temp < SERCAP_TRACK_TEMP) ||
+		(di->bat1_temp < SERCAP_TRACK_TEMP))
 		return false;
-	if (abs(di->cur) > SERCAP_CURRENT_LIMIT ||
-		abs(di->avg_i) > SERCAP_CURRENT_LIMIT)
+	if ((abs(di->cur) > SERCAP_CURRENT_LIMIT) ||
+		(abs(di->avg_i) > SERCAP_CURRENT_LIMIT))
 		return false;
 
 	ocv0 = sercap_vol2ocv(di->bat0_vol, di->cur);
 	ocv1 = sercap_vol2ocv(di->bat1_vol, di->cur);
-
-	if (ocv0 >= SERCAP_TRACK_VOL_LOW || ocv1 >= SERCAP_TRACK_VOL_LOW)
+	if ((ocv0 >= SERCAP_TRACK_VOL_LOW) || (ocv1 >= SERCAP_TRACK_VOL_LOW))
 		return false;
 
 	/* wait a moment, check voltage again */
 	msleep(SERCAP_DEBOUNCE);
 	v0 = hw_battery_voltage(BAT_ID_0);
 	v1 = sercap_vbat1_voltage();
-	cur = -hisi_battery_current();
-
+	cur = -coul_drv_battery_current();
 	/* current is jumping */
-	if (abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(di->cur) > SERCAP_CURRENT_LIMIT)
+	if ((abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(di->cur) > SERCAP_CURRENT_LIMIT))
 		return false;
 
 	/* average voltage */
 	v0 = (v0 + di->bat0_vol) / 2;
 	v1 = (v1 + di->bat1_vol) / 2;
 	cur = (cur + di->cur) / 2;
-
 	ocv0 = sercap_vol2ocv(v0, cur);
 	ocv1 = sercap_vol2ocv(v1, cur);
-
-	if (ocv0 >= SERCAP_TRACK_VOL_LOW || ocv1 >= SERCAP_TRACK_VOL_LOW)
+	if ((ocv0 >= SERCAP_TRACK_VOL_LOW) || (ocv1 >= SERCAP_TRACK_VOL_LOW))
 		return false;
 
-	soc0 = hisi_coul_get_soc_by_ocv(di->bat0_temp, ocv0);
-	soc1 = hisi_coul_get_soc_by_ocv(di->bat1_temp, ocv1);
+	soc0 = coul_drv_get_soc_by_ocv(di->bat0_temp, ocv0);
+	soc1 = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv1);
 	di->track.soc0_s = soc0;
 	di->track.soc1_s = soc1;
 	return true;
@@ -1028,8 +1102,8 @@ static void sercap_track_idle(struct series_capacity *di)
 {
 	if (sercap_bat1_chg_is_full(di) &&
 		sercap_bat0_chg_is_full(di) &&
-		di->bat1_soc >= SERCAP_FULL_CAP &&
-		di->bat0_soc >= SERCAP_FULL_CAP) {
+		(abs(di->bat0_vol - di->bat1_vol) < SERCAP_VOL_DIFF_LIMIT) &&
+		(abs(di->bat0_soc - di->bat1_soc) < SERCAP_PER_1)) {
 		di->track.soc0_s = di->bat0_soc;
 		di->track.soc1_s = di->bat1_soc;
 		sercap_track_start(di, TRACK_TYPE_DIS);
@@ -1051,48 +1125,44 @@ static void sercap_track_dis_check(struct series_capacity *di)
 	int soc0, soc1;
 	int v0, v1, cur;
 
-	if (di->bat0_temp < SERCAP_TRACK_TEMP ||
-		di->bat1_temp < SERCAP_TRACK_TEMP)
+	if ((di->bat0_temp < SERCAP_TRACK_TEMP) ||
+		(di->bat1_temp < SERCAP_TRACK_TEMP))
 		return;
-	if (abs(di->cur) > SERCAP_TRACK_DONE_CURRENT ||
-		abs(di->avg_i) > SERCAP_TRACK_DONE_CURRENT)
+	if ((abs(di->cur) > SERCAP_TRACK_DONE_CURRENT) ||
+		(abs(di->avg_i) > SERCAP_TRACK_DONE_CURRENT))
 		return;
 
 	ocv0 = sercap_vol2ocv(di->bat0_vol, di->cur);
 	ocv1 = sercap_vol2ocv(di->bat1_vol, di->cur);
-
-	if (ocv0 >= SERCAP_TRACK_VOL_LOW && ocv1 >= SERCAP_TRACK_VOL_LOW)
+	if ((ocv0 >= SERCAP_TRACK_VOL_LOW) && (ocv1 >= SERCAP_TRACK_VOL_LOW))
 		return;
 
 	/* wait a moment, check voltage again */
 	msleep(SERCAP_DEBOUNCE);
 	v0 = hw_battery_voltage(BAT_ID_0);
 	v1 = sercap_vbat1_voltage();
-	cur = -hisi_battery_current();
-
+	cur = -coul_drv_battery_current();
 	/* current is jumping */
-	if (abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT ||
-		abs(di->cur) > SERCAP_TRACK_DONE_CURRENT)
+	if ((abs(v0 - di->bat0_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(v1 - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT) ||
+		(abs(di->cur) > SERCAP_TRACK_DONE_CURRENT))
 		return;
 
 	/* average voltage and current */
 	v0 = (v0 + di->bat0_vol) / 2;
 	v1 = (v1 + di->bat1_vol) / 2;
 	cur = (cur + di->cur) / 2;
-
 	ocv0 = sercap_vol2ocv(v0, cur);
 	ocv1 = sercap_vol2ocv(v1, cur);
-
-	soc0 = hisi_coul_get_soc_by_ocv(di->bat0_temp, ocv0);
-	soc1 = hisi_coul_get_soc_by_ocv(di->bat1_temp, ocv1);
-
-	if (ocv0 >= SERCAP_TRACK_VOL_LOW && ocv1 >= SERCAP_TRACK_VOL_LOW) {
+	soc0 = coul_drv_get_soc_by_ocv(di->bat0_temp, ocv0);
+	soc1 = coul_drv_get_soc_by_ocv(di->bat1_temp, ocv1);
+	if ((ocv0 >= SERCAP_TRACK_VOL_LOW) && (ocv1 >= SERCAP_TRACK_VOL_LOW)) {
 		return;
-	} else if (ocv0 < SERCAP_TRACK_VOL_LOW && ocv1 < SERCAP_TRACK_VOL_LOW) {
+	} else if ((ocv0 < SERCAP_TRACK_VOL_LOW) &&
+		(ocv1 < SERCAP_TRACK_VOL_LOW)) {
 		/* do nothing */
 	} else if (ocv0 > ocv1) {
-		int s0 = hisi_coul_get_soc_by_ocv(di->bat0_temp,
+		int s0 = coul_drv_get_soc_by_ocv(di->bat0_temp,
 			SERCAP_TRACK_VOL_LOW);
 		if (di->bat0_soc < s0)
 			soc0 = s0;
@@ -1117,6 +1187,13 @@ static void sercap_track_dis_check(struct series_capacity *di)
 		hwlog_info("ratio invalid:%d\n", SERCAP_RATIO_VALID);
 		return;
 	}
+
+	if (ratio > SERCAP_FCC_RATIO_HI)
+		ratio = SERCAP_FCC_RATIO_HI;
+	if (ratio < SERCAP_FCC_RATIO_LOW)
+		ratio = SERCAP_FCC_RATIO_LOW;
+
+	di->fcc_ratio = ratio;
 	sercap_nv_write(di);
 }
 
@@ -1129,6 +1206,8 @@ static void sercap_track_chg_check(struct series_capacity *di)
 
 	if (!sercap_bat1_chg_is_full(di))
 		return;
+	if (!sercap_bat0_chg_is_full(di))
+		return;
 	/* check battery0 is also full */
 	if (abs(di->bat0_vol - di->bat1_vol) > SERCAP_VOL_DIFF_LIMIT)
 		return;
@@ -1137,7 +1216,6 @@ static void sercap_track_chg_check(struct series_capacity *di)
 	msleep(SERCAP_DEBOUNCE);
 	v0 = hw_battery_voltage(BAT_ID_0);
 	v1 = sercap_vbat1_voltage();
-
 	if (abs(v0 - v1) > SERCAP_VOL_DIFF_LIMIT)
 		return;
 
@@ -1146,7 +1224,7 @@ static void sercap_track_chg_check(struct series_capacity *di)
 	delta1 = SERCAP_FULL_CAP - di->track.soc1_s;
 
 	cc = sercap_bal_query_info();
-	fcc = hisi_battery_fcc();
+	fcc = coul_drv_battery_fcc();
 	if (fcc != 0)
 		bal_soc = cc * SERCAP_FULL_CAP / fcc;
 
@@ -1164,6 +1242,13 @@ static void sercap_track_chg_check(struct series_capacity *di)
 		hwlog_info("ratio invalid:%d\n", SERCAP_RATIO_VALID);
 		return;
 	}
+
+	if (ratio > SERCAP_FCC_RATIO_HI)
+		ratio = SERCAP_FCC_RATIO_HI;
+	if (ratio < SERCAP_FCC_RATIO_LOW)
+		ratio = SERCAP_FCC_RATIO_LOW;
+
+	di->fcc_ratio = ratio;
 	sercap_nv_write(di);
 }
 
@@ -1179,16 +1264,16 @@ static void sercap_track_running(struct series_capacity *di)
 		return;
 	}
 	if (di->track.type == TRACK_TYPE_DIS) {
-		if (di->psy_state != POWER_SUPPLY_STATUS_DISCHARGING &&
-			di->bal_event != BAL_STOP) {
+		if ((di->psy_state != POWER_SUPPLY_STATUS_DISCHARGING) &&
+			(di->bal_event != BAL_STOP)) {
 			hwlog_info("charging and blance cancel track\n");
 			di->track.state = SERCAP_TRACK_IDLE;
 		} else {
 			sercap_track_dis_check(di);
 		}
 	} else if (di->track.type == TRACK_TYPE_CHG) {
-		if (pre_psy_state != POWER_SUPPLY_STATUS_DISCHARGING &&
-			di->psy_state == POWER_SUPPLY_STATUS_DISCHARGING) {
+		if ((pre_psy_state != POWER_SUPPLY_STATUS_DISCHARGING) &&
+			(di->psy_state == POWER_SUPPLY_STATUS_DISCHARGING)) {
 			hwlog_info("charger plugout, cancel track\n");
 			di->track.state = SERCAP_TRACK_IDLE;
 		} else {
@@ -1229,9 +1314,9 @@ static void sercap_print_info(struct series_capacity *di)
 			di->track.soc0_s, di->track.soc1_s);
 }
 
-int sercap_log_head(char *log_head, int size)
+static int sercap_log_head(char *log_head, int size, void *dev_data)
 {
-	if (!series_cap)
+	if (!series_cap || !log_head)
 		return -ENOMEM;
 
 	if (!log_head) {
@@ -1244,12 +1329,11 @@ int sercap_log_head(char *log_head, int size)
 	return 0;
 }
 
-int sercap_log(char *log, int size)
+static int sercap_log(char *log, int size, void *dev_data)
 {
-
 	struct series_capacity *di = series_cap;
 
-	if (!di)
+	if (!di || !log)
 		return -ENOMEM;
 
 	if (!log) {
@@ -1263,6 +1347,12 @@ int sercap_log(char *log, int size)
 		di->bat0_soc, di->bat1_soc, di->ui_ratio);
 	return 0;
 }
+
+static struct power_log_ops sercap_log_ops = {
+	.dev_name = "series_cap",
+	.dump_log_head = sercap_log_head,
+	.dump_log_content = sercap_log,
+};
 
 static void sercap_monitor_work(struct work_struct *work)
 {
@@ -1293,14 +1383,15 @@ static int huawei_battery_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_HEALTH:
 		if (power_cmdline_is_factory_mode() ||
-			!is_hisi_battery_exist()) {
+			!coul_drv_is_battery_exist()) {
 			val->intval = POWER_SUPPLY_HEALTH_GOOD;
 			break;
 		}
 
-		if (hisi_battery_health() == POWER_SUPPLY_HEALTH_UNDERVOLTAGE)
+		if (coul_drv_battery_health() == POWER_SUPPLY_HEALTH_UNDERVOLTAGE)
 			val->intval = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
-		else if (di->mixed_cap == 0 && di->bat1_vol < SERCAP_SHUTDOWN)
+		else if ((di->bat1_soc <= SERCAP_PER_1) &&
+			(di->bat1_vol < SERCAP_SHUTDOWN))
 			val->intval = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
 		else
 			val->intval = POWER_SUPPLY_HEALTH_GOOD;
@@ -1311,7 +1402,7 @@ static int huawei_battery_get_property(struct power_supply *psy,
 			SERCAP_TENTH;
 		/* if factory mode and battery is not exist, cap must > 2 */
 		if (power_cmdline_is_factory_mode() &&
-			!is_hisi_battery_exist() &&
+			!coul_drv_is_battery_exist() &&
 			(val->intval <= SERCAP_CAP_2))
 			val->intval = SERCAP_CAP_3;
 		break;
@@ -1446,7 +1537,7 @@ static int sercap_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, di);
 
 	di->batt = devm_power_supply_register(&pdev->dev,
-				&huawei_battery_desc, NULL);
+		&huawei_battery_desc, NULL);
 	if (IS_ERR(di->batt))
 		return PTR_ERR(di->batt);
 
@@ -1461,10 +1552,14 @@ static int sercap_probe(struct platform_device *pdev)
 	sercap_info_init(di);
 	INIT_DELAYED_WORK(&di->monitor, sercap_monitor_work);
 	di->chg_nb.notifier_call = sercap_chg_notifier;
-	hisi_register_notifier(&di->chg_nb, 0);
+	bci_register_notifier(&di->chg_nb, 0);
 	di->bal_nb.notifier_call = sercap_bal_notifier;
 	batt_bal_state_notifier_register(&di->bal_nb);
 	queue_delayed_work(system_power_efficient_wq, &di->monitor, 0);
+
+	sercap_log_ops.dev_data = (void *)di;
+	power_log_ops_register(&sercap_log_ops);
+
 	return 0;
 }
 
@@ -1476,7 +1571,7 @@ static int sercap_remove(struct platform_device *pdev)
 		return 0;
 
 	sysfs_remove_group(&pdev->dev.kobj, &series_cap_group);
-	hisi_unregister_notifier(&di->chg_nb, 0);
+	bci_unregister_notifier(&di->chg_nb, 0);
 	batt_bal_state_notifier_unregister(&di->bal_nb);
 	wakeup_source_trash(&di->wakelock);
 	return 0;

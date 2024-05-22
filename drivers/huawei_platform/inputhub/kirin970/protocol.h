@@ -31,86 +31,86 @@
 #define ALS_CALIBRATE_DATA_LENGTH  (6)
 
 /*tag----------------------------------------------------*/
-typedef enum {
-    TAG_FLUSH_META,
-    TAG_BEGIN = 0x01,
-    TAG_SENSOR_BEGIN = TAG_BEGIN,
-    TAG_ACCEL = TAG_SENSOR_BEGIN,
-    TAG_GYRO,
-    TAG_MAG,
-    TAG_ALS,
-    TAG_PS,/*5*/
-    TAG_LINEAR_ACCEL,
-    TAG_GRAVITY,
-    TAG_ORIENTATION,
-    TAG_ROTATION_VECTORS,
-    TAG_PRESSURE,/*0x0a=10*/
-    TAG_HALL,
-    TAG_MAG_UNCALIBRATED,
-    TAG_GAME_RV,
-    TAG_GYRO_UNCALIBRATED,
-    TAG_SIGNIFICANT_MOTION,/*0x0f=15*/
-    TAG_STEP_DETECTOR,
-    TAG_STEP_COUNTER,
-    TAG_GEOMAGNETIC_RV,
-    TAG_HANDPRESS,
-    TAG_FINGERSENSE,/*0x14=20*/
-    TAG_PHONECALL,
-    TAG_GPS_4774_I2C,
-    TAG_OIS,
-    TAG_TILT_DETECTOR,
-    TAG_RPC,/*0x19=25*///should same with modem definition
-    TAG_CAP_PROX,
-    TAG_MAGN_BRACKET,
-    TAG_AGT,
+enum obj_tag {
+	TAG_FLUSH_META,
+	TAG_BEGIN = 0x01,
+	TAG_SENSOR_BEGIN = TAG_BEGIN,
+	TAG_ACCEL = TAG_SENSOR_BEGIN,
+	TAG_GYRO,
+	TAG_MAG,
+	TAG_ALS,
+	TAG_PS,/*5*/
+	TAG_LINEAR_ACCEL,
+	TAG_GRAVITY,
+	TAG_ORIENTATION,
+	TAG_ROTATION_VECTORS,
+	TAG_PRESSURE,/*0x0a=10*/
+	TAG_HALL,
+	TAG_MAG_UNCALIBRATED,
+	TAG_GAME_RV,
+	TAG_GYRO_UNCALIBRATED,
+	TAG_SIGNIFICANT_MOTION,/*0x0f=15*/
+	TAG_STEP_DETECTOR,
+	TAG_STEP_COUNTER,
+	TAG_GEOMAGNETIC_RV,
+	TAG_HANDPRESS,
+	TAG_FINGERSENSE,/*0x14=20*/
+	TAG_PHONECALL,
+	TAG_GPS_4774_I2C,
+	TAG_OIS,
+	TAG_TILT_DETECTOR,
+	TAG_RPC,/*0x19=25*///should same with modem definition
+	TAG_CAP_PROX,
+	TAG_MAGN_BRACKET,
+	TAG_AGT,
 	TAG_COLOR,
 	TAG_ACCEL_UNCALIBRATED,/*0x1e = 30*/
-    TAG_TOF,
-    TAG_DROP,
-    TAG_SENSOR_END,//sensor end should < 45
-    TAG_HW_PRIVATE_APP_START = 45,/*0x2d=45*/
-    TAG_AR = TAG_HW_PRIVATE_APP_START,
-    TAG_MOTION,
-    TAG_GPS,
-    TAG_PDR,
-    TAG_CA,
-    TAG_FP,/*0x32=50*/
-    TAG_KEY,
-    TAG_AOD,
-    TAG_FLP,
-    TAG_ENVIRONMENT,
-    TAG_LOADMONITOR,/*0x37=55*/
-    TAG_APP_CHRE,
-    TAG_FP_UD,
-    TAG_HW_PRIVATE_APP_END,//APP_END should < 64, because power log used bitmap
-    TAG_MODEM = 128,/*0x80=128*/
-    TAG_TP,
-    TAG_SPI,
-    TAG_I2C,
-    TAG_UART,
-    TAG_RGBLIGHT,
-    TAG_BUTTONLIGHT,/*0x86=135*/
-    TAG_BACKLIGHT,
-    TAG_VIBRATOR,
-    TAG_SYS,
-    TAG_LOG,
-    TAG_LOG_BUFF,/*0x8b=140*/
-    TAG_RAMDUMP,
-    TAG_FAULT,
-    TAG_SHAREMEM,
-    TAG_SHELL_DBG,
-    TAG_PD,/*0x90=145*/
-    TAG_I3C,
-    TAG_DATA_PLAYBACK,
-    TAG_CHRE,
-    TAG_SENSOR_CALI,
-    TAG_CELL,
-    TAG_BIG_DATA,
-    TAG_END = 0xFF
-}obj_tag_t;
+	TAG_TOF,
+	TAG_DROP,
+	TAG_SENSOR_END,//sensor end should < 45
+	TAG_HW_PRIVATE_APP_START = 45,/*0x2d=45*/
+	TAG_AR = TAG_HW_PRIVATE_APP_START,
+	TAG_MOTION,
+	TAG_GPS,
+	TAG_PDR,
+	TAG_CA,
+	TAG_FP,/*0x32=50*/
+	TAG_KEY,
+	TAG_AOD,
+	TAG_FLP,
+	TAG_ENVIRONMENT,
+	TAG_LOADMONITOR,/*0x37=55*/
+	TAG_APP_CHRE,
+	TAG_FP_UD,
+	TAG_HW_PRIVATE_APP_END,//APP_END should < 64, because power log used bitmap
+	TAG_MODEM = 128,/*0x80=128*/
+	TAG_TP,
+	TAG_SPI,
+	TAG_I2C,
+	TAG_UART,
+	TAG_RGBLIGHT,
+	TAG_BUTTONLIGHT,/*0x86=135*/
+	TAG_BACKLIGHT,
+	TAG_VIBRATOR,
+	TAG_SYS,
+	TAG_LOG,
+	TAG_LOG_BUFF,/*0x8b=140*/
+	TAG_RAMDUMP,
+	TAG_FAULT,
+	TAG_SHAREMEM,
+	TAG_SHELL_DBG,
+	TAG_PD,/*0x90=145*/
+	TAG_I3C,
+	TAG_DATA_PLAYBACK,
+	TAG_CHRE,
+	TAG_SENSOR_CALI,
+	TAG_CELL,
+	TAG_BIG_DATA,
+	TAG_END = 0xFF
+};
 
 /*------------------------cmd----------------------*/
-typedef enum {
+enum obj_cmd {
 	CMD_CMN_OPEN_REQ = 0x01,
 	CMD_CMN_OPEN_RESP,
 	CMD_CMN_CLOSE_REQ,
@@ -207,11 +207,14 @@ typedef enum {
 	CMD_EXT_LOG_FLUSH,
 	CMD_EXT_LOG_FLUSHP,
 
+	CMD_SYS_TIMEZONE_REQ,
+	CMD_SYS_TIMEZONE_RESP,
+
 	/*max cmd*/
 	CMD_ERR_RESP = 0xfe,
-} obj_cmd_t;
+};
 
-typedef enum{
+enum obj_sub_cmd {
 	SUB_CMD_NULL_REQ = 0x0,
 	SUB_CMD_SELFCALI_REQ = 0x01,
 	SUB_CMD_SET_PARAMET_REQ,
@@ -331,7 +334,12 @@ typedef enum{
 	SUB_CMD_FLP_DIAG_DATA_REPORT_REQ,
 	SUB_CMD_FLP_BATCHING_MULT_LASTLOCATION_REQ,
 	SUB_CMD_FLP_BATCHING_MULT_FLUSH_REQ,
-
+	SUB_CMD_FLP_GEOF_GET_SIZE_REQ,
+	SUB_CMD_FLP_GEOF_GET_SIZE_REPORT_REQ,
+	SUB_CMD_FLP_CELLFENCE_GET_SIZE_REQ,
+	SUB_CMD_FLP_CELLFENCE_GET_SIZE_REPORT_REQ,
+	SUB_CMD_FLP_WIFENCE_GET_SIZE_REQ,
+	SUB_CMD_FLP_WIFENCE_GET_SIZE_REPORT_REQ,
 
 	//Always On Display
 	SUB_CMD_AOD_START_REQ = 0x20,
@@ -346,7 +354,7 @@ typedef enum{
 
 	//key
 	SUB_CMD_BACKLIGHT_REQ = 0x20,
-       	// rpc
+	// rpc
 	SUB_CMD_RPC_START_REQ = 0x20,
 	SUB_CMD_RPC_STOP_REQ,
 	SUB_CMD_RPC_UPDATE_REQ,
@@ -358,7 +366,7 @@ typedef enum{
 	SUB_CMD_VIBRATOR_SET_AMPLITUDE_REQ,
 
 	SUB_CMD_MAX = 0xff,
-}obj_sub_cmd_t;
+};
 
 typedef enum {
 	EN_OK = 0,
@@ -392,12 +400,11 @@ typedef enum {
 	MOTION_TYPE_END,
 } motion_type_t;
 
-typedef enum
-{
-	FINGERPRINT_TYPE_START = 0x0,
-	FINGERPRINT_TYPE_HUB,
-	FINGERPRINT_TYPE_END,
-}fingerprint_type_t;
+enum fp_type {
+	FP_TYPE_START = 0x0,
+	FP_TYPE_HUB,
+	FP_TYPE_END,
+};
 
 typedef enum
 {
@@ -466,16 +473,16 @@ typedef struct {
 	uint8_t tag;
 	uint8_t partial_order;
 } pkt_part_header_t;
-typedef struct {
+struct pkt_header {
 	uint8_t tag;
 	uint8_t cmd;
 	uint8_t resp;	/*value CMD_RESP means need resp, CMD_NO_RESP means need not resp*/
 	uint8_t partial_order;
 	uint16_t tranid;
 	uint16_t length;
-} pkt_header_t;
+};
 
-typedef struct {
+struct pkt_header_resp {
 	uint8_t tag;
 	uint8_t cmd;
 	uint8_t resp;
@@ -483,10 +490,10 @@ typedef struct {
 	uint16_t tranid;
 	uint16_t length;
 	uint32_t errno; /*In win32, errno is function name and conflict*/
-} pkt_header_resp_t;
+};
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint8_t wr;
 	uint32_t fault_addr;
 } __packed pkt_fault_addr_req_t;
@@ -546,19 +553,19 @@ typedef struct aod_config_info {
 } aod_config_info_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t sub_cmd;
-        union {
-        	aod_start_config_t start_param;
-        	aod_time_config_t time_param;
+	union {
+		aod_start_config_t start_param;
+		aod_time_config_t time_param;
 		aod_display_spaces_t display_param;
 		aod_config_info_t config_param;
 		aod_display_pos_t display_pos;
-    	};
+	};
 } aod_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	int32_t x;
 	int32_t y;
 	int32_t z;
@@ -574,27 +581,27 @@ struct sensor_data_xyz {
 
 typedef struct
 {
-    pkt_header_t hd;
-    uint16_t data_flag;
-    uint16_t cnt;
-    uint16_t len_element;
-    uint16_t sample_rate;
-    uint64_t timestamp;
+	struct pkt_header hd;
+	uint16_t data_flag;
+	uint16_t cnt;
+	uint16_t len_element;
+	uint16_t sample_rate;
+	uint64_t timestamp;
 }  pkt_common_data_t;
 
 typedef struct
 {
-    pkt_common_data_t data_hd;
-    struct sensor_data_xyz xyz[];	/*x,y,z,acc,time*/
+	pkt_common_data_t data_hd;
+	struct sensor_data_xyz xyz[];	/*x,y,z,acc,time*/
 } pkt_batch_data_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	s16 zaxis_data[];
 } pkt_fingersense_data_report_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint16_t data_flag;
 	uint32_t step_count;
 	uint32_t begin_time;
@@ -615,79 +622,70 @@ typedef struct {
 
 typedef struct
 {
-    pkt_header_t hd;
-    int32_t type;
-    int16_t serial;
-    int16_t end;  // 0: more additional info to be send  1:this pkt is last one
-    union {
-        // for each frame, a single data type, either int32_t or float, should be used.
-        int32_t data_int32[14];
-        //float   data_float[14];
-    };
+	struct pkt_header hd;
+	int32_t type;
+	int16_t serial;
+	int16_t end;  // 0: more additional info to be send  1:this pkt is last one
+	union {
+		int32_t data_int32[14];
+	};
 }pkt_additional_info_req_t;
 
 typedef struct
 {
-    pkt_common_data_t data_hd;
-    int32_t status;
+	pkt_common_data_t data_hd;
+	int32_t status;
 } pkt_magn_bracket_data_req_t;
 
 typedef struct
 {
-    unsigned int type;
-    unsigned int initial_speed;
-    unsigned int height;
-    int angle_pitch;
-    int angle_roll;
-    unsigned int material;
+	unsigned int type;
+	unsigned int initial_speed;
+	unsigned int height;
+	int angle_pitch;
+	int angle_roll;
+	unsigned int material;
 } drop_info_t;
 
 typedef struct
 {
-    pkt_common_data_t data_hd;
-    drop_info_t   data;
+	pkt_common_data_t data_hd;
+	drop_info_t   data;
 } pkt_drop_data_req_t;
 
 typedef struct interval_param{
 	uint32_t  period;
-	//每batch_count组数据上报一次，in & out，
-	//输入为期望值，输出为器件实际支持的最接近的值
-	uint32_t	batch_count;
-	//0：自动模式，由MCU根据业务特点及系统状态等条件来判断是否上报；
-	//1：FIFO(Batch)，可能会有多条记录；
-	//2：Integrate,将最新数据更新/累加，但不增加记录，择机上报；
-	//3：实时模式，不管AP处于何种状态，实时上报
-	uint8_t	mode;
-	uint8_t	reserved[3]; //reserved[0]目前motion与计步器使用
+	uint32_t batch_count;
+	uint8_t mode;
+	uint8_t reserved[3];
 }__packed interval_param_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	interval_param_t param;
 }__packed pkt_cmn_interval_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	char app_config[16];
 }__packed pkt_cmn_motion_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t subcmd;
 	uint8_t para[128];
 }__packed pkt_parameter_req_t;
 
 typedef struct
 {
-    pkt_header_t hd;
-    uint32_t subcmd;
+	struct pkt_header hd;
+	uint32_t subcmd;
 }__packed pkt_subcmd_req_t;
 
-typedef struct
-{
-    pkt_header_resp_t hd;
-    uint32_t subcmd;
-}__packed pkt_subcmd_resp_t;
+struct pkt_subcmd_resp {
+	struct pkt_header_resp hd;
+	uint32_t subcmd;
+}__packed;
 
 union SPI_CTRL {
 	uint32_t data;
@@ -701,7 +699,7 @@ union SPI_CTRL {
 };
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint8_t busid;
 	union {
 		uint32_t i2c_address;
@@ -713,37 +711,36 @@ typedef struct {
 } pkt_combo_bus_trans_req_t;
 
 typedef struct {
-	pkt_header_resp_t hd;
+	struct pkt_header_resp hd;
 	uint8_t data[];
 } pkt_combo_bus_trans_resp_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint16_t status;
 	uint16_t version;
 } pkt_sys_statuschange_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t idle_time;
 	uint64_t current_app_mask;
 } pkt_power_log_report_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t event_id;
 } pkt_big_data_report_t;
 
 typedef struct {
-	pkt_header_t hd;
-	/*(MAX_PKT_LENGTH-sizeof(PKT_HEADER)-sizeof(End))/sizeof(uint16_t)*/
+	struct pkt_header hd;
 	uint8_t end;
 	uint8_t file_count;
 	uint16_t file_list[];
 } pkt_sys_dynload_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint8_t level;
 	uint8_t dmd_case;
 	uint8_t resv1;
@@ -753,25 +750,25 @@ typedef struct {
 } pkt_dmd_log_report_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t subcmd;
 	char calibrate_data[MAX_MAG_CALIBRATE_DATA_LENGTH];
 } pkt_mag_calibrate_data_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t subcmd;
 	char calibrate_data[MAX_MAG_AKM_CALIBRATE_DATA_LENGTH];
 } pkt_akm_mag_calibrate_data_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t subcmd;
 	char calibrate_data[MAX_GYRO_CALIBRATE_DATA_LENGTH];
 } pkt_gyro_calibrate_data_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t subcmd;
 	char calibrate_data[MAX_GYRO_TEMP_OFFSET_LENGTH];
 } pkt_gyro_temp_offset_req_t;
@@ -788,7 +785,7 @@ typedef struct {
 } fingerprint_req_t;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint64_t app_id;
 	uint16_t msg_type;
 	uint8_t res[2];
@@ -796,72 +793,24 @@ typedef struct {
 } chre_req_t;
 
 typedef enum additional_info_type {
-    //
-    AINFO_BEGIN = 0x0,                      // Marks the beginning of additional information frames
-    AINFO_END   = 0x1,                      // Marks the end of additional information frames
-    // Basic information
-    AINFO_UNTRACKED_DELAY =  0x10000,       // Estimation of the delay that is not tracked by sensor
-                                            // timestamps. This includes delay introduced by
-                                            // sensor front-end filtering, data transport, etc.
-                                            // float[2]: delay in seconds
-                                            //           standard deviation of estimated value
-                                            //
-    AINFO_INTERNAL_TEMPERATURE,             // float: Celsius temperature.
-                                            //
-    AINFO_VEC3_CALIBRATION,                 // First three rows of a homogeneous matrix, which
-                                            // represents calibration to a three-element vector
-                                            // raw sensor reading.
-                                            // float[12]: 3x4 matrix in row major order
-                                            //
-    AINFO_SENSOR_PLACEMENT,                 // Location and orientation of sensor element in the
-                                            // device frame: origin is the geometric center of the
-                                            // mobile device screen surface; the axis definition
-                                            // corresponds to Android sensor definitions.
-                                            // float[12]: 3x4 matrix in row major order
-                                            //
-    AINFO_SAMPLING,                         // float[2]: raw sample period in seconds,
-                                            //           standard deviation of sampling period
-
-    // Sampling channel modeling information
-    AINFO_CHANNEL_NOISE = 0x20000,          // int32_t: noise type
-                                            // float[n]: parameters
-                                            //
-    AINFO_CHANNEL_SAMPLER,                  // float[3]: sample period
-                                            //           standard deviation of sample period,
-                                            //           quantization unit
-                                            //
-    AINFO_CHANNEL_FILTER,                   // Represents a filter:
-                                            //      \sum_j a_j y[n-j] == \sum_i b_i x[n-i]
-                                            //
-                                            // int32_t[3]: number of feedforward coefficients, M,
-                                            //             number of feedback coefficients, N, for
-                                            //               FIR filter, N=1.
-                                            //             bit mask that represents which element to
-                                            //               which the filter is applied, bit 0 == 1
-                                            //               means this filter applies to vector
-                                            //               element 0.
-                                            // float[M+N]: filter coefficients (b0, b1, ..., BM-1),
-                                            //             then (a0, a1, ..., aN-1), a0 is always 1.
-                                            //             Multiple frames may be needed for higher
-                                            //             number of taps.
-                                            //
-    AINFO_CHANNEL_LINEAR_TRANSFORM,         // int32_t[2]: size in (row, column) ... 1st frame
-                                            // float[n]: matrix element values in row major order.
-                                            //
-    AINFO_CHANNEL_NONLINEAR_MAP,            // int32_t[2]: extrapolate method
-                                            //             interpolate method
-                                            // float[n]: mapping key points in pairs, (in, out)...
-                                            //           (may be used to model saturation)
-                                            //
-    AINFO_CHANNEL_RESAMPLER,                // int32_t:  resample method (0-th order, 1st order...)
-                                            // float[1]: resample ratio (upsampling if < 1.0;
-                                            //           downsampling if > 1.0).
-                                            //
-
-    // Custom information
-    AINFO_CUSTOM_START =    0x10000000,     //
-    // Debugging
-    AINFO_DEBUGGING_START = 0x40000000,     //
+	AINFO_BEGIN = 0x0,
+	AINFO_END   = 0x1,
+	// Basic information
+	AINFO_UNTRACKED_DELAY =  0x10000,
+	AINFO_INTERNAL_TEMPERATURE,
+	AINFO_VEC3_CALIBRATION,
+	AINFO_SENSOR_PLACEMENT,
+	AINFO_SAMPLING,
+	AINFO_CHANNEL_NOISE = 0x20000,
+	AINFO_CHANNEL_SAMPLER,
+	AINFO_CHANNEL_FILTER,
+	AINFO_CHANNEL_LINEAR_TRANSFORM,
+	AINFO_CHANNEL_NONLINEAR_MAP,
+	AINFO_CHANNEL_RESAMPLER,
+	// Custom information
+	AINFO_CUSTOM_START =    0x10000000,
+	// Debugging
+	AINFO_DEBUGGING_START = 0x40000000,
 } additional_info_type_t;
 
 enum {
@@ -887,10 +836,10 @@ enum {
 	FILE_AOD,                                     //18
 	FILE_MODEM,                                //19
 	FILE_CHARGING,                          /* 20 */
-    	FILE_MAGN_BRACKET,  			//21
-    	FILE_FLP,                               // 22
-    	FILE_TILT_DETECTOR,     //23
-    	FILE_RPC,
+	FILE_MAGN_BRACKET,  			//21
+	FILE_FLP,                               // 22
+	FILE_TILT_DETECTOR,     //23
+	FILE_RPC,
 	FILE_FINGERPRINT_UD = 28,
 	FILE_DROP,           //29
 	FILE_APP_ID_MAX = 31,                   /* MAX VALID FILE ID FOR APPs */
@@ -922,10 +871,10 @@ enum {
 	FILE_LTR578_PS,                 //56
 	FILE_FPC1021_FP,                           //57
 	FILE_CAP_PROX,                             //58
-        FILE_CYPRESS_KEY,		          //59
-        FILE_CYPRESS_SAR,			  //60
-        FILE_GPS_4774_SINGLE,		    //61
-        FILE_SX9323_CAP_PROX,	           //62
+	FILE_CYPRESS_KEY,		          //59
+	FILE_CYPRESS_SAR,			  //60
+	FILE_GPS_4774_SINGLE,		    //61
+	FILE_SX9323_CAP_PROX,	           //62
 	FILE_BQ25892_CHARGER,             /* 63 */
 	FILE_FSA9685_SWITCH,               /* 64 */
 	FILE_SCHARGER_V300,                /* 65 */

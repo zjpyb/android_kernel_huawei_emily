@@ -52,7 +52,7 @@
 #include <hwnet/ipv4/wifipro_tcp_monitor.h>
 #endif
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
 #endif
 
 
@@ -64,9 +64,13 @@
 #include <huawei_platform/power/pid_socket/pid_socket.h>
 #endif
 
-
 #ifdef CONFIG_HW_NETQOS_SCHED
 #include <netqos_sched/netqos_sched.h>
+#include <trace/events/netqos.h>
+#endif
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include <hwnet/booster/hw_pt.h>
 #endif
 
 /* People can turn this off for buggy TCP's found in printers etc. */
@@ -217,6 +221,14 @@ static inline void tcp_event_ack_sent(struct sock *sk, unsigned int pkts,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+	if (unlikely(tp->compressed_ack > TCP_FASTRETRANS_THRESH)) {
+		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPACKCOMPRESSED,
+			      tp->compressed_ack - TCP_FASTRETRANS_THRESH);
+		tp->compressed_ack = TCP_FASTRETRANS_THRESH;
+		if (hrtimer_try_to_cancel(&tp->compressed_ack_timer) == 1)
+			__sock_put(sk);
+	}
+
 	if (unlikely(rcv_nxt != tp->rcv_nxt))
 		return;  /* Special ACK sent by DCTCP to reflect ECN */
 	tcp_dec_quickack_mode(sk, pkts);
@@ -318,7 +330,8 @@ u16 tcp_select_window(struct sock *sk)
 	 * have to allow this. Otherwise we may announce a window too large
 	 * for the current meta-level sk_rcvbuf.
 	 */
-	u32 cur_win = tcp_receive_window(mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
+	u32 cur_win = tcp_receive_window(
+		mptcp(tp) ? tcp_sk(mptcp_meta_sk(sk)) : tp);
 	u32 new_win = tp->ops->__select_window(sk);
 #else
 	u32 cur_win = tcp_receive_window(tp);
@@ -790,7 +803,7 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
 #ifdef CONFIG_MPTCP
-		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
+		const unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
 
 		if (remaining < TCPOLEN_SACK_BASE_ALIGNED)
 			opts->num_sack_blocks = 0;
@@ -815,7 +828,6 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 
 	return size;
 }
-
 
 /* TCP SMALL QUEUES (TSQ)
  *
@@ -1146,6 +1158,87 @@ static void tcp_internal_pacing(struct sock *sk, const struct sk_buff *skb)
 		      HRTIMER_MODE_ABS_PINNED);
 }
 
+struct tcs_tasklet {
+	struct tasklet_struct	tasklet;
+	struct list_head	head; /* queue of tcp sockets */
+};
+static DEFINE_PER_CPU(struct tcs_tasklet, tcs_tasklet);
+
+static void tcp_tcs_handler(struct sock *sk)
+{
+	bh_lock_sock(sk);
+	if (!sock_owned_by_user(sk)) {
+		struct tcp_sock *tp = tcp_sk(sk);
+		if (tp->compressed_ack > TCP_FASTRETRANS_THRESH)
+			tcp_send_ack(sk);
+	} else {
+		if (!test_and_set_bit(TCP_DELACK_TIMER_DEFERRED,
+				      &sk->sk_tsq_flags))
+			sock_hold(sk);
+	}
+	bh_unlock_sock(sk);
+	sock_put(sk);
+}
+
+static void tcp_tcs_tasklet_func(unsigned long data)
+{
+	struct tcs_tasklet *tcs = (struct tcs_tasklet *)data;
+	LIST_HEAD(list);
+	unsigned long flags;
+	struct list_head *q, *n;
+	struct tcp_sock *tp;
+	struct sock *sk;
+
+	local_irq_save(flags);
+	list_splice_init(&tcs->head, &list);
+	local_irq_restore(flags);
+
+	list_for_each_safe(q, n, &list) {
+		tp = list_entry(q, struct tcp_sock, tcs_node);
+		list_del(&tp->tcs_node);
+
+		sk = (struct sock *)tp;
+		smp_mb__before_atomic();
+		clear_bit(TCP_COMP_SACK_TIMER_DEFERRED, &sk->sk_tsq_flags);
+
+		tcp_tcs_handler(sk);
+	}
+}
+
+void __init tcp_tcs_tasklet_init(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct tcs_tasklet *tcs = &per_cpu(tcs_tasklet, i);
+
+		INIT_LIST_HEAD(&tcs->head);
+		tasklet_init(&tcs->tasklet,
+			     tcp_tcs_tasklet_func,
+			     (unsigned long)tcs);
+	}
+}
+
+enum hrtimer_restart tcp_compressed_ack_kick(struct hrtimer *timer)
+{
+	struct tcp_sock *tp = container_of(timer, struct tcp_sock, compressed_ack_timer);
+	struct sock *sk = (struct sock *)tp;
+
+	if (!test_and_set_bit(TCP_COMP_SACK_TIMER_DEFERRED, &sk->sk_tsq_flags)) {
+		struct tcs_tasklet *tcs;
+		bool empty;
+
+		/* queue this socket to tasklet queue */
+		tcs = this_cpu_ptr(&tcs_tasklet);
+		empty = list_empty(&tcs->head);
+		list_add(&tp->tcs_node, &tcs->head);
+		if (empty)
+			tasklet_schedule(&tcs->tasklet);
+	}
+
+	return HRTIMER_NORESTART;
+}
+
 /* This routine actually transmits TCP packets queued in by
  * tcp_do_sendmsg().  This is used by both the initial
  * transmission and possible later retransmissions.
@@ -1456,6 +1549,7 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *buff;
 	int nsize, old_factor;
+	long limit;
 	int nlen;
 	u8 flags;
 
@@ -1465,6 +1559,19 @@ int tcp_fragment(struct sock *sk, struct sk_buff *skb, u32 len,
 	nsize = skb_headlen(skb) - len;
 	if (nsize < 0)
 		nsize = 0;
+
+	/* tcp_sendmsg() can overshoot sk_wmem_queued by one full size skb.
+	 * We need some allowance to not penalize applications setting small
+	 * SO_SNDBUF values.
+	 * Also allow first and last skb in retransmit queue to be split.
+	 */
+	limit = sk->sk_sndbuf + 2 * SKB_TRUESIZE(GSO_MAX_SIZE);
+	if (unlikely((sk->sk_wmem_queued >> 1) > limit &&
+		     skb != tcp_rtx_queue_head(sk) &&
+		     skb != tcp_rtx_queue_tail(sk))) {
+		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPWQUEUETOOBIG);
+		return -ENOMEM;
+	}
 
 	if (skb_unclone(skb, gfp))
 		return -ENOMEM;
@@ -1819,7 +1926,7 @@ void tcp_cwnd_validate(struct sock *sk, bool is_cwnd_limited)
 		if (tp->packets_out > tp->snd_cwnd_used)
 			tp->snd_cwnd_used = tp->packets_out;
 
-		if (sysctl_tcp_slow_start_after_idle &&
+		if (tp->slow_start_after_idle && sysctl_tcp_slow_start_after_idle &&
 		    (s32)(tcp_jiffies32 - tp->snd_cwnd_stamp) >= inet_csk(sk)->icsk_rto &&
 		    !ca_ops->cong_control)
 			tcp_cwnd_application_limited(sk);
@@ -2232,7 +2339,7 @@ static bool tcp_can_coalesce_send_queue_head(struct sock *sk, int len)
 		if (len <= skb->len)
 			break;
 
-		if (unlikely(TCP_SKB_CB(skb)->eor))
+		if (unlikely(TCP_SKB_CB(skb)->eor) || tcp_has_tx_tstamp(skb))
 			return false;
 
 		len -= skb->len;
@@ -2355,6 +2462,7 @@ static int tcp_mtu_probe(struct sock *sk)
 			 * we need to propagate it to the new skb.
 			 */
 			TCP_SKB_CB(nskb)->eor = TCP_SKB_CB(skb)->eor;
+			tcp_skb_collapse_tstamp(nskb, skb);
 			tcp_unlink_write_queue(skb, sk);
 			sk_wmem_free_skb(sk, skb);
 		} else {
@@ -2488,6 +2596,24 @@ void tcp_chrono_stop(struct sock *sk, const enum tcp_chrono type)
 		tcp_chrono_set(tp, TCP_CHRONO_BUSY);
 }
 
+#ifdef CONFIG_MPTCP
+void tcp_write_queue_purge(struct sock *sk)
+{
+	struct sk_buff *skb;
+
+	if (mptcp(tcp_sk(sk)) && !is_meta_sk(sk) && !tcp_write_queue_empty(sk))
+		mptcp_reinject_data(sk, 0);
+
+	tcp_chrono_stop(sk, TCP_CHRONO_BUSY);
+	while ((skb = __skb_dequeue(&sk->sk_write_queue)) != NULL)
+		sk_wmem_free_skb(sk, skb);
+	sk_mem_reclaim(sk);
+	tcp_clear_all_retrans_hints(tcp_sk(sk));
+	tcp_init_send_head(sk);
+	tcp_sk(sk)->packets_out = 0;
+}
+#endif
+
 /* This routine writes packets to the network.  It advances the
  * send_head.  This happens as incoming acks open up the remote
  * window for us.
@@ -2598,6 +2724,14 @@ bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (test_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags))
 			clear_bit(TCP_TSQ_DEFERRED, &sk->sk_tsq_flags);
 		if (tcp_small_queue_check(sk, skb, 0))
+			break;
+
+		/* Argh, we hit an empty skb(), presumably a thread
+		 * is sleeping in sendmsg()/sk_stream_wait_memory().
+		 * We do not want to send a pure-ack packet and have
+		 * a strange looking rtx queue with empty packet(s).
+		 */
+		if (TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq)
 			break;
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
@@ -2720,7 +2854,8 @@ void tcp_send_loss_probe(struct sock *sk)
 		if (tcp_snd_wnd_test(tp, skb, mss)) {
 			pcount = tp->packets_out;
 #ifdef CONFIG_MPTCP
-			tp->ops->write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
+			tp->ops->write_xmit(sk, mss, TCP_NAGLE_OFF,
+				2, GFP_ATOMIC);
 #else
 			tcp_write_xmit(sk, mss, TCP_NAGLE_OFF, 2, GFP_ATOMIC);
 #endif
@@ -2733,12 +2868,16 @@ void tcp_send_loss_probe(struct sock *sk)
 		skb = tcp_write_queue_tail(sk);
 	}
 
+	if (unlikely(!skb)) {
+		WARN_ONCE(tp->packets_out,
+			  "invalid inflight: %u state %u cwnd %u mss %d\n",
+			  tp->packets_out, sk->sk_state, tp->snd_cwnd, mss);
+		inet_csk(sk)->icsk_pending = 0;
+		return;
+	}
+
 	/* At most one outstanding TLP retransmission. */
 	if (tp->tlp_high_seq)
-		goto rearm_timer;
-
-	/* Retransmit last segment. */
-	if (WARN_ON(!skb))
 		goto rearm_timer;
 
 	if (skb_still_in_host_queue(sk, skb))
@@ -3107,7 +3246,7 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 			return -ENOMEM;
 	}
 
-	if(NULL == inet_csk(sk)->icsk_af_ops->rebuild_header) {
+	if (!inet_csk(sk)->icsk_af_ops->rebuild_header) {
 		pr_err("%s: rebuild_header is null.\n", __func__);
 		return -EAGAIN;
 	}
@@ -3175,7 +3314,7 @@ int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs)
 	if (likely(!err)) {
 		TCP_SKB_CB(skb)->sacked |= TCPCB_EVER_RETRANS;
 	} else if (err != -EBUSY) {
-		NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL);
+		NET_ADD_STATS(sock_net(sk), LINUX_MIB_TCPRETRANSFAIL, segs);
 	}
 	return err;
 }
@@ -3594,7 +3733,8 @@ static void tcp_connect_init(struct sock *sk)
 
 #ifdef CONFIG_MPTCP
 	tp->ops->select_initial_window(tcp_full_space(sk),
-				tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
+				tp->advmss - (tp->rx_opt.ts_recent_stamp ?
+					tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				&tp->rcv_wnd,
 				&tp->window_clamp,
 				sock_net(sk)->ipv4.sysctl_tcp_window_scaling,
@@ -3602,7 +3742,8 @@ static void tcp_connect_init(struct sock *sk)
 				rcv_wnd, sk);
 #else
 	tcp_select_initial_window(tcp_full_space(sk),
-				  tp->advmss - (tp->rx_opt.ts_recent_stamp ? tp->tcp_header_len - sizeof(struct tcphdr) : 0),
+				  tp->advmss - (tp->rx_opt.ts_recent_stamp ?
+				  	tp->tcp_header_len - sizeof(struct tcphdr) : 0),
 				  &tp->rcv_wnd,
 				  &tp->window_clamp,
 				  sock_net(sk)->ipv4.sysctl_tcp_window_scaling,
@@ -3775,8 +3916,10 @@ static void hw_tcp_timestamps_recovery(struct net *net)
 	if (net == NULL)
 		return;
 
-	if (!hw_timestamps_get_wifi_connect_status() && !net->ipv4.sysctl_tcp_timestamps)
-		net->ipv4.sysctl_tcp_timestamps = hw_get_currect_ipv4_sysctl_tcp_timestamps();
+	if (!hw_timestamps_get_wifi_connect_status() &&
+	    !net->ipv4.sysctl_tcp_timestamps)
+		net->ipv4.sysctl_tcp_timestamps =
+			hw_get_currect_ipv4_sysctl_tcp_timestamps();
 }
 #endif
 
@@ -3790,6 +3933,10 @@ int tcp_connect(struct sock *sk)
 	int wifipro_dev_max_len = 0;
 #endif
 	tcp_call_bpf(sk, BPF_SOCK_OPS_TCP_CONNECT_CB);
+
+#ifdef CONFIG_HW_NETQOS_SCHED
+	trace_netqos_trx(sk, 0, false, jiffies);
+#endif
 
 	if (inet_csk(sk)->icsk_af_ops->rebuild_header(sk))
 		return -EHOSTUNREACH; /* Routing failure or similar. */
@@ -3815,7 +3962,7 @@ int tcp_connect(struct sock *sk)
 	tcp_ecn_send_syn(sk, buff);
 
 #ifdef CONFIG_HUAWEI_BASTET
-	BST_FG_Custom_Process(sk, NULL, (uint8_t)BST_FG_TCP_BITMAP);
+	bst_fg_custom_process(sk, NULL, (uint8_t)BST_FG_TCP_BITMAP);
 #endif
 
 	/* Send off SYN; include data in Fast Open. */
@@ -3824,6 +3971,10 @@ int tcp_connect(struct sock *sk)
 	if (err == -ECONNREFUSED)
 		return err;
 
+#ifdef CONFIG_HW_PACKET_TRACKER
+	hw_pt_set_skb_stamp(buff);
+#endif
+
 	/* We change tp->snd_nxt after the tcp_transmit_skb() call
 	 * in order to make this packet get counted in tcpOutSegs.
 	 */
@@ -3831,10 +3982,12 @@ int tcp_connect(struct sock *sk)
 	tp->pushed_seq = tp->write_seq;
 #ifdef CONFIG_HW_WIFIPRO
 	if (buff->dev) {
-	    wifipro_dev_max_len = strnlen(buff->dev->name, IFNAMSIZ-1);
-	    strncpy(buff->sk->wifipro_dev_name, buff->dev->name, wifipro_dev_max_len);
-	    buff->sk->wifipro_dev_name[wifipro_dev_max_len] = '\0';
-	    WIFIPRO_DEBUG("wifipro_dev_name is %s", buff->dev->name);
+		wifipro_dev_max_len = strnlen(buff->dev->name,
+			IFNAMSIZ - 1);
+		strncpy(buff->sk->wifipro_dev_name,
+			buff->dev->name, wifipro_dev_max_len);
+		buff->sk->wifipro_dev_name[wifipro_dev_max_len] = '\0';
+		WIFIPRO_DEBUG("wifipro_dev_name is %s", buff->dev->name);
 	}
 #endif
 	buff = tcp_send_head(sk);
@@ -3936,6 +4089,9 @@ void __tcp_send_ack(struct sock *sk, u32 rcv_nxt)
 					  TCP_DELACK_MAX, TCP_RTO_MAX);
 		return;
 	}
+#ifdef CONFIG_HW_PACKET_TRACKER
+	hw_pt_set_skb_stamp(buff);
+#endif
 
 	/* Reserve space for headers and prepare control bits. */
 	skb_reserve(buff, MAX_TCP_HEADER);
@@ -3947,9 +4103,9 @@ void __tcp_send_ack(struct sock *sk, u32 rcv_nxt)
 	 */
 	skb_set_tcp_pure_ack(buff);
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
-	if(DELAY_STATISTIC_SWITCH_ON) {
-		delay_record_first_combine(sk,buff,TP_SKB_DIRECT_SND,TP_SKB_TYPE_TCP);
-	}
+	if (DELAY_STATISTIC_SWITCH_ON)
+		delay_record_first_combine(sk, buff,
+			TP_SKB_DIRECT_SND, TP_SKB_TYPE_TCP);
 #endif
 	/* Send it off, this clears delayed acks for us. */
 	__tcp_transmit_skb(sk, buff, 0, (__force gfp_t)0, rcv_nxt);

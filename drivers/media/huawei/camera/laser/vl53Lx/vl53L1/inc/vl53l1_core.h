@@ -1,6 +1,6 @@
 
 /*
-* Copyright (c) 2016, STMicroelectronics - All Rights Reserved
+* Copyright (c) 2017, STMicroelectronics - All Rights Reserved
 *
 * This file is part of VL53L1 Core and is dual licensed,
 * either 'STMicroelectronics
@@ -14,7 +14,7 @@
 ********************************************************************************
 *
 * License terms: STMicroelectronics Proprietary in accordance with licensing
-* terms at www.st.com/sla0044
+* terms at www.st.com/sla0081
 *
 * STMicroelectronics confidential
 * Reproduction and Communication of this document is strictly prohibited unless
@@ -184,8 +184,8 @@ VL53L1_Error VL53L1_update_ll_driver_cfg_state(
 
 
 void VL53L1_copy_rtn_good_spads_to_buffer(
-	VL53L1_nvm_copy_data_t  *pdata,
-	uint8_t                 *pbuffer);
+	struct VL53L1_nvm_copy_data_t  *pdata,
+	uint8_t                        *pbuffer);
 
 
 
@@ -199,7 +199,7 @@ void VL53L1_copy_rtn_good_spads_to_buffer(
 
 
 void VL53L1_init_system_results(
-	VL53L1_system_results_t      *pdata);
+	struct VL53L1_system_results_t      *pdata);
 
 
 
@@ -211,8 +211,8 @@ void VL53L1_init_system_results(
 
 
 void V53L1_init_zone_results_structure(
-	uint8_t                 active_zones,
-	VL53L1_zone_results_t  *pdata);
+	uint8_t                       active_zones,
+	struct VL53L1_zone_results_t  *pdata);
 
 
 
@@ -272,19 +272,19 @@ void V53L1_init_zone_dss_configs(
 
 
 void VL53L1_init_histogram_config_structure(
-	uint8_t   even_bin0,
-	uint8_t   even_bin1,
-	uint8_t   even_bin2,
-	uint8_t   even_bin3,
-	uint8_t   even_bin4,
-	uint8_t   even_bin5,
-	uint8_t   odd_bin0,
-	uint8_t   odd_bin1,
-	uint8_t   odd_bin2,
-	uint8_t   odd_bin3,
-	uint8_t   odd_bin4,
-	uint8_t   odd_bin5,
-	VL53L1_histogram_config_t  *pdata);
+	uint8_t                           even_bin0,
+	uint8_t                           even_bin1,
+	uint8_t                           even_bin2,
+	uint8_t                           even_bin3,
+	uint8_t                           even_bin4,
+	uint8_t                           even_bin5,
+	uint8_t                           odd_bin0,
+	uint8_t                           odd_bin1,
+	uint8_t                           odd_bin2,
+	uint8_t                           odd_bin3,
+	uint8_t                           odd_bin4,
+	uint8_t                           odd_bin5,
+	struct VL53L1_histogram_config_t  *pdata);
 
 
 
@@ -340,19 +340,19 @@ void VL53L1_init_histogram_config_structure(
 
 
 void VL53L1_init_histogram_multizone_config_structure(
-	uint8_t   even_bin0,
-	uint8_t   even_bin1,
-	uint8_t   even_bin2,
-	uint8_t   even_bin3,
-	uint8_t   even_bin4,
-	uint8_t   even_bin5,
-	uint8_t   odd_bin0,
-	uint8_t   odd_bin1,
-	uint8_t   odd_bin2,
-	uint8_t   odd_bin3,
-	uint8_t   odd_bin4,
-	uint8_t   odd_bin5,
-	VL53L1_histogram_config_t  *pdata);
+	uint8_t                           even_bin0,
+	uint8_t                           even_bin1,
+	uint8_t                           even_bin2,
+	uint8_t                           even_bin3,
+	uint8_t                           even_bin4,
+	uint8_t                           even_bin5,
+	uint8_t                           odd_bin0,
+	uint8_t                           odd_bin1,
+	uint8_t                           odd_bin2,
+	uint8_t                           odd_bin3,
+	uint8_t                           odd_bin4,
+	uint8_t                           odd_bin5,
+	struct VL53L1_histogram_config_t  *pdata);
 
 
 
@@ -365,9 +365,9 @@ void VL53L1_init_histogram_multizone_config_structure(
 
 
 void VL53L1_init_xtalk_bin_data_struct(
-	uint32_t                        bin_value,
-	uint16_t                        VL53L1_PRM_00021,
-	VL53L1_xtalk_histogram_shape_t *pdata);
+	uint32_t                              bin_value,
+	uint16_t                              VL53L1_PRM_00021,
+	struct VL53L1_xtalk_histogram_shape_t *pdata);
 
 
 
@@ -833,12 +833,12 @@ uint32_t VL53L1_decode_timeout(
 
 
 VL53L1_Error  VL53L1_calc_timeout_register_values(
-	uint32_t                 phasecal_config_timeout_us,
-	uint32_t                 mm_config_timeout_us,
-	uint32_t                 range_config_timeout_us,
-	uint16_t                 fast_osc_frequency,
-	VL53L1_general_config_t *pgeneral,
-	VL53L1_timing_config_t  *ptiming);
+	uint32_t                       phasecal_config_timeout_us,
+	uint32_t                       mm_config_timeout_us,
+	uint32_t                       range_config_timeout_us,
+	uint16_t                       fast_osc_frequency,
+	struct VL53L1_general_config_t *pgeneral,
+	struct VL53L1_timing_config_t  *ptiming);
 
 
 
@@ -905,8 +905,8 @@ void   VL53L1_encode_unsigned_integer(
 
 
 VL53L1_Error VL53L1_hist_copy_and_scale_ambient_info(
-	VL53L1_zone_hist_info_t        *pidata,
-	VL53L1_histogram_bin_data_t    *podata);
+	struct VL53L1_zone_hist_info_t        *pidata,
+	struct VL53L1_histogram_bin_data_t    *podata);
 
 
 
@@ -920,8 +920,8 @@ VL53L1_Error VL53L1_hist_copy_and_scale_ambient_info(
 
 
 void  VL53L1_hist_get_bin_sequence_config(
-	VL53L1_DEV                     Dev,
-	VL53L1_histogram_bin_data_t   *pdata);
+	VL53L1_DEV                           Dev,
+	struct VL53L1_histogram_bin_data_t   *pdata);
 
 
 
@@ -945,10 +945,10 @@ void  VL53L1_hist_get_bin_sequence_config(
 
 
 VL53L1_Error  VL53L1_hist_phase_consistency_check(
-	VL53L1_DEV                   Dev,
-	VL53L1_zone_hist_info_t     *phist_prev,
-	VL53L1_zone_objects_t       *prange_prev,
-	VL53L1_range_results_t      *prange_curr);
+	VL53L1_DEV                         Dev,
+	struct VL53L1_zone_hist_info_t     *phist_prev,
+	struct VL53L1_zone_objects_t       *prange_prev,
+	struct VL53L1_range_results_t      *prange_curr);
 
 
 
@@ -979,14 +979,14 @@ VL53L1_Error  VL53L1_hist_phase_consistency_check(
 
 
 VL53L1_Error  VL53L1_hist_events_consistency_check(
-	uint8_t                      event_sigma,
-	uint16_t                     min_effective_spad_count,
-	VL53L1_zone_hist_info_t     *phist_prev,
-	VL53L1_object_data_t        *prange_prev,
-	VL53L1_range_data_t         *prange_curr,
-	int32_t                     *pevents_tolerance,
-	int32_t                     *pevents_delta,
-	VL53L1_DeviceError          *prange_status);
+	uint8_t                         event_sigma,
+	uint16_t                        min_effective_spad_count,
+	struct VL53L1_zone_hist_info_t  *phist_prev,
+	struct VL53L1_object_data_t     *prange_prev,
+	struct VL53L1_range_data_t      *prange_curr,
+	int32_t                         *pevents_tolerance,
+	int32_t                         *pevents_delta,
+	VL53L1_DeviceError              *prange_status);
 
 
 
@@ -1015,8 +1015,8 @@ VL53L1_Error  VL53L1_hist_events_consistency_check(
 
 
 VL53L1_Error  VL53L1_hist_merged_pulse_check(
-	int16_t                      min_max_tolerance_mm,
-	VL53L1_range_data_t         *pdata,
+	int16_t                     min_max_tolerance_mm,
+	struct VL53L1_range_data_t  *pdata,
 	VL53L1_DeviceError          *prange_status);
 
 
@@ -1050,10 +1050,10 @@ VL53L1_Error  VL53L1_hist_merged_pulse_check(
 
 
 VL53L1_Error  VL53L1_hist_xmonitor_consistency_check(
-	VL53L1_DEV                   Dev,
-	VL53L1_zone_hist_info_t     *phist_prev,
-	VL53L1_zone_objects_t       *prange_prev,
-	VL53L1_range_data_t         *prange_curr);
+	VL53L1_DEV                         Dev,
+	struct VL53L1_zone_hist_info_t     *phist_prev,
+	struct VL53L1_zone_objects_t       *prange_prev,
+	struct VL53L1_range_data_t         *prange_curr);
 
 
 
@@ -1077,9 +1077,9 @@ VL53L1_Error  VL53L1_hist_xmonitor_consistency_check(
 
 
 VL53L1_Error  VL53L1_hist_wrap_dmax(
-	VL53L1_hist_post_process_config_t *phistpostprocess,
-	VL53L1_histogram_bin_data_t       *pcurrent,
-	int16_t                           *pwrap_dmax_mm);
+	struct VL53L1_hist_post_process_config_t *phistpostprocess,
+	struct VL53L1_histogram_bin_data_t       *pcurrent,
+	int16_t                                  *pwrap_dmax_mm);
 
 
 
@@ -1102,16 +1102,123 @@ VL53L1_Error  VL53L1_hist_wrap_dmax(
 
 
 void VL53L1_hist_combine_mm1_mm2_offsets(
-	int16_t                              mm1_offset_mm,
-	int16_t                              mm2_offset_mm,
-	uint8_t                              encoded_mm_roi_centre,
-	uint8_t                              encoded_mm_roi_size,
-	uint8_t                              encoded_zone_centre,
-	uint8_t                              encoded_zone_size,
-	VL53L1_additional_offset_cal_data_t *pcal_data,
-	uint8_t                             *pgood_spads,
-	uint16_t                             aperture_attenuation,
-	int16_t                             *prange_offset_mm);
+	int16_t mm1_offset_mm,
+	int16_t mm2_offset_mm,
+	uint8_t encoded_mm_roi_centre,
+	uint8_t encoded_mm_roi_size,
+	uint8_t encoded_zone_centre,
+	uint8_t encoded_zone_size,
+	struct VL53L1_additional_offset_cal_data_t *pcal_data,
+	uint8_t *pgood_spads,
+	uint16_t aperture_attenuation,
+	int16_t *prange_offset_mm);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+VL53L1_Error VL53L1_hist_xtalk_extract_calc_window(
+	int16_t                                 target_distance_mm,
+	uint16_t                                target_width_oversize,
+	struct VL53L1_histogram_bin_data_t      *phist_bins,
+	struct VL53L1_hist_xtalk_extract_data_t *pxtalk_data);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+VL53L1_Error VL53L1_hist_xtalk_extract_calc_event_sums(
+	struct VL53L1_histogram_bin_data_t        *phist_bins,
+	struct VL53L1_hist_xtalk_extract_data_t   *pxtalk_data);
+
+
+
+
+
+
+
+
+
+
+
+
+VL53L1_Error VL53L1_hist_xtalk_extract_calc_rate_per_spad(
+	struct VL53L1_hist_xtalk_extract_data_t   *pxtalk_data);
+
+
+
+
+
+
+
+
+
+
+
+
+
+VL53L1_Error VL53L1_hist_xtalk_extract_calc_shape(
+	struct VL53L1_hist_xtalk_extract_data_t  *pxtalk_data,
+	struct VL53L1_xtalk_histogram_shape_t    *pxtalk_shape);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+VL53L1_Error VL53L1_hist_xtalk_shape_model(
+	uint16_t                               events_per_bin,
+	uint16_t                               pulse_centre,
+	uint16_t                               pulse_width,
+	struct VL53L1_xtalk_histogram_shape_t  *pxtalk_shape);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uint16_t VL53L1_hist_xtalk_shape_model_interp(
+	uint16_t      events_per_bin,
+	uint32_t      phase_delta);
 
 
 
@@ -1287,10 +1394,10 @@ void VL53L1_calc_mm_effective_spads(
 
 
 void VL53L1_hist_copy_results_to_sys_and_core(
-	VL53L1_histogram_bin_data_t      *pbins,
-	VL53L1_range_results_t           *phist,
-	VL53L1_system_results_t          *psys,
-	VL53L1_core_results_t            *pcore);
+	struct VL53L1_histogram_bin_data_t      *pbins,
+	struct VL53L1_range_results_t           *phist,
+	struct VL53L1_system_results_t          *psys,
+	struct VL53L1_core_results_t            *pcore);
 
 
 
@@ -1306,8 +1413,8 @@ void VL53L1_hist_copy_results_to_sys_and_core(
 
 
 VL53L1_Error VL53L1_sum_histogram_data (
-		VL53L1_histogram_bin_data_t *phist_input,
-		VL53L1_histogram_bin_data_t *phist_output);
+	struct VL53L1_histogram_bin_data_t *phist_input,
+	struct VL53L1_histogram_bin_data_t *phist_output);
 
 
 
@@ -1324,9 +1431,9 @@ VL53L1_Error VL53L1_sum_histogram_data (
 
 
 VL53L1_Error VL53L1_avg_histogram_data (
-		uint8_t no_of_samples,
-		VL53L1_histogram_bin_data_t *phist_sum,
-		VL53L1_histogram_bin_data_t *phist_avg);
+	uint8_t                            no_of_samples,
+	struct VL53L1_histogram_bin_data_t *phist_sum,
+	struct VL53L1_histogram_bin_data_t *phist_avg);
 
 
 
@@ -1357,8 +1464,8 @@ VL53L1_Error VL53L1_save_cfg_data(
 
 
 VL53L1_Error VL53L1_dynamic_zone_update(
-	VL53L1_DEV  Dev,
-	VL53L1_range_results_t *presults);
+	VL53L1_DEV                    Dev,
+	struct VL53L1_range_results_t *presults);
 
 
 
@@ -1404,9 +1511,9 @@ VL53L1_Error VL53L1_multizone_hist_bins_update(
 
 
 VL53L1_Error VL53L1_set_histogram_multizone_initial_bin_config(
-	  VL53L1_zone_config_t           *pzone_cfg,
-	  VL53L1_histogram_config_t      *phist_cfg,
-	  VL53L1_histogram_config_t      *pmulti_hist
+	  struct VL53L1_zone_config_t           *pzone_cfg,
+	  struct VL53L1_histogram_config_t      *phist_cfg,
+	  struct VL53L1_histogram_config_t      *pmulti_hist
     );
 
 
@@ -1417,8 +1524,8 @@ VL53L1_Error VL53L1_set_histogram_multizone_initial_bin_config(
 
 
 
-uint8_t	VL53L1_encode_GPIO_interrupt_config(
-	VL53L1_GPIO_interrupt_config_t	*pintconf);
+uint8_t VL53L1_encode_GPIO_interrupt_config(
+	struct VL53L1_GPIO_interrupt_config_t  *pintconf);
 
 
 
@@ -1428,8 +1535,8 @@ uint8_t	VL53L1_encode_GPIO_interrupt_config(
 
 
 
-VL53L1_GPIO_interrupt_config_t VL53L1_decode_GPIO_interrupt_config(
-	uint8_t		system__interrupt_config);
+struct VL53L1_GPIO_interrupt_config_t VL53L1_decode_GPIO_interrupt_config(
+	uint8_t      system__interrupt_config);
 
 
 
@@ -1469,8 +1576,8 @@ VL53L1_Error VL53L1_set_GPIO_rate_threshold(
 
 
 VL53L1_Error VL53L1_set_GPIO_thresholds_from_struct(
-	VL53L1_DEV                      Dev,
-	VL53L1_GPIO_interrupt_config_t *pintconf);
+	VL53L1_DEV                            Dev,
+	struct VL53L1_GPIO_interrupt_config_t *pintconf);
 
 
 
@@ -1552,9 +1659,9 @@ VL53L1_Error VL53L1_set_ref_spad_char_config(
 
 
 VL53L1_Error VL53L1_set_ssc_config(
-	VL53L1_DEV           Dev,
-	VL53L1_ssc_config_t *pssc_cfg,
-	uint16_t             fast_osc_frequency);
+	VL53L1_DEV                 Dev,
+	struct VL53L1_ssc_config_t *pssc_cfg,
+	uint16_t                   fast_osc_frequency);
 
 
 
@@ -1584,8 +1691,8 @@ VL53L1_Error VL53L1_set_ssc_config(
 
 
 VL53L1_Error VL53L1_get_spad_rate_data(
-	VL53L1_DEV                Dev,
-	VL53L1_spad_rate_data_t  *pspad_rates);
+	VL53L1_DEV                      Dev,
+	struct VL53L1_spad_rate_data_t  *pspad_rates);
 
 
 
@@ -1678,13 +1785,12 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_calc_required_samples(
 
 
 VL53L1_Error VL53L1_dynamic_xtalk_correction_calc_new_xtalk(
-	VL53L1_DEV                     		Dev,
-	uint32_t				xtalk_offset_out,
-	VL53L1_smudge_corrector_config_t 	*pconfig,
-	VL53L1_smudge_corrector_data_t 		*pout,
-	uint8_t					add_smudge,
-	uint8_t					soft_update
-	);
+	VL53L1_DEV                              Dev,
+	uint32_t                                xtalk_offset_out,
+	struct VL53L1_smudge_corrector_config_t *pconfig,
+	struct VL53L1_smudge_corrector_data_t   *pout,
+	uint8_t                                 add_smudge,
+	uint8_t                                 soft_update);
 
 
 
@@ -1732,8 +1838,7 @@ VL53L1_Error VL53L1_dynamic_xtalk_correction_data_init(
 
 
 VL53L1_Error VL53L1_dynamic_xtalk_correction_output_init(
-	VL53L1_LLDriverResults_t *pres
-	);
+	struct VL53L1_LLDriverResults_t *pres);
 
 
 
@@ -1767,10 +1872,9 @@ VL53L1_Error VL53L1_xtalk_cal_data_init(
 
 
 VL53L1_Error VL53L1_config_low_power_auto_mode(
-	VL53L1_general_config_t   *pgeneral,
-	VL53L1_dynamic_config_t   *pdynamic,
-	VL53L1_low_power_auto_data_t *plpadata
-	);
+	struct VL53L1_general_config_t      *pgeneral,
+	struct VL53L1_dynamic_config_t      *pdynamic,
+	struct VL53L1_low_power_auto_data_t *plpadata);
 
 
 

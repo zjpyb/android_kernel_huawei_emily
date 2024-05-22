@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
  * Description: the hw_kernel_stp_proc.c for proc file create and destroy
  * Author: sunhongqing <sunhongqing@huawei.com>
  * Create: 2018-3-31
@@ -31,6 +31,7 @@
 #define STP_NAME_HKIP          "hkip"
 #define STP_NAME_ITRUSTEE      "itrustee"
 #define STP_NAME_DOUBLE_FREE   "double-free"
+#define STP_NAME_KSHIELD       "kshield"
 
 #define STP_ID_KCODE           0x00000282
 #define STP_ID_KCODE_SYSCALL   0x00000283
@@ -48,6 +49,7 @@
 #define STP_ID_HKIP            0x00000184
 #define STP_ID_ITRUSTEE        0x00000185
 #define STP_ID_DOUBLE_FREE     0x00000186
+#define STP_ID_KSHIELD         0x00000188
 
 typedef int (*stp_cb)(void);
 
@@ -62,6 +64,12 @@ typedef union {
 enum stp_proc_feature {
 	KERNEL_STP_SCAN = 0,
 	HARDEN_DBLFREE_CHECK = 1,
+	KERNEL_STP_KSHIELD = 2,
+	HHEE_SWITCH = 3,
+};
+
+enum stp_proc_hhee_bit {
+	ENABLE_HHEE_TVM = (1 << 0),
 };
 
 enum stp_status {
@@ -90,6 +98,7 @@ enum stp_item_category {
 	HKIP,
 	ITRUSTEE,
 	DOUBLE_FREE,
+	KSHIELD,
 	STP_ITEM_MAX,
 };
 
@@ -158,6 +167,7 @@ static const struct stp_item_info item_info[] = {
 	[HKIP]         = { STP_ID_HKIP, STP_NAME_HKIP },
 	[ITRUSTEE]     = { STP_ID_ITRUSTEE, STP_NAME_ITRUSTEE },
 	[DOUBLE_FREE]  = { STP_ID_DOUBLE_FREE, STP_NAME_DOUBLE_FREE },
+	[KSHIELD]      = { STP_ID_KSHIELD, STP_NAME_KSHIELD },
 };
 #endif
 
@@ -175,6 +185,26 @@ int kernel_stp_upload(struct stp_item result, const char *addition_info);
 
 #else
 static inline int kernel_stp_upload(struct stp_item result, const char *addition_info)
+{
+	return 0;
+}
+#endif
+
+/*
+ * kernel_stp_kshield_upload - kshield info upload result to stp
+ * Description: upload kshield info to stp
+ * @result, kshield of stp_item
+ * @addition_info,the addition info wanted to upload
+ * @return: Result of loading.
+ *     0, upload correctly.
+ *     -1, upload failed.
+ */
+
+#ifdef CONFIG_HW_KERNEL_STP
+int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info);
+
+#else
+static inline int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info)
 {
 	return 0;
 }

@@ -3,7 +3,7 @@
  *
  * header file for typec driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,7 +24,6 @@
 
 extern void typec_wake_lock(struct typec_device_info *di);
 extern void typec_wake_unlock(struct typec_device_info *di);
-extern int typec_current_notifier_register(struct notifier_block *nb);
 extern int typec_detect_cc_orientation(void);
 extern int typec_detect_current_mode(void);
 extern int typec_detect_port_mode(void);
@@ -35,11 +34,6 @@ static inline void typec_wake_lock(struct typec_device_info *di)
 
 static inline void typec_wake_unlock(struct typec_device_info *di)
 {
-}
-
-static inline int typec_current_notifier_register(struct notifier_block *nb)
-{
-	return -EINVAL;
 }
 
 static inline int typec_detect_cc_orientation(void)

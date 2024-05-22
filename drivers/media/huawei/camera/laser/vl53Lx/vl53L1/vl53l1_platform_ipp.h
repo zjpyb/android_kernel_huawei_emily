@@ -64,13 +64,13 @@ extern "C"
  */
 
 VL53L1_Error VL53L1_ipp_hist_process_data(
-	VL53L1_DEV                         Dev,
-	VL53L1_dmax_calibration_data_t    *pdmax_cal,
-	VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
-	VL53L1_hist_post_process_config_t *ppost_cfg,
-	VL53L1_histogram_bin_data_t       *pbins,
-	VL53L1_xtalk_histogram_data_t     *pxtalk,
-	VL53L1_range_results_t            *presults);
+	VL53L1_DEV                               Dev,
+	struct VL53L1_dmax_calibration_data_t    *pdmax_cal,
+	struct VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
+	struct VL53L1_hist_post_process_config_t *ppost_cfg,
+	struct VL53L1_histogram_bin_data_t       *pbins,
+	struct VL53L1_xtalk_histogram_data_t     *pxtalk,
+	struct VL53L1_range_results_t            *presults);
 
 
 /**
@@ -94,12 +94,12 @@ VL53L1_Error VL53L1_ipp_hist_process_data(
  */
 
 VL53L1_Error VL53L1_ipp_hist_ambient_dmax(
-	VL53L1_DEV                         Dev,
-	uint16_t                           target_reflectance,
-	VL53L1_dmax_calibration_data_t    *pdmax_cal,
-	VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
-	VL53L1_histogram_bin_data_t       *pbins,
-	int16_t                           *pambient_dmax_mm);
+	VL53L1_DEV                               Dev,
+	uint16_t                                 target_reflectance,
+	struct VL53L1_dmax_calibration_data_t    *pdmax_cal,
+	struct VL53L1_hist_gen3_dmax_config_t    *pdmax_cfg,
+	struct VL53L1_histogram_bin_data_t       *pbins,
+	int16_t                                  *pambient_dmax_mm);
 
 
 /**
@@ -119,10 +119,10 @@ VL53L1_Error VL53L1_ipp_hist_ambient_dmax(
  */
 
 VL53L1_Error VL53L1_ipp_xtalk_calibration_process_data(
-	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_range_results_t       *pxtalk_ranges,
-	VL53L1_xtalk_histogram_data_t      *pxtalk_shape,
-	VL53L1_xtalk_calibration_results_t *pxtalk_cal);
+	VL53L1_DEV                                Dev,
+	struct VL53L1_xtalk_range_results_t       *pxtalk_ranges,
+	struct VL53L1_xtalk_histogram_data_t      *pxtalk_shape,
+	struct VL53L1_xtalk_calibration_results_t *pxtalk_cal);
 
 
 /**
@@ -144,13 +144,13 @@ VL53L1_Error VL53L1_ipp_xtalk_calibration_process_data(
  */
 
 VL53L1_Error VL53L1_ipp_hist_xtalk_correction(
-	VL53L1_DEV                    Dev,
-	VL53L1_customer_nvm_managed_t *pcustomer,
-	VL53L1_dynamic_config_t       *pdyn_cfg,
-	VL53L1_xtalk_histogram_data_t *pxtalk_shape,
-	VL53L1_histogram_bin_data_t   *pip_hist_data,
-	VL53L1_histogram_bin_data_t   *pop_hist_data,
-	VL53L1_histogram_bin_data_t   *pxtalk_count_data);
+	VL53L1_DEV                           Dev,
+	struct VL53L1_customer_nvm_managed_t *pcustomer,
+	struct VL53L1_dynamic_config_t       *pdyn_cfg,
+	struct VL53L1_xtalk_histogram_data_t *pxtalk_shape,
+	struct VL53L1_histogram_bin_data_t   *pip_hist_data,
+	struct VL53L1_histogram_bin_data_t   *pop_hist_data,
+	struct VL53L1_histogram_bin_data_t   *pxtalk_count_data);
 
 /**
  * @brief  IPP Wrapper call for Generating Xtalk data from dual reflectance
@@ -172,11 +172,11 @@ VL53L1_Error VL53L1_ipp_hist_xtalk_correction(
  */
 
 VL53L1_Error VL53L1_ipp_generate_dual_reflectance_xtalk_samples(
-	VL53L1_DEV                     Dev,
-	VL53L1_xtalk_range_results_t  *pxtalk_results,
-	uint16_t                       expected_target_distance_mm,
-	uint8_t                        higher_reflectance,
-	VL53L1_histogram_bin_data_t	  *pxtalk_avg_samples);
+	VL53L1_DEV                           Dev,
+	struct VL53L1_xtalk_range_results_t  *pxtalk_results,
+	uint16_t                             expected_target_distance_mm,
+	uint8_t                              higher_reflectance,
+	struct VL53L1_histogram_bin_data_t   *pxtalk_avg_samples);
 
 
 

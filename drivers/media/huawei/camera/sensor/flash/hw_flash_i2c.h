@@ -1,4 +1,7 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/*
+ * hw_flash_i2c.h
+ *
+ * Copyright (c) 2011-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,4 +20,4 @@
 
 extern struct hw_flash_i2c_fn_t hw_flash_i2c_func_tbl;
 
-#endif /*_HW_FLASH_I2C_H_*/
+#endif /* _HW_FLASH_I2C_H_ */

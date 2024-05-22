@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the sescan.c for selinux status checking
  * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
  *         likun <quentin.lee@huawei.com>
@@ -17,15 +17,16 @@ static const char *TAG = "sescan";
 
 int get_selinux_enforcing(void)
 {
-	return selinux_enforcing;
+	return SELINUX_ENFORCING;
 }
 
-int sescan_hookhash(uint8_t *hash)
+int sescan_hookhash(uint8_t *hash, size_t hash_len)
 {
 	int err;
 	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
 
 	SHASH_DESC_ON_STACK(shash, tfm);
+	var_not_used(hash_len);
 
 	if (IS_ERR(tfm)) {
 		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
@@ -52,7 +53,7 @@ int sescan_hookhash(uint8_t *hash)
 		return -EFAULT;
 	}
 
-	crypto_shash_update(shash,(char *) *security_ops,
+	crypto_shash_update(shash, (char *)*security_ops,
 			sizeof(struct security_operations));
 #else
 /*
@@ -61,13 +62,23 @@ int sescan_hookhash(uint8_t *hash)
  * sizeof(P->hook.FUNC) in order to get the size of
  * function pointer that for computing a hash later
  */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
 #define DO_ONE_HEAD(FUNC) do { \
-		struct security_hook_list *P; \
+	struct security_hook_list *P; \
 		list_for_each_entry(P, &security_hook_heads.FUNC, list) { \
 			crypto_shash_update(shash, (char *)&(P->hook.FUNC), \
-					sizeof(P->hook.FUNC)); \
+				sizeof(P->hook.FUNC)); \
 		} \
 	} while (0)
+#else
+#define DO_ONE_HEAD(FUNC) do { \
+	struct security_hook_list *P; \
+		hlist_for_each_entry(P, &security_hook_heads.FUNC, list) { \
+			crypto_shash_update(shash, (char *)&(P->hook.FUNC), \
+				sizeof(P->hook.FUNC)); \
+		} \
+	} while (0)
+#endif
 	// reference initialization in security_hook_heads in security/security.c
 	DO_ONE_HEAD(binder_set_context_mgr);
 	DO_ONE_HEAD(binder_transaction);
@@ -300,5 +311,3 @@ int sescan_hookhash(uint8_t *hash)
 	crypto_free_shash(tfm);
 	return err;
 }
-
-

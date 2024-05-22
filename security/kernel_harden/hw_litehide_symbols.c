@@ -209,7 +209,9 @@ static ssize_t litehide_syms_write(struct file *filp, const char __user *ubuf,
 {
 	struct symbol_node *node = NULL;
 	ssize_t write = 0;
+#ifdef CONFIG_CFI_CLANG
 	char blacklist_cfi[SYM_NAME_LEN];
+#endif
 
 	/* Clear the hidesym_blacklist by 'echo > litehide_syms' */
 	if (cnt == 1) {
@@ -233,7 +235,7 @@ static ssize_t litehide_syms_write(struct file *filp, const char __user *ubuf,
 		}
 		if (!find_sym_from_blacklist(node->sym))
 			list_add_tail(&node->list, &hidesyms_blacklist);
-#ifdef CONFIG_HISI_CLANG
+#ifdef CONFIG_CFI_CLANG
 		/* Add .cfi func support */
 		memset(blacklist_cfi, 0, SYM_NAME_LEN);
 		(void)strncpy(blacklist_cfi, node->sym, strlen(node->sym));
@@ -270,7 +272,9 @@ static const struct file_operations hide_syms_fops = {
 static __init int initialize_blacklist(void)
 {
 	int i;
+#ifdef CONFIG_CFI_CLANG
 	char blacklist_cfi[SYM_NAME_LEN];
+#endif
 	struct symbol_node *node = NULL;
 
 	for (i = 0; i < MAX_HIDESYMS_NUM; i++) {
@@ -287,7 +291,7 @@ static __init int initialize_blacklist(void)
 		(void)strncpy(node->sym, hw_litehidesymbs_blacklist[i],
 			      strlen(hw_litehidesymbs_blacklist[i]));
 		list_add_tail(&node->list, &hidesyms_blacklist);
-#ifdef CONFIG_HISI_CLANG
+#ifdef CONFIG_CFI_CLANG
 		node = litehide_sym_node_alloc();
                 if (!node)
 			return -ENOMEM;

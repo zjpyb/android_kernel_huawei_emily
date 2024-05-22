@@ -271,7 +271,7 @@ else # !BUILD_C_RECORDMCOUNT
 sub_cmd_record_mcount = set -e ; perl $(srctree)/scripts/recordmcount.pl "$(ARCH)" \
 	"$(if $(CONFIG_CPU_BIG_ENDIAN),big,little)" \
 	"$(if $(CONFIG_64BIT),64,32)" \
-	"$(OBJDUMP)" "$(OBJCOPY)" "$(CC) $(KBUILD_CFLAGS)" \
+	"$(OBJDUMP)" "$(OBJCOPY)" "$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS)" \
 	"$(LD)" "$(NM)" "$(RM)" "$(MV)" \
 	"$(if $(part-of-module),1,0)" "$(@)";
 
@@ -539,6 +539,17 @@ ifdef CONFIG_LTO_CLANG
 	rm -f $@.tmp
 endif
 
+ifeq ($(CONFIG_ARM64_HKRR),y)
+ifdef rename-text-section-to
+OBJCOPYFLAGS := --rename-section .text=$(rename-text-section-to)
+
+$(obj)/%.rename.o: $(obj)/%.o FORCE
+	$(call if_changed,objcopy)
+
+obj-y := $(patsubst %.o,%.rename.o,$(filter-out %/built-in.o, $(obj-y))) $(filter %/built-in.o, $(obj-y))
+endif
+endif
+
 ifdef CONFIG_THIN_ARCHIVES
   cmd_make_builtin = $(update_lto_symversions)	\
 	rm -f $@; $(AR) rcSTP$(KBUILD_ARFLAGS)
@@ -556,6 +567,10 @@ cmd_link_o_target = $(if $(strip $(obj-y)),\
 		      $(cmd_secanalysis),\
 		      $(cmd_make_empty_builtin) $@)
 
+ifeq ($(CONFIG_ARM64_HKRR),y)
+$(builtin-target): $(obj-y) FORCE
+	$(call if_changed,link_o_target)
+else
 ifndef rename-text-section-to
 $(builtin-target): $(obj-y) FORCE
 	$(call if_changed,link_o_target)
@@ -566,6 +581,8 @@ $(builtin-target): $(obj)/.built-in.o FORCE
 $(obj)/.built-in.o: $(obj-y) FORCE
 	$(call if_changed,link_o_target)
 endif
+endif
+
 
 targets += $(builtin-target)
 endif # builtin-target
@@ -730,8 +747,6 @@ endif
 # information in a variable se we can use it in if_changed and friends.
 
 .PHONY: $(PHONY)
-
-export LINT_PATH = $(if $(KBUILD_SRC),$(srctree)/)../../vendor/hisi/llt/ci/tools/pc-lint
 
 lint_flags = $(filter -I% -D%, $(c_flags)) -I$(LINT_PATH) -header"(generated/autoconf.h)" -D_lint -DLINUX_PC_LINT
 

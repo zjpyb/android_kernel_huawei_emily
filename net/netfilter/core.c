@@ -478,7 +478,7 @@ int nf_hook_slow(struct sk_buff *skb, struct nf_hook_state *state,
 		case NF_DROP:
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
 			if (hw_bypass_skb(state->pf, hook, NULL, skb,
-				state->in, state->out, DROP)) {
+					  state->in, state->out, DROP)) {
 				bypass = true;
 				break;
 			}
@@ -502,7 +502,8 @@ int nf_hook_slow(struct sk_buff *skb, struct nf_hook_state *state,
 	}
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
 	if (!bypass)
-		hw_bypass_skb(state->pf, hook, NULL, skb, state->in, state->out, PASS);
+		hw_bypass_skb(state->pf, hook, NULL, skb, state->in,
+			      state->out, PASS);
 #endif
 	return 1;
 }

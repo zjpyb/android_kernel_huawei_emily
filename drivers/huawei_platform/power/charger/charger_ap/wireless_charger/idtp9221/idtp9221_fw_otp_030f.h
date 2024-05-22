@@ -3,7 +3,7 @@
  *
  * idtp9221 3.f otp fw
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

@@ -5,7 +5,7 @@
  * Issue date:  04/30/2005
  * http://www.ouah.org/ogay/sha2/
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,27 +20,27 @@
 
 #include "sha224.h"
 
-#define SHA2_SHFR(x, n) (x >> n)
-#define SHA2_ROTR(x, n) ((x >> n) | (x << ((sizeof(x) << 3) - n)))
-#define SHA2_ROTL(x, n) ((x << n) | (x >> ((sizeof(x) << 3) - n)))
-#define SHA2_CH(x, y, z) ((x & y) ^ (~x & z))
-#define SHA2_MAJ(x, y, z) ((x & y) ^ (x & z) ^ (y & z))
-#define SHA224_F1(x) (SHA2_ROTR(x, 2) ^ SHA2_ROTR(x, 13) ^ SHA2_ROTR(x, 22))
-#define SHA224_F2(x) (SHA2_ROTR(x, 6) ^ SHA2_ROTR(x, 11) ^ SHA2_ROTR(x, 25))
-#define SHA224_F3(x) (SHA2_ROTR(x, 7) ^ SHA2_ROTR(x, 18) ^ SHA2_SHFR(x, 3))
-#define SHA224_F4(x) (SHA2_ROTR(x, 17) ^ SHA2_ROTR(x, 19) ^ SHA2_SHFR(x, 10))
-#define SHA2_UNPACK32(x, str)			\
-do {						\
-	*((str) + 3) = (uint8_t)((x));		\
-	*((str) + 2) = (uint8_t)((x) >> 8);	\
-	*((str) + 1) = (uint8_t)((x) >> 16);	\
-	*((str) + 0) = (uint8_t)((x) >> 24);	\
+#define sha2_shfr(x, n) ((x) >> (n))
+#define sha2_rotr(x, n) (((x) >> (n)) | ((x) << ((sizeof(x) << 3) - (n))))
+#define sha2_rotl(x, n) (((x) << (n)) | ((x) >> ((sizeof(x) << 3) - (n))))
+#define sha2_ch(x, y, z) (((x) & (y)) ^ (~(x) & (z)))
+#define sha2_maj(x, y, z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+#define sha224_f1(x) (sha2_rotr(x, 2) ^ sha2_rotr(x, 13) ^ sha2_rotr(x, 22))
+#define sha224_f2(x) (sha2_rotr(x, 6) ^ sha2_rotr(x, 11) ^ sha2_rotr(x, 25))
+#define sha224_f3(x) (sha2_rotr(x, 7) ^ sha2_rotr(x, 18) ^ sha2_shfr(x, 3))
+#define sha224_f4(x) (sha2_rotr(x, 17) ^ sha2_rotr(x, 19) ^ sha2_shfr(x, 10))
+#define sha2_unpack32(x, str) \
+do { \
+	*((str) + 3) = (uint8_t)((x)); \
+	*((str) + 2) = (uint8_t)((x) >> 8); \
+	*((str) + 1) = (uint8_t)((x) >> 16); \
+	*((str) + 0) = (uint8_t)((x) >> 24); \
 } while (0)
-#define SHA2_PACK32(str, x) {			\
-	*(x) = (((uint32_t)*((str) + 3)) |	\
-		((uint32_t)*((str) + 2) << 8) |	\
-		((uint32_t)*((str) + 1) << 16) |\
-		((uint32_t)*((str) + 0) << 24));\
+#define sha2_pack32(str, x) { \
+	*(x) = (((uint32_t)*((str) + 3)) | \
+		((uint32_t)*((str) + 2) << 8) | \
+		((uint32_t)*((str) + 1) << 16) | \
+		((uint32_t)*((str) + 0) << 24)); \
 }
 static const uint32_t sha224_k[] = {
 	0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5,
@@ -62,7 +62,7 @@ static const uint32_t sha224_k[] = {
 };
 
 static void sha224_transform(struct sha224_t *context,
-		const uint8_t *message, uint32_t block_nb)
+	const uint8_t *message, uint32_t block_nb)
 {
 	uint32_t w[64];
 	uint32_t wv[8];
@@ -73,16 +73,16 @@ static void sha224_transform(struct sha224_t *context,
 	for (i = 0; i < (uint32_t)block_nb; i++) {
 		sub_block = message + (i << 6);
 		for (j = 0; j < 16; j++)
-			SHA2_PACK32(&sub_block[j << 2], &w[j]);
+			sha2_pack32(&sub_block[j << 2], &w[j]);
 		for (j = 16; j < 64; j++)
-			w[j] = SHA224_F4(w[j - 2]) + w[j - 7]
-				+ SHA224_F3(w[j - 15]) + w[j - 16];
+			w[j] = sha224_f4(w[j - 2]) + w[j - 7]
+				+ sha224_f3(w[j - 15]) + w[j - 16];
 		for (j = 0; j < 8; j++)
 			wv[j] = (context->m_h)[j];
 		for (j = 0; j < 64; j++) {
-			t1 = wv[7] + SHA224_F2(wv[4]) +
-			SHA2_CH(wv[4], wv[5], wv[6]) + sha224_k[j] + w[j];
-			t2 = SHA224_F1(wv[0]) + SHA2_MAJ(wv[0], wv[1], wv[2]);
+			t1 = wv[7] + sha224_f2(wv[4]) +
+			sha2_ch(wv[4], wv[5], wv[6]) + sha224_k[j] + w[j];
+			t2 = sha224_f1(wv[0]) + sha2_maj(wv[0], wv[1], wv[2]);
 			wv[7] = wv[6];
 			wv[6] = wv[5];
 			wv[5] = wv[4];
@@ -114,7 +114,7 @@ void sha224_init(struct sha224_t *context)
 }
 
 void sha224_update(struct sha224_t *context,
-		const uint8_t *message, const uint32_t len)
+	const uint8_t *message, const uint32_t len)
 {
 	uint32_t block_nb;
 	uint32_t new_len, rem_len, tmp_len;
@@ -159,8 +159,8 @@ void sha224_final(struct sha224_t *context, uint8_t *digest)
 	for (i = 0; i < (pm_len - (context->m_len)); i++)
 		((context->m_block) + (context->m_len))[i] = 0;
 	(context->m_block)[(context->m_len)] = 0x80;
-	SHA2_UNPACK32(len_b, (context->m_block) + pm_len - 4);
+	sha2_unpack32(len_b, (context->m_block) + pm_len - 4);
 	sha224_transform(context, (context->m_block), block_nb);
 	for (i = 0; i < 7; i++)
-		SHA2_UNPACK32((context->m_h)[i], &digest[i << 2]);
+		sha2_unpack32((context->m_h)[i], &digest[i << 2]);
 }

@@ -28,3 +28,11 @@ endif
 if HISI_CAMERA_HISTAR_ISPV210
 source "drivers/media/huawei/camera/hisp/hisp210/Kconfig"
 endif
+
+if HISI_CAMERA_HISTAR_ISPV310
+source "drivers/media/huawei/camera/hisp/hisp310/Kconfig"
+endif
+
+if HISI_CAMERA_HISTAR_ISPV300
+source "drivers/media/huawei/camera/hisp/hisp300/Kconfig"
+endif

@@ -51,7 +51,7 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_api.h"
 
 extern volatile int g_ts_kit_lcd_brightness_info;
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
@@ -4796,7 +4796,7 @@ static ssize_t parade_ic_ver_show(struct device *dev,
 {
 	struct parade_core_data *cd = NULL;
 	struct parade_ttdata *ttdata = NULL;
-	int rc = parade_hid_output_get_sysinfo_(cd);
+	int rc;
 
 	if (!dev || !attr || !buf || !tskit_parade_data) {
 		TS_LOG_ERR("%s, param is null\n", __func__);
@@ -4804,6 +4804,7 @@ static ssize_t parade_ic_ver_show(struct device *dev,
 	}
 	cd = tskit_parade_data;
 	ttdata = &cd->sysinfo.ttdata;
+	rc = parade_hid_output_get_sysinfo_(cd);
 
 	if (rc < 0) {
 		return scnprintf(buf, PAGE_SIZE,
@@ -7938,7 +7939,7 @@ static int parade_fw_update(const struct firmware *fw)
 	if (!fw) {
 		rc = -1;
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_REQUEST_FW_FAIL;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_REQUEST_FW_FAIL;
 #endif
 		TS_LOG_ERR("%s, fw is null\n", __func__);
 		goto pt_firmware_cont_exit;
@@ -7947,7 +7948,7 @@ static int parade_fw_update(const struct firmware *fw)
 	if (!fw->data || !fw->size) {
 		TS_LOG_INFO("%s: No firmware received\n", __func__);
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_FW_CONT_ERROR;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_FW_CONT_ERROR;
 #endif
 		rc = -1;
 		goto pt_firmware_cont_release_exit;
@@ -7959,7 +7960,7 @@ static int parade_fw_update(const struct firmware *fw)
 	if (header_size >= (fw->size + 1)) {
 		TS_LOG_INFO("%s: Firmware format is invalid\n", __func__);
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_FW_CONT_ERROR;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_FW_CONT_ERROR;
 #endif
 		rc = -1;
 		goto pt_firmware_cont_release_exit;
@@ -8195,7 +8196,7 @@ upgrade_firmware_again:
 	if (fw_entry == NULL) {
 		TS_LOG_ERR("%s: fw_entry == NULL\n", __func__);
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_FW_CONT_ERROR;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_FW_CONT_ERROR;
 #endif
 		rc = -EINVAL;
 		goto entry_null;
@@ -8203,7 +8204,7 @@ upgrade_firmware_again:
 	if (fw_entry->data == NULL || fw_entry->size == 0) {
 		TS_LOG_ERR("%s: No firmware received\n", __func__);
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_FW_CONT_ERROR;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_FW_CONT_ERROR;
 #endif
 		rc = -EINVAL;
 		goto firmware_release;
@@ -8212,7 +8213,7 @@ upgrade_firmware_again:
 	if (header_size >= (fw_entry->size + 1)) {
 		TS_LOG_ERR("%s: Firmware format is invalid\n", __func__);
 #if defined (CONFIG_HUAWEI_DSM)
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_FW_CONT_ERROR;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_FW_CONT_ERROR;
 #endif
 		rc = -EINVAL;
 		goto firmware_release;
@@ -8226,7 +8227,7 @@ upgrade_firmware_again:
 			TS_LOG_ERR("%s: Startup Error after FW upgrade\n",
 					__func__);
 #if defined (CONFIG_HUAWEI_DSM)
-			tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_START_UP_FAIL;
+			tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_START_UP_FAIL;
 #endif
 		} else {
 			TS_LOG_INFO("%s: Start up successfully after FW upgrade\n",
@@ -8391,7 +8392,7 @@ static int parade_need_fw_update(void)
 	if (rc < 0) {
 		TS_LOG_ERR("%s: Fail request firmware\n", __func__);
 #ifdef CONFIG_HUAWEI_DSM
-		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = FWU_REQUEST_FW_FAIL;
+		tskit_parade_data->parade_chip_data->ts_platform_data->dsm_info.constraints_update_status = FWU_REQUEST_FW_FAIL;
 #endif /* CONFIG_HUAWEI_DSM */
 		return NO_UPDATA;
 	}
@@ -10139,11 +10140,11 @@ static int  parade_get_cmcp_info(struct parade_core_data *cd,
 		cmcp_info->cm_sensor_delta = ABS((cmcp_info->cm_ave_data_panel -
 					cmcp_info->cm_cal_data_panel) * 1000 /
 				cmcp_info->cm_ave_data_panel);
+		/* calculate gradient panel sensor column/row here */
+		calculate_gd_info(gd_sensor_col, gd_sensor_row, tx_num, rx_num,
+			cm_data_panel, 1, 1);
 	}
 
-	/* calculate gradient panel sensor column/row here */
-	calculate_gd_info(gd_sensor_col, gd_sensor_row, tx_num, rx_num,
-			cm_data_panel, 1, 1);
 	TS_LOG_DEBUG("%s: TX gradient:\n", __func__);
 	for (i = 0; i < tx_num; i++) {
 		TS_LOG_DEBUG("i=%d max=%d,min=%d,ave=%d, gradient=%d\n",

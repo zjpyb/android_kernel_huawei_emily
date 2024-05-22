@@ -131,6 +131,10 @@
 
 #include	"slab.h"
 
+#ifdef CONFIG_HW_TASK_MEM_STAT
+#include	<task_mem_stat/task_mem_stat.h>
+#endif
+
 /*
  * DEBUG	- 1 for kmem_cache_create() to honour; SLAB_RED_ZONE & SLAB_POISON.
  *		  0 for faster, smaller code (especially in the critical paths).
@@ -405,19 +409,6 @@ static inline void *index_to_obj(struct kmem_cache *cache, struct page *page,
 				 unsigned int idx)
 {
 	return page->s_mem + cache->size * idx;
-}
-
-/*
- * We want to avoid an expensive divide : (offset / cache->size)
- *   Using the fact that size is a constant for a particular cache,
- *   we can replace (offset / cache->size) by
- *   reciprocal_divide(offset, cache->reciprocal_buffer_size)
- */
-static inline unsigned int obj_to_index(const struct kmem_cache *cache,
-					const struct page *page, void *obj)
-{
-	u32 offset = (obj - page->s_mem);
-	return reciprocal_divide(offset, cache->reciprocal_buffer_size);
 }
 
 #define BOOT_CPUCACHE_ENTRIES	1
@@ -1293,7 +1284,7 @@ void __init kmem_cache_init(void)
 	 * Initialize the caches that provide memory for the  kmem_cache_node
 	 * structures first.  Without this, further allocations will bug.
 	 */
-	kmalloc_caches[INDEX_NODE] = create_kmalloc_cache(
+	kmalloc_caches[KMALLOC_NORMAL][INDEX_NODE] = create_kmalloc_cache(
 				kmalloc_info[INDEX_NODE].name,
 				kmalloc_size(INDEX_NODE), ARCH_KMALLOC_FLAGS);
 	slab_state = PARTIAL_NODE;
@@ -1308,7 +1299,7 @@ void __init kmem_cache_init(void)
 		for_each_online_node(nid) {
 			init_list(kmem_cache, &init_kmem_cache_node[CACHE_CACHE + nid], nid);
 
-			init_list(kmalloc_caches[INDEX_NODE],
+			init_list(kmalloc_caches[KMALLOC_NORMAL][INDEX_NODE],
 					  &init_kmem_cache_node[SIZE_NODE + nid], nid);
 		}
 	}
@@ -1432,6 +1423,9 @@ static struct page *kmem_getpages(struct kmem_cache *cachep, gfp_t flags,
 		mod_lruvec_page_state(page, NR_SLAB_RECLAIMABLE, nr_pages);
 	else
 		mod_lruvec_page_state(page, NR_SLAB_UNRECLAIMABLE, nr_pages);
+#ifdef CONFIG_HW_TASK_MEM_STAT
+	add_slab_count((cachep->flags & SLAB_RECLAIM_ACCOUNT) ? true : false, nr_pages);
+#endif
 
 	__SetPageSlab(page);
 	/* Record if ALLOC_NO_WATERMARKS was set when allocating the slab */
@@ -1455,6 +1449,9 @@ static void kmem_freepages(struct kmem_cache *cachep, struct page *page)
 		mod_lruvec_page_state(page, NR_SLAB_RECLAIMABLE, -nr_freed);
 	else
 		mod_lruvec_page_state(page, NR_SLAB_UNRECLAIMABLE, -nr_freed);
+#ifdef CONFIG_HW_TASK_MEM_STAT
+	add_slab_count((cachep->flags & SLAB_RECLAIM_ACCOUNT) ? true : false, -nr_freed);
+#endif
 
 	BUG_ON(!PageSlab(page));
 	__ClearPageSlabPfmemalloc(page);
@@ -2301,6 +2298,18 @@ static int drain_freelist(struct kmem_cache *cache,
 	}
 out:
 	return nr_freed;
+}
+
+bool __kmem_cache_empty(struct kmem_cache *s)
+{
+	int node;
+	struct kmem_cache_node *n;
+
+	for_each_kmem_cache_node(s, node, n)
+		if (!list_empty(&n->slabs_full) ||
+		    !list_empty(&n->slabs_partial))
+			return false;
+	return true;
 }
 
 int __kmem_cache_shrink(struct kmem_cache *cachep)

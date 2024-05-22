@@ -1,24 +1,20 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2013-2025. All rights reserved.
- * Description: jpeg jpu common
- * Author: Huawei Hisilicon
- * Create: 2013
+ * jpeg jpu common
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
  */
+
 #ifndef HISI_JPU_COMMON_H
 #define HISI_JPU_COMMON_H
 
 #include <linux/types.h>
-#include <securec.h>
 
 #define HISIJPU_IOCTL_MAGIC 'J'
 
@@ -27,9 +23,6 @@
 #define JPU_MCU_8ALIGN 8
 #define JPU_MCU_16ALIGN 16
 
-/*
- * Maximum number of data components
- */
 #define PIXEL_COMPONENT_NUM 3
 #define NUM_COMPS_IN_SCAN   4
 
@@ -41,7 +34,7 @@
 #define HAC_SYMBOL_TABLE_NUM 176
 
 #ifndef BIT
-#define BIT(x)  (1<<(x))
+#define BIT(x) (1 << (x))
 #endif
 
 struct jpu_region_info {
@@ -53,9 +46,6 @@ struct jpu_region_info {
 	uint32_t rsv;
 };
 
-/*
- * input format
- */
 enum jpu_raw_format {
 	HISI_JPEG_DECODE_RAW_YUV_UNSUPPORT = -1,
 	HISI_JPEG_DECODE_RAW_YUV444 = 0,
@@ -68,7 +58,7 @@ enum jpu_raw_format {
 
 enum jpu_color_space {
 	HISI_JPEG_DECODE_OUT_UNKNOWN = -1,
-/* Y/Cb/Cr (also known as YUV) */
+	/* Y/Cb/Cr (also known as YUV) */
 	HISI_JPEG_DECODE_OUT_YUV444 = 0,
 	HISI_JPEG_DECODE_OUT_YUV422_H2V1 = 1, /* YUV422 */
 	HISI_JPEG_DECODE_OUT_YUV422_H1V2 = 2, /* YUV440 */
@@ -83,9 +73,6 @@ enum jpu_color_space {
 	HISI_JPEG_DECODE_OUT_FORMAT_MAX,
 };
 
-/*
- * jpu decode sample scale
- */
 enum hisi_jpeg_decode_sample_size {
 	HISI_JPEG_DECODE_SAMPLE_SIZE_1 = 1,
 	HISI_JPEG_DECODE_SAMPLE_SIZE_2 = 2,
@@ -94,9 +81,6 @@ enum hisi_jpeg_decode_sample_size {
 	HISI_JPEG_DECODE_SAMPLE_SIZE_MAX,
 };
 
-/*
- * jpu decode mode
- */
 enum jpu_decode_mode {
 	HISI_JPEG_DECODE_MODE_FULL = 0,
 	HISI_JPEG_DECODE_MODE_FULL_SUB = 1,
@@ -106,13 +90,13 @@ enum jpu_decode_mode {
 };
 
 struct component_info_t {
-	uint32_t s32ComponentId;
-	uint32_t s32ComponentIndex;
-	uint32_t s32QuantTblNo;
-	uint32_t s32DcTblNo;
-	uint32_t s32AcTblNo;
-	uint8_t u8HorSampleFac;
-	uint8_t u8VerSampleFac;
+	uint32_t component_id;
+	uint32_t component_index;
+	uint32_t quant_tbl_num;
+	uint32_t dc_tbl_num;
+	uint32_t ac_tbl_num;
+	uint8_t hor_sample_fac;
+	uint8_t ver_sample_fac;
 	uint16_t reserved0;
 };
 

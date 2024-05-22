@@ -1,7 +1,7 @@
 /*
  * dsm_test.c
  *
- *the file is for dsm test
+ * the file is for dsm test
  *
  * Copyright (c) 2015-2019 Huawei Technologies Co., Ltd.
  *
@@ -27,9 +27,9 @@
 
 #define HWLOG_TAG		DSM_TEST
 HWLOG_REGIST();
-#define DSM_LOG_INFO(x...)	_hwlog_info(HWLOG_TAG, ##x)
-#define DSM_LOG_ERR(x...)	_hwlog_err(HWLOG_TAG, ##x)
-#define DSM_LOG_DEBUG(x...)	_hwlog_debug(HWLOG_TAG, ##x)
+#define dsm_log_info(x...)	_hwlog_info(HWLOG_TAG, ##x)
+#define dsm_log_err(x...)	_hwlog_err(HWLOG_TAG, ##x)
+#define dsm_log_debug(x...)	_hwlog_debug(HWLOG_TAG, ##x)
 
 #define DSM_TEST_BUFF		16
 #define DSM_TEST_DEVICE_SUM	5
@@ -40,6 +40,8 @@ HWLOG_REGIST();
 #define DEV_FIVE_BUFF_SIZE	500
 #define DSM_RANDOM_ODD_RESULT	0
 #define DSM_RANDOM_EVEN_RESULT	5
+#define DSM_EVEN_NUM            2
+#define DSM_SCHEDULE_TIMEOUT    10
 
 int poll(void)
 {
@@ -47,8 +49,9 @@ int poll(void)
 	int result;
 
 	random = get_random_int();
-	result = (random % 2) ? DSM_RANDOM_ODD_RESULT : DSM_RANDOM_EVEN_RESULT;
-	DSM_LOG_INFO("%s enter random num %u, result %d\n",
+	result = (random % DSM_EVEN_NUM) ?
+		 DSM_RANDOM_ODD_RESULT : DSM_RANDOM_EVEN_RESULT;
+	dsm_log_info("%s enter random num %u, result %d\n",
 		     __func__, random, result);
 	return result;
 }
@@ -58,7 +61,7 @@ int dump(int type, void *buff, int size)
 	int used_size = 0;
 	char *ptr = buff;
 
-	DSM_LOG_INFO("%s called, type %d\n", __func__, type);
+	dsm_log_info("%s called, type %d\n", __func__, type);
 	used_size += snprintf(ptr, size - used_size, "%s called:\n", __func__);
 	ptr = buff + used_size;
 	used_size += snprintf(ptr, size - used_size, "Today is saturday\n");
@@ -77,7 +80,7 @@ struct dsm_client_ops ops = {
 	.dump_func = dump,
 };
 
-struct dsm_dev dev1 = {
+struct dsm_dev test_dev_1 = {
 	.name = "test_dev_1",
 	.device_name = NULL,
 	.ic_name = NULL,
@@ -86,7 +89,7 @@ struct dsm_dev dev1 = {
 	.buff_size = DEV_ONE_BUFF_SIZE,
 };
 
-struct dsm_dev dev2 = {
+struct dsm_dev test_dev_2 = {
 	.name = "test_dev_2",
 	.device_name = NULL,
 	.ic_name = NULL,
@@ -95,7 +98,7 @@ struct dsm_dev dev2 = {
 	.buff_size = DEV_TWO_BUFF_SIZE,
 };
 
-struct dsm_dev dev3 = {
+struct dsm_dev test_dev_3 = {
 	.name = "test_dev_3",
 	.device_name = NULL,
 	.ic_name = NULL,
@@ -104,7 +107,7 @@ struct dsm_dev dev3 = {
 	.buff_size = DEV_THREE_BUFF_SIZE,
 };
 
-struct dsm_dev dev4 = {
+struct dsm_dev test_dev_4 = {
 	.name = "test_dev_4",
 	.device_name = NULL,
 	.ic_name = NULL,
@@ -113,7 +116,7 @@ struct dsm_dev dev4 = {
 	.buff_size = DEV_FOUR_BUFF_SIZE,
 };
 
-struct dsm_dev dev5 = {
+struct dsm_dev test_dev_5 = {
 	.name = "test_dev_5",
 	.device_name = NULL,
 	.ic_name = NULL,
@@ -122,18 +125,18 @@ struct dsm_dev dev5 = {
 	.buff_size = DEV_FIVE_BUFF_SIZE,
 };
 
-struct dsm_client *c1;
-struct dsm_client *c2;
-struct dsm_client *c3;
-struct dsm_client *c4;
-struct dsm_client *c5;
+static struct dsm_client *client_1;
+static struct dsm_client *client_2;
+static struct dsm_client *client_3;
+static struct dsm_client *client_4;
+static struct dsm_client *client_5;
 
 static u8 test_buff[DSM_TEST_BUFF] = {'a', 'b', 'c', 'd',
 				      'e', 'f', 'g', 'h',
 				      'i', 'j', 'k', 'l',
 				      'm', 'n', 'o', '\n'};
 
-static inline void test_copy(struct dsm_client *client, int count)
+static void test_copy(struct dsm_client *client, int count)
 {
 	while (count / DSM_TEST_BUFF) {
 		dsm_client_copy(client, test_buff, DSM_TEST_BUFF);
@@ -151,7 +154,7 @@ void notify_work(void)
 
 	random = get_random_int();
 	result = random % DSM_TEST_DEVICE_SUM;
-	DSM_LOG_INFO("%s enter random num %u, result %d\n",
+	dsm_log_info("%s enter random num %u, result %d\n",
 		     __func__, random, result);
 	switch (result) {
 	case 0:
@@ -170,36 +173,36 @@ void notify_work(void)
 		goto notify_5;
 		/* go through down */
 	default:
-		DSM_LOG_INFO("%s out , finish %d dsm_dev notify\n",
+		dsm_log_info("%s out , finish %d dsm_dev notify\n",
 			     __func__, result);
 	}
 
 notify_5:
-	curr = c1;
+	curr = client_1;
 	if (!dsm_client_ocuppy(curr)) {
 		test_copy(curr, DEV_ONE_BUFF_SIZE);
 		dsm_client_notify(curr, DSM_TEST_DEVICE_SUM);
-		DSM_LOG_INFO("%s dsm_client_notify\n", curr->client_name);
+		dsm_log_info("%s dsm_client_notify\n", curr->client_name);
 	}
 
 notify_4:
-	curr = c2;
+	curr = client_2;
 	if (!dsm_client_ocuppy(curr)) {
 		test_copy(curr, DEV_TWO_BUFF_SIZE);
 		dsm_client_notify(curr, DSM_TEST_DEVICE_SUM);
-		DSM_LOG_INFO("%s dsm_client_notify\n", curr->client_name);
+		dsm_log_info("%s dsm_client_notify\n", curr->client_name);
 	}
 
 notify_3:
-	curr = c3;
+	curr = client_3;
 	if (!dsm_client_ocuppy(curr)) {
 		test_copy(curr, DEV_THREE_BUFF_SIZE);
 		dsm_client_notify(curr, DSM_TEST_DEVICE_SUM);
-		DSM_LOG_INFO("%s dsm_client_notify\n", curr->client_name);
+		dsm_log_info("%s dsm_client_notify\n", curr->client_name);
 	}
 
 notify_2:
-	curr = c4;
+	curr = client_4;
 	if (!dsm_client_ocuppy(curr)) {
 		dsm_client_record(curr, "Kaka is an amazing palyer\n");
 		dsm_client_record(curr, "Ronaldo is an amazing palyer\n");
@@ -207,11 +210,11 @@ notify_2:
 		dsm_client_record(curr, "Henny is an amazing palyer\n");
 		dsm_client_record(curr, "Veri is an amazing palyer\n");
 		dsm_client_notify(curr, DSM_TEST_DEVICE_SUM);
-		DSM_LOG_INFO("%s dsm_client_notify\n", curr->client_name);
+		dsm_log_info("%s dsm_client_notify\n", curr->client_name);
 	}
 
 notify_1:
-	curr = c5;
+	curr = client_5;
 	if (!dsm_client_ocuppy(curr)) {
 		dsm_client_record(curr, "National derby:\n");
 		dsm_client_record(curr, "Real Madrid vs  Barcelona\n");
@@ -219,7 +222,7 @@ notify_1:
 		dsm_client_record(curr, "AC milan vs Juventus\n");
 		dsm_client_record(curr, "Bayern Munich vs Hertha BSC\n");
 		dsm_client_notify(curr, DSM_TEST_DEVICE_NUM);
-		DSM_LOG_INFO("%s dsm_client_notify\n", curr->client_name);
+		dsm_log_info("%s dsm_client_notify\n", curr->client_name);
 	}
 }
 
@@ -233,9 +236,9 @@ static int dsm_test_thread(void *data)
 
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		DSM_LOG_INFO("%s sleep in\n", __func__);
-		schedule_timeout(10 * HZ);
-		DSM_LOG_INFO("%s sleep out\n", __func__);
+		dsm_log_info("%s sleep in\n", __func__);
+		schedule_timeout(DSM_SCHEDULE_TIMEOUT * HZ);
+		dsm_log_info("%s sleep out\n", __func__);
 		set_current_state(TASK_RUNNING);
 		notify_work();
 	}
@@ -246,25 +249,25 @@ struct task_struct *dsm_task;
 
 static int __init dsm_test(void)
 {
-	c1 = dsm_register_client(&dev1);
-	if (!c1)
-		DSM_LOG_ERR("dsm1 reg failed\n");
+	client_1 = dsm_register_client(&test_dev_1);
+	if (!client_1)
+		dsm_log_err("dsm1 reg failed\n");
 
-	c2 = dsm_register_client(&dev2);
-	if (!c2)
-		DSM_LOG_ERR("dsm2 reg failed\n");
+	client_2 = dsm_register_client(&test_dev_2);
+	if (!client_2)
+		dsm_log_err("dsm2 reg failed\n");
 
-	c3 = dsm_register_client(&dev3);
-	if (!c3)
-		DSM_LOG_ERR("dsm3 reg failed\n");
+	client_3 = dsm_register_client(&test_dev_3);
+	if (!client_3)
+		dsm_log_err("dsm3 reg failed\n");
 
-	c4 = dsm_register_client(&dev4);
-	if (!c4)
-		DSM_LOG_ERR("dsm4 reg failed\n");
+	client_4 = dsm_register_client(&test_dev_4);
+	if (!client_4)
+		dsm_log_err("dsm4 reg failed\n");
 
-	c5 = dsm_register_client(&dev5);
-	if (!c5)
-		DSM_LOG_ERR("dsm5 reg failed\n");
+	client_5 = dsm_register_client(&test_dev_5);
+	if (!client_5)
+		dsm_log_err("dsm5 reg failed\n");
 
 	dsm_task = kthread_create(dsm_test_thread, NULL, "dsm_thread");
 	wake_up_process(dsm_task);

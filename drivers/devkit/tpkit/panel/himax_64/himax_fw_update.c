@@ -102,6 +102,7 @@ static int check_firmware_version(const struct firmware *fw)
 			return FW_NO_NEED_TO_UPDATE;
 		}
 	}
+	return FW_NO_NEED_TO_UPDATE;
 }
 
 static int check_need_firmware_upgrade(const struct firmware *fw)
@@ -146,41 +147,56 @@ static void  firmware_update(const struct firmware *fw)
 	TS_LOG_INFO("himax fw size =%u \n",(unsigned int )fw->size);
 
 	fullFileLength=(unsigned int) fw->size;
-	if (fullFileLength != FW_SIZE_64k)   //64k
-	{
-	    	TS_LOG_ERR("%s: The file size is not 64K bytes\n", __func__);
-	    	return ;
-	}
-	if (check_need_firmware_upgrade(fw))
-	{
-			__pm_stay_awake(&g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_wake_lock);
-			TS_LOG_INFO("himax flash write start");
-			retval = hx_nc_fts_ctpm_fw_upgrade_with_fs((unsigned char*)fw->data,fullFileLength,true);
-			if( retval == 0 )
-			{
-				TS_LOG_ERR("%s:himax  TP upgrade error\n", __func__);
-			}
-			else
-			{
-				TS_LOG_INFO("%s: himax TP upgrade OK\n", __func__);
-				himax_nc_reload_disable(0);
-				g_himax_nc_ts_data->vendor_fw_ver = (fw->data[NC_FW_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_FW_VER_MIN_FLASH_ADDR]);
-				g_himax_nc_ts_data->vendor_config_ver = (fw->data[NC_CFG_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_CFG_VER_MIN_FLASH_ADDR]);
 
-				TS_LOG_INFO("himax upgraded IMAGE FW_VER=%x.\n", (fw->data[NC_FW_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_FW_VER_MIN_FLASH_ADDR]));
-				TS_LOG_INFO("himax upgraded IMAGE CFG_VER=%x.\n", (fw->data[NC_CFG_VER_MAJ_FLASH_ADDR]<<8 | fw->data[NC_CFG_VER_MIN_FLASH_ADDR]));
-
-			}
-			__pm_relax(&g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_wake_lock);
-			TS_LOG_INFO("himax i_update function end ");
+	switch (fullFileLength) {
+	case FW_SIZE_64k:
+	case FW_SIZE_128k:
+		TS_LOG_INFO("%s: Now FW size is = %d\n", __func__,
+			fullFileLength);
+		break;
+	default:
+		TS_LOG_ERR("%s: FW size is fail = %d\n", __func__,
+			fullFileLength);
+		goto END_FUNC;
 	}
-	else
-	{
+	if ((check_need_firmware_upgrade(fw)) ||
+		(fw_update_boot_sd_flag == FW_UPDATE_SD)) {
+		__pm_stay_awake(&g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_wake_lock);
+		TS_LOG_INFO("himax flash write start");
+		retval = hx_nc_fts_ctpm_fw_upgrade_with_fs(
+			(unsigned char *)fw->data, fullFileLength, true);
+		if (retval == 0) {
+			TS_LOG_ERR("%s:himax  TP upgrade error\n", __func__);
+		} else {
+			TS_LOG_INFO("%s: himax TP upgrade OK\n", __func__);
+			himax_nc_reload_disable(0);
+			g_himax_nc_ts_data->vendor_fw_ver =
+				(fw->data[NC_FW_VER_MAJ_FLASH_ADDR] <<
+				LEFT_MOV_8BIT) |
+				fw->data[NC_FW_VER_MIN_FLASH_ADDR];
+			g_himax_nc_ts_data->vendor_config_ver =
+				(fw->data[NC_CFG_VER_MAJ_FLASH_ADDR] <<
+				LEFT_MOV_8BIT) |
+				fw->data[NC_CFG_VER_MIN_FLASH_ADDR];
+
+			TS_LOG_INFO("himax upgraded IMAGE FW_VER = %x.\n",
+				(fw->data[NC_FW_VER_MAJ_FLASH_ADDR] <<
+				LEFT_MOV_8BIT) |
+				fw->data[NC_FW_VER_MIN_FLASH_ADDR]);
+			TS_LOG_INFO("himax upgraded IMAGE CFG_VER = %x.\n",
+				(fw->data[NC_CFG_VER_MAJ_FLASH_ADDR] <<
+				LEFT_MOV_8BIT) |
+				fw->data[NC_CFG_VER_MIN_FLASH_ADDR]);
+		}
+		__pm_relax(&g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->ts_wake_lock);
+		TS_LOG_INFO("himax i_update function end ");
+	} else {
 		TS_LOG_INFO("himax don't need upgrade firmware");
 	}
 	himax_nc_HW_reset(HX_LOADCONFIG_EN,HX_INT_EN);
 	g_himax_nc_ts_data->firmware_updating = false;
-	return ;
+END_FUNC:
+	return;
 }
 
 

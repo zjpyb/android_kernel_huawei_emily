@@ -4,3 +4,4 @@ obj-$(CONFIG_ST_TS_KIT) += fts_gui.o
 obj-$(CONFIG_ST_TS_KIT) += fts_lib/
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
+EXTRA_CFLAGS += -Idrivers/devkit/tpkit

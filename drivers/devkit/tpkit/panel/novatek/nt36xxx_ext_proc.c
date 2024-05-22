@@ -29,7 +29,7 @@
 
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -41,6 +41,9 @@
 #define NVT_BASELINE "nvt_baseline"
 #define NVT_RAW "nvt_raw"
 #define NVT_DIFF "nvt_diff"
+#define KIT_FLASH_PROC_INIT "kit_flash_proc_init"
+#define KIT_GET_FW_INFO "kit_get_fw_info"
+#define KIT_EXTRA_PROC_INIT "kit_get_fw_info"
 
 #define I2C_TRANSFER_LENGTH  64
 #define SPI_TRANSFER_LENGTH  256
@@ -178,7 +181,7 @@ static ssize_t nvt_flash_spi_read(struct file *file, char __user *buff, size_t c
 	int32_t retries = 0;
 	int8_t spi_wr = 0;
 
-	if (count > NVT_TANSFER_LEN) {
+	if (count > nvt_ts->bus_transfer_len) {
 		TS_LOG_ERR("invalid transfer len!\n");
 		return -EFAULT;
 	}
@@ -320,10 +323,10 @@ int32_t nvt_kit_flash_proc_init(void)
 		NVT_proc_entry = proc_create(DEVICE_SPI_NAME, 0444, NULL,&nvt_flash_spi_fops);
 	}
 	if (NVT_proc_entry == NULL) {
-		TS_LOG_ERR("%s: Failed!\n", __func__);
+		TS_LOG_ERR("%s: Failed!\n", KIT_FLASH_PROC_INIT);
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: Succeeded!\n", __func__);
+		TS_LOG_INFO("%s: Succeeded!\n", KIT_FLASH_PROC_INIT);
 	}
 
 	TS_LOG_INFO("============================================================\n");
@@ -332,7 +335,7 @@ int32_t nvt_kit_flash_proc_init(void)
 		TS_LOG_INFO("Create /proc/NVTflash\n");
 	} else if (nvt_ts->btype == TS_BUS_SPI) {
 		NVT_TRANSFER_LENGTH = SPI_TRANSFER_LENGTH;	//Support SPI transfer length
-		TS_LOG_INFO("Create /proc/NVTSPI\n");
+		TS_LOG_INFO("Create /proc/xxSPI\n");
 	}
 	TS_LOG_INFO("============================================================\n");
 
@@ -406,17 +409,18 @@ info_retry:
 	nvt_ts->y_num = y_num;
 	button_num = buf[11];
 
-	TS_LOG_INFO("%s: nvt_fw_ver=0x%02X\n", __func__, nvt_fw_ver);
+	TS_LOG_INFO("%s: fw_ver=0x%02X\n", KIT_GET_FW_INFO, nvt_fw_ver);
 	//---clear x_num, y_num if fw info is broken---
 	if ((buf[1] + buf[2]) != 0xFF) {
-		TS_LOG_ERR("%s: FW info is broken! nvt_fw_ver=0x%02X, ~nvt_fw_ver=0x%02X\n", __func__, buf[1], buf[2]);
+		TS_LOG_ERR("%s: FW info is broken! fw_ver=0x%02X, ~fw_ver=0x%02X\n",
+			KIT_GET_FW_INFO, buf[1], buf[2]);
 		x_num = 0;
 		y_num = 0;
 		button_num = 0;
 
 		if(retry_count < 3) {
 			retry_count++;
-			TS_LOG_ERR("%s: retry_count=%d\n", __func__, retry_count);
+			TS_LOG_ERR("%s: retry_count=%d\n", KIT_GET_FW_INFO, retry_count);
 			goto info_retry;
 		} else {
 			ret = -1;
@@ -849,34 +853,42 @@ int32_t nvt_kit_extra_proc_init(void)
 {
 	NVT_proc_fw_version_entry = proc_create(NVT_FW_VERSION, 0444, NULL,&nvt_fw_version_fops);
 	if (NVT_proc_fw_version_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_fw_version Failed!\n", __func__);
+		TS_LOG_ERR("%s: create proc/nvt_fw_version Failed!\n",
+			KIT_EXTRA_PROC_INIT);
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_fw_version Succeeded!\n", __func__);
+		TS_LOG_INFO("%s: create proc/nvt_fw_version Succeeded!\n",
+			KIT_EXTRA_PROC_INIT);
 	}
 
 	NVT_proc_baseline_entry = proc_create(NVT_BASELINE, 0444, NULL,&nvt_baseline_fops);
 	if (NVT_proc_baseline_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_baseline Failed!\n", __func__);
+		TS_LOG_ERR("%s: create proc/nvt_baseline Failed!\n",
+			KIT_EXTRA_PROC_INIT);
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_baseline Succeeded!\n", __func__);
+		TS_LOG_INFO("%s: create proc/nvt_baseline Succeeded!\n",
+			KIT_EXTRA_PROC_INIT);
 	}
 
 	NVT_proc_raw_entry = proc_create(NVT_RAW, 0444, NULL,&nvt_raw_fops);
 	if (NVT_proc_raw_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_raw Failed!\n", __func__);
+		TS_LOG_ERR("%s: create proc/nvt_raw Failed!\n",
+			KIT_EXTRA_PROC_INIT);
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_raw Succeeded!\n", __func__);
+		TS_LOG_INFO("%s: create proc/nvt_raw Succeeded!\n",
+			KIT_EXTRA_PROC_INIT);
 	}
 
 	NVT_proc_diff_entry = proc_create(NVT_DIFF, 0444, NULL,&nvt_diff_fops);
 	if (NVT_proc_diff_entry == NULL) {
-		TS_LOG_ERR("%s: create proc/nvt_diff Failed!\n", __func__);
+		TS_LOG_ERR("%s: create proc/nvt_diff Failed!\n",
+			KIT_EXTRA_PROC_INIT);
 		return -ENOMEM;
 	} else {
-		TS_LOG_INFO("%s: create proc/nvt_diff Succeeded!\n", __func__);
+		TS_LOG_INFO("%s: create proc/nvt_diff Succeeded!\n",
+			KIT_EXTRA_PROC_INIT);
 	}
 
 	return 0;

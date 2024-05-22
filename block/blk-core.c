@@ -34,7 +34,9 @@
 #include <linux/pm_runtime.h>
 #include <linux/blk-cgroup.h>
 #include <linux/debugfs.h>
-
+#if defined(CONFIG_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
+#include <chipset_common/hwqos/hwqos_common.h>
+#endif
 #define CREATE_TRACE_POINTS
 #include <trace/events/block.h>
 
@@ -43,20 +45,12 @@
 #include "blk-mq-sched.h"
 #include "blk-wbt.h"
 
-#ifdef CONFIG_HISI_BLOCK_FREQUENCE_CONTROL
-#include "hisi_freq_ctl.h"
-#endif
-
 #ifdef CONFIG_DEBUG_FS
 struct dentry *blk_debugfs_root;
 #endif
 
 #ifdef CONFIG_HW_SYSTEM_WR_PROTECT
 #include <linux/mmc/hw_write_protect.h>
-#endif
-
-#if defined(CONFIG_HUAWEI_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
-extern int get_task_qos(struct task_struct *task);
 #endif
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
@@ -127,6 +121,9 @@ void blk_rq_init(struct request_queue *q, struct request *rq)
 	memset(rq, 0, sizeof(*rq));
 
 	INIT_LIST_HEAD(&rq->queuelist);
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+	INIT_LIST_HEAD(&rq->cmdq_list);
+#endif
 	INIT_LIST_HEAD(&rq->fg_bg_list);
 	INIT_LIST_HEAD(&rq->timeout_list);
 	rq->cpu = -1;
@@ -204,10 +201,6 @@ static void print_req_error(struct request *req, blk_status_t status)
 static void req_bio_endio(struct request *rq, struct bio *bio,
 			  unsigned int nbytes, blk_status_t error)
 {
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_req_bio_endio(rq, bio, nbytes, error);
-#endif
-
 	if (error)
 		bio->bi_status = error;
 
@@ -356,7 +349,6 @@ void blk_sync_queue(struct request_queue *q)
 		struct blk_mq_hw_ctx *hctx;
 		int i;
 
-		cancel_delayed_work_sync(&q->requeue_work);
 		queue_for_each_hw_ctx(q, hctx, i) /*lint !e574*/
 			cancel_delayed_work_sync(&hctx->run_work);
 	} else {
@@ -704,9 +696,22 @@ void blk_cleanup_queue(struct request_queue *q)
 	if (q->mq_ops)
 		blk_mq_free_queue(q);
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_cleanup_queue(q);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_cleanup_queue(q);
 #endif
+
+	/*
+	 * In theory, request pool of sched_tags belongs to request queue.
+	 * However, the current implementation requires tag_set for freeing
+	 * requests, so free the pool now.
+	 *
+	 * Queue has become frozen, there can't be any in-queue requests, so
+	 * it is safe to free requests now.
+	 */
+	mutex_lock(&q->sysfs_lock);
+	if (q->elevator)
+		blk_mq_sched_free_requests(q);
+	mutex_unlock(&q->sysfs_lock);
 
 	percpu_ref_exit(&q->q_usage_counter);
 
@@ -810,7 +815,10 @@ int blk_queue_enter(struct request_queue *q, bool nowait)
 
 		if (nowait)
 			return -EBUSY;
-
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		if (blk_queue_query_unistore_enable(q))
+			blk_flush_plug(current);
+#endif
 		/*
 		 * read pair of barrier in blk_freeze_queue_start(),
 		 * we need to order reading __PERCPU_REF_DEAD flag of
@@ -869,12 +877,17 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 	if (!q->backing_dev_info)
 		goto fail_split;
 
+#ifdef CONFIG_MAS_BLK
+	q->backing_dev_info->queue = q;
+#endif
+
 	q->stats = blk_alloc_queue_stats();
 	if (!q->stats)
 		goto fail_stats;
 
 	q->backing_dev_info->ra_pages =
 			(VM_MAX_READAHEAD * 1024) / PAGE_SIZE;
+
 	q->backing_dev_info->capabilities = BDI_CAP_CGROUP_WRITEBACK;
 	q->backing_dev_info->name = "block";
 	q->node = node_id;
@@ -930,8 +943,8 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 	if (blkcg_init_queue(q))
 		goto fail_ref;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_allocated_queue_init(q);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_allocated_queue_init(q);
 #endif
 
 	return q;
@@ -1053,8 +1066,8 @@ int blk_init_allocated_queue(struct request_queue *q)
 
 	mutex_unlock(&q->sysfs_lock);
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_sq_init_allocated_queue(q);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_sq_init_allocated_queue(q);
 #endif
 
 	return 0;
@@ -1515,8 +1528,8 @@ void blk_requeue_request(struct request_queue *q, struct request *rq)
 
 	BUG_ON(blk_queued_rq(rq));
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_requeue_request(q, rq);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_requeue_request(rq);
 #endif
 
 	elv_requeue_request(q, rq);
@@ -1538,13 +1551,6 @@ static void part_round_stats_single(struct request_queue *q, int cpu,
 		__part_stat_add(cpu, part, time_in_queue,
 				inflight * (now - part->stamp)); /*lint !e63*/
 		__part_stat_add(cpu, part, io_ticks, (now - part->stamp)); /*lint !e63*/
-#if (defined(CONFIG_HISI_BLOCK_FREQUENCE_CONTROL) &&                           \
-     !defined(CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL))
-		hisi_blk_freq_request(FREQ_REQ_ADD,
-				      inflight * (now - part->stamp));
-	} else {
-		hisi_blk_freq_request(FREQ_REQ_REMOVE, (now - part->stamp));
-#endif
 	}
 	part->stamp = now;
 }
@@ -1616,8 +1622,8 @@ void __blk_put_request(struct request_queue *q, struct request *req)
 		return;
 	}
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_request_put(q, req);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_request_put(req);
 #endif
 
 	lockdep_assert_held(q->queue_lock);
@@ -1853,8 +1859,11 @@ void blk_init_request_from_bio(struct request *req, struct bio *bio)
 	else
 		req->ioprio = IOPRIO_PRIO_VALUE(IOPRIO_CLASS_NONE, 0);
 	req->write_hint = bio->bi_write_hint;
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_request_init_from_bio(req, bio);
+#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
+	mas_blk_inline_crypto_init_request_from_bio(req, bio);
+#endif
+#ifdef CONFIG_MAS_BLK
+	mas_blk_request_init_from_bio(req, bio);
 #endif
 	blk_rq_bio_prep(req->q, req, bio);
 }
@@ -2061,7 +2070,13 @@ static inline int blk_partition_remap(struct bio *bio)
 	p = __disk_get_part(bio->bi_disk, bio->bi_partno);
 	if (likely(p && !should_fail_request(p, bio->bi_iter.bi_size))) {
 		bio->bi_iter.bi_sector += p->start_sect;
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+		bio->bi_orig_partno = bio->bi_partno;
+#endif
 		bio->bi_partno = 0;
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		mas_blk_partition_remap(bio, p);
+#endif
 		trace_block_bio_remap(bio->bi_disk->queue, bio, part_devt(p),
 				bio->bi_iter.bi_sector - p->start_sect);
 	} else {
@@ -2299,7 +2314,7 @@ blk_qc_t generic_make_request(struct bio *bio)
 	 */
 	struct bio_list bio_list_on_stack[2];
 	blk_qc_t ret = BLK_QC_T_NONE; /*lint !e501*/
-#ifdef CONFIG_HUAWEI_QOS_BLKIO
+#ifdef CONFIG_QOS_BLKIO
 	if (blk_queue_qos_on(bio->bi_disk->queue)) {
 		int qos = get_task_qos(current);
 
@@ -2311,8 +2326,8 @@ blk_qc_t generic_make_request(struct bio *bio)
 	}
 #endif
 
-#ifdef CONFIG_HISI_BLK
-	if(unlikely(hisi_blk_generic_make_request_check(bio)))
+#ifdef CONFIG_MAS_BLK
+	if (unlikely(mas_blk_generic_make_request_check(bio)))
 		goto out;
 #endif
 
@@ -2374,8 +2389,8 @@ blk_qc_t generic_make_request(struct bio *bio)
 			/* Create a fresh bio_list for all subordinate requests */
 			bio_list_on_stack[1] = bio_list_on_stack[0];
 			bio_list_init(&bio_list_on_stack[0]);
-#ifdef CONFIG_HISI_BLK
-			hisi_blk_generic_make_request(bio);
+#ifdef CONFIG_MAS_BLK
+			mas_blk_generic_make_request(bio);
 #endif
 			ret = q->make_request_fn(q, bio);
 
@@ -2422,14 +2437,6 @@ EXPORT_SYMBOL(generic_make_request);
  */
 blk_qc_t submit_bio(struct bio *bio)
 {
-#ifdef CONFIG_HISI_IO_TRACE
-	blk_qc_t ret;
-
-	bio_get(bio);
-	if (bio->bi_disk)
-		trace_block_submit_bio(bio, 1);
-#endif
-
 	/*
 	 * If it's a regular read/write or a barrier with data attached,
 	 * go through the normal accounting stuff before submission.
@@ -2459,16 +2466,7 @@ blk_qc_t submit_bio(struct bio *bio)
 		}
 	}
 
-#ifdef CONFIG_HISI_IO_TRACE
-	ret = generic_make_request(bio);
-	if (bio->bi_disk)
-		trace_block_submit_bio(bio, 0);
-	bio_put(bio);
-	return ret;
-#else
 	return generic_make_request(bio);
-#endif
-
 }
 EXPORT_SYMBOL(submit_bio);
 
@@ -2529,8 +2527,8 @@ blk_status_t blk_insert_cloned_request(struct request_queue *q, struct request *
 	    should_fail_request(&rq->rq_disk->part0, blk_rq_bytes(rq)))
 		return BLK_STS_IOERR;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_insert_cloned_request(q, rq);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_insert_cloned_request(q, rq);
 #endif
 
 	if (q->mq_ops) {
@@ -2612,8 +2610,8 @@ EXPORT_SYMBOL_GPL(blk_rq_err_bytes);
 
 void blk_account_io_completion(struct request *req, unsigned int bytes)
 {
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_account_io_completion(req, bytes);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_account_io_completion(req, bytes);
 #endif
 
 	if (blk_do_io_stat(req)) {
@@ -2855,8 +2853,8 @@ void blk_start_request(struct request *req)
 
 	blk_dequeue_request(req);
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_request_start(req);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_request_start(req);
 #endif
 
 	if (test_bit(QUEUE_FLAG_STATS, &req->q->queue_flags)) {
@@ -2924,8 +2922,8 @@ bool blk_update_request(struct request *req, blk_status_t error,
 {
 	int total_bytes;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_request_update(req, error, nr_bytes);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_request_update(req, error, nr_bytes);
 #endif
 
 	trace_block_rq_complete(req, blk_status_to_errno(error), nr_bytes);
@@ -3466,8 +3464,8 @@ void blk_start_plug(struct blk_plug *plug)
 	INIT_LIST_HEAD(&plug->list);
 	INIT_LIST_HEAD(&plug->mq_list);
 	INIT_LIST_HEAD(&plug->cb_list);
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_start_plug(plug);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_start_plug(plug);
 #endif
 	/*
 	 * Store ordering should not be needed here, since a potential
@@ -3557,8 +3555,8 @@ void blk_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	LIST_HEAD(list);
 	unsigned int depth;
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_flush_plug_list(plug, from_schedule);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_flush_plug_list(plug, from_schedule);
 #endif
 
 	flush_plug_callbacks(plug, from_schedule);
@@ -3843,11 +3841,8 @@ int __init blk_dev_init(void)
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
 #endif
 
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_dev_init();
-#endif
-#ifdef CONFIG_HISI_BLOCK_FREQUENCE_CONTROL
-	hisi_blk_freq_ctrl_init();
+#ifdef CONFIG_MAS_BLK
+	mas_blk_dev_init();
 #endif
 	return 0;
 }

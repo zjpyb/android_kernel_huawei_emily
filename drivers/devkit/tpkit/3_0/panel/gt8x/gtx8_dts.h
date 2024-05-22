@@ -62,6 +62,8 @@
 #define GTX8_FILENAME_CONTAIN_LCD_MOUDULE "support_filename_contain_lcd_module"
 #define GTX8_SUPPORT_IC_USE_MAX_RESOLUTION "support_ic_use_max_resolution"
 #define GTX8_SUPPORT_READ_GESTURE_WITHOUT_CHECKSUM "support_read_gesture_without_checksum"
+#define GTX8_SUPPORT_PEN_USE_MAX_RESOLUTION "support_pen_use_max_resolution"
+#define GTX8_SUPPORT_RETRY_READ_GESTURE "support_retry_read_gesture"
 #define GTP_BOOT_PROJ_CODE_ADDR2	0x20
 #define GTX8_DEFAULT_SLAVE_ADDR		0x5D
 

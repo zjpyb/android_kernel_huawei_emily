@@ -1,19 +1,10 @@
+
 /*
- * hw_packet_filter_bypass.c
- *
- * Detect whether the BPF and iptables rule drop the skb.
- *
- * Copyright (c) 2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
+ * Description: This file is detect whether the BPF
+ *              and iptables rule drop the skb.
+ * Author: fanxiaoyu3@huawei.com
+ * Create: 2019-04-18
  */
 
 #include "hw_packet_filter_bypass.h"
@@ -22,33 +13,18 @@
 #include <linux/jiffies.h>
 #include <linux/printk.h>
 #include <linux/module.h>
-#include <linux/highuid.h>
 #include <linux/uidgid.h>
 #include <net/sock.h>
 #include <net/inet_sock.h>
 
-#define		NOTIFY_BUF_LEN	512
-#define		MAX_LISTENING_UID_NUM	10
+#include "hw_booster_common.h"
 
-#define		REPORT_THRESHOLD_PKTS 1
-#define		IP_REPORT_THRESHOLD_PKTS 10
-#define		DETECT_PEIROID	(30 * HZ)
+#define NOTIFY_BUF_LEN 512
+#define MAX_LISTENING_UID_NUM 10
 
-#define ASSIGN_SHORT(p, val) (*(s16 *)(p) = (val))
-#define ASSIGN_INT(p, val) (*(s32 *)(p) = (val))
-#define ASSIGN_UINT(p, val) (*(u32 *)(p) = (val))
-#define SKIP_BYTE(p, num) ((p) = (p) + (num))
-
-/* when modify mobile_ifaces array, plz modify the IFACE_NUM simultaneously */
-#define IFACE_NUM 15
-static const char mobile_ifaces[IFACE_NUM][IFNAMSIZ] __attribute__((aligned(sizeof(long)))) = {
-	/* hisi, sort by frequency of use:rmnet0 > rmnet3 > rmnet1 > ... */
-	"rmnet0", "rmnet3", "rmnet1", "rmnet4", "rmnet2", "rmnet5", "rmnet6",
-	/* qcom */
-	"rmnet_data0", "rmnet_data1", "rmnet_data2", "rmnet_data3",
-	/* mtk */
-	"ccmni0", "ccmni1", "ccmni2", "ccmni3",
-};
+#define REPORT_THRESHOLD_PKTS 1
+#define IP_REPORT_THRESHOLD_PKTS 10
+#define DETECT_PEIROID (30 * HZ)
 
 enum report_hooks {
 	HOOK_IP = 0,
@@ -85,7 +61,7 @@ struct listening_uids {
 	spinlock_t lock;
 };
 
-static struct listening_uids uids;
+static struct listening_uids listen_uids;
 static notify_event *notifier = NULL;
 
 static void reset_uid_info(struct uid_info *info, int uid)
@@ -103,17 +79,17 @@ static bool add_listening_uid(int uid)
 {
 	int i;
 
-	if (uids.nums >= MAX_LISTENING_UID_NUM)
+	if (listen_uids.nums >= MAX_LISTENING_UID_NUM)
 		return false;
-	for (i = 0; i < uids.nums; ++i) {
-		if (uids.infos[i].uid == uid) {
-			reset_uid_info(&uids.infos[i], uid);
+	for (i = 0; i < listen_uids.nums; ++i) {
+		if (listen_uids.infos[i].uid == uid) {
+			reset_uid_info(&listen_uids.infos[i], uid);
 			return true;
 		}
 	}
-	i = uids.nums;
-	reset_uid_info(&uids.infos[i], uid);
-	++uids.nums;
+	i = listen_uids.nums;
+	reset_uid_info(&listen_uids.infos[i], uid);
+	++listen_uids.nums;
 	return true;
 }
 
@@ -121,11 +97,11 @@ static bool del_listening_uid(int uid)
 {
 	int i;
 
-	for (i = 0; i < uids.nums; ++i) {
-		if (uids.infos[i].uid == uid) {
-			for (; i < (uids.nums - 1); ++i)
-				uids.infos[i] = uids.infos[i+1];
-			--uids.nums;
+	for (i = 0; i < listen_uids.nums; ++i) {
+		if (listen_uids.infos[i].uid == uid) {
+			for (; i < (listen_uids.nums - 1); ++i)
+				listen_uids.infos[i] = listen_uids.infos[i + 1];
+			--listen_uids.nums;
 			return true;
 		}
 	}
@@ -136,9 +112,9 @@ static bool upate_bypass_flag(int uid, bool bypass)
 {
 	int i;
 
-	for (i = 0; i < uids.nums; ++i) {
-		if (uids.infos[i].uid == uid) {
-			uids.infos[i].bypass = bypass;
+	for (i = 0; i < listen_uids.nums; ++i) {
+		if (listen_uids.infos[i].uid == uid) {
+			listen_uids.infos[i].bypass = bypass;
 			return true;
 		}
 	}
@@ -147,10 +123,12 @@ static bool upate_bypass_flag(int uid, bool bypass)
 
 static void do_commands(struct req_msg_head *msg)
 {
-	int uid, num, len;
+	int uid;
+	int num;
+	int len;
 	int i;
-	char *p= NULL;
-	bool ret;
+	char *p = NULL;
+	bool ret = false;
 
 	if (!msg || msg->len <= sizeof(struct req_msg_head)) {
 		pr_err("too small\n");
@@ -167,12 +145,12 @@ static void do_commands(struct req_msg_head *msg)
 	if (len < (sizeof(int) * num))
 		return;
 
-	spin_lock_bh(&uids.lock);
+	spin_lock_bh(&listen_uids.lock);
 	for (i = 0; i < num; ++i) {
 		uid = *(int *)p;
 		if (uid < 0)
 			break;
-		switch(msg->type) {
+		switch (msg->type) {
 		case ADD_FG_UID:
 			ret = add_listening_uid(uid);
 			break;
@@ -193,7 +171,7 @@ static void do_commands(struct req_msg_head *msg)
 			break;
 		p += sizeof(int);
 	}
-	spin_unlock_bh(&uids.lock);
+	spin_unlock_bh(&listen_uids.lock);
 }
 
 static void notify_drop_event(int uid, struct packet_drop_stats *stats)
@@ -205,20 +183,20 @@ static void notify_drop_event(int uid, struct packet_drop_stats *stats)
 		return;
 
 	// type
-	ASSIGN_SHORT(p, PACKET_FILTER_DROP_RPT);
-	SKIP_BYTE(p, 2);
-	// len(2B type + 2B len + 4B uid + 4B hook + 4B pkts)
-	ASSIGN_SHORT(p, 16);
-	SKIP_BYTE(p, 2);
+	assign_short(p, PACKET_FILTER_DROP_RPT);
+	skip_byte(p, sizeof(s16));
+	// 16 eq len(2B type + 2B len + 4B uid + 4B hook + 4B pkts)
+	assign_short(p, 16);
+	skip_byte(p, sizeof(s16));
 	// uid
-	ASSIGN_INT(p, uid);
-	SKIP_BYTE(p, 4);
+	assign_int(p, uid);
+	skip_byte(p, sizeof(int));
 	// hook
-	ASSIGN_INT(p, stats->hook);
-	SKIP_BYTE(p, 4);
+	assign_int(p, stats->hook);
+	skip_byte(p, sizeof(int));
 	// pkts
-	ASSIGN_INT(p, stats->pkts);
-	SKIP_BYTE(p, 4);
+	assign_int(p, stats->pkts);
+	skip_byte(p, sizeof(int));
 
 	notifier((struct res_msg_head *)event);
 }
@@ -232,23 +210,23 @@ static void notify_recovery_event(int uid, struct packet_drop_stats *stats)
 		return;
 
 	// type
-	ASSIGN_SHORT(p, PACKET_FILTER_RECOVERY_RPT);
-	SKIP_BYTE(p, 2);
-	// len((2B type + 2B len + 4B uid + 4B hook))
-	ASSIGN_SHORT(p, 12);
-	SKIP_BYTE(p, 2);
+	assign_short(p, PACKET_FILTER_RECOVERY_RPT);
+	skip_byte(p, sizeof(s16));
+	// 12 eq len((2B type + 2B len + 4B uid + 4B hook))
+	assign_short(p, 12);
+	skip_byte(p, sizeof(s16));
 	// uid
-	ASSIGN_INT(p, uid);
-	SKIP_BYTE(p, 4);
+	assign_int(p, uid);
+	skip_byte(p, sizeof(int));
 	// hook
-	ASSIGN_INT(p, stats->hook);
+	assign_int(p, stats->hook);
 	notifier((struct res_msg_head *)event);
 }
 
 static void update_packet_count(int uid, struct packet_drop_stats *stats)
 {
 	unsigned long now = jiffies;
-	int threshold = 0;
+	int threshold;
 
 	if (stats->hook == HOOK_IP)
 		threshold = IP_REPORT_THRESHOLD_PKTS;
@@ -331,64 +309,11 @@ static int update_ip_out_pkts(struct uid_info *info,
 	return 0;
 }
 
-static uid_t get_uid_from_sock(struct sock *sk)
-{
-	kuid_t kuid;
-
-	if (!sk || !sk_fullsock(sk))
-		return overflowuid;
-	kuid = sock_net_uid(sock_net(sk), sk);
-	return from_kuid_munged(sock_net(sk)->user_ns, kuid);
-}
-
-/* reference to ifname_compare_aligned in x_tables.h */
-static bool ifname_equal(const char *if1, size_t if1_len,
-	const char *if2, size_t if2_len)
-{
-	const unsigned long *p = (const unsigned long *)if1;
-	const unsigned long *q = (const unsigned long *)if2;
-	unsigned long ret;
-
-	if (if1_len != if2_len)
-		return false;
-	if (if1_len == 0)
-		return false;
-
-	ret = (p[0] ^ q[0]);
-	if (ret != 0)
-		return false;
-	if (if1_len > sizeof(unsigned long))
-		ret = (p[1] ^ q[1]);
-	if (ret != 0)
-		return false;
-	if (if1_len > 2 * sizeof(unsigned long))
-		ret = (p[2] ^ q[2]);
-	if (ret)
-		return false;
-	if (if1_len > 3 * sizeof(unsigned long))
-		ret = (p[3] ^ q[3]);
-	return (ret == 0L);
-}
-
-bool is_ds_rnic(const struct net_device *dev)
-{
-	int i;
-
-	if (!dev)
-		return false;
-	for (i = 0; i < IFACE_NUM; ++i) {
-		if (ifname_equal(dev->name, sizeof(dev->name),
-			mobile_ifaces[i], sizeof(mobile_ifaces[i])))
-			return true;
-	}
-	return false;
-}
-
 int hw_translate_hook_num(int af, int hook)
 {
 	int ret;
 
-	switch(hook) {
+	switch (hook) {
 	case NF_INET_PRE_ROUTING:
 		ret = HW_PFB_INET_PRE_ROUTING;
 		if (af == AF_INET6)
@@ -431,12 +356,12 @@ int hw_translate_verdict(u32 verdict)
 		return IGNORE;
 }
 
-bool hw_hook_bypass_skb(int af , int hook, struct sk_buff *skb)
+bool hw_hook_bypass_skb(int af, int hook, struct sk_buff *skb)
 {
 	/* 0 means do not influence the orignal procedure */
 	struct net_device *in = NULL;
 	struct net_device *out = NULL;
-	struct dst_entry *dst;
+	struct dst_entry *dst = NULL;
 
 	if (notifier == NULL)
 		return 0;
@@ -462,6 +387,52 @@ bool hw_hook_bypass_skb(int af , int hook, struct sk_buff *skb)
 	return hw_bypass_skb(af, HW_PFB_HOOK_ICMP, NULL, skb, in, out, PASS);
 }
 
+static int hw_pfb_hooks_info_judge(int i, int hook, int pass)
+{
+	int ret = 0;
+	if (i < listen_uids.nums) {
+		switch (hook) {
+		case HW_PFB_INET_LOCAL_OUT:
+		case HW_PFB_INET6_LOCAL_OUT:
+			ret = update_filter_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].local_out_drop_stats, pass);
+			break;
+		case HW_PFB_INET_BPF_EGRESS:
+		case HW_PFB_INET6_BPF_EGRESS:
+			ret = update_filter_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].bpf_egress_drop_stats, pass);
+			break;
+		case HW_PFB_INET_IP_XMIT:
+		case HW_PFB_INET6_IP_XMIT:
+			ret = update_ip_in_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].ip_in_stats, pass);
+			break;
+		case HW_PFB_INET_DEV_XMIT:
+		case HW_PFB_INET6_DEV_XMIT:
+			ret = update_ip_out_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].ip_in_stats, pass);
+			break;
+		case HW_PFB_INET_LOCAL_IN:
+		case HW_PFB_INET6_LOCAL_IN:
+			ret = update_filter_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].local_in_drop_stats, pass);
+			break;
+		case HW_PFB_INET_BPF_INGRESS:
+		case HW_PFB_INET6_BPF_INGRESS:
+			ret = update_filter_pkts(&listen_uids.infos[i],
+				&listen_uids.infos[i].bpf_ingress_drop_stats, pass);
+			break;
+		case HW_PFB_HOOK_ICMP:
+			ret = listen_uids.infos[i].bypass;
+			break;
+		default:
+			break;
+		}
+	}
+
+	return ret;
+}
+
 /* if we should bypass this skb, return 1, else return 0 */
 bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 	struct sk_buff *skb, struct net_device *in,
@@ -483,57 +454,19 @@ bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 		sk = sk_to_full_sk((struct sock *)sk);
 	else
 		sk = sk_to_full_sk(skb->sk);
-	uid = get_uid_from_sock((struct sock *)sk);
+	uid = hw_get_sock_uid((struct sock *)sk);
 	if (uid == overflowuid)
 		return ret;
 	if (!is_ds_rnic(in) && !is_ds_rnic(out))
 		return ret;
 
-	spin_lock_bh(&uids.lock);
-	for (i = 0; i < uids.nums; ++i) {
-		if (uids.infos[i].uid == uid)
+	spin_lock_bh(&listen_uids.lock);
+	for (i = 0; i < listen_uids.nums; ++i) {
+		if (listen_uids.infos[i].uid == uid)
 			break;
 	}
-	if (i < uids.nums) {
-		switch(hook) {
-		case HW_PFB_INET_LOCAL_OUT:
-		case HW_PFB_INET6_LOCAL_OUT:
-			ret = update_filter_pkts(&uids.infos[i],
-					&uids.infos[i].local_out_drop_stats, pass);
-			break;
-		case HW_PFB_INET_BPF_EGRESS:
-		case HW_PFB_INET6_BPF_EGRESS:
-			ret = update_filter_pkts(&uids.infos[i],
-					&uids.infos[i].bpf_egress_drop_stats, pass);
-			break;
-		case HW_PFB_INET_IP_XMIT:
-		case HW_PFB_INET6_IP_XMIT:
-			ret = update_ip_in_pkts(&uids.infos[i],
-					&uids.infos[i].ip_in_stats, pass);
-			break;
-		case HW_PFB_INET_DEV_XMIT:
-		case HW_PFB_INET6_DEV_XMIT:
-			ret = update_ip_out_pkts(&uids.infos[i],
-					&uids.infos[i].ip_in_stats, pass);
-			break;
-		case HW_PFB_INET_LOCAL_IN:
-		case HW_PFB_INET6_LOCAL_IN:
-			ret = update_filter_pkts(&uids.infos[i],
-					&uids.infos[i].local_in_drop_stats, pass);
-			break;
-		case HW_PFB_INET_BPF_INGRESS:
-		case HW_PFB_INET6_BPF_INGRESS:
-			ret = update_filter_pkts(&uids.infos[i],
-					&uids.infos[i].bpf_ingress_drop_stats, pass);
-			break;
-		case HW_PFB_HOOK_ICMP:
-			ret = uids.infos[i].bypass;
-			break;
-		default:
-			break;
-		}
-	}
-	spin_unlock_bh(&uids.lock);
+	ret = hw_pfb_hooks_info_judge(i, hook, pass);
+	spin_unlock_bh(&listen_uids.lock);
 
 	return ret;
 }
@@ -544,7 +477,7 @@ msg_process* __init hw_packet_filter_bypass_init(notify_event *notify)
 		pr_err("%s: notify parameter is null\n", __func__);
 		return NULL;
 	}
-	spin_lock_init(&uids.lock);
+	spin_lock_init(&listen_uids.lock);
 	notifier = notify;
 	return do_commands;
 }

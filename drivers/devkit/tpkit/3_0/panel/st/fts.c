@@ -96,6 +96,7 @@ static int fts_enable_reg(struct fts_ts_info *info,bool enable);
 int writeLockDownInfo(u8 *data, int size,u8 lock_id);
 int read_lock_down_info(u8 *lock_data, u8 lock_id, int size);
 static void st_set_fold_status(struct ts_fold_info info, int calibration);
+static int fts_set_charger_status(u8 charger_switch);
 
 #define STATUS_GLOVE_MODE 6
 #define STATUS_FINGER_MODE 1
@@ -106,7 +107,14 @@ static void st_set_fold_status(struct ts_fold_info info, int calibration);
 #define GLOVE_STATUS 0x02
 #define FINGER_STATUS 0x01
 #define DONT_CALIBRATE 0
+#define ST_POWER_ON_DELAY_MS 15
+#define ST_IOVDD_DELAY_MS 5
+#define ST_VCC_DELAY_MS 10
+#define ST_PPWER_DELAY_MS 0
 
+#define CHARGER_CMD_SIZE 3
+#define CHARGER_IN 0x01
+#define CHARGER_OUT 0x00
 
 int check_mutual_raw_res_gap(void);
 struct fts_ts_info* fts_get_info(void)
@@ -813,38 +821,28 @@ int fts_chip_powercycle(struct fts_ts_info *info)
 		return -1;
 	}
 	disable_irq_nosync(info->chip_data->ts_platform_data->irq_id);
-
-	if (info->bus_reg) {
-		error = regulator_disable(info->bus_reg);
-		if (error < 0) {
-			TS_LOG_ERR("%s: Failed to disable DVDD regulator\n", __func__);
-		}
-	}
-	msleep(5);
-	if (info->pwr_reg) {
-		error = regulator_disable(info->pwr_reg);
-		if (error < 0) {
-			TS_LOG_ERR("%s: Failed to disable AVDD regulator\n", __func__);
-		}
-	}
+	/* delay 5ms after iovdd off */
+	error = ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_OFF,
+		ST_IOVDD_DELAY_MS);
+	if (error < 0)
+		TS_LOG_ERR("%s: fail to disable iovdd power\n", __func__);
+	error = ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_OFF,
+		ST_PPWER_DELAY_MS);
+	if (error < 0)
+		TS_LOG_ERR("%s: fail to disable vcc power\n", __func__);
 
 	gpio_set_value(info->chip_data->ts_platform_data->reset_gpio, 0);
 	msleep(10);
-
-	if (info->bus_reg) {
-		error = regulator_enable(info->bus_reg);
-		if (error < 0) {
-			TS_LOG_ERR("%s: Failed to enable DVDD regulator\n", __func__);
-		}
-	}
-	msleep(5);
-	if (info->pwr_reg) {
-		error = regulator_enable(info->pwr_reg);
-		if (error < 0) {
-			TS_LOG_ERR("%s: Failed to enable AVDD regulator\n", __func__);
-		}
-	}
-	mdelay(10); //time needed by the regulators for reaching the regime values
+	/* delay 5ms after iovdd on */
+	error = ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_ON,
+		ST_IOVDD_DELAY_MS);
+	if (error < 0)
+		TS_LOG_ERR("%s: fail to enable iovdd power\n", __func__);
+	/* delay 10ms after vcc on */
+	error = ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_ON,
+		ST_VCC_DELAY_MS);
+	if (error < 0)
+		TS_LOG_ERR("%s: fail to enable vcc power\n", __func__);
 
 	gpio_set_value(info->chip_data->ts_platform_data->reset_gpio, 1);
 	mdelay(20);
@@ -974,52 +972,26 @@ static int fts_get_reg(struct fts_ts_info *info, bool get)
 {
 	int retval;
 
-	if (!get) {
-		retval = 0;
+	if (!get)
 		goto regulator_put;
-	}
-
-	info->pwr_reg = regulator_get(info->dev, ST_TS_AVCC_NAME);
-	if (IS_ERR(info->pwr_reg)) {
-		TS_LOG_ERR("%s: Failed to get power regulator\n", __func__);
-		retval = PTR_ERR(info->pwr_reg);
-		goto regulator_put;
-	}
-	retval = regulator_set_voltage(info->pwr_reg, info->avdd_value,
-				info->avdd_value);
-	if (retval)
-		TS_LOG_ERR("%s: Failed to set pwr regulator vol\n", __func__);
-
-
-	info->bus_reg = regulator_get(info->dev, ST_TS_IOVCC_NAME);
-	if (IS_ERR(info->bus_reg)) {
-		TS_LOG_ERR("%s: Failed to get bus pullup regulator\n", __func__);
-		retval = PTR_ERR(info->bus_reg);
-		goto regulator_put;
-	}
-
-	retval = regulator_set_voltage(info->bus_reg, info->iovdd_value,
-				info->iovdd_value);
-	if (retval)
-		TS_LOG_ERR("%s: Failed to set bus regulator vol\n", __func__);
-
-	return 0;
+	retval = ts_kit_power_supply_get(TS_KIT_IOVDD);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to get iovdd power\n", __func__);
+	retval = ts_kit_power_supply_get(TS_KIT_VCC);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to get vcc power\n", __func__);
+	return retval;
 
 regulator_put:
-	if (info->pwr_reg) {
-		regulator_put(info->pwr_reg);
-		info->pwr_reg = NULL;
-	}
-
-	if (info->bus_reg) {
-		regulator_put(info->bus_reg);
-		info->bus_reg = NULL;
-	}
-
-	return retval;
+	retval = ts_kit_power_supply_put(TS_KIT_IOVDD);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to put iovdd power\n", __func__);
+	retval = ts_kit_power_supply_put(TS_KIT_VCC);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to put vcc power\n", __func__);
+	return 0;
 }
 
-#define ST_POWER_ON_DELAY_MS 15
 static int fts_enable_reg(struct fts_ts_info *info,bool enable) 
 {
 	int retval = 0;
@@ -1027,39 +999,26 @@ static int fts_enable_reg(struct fts_ts_info *info,bool enable)
 		retval = 0;
 		goto power_off;
 	}
-
-	if (info->bus_reg) {
-		retval = regulator_enable(info->bus_reg);
-		TS_LOG_INFO("%s: iovdd on\n", __func__);
-		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to enable bus regulator\n", __func__);
-			goto power_off;
-		}
-		mdelay(5);
-	}
-
-	if (info->pwr_reg) {
-		retval |= regulator_enable(info->pwr_reg);
-		TS_LOG_INFO("%s: avdd on\n", __func__);
-		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to enable power regulator\n", __func__);
-			goto disable_bus_reg;
-		}
-		mdelay(ST_POWER_ON_DELAY_MS);
-	}
-
+	/* delay 5ms after iovdd on */
+	retval = ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_ON,
+		ST_IOVDD_DELAY_MS);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to enable iovdd power\n", __func__);
+	retval = ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_ON,
+		ST_POWER_ON_DELAY_MS);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to enable vcc power\n", __func__);
 	return OK;
 
 power_off:
-	if (info->bus_reg) {
-		retval = regulator_disable(info->bus_reg);
-		mdelay(5); /* in IC SPEC, need dealy 5ms after 1.8v power off */
-	}
-disable_bus_reg:
-	if (info->pwr_reg){
-		retval |= regulator_disable(info->pwr_reg);
-	}
-
+	/* delay 5ms after iovdd off */
+	retval = ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_OFF,
+		ST_IOVDD_DELAY_MS);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to disable iovdd power\n", __func__);
+	retval = ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_OFF, 0);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to disable vcc power\n", __func__);
 	return retval;
 }
 
@@ -1096,6 +1055,11 @@ repeat:
 	if (res < 0) {
 		TS_LOG_ERR("%s Error during initialize TEST! ERROR %08X\n",
 			__func__, res);
+		if (isI2cError(res)) {
+			enable_irq(info->chip_data->ts_platform_data->irq_id);
+			TS_LOG_ERR("i2c error %08X\n", res);
+			return res;
+		}
 		goto end;
 	} else {
 		TS_LOG_ERR("%s:INITIALIZATION TEST OK!\n", __func__);
@@ -1171,12 +1135,13 @@ static int st_holster_switch(struct ts_holster_info *info)
 {
 	int retval = NO_ERR;
 	u8 settings[2]={0x00};
-	TS_LOG_INFO("holster switch(%d) action: %d\n", info->holster_switch, info->op_action);
+
 	if (!info) {
 		TS_LOG_ERR("synaptics_holster_switch: info is Null\n");
 		retval = -ENOMEM;
 		return retval;
 	}
+	TS_LOG_INFO("holster switch(%d) action: %d\n", info->holster_switch, info->op_action);
 
 	switch (info->op_action) {
 		case TS_ACTION_WRITE:
@@ -1364,6 +1329,12 @@ static int st_after_resume(void *feature_info)
 			TS_LOG_ERR("retore holster switch %d, failed: %d\n",
 				info->holster_info.holster_switch, retval);
 	}
+	if (info->charger_info.charger_supported) {
+		retval = fts_set_charger_status(
+			info->charger_info.charger_switch);
+		if (retval < 0)
+			TS_LOG_ERR("fts_set_charger_status failed\n");
+	}
 	st_set_fold_status(info->fold_info, DONT_CALIBRATE);
 	TS_LOG_INFO("%s -\n", __func__);
 	return OK;
@@ -1453,12 +1424,44 @@ static int st_irq_bottom_half(struct ts_cmd_node *in_cmd, struct ts_cmd_node *ou
 	return NO_ERR;
 }
 
+static void cap_test_parse_dts(struct device_node *device)
+{
+	int retval;
+	struct fts_ts_info *ts = fts_get_info();
 
+	if (!ts) {
+		TS_LOG_ERR("%s ts null\n", __func__);
+		return;
+	}
+	retval = of_property_read_u32(device, "self_cap_test_support",
+				&ts->chip_data->self_cap_test);
+	if (retval) {
+		TS_LOG_ERR("get self_cap_test support = 0\n" );
+		ts->chip_data->self_cap_test = 0;
+	}
+	retval = of_property_read_u32(device, "support_self_calibrate_test",
+		&ts->chip_data->support_self_calibrate_test);
+	if (retval) {
+		ts->chip_data->support_self_calibrate_test = 0;
+		TS_LOG_ERR("support_self_calibrate_test = 0\n");
+	}
+	retval = of_property_read_u32(device, "support_ito_cap_test",
+		&ts->chip_data->support_ito_cap_test);
+	if (retval) {
+		ts->chip_data->support_ito_cap_test = 0;
+		TS_LOG_ERR("support_ito_cap_test = 0\n");
+	}
+	retval = of_property_read_u32(device, "support_raw_adjacent_test",
+		&ts->support_raw_adjacent_test);
+	if (retval) {
+		ts->support_raw_adjacent_test = 0;
+		TS_LOG_ERR("support_raw_adjacent_test = 0\n");
+	}
+}
 
 static int st_parse_dts(struct device_node *device, struct ts_kit_device_data *chip_data)
 {
 	int retval  = NO_ERR;
-	struct fts_ts_info *ts = fts_get_info();
 
 	TS_LOG_INFO("%s st parse dts start\n", __func__);
 
@@ -1506,67 +1509,11 @@ static int st_parse_dts(struct device_node *device, struct ts_kit_device_data *c
 		retval = -EINVAL;
 		goto err;
 	}
-
-	retval = of_property_read_u32(device, ST_VCI_GPIO_TYPE,
-				&chip_data->vci_gpio_type);
-	if (retval) {
-		TS_LOG_ERR("get device ST_VCI_GPIO_TYPE failed\n");
-		retval = -EINVAL;
-		goto err;
-	}
-
-	retval = of_property_read_u32(device, ST_VCI_REGULATOR_TYPE,
-				&chip_data->vci_regulator_type);
-	if (retval) {
-		TS_LOG_ERR("get device ST_VCI_REGULATOR_TYPE failed\n");
-		retval = -EINVAL;
-		goto err;
-	}
-
-	if (chip_data->vci_regulator_type) {
-		if(of_property_read_u32(device, ST_AVDD_VOL_VALUE,
-				&ts->avdd_value)) {
-			TS_LOG_ERR("AVDD_VOL_VALUE not found. use default 3.3v\n");
-			ts->avdd_value = 3300000;
-		}
-	}
-
-	retval = of_property_read_u32(device, ST_VDDIO_GPIO_TYPE,
-				&chip_data->vddio_gpio_type);
-	if (retval) {
-		TS_LOG_ERR("get device ST_VDDIO_GPIO_TYPE failed\n");
-		retval = -EINVAL;
-		goto err;
-	}
-
-	retval = of_property_read_u32(device, ST_VDDIO_REGULATOR_TYPE,
-				&chip_data->vddio_regulator_type);
-	if (retval) {
-		TS_LOG_ERR("get device ST_VDDIO_REGULATOR_TYPE failed\n");
-		retval = -EINVAL;
-		goto err;
-	}
-
-	if (chip_data->vddio_regulator_type) {
-		if(of_property_read_u32(device, ST_IOVDD_VOL_VALUE,
-				&ts->iovdd_value)) {
-			TS_LOG_ERR("IOVDD_VOL_VALUE not found, use default 1.8v\n");
-			ts->iovdd_value = 1800000;
-		}
-	}
-
-	retval = of_property_read_u32(device, "self_cap_test_support",
-				&chip_data->self_cap_test);
-	if (retval) {
-		TS_LOG_INFO("get self_cap_test support = 0\n" );
-		chip_data->self_cap_test = 0;
-	}
-
 	retval = of_property_read_u32(device,
 		"support_notice_aft_gesture_mode",
 		&chip_data->support_notice_aft_gesture_mode);
 	if (retval) {
-		TS_LOG_INFO("get support_notice_aft_gesture_mode  = 0\n");
+		TS_LOG_INFO("get support_notice_aft_gesture_mode = 0\n");
 		chip_data->support_notice_aft_gesture_mode = 0;
 	}
 	retval = of_property_read_u32(device, "support_extra_key_event_input",
@@ -1576,15 +1523,22 @@ static int st_parse_dts(struct device_node *device, struct ts_kit_device_data *c
 		chip_data->support_extra_key_event_input = 0;
 	}
 	retval = of_property_read_u32(device, "support_gesture_mode",
-				&chip_data->support_gesture_mode);
+		&chip_data->support_gesture_mode);
 	if (retval) {
 		chip_data->support_gesture_mode = 0;
-		TS_LOG_ERR("%s:support_gesture_mode configed %d\n", __func__,
-			chip_data->support_gesture_mode);
+		TS_LOG_ERR("support_gesture_mode = 0\n");
 	}
+	cap_test_parse_dts(device);
 	TS_LOG_INFO("irq_config=%d, algo_id=%d, x_max=%d, y_max=%d, x_mt=%d,y_mt=%d\n", \
 		chip_data->irq_config, chip_data->algo_id,
 		chip_data->x_max, chip_data->y_max, chip_data->x_max_mt, chip_data->y_max_mt);
+
+	retval = of_property_read_u32(device, "tui_special_feature_support",
+		&chip_data->tui_special_feature_support);
+	if (retval)
+		chip_data->tui_special_feature_support = 0;
+	TS_LOG_INFO("get tui_special_feature_support = %u\n",
+		chip_data->tui_special_feature_support);
 err:
 	return retval;
 }
@@ -1651,6 +1605,14 @@ static int st_init_chip(void)
 #if defined(CONFIG_TEE_TUI)
 	strncpy(tee_tui_data.device_name, "new_st", strlen("new_st"));
 	tee_tui_data.device_name[strlen("new_st")] = '\0';
+	TS_LOG_INFO("%s irq gpio = %d\n", __func__,
+		info->chip_data->ts_platform_data->irq_gpio);
+	tee_tui_data.tui_special_feature_support =
+		info->chip_data->tui_special_feature_support;
+	if ((tee_tui_data.tui_special_feature_support & TP_TUI_NEW_IRQ_MASK) ==
+		TP_TUI_NEW_IRQ_SUPPORT)
+		tee_tui_data.tui_irq_gpio =
+			info->chip_data->ts_platform_data->irq_gpio;
 #endif
 
 	TS_LOG_INFO("%s: -\n", __func__);
@@ -1673,10 +1635,10 @@ static int st_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(KEY_FLIP, input_dev->keybit);
@@ -1746,7 +1708,6 @@ static int st_chip_detect(struct ts_kit_platform_data *data)
 	ts->dev = &data->ts_dev->dev;
 	data->ts_dev->dev.of_node = ts->chip_data->cnode;
 	data->client->addr = ts->chip_data->slave_addr;
-
 
 	retval = fts_get_reg(ts, 1);
 	if (retval){
@@ -1944,7 +1905,7 @@ int check_mutual_raw_res_gap(void)
 	memset(info, 0, sizeof(struct ts_rawdata_info));
 	ret = st_get_testdata(info, NULL);
 	TS_LOG_INFO("%s: %s\n", __func__, info->result);
-	if (strstr(info->result, "-2F")) {
+	if (strstr(info->result, "-11F")) {
 		TS_LOG_ERR("%s: check rawgap failed !\n", __func__);
 		ret = -EINVAL;
 	}
@@ -1955,6 +1916,53 @@ int check_mutual_raw_res_gap(void)
 static int fts_palm_switch(struct ts_palm_info *info)
 {
 	return 0;
+}
+
+static int fts_set_charger_status(u8 charger_switch)
+{
+	int ret;
+	/* Charger mode ic cmd 0xA2, 0x02, 0x00 */
+	unsigned char charger_cmd[CHARGER_CMD_SIZE] = { 0xA2, 0x02, 0x00 };
+
+	/* charger_cmd[2] is charger in or out */
+	if (charger_switch)
+		charger_cmd[2] = CHARGER_IN;
+	else
+		charger_cmd[2] = CHARGER_OUT;
+
+	TS_LOG_INFO("%s:%x, %x, %x\n", __func__,
+		charger_cmd[0], charger_cmd[1], charger_cmd[2]);
+	ret = fts_write(charger_cmd, sizeof(charger_cmd));
+	if (ret < 0)
+		TS_LOG_ERR("%s: write failed error %08X\n", __func__, ret);
+	return ret;
+}
+
+static int fts_charger_switch(struct ts_charger_info *info)
+{
+	int retval;
+
+	if (!info) {
+		TS_LOG_ERR("%s: info is null\n", __func__);
+		return -EINVAL;
+	}
+	if (!info->charger_supported) {
+		TS_LOG_ERR("%s: no charger supported\n", __func__);
+		return -EINVAL;
+	}
+	switch (info->op_action) {
+	case TS_ACTION_WRITE:
+		retval = fts_set_charger_status(info->charger_switch);
+		if (retval < 0)
+			TS_LOG_ERR("%s set charger status %d, failed: %d\n",
+				__func__, info->charger_switch, retval);
+		break;
+	default:
+		TS_LOG_ERR("%s invalid cmd\n", __func__);
+		retval = -EINVAL;
+		break;
+	}
+	return retval;
 }
 
 static int fts_wrong_touch(void)
@@ -1998,6 +2006,7 @@ struct ts_device_ops ts_kit_st_ops = {
 	.chip_set_recovery_window = st_set_recovery_window,
 	.chip_palm_switch = fts_palm_switch,
 	.chip_wrong_touch = fts_wrong_touch,
+	.chip_charger_switch = fts_charger_switch,
 	.chip_reset = NULL,
 };
 

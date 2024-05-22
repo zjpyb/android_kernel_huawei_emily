@@ -52,10 +52,10 @@ struct cfg80211_conn {
 };
 
 #ifdef CONFIG_HW_WIFI
-static bool hw_wifi_connect_mode = false;
+static bool hw_wifi_connect_mode;
 extern void wifi_disconnect_report(void);
 
-bool  hw_timestamps_get_wifi_connect_status(void)
+bool hw_timestamps_get_wifi_connect_status(void)
 {
 	return hw_wifi_connect_mode;
 }
@@ -63,8 +63,8 @@ bool  hw_timestamps_get_wifi_connect_status(void)
 static void hw_timestamps_set_wifi_connect_status(bool connect)
 {
 	hw_wifi_connect_mode = connect;
-	printk(KERN_ERR "%s: hw_wifi_connect_mode(%d)\n",__FUNCTION__,hw_wifi_connect_mode);
-	return;
+	printk(KERN_ERR "%s: hw_wifi_connect_mode(%d)\n",
+		__FUNCTION__, hw_wifi_connect_mode);
 }
 #endif
 static void cfg80211_sme_free(struct wireless_dev *wdev)
@@ -337,7 +337,7 @@ void cfg80211_sme_scan_done(struct net_device *dev)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 #ifdef CONFIG_BCMDHD
-	if (NULL == wdev)
+	if (wdev == NULL)
 		return;
 #endif
 
@@ -694,11 +694,10 @@ void cfg80211_drv_vowifi(struct net_device *dev, gfp_t gfp)
 	unsigned long flags;
 
 	ev = kzalloc(sizeof(*ev), gfp);
-	if (!ev) {
+	if (ev == NULL) {
 		printk(KERN_ERR "%s: malloc fail\n", __FUNCTION__);
 		return;
 	}
-
 	ev->type = EVENT_DRV_VOWIFI;
 	spin_lock_irqsave(&wdev->event_lock, flags);
 	list_add_tail(&ev->list, &wdev->event_list);
@@ -904,9 +903,8 @@ void cfg80211_connect_done(struct net_device *dev,
 	spin_unlock_irqrestore(&wdev->event_lock, flags);
 	queue_work(cfg80211_wq, &rdev->event_work);
 #ifdef CONFIG_HW_WIFI
-	if((wdev->iftype == NL80211_IFTYPE_STATION) && (!params->status)){
+	if (wdev->iftype == NL80211_IFTYPE_STATION && !params->status)
 		hw_timestamps_set_wifi_connect_status(true);
-	}
 #endif
 }
 EXPORT_SYMBOL(cfg80211_connect_done);
@@ -1025,7 +1023,7 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 	union iwreq_data wrqu;
 #endif
 #ifdef CONFIG_BCMDHD
-	if (NULL == wdev)
+	if (wdev == NULL)
 		return;
 #endif
 
@@ -1102,7 +1100,7 @@ void cfg80211_disconnected(struct net_device *dev, u16 reason,
 	spin_unlock_irqrestore(&wdev->event_lock, flags);
 	queue_work(cfg80211_wq, &rdev->event_work);
 #ifdef CONFIG_HW_WIFI
-	if(wdev->iftype == NL80211_IFTYPE_STATION){
+	if (wdev->iftype == NL80211_IFTYPE_STATION) {
 		hw_timestamps_set_wifi_connect_status(false);
 		wifi_disconnect_report();
 	}
@@ -1234,12 +1232,11 @@ int cfg80211_disconnect(struct cfg80211_registered_device *rdev,
 		cfg80211_mlme_down(rdev, dev);
 	else if (wdev->ssid_len) {
 		err = rdev_disconnect(rdev, dev, reason);
-		if (!err) {
+		if (!err)
 			__cfg80211_disconnected(dev, NULL, 0, reason, false);
-		}
 	}
 	#ifdef CONFIG_HW_WIFI
-	if(wdev->iftype == NL80211_IFTYPE_STATION){
+	if (wdev->iftype == NL80211_IFTYPE_STATION) {
 		hw_timestamps_set_wifi_connect_status(false);
 		wifi_disconnect_report();
 	}

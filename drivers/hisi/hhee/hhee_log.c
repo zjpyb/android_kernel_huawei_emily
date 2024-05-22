@@ -1,7 +1,6 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2021. All rights reserved.
  * Description: HHEE log driver in kernel
- * Creator: security-ap
  * Date: 2017/2/1
  */
 
@@ -20,7 +19,7 @@
 #include "hhee.h"
 
 static int hhee_logging_enabled;
-struct circular_buffer *cb;
+struct circular_buffer *normal_cb;
 struct circular_buffer *crash_cb;
 struct circular_buffer *monitor_cb;
 
@@ -35,13 +34,11 @@ static int circ_buf_init(struct circular_buffer *cir_buf)
 {
 	struct circular_buffer *tmp_cb = (struct circular_buffer *)(uintptr_t)cir_buf->virt_log_addr;
 
-	if (0 == cir_buf->inited) {
-		memset(cir_buf, 0, sizeof(struct circular_buffer));/* unsafe_function_ignore: memset */
+	if (cir_buf->inited == 0) {
+		memset(cir_buf, 0, sizeof(struct circular_buffer));
 		cir_buf->virt_log_addr = (uint64_t)(uintptr_t)tmp_cb;
 		cir_buf->start = tmp_cb->start;
 		cir_buf->inited = 1;
-	} else {
-		cir_buf->start = cir_buf->end;
 	}
 
 	cir_buf->size  = tmp_cb->size;
@@ -73,17 +70,13 @@ ssize_t circ_buf_copy(struct circular_buffer *incb, char *text)
 
 	if (incb->end > incb->start) {
 		len += incb->end - incb->start;
-		memcpy(text, incb->buf + incb->start, incb->end - incb->start);/* unsafe_function_ignore: memcpy */
-
+		memcpy(text, incb->buf + incb->start, incb->end - incb->start);
 	} else if (incb->start > incb->end) {
-		memcpy(text, incb->buf + incb->start, incb->size - incb->start);/* unsafe_function_ignore: memcpy */
+		memcpy(text, incb->buf + incb->start, incb->size - incb->start);
 		len += incb->size - incb->start;
-		memcpy(text + incb->size - incb->start, incb->buf, incb->end);/* unsafe_function_ignore: memcpy */
+		memcpy(text + incb->size - incb->start, incb->buf, incb->end);
 		len += incb->end;
 	}
-
-	/* Indicate that buffer is empty */
-	incb->start = incb->end;
 
 	return (ssize_t)len;
 }
@@ -99,7 +92,7 @@ ssize_t hhee_copy_logs(char __user *buf, size_t count,
 		return 0;
 
 	if (NORMAL_LOG == logtype)
-		incb = cb;
+		incb = normal_cb;
 	else if(CRASH_LOG == logtype)
 		incb = crash_cb;
 	else if(MONITOR_LOG == logtype)
@@ -132,8 +125,17 @@ ssize_t hhee_copy_logs(char __user *buf, size_t count,
 	}
 	incb->buf[incb->end] = '\0';
 
+	/* read offset clear */
+	*offp = 0;
 	len = simple_read_from_buffer(buf, count, offp,
 				buffer, (unsigned long)len);
+
+	if (incb->start + len < incb->size) {
+		incb->start = incb->start + len;
+	}
+	else {
+		incb->start = incb->start + len - incb->size;
+	}
 
 	kfree(buffer);
 	return len;
@@ -174,6 +176,7 @@ void cb_deinit(struct circular_buffer *incb)
 	if (incb)
 		kfree(incb);
 }
+
 /*
  * Call function to initialize circular buffer.
  * An HVC is made to send the virtual address of the structure to
@@ -185,20 +188,20 @@ int hhee_logger_init(void)
 	int ret;
 
 	pr_info("hhee logger init\n");
-	/* get logging information*/
-	/*normal buffer*/
+	/* get logging information */
+	/* normal buffer */
 	ret_res = hhee_fn_hvc((unsigned long)HHEE_LOGBUF_INFO, 0ul, 0ul, 0ul);
-	ret = cb_init(ret_res.a0, ret_res.a1, &cb, NORMAL_LOG);
+	ret = cb_init(ret_res.a0, ret_res.a1, &normal_cb, NORMAL_LOG);
 	if (ret)
 		goto outfail1;
 
-	/*crash buffer*/
+	/* crash buffer */
 	ret_res = hhee_fn_hvc((unsigned long)HHEE_CRASHLOG_INFO, 0ul, 0ul, 0ul);
 	ret = cb_init(ret_res.a0, ret_res.a1, &crash_cb, CRASH_LOG);
 	if (ret)
 		goto outfail2;
 
-	/*monitor buffer*/
+	/* monitor buffer */
 	ret_res = hhee_fn_hvc((unsigned long)HHEE_PMFBUFLOG_INFO, 0ul, 0ul, 0ul);
 	ret = cb_init(ret_res.a0, ret_res.a1, &monitor_cb, MONITOR_LOG);
 	if (ret)
@@ -211,7 +214,7 @@ int hhee_logger_init(void)
 outfail3:
 	cb_deinit(crash_cb);
 outfail2:
-	cb_deinit(cb);
+	cb_deinit(normal_cb);
 outfail1:
 	pr_info("HHEE log init failed!\n");
 	return -EINVAL;

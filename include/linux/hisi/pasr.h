@@ -9,12 +9,8 @@
 #include <linux/mm.h>
 #include <linux/spinlock.h>
 
-//#if defined(CONFIG_HI6210_PASR) || defined(CONFIG_HI3635_PASR)
-/*#warning CONFIG_HI3630_PASR defined!*/
-//#define PASR_SECTION_SZ	(192 * 1024 * 1024)
 #define PASR_MAX_DIE_NR		4
 #define PASR_MAX_SECTION_NR_PER_DIE	8
-//#endif
 
 #ifdef CONFIG_PASR
 
@@ -74,10 +70,10 @@ struct pasr_map {
 };
 
 #define for_each_pasr_section(i, j, map, s) \
-        for (i = 0; i < map.nr_dies; i++) \
-                for (s = &map.die[i].section[0], j = 0; \
-                                j < map.die[i].nr_sections; \
-                                j++, s = &map.die[i].section[j])
+		for (i = 0; i < map.nr_dies; i++) \
+			for (s = &map.die[i].section[0], j = 0; \
+				j < map.die[i].nr_sections; \
+				j++, s = &map.die[i].section[j])
 
 /**
  * pasr_register_mask_function()

@@ -1,32 +1,25 @@
-/* bastet_sync_seq.c
- *
- * Bastet Tcp Seq Sync.
- *
- * Copyright (C) 2014 Huawei Device Co.,Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description: Bastet TCP sequence sync.
+ * Author: zhuweichen@huawei.com
+ * Create: 2014-09-01
  */
 
 #include <net/tcp.h>
 #include <net/inet_sock.h>
 #include <huawei_platform/net/bastet/bastet_utils.h>
 #include <huawei_platform/net/bastet/bastet.h>
+#include <huawei_platform/net/bastet/bastet_interface.h>
 
-#define BST_MAX_SEQ_VALUE				0xFFFFFFFF
+#define BST_MAX_SEQ_VALUE 0xFFFFFFFF
 
-#define BST_REQ_SOCK_SYNC_TIME			(HZ / 2)
-#define BST_SKIP_SOCK_OWNER_TIME		(HZ / 20)
-#define BST_WAKELOCK_TIMEOUT			(HZ / 10)
+#define BST_REQ_SOCK_SYNC_TIME (HZ / 2)
+#define BST_REQ_SOCK_WAIT_SYNC_TIME (HZ*2 / 5)
+#define BST_SKIP_SOCK_OWNER_TIME (HZ / 2)
+#define BST_WAKELOCK_TIMEOUT (HZ / 10)
+#define BST_NULL_RETURN_VALUE 1
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 #ifndef tcp_jiffies32
 #define tcp_jiffies32 tcp_time_stamp
 #endif
@@ -47,11 +40,24 @@ enum {
 
 static DEFINE_SPINLOCK(create_bastet_lock);
 
-extern int adjust_traffic_flow_by_sock(struct sock *sk,
-	unsigned long tx, unsigned long rx);
+void bastet_sock_seq_num_invalid(struct sock *sk)
+{
+	struct bst_sock_comm_prop prop;
+
+	memset(&prop, 0, sizeof(prop));
+	if (!is_ipv6_addr(sk)) {
+		bastet_get_comm_prop(sk, &prop);
+		post_indicate_packet(BST_IND_SN_INVALID, &prop, sizeof(prop));
+	}
+}
 
 /*
+ * cancel_sock_bastet_timer () - cancel the timer.
+ * @sk: point to the sock.
+ *
  * Cancel bastet sock timer anyway.
+ *
+ * Returns:No
  */
 static void cancel_sock_bastet_timer(struct sock *sk)
 {
@@ -62,46 +68,64 @@ static void cancel_sock_bastet_timer(struct sock *sk)
 }
 
 /*
+ * setup_sock_sync_delay_timer () - setup the delay timer.
+ * @sk: point to the sock.
+ *
  * Setup bastet sock delay sync timer.
+ *
+ * Returns:No
  */
 static void setup_sock_sync_delay_timer(struct sock *sk)
 {
 	struct bastet_sock *bsk = sk->bastet;
 
-	BASTET_LOGI("delay_time=%ld", bsk->delay_sync_time_section);
+	bastet_logi("delay_time=%ld", bsk->delay_sync_time_section);
 	bsk->bastet_timer_event = BST_TMR_DELAY_SOCK_SYNC;
-	bsk->bastet_timeout = bsk->last_sock_active_time_point
-		+ bsk->delay_sync_time_section;
+	bsk->bastet_timeout = bsk->last_sock_active_time_point +
+		bsk->delay_sync_time_section;
 
 	sk_reset_timer(sk, &bsk->bastet_timer, bsk->bastet_timeout);
 }
 
 /*
+ * process_sock_send_and_recv () - process the sock data.
+ * @sk: point to the sock.
+ *
  * Send out user data and Recv User data if necessary.
+ *
+ * Returns:No
  */
 static void process_sock_send_and_recv(struct sock *sk)
 {
 	int mss_now;
 	struct bastet_sock *bsk = sk->bastet;
 
-	if (NULL != sk->sk_send_head) {
+	if (sk->sk_send_head != NULL) {
 		mss_now = tcp_current_mss(sk);
 		__tcp_push_pending_frames(sk, mss_now, tcp_sk(sk)->nonagle);
 	}
 
 	if (!skb_queue_empty(&bsk->recv_queue)) {
-		struct sk_buff *skb;
-
-		while ((skb = __skb_dequeue(&bsk->recv_queue)))
+		struct sk_buff *skb = NULL;
+		skb = __skb_dequeue(&bsk->recv_queue);
+		bastet_loge("bastet backlog: begin to process bastet_receive_queue");
+		while (skb) {
 			sk_backlog_rcv(sk, skb);
-
+			skb = __skb_dequeue(&bsk->recv_queue);
+		}
 		bsk->recv_len = 0;
 	}
 }
 
 /*
+ * setup_sock_sync_request_timer () - setup the timer.
+ * @sk: point to the sock.
+ * @retry: retry numbers.
+ *
  * Setup bastet sock request sync timer,
  * Insure user sock can turn to valid after a while.
+ *
+ * Returns:No
  */
 static void setup_sock_sync_request_timer(struct sock *sk, bool retry)
 {
@@ -114,27 +138,60 @@ static void setup_sock_sync_request_timer(struct sock *sk, bool retry)
 	sk_reset_timer(sk, &bsk->bastet_timer, bsk->bastet_timeout);
 }
 
+static int request_sock_sync_ipv4(struct sock *sk)
+{
+	int err;
+	struct bst_sock_comm_prop prop;
+
+	memset(&prop, 0, sizeof(prop));
+
+	sk->bastet->bastet_sock_state = BST_SOCK_UPDATING;
+	setup_sock_sync_request_timer(sk, false);
+	bastet_get_comm_prop(sk, &prop);
+	err = post_indicate_packet(BST_IND_SOCK_SYNC_REQ, &prop, sizeof(prop));
+
+	return err;
+}
+
+static int request_sock_sync_ipv6(struct sock *sk)
+{
+	int err;
+	struct bst_sock_comm_prop_ipv6 prop;
+
+	memset(&prop, 0, sizeof(prop));
+
+	sk->bastet->bastet_sock_state = BST_SOCK_UPDATING;
+	setup_sock_sync_request_timer(sk, false);
+	bastet_get_comm_prop_ipv6(sk, &prop);
+	err = post_indicate_packet(BST_IND_SOCK_SYNC_REQ_IPV6,
+		&prop, sizeof(prop));
+
+	return err;
+}
+
 /*
+ * request_sock_sync () - sync the sock.
+ * @sk: point to the sock.
+ *
  * Sock requests sock sync when sock is invalid.
+ *
+ * Returns:0 means success
+ * Otherwise is fail.
  */
 static int request_sock_sync(struct sock *sk)
 {
-	int err = 0;
-	struct bst_sock_comm_prop prop ;
+	int err;
 
-	memset(&prop, 0, sizeof(prop));
-	if (IS_ERR_OR_NULL(sk) ||IS_ERR_OR_NULL(sk->bastet)) {
-		BASTET_LOGE("invalid parameter");
+	if (IS_ERR_OR_NULL(sk) || IS_ERR_OR_NULL(sk->bastet)) {
+		bastet_loge("invalid parameter");
 		return -EFAULT;
 	}
 
-	sk->bastet->bastet_sock_state = BST_SOCK_UPDATING;
+	if (is_ipv6_addr(sk))
+		err = request_sock_sync_ipv6(sk);
+	else
+		err = request_sock_sync_ipv4(sk);
 
-	setup_sock_sync_request_timer(sk, false);
-
-	bastet_get_comm_prop(sk, &prop);
-
-	err = post_indicate_packet(BST_IND_SOCK_SYNC_REQ, &prop, sizeof(prop));
 	return err;
 }
 
@@ -142,18 +199,17 @@ static bool do_sock_send_prepare(struct sock *sk)
 {
 	u8 sync_state;
 
-	if (IS_ERR_OR_NULL(sk) ||IS_ERR_OR_NULL(sk->bastet)) {
-		BASTET_LOGE("invalid parameter");
+	if (IS_ERR_OR_NULL(sk) || IS_ERR_OR_NULL(sk->bastet)) {
+		bastet_loge("invalid parameter");
 		return false;
 	}
 
 	sync_state = sk->bastet->bastet_sock_state;
-
+	bastet_logi("sync_state:%d", sync_state);
 	switch (sync_state) {
 	case BST_SOCK_INVALID:
-		/* Bastet Log should be outside of lock */
-		BASTET_LOGI("sk: %p", sk);
-		/* We should never add lock outside switch grammar,
+		/*
+		 * We should never add lock outside switch grammar,
 		 * or it will cause interlock when
 		 * we call process_sock_send_and_recv.
 		 */
@@ -169,13 +225,19 @@ static bool do_sock_send_prepare(struct sock *sk)
 }
 
 /*
+ * bastet_sock_send_prepare () - prepare the send sock.
+ * @sk: point to the sock.
+ *
  * Judge if send data need to wait.
  * If current sock is invalid, requests socket sync and saves send data;
  * Otherwise, do nothing.
+ *
+ * Returns:true means success.
+ *         false means false.
  */
 bool bastet_sock_send_prepare(struct sock *sk)
 {
-	if (NULL != sk->bastet)
+	if (sk->bastet != NULL)
 		return do_sock_send_prepare(sk);
 
 	return false;
@@ -184,74 +246,57 @@ bool bastet_sock_send_prepare(struct sock *sk)
 static inline bool bastet_rcvqueues_full(struct sock *sk,
 	const struct sk_buff *skb)
 {
-	struct bastet_sock *bsk;
-
-	if (IS_ERR_OR_NULL(skb) || IS_ERR_OR_NULL(sk) ||IS_ERR_OR_NULL(sk->bastet)) {
-		BASTET_LOGE("invalid parameter");
-		return false;
-	}
-
-	bsk = sk->bastet;
-
-	return bsk->recv_len + skb->truesize > sk->sk_rcvbuf;
+	return ((IS_ERR_OR_NULL(skb) || IS_ERR_OR_NULL(sk) ||
+		IS_ERR_OR_NULL(sk->bastet)) ? false :
+		sk->bastet->recv_len + skb->truesize > sk->sk_rcvbuf);
 }
 
 static int add_rcvqueues_queue(struct sock *sk, struct sk_buff *skb)
 {
-	if (bastet_rcvqueues_full(sk, skb))
-		return -ENOBUFS;
+	struct bst_sock_comm_prop prop;
+	struct bst_sock_comm_prop_ipv6 prop_ipv6;
 
+	memset(&prop, 0, sizeof(prop));
+	memset(&prop_ipv6, 0, sizeof(prop_ipv6));
+
+	if (bastet_rcvqueues_full(sk, skb)) {
+		if (!is_ipv6_addr(sk)) {
+			bastet_get_comm_prop(sk, &prop);
+			post_indicate_packet(BST_IND_RCVQUEUE_FULL,
+				&prop, sizeof(prop));
+		} else {
+			bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+			post_indicate_packet(BST_IND_RCVQUEUE_FULL_IPV6,
+				&prop_ipv6, sizeof(prop_ipv6));
+		}
+		return -ENOBUFS;
+	}
+
+	bastet_loge("bastet backlog: push the skb data into bastet_receive_queue");
+	skb_dst_force(skb);
 	__skb_queue_tail(&sk->bastet->recv_queue, skb);
 	sk->bastet->recv_len += skb->truesize;
 	return 0;
 }
 
 /*
- * Judge if recv data need to wait.
- * If current sock is invalid, requests socket sync and saves recv data;
- * Otherwise, do nothing.
- */
-/*lint -e666*/
-bool bastet_sock_recv_prepare(struct sock *sk, struct sk_buff *skb)
-{
-	u8 sync_state;
-	struct bastet_sock *bsk = sk->bastet;
-
-	if (NULL == bsk)
-		return false;
-
-	sync_state = bsk->bastet_sock_state;
-	switch (sync_state) {
-	case BST_SOCK_INVALID:
-		bsk->bastet_sock_state = BST_SOCK_UPDATING;
-
-		/* Set retry true, if timeout, request sock sync */
-		setup_sock_sync_request_timer(sk, true);
-		/* Ps: do not break */
-	case BST_SOCK_UPDATING:
-		if (unlikely(add_rcvqueues_queue(sk, skb))) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
-			__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
-#else
-			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
-#endif
-			kfree_skb(skb);
-		}
-		return true;
-	default:
-		return false;
-	}
-}
-/*lint +e666*/
-
-/*
+ * request_sock_bastet_timeout () - request timeout event process
+ * @sk: point to the sock.
+ *
  * BST_TMR_REQ_SOCK_SYNC timeout.
  * Request sync time is up, but sock sync properties still invalid.
  * Usually, daemon should set sock sync properties before timeout.
+ *
+ * Returns:No
  */
 static void request_sock_bastet_timeout(struct sock *sk)
 {
 	struct bastet_sock *bsk = sk->bastet;
+	struct bst_sock_comm_prop prop;
+	struct bst_sock_comm_prop_ipv6 prop_ipv6;
+
+	memset(&prop, 0, sizeof(prop));
+	memset(&prop_ipv6, 0, sizeof(prop_ipv6));
 
 	/* Accurating time */
 	if (time_after(bsk->bastet_timeout, jiffies)) {
@@ -259,14 +304,24 @@ static void request_sock_bastet_timeout(struct sock *sk)
 		return;
 	}
 
-	/* We must reset timer event, bastet_delay_sock_sync_notify
+	/*
+	 * We must reset timer event, bastet_delay_sock_sync_notify
 	 * depends on it this code must be put after accurating time
 	 */
 	bsk->bastet_timer_event = BST_TMR_EVT_INVALID;
 
-	if (BST_SOCK_UPDATING != bsk->bastet_sock_state) {
-		BASTET_LOGE("sk: %p state: %d not expected",
-			sk, bsk->bastet_sock_state);
+	if (bsk->bastet_sock_state != BST_SOCK_UPDATING) {
+		if (!is_ipv6_addr(sk)) {
+			bastet_get_comm_prop(sk, &prop);
+			post_indicate_packet(BST_IND_SKSTATE_NOT_UPDATING,
+				&prop, sizeof(prop));
+		} else {
+			bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+			post_indicate_packet(BST_IND_SKSTATE_NOT_UPDATING_IPV6,
+				&prop_ipv6, sizeof(prop_ipv6));
+		}
+		bastet_loge("proxy_id:%d state: %d not expected",
+			bsk->proxy_id, bsk->bastet_sock_state);
 		return;
 	}
 
@@ -276,78 +331,74 @@ static void request_sock_bastet_timeout(struct sock *sk)
 		return;
 	}
 
-	/* If goes here, bastet sock sync failed,
-	 * Send or recv data anyway. */
-	BASTET_LOGE("sk: %p request timeout", sk);
-
-	if (BST_USER_START == bsk->user_ctrl) {
-		/* Before send or recv data, set state to BST_SOCK_VALID*/
-		bsk->bastet_sock_state = BST_SOCK_VALID;
+	/*
+	 * If goes here, bastet sock sync failed,
+	 * Send or recv data anyway.
+	 */
+	if (!is_ipv6_addr(sk)) {
+		bastet_get_comm_prop(sk, &prop);
+		post_indicate_packet(BST_IND_SOCK_SYNC_FAILED,
+			&prop, sizeof(prop));
 	} else {
-		bsk->bastet_sock_state = BST_SOCK_NOT_USED;
+		bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+		post_indicate_packet(BST_IND_SOCK_SYNC_FAILED_IPV6,
+			&prop_ipv6, sizeof(prop_ipv6));
 	}
+	bastet_loge("proxy_id:%d request timeout", bsk->proxy_id);
+
+	if (bsk->user_ctrl == BST_USER_START)
+		/* Before send or recv data, set state to BST_SOCK_VALID */
+		bsk->bastet_sock_state = BST_SOCK_VALID;
+	else
+		bsk->bastet_sock_state = BST_SOCK_NOT_USED;
 }
 
-/*
- * BST_TMR_DELAY_SOCK_SYNC timeout.
- * If sock is ready, get sock sync properties and post them to daemon
- */
-static void delay_sock_bastet_timeout(struct sock *sk)
+static int post_sock_prop_ipv4(struct sock *sk)
+{
+	struct bst_set_sock_sync_prop sock_p;
+
+	memset(&sock_p, 0, sizeof(sock_p));
+	bastet_get_comm_prop(sk, &sock_p.guide);
+	bastet_get_sock_prop(sk, &sock_p.sync_prop);
+
+	return post_indicate_packet(BST_IND_SOCK_SYNC_PROP,
+		&sock_p, sizeof(sock_p));
+}
+
+static int post_sock_prop_ipv6(struct sock *sk)
+{
+	struct bst_set_sock_sync_prop_ipv6 sock_p;
+
+	memset(&sock_p, 0, sizeof(sock_p));
+	bastet_get_comm_prop_ipv6(sk, &sock_p.guide);
+	bastet_get_sock_prop(sk, &sock_p.sync_prop);
+
+	return post_indicate_packet(BST_IND_SOCK_SYNC_PROP_IPV6,
+		&sock_p, sizeof(sock_p));
+}
+
+static void delay_sock_bastet_timeout_ex(struct sock *sk)
 {
 	int err;
-	struct bst_set_sock_sync_prop sock_p;
 	struct bastet_sock *bsk = sk->bastet;
+	struct bst_set_sock_sync_prop sock_p;
+	struct bst_sock_comm_prop_ipv6 prop_ipv6;
 
-	/* Accurating time */
-	if (time_after(bsk->bastet_timeout, jiffies)) {
-		sk_reset_timer(sk, &bsk->bastet_timer, bsk->bastet_timeout);
-		return;
-	}
+	memset(&sock_p, 0, sizeof(sock_p));
+	memset(&prop_ipv6, 0, sizeof(prop_ipv6));
 
-	/* We must reset timer event,
-	 * bastet_delay_sock_sync_notify depends on it
-	 * this code must be put after accurating time
-	 */
-	bsk->bastet_timer_event = BST_TMR_EVT_INVALID;
-
-	/* In repair mode or userspace needs repair, do not sync sock */
-	if (unlikely(tcp_sk(sk)->repair || bsk->need_repair)) {
-		BASTET_LOGE("sk: %p in repair mode", sk);
-		return;
-	}
-
-	if (TCP_ESTABLISHED != sk->sk_state) {
-		BASTET_LOGE("sk: %p sk_state is not TCP_ESTABLISHED", sk);
-		return;
-	}
-
-	if (BST_SOCK_VALID != bsk->bastet_sock_state) {
-		BASTET_LOGE("sk: %p state: %d not expected",
-			sk, bsk->bastet_sock_state);
-		return;
-	}
-
-	/* Sock owner has used since last setup */
-	if (time_after(bsk->last_sock_active_time_point
-		+ bsk->delay_sync_time_section, jiffies)) {
-		setup_sock_sync_delay_timer(sk);
-		return;
-	}
-
-	/* Sock owner has some data unacked,
-	 * Coming ack would trigger delay timer again */
-	if (!tcp_write_queue_empty(sk)) {
-		BASTET_LOGI("sk: %p has sent data not acked", sk);
-		post_indicate_packet(BST_IND_TRIGGER_THAW,
-			&bsk->pid, sizeof(pid_t));
-		return;
-	}
-
-	/* Sock owner has some data to recv, do not sync.
-	 * If sock owner has none recv action,
-	 * delay timer should be stopped. */
 	if (!skb_queue_empty(&sk->sk_receive_queue)) {
-		BASTET_LOGI("sk: %p has received data in queue", sk);
+		if (!is_ipv6_addr(sk)) {
+			bastet_get_comm_prop(sk, &sock_p.guide);
+			post_indicate_packet(BST_IND_RECV_DATA_INQUEUE,
+				&sock_p.guide, sizeof(sock_p.guide));
+		} else {
+			bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+			post_indicate_packet(BST_IND_RECV_DATA_INQUEUE_IPV6,
+				&prop_ipv6, sizeof(prop_ipv6));
+		}
+		bastet_logi("proxy_id:%d has received data in queue",
+			bsk->proxy_id);
 		bsk->last_sock_active_time_point = jiffies;
 		setup_sock_sync_delay_timer(sk);
 		post_indicate_packet(BST_IND_TRIGGER_THAW,
@@ -355,39 +406,129 @@ static void delay_sock_bastet_timeout(struct sock *sk)
 		return;
 	}
 
-	memset(&sock_p, 0, sizeof(struct bst_set_sock_sync_prop));
-	bastet_get_comm_prop(sk, &sock_p.guide);
-	bastet_get_sock_prop(sk, &sock_p.sync_prop);
+	if (is_ipv6_addr(sk))
+		err = post_sock_prop_ipv6(sk);
+	else
+		err = post_sock_prop_ipv4(sk);
 
-	err = post_indicate_packet(BST_IND_SOCK_SYNC_PROP,
-		&sock_p, sizeof(sock_p));
-	if (!err) {
-		/* if post success */
+	if (!err)
 		bsk->bastet_sock_state = BST_SOCK_INVALID;
-	}
 }
 
-static void bastet_store_ts_recent(struct tcp_sock *tp,
-	u32 new_ts_recent, u32 new_ts_rencent_tick)
+/*
+ * delay_sock_bastet_timeout() - delay sock timeout.
+ * @sk: point to the sock.
+ *
+ * BST_TMR_DELAY_SOCK_SYNC timeout.
+ * If sock is ready, get sock sync properties and post them to daemon
+ *
+ * Returns:No
+ */
+static void delay_sock_bastet_timeout(struct sock *sk)
+{
+	struct bastet_sock *bsk = sk->bastet;
+	struct bst_set_sock_sync_prop sock_p;
+	struct bst_sock_comm_prop_ipv6 prop_ipv6;
+
+	memset(&sock_p, 0, sizeof(sock_p));
+	memset(&prop_ipv6, 0, sizeof(prop_ipv6));
+
+	/* Accurating time */
+	if (time_after(bsk->bastet_timeout, jiffies)) {
+		sk_reset_timer(sk, &bsk->bastet_timer, bsk->bastet_timeout);
+		return;
+	}
+
+	/*
+	 * We must reset timer event,
+	 * bastet_delay_sock_sync_notify depends on it
+	 * this code must be put after accurating time
+	 */
+	bsk->bastet_timer_event = BST_TMR_EVT_INVALID;
+
+	/* In repair mode or userspace needs repair, do not sync sock */
+	if (unlikely(tcp_sk(sk)->repair || bsk->need_repair)) {
+		bastet_loge("proxy_id:%d in repair mode", bsk->proxy_id);
+		return;
+	}
+
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		bastet_loge("proxy_id:%d sk_state is not TCP_ESTABLISHED",
+			bsk->proxy_id);
+		return;
+	}
+
+	if (bsk->bastet_sock_state != BST_SOCK_VALID) {
+		bastet_loge("proxy_id:%d state: %d not expected",
+			bsk->proxy_id, bsk->bastet_sock_state);
+		return;
+	}
+
+	/* Sock owner has used since last setup */
+	if (time_after(bsk->last_sock_active_time_point +
+		bsk->delay_sync_time_section, jiffies)) {
+		setup_sock_sync_delay_timer(sk);
+		return;
+	}
+
+	/*
+	 * Sock owner has some data unacked,
+	 * Coming ack would trigger delay timer again
+	 */
+	if (!tcp_write_queue_empty(sk)) {
+		if (!is_ipv6_addr(sk)) {
+			bastet_get_comm_prop(sk, &sock_p.guide);
+			post_indicate_packet(BST_IND_SEND_DATA_NOTACK,
+				&sock_p.guide, sizeof(sock_p.guide));
+		} else {
+			bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+			post_indicate_packet(BST_IND_SEND_DATA_NOTACK_IPV6,
+				&prop_ipv6, sizeof(prop_ipv6));
+		}
+		bastet_logi("proxy_id:%d has sent data not acked",
+			bsk->proxy_id);
+		post_indicate_packet(BST_IND_TRIGGER_THAW,
+			&bsk->pid, sizeof(pid_t));
+		return;
+	}
+
+	/*
+	 * Sock owner has some data to recv, do not sync.
+	 * If sock owner has none recv action,delay timer should be stopped.
+	 */
+	delay_sock_bastet_timeout_ex(sk);
+}
+
+static void bastet_store_ts_recent(struct tcp_sock *tp, u32 new_ts_recent,
+	u32 new_ts_rencent_tick)
 {
 	tp->rx_opt.ts_recent = new_ts_recent;
 
 	/* new_ts_rencent_tick has not changed since been passed to modem */
-	if (0 != new_ts_rencent_tick) {
-		long new_stamp = get_seconds()
-			- ((tcp_jiffies32 - new_ts_rencent_tick) / HZ);
-
+	if (new_ts_rencent_tick != 0) {
+		long new_stamp = get_seconds() -
+			((tcp_jiffies32 - new_ts_rencent_tick) / HZ);
+		bastet_logi("ts_recent_stamp from %u to %u",
+			tp->rx_opt.ts_recent_stamp, new_stamp);
 		tp->rx_opt.ts_recent_stamp = new_stamp;
 	}
 }
 
 /*
- * Adjust sock sync properties.
+ * adjust_sock_sync_prop() - Adjust sock sync properties.
+ * @sk: point to the sock.
+ * @sync_p: point to the sync properties.
+ *
+ * There may be more than one sk_buff in tcp write queue,
+ * Adjust them all.
+ *
+ * Returns 0 is success,
+ * Otherwise is fail.
  */
 static int adjust_sock_sync_prop(struct sock *sk,
 	struct bst_sock_sync_prop *sync_p)
 {
-	struct tcp_sock *tp;
+	struct tcp_sock *tp = NULL;
 	struct sk_buff *skb = NULL;
 	u32 seq_changed = 0;
 	u32 new_seq;
@@ -400,7 +541,7 @@ static int adjust_sock_sync_prop(struct sock *sk,
 	 * Adjust them all.
 	 */
 	skb = tcp_write_queue_head(sk);
-	while (NULL != skb) {
+	while (skb != NULL) {
 		struct tcp_skb_cb *tcb = TCP_SKB_CB(skb);
 
 		if (skb == tcp_write_queue_head(sk)) {
@@ -422,7 +563,7 @@ static int adjust_sock_sync_prop(struct sock *sk,
 			skb = NULL;
 	}
 
-	if (NULL == tcp_write_queue_head(sk))
+	if (tcp_write_queue_head(sk) == NULL)
 		seq_changed = new_seq - tp->write_seq;
 
 	tp->write_seq = new_seq;
@@ -435,12 +576,16 @@ static int adjust_sock_sync_prop(struct sock *sk,
 	tp->snd_una += seq_changed;
 
 	if (likely(tp->rx_opt.tstamp_ok)) {
-		tp->tsoffset = sync_p->ts_current - tcp_jiffies32;
-
+		tcp_mstamp_refresh(tp);
+		tp->tsoffset = sync_p->ts_current - tcp_time_stamp(tp);
 		bastet_store_ts_recent(tp, sync_p->ts_recent,
 			sync_p->ts_recent_tick);
 	}
 
+	bastet_logi("prop->seq=%u,prop->rcv_nxt=%u,prop->snd_wnd=%u,"
+		"prop->mss=%u,prop->snd_wscale=%u,prop->rcv_wscale=%u",
+		tp->write_seq, tp->rcv_nxt, tp->snd_wnd, tp->advmss,
+		tp->rx_opt.snd_wscale, tp->rx_opt.rcv_wscale);
 	return 0;
 }
 
@@ -449,31 +594,129 @@ static void sock_set_internal(struct sock *sk,
 {
 	struct bastet_sock *bsk = sk->bastet;
 
-	if (BST_SOCK_INVALID == bsk->bastet_sock_state
-		|| BST_SOCK_UPDATING == bsk->bastet_sock_state) {
-
+	if (bsk->bastet_sock_state == BST_SOCK_INVALID ||
+		bsk->bastet_sock_state == BST_SOCK_UPDATING) {
 		adjust_sock_sync_prop(sk, sync_p);
-
 		bsk->bastet_sock_state = BST_SOCK_VALID;
-
 		process_sock_send_and_recv(sk);
 	}
 
-	if (BST_USER_STOP == bsk->user_ctrl)
+	if (bsk->user_ctrl == BST_USER_STOP)
 		bsk->bastet_sock_state = BST_SOCK_NOT_USED;
 }
 
+int check_ack_larger_seq(struct sock *sk, struct sk_buff *skb)
+{
+	u32 ack = TCP_SKB_CB(skb)->ack_seq;
+	struct bst_sock_sync_prop sync_prop;
+
+	ack = TCP_SKB_CB(skb)->ack_seq;
+	bastet_get_sock_prop(sk, &sync_prop);
+	if (after(ack, sync_prop.seq)) {
+		bastet_logi("begin to repaire the ack larger than ack");
+		return -EPERM;
+	}
+	return 0;
+}
+
+void fix_sync_with_ack(struct sock *sk, struct sk_buff *skb)
+{
+	u32 ack;
+	struct bastet_sock *bsk = NULL;
+
+	ack = TCP_SKB_CB(skb)->ack_seq;
+	bsk = sk->bastet;
+	if (bsk == NULL) {
+		bastet_loge("can not get bastet from sk");
+		return;
+	}
+	if (bsk->bastet_timer_event == BST_TMR_SET_SOCK_SYNC
+		&& bsk->sync_p != NULL) {
+		bsk->sync_p->seq = ack;
+		bastet_loge("success to change the sync_p.seq with ack");
+		return;
+	}
+
+	bastet_loge("fail to change the sync seq by tcp ack");
+	return;
+}
+
 /*
- * BST_TMR_SET_SOCK_SYNC timeout.
+ * bastet_sock_recv_prepare () - prepare the sock.
+ * @sk: point to the sock.
+ * @skb: point to the buffer of sock.
+ *
+ * Judge if recv data need to wait.
+ * If current sock is invalid, requests socket sync and saves recv data;
+ * Otherwise, do nothing.
+ *
+ * Returns:true means success.
+ *         false means false.
+ */
+/*lint -e666*/
+bool bastet_sock_recv_prepare(struct sock *sk, struct sk_buff *skb)
+{
+	u8 sync_state;
+	struct bastet_sock *bsk = sk->bastet;
+
+	if (bsk == NULL)
+		return false;
+
+	sync_state = bsk->bastet_sock_state;
+	bastet_logi("sync_state:%d", sync_state);
+	switch (sync_state) {
+	case BST_SOCK_INVALID:
+		bsk->bastet_sock_state = BST_SOCK_UPDATING;
+
+		/* Set retry true, if timeout, request sock sync */
+		setup_sock_sync_request_timer(sk, true);
+		/* fall-through */
+	case BST_SOCK_UPDATING:
+		if (check_ack_larger_seq(sk, skb)) {
+			fix_sync_with_ack(sk, skb);
+			bastet_logi("ack lager than seq, begin to repaire before send");
+		}
+		if (unlikely(add_rcvqueues_queue(sk, skb))) {
+			__NET_INC_STATS(sock_net(sk), LINUX_MIB_TCPBACKLOGDROP);
+			kfree_skb(skb);
+		}
+		return true;
+	default:
+		return false;
+	}
+}
+/*lint +e666*/
+
+/*
+ * set_sock_bastet_timeout() - set the sock timeout.
+ * @sk: point to the sock.
+ * if the event is BST_TMR_SET_SOCK_SYNC timeout, this method
+ * will be invoked
+ * Returns No
  */
 static void set_sock_bastet_timeout(struct sock *sk)
 {
 	struct bastet_sock *bsk = sk->bastet;
+	struct bst_sock_comm_prop prop;
+	struct bst_sock_comm_prop_ipv6 prop_ipv6;
+
+	memset(&prop, 0, sizeof(prop));
+	memset(&prop_ipv6, 0, sizeof(prop_ipv6));
 
 	bsk->bastet_timer_event = BST_TMR_EVT_INVALID;
 
-	if (NULL == bsk->sync_p) {
-		BASTET_LOGE("sk: %p not expected null sync prop", sk);
+	if (bsk->sync_p == NULL) {
+		if (!is_ipv6_addr(sk)) {
+			bastet_get_comm_prop(sk, &prop);
+			post_indicate_packet(BST_IND_NOPENDING_SK_SET,
+				&prop, sizeof(prop));
+		} else {
+			bastet_get_comm_prop_ipv6(sk, &prop_ipv6);
+			post_indicate_packet(BST_IND_NOPENDING_SK_SET_IPV6,
+				&prop_ipv6, sizeof(prop_ipv6));
+		}
+		bastet_loge("proxy_id:%d not expected null sync prop",
+			bsk->proxy_id);
 		return;
 	}
 
@@ -484,7 +727,12 @@ static void set_sock_bastet_timeout(struct sock *sk)
 }
 
 /*
+ * set_sock_close_internal() - set the internal sock close.
+ * @sk: point to the sock.
+ *
  * Read tcp_reset in tcp_input.c for reference.
+ *
+ * Returns No
  */
 static void set_sock_close_internal(struct sock *sk)
 {
@@ -510,8 +758,13 @@ static void set_sock_close_internal(struct sock *sk)
 }
 
 /*
- * BST_TMR_CLOSE_SOCK timeout.
+ * close_sock_bastet_timeout() - close sock timeout.
+ * @sk: point to the sock.
  *
+ * if the event is BST_TMR_CLOSE_SOCK timeout, this method
+ * will be invoked.
+ *
+ * Returns No
  */
 static void close_sock_bastet_timeout(struct sock *sk)
 {
@@ -521,7 +774,12 @@ static void close_sock_bastet_timeout(struct sock *sk)
 }
 
 /*
+ * bastet_sock_bastet_timeout() - timeout timer process.
+ * @data: message data.
+ *
  * Bastet sock timeout, include all bastet time events.
+ *
+ * Returns No
  */
 static void bastet_sock_bastet_timeout(unsigned long data)
 {
@@ -529,7 +787,8 @@ static void bastet_sock_bastet_timeout(unsigned long data)
 	struct sock *sk = (struct sock *)data;
 	struct bastet_sock *bsk = sk->bastet;
 
-	BASTET_LOGI("sk: %p time event: %d", sk, bsk->bastet_timer_event);
+	bastet_logi("proxy_id:%d time event: %d", bsk->proxy_id,
+		bsk->bastet_timer_event);
 
 	bh_lock_sock(sk);
 
@@ -557,7 +816,8 @@ static void bastet_sock_bastet_timeout(unsigned long data)
 		close_sock_bastet_timeout(sk);
 		break;
 	default:
-		BASTET_LOGE("sk: %p invalid time event: %d", sk, event);
+		bastet_loge("proxy_id:%d invalid time event: %d",
+			bsk->proxy_id, event);
 		break;
 	}
 
@@ -568,7 +828,12 @@ out_unlock:
 }
 
 /*
- * When sock owner uses sock, we should not sync sock for a while
+ * bastet_delay_sock_sync_notify() - notify the bastet delay
+ * @sk: sock pointer
+ *
+ * When sock owner uses sock, we should not sync sock for a while.
+ *
+ * Return:no
  */
 void bastet_delay_sock_sync_notify(struct sock *sk)
 {
@@ -577,19 +842,22 @@ void bastet_delay_sock_sync_notify(struct sock *sk)
 	if (!is_bastet_enabled())
 		return;
 
-	if (NULL != bsk && TCP_ESTABLISHED == sk->sk_state) {
+	if (bsk != NULL && sk->sk_state == TCP_ESTABLISHED) {
 		bsk->last_sock_active_time_point = jiffies;
-
-		if (BST_TMR_DELAY_SOCK_SYNC != bsk->bastet_timer_event
-			&& BST_SOCK_VALID == bsk->bastet_sock_state
-			&& BST_USER_START == bsk->user_ctrl) {
+		if (bsk->bastet_timer_event != BST_TMR_DELAY_SOCK_SYNC &&
+			bsk->bastet_sock_state == BST_SOCK_VALID &&
+			bsk->user_ctrl == BST_USER_START)
 			setup_sock_sync_delay_timer(sk);
-		}
 	}
 }
 
 /*
+ * bastet_sock_repair_prepare_notify() - notify the bastet sock repair
+ * @sk: sock pointer
+ * @val:to judge if it is need repair.
+ *
  * CRIU's socket repair would stop bastet function
+ *
  * Returns true, if repair should be stopped.
  * Otherwise return false.
  */
@@ -603,57 +871,64 @@ bool bastet_sock_repair_prepare_notify(struct sock *sk, int val)
 
 	sk->bastet->need_repair = val;
 
-	if (val) {
+	if (val)
 		/* Userspace requires repair */
 		return do_sock_send_prepare(sk);
-	} else {
-		/* Userspace restore repair */
-		spin_lock_bh(&sk->sk_lock.slock);
-		bastet_delay_sock_sync_notify(sk);
-		spin_unlock_bh(&sk->sk_lock.slock);
-		return false;
-	}
+
+	/* Userspace restore repair */
+	spin_lock_bh(&sk->sk_lock.slock);
+	bastet_delay_sock_sync_notify(sk);
+	spin_unlock_bh(&sk->sk_lock.slock);
+	return false;
 }
 
 /*
- * Set socket sync hold time
-*/
+ * set_sock_sync_hold_time() - set the sync socket timer.
+ * @hold_delay: sync delay timer value.
+ *
+ * Check the sync delay timer's value.if it large then orig
+ * delay value then caluate the expire value. finally reset the timer.
+ *
+ * Returns true, if set success.
+ * Otherwise return false.
+ */
 int set_sock_sync_hold_time(struct bst_set_sock_sync_delay hold_delay)
 {
 	struct sock *sk = NULL;
 	struct bastet_sock *bsk = NULL;
-	unsigned long orig_delay = 0;
-	unsigned long expire = 0;
+	unsigned long orig_delay;
+	unsigned long expire;
 
 	sk = get_sock_by_fd_pid(hold_delay.guide.fd, hold_delay.guide.pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			hold_delay.guide.fd, hold_delay.guide.pid);
 		return -ENOENT;
 	}
 	bsk = sk->bastet;
-	if (NULL == bsk) {
-		BASTET_LOGE("sk: %p not expected bastet null", sk);
+	if (bsk == NULL) {
+		bastet_loge("not expected bastet null");
 		sock_put(sk);
 		return -EPERM;
 	}
-	BASTET_LOGI("hold_time=%u", hold_delay.hold_time);
+	bastet_logi("hold_time=%u", hold_delay.hold_time);
 	orig_delay = bsk->delay_sync_time_section;
 	bsk->delay_sync_time_section = msecs_to_jiffies(hold_delay.hold_time);
 	if (timer_pending(&bsk->bastet_timer)) {
 		if (orig_delay < bsk->delay_sync_time_section) {
-			BASTET_LOGI("screen off to on");
-			expire = bsk->last_sock_active_time_point
-				+ bsk->delay_sync_time_section;
+			bastet_logi("screen off to on");
+			expire = bsk->last_sock_active_time_point +
+				bsk->delay_sync_time_section;
 		} else {
-			BASTET_LOGI("screen on to off");
-			if (time_after(jiffies, bsk->last_sock_active_time_point
-				+ bsk->delay_sync_time_section)) {
-				BASTET_LOGI("need to timeout right now");
+			bastet_logi("screen on to off");
+			if (time_after(jiffies,
+				bsk->last_sock_active_time_point +
+				bsk->delay_sync_time_section)) {
+				bastet_logi("need to timeout right now");
 				expire = jiffies;
 			} else {
-				expire = bsk->last_sock_active_time_point
-					+ bsk->delay_sync_time_section;
+				expire = bsk->last_sock_active_time_point +
+					bsk->delay_sync_time_section;
 			}
 		}
 		bsk->bastet_timeout = expire;
@@ -665,20 +940,27 @@ int set_sock_sync_hold_time(struct bst_set_sock_sync_delay hold_delay)
 }
 
 /*
+ * create_bastet_sock() - create bastet sock
+ * @sk: sock pointer
+ * @init_prop: sock parameter which should be set.
+ *
  * Generate bastet sock in sock struct.
+ *
+ * Returns 0, if create sock success.
+ * Otherwise return false.
  */
 static int create_bastet_sock(struct sock *sk,
 	struct bst_set_sock_sync_delay *init_prop)
 {
-	struct bastet_sock *bsk;
+	struct bastet_sock *bsk = NULL;
 
-	bsk = kmalloc(sizeof(*bsk), GFP_ATOMIC);
-	if (NULL == bsk) {
-		BASTET_LOGE("kmalloc failed");
+	bsk = kzalloc(sizeof(*bsk), GFP_ATOMIC);
+	if (bsk == NULL) {
+		bastet_loge("kmalloc failed");
 		return -ENOMEM;
 	}
 	/* clear bsk memory */
-	memset(bsk, 0, sizeof(struct bastet_sock));
+	memset(bsk, 0, sizeof(*bsk));
 
 	bsk->bastet_sock_state = BST_SOCK_NOT_USED;
 	bsk->bastet_timer_event = BST_TMR_EVT_INVALID;
@@ -686,13 +968,13 @@ static int create_bastet_sock(struct sock *sk,
 	bsk->fd = init_prop->guide.fd;
 	bsk->pid = init_prop->guide.pid;
 	bsk->proxy_id = init_prop->proxy_id;
+
 	/* if wifi proxy is closed, then is_wifi MUST be false */
 	bsk->is_wifi = init_prop->is_wifi;
 	bsk->bastet_timeout = 0;
 	bsk->last_sock_active_time_point = jiffies;
 	bsk->sync_p = NULL;
 	bsk->need_repair = 0;
-
 	bsk->delay_sync_time_section = msecs_to_jiffies(init_prop->hold_time);
 
 	setup_timer(&bsk->bastet_timer,
@@ -718,7 +1000,7 @@ static int do_start_bastet_sock(struct sock *sk,
 	struct bastet_sock *bsk = sk->bastet;
 
 	spin_lock(&create_bastet_lock);
-	if (NULL == bsk) {
+	if (bsk == NULL) {
 		err = create_bastet_sock(sk, init_prop);
 		if (err < 0) {
 			spin_unlock(&create_bastet_lock);
@@ -734,8 +1016,8 @@ static int do_start_bastet_sock(struct sock *sk,
 
 	bsk->user_ctrl = BST_USER_START;
 
-	if (BST_SOCK_INVALID == bsk->bastet_sock_state
-		|| BST_SOCK_UPDATING == bsk->bastet_sock_state) {
+	if (bsk->bastet_sock_state == BST_SOCK_INVALID ||
+		bsk->bastet_sock_state == BST_SOCK_UPDATING) {
 		err = -EPERM;
 		goto out_unlock;
 	}
@@ -746,39 +1028,55 @@ static int do_start_bastet_sock(struct sock *sk,
 
 out_unlock:
 	spin_unlock_bh(&sk->sk_lock.slock);
-
 	return err;
 }
 
 /*
- * Function is called when application starts bastet proxy.
+ * start_bastet_sock() - starts bastet sock
+ * @init_prop: sock parameter which should be set.
+ *
+ * Function is called when application starts bastet
+ * proxy hearbeat.
+ *
+ * Returns 0, if start sock success.
+ * Otherwise return false.
  */
 int start_bastet_sock(struct bst_set_sock_sync_delay *init_prop)
 {
-	int err = 0;
-	struct sock *sk;
+	int err;
+	struct sock *sk = NULL;
 	struct bst_sock_id *guide = &init_prop->guide;
 
 	sk = get_sock_by_fd_pid(guide->fd, guide->pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
 
-	if (TCP_ESTABLISHED != sk->sk_state) {
-		BASTET_LOGE("sk: %p sk_state is not TCP_ESTABLISHED", sk);
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		bastet_loge("sk_state is not TCP_ESTABLISHED");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
 		sock_put(sk);
 		return -EPERM;
 	}
 
 	if (tcp_sk(sk)->repair) {
-		BASTET_LOGE("sk: %p in repair mode", sk);
+		bastet_loge("sk in repair mode");
 		sock_put(sk);
 		return -EPERM;
 	}
-
-	BASTET_LOGI("sk: %p", sk);
 
 	err = do_start_bastet_sock(sk, init_prop);
 	sock_put(sk);
@@ -786,29 +1084,33 @@ int start_bastet_sock(struct bst_set_sock_sync_delay *init_prop)
 }
 
 /*
+ * stop_bastet_sock() - stops bastet sock
+ * @guide: sock information,include pid and fd.
+ *
  * Function is called when application stops bastet proxy.
+ *
+ * Returns 0, if stops sock success.
+ * Otherwise return false.
  */
 int stop_bastet_sock(struct bst_sock_id *guide)
 {
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 	u8 sync_state;
 
 	sk = get_sock_by_fd_pid(guide->fd, guide->pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
 
 	bsk = sk->bastet;
-	if (NULL == bsk) {
-		BASTET_LOGE("sk: %p not expected bastet null", sk);
+	if (bsk == NULL) {
+		bastet_loge("not expected bastet null");
 		sock_put(sk);
 		return -EPERM;
 	}
-
-	BASTET_LOGI("sk: %p", sk);
 
 	spin_lock_bh(&sk->sk_lock.slock);
 
@@ -818,7 +1120,6 @@ int stop_bastet_sock(struct bst_sock_id *guide)
 	switch (sync_state) {
 	case BST_SOCK_VALID:
 		bsk->bastet_sock_state = BST_SOCK_NOT_USED;
-
 		cancel_sock_bastet_timer(sk);
 		break;
 	case BST_SOCK_INVALID:
@@ -835,38 +1136,42 @@ int stop_bastet_sock(struct bst_sock_id *guide)
 }
 
 /*
+ * prepare_bastet_sock() - prepare the bastet sock info.
+ * @sync_prop: sync sock information,include delay time and proxy id.
+ *
  * Function is called when application prepare bastet proxy.
+ *
+ * Returns 0, if prepare sock success.
+ * Otherwise return false.
  */
 int prepare_bastet_sock(struct bst_set_sock_sync_delay *sync_prop)
 {
 	int err = 0;
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 
 	sk = get_sock_by_fd_pid(sync_prop->guide.fd, sync_prop->guide.pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			sync_prop->guide.fd, sync_prop->guide.pid);
 		return -ENOENT;
 	}
 
-	if (TCP_ESTABLISHED != sk->sk_state) {
-		BASTET_LOGE("sk: %p sk_state is not TCP_ESTABLISHED", sk);
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		bastet_loge("sk_state is not TCP_ESTABLISHED");
 		sock_put(sk);
 		return -EPERM;
 	}
 
 	if (tcp_sk(sk)->repair) {
-		BASTET_LOGE("sk: %p in repair mode", sk);
+		bastet_loge("sk in repair mode");
 		sock_put(sk);
 		return -EPERM;
 	}
 
-	BASTET_LOGI("sk: %p", sk);
-
 	bsk = sk->bastet;
 	spin_lock(&create_bastet_lock);
-	if (NULL == bsk) {
+	if (bsk == NULL) {
 		err = create_bastet_sock(sk, sync_prop);
 		if (err < 0) {
 			sock_put(sk);
@@ -882,19 +1187,25 @@ int prepare_bastet_sock(struct bst_set_sock_sync_delay *sync_prop)
 }
 
 /*
- * Setup sock set timer.
+ * setup_sock_sync_set_timer() - Setup sock set timer.
+ * @sk: sock pointer
+ * @sync_prop: sync sock information,include delay time and proxy id.
+ *
+ * Function is called when sock was owned by the current user
+ *
+ * Returns 0, if setup success.
+ * Otherwise return false.
  */
 static int setup_sock_sync_set_timer(struct sock *sk,
 	struct bst_sock_sync_prop *sync_p)
 {
 	struct bastet_sock *bsk = sk->bastet;
 
-	bsk->sync_p = kmalloc(sizeof(*sync_p), GFP_KERNEL);
-	if (NULL == bsk->sync_p)
+	bsk->sync_p = kzalloc(sizeof(*sync_p), GFP_KERNEL);
+	if (bsk->sync_p == NULL)
 		return -ENOMEM;
 
 	memcpy(bsk->sync_p, sync_p, sizeof(*sync_p));
-
 	bsk->bastet_timer_event = BST_TMR_SET_SOCK_SYNC;
 
 	sk_reset_timer(sk, &bsk->bastet_timer,
@@ -902,47 +1213,161 @@ static int setup_sock_sync_set_timer(struct sock *sk,
 	return 0;
 }
 
+static int setup_wait_sock_sync_set_timer(struct sock *sk,
+	struct bst_sock_sync_prop *sync_p)
+{
+	struct bastet_sock *bsk = sk->bastet;
+
+	bsk->sync_p = kzalloc(sizeof(*sync_p), GFP_KERNEL);
+	if (bsk->sync_p == NULL)
+		return -ENOMEM;
+
+	if (bsk->bastet_sock_state == BST_SOCK_INVALID)
+		bsk->bastet_sock_state = BST_SOCK_UPDATING;
+
+	memcpy(bsk->sync_p, sync_p, sizeof(*sync_p));
+	bsk->bastet_timer_event = BST_TMR_SET_SOCK_SYNC;
+
+	sk_reset_timer(sk, &bsk->bastet_timer,
+		jiffies + BST_REQ_SOCK_WAIT_SYNC_TIME);
+	bastet_logi("setup_wait_sock_sync_set_timer = 400ms");
+	return 0;
+}
+
 /*
- * Set sock sync properties.
+ * get_sk_and_bsk() - get the sk and bsk.
+ * @guide: the sock common properites, such as ip and port value.
+ * @sk: the address of sock pointer.
+ * @bsk: the address of bsk pointer.
+ *
+ * Function is called by set_tcp_sock_closed(), set_tcp_sock_sync_prop(),
+ * bastet_sync_prop_start(), to cut short the duplicated code. Basiclly,
+ * this method will find the sk and bsk, check the state.
+ *
+ * Returns 0, get sk & bsk success, and the state is ok.
+ * -ENOENT, not found the sock.
+ * -EPERM, time wait sock.
+ * EPERM, not expected bastet null.
+ */
+static int get_sk_and_bsk(struct bst_sock_comm_prop *guide,
+	struct sock **sk, struct bastet_sock **bsk)
+{
+	int ret = 0;
+
+	*sk = get_sock_by_comm_prop(guide);
+	if (*sk == NULL) {
+		post_indicate_packet(BST_IND_GET_SK_FAILED,
+			guide, sizeof(*guide));
+		bastet_loge("can not find sock by lport: %d, lIp: ***,"
+			"rport: %d, rIp: ***",
+			guide->local_port, guide->remote_port);
+		return -ENOENT;
+	}
+
+	if ((*sk)->sk_state == TCP_TIME_WAIT) {
+		if (!is_ipv6_addr(*sk))
+			post_indicate_packet(BST_IND_SOCK_STATE_WAIT,
+				guide, sizeof(*guide));
+		bastet_loge("not expected time wait sock");
+		inet_twsk_put(inet_twsk(*sk));
+		return -EPERM;
+	}
+
+	*bsk = (*sk)->bastet;
+	if (*bsk == NULL) {
+		if (!is_ipv6_addr(*sk))
+			post_indicate_packet(BST_IND_GET_BSK_FAILED,
+				guide, sizeof(*guide));
+		bastet_loge("not expected bastet null");
+		/*
+		 * here should return the 1, not -EPERM.
+		 * use this value to judge if it is need to go to out_put.
+		 */
+		return BST_NULL_RETURN_VALUE;
+	}
+
+	/* the normal return. value is 0. */
+	return ret;
+}
+static int get_sk_and_bsk_ipv6(struct bst_sock_comm_prop_ipv6 *guide,
+	struct sock **sk, struct bastet_sock **bsk)
+{
+	int ret = 0;
+
+	*sk = get_sock_by_comm_prop_ipv6(guide);
+	if (*sk == NULL) {
+		bastet_loge("ipv6 can not find sock by lport: %d,"
+			"lIp: ***, rport: %d, rIp: ***",
+			guide->local_port, guide->remote_port);
+		return -ENOENT;
+	}
+
+	if ((*sk)->sk_state == TCP_TIME_WAIT) {
+		if (is_ipv6_addr(*sk))
+			post_indicate_packet(BST_IND_SOCK_STATE_WAIT_IPV6,
+				guide, sizeof(*guide));
+		bastet_loge("ipv6 not expected time wait sock");
+		inet_twsk_put(inet_twsk(*sk));
+		return -EPERM;
+	}
+
+	*bsk = (*sk)->bastet;
+	if (*bsk == NULL) {
+		if (is_ipv6_addr(*sk))
+			post_indicate_packet(BST_IND_GET_BSK_FAILED_IPV6,
+				guide, sizeof(*guide));
+		bastet_loge("ipv6 not expected bastet null");
+
+		/*
+		 * here should return the 1, not -EPERM.
+		 * use this value to judge if it is need to go to out_put.
+		 */
+		return BST_NULL_RETURN_VALUE;
+	}
+
+	bastet_logi("get ipv6 sk and bastet");
+
+	/* the normal return. value is 0. */
+	return ret;
+}
+
+/*
+ * set_tcp_sock_sync_prop() - Set sock sync properties.
+ * @set_prop: the sock sync properties.include bst_sock_comm_prop
+ *
+ * Function is called by bastet ioctl(), when it start to set the sock
+ * properties.
+ *
+ * Returns 0, if set success.
+ * Otherwise return false.
  */
 int set_tcp_sock_sync_prop(struct bst_set_sock_sync_prop *set_prop)
 {
 	int err = 0;
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 	struct bst_sock_comm_prop *guide = &set_prop->guide;
 
-	sk = get_sock_by_comm_prop(guide);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
-					guide->local_port,
-					guide->remote_port);
-		return -ENOENT;
-	}
+	ret = get_sk_and_bsk(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
 
-	if (sk->sk_state == TCP_TIME_WAIT) {
-		BASTET_LOGE("sk: %p not expected time wait sock", sk);
-		inet_twsk_put(inet_twsk(sk));
-		return -EPERM;
-	}
-
-	bsk = sk->bastet;
-	if (NULL == bsk) {
-		BASTET_LOGE("sk: %p not expected bastet null", sk);
+	if (ret == BST_NULL_RETURN_VALUE) {
 		err = -EPERM;
 		goto out_put;
 	}
-
-	BASTET_LOGI("sk: %p", sk);
-
 	spin_lock_bh(&sk->sk_lock.slock);
 
-	if (NULL != bsk->sync_p) {
-		BASTET_LOGE("sk: %p has a pending sock set", sk);
+	if (bsk->sync_p != NULL) {
+		if (!is_ipv6_addr(sk))
+			post_indicate_packet(BST_IND_PENDING_SK_SET,
+				guide, sizeof(*guide));
+		bastet_loge("proxy_id:%d has a pending sock set", bsk->proxy_id);
 		err = -EPERM;
 		goto out_unlock;
 	}
-
+	print_bastet_sock_seq(&set_prop->sync_prop);
 	cancel_sock_bastet_timer(sk);
 
 	if (sock_owned_by_user(sk)) {
@@ -950,7 +1375,7 @@ int set_tcp_sock_sync_prop(struct bst_set_sock_sync_prop *set_prop)
 		goto out_unlock;
 	}
 
-	sock_set_internal(sk, &set_prop->sync_prop);
+	err = setup_wait_sock_sync_set_timer(sk, &set_prop->sync_prop);
 
 out_unlock:
 	spin_unlock_bh(&sk->sk_lock.slock);
@@ -963,6 +1388,67 @@ out_put:
 	return err;
 }
 
+int set_tcp_sock_sync_prop_ipv6(
+	struct bst_set_sock_sync_prop_ipv6 *set_prop)
+{
+	int err = 0;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
+	struct bst_sock_comm_prop_ipv6 *guide = NULL;
+
+	if (set_prop == NULL)
+		return -EPERM;
+
+	guide = &set_prop->guide;
+	print_bastet_sock_seq(&set_prop->sync_prop);
+	ret = get_sk_and_bsk_ipv6(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
+
+	if (ret == BST_NULL_RETURN_VALUE) {
+		err = -EPERM;
+		goto out_put;
+	}
+	spin_lock_bh(&sk->sk_lock.slock);
+
+	if (bsk->sync_p != NULL) {
+		if (is_ipv6_addr(sk))
+			post_indicate_packet(BST_IND_PENDING_SK_SET_IPV6,
+				guide, sizeof(*guide));
+		bastet_loge("proxy_id:%d has a pending sock set", bsk->proxy_id);
+		err = -EPERM;
+		goto out_unlock;
+	}
+
+	cancel_sock_bastet_timer(sk);
+
+	if (sock_owned_by_user(sk)) {
+		err = setup_sock_sync_set_timer(sk, &set_prop->sync_prop);
+		goto out_unlock;
+	}
+
+	err = setup_wait_sock_sync_set_timer(sk, &set_prop->sync_prop);
+
+out_unlock:
+	spin_unlock_bh(&sk->sk_lock.slock);
+
+	adjust_traffic_flow_by_sock(sk,
+		set_prop->sync_prop.tx, set_prop->sync_prop.rx);
+
+out_put:
+	sock_put(sk);
+	return err;
+}
+
+/*
+ * bastet_sync_prop_cancel() - cancel set sync properties
+ * @sk: sock pointer
+ *
+ * Function is called by sock state handle. if the sock is vaild.
+ *
+ * Returns No.
+ */
 void bastet_sync_prop_cancel(struct sock *sk)
 {
 	if (sk->bastet) {
@@ -971,38 +1457,37 @@ void bastet_sync_prop_cancel(struct sock *sk)
 	}
 }
 
+/*
+ * bastet_sync_prop_start() - start sync properties
+ * @set_prop: the sock sync properties.include bst_sock_comm_prop
+ *
+ * Function is called by bastet ioctl.check the sock state. then set
+ * the properties.
+ *
+ * Returns 0, if start success.
+ * Otherwise return false.
+ */
 int bastet_sync_prop_start(struct bst_set_sock_sync_prop *set_prop)
 {
 	int err = 0;
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 	struct bst_sock_comm_prop *guide = &set_prop->guide;
 
-	sk = get_sock_by_comm_prop(guide);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
-					guide->local_port,
-					guide->remote_port);
-		return -ENOENT;
-	}
+	ret = get_sk_and_bsk(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
 
-	if (sk->sk_state == TCP_TIME_WAIT) {
-		BASTET_LOGE("sk: %p not expected time wait sock", sk);
-		inet_twsk_put(inet_twsk(sk));
-		return -EPERM;
-	}
-
-	bsk = sk->bastet;
-	if (NULL == bsk) {
-		BASTET_LOGE("sk: %p not expected bastet null", sk);
+	if (ret == BST_NULL_RETURN_VALUE) {
 		err = -EPERM;
 		goto out_put;
 	}
-
-	BASTET_LOGI("sk: %p", sk);
-
-	if (NULL != bsk->sync_p) {
-		BASTET_LOGE("sk: %p has a pending sock set", sk);
+	if (bsk->sync_p != NULL) {
+		if (!is_ipv6_addr(sk))
+			post_indicate_packet(BST_IND_PENDING_SK_SET,
+				guide, sizeof(*guide));
+		bastet_loge("proxy_id:%d has a pending sock set", bsk->proxy_id);
 		err = -EPERM;
 		goto out;
 	}
@@ -1010,7 +1495,7 @@ int bastet_sync_prop_start(struct bst_set_sock_sync_prop *set_prop)
 	sock_set_internal(sk, &set_prop->sync_prop);
 	bastet_sync_prop_cancel(sk);
 	bsk->flag = true;
-	BASTET_LOGI("wake up bastet wq");
+	bastet_logi("wake up bastet wq");
 	wake_up_interruptible(&bsk->wq);
 
 out:
@@ -1022,25 +1507,114 @@ out_put:
 	return err;
 }
 
+int bastet_sync_prop_start_ipv6(
+	struct bst_set_sock_sync_prop_ipv6 *set_prop)
+{
+	int err = 0;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
+	struct bst_sock_comm_prop_ipv6 *guide = NULL;
+
+	if (set_prop == NULL)
+		return -EPERM;
+
+	guide = &set_prop->guide;
+	ret = get_sk_and_bsk_ipv6(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
+
+	if (ret == BST_NULL_RETURN_VALUE) {
+		err = -EPERM;
+		goto out_put;
+	}
+	if (bsk->sync_p != NULL) {
+		if (is_ipv6_addr(sk))
+			post_indicate_packet(BST_IND_PENDING_SK_SET_IPV6,
+				guide, sizeof(*guide));
+		bastet_loge("ipv6 proxy_id:%d has a pending sock set",
+			bsk->proxy_id);
+		err = -EPERM;
+		goto out;
+	}
+
+	sock_set_internal(sk, &set_prop->sync_prop);
+	bastet_sync_prop_cancel(sk);
+	bsk->flag = true;
+	bastet_logi("ipv6 wake up bastet wq");
+	wake_up_interruptible(&bsk->wq);
+
+out:
+	adjust_traffic_flow_by_sock(sk,
+		set_prop->sync_prop.tx, set_prop->sync_prop.rx);
+
+out_put:
+	sock_put(sk);
+	return err;
+}
+
+/*
+ * bastet_sync_prop_stop() - stop sync properties
+ * @comm_prop: the socket common properties.include ip and port.
+ *
+ * Function is called by bastet ioctl.check the sock state. then stop
+ * the bastet sync.
+ *
+ * Returns 0, if start success.
+ * Otherwise return false.
+ */
 int bastet_sync_prop_stop(struct bst_sock_comm_prop *comm_prop)
 {
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 
 	sk = get_sock_by_comm_prop(comm_prop);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
-			comm_prop->local_port,
+	if (sk == NULL) {
+		bastet_loge("can not find sock by lport: %d, lIp: ***,"
+			"rport: %d, rIp: ***", comm_prop->local_port,
 			comm_prop->remote_port);
 		return -ENOENT;
 	}
-
 	if (sk->sk_state == TCP_TIME_WAIT) {
-		BASTET_LOGE("sk: %p not expected time wait sock", sk);
+		bastet_loge("not expected time wait sock");
 		inet_twsk_put(inet_twsk(sk));
 		return -EPERM;
 	}
-	BASTET_LOGI("sk: %p", sk);
+	bsk = sk->bastet;
+	if (bsk) {
+		if (bsk->bastet_sock_state != BST_SOCK_NOT_USED) {
+			bsk->user_ctrl = BST_USER_START;
+			bsk->bastet_sock_state = BST_SOCK_VALID;
+			setup_sock_sync_delay_timer(sk);
+		}
+	}
+
+	sock_put(sk);
+	return 0;
+}
+
+int bastet_sync_prop_stop_ipv6(
+	struct bst_sock_comm_prop_ipv6 *comm_prop)
+{
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
+
+	if (comm_prop == NULL)
+		return -EPERM;
+
+	sk = get_sock_by_comm_prop_ipv6(comm_prop);
+	if (sk == NULL) {
+		bastet_loge("ipv6 can not find sock by lport:%d,"
+			"lIp: ***, rport: %d, rIp: ***", comm_prop->local_port,
+			comm_prop->remote_port);
+		return -ENOENT;
+	}
+	bastet_logi("ipv6 sync prop stop");
+	if (sk->sk_state == TCP_TIME_WAIT) {
+		bastet_loge("ipv6 not expected time wait sock");
+		inet_twsk_put(inet_twsk(sk));
+		return -EPERM;
+	}
 	bsk = sk->bastet;
 	if (bsk) {
 		if (bsk->bastet_sock_state != BST_SOCK_NOT_USED) {
@@ -1055,29 +1629,61 @@ int bastet_sync_prop_stop(struct bst_sock_comm_prop *comm_prop)
 }
 
 /*
- * Get sock common properties.
+ * get_tcp_sock_comm_prop() - get tcp properties
+ * @get_prop the socket common properties.include ip and port.
+ *
+ * Function is called by bastet ioctl.get the tcp socket common
+ * properties such as ip,port.(local and remote)
+ *
+ * Returns 0, if get success.
+ * Otherwise return false.
  */
 int get_tcp_sock_comm_prop(struct bst_get_sock_comm_prop *get_prop)
 {
-	struct sock *sk;
+	struct sock *sk = NULL;
 	struct bst_sock_id *guide = &get_prop->guide;
 
 	sk = get_sock_by_fd_pid(guide->fd, guide->pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
+			guide->fd, guide->pid);
+		return -ENOENT;
+	}
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		bastet_loge("sk_state not expected");
+		sock_put(sk);
+		return -EPERM;
+	}
+	bastet_get_comm_prop(sk, &get_prop->comm_prop);
+	sock_put(sk);
+	return 0;
+}
+
+int get_tcp_sock_comm_prop_ipv6(
+	struct bst_get_sock_comm_prop_ipv6 *get_prop)
+{
+	struct sock *sk = NULL;
+	struct bst_sock_id *guide = NULL;
+
+	if (get_prop == NULL)
+		return -EPERM;
+
+	guide = &get_prop->guide;
+
+	sk = get_sock_by_fd_pid(guide->fd, guide->pid);
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
 
-	if (TCP_ESTABLISHED != sk->sk_state) {
-		BASTET_LOGE("sk: %p sk_state not expected", sk);
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		bastet_loge("sk_state not expected");
 		sock_put(sk);
 		return -EPERM;
 	}
 
-	BASTET_LOGI("sk: %p", sk);
-
-	bastet_get_comm_prop(sk, &get_prop->comm_prop);
+	bastet_get_comm_prop_ipv6(sk, &get_prop->comm_prop);
 	sock_put(sk);
 	return 0;
 }
@@ -1093,37 +1699,29 @@ static void setup_sock_sync_close_timer(struct sock *sk)
 }
 
 /*
+ * set_tcp_sock_closed() - set tcp sock closed
+ * @guide: the socket common properties.include ip and port.
+ *
  * Close sock, when modem bastet fails this sock.
+ *
+ * Returns 0, if set success.
+ * Otherwise return false.
  */
 int set_tcp_sock_closed(struct bst_sock_comm_prop *guide)
 {
 	int err = 0;
-	struct sock *sk;
-	struct bastet_sock *bsk;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
 
-	sk = get_sock_by_comm_prop(guide);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by lport: %d, lIp: ***, rport: %d, rIp: ***",
-					guide->local_port,
-					guide->remote_port);
-		return -ENOENT;
-	}
+	ret = get_sk_and_bsk(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
 
-	if (sk->sk_state == TCP_TIME_WAIT) {
-		BASTET_LOGE("sk: %p not expected time wait sock", sk);
-		inet_twsk_put(inet_twsk(sk));
-		return -EPERM;
-	}
-
-	bsk = sk->bastet;
-	if (NULL == bsk) {
-		BASTET_LOGE("sk: %p not expected bastet null", sk);
+	if (ret == BST_NULL_RETURN_VALUE) {
 		err = -EPERM;
 		goto out_put;
 	}
-
-	BASTET_LOGI("sk: %p", sk);
-
 	spin_lock_bh(&sk->sk_lock.slock);
 
 	/*
@@ -1131,18 +1729,16 @@ int set_tcp_sock_closed(struct bst_sock_comm_prop *guide)
 	 * if wifi proxy is closed, then is_wifi MUST be false
 	 */
 	if (!bsk->is_wifi)
-		if (BST_SOCK_INVALID != bsk->bastet_sock_state
-			&& BST_SOCK_UPDATING != bsk->bastet_sock_state) {
-			BASTET_LOGE(
-				"sk: %p sync_current_state: %d not expected",
-				sk, bsk->bastet_sock_state);
+		if (bsk->bastet_sock_state != BST_SOCK_INVALID
+			&& bsk->bastet_sock_state != BST_SOCK_UPDATING) {
+			bastet_loge(
+				"proxyid:%d sync_current_state: %d not expecte",
+				bsk->proxy_id, bsk->bastet_sock_state);
 			goto out_unlock;
 		}
 
 	cancel_sock_bastet_timer(sk);
-
 	bsk->bastet_sock_state = BST_SOCK_NOT_USED;
-
 	if (sock_owned_by_user(sk)) {
 		setup_sock_sync_close_timer(sk);
 		goto out_unlock;
@@ -1158,38 +1754,81 @@ out_put:
 	return err;
 }
 
-/*
- * Release bastet sock and Post sock close information.
- */
-void bastet_sock_release(struct sock *sk)
+int set_tcp_sock_closed_ipv6(struct bst_sock_comm_prop_ipv6 *guide)
+{
+	int err = 0;
+	int ret;
+	struct sock *sk = NULL;
+	struct bastet_sock *bsk = NULL;
+
+	if (guide == NULL)
+		return -EPERM;
+
+	ret = get_sk_and_bsk_ipv6(guide, &sk, &bsk);
+	if (ret == -ENOENT || ret == -EPERM)
+		return ret;
+
+	if (ret == BST_NULL_RETURN_VALUE) {
+		err = -EPERM;
+		goto out_put;
+	}
+	spin_lock_bh(&sk->sk_lock.slock);
+
+	/*
+	 * wifi network type do not check bastet socket sync state
+	 * if wifi proxy is closed, then is_wifi MUST be false
+	 */
+	if (!bsk->is_wifi)
+		if (bsk->bastet_sock_state != BST_SOCK_INVALID &&
+			bsk->bastet_sock_state != BST_SOCK_UPDATING) {
+			bastet_loge(
+				"ipv6 proxy_id:%d sync_cur_state:%d unexpected",
+				bsk->proxy_id, bsk->bastet_sock_state);
+			goto out_unlock;
+		}
+
+	cancel_sock_bastet_timer(sk);
+	bsk->bastet_sock_state = BST_SOCK_NOT_USED;
+	if (sock_owned_by_user(sk)) {
+		setup_sock_sync_close_timer(sk);
+		goto out_unlock;
+	}
+
+	set_sock_close_internal(sk);
+
+out_unlock:
+	spin_unlock_bh(&sk->sk_lock.slock);
+
+out_put:
+	sock_put(sk);
+	return err;
+}
+
+static void bastet_sock_release_ipv4(struct sock *sk)
 {
 	struct bst_close_sock_prop prop;
-	struct bastet_sock *bsk;
-
-	if (IS_ERR_OR_NULL(sk)) {
-		BASTET_LOGE("invalid parameter");
-		return;
-	}
+	struct bastet_sock *bsk = NULL;
 
 	bsk = sk->bastet;
 	memset(&prop, 0, sizeof(prop));
 	if (!is_bastet_enabled())
 		return;
 
-	if (NULL != bsk) {
+	if (bsk != NULL) {
 		bastet_get_comm_prop(sk, &prop.comm_prop);
 		prop.proxy_id = bsk->proxy_id;
-		/* for wifi proxy, clear heartbeat reply content */
-		/* if wifi proxy is closed, then is_wifi MUST be false */
+		/*
+		 * for wifi proxy, clear heartbeat reply content
+		 * if wifi proxy is closed, then is_wifi MUST be false
+		 */
 		if (bsk->is_wifi)
 			bastet_clear_hb_reply(bsk);
 
-		BASTET_LOGI("indicate socket close, proxyId=0x%08X",
+		bastet_logi("indicate socket close, proxyId=0x%08X",
 			prop.proxy_id);
-		post_indicate_packet(BST_IND_SOCK_CLOSED, &prop,
-			sizeof(struct bst_close_sock_prop));
+		post_indicate_packet(BST_IND_SOCK_CLOSED, &prop, sizeof(prop));
 
-		if (NULL != bsk->sync_p) {
+		if (bsk->sync_p != NULL) {
 			kfree(bsk->sync_p);
 			bsk->sync_p = NULL;
 		}
@@ -1199,30 +1838,111 @@ void bastet_sock_release(struct sock *sk)
 	}
 
 	if (sk->reconn) {
-		BASTET_LOGI("kfree sk reconn");
+		bastet_logi("kfree sk reconn");
 		kfree(sk->reconn);
 		sk->reconn = NULL;
 	}
 }
 
-int get_bastet_sock_state(struct sock *sk)
+static void bastet_sock_release_ipv6(struct sock *sk)
 {
-	return sk->bastet
-		? sk->bastet->bastet_sock_state : BST_SOCK_NOT_CREATED;
+	struct bst_close_sock_prop_ipv6 prop;
+	struct bastet_sock *bsk = NULL;
+
+	bsk = sk->bastet;
+	memset(&prop, 0, sizeof(prop));
+	if (!is_bastet_enabled())
+		return;
+
+	if (bsk != NULL) {
+		bastet_get_comm_prop_ipv6(sk, &prop.comm_prop);
+		prop.proxy_id = bsk->proxy_id;
+
+		/*
+		 * for wifi proxy, clear heartbeat reply content
+		 * if wifi proxy is closed, then is_wifi MUST be false
+		 */
+		if (bsk->is_wifi)
+			bastet_clear_hb_reply(bsk);
+
+		bastet_logi("indicate socket close, proxyId=0x%08X",
+			prop.proxy_id);
+		post_indicate_packet(BST_IND_SOCK_CLOSED_IPV6, &prop,
+			sizeof(prop));
+
+		if (bsk->sync_p != NULL) {
+			kfree(bsk->sync_p);
+			bsk->sync_p = NULL;
+		}
+
+		kfree(sk->bastet);
+		sk->bastet = NULL;
+	}
+
+	if (sk->reconn) {
+		bastet_logi("kfree sk reconn");
+		kfree(sk->reconn);
+		sk->reconn = NULL;
+	}
 }
 
+/*
+ * bastet_sock_release() - release bastet socket.
+ * @sk: the socket pointer.
+ *
+ * Release bastet sock and Post sock close information.
+ *
+ * Returns No
+ */
+void bastet_sock_release(struct sock *sk)
+{
+	if (IS_ERR_OR_NULL(sk)) {
+		bastet_loge("invalid parameter");
+		return;
+	}
+
+	if (is_ipv6_addr(sk))
+		bastet_sock_release_ipv6(sk);
+	else
+		bastet_sock_release_ipv4(sk);
+}
+
+/*
+ * get_bastet_sock_state() - get bastet socket state.
+ * @sk: the socket pointer.
+ *
+ * get the bastet socket state by check the sk->bastet.
+ *
+ * Returns sock state
+ * if not exist, BST_SOCK_NOT_CREATED
+ */
+int get_bastet_sock_state(struct sock *sk)
+{
+	return sk->bastet ?
+		sk->bastet->bastet_sock_state : BST_SOCK_NOT_CREATED;
+}
+
+/*
+ * get_tcp_bastet_sock_state() - get tcp bastet socket state.
+ * @get_prop: the socket state pointer.
+ *
+ * get the tcp bastet socket state, the value returned from
+ * get_bastet_sock_state will filled the .sync_state
+ *
+ * Returns 0, get success
+ * Otherwise failed.
+ */
 int get_tcp_bastet_sock_state(struct bst_get_bastet_sock_state *get_prop)
 {
-	struct sock *sk;
+	struct sock *sk = NULL;
 	struct bst_sock_id *guide = &get_prop->guide;
 
 	sk = get_sock_by_fd_pid(guide->fd, guide->pid);
-	if (NULL == sk) {
-		BASTET_LOGE("can not find sock by fd: %d pid: %d",
+	if (sk == NULL) {
+		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
-	BASTET_LOGI("sk: %p", sk);
 
 	get_prop->sync_state = get_bastet_sock_state(sk);
 

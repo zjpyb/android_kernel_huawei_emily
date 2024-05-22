@@ -1,9 +1,6 @@
 /*
- * ddr_info.c
- *
- * for ddr operation
- *
- * Copyright (c) 2015-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2015-2020. All rights reserved.
+ * Description: show ddr info
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,25 +12,24 @@
  * GNU General Public License for more details.
  *
  */
-
-#include <linux/types.h>
-#include <linux/proc_fs.h>
-#include <linux/ioport.h>
+#include <linux/errno.h>
+#include <linux/init.h>
 #include <linux/io.h>
-#include <linux/seq_file.h>
+#include <linux/ioport.h>
+#include <linux/kernel.h>
+#include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/of.h>
 #include <linux/printk.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/string.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/mm.h>
-#include <linux/slab.h>
-#include <linux/init.h>
-#include <linux/of.h>
-#include "soc_sctrl_interface.h"
+#include <linux/types.h>
+
 #include "soc_acpu_baseaddr_interface.h"
+#include "soc_sctrl_interface.h"
 
 #define DDR_INFO_ADDR (SOC_SCTRL_SCBAKDATA7_ADDR(SOC_ACPU_SCTRL_BASE_ADDR))
 
@@ -61,8 +57,6 @@ static unsigned int get_ddr_info(void)
 		pr_err("%s  ioremap ERROR !!\n", __func__);
 		return 0;
 	}
-	pr_info("ddr_info va = 0x%lx\n", (uintptr_t)virtual_addr);
-
 	tmp_reg_value = *(unsigned long *)((uintptr_t)virtual_addr +
 		(DDR_INFO_ADDR & 0x00000FFF));
 	iounmap(virtual_addr);

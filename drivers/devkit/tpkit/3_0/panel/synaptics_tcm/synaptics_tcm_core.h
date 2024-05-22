@@ -41,7 +41,7 @@
 #include <linux/platform_device.h>
 #include <linux/ctype.h>
 #include "synaptics_tcm.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #ifdef CONFIG_FB
 #include <linux/fb.h>
@@ -64,6 +64,8 @@
 #define WR_CHUNK_SIZE_SPI 0 /* write length limit in bytes, 0 = unlimited */
 #define RD_CHUNK_SIZE_I2C 256 /* read length limit in bytes, 0 = unlimited */
 #define WR_CHUNK_SIZE_I2C 512 /* write length limit in bytes, 0 = unlimited */
+#define RD_CHUNK_SIZE_I3C 512
+#define WR_CHUNK_SIZE_I3C 512
 
 #define GLOVE_SWITCH_ON 1
 #define GLOVE_SWITCH_OFF 0
@@ -74,18 +76,25 @@
 #define GPIO_OUTPUT_HIGH	1
 #define GPIO_OUTPUT_LOW	0
 
+/* define esd Action */
+#define ESD_NO_ACTION 0
+#define ESD_POWER_RESET 1
+#define ESD_HW_RESET 2
+#define ESD_SW_RESET 3
+
+#define IRQ_STORM_MAX_SUM 10
 #define FIXED_READ_LENGTH 256
 #define MESSAGE_HEADER_SIZE 4
 #define MSG_STATUS_SIZE 2
 #define MESSAGE_MARKER 0xa5
 #define MESSAGE_PADDING 0x5a
-
+#define READ_RETRY 6
 #define PDT_START_ADDR 0x00e9
 #define PDT_END_ADDR 0x00ee
 #define UBL_FN_NUMBER 0x35
 
 #define ROI_DATA_LENGTH 102
-
+#define SYNC_TCM_CONFIG_ID_ARRY_SIZE 16
 #define INIT_BUFFER(buffer, is_clone) \
 	mutex_init(&buffer.buf_mutex); \
 	buffer.clone = is_clone
@@ -126,7 +135,7 @@ static ssize_t CONCAT(m_name##_sysfs, _##a_name##_show)(struct device *dev, \
 static struct device_attribute dev_attr_##a_name = \
 		__ATTR(a_name, S_IRUGO, \
 		CONCAT(m_name##_sysfs, _##a_name##_show), \
-		syna_tcm_store_error);
+		tskit_driver_store_error);
 
 #define STORE_PROTOTYPE(m_name, a_name) \
 static ssize_t CONCAT(m_name##_sysfs, _##a_name##_store)(struct device *dev, \
@@ -134,7 +143,7 @@ static ssize_t CONCAT(m_name##_sysfs, _##a_name##_store)(struct device *dev, \
 \
 static struct device_attribute dev_attr_##a_name = \
 		__ATTR(a_name, (S_IWUSR | S_IWGRP), \
-		syna_tcm_show_error, \
+		tskit_driver_show_error, \
 		CONCAT(m_name##_sysfs, _##a_name##_store));
 
 #define SHOW_STORE_PROTOTYPE(m_name, a_name) \
@@ -163,6 +172,9 @@ static struct device_attribute dev_attr_##a_name = \
 
 #define SYNA_CHECKSUM_SEED (~0)
 
+#define GESTURE_DATA_SIZE_32BITS 2
+#define LEFT_BITS_DBG_MAX 32
+#define BASELINE_DATA_MASK 0x0000FFFF
 enum module_type {
 	TCM_TOUCH = 0,
 	TCM_DEVICE = 1,
@@ -219,6 +231,7 @@ enum dynamic_config_id {
 	DC_STIMULUS_FINGERS,
 	DC_GRIP_SUPPRESSION_ENABLED,
 	DC_ENABLE_THICK_GLOVE,
+	DC_ENABLE_CLOSED_COVER = 0x11,
 	DC_ENABLE_LOZE = 216,
 	DC_SCENE_SWITCH = 0xCB,
 };
@@ -382,6 +395,7 @@ enum helper_task {
 
 enum syna_tcm_ic_type {
 	SYNA_TCM_TD4320 =0,
+	S3909 = 1,
 };
 
 struct syna_tcm_helper {
@@ -446,7 +460,7 @@ struct syna_tcm_app_info {
 	unsigned char app_config_size[2];
 	unsigned char max_touch_report_config_size[2];
 	unsigned char max_touch_report_payload_size[2];
-	unsigned char customer_config_id[16];
+	unsigned char customer_config_id[SYNC_TCM_CONFIG_ID_ARRY_SIZE];
 	unsigned char max_x[2];
 	unsigned char max_y[2];
 	unsigned char max_objects[2];
@@ -469,6 +483,10 @@ struct syna_tcm_message_header {
 	unsigned char length[2];
 };
 
+struct syna_tcm_esd_info {
+	unsigned char esd_action;
+	unsigned char esd_reason;
+};
 /*
  * struct synaptics_rmi4_device_info - device information
  * @version_major: rmi protocol major version number
@@ -533,6 +551,7 @@ struct syna_tcm_hcd {
 	unsigned int read_length;
 	unsigned int payload_length;
 	unsigned int packrat_number;
+	unsigned int packrat_number_old;
 	unsigned int rd_chunk_size;
 	unsigned int wr_chunk_size;
 	unsigned int app_status;
@@ -542,6 +561,7 @@ struct syna_tcm_hcd {
 	bool in_before_suspend;
 	bool device_status_check;
 	bool in_suspend_charge;
+	bool after_resume_done;
 	struct syna_tcm_abnormal_info ab_device_status;
 	struct platform_device *pdev;
 	struct regulator *pwr_reg;
@@ -568,14 +588,22 @@ struct syna_tcm_hcd {
 	struct syna_tcm_helper helper;
 	struct syna_tcm_watchdog watchdog;
 	struct syna_tcm_board_data *bdata;
+	struct syna_tcm_esd_info esd_info;
 	unsigned int esd_report_status;
 	unsigned int use_esd_report;
 	unsigned int use_dma_download_firmware;
 	unsigned int downmload_firmware_frequency;
 	unsigned int spi_comnunicate_frequency;
+	unsigned int support_cold_patch;
+	unsigned int syna_spec_delay_after_lcd;
+	unsigned int baseline_status_flag;
+	unsigned int irq_storm_sum;
+	unsigned int support_esd_power_reset;
 	const struct syna_tcm_hw_interface *hw_if;
 	char fw_name[MAX_STR_LEN * 4];
 	unsigned int aft_wxy_enable;
+	unsigned int aod_display_no_power_off;
+	unsigned int aod_touch_enable;
 	int (*reset)(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd);
 	int (*sleep)(struct syna_tcm_hcd *tcm_hcd, bool en);
 	int (*identify)(struct syna_tcm_hcd *tcm_hcd, bool id);
@@ -628,37 +656,37 @@ struct syna_tcm_module_pool {
 	struct syna_tcm_hcd *tcm_hcd;
 };
 
-int syna_tcm_bus_init(void);
+int tskit_driver_bus_init(void);
 
-void syna_tcm_bus_exit(void);
+void tskit_driver_bus_exit(void);
 
-int syna_tcm_add_module(struct syna_tcm_module_cb *mod_cb, bool insert);
+int tskit_driver_add_module(struct syna_tcm_module_cb *mod_cb, bool insert);
 
-static inline int syna_tcm_rmi_read(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
 {
 	return tcm_hcd->rmi_read(tcm_hcd, addr, data, length);
 }
 
-static inline int syna_tcm_rmi_write(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
 {
 	return tcm_hcd->rmi_write(tcm_hcd, addr, data, length);
 }
 
-static inline int syna_tcm_read(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char *data, unsigned int length)
 {
 	return tcm_hcd->read(tcm_hcd, data, length);
 }
 
-static inline int syna_tcm_write(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_write(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char *data, unsigned int length)
 {
 	return tcm_hcd->write(tcm_hcd, data, length);
 }
 
-static inline ssize_t syna_tcm_show_error(struct device *dev,
+static inline ssize_t tskit_driver_show_error(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	pr_err("%s: Attribute not readable\n", __func__);
@@ -666,7 +694,7 @@ static inline ssize_t syna_tcm_show_error(struct device *dev,
 	return -EPERM;
 }
 
-static inline ssize_t syna_tcm_store_error(struct device *dev,
+static inline ssize_t tskit_driver_store_error(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
 	pr_err("%s: Attribute not writable\n", __func__);
@@ -674,7 +702,7 @@ static inline ssize_t syna_tcm_store_error(struct device *dev,
 	return -EPERM;
 }
 
-static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
 		struct syna_tcm_buffer *buffer, unsigned int size)
 {
 	unsigned char *temp;
@@ -701,7 +729,7 @@ static inline int syna_tcm_realloc_mem(struct syna_tcm_hcd *tcm_hcd,
 	return 0;
 }
 
-static inline int syna_tcm_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
+static inline int tskit_driver_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
 		struct syna_tcm_buffer *buffer, unsigned int size)
 {
 	if (size > buffer->buf_size) {
@@ -750,6 +778,7 @@ static inline unsigned int ceil_div(unsigned int dividend, unsigned divisor)
 	return (dividend + divisor - 1) / divisor;
 }
 
+int touch_set_input_reporting(bool get_id_info_flag);
 extern int zeroflash_init(struct syna_tcm_hcd *tcm_hcd);
 extern int zeroflash_get_fw_image(char *file_name);
 extern int zeroflash_remove(struct syna_tcm_hcd *tcm_hcd);
@@ -757,18 +786,20 @@ extern int zeroflash_download(char *file_name,struct syna_tcm_hcd *tcm_hcd);
 extern int touch_init(struct syna_tcm_hcd *tcm_hcd);
 extern void touch_report(struct ts_fingers *info);
 extern int debug_device_init(struct syna_tcm_hcd *tcm_hcd);
-extern int syna_tcm_write_hdl_message(struct syna_tcm_hcd *tcm_hcd,
+extern int tskit_driver_write_hdl_message(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char command, unsigned char *payload,
 		unsigned int length, unsigned char **resp_buf,
 		unsigned int *resp_buf_size, unsigned int *resp_length,
 		unsigned char *response_code, unsigned int polling_delay_ms);
-extern int syna_tcm_cap_test_init(struct syna_tcm_hcd *tcm_hcd);
-extern int syna_tcm_cap_test(struct ts_rawdata_info_new *info,
+extern int tskit_driver_cap_test_init(struct syna_tcm_hcd *tcm_hcd);
+extern int tskit_driver_cap_test(struct ts_rawdata_info_new *info,
 			struct ts_cmd_node *out_cmd);
-extern int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en);
+int tskit_driver_cap_test_remove(struct syna_tcm_hcd *tcm_hcd);
+extern int tskit_driver_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en);
 extern int reflash_init(struct syna_tcm_hcd *tcm_hcd);
-extern int reflash_do_reflash(char *fw_name);
-unsigned int syna_checksum_cal(unsigned int checksum,
+extern int reflash_do_reflash(char *fw_name, unsigned int len);
+unsigned int tskit_driver_checksum_cal(unsigned int checksum,
 		unsigned char const *buffer,
 		unsigned int size);
+int reflash_do_reflash(char *fw_name, unsigned int len);
 #endif

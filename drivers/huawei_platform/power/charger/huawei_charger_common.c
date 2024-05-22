@@ -3,7 +3,7 @@
  *
  * common interface for huawei charger driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -91,10 +91,8 @@ int charge_check_input_dpm_state(void)
 
 int charge_check_charger_plugged(void)
 {
-	if (!g_ops || !g_ops->check_charger_plugged) {
-		hwlog_err("g_charge_ops or check_charger_plugged is null\n");
+	if (!g_ops || !g_ops->check_charger_plugged)
 		return -1;
-	}
 
 	return g_ops->check_charger_plugged();
 }
@@ -129,7 +127,7 @@ enum fcp_check_stage_type fcp_get_stage_status(void)
 	return g_extra_ops->get_stage();
 }
 
-enum huawei_usb_charger_type charge_get_charger_type(void)
+unsigned int charge_get_charger_type(void)
 {
 	if (!g_extra_ops || !g_extra_ops->get_charger_type) {
 		hwlog_err("g_extra_ops or get_charger_type is null\n");

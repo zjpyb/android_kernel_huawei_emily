@@ -30,22 +30,23 @@
 #define CHIP_NAME_LEN 32
 #define POWER_SLEEP_TIME 2
 struct i2c_data {
-    struct i2c_client *client;
-    struct regulator_bulk_data ldo_avdd;
-    struct pinctrl	*pinctrl;
-    struct pinctrl_state	*pins_default;
-    struct pinctrl_state	*pins_idle;
-    uint8_t power_up;
-    int irq;
-    unsigned int xsdn_gpio;
-    unsigned int intr_gpio;
-    struct i2d_data_flags_t {
-        unsigned pwr_owned:1; /*!< set if pwren gpio is owned*/
-        unsigned xsdn_owned:1; /*!< set if sxdn  gpio is owned*/
-        unsigned intr_owned:1; /*!< set if intr  gpio is owned*/
-        unsigned intr_started:1; /*!< set if irq is hanlde  */
-    } io_flag;
-    hw_laser_ctrl_t *ctrl;
+	struct i2c_client *client;
+	struct regulator_bulk_data ldo_avdd;
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pins_default;
+	struct pinctrl_state *pins_idle;
+	uint8_t power_up;
+	int irq;
+	unsigned int xsdn_gpio;
+	unsigned int intr_gpio;
+	struct i2d_data_flags_t {
+		unsigned pwr_owned:1; /* !< set if pwren gpio is owned */
+		unsigned xsdn_owned:1; /* !< set if sxdn  gpio is owned */
+		unsigned intr_owned:1; /* !< set if intr  gpio is owned */
+		unsigned intr_started:1; /* !< set if irq is hanlde  */
+	} io_flag;
+	hw_laser_ctrl_t *ctrl;
+	unsigned int laser_state; /* 1: xsdn always on */
 };
 
 #endif /* HW_LASER_I2C_H */

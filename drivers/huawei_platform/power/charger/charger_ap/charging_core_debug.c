@@ -3,7 +3,7 @@
  *
  * debug for charging core module
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -24,16 +24,16 @@
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/raid/pq.h>
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>
 #endif
 
 #ifdef CONFIG_TCPC_CLASS
 #include <huawei_platform/usb/hw_pd_dev.h>
 #endif
 #include <huawei_platform/power/battery_voltage.h>
-#include <huawei_platform/power/huawei_battery_temp.h>
-#include <huawei_platform/power/power_debug.h>
+#include <chipset_common/hwpower/battery/battery_temp.h>
+#include <chipset_common/hwpower/common_module/power_debug.h>
 #include "charging_core.h"
 
 #define HWLOG_TAG charging_core_debug
@@ -44,9 +44,8 @@ static ssize_t charging_core_dbg_iterm_store(void *dev_data,
 {
 	int iterm = 0;
 	int ret;
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return -EINVAL;
 
@@ -64,9 +63,8 @@ static ssize_t charging_core_dbg_iterm_store(void *dev_data,
 static ssize_t charging_core_dbg_iterm_show(void *dev_data,
 	char *buf, size_t size)
 {
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return scnprintf(buf, size, "not support\n");
 
@@ -78,9 +76,8 @@ static ssize_t charging_core_dbg_ichg_ac_store(void *dev_data,
 {
 	int ichg = 0;
 	int ret;
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return -EINVAL;
 
@@ -98,9 +95,8 @@ static ssize_t charging_core_dbg_ichg_ac_store(void *dev_data,
 static ssize_t charging_core_dbg_ichg_ac_show(void *dev_data,
 	char *buf, size_t size)
 {
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return scnprintf(buf, size, "not support\n");
 
@@ -112,9 +108,8 @@ static ssize_t charging_core_dbg_iin_ac_store(void *dev_data,
 {
 	int iin = 0;
 	int ret;
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return -EINVAL;
 
@@ -132,9 +127,8 @@ static ssize_t charging_core_dbg_iin_ac_store(void *dev_data,
 static ssize_t charging_core_dbg_iin_ac_show(void *dev_data,
 	char *buf, size_t size)
 {
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return scnprintf(buf, size, "not support\n");
 
@@ -146,9 +140,8 @@ static ssize_t charging_core_dbg_ichg_fcp_store(void *dev_data,
 {
 	int ichg_fcp = 0;
 	int ret;
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return -EINVAL;
 
@@ -166,9 +159,8 @@ static ssize_t charging_core_dbg_ichg_fcp_store(void *dev_data,
 static ssize_t charging_core_dbg_ichg_fcp_show(void *dev_data,
 	char *buf, size_t size)
 {
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return scnprintf(buf, size, "not support\n");
 
@@ -180,9 +172,8 @@ static ssize_t charging_core_dbg_iin_fcp_store(void *dev_data,
 {
 	int iin_fcp = 0;
 	int ret;
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return -EINVAL;
 
@@ -200,9 +191,8 @@ static ssize_t charging_core_dbg_iin_fcp_store(void *dev_data,
 static ssize_t charging_core_dbg_iin_fcp_show(void *dev_data,
 	char *buf, size_t size)
 {
-	struct charge_core_info *di = NULL;
+	struct charge_core_info *di = dev_data;
 
-	di = (struct charge_core_info *)dev_data;
 	if (!di)
 		return scnprintf(buf, size, "not support\n");
 

@@ -298,7 +298,6 @@ static int reflash_update_app_config(bool reset);
 
 static int reflash_update_disp_config(bool reset);
 int reflash_after_fw_update_do_reset(void);
-int reflash_do_reflash(char *fw_name);
 
 unsigned char tmp_response[100] = {0};
 static int reflash_set_up_flash_access(void)
@@ -308,6 +307,7 @@ static int reflash_set_up_flash_access(void)
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 	unsigned int max_write_size;
 	unsigned long count;
+	struct ts_kit_device_data *chip_data = tcm_hcd->syna_tcm_chip_data;
 
 	retval = reflash_raw_write(tcm_hcd,	CMD_IDENTIFY,NULL, 0);
 	if (retval < 0) {
@@ -316,7 +316,7 @@ static int reflash_set_up_flash_access(void)
 		return -EINVAL;
 	}
 	msleep(50);
-	retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
+	retval = tskit_driver_read(tcm_hcd, tmp_response, sizeof(tmp_response));
 
 	TS_LOG_ERR("response[0] %x, %x, %x, %x, %x, %x, %x\n", tmp_response[0], tmp_response[1], tmp_response[2], tmp_response[3], tmp_response[4], tmp_response[5], tmp_response[6]);
 	if (retval < 0 || (tmp_response[1] != STATUS_OK && tmp_response[1] != REPORT_IDENTIFY)) {
@@ -341,7 +341,13 @@ static int reflash_set_up_flash_access(void)
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_SPI);
 	}else{
-		tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_I2C);
+		if (chip_data->ts_platform_data->i2c_driver_type ==
+			I3C_MASTER_I2C_DRIVER)
+			tcm_hcd->wr_chunk_size = MIN(max_write_size,
+				WR_CHUNK_SIZE_I3C);
+		else
+			tcm_hcd->wr_chunk_size = MIN(max_write_size,
+				WR_CHUNK_SIZE_I2C);
 	}
 	TS_LOG_ERR("max_write_size:%d\n",  max_write_size);
 
@@ -358,7 +364,8 @@ static int reflash_set_up_flash_access(void)
 			return retval;
 		}
 		msleep(50);
-		retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
+		retval = tskit_driver_read(tcm_hcd,
+			tmp_response, sizeof(tmp_response));
 		if (retval < 0) {
 			TS_LOG_ERR(
 						"in set up reflash 2\n");
@@ -387,7 +394,7 @@ static int reflash_set_up_flash_access(void)
 		return -EINVAL;
 	}
 	msleep(10);
-	retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
+	retval = tskit_driver_read(tcm_hcd, tmp_response, sizeof(tmp_response));
 	if (retval < 0) {
 		TS_LOG_ERR(
 					"in set up reflash 3\n");
@@ -443,7 +450,7 @@ static int reflash_parse_fw_image(void)
 	unsigned int num_of_areas;
 	struct image_header *header;
 	struct image_info *image_info;
-	struct area_descriptor *descriptor;
+	struct area_descriptor *descriptor = NULL;
 	const unsigned char *image;
 	const unsigned char *content;
 
@@ -481,7 +488,8 @@ static int reflash_parse_fw_image(void)
 		if (0 == strncmp((char *)descriptor->id_string,
 				BOOT_CONFIG_ID,
 				strlen(BOOT_CONFIG_ID))) {
-			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+			if (checksum !=
+				(tskit_driver_checksum_cal(SYNA_CHECKSUM_SEED,
 				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Boot config checksum error\n");
@@ -497,7 +505,8 @@ static int reflash_parse_fw_image(void)
 				APP_CODE_ID,
 				strlen(APP_CODE_ID))) {
 
-			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+			if (checksum !=
+				(tskit_driver_checksum_cal(SYNA_CHECKSUM_SEED,
 				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Application firmware checksum error\n");
@@ -513,7 +522,8 @@ static int reflash_parse_fw_image(void)
 				APP_CONFIG_ID,
 				strlen(APP_CONFIG_ID))) {
 
-			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+			if (checksum !=
+				(tskit_driver_checksum_cal(SYNA_CHECKSUM_SEED,
 				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR(
 						"Application config checksum error\n");
@@ -529,7 +539,8 @@ static int reflash_parse_fw_image(void)
 				DISP_CONFIG_ID,
 				strlen(DISP_CONFIG_ID))) {
 
-			if (checksum != (syna_checksum_cal(SYNA_CHECKSUM_SEED,
+			if (checksum !=
+				(tskit_driver_checksum_cal(SYNA_CHECKSUM_SEED,
 				content, length) ^ SYNA_CHECKSUM_SEED)) {
 				TS_LOG_ERR("Display config checksum error\n");
 				return -EINVAL;
@@ -592,7 +603,7 @@ static enum update_area reflash_compare_id_info(void)
 	unsigned int device_fw_id;
 	unsigned char *image_config_id;
 	unsigned char *device_config_id;
-	struct app_config_header *header;
+	struct app_config_header *header = NULL;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 	const unsigned char *app_config_data;
 
@@ -760,6 +771,7 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 	unsigned int block_address = 0;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 	unsigned char response[10] = {0};
+	unsigned int retry = 0;
 
 	w_length = tcm_hcd->wr_chunk_size - 5;
 
@@ -780,7 +792,7 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 		else
 			xfer_length = remaining_length;
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&reflash_hcd->out,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -823,20 +835,43 @@ static int reflash_write_flash(unsigned int address, const unsigned char *data,
 			UNLOCK_BUFFER(reflash_hcd->out);
 			return retval;
 		}
-		msleep(30);
-		retval = syna_tcm_read(tcm_hcd,
-				response,
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type != S3909) {
+			msleep(30);
+			retval = tskit_driver_read(tcm_hcd, response,
 				sizeof(response));
-		if (retval < 0 || (response[1] != STATUS_OK && response[1] != STATUS_IDLE)) {
-			TS_LOG_ERR(
-					"Failed to get write response\n");
+			if (retval < 0 || (response[1] != STATUS_OK &&
+				response[1] != STATUS_IDLE)) {
+				TS_LOG_ERR("Failed to get write response\n");
 
-			TS_LOG_ERR("response[0] %x, %x, %x, %x, %x\n", response[0], response[1], response[2], response[3], response[4]);
-			UNLOCK_BUFFER(reflash_hcd->resp);
-			UNLOCK_BUFFER(reflash_hcd->out);
-			return -EINVAL;
+				TS_LOG_ERR("response[0] %x, %x, %x, %x, %x\n",
+					response[0], response[1], response[2],
+					response[3], response[4]);
+				UNLOCK_BUFFER(reflash_hcd->resp);
+				UNLOCK_BUFFER(reflash_hcd->out);
+				return -EINVAL;
+			}
+		} else {
+			do {
+				mdelay(5);
+				retval = tskit_driver_read(tcm_hcd, response,
+					sizeof(response));
+				if (retval < 0 || (response[1] != STATUS_OK &&
+					response[1] != STATUS_IDLE)) {
+					TS_LOG_ERR("Failed to get write response\n");
+					TS_LOG_ERR("response[0] %x, %x, %x, %x, %x\n",
+						response[0], response[1],
+						response[2], response[3],
+						response[4]);
+					UNLOCK_BUFFER(reflash_hcd->resp);
+					UNLOCK_BUFFER(reflash_hcd->out);
+					return -EINVAL;
+				}
+				if (response[1] == STATUS_OK)
+					break;
+				retry++;
+			} while (retry < 10);
 		}
-
 		offset += xfer_length;
 		remaining_length -= xfer_length;
 	}
@@ -890,7 +925,7 @@ static int reflash_raw_write(struct syna_tcm_hcd *tcm_hcd,
 		else
 			xfer_length = remaining_length;
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->out,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -933,7 +968,7 @@ static int reflash_raw_write(struct syna_tcm_hcd *tcm_hcd,
 					xfer_length);
 		}
 
-		retval = syna_tcm_write(tcm_hcd,
+		retval = tskit_driver_write(tcm_hcd,
 				tcm_hcd->out.buf,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -961,20 +996,36 @@ exit:
 static int reflash_erase_flash(unsigned int page_start, unsigned int page_count)
 {
 	int retval;
-	unsigned char out_buf[2];
+	unsigned char out_buf[4] = {0};
+	int size_erase_cmd;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
-
 	unsigned char response[10] = {0};
-	out_buf[0] = (unsigned char)page_start;
-	out_buf[1] = (unsigned char)page_count;
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		if ((page_start > 0xff) || (page_count > 0xff)) {
+			size_erase_cmd = 4;
+			out_buf[0] = (unsigned char)(page_start & 0xff);
+			out_buf[1] = (unsigned char)((page_start >> 8) & 0xff);
+			out_buf[2] = (unsigned char)(page_count & 0xff);
+			out_buf[3] = (unsigned char)((page_count >> 8) & 0xff);
+		} else {
+			size_erase_cmd = 2;
+			out_buf[0] = (unsigned char)(page_start & 0xff);
+			out_buf[1] = (unsigned char)(page_count & 0xff);
+		}
+	} else {
+		size_erase_cmd = 2;
+		out_buf[0] = (unsigned char)(page_start & 0xff);
+		out_buf[1] = (unsigned char)(page_count & 0xff);
+	}
 
 	LOCK_BUFFER(reflash_hcd->resp);
 
-	TS_LOG_ERR("start to write erase command\n");
+	TS_LOG_ERR("start to write erase command %d %d\n",
+		page_start, page_count);
 	retval = reflash_raw_write(tcm_hcd,
 			CMD_ERASE_FLASH,
 			out_buf,
-			sizeof(out_buf));
+			size_erase_cmd);
 
 	if (retval < 0) {
 		TS_LOG_ERR(
@@ -991,7 +1042,7 @@ static int reflash_erase_flash(unsigned int page_start, unsigned int page_count)
 		mdelay(600);
 	}
 
-	retval = syna_tcm_read(tcm_hcd,
+	retval = tskit_driver_read(tcm_hcd,
 			response,
 			sizeof(response));
 	if (retval < 0) {
@@ -1001,8 +1052,9 @@ static int reflash_erase_flash(unsigned int page_start, unsigned int page_count)
 		return retval;
 	}
 	UNLOCK_BUFFER(reflash_hcd->resp);
-	if (response[1] != STATUS_OK && response[1] != STATUS_IDLE) {
-		TS_LOG_ERR("response[0] %x, %x, %x, %x, %x\n", response[0], response[1], response[2], response[3], response[4]);
+	if ((response[1] != STATUS_OK) && (response[1] != STATUS_IDLE)) {
+		TS_LOG_ERR("response[0] %x, %x, %x, %x, %x\n", response[0],
+			response[1], response[2], response[3], response[4]);
 		return -EINVAL;
 	}
 	return 0;
@@ -1020,11 +1072,15 @@ reflash_update(disp_config)
 
 reflash_update(app_firmware)
 
-int reflash_do_reflash(char *fw_name)
+int reflash_do_reflash(char *fw_name, unsigned int len)
 {
 	int retval;
 	enum update_area update_area;
 
+	if (len == 0) {
+		TS_LOG_ERR("%s:invalid len:%d\n", __func__, len);
+		return -EINVAL;
+	}
 	retval = reflash_get_fw_image(fw_name);
 	if (retval < 0) {
 		TS_LOG_ERR(
@@ -1120,7 +1176,7 @@ int reflash_after_fw_update_do_reset(void)
 	}
 	/* sequential */
 	msleep(120);
-	retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
+	retval = tskit_driver_read(tcm_hcd, tmp_response, sizeof(tmp_response));
 
 	if (tmp_response[1] == REPORT_IDENTIFY) {
 		TS_LOG_ERR("receive identify report\n");
@@ -1137,7 +1193,8 @@ int reflash_after_fw_update_do_reset(void)
 			return retval;
 		}
 		msleep(120);
-		retval = syna_tcm_read(tcm_hcd, tmp_response, sizeof(tmp_response));
+		retval = tskit_driver_read(tcm_hcd,
+			tmp_response, sizeof(tmp_response));
 		if (retval < 0) {
 			TS_LOG_ERR("in set up reflash 2\n");
 			return -EINVAL;
@@ -1175,7 +1232,7 @@ static int reflash_read_flash(unsigned int address, unsigned char *data,
 
 	LOCK_BUFFER(reflash_hcd->out);
 
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&reflash_hcd->out,
 			6);
 	if (retval < 0) {
@@ -1208,7 +1265,8 @@ static int reflash_read_flash(unsigned int address, unsigned char *data,
 	UNLOCK_BUFFER(reflash_hcd->out);
 
 	msleep(50);
-	retval = syna_tcm_read(tcm_hcd, flash_read_data, sizeof(flash_read_data));
+	retval = tskit_driver_read(tcm_hcd,
+		flash_read_data, sizeof(flash_read_data));
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to read flash_read_data\n");
 
@@ -1237,8 +1295,8 @@ int reflash_read_boot_config(unsigned char *data, int data_length)
 	unsigned int addr;
 	unsigned int length;
 
-	struct syna_tcm_app_info *app_info;
-	struct syna_tcm_boot_info *boot_info;
+	struct syna_tcm_app_info *app_info = NULL;
+	struct syna_tcm_boot_info *boot_info = NULL;
 	struct syna_tcm_hcd *tcm_hcd = reflash_hcd->tcm_hcd;
 
 	retval = reflash_set_up_flash_access();
@@ -1269,9 +1327,18 @@ int reflash_parse_boot_config(unsigned char *boot_config_data, int data_length, 
 {
 	int i = 0;
 
-	memcpy(out_info, &boot_config_data[BOOT_CONFIG_SIZE], length);
-	for (i = 0; i < strlen(out_info) && i < length; i++) {
-		out_info[i] = tolower(out_info[i]);
+	if (!reflash_hcd) {
+		TS_LOG_ERR("%s:have null ptr\n", __func__);
+		return -EINVAL;
+	}
+
+	if (reflash_hcd->tcm_hcd && reflash_hcd->tcm_hcd->bdata &&
+		reflash_hcd->tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		memcpy(out_info, &boot_config_data[0], length);
+	} else {
+		memcpy(out_info, &boot_config_data[BOOT_CONFIG_SIZE], length);
+		for (i = 0; i < strlen(out_info) && i < length; i++)
+			out_info[i] = tolower(out_info[i]);
 	}
 
 	return 0;
@@ -1280,7 +1347,6 @@ int reflash_parse_boot_config(unsigned char *boot_config_data, int data_length, 
 int reflash_init(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = 0;
-	//int idx;
 
 	reflash_hcd = kzalloc(sizeof(*reflash_hcd), GFP_KERNEL);
 	if (!reflash_hcd) {
@@ -1315,6 +1381,21 @@ int reflash_init(struct syna_tcm_hcd *tcm_hcd)
 				sizeof(boot_config_data),
 				tcm_hcd->tcm_mod_info.project_id_string,
 				sizeof(tcm_hcd->tcm_mod_info.project_id_string) - 1);
+		TS_LOG_INFO("%s project id:%s\n", __func__,
+			tcm_hcd->tcm_mod_info.project_id_string);
+
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type == S3909 &&
+			tcm_hcd->bdata->default_project_id != NULL) {
+			memcpy(&tcm_hcd->tcm_mod_info.project_id_string,
+				tcm_hcd->bdata->default_project_id,
+				SYNAPTICS_RMI4_PROJECT_ID_SIZE);
+			tcm_hcd->tcm_mod_info.project_id_string[
+				SYNAPTICS_RMI4_PROJECT_ID_SIZE] = '\0';
+			TS_LOG_ERR("%s use dummy project id:%s\n",
+				__func__,
+				tcm_hcd->tcm_mod_info.project_id_string);
+		}
 	}
 
 	return retval;

@@ -140,6 +140,10 @@ struct arm_pmu {
 
 #define to_arm_pmu(p) (container_of(p, struct arm_pmu, pmu))
 
+#ifdef CONFIG_HISI_HARDEN_BRANCH_PREDICTOR
+u32 armv8pmu_get_counter(struct perf_event *event);
+#endif
+
 u64 armpmu_event_update(struct perf_event *event);
 
 int armpmu_event_set_period(struct perf_event *event);

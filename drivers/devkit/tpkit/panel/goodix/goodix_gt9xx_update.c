@@ -2298,7 +2298,7 @@ s32 gup_update_proc(int type)
     {
         GTP_ERROR("[update_proc]check update file fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_CHECK_UPDATE_FILE_FAIL;
+        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_CHECK_UPDATE_FILE_FAIL;
 #endif
         goto file_fail;
     } else if(FW_NOT_EXIST == ret) {
@@ -2312,7 +2312,7 @@ s32 gup_update_proc(int type)
     {
         GTP_ERROR("[update_proc]get ic message fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_GET_IC_FW_FAIL;
+        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_GET_IC_FW_FAIL;
 #endif
         goto file_fail;
     }
@@ -2328,7 +2328,7 @@ s32 gup_update_proc(int type)
     {
         GTP_ERROR("[update_proc]Check *.bin file fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_ENTER_UPDATE_JUDGE_FAIL;
+        g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_ENTER_UPDATE_JUDGE_FAIL;
 #endif
         goto file_fail;
     }
@@ -2340,7 +2340,7 @@ s32 gup_update_proc(int type)
     {
          GTP_ERROR("[update_proc]enter update mode fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-         g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_ENTER_UPDATE_MODE_FAIL;
+         g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_ENTER_UPDATE_MODE_FAIL;
 #endif
          goto update_fail;
     }
@@ -2355,7 +2355,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn dsp isp fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_DSP_ISP_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_DSP_ISP_FAIL;
 #endif
             continue;
         }
@@ -2366,7 +2366,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn app_code firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_GWAKE_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_GWAKE_FAIL;
 #endif
             continue;
         }
@@ -2377,7 +2377,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn ss51 firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_SS51_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_SS51_FAIL;
 #endif
             continue;
         }
@@ -2388,7 +2388,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn dsp firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_DSP_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_DSP_FAIL;
 #endif
             continue;
         }
@@ -2399,7 +2399,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn bootloader firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_BOOT_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_BOOT_FAIL;
 #endif
             continue;
         }
@@ -2410,7 +2410,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn boot_isp firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_BOOT_ISP_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_BOOT_ISP_FAIL;
 #endif
             continue;
         }
@@ -2421,7 +2421,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn link firmware fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_LINK_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_LINK_FAIL;
 #endif
             continue;
         }
@@ -2432,7 +2432,7 @@ s32 gup_update_proc(int type)
         {
             GTP_ERROR("[update_proc]burn finish fail.");
 #if defined (CONFIG_HUAWEI_DSM)
-            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  GTP_BURN_FW_FINISH_FAIL;
+            g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status =  GTP_BURN_FW_FINISH_FAIL;
 #endif
             continue;
         }
@@ -2451,7 +2451,7 @@ s32 gup_update_proc(int type)
         if (!dsm_client_ocuppy(ts_dclient)) {
             TS_LOG_INFO("%s: try to client record DSM_TP_FWUPDATE_ERROR_NO(%d)\n", __func__, DSM_TP_FWUPDATE_ERROR_NO);
             dsm_client_record(ts_dclient, "fw update result: failed updata_status is %d.\n",
-				g_goodix_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status);
+				g_goodix_dev_data->ts_platform_data->dsm_info.constraints_update_status);
             dsm_client_notify(ts_dclient,DSM_TP_FWUPDATE_ERROR_NO);
         }
         strncpy(g_goodix_dev_data->ts_platform_data->dsm_info.fw_update_result, "failed", strlen("failed"));

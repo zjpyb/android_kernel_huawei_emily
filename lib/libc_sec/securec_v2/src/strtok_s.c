@@ -7,7 +7,6 @@
 
 #include "securecutil.h"
 
-
 SECUREC_INLINE int SecIsInDelimit(char ch, const char *strDelimit)
 {
     const char *ctl = strDelimit;
@@ -25,7 +24,7 @@ SECUREC_INLINE char *SecFindBegin(char *strToken, const char *strDelimit)
 {
     char *token = strToken;
     while (*token != '\0') {
-        if (SecIsInDelimit(*token, strDelimit)) {
+        if (SecIsInDelimit(*token, strDelimit) != 0) {
             ++token;
             continue;
         }
@@ -43,7 +42,7 @@ SECUREC_INLINE char *SecFindRest(char *strToken, const char *strDelimit)
     /* Find the rest of the token. If it is not the end of the string, put a null there */
     char *token = strToken;
     while (*token != '\0') {
-        if (SecIsInDelimit(*token, strDelimit)) {
+        if (SecIsInDelimit(*token, strDelimit) != 0) {
             /* Find a delimiter, set string termintor */
             *token = '\0';
             ++token;
@@ -59,12 +58,10 @@ SECUREC_INLINE char *SecFindRest(char *strToken, const char *strDelimit)
  */
 SECUREC_INLINE char *SecUpdateToken(char *strToken, const char *strDelimit, char **context)
 {
-    /* Point to updated position */
-    char *token = SecFindRest(strToken, strDelimit);
-    /* Record string position for next search in the context */
-    *context = token;
+    /* Point to updated position. Record string position for next search in the context */
+    *context = SecFindRest(strToken, strDelimit);
     /* Determine if a token has been found. */
-    if (token == strToken) {
+    if (*context == strToken) {
         return NULL;
     }
     return strToken;

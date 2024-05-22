@@ -25,7 +25,7 @@
 #include <net/inet_timewait_sock.h>
 #include <uapi/linux/tcp.h>
 #ifdef CONFIG_TCP_ARGO
-#include <huawei_platform/emcom/argo/tcp_argo.h>
+#include <emcom/argo/tcp_argo.h>
 #endif /* CONFIG_TCP_ARGO */
 
 static inline struct tcphdr *tcp_hdr(const struct sk_buff *skb)
@@ -260,10 +260,12 @@ struct tcp_sock {
 	u32	rcv_tstamp;	/* timestamp of last received ACK (for keepalives) */
 	u32	lsndtime;	/* timestamp of last sent data packet (for restart window) */
 	u32	last_oow_ack_time;  /* timestamp of last out-of-window ACK */
+	u32	compressed_ack_rcv_nxt;
 
 	u32	tsoffset;	/* timestamp offset */
 
 	struct list_head tsq_node; /* anchor in tsq_tasklet.head list */
+	struct list_head tcs_node; /* anchor in tcs_tasklet.head list */
 
 	u32	snd_wl1;	/* Sequence for window update		*/
 	u32	snd_wnd;	/* The window we expect to receive	*/
@@ -282,6 +284,7 @@ struct tcp_sock {
 		u8 reord;    /* reordering detected */
 	} rack;
 	u16	advmss;		/* Advertised MSS			*/
+	u8	compressed_ack;
 	u32	chrono_start;	/* Start time in jiffies of a TCP chrono */
 	u32	chrono_stat[3];	/* Time in jiffies for chrono_stat stats */
 	u8	chrono_type:2,	/* current chronograph type */
@@ -291,7 +294,7 @@ struct tcp_sock {
 		unused:3;
 	u8	nonagle     : 4,/* Disable Nagle algorithm?             */
 		thin_lto    : 1,/* Use linear timeouts for thin streams */
-		unused1	    : 1,
+		slow_start_after_idle	    : 1,/* Slow start after transmission idle */
 		repair      : 1,
 		frto        : 1;/* F-RTO (RFC5682) activated in CA_Loss */
 	u8	repair_queue;
@@ -301,11 +304,26 @@ struct tcp_sock {
 		syn_fastopen_ch:1, /* Active TFO re-enabling probe */
 		syn_data_acked:1,/* data in SYN is acked by SYN-ACK */
 		save_syn:1,	/* Save headers of SYN packet */
+#ifndef CONFIG_HUAWEI_TCP_QUICK_START
 		is_cwnd_limited:1;/* forward progress limited by snd_cwnd? */
+#else
+		is_cwnd_limited:1,/* forward progress limited by snd_cwnd? */
+		quick_start:1;
+#endif
 	u32	tlp_high_seq;	/* snd_nxt at the time of TLP retransmit. */
 
 /* RTT measurement */
 	u64	tcp_mstamp;	/* most recent packet received/sent */
+#ifdef CONFIG_HW_NETWORK_QOE
+	u32	ofo_tstamp;	/* timestamp of ofo queue become not null */
+	u32	rcv_nxt_ofo;	/* equals rcv_nxt+rcv_wnd */
+	u32	rtt_update_tstamp;	/* timestamp of rtt update */
+	u32	prior_srtt_us;	/* srtt << 3 in usecs at last rtt update */
+	u32	last_pkt_tstamp;	/* timestamp of last data packet */
+			/* Through the hook */
+	u32	key_flow;	/* key flow flag */
+	u32	content_length;	/* content_length value in http head. */
+#endif
 	u32	srtt_us;	/* smoothed round trip time << 3 in usecs */
 	u32	mdev_us;	/* medium deviation			*/
 	u32	mdev_max_us;	/* maximal mdev for the last rtt period	*/
@@ -359,6 +377,7 @@ struct tcp_sock {
 	u32	fackets_out;	/* FACK'd packets			*/
 
 	struct hrtimer	pacing_timer;
+	struct hrtimer	compressed_ack_timer;
 
 #ifdef CONFIG_TCP_NODELAY
 	u16	nodelay_size;	/* packet size by delayed */
@@ -481,7 +500,6 @@ struct tcp_sock {
 		       * stop using the subflow
 		       */
 		mp_killed:1, /* Killed with a tcp_done in mptcp? */
-		was_meta_sk:1,	/* This was a meta sk (in case of reuse) */
 		is_master_sk:1,
 		close_it:1,	/* Must close socket in mptcp_data_ready? */
 		closing:1,
@@ -489,6 +507,7 @@ struct tcp_sock {
 		mptcp_sched_setsockopt:1,
 		mptcp_pm_setsockopt:1,
 		record_master_info:1,
+		tcp_disconnect:1,
 		mptcp_cap_flag:3,
 		user_switch:1, /* indicate whether can create subflows */
 		mptcp_sched_prim_intf:1,
@@ -518,10 +537,13 @@ enum tsq_enum {
 	TCP_MTU_REDUCED_DEFERRED,  /* tcp_v{4|6}_err() could not call
 				    * tcp_v{4|6}_mtu_reduced()
 				    */
+	TCP_COMP_SACK_TIMER_DEFERRED, /* tcp_tcs_tasklet_func() found socket was owned */
 #ifdef CONFIG_MPTCP
-	MPTCP_PATH_MANAGER_DEFERRED, /* MPTCP deferred creation of new subflows */
+	/* MPTCP deferred creation of new subflows */
+	MPTCP_PATH_MANAGER_DEFERRED,
 	MPTCP_SUB_DEFERRED, /* A subflow got deferred - process them */
-	MPTCP_USER_SWTCH_DEFERRED, /* A user switch event deferred - process them */
+	/* A user switch event deferred - process them */
+	MPTCP_USER_SWTCH_DEFERRED,
 #endif /* CONFIG_MPTCP */
 };
 
@@ -532,6 +554,7 @@ enum tsq_flags {
 	TCPF_WRITE_TIMER_DEFERRED	= (1UL << TCP_WRITE_TIMER_DEFERRED),
 	TCPF_DELACK_TIMER_DEFERRED	= (1UL << TCP_DELACK_TIMER_DEFERRED),
 	TCPF_MTU_REDUCED_DEFERRED	= (1UL << TCP_MTU_REDUCED_DEFERRED),
+	TCPF_COMP_SACK_TIMER_DEFERRED	= (1UL << TCP_COMP_SACK_TIMER_DEFERRED),
 #ifdef CONFIG_MPTCP
 	TCPF_PATH_MANAGER_DEFERRED	= (1UL << MPTCP_PATH_MANAGER_DEFERRED),
 	TCPF_SUB_DEFERRED		= (1UL << MPTCP_SUB_DEFERRED),

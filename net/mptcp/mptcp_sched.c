@@ -113,7 +113,7 @@ static bool mptcp_is_temp_unavailable(struct sock *sk,
 	 * calculated end_seq (because here at this point end_seq is still at
 	 * the meta-level).
 	 */
-	if (skb && !zero_wnd_test &&
+	if (skb && zero_wnd_test &&
 	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
 		return true;
 
@@ -321,7 +321,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 	if (tcp_time_stamp - dsp->last_rbuf_opti < usecs_to_jiffies(tp->srtt_us >> 3))
 		goto retrans;
 
-	/* Half the cwnd of the slow flow */
+	/* Half the cwnd of the slow flows */
 	mptcp_for_each_tp(tp->mpcb, tp_it) {
 		if (tp_it != tp &&
 		    TCP_SKB_CB(skb_head)->path_mask & mptcp_pi_to_flag(tp_it->mptcp->path_index)) {
@@ -336,7 +336,6 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 
 				dsp->last_rbuf_opti = tcp_time_stamp;
 			}
-			break;
 		}
 	}
 
@@ -542,7 +541,7 @@ static void defsched_adv_calc(struct sock *sk, u32 now, u32 *max_rate,
 			continue;
 
 		/* rate is bytes per ms */
-		rate = (sub_dsp->rcv_bytes*1000)/delta_us;
+		rate = (sub_dsp->rcv_bytes*1000) / delta_us;
 
 		/* rcv_rate is 8X of rate, it is same as tcp_rtt_estimator  */
 		if (!sub_dsp->rcv_rate) {
@@ -575,9 +574,9 @@ static void defsched_adv_calc(struct sock *sk, u32 now, u32 *max_rate,
 				(void)strncpy(iface, dst->dev->name, IFNAMSIZ);
 				iface[IFNAMSIZ - 1] = '\0';
 				dst_release(dst);
-			} else
+			} else {
 				(void)strncpy(iface, "NULL", IFNAMSIZ);
-
+			}
 			mptcp_debug("%s: sub_sk %pK iface %s rcv_rate %u recv_ofo %u rate %u rcv_bytes %u delta_us %u rtt_us %u min_rtt %u\n", __func__,
 				sub_sk, iface, sub_dsp->rcv_rate >> SHIFT_8X, sub_dsp->recv_ofo, rate, sub_dsp->rcv_bytes, delta_us, rtt_us, *min_rtt);
 		}
@@ -618,7 +617,7 @@ static void defsched_adv_rcv_skb(struct sock *sk, unsigned int len,
 		dsp->end_seq = end_seq;
 
 	delta_us = jiffies_to_usecs(now - cb_data->last_sampling_ts);
-	if (delta_us < cb_data->sampling_rtt)
+	if (delta_us == 0 || delta_us < cb_data->sampling_rtt)
 		return;
 
 	defsched_adv_calc(sk, now, &max_rate, &max_sampling_rtt, &min_rtt,
@@ -671,9 +670,9 @@ static void defsched_adv_rcv_skb(struct sock *sk, unsigned int len,
 
 			mptcp_debug("%s: sub_sk %pK change to low_prio for rcv_rate %u max_rate %u rtt_us %u min_rtt %u\n", __func__,
 				sub_sk, sub_dsp->rcv_rate >> SHIFT_8X, max_rate, rtt_us, min_rtt);
-		} else if (!good_tp)
+		} else if (!good_tp) {
 			good_tp = sub_tp;
-
+		}
 		sub_dsp->recv_ofo = 0;
 		sub_dsp->rcv_bytes = 0;
 	}

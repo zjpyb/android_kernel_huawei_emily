@@ -72,7 +72,7 @@ static int32_t update_firmware_request(char *filename)
 		return -1;
 	}
 
-	TS_LOG_INFO("%s: filename is %s\n", __func__, filename);
+	TS_LOG_INFO("%s: enter\n", __func__);
 
 	ret = request_firmware(&fw_entry_boot, filename, &nvt_ts->ts_dev->dev);
 	if (ret) {
@@ -482,9 +482,9 @@ static int32_t Erase_Flash(void)
 		// Sector Erase
 		buf[0] = 0x00;
 		buf[1] = 0x20;    // Command : Sector Erase
-		buf[2] = ((Flash_Address >> 16) & 0xFF);
-		buf[3] = ((Flash_Address >> 8) & 0xFF);
-		buf[4] = (Flash_Address & 0xFF);
+		buf[2] = ((uint32_t)Flash_Address >> 16) & 0xFF;
+		buf[3] = ((uint32_t)Flash_Address >> 8) & 0xFF;
+		buf[4] = (uint32_t)Flash_Address & 0xFF;
 		ret = novatek_ts_kit_write(I2C_HW_Address, buf, 5);
 		if (ret < 0) {
 			TS_LOG_ERR("%s: Sector Erase error!!(%d,%d)\n", __func__, ret, i);
@@ -562,7 +562,9 @@ static int32_t Write_Flash(void)
 	uint8_t buf[64] = {0};
 	uint32_t XDATA_Addr = nvt_ts->mmap->RW_FLASH_DATA_ADDR;
 	uint32_t Flash_Address = 0;
-	int32_t i = 0, j = 0, k = 0;
+	int32_t i;
+	int32_t k;
+	uint32_t j;
 	uint8_t tmpvalue = 0;
 	int32_t count = 0;
 	int32_t ret = 0;
@@ -604,7 +606,8 @@ static int32_t Write_Flash(void)
 			}
 			ret = novatek_ts_kit_write(I2C_BLDR_Address, buf, 33);
 			if (ret < 0) {
-				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, ret, j);
+				TS_LOG_ERR("%s: Write Page error!%d, j=%u\n",
+					__func__, ret, j);
 				return ret;
 			}
 		}
@@ -819,7 +822,7 @@ static int32_t Update_Firmware(void)
 	// Step 2 : Resume PD
 	ret = Nova_Resume_PD();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Nova_Resume_PD_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Nova_Resume_PD_fail;
 		TS_LOG_ERR("%s:Nova_Resume_PD fail\n",__func__);
 		return ret;
 	}
@@ -827,7 +830,7 @@ static int32_t Update_Firmware(void)
 	// Step 3 : Erase
 	ret = Erase_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Erase_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Erase_Flash_fail;
 		TS_LOG_ERR("%s:Erase_Flash fail\n",__func__);
 		return ret;
 	}
@@ -835,7 +838,7 @@ static int32_t Update_Firmware(void)
 	// Step 4 : Program
 	ret = Write_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Write_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Write_Flash_fail;
 		TS_LOG_ERR("%s:Write_Flash fail\n",__func__);
 		return ret;
 	}
@@ -843,7 +846,7 @@ static int32_t Update_Firmware(void)
 	// Step 5 : Verify
 	ret = Verify_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Verify_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Verify_Flash_fail;
 		TS_LOG_ERR("%s:Verify_Flash fail\n",__func__);
 		return ret;
 	}

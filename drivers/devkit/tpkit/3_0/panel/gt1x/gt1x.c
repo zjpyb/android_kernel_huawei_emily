@@ -646,8 +646,9 @@ static int gt1x_cache_roidata_device(struct gt1x_ts_roi *roi)
 		TS_LOG_ERR("%s:roi is not support or invalid parameter\n", __func__);
 		return -EINVAL;
 	}
-
+	mutex_lock(&roi->mutex);
 	roi->data_ready = false;
+	mutex_unlock(&roi->mutex);
 
 	ret = gt1x_i2c_read(ts->gt1x_roi_data_add, status, ROI_HEAD_LEN);
 	if (ret) {
@@ -1639,7 +1640,7 @@ static int gt1x_parse_dts(void)
 		value = IC_TYPE_9PT;
 	}
 	ts->ic_type = value;
-	TS_LOG_INFO("%s: ic_type = %s  \n", __func__,ts->ic_type);
+	TS_LOG_INFO("%s: ic_type = %d\n", __func__, ts->ic_type);
 
 	ret = of_property_read_u32(device, FW_ONLY_DEPEND_ON_LCD, &value);
 	if (ret) {
@@ -2299,10 +2300,10 @@ static int gt1x_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 

@@ -262,7 +262,7 @@ int elevator_init(struct request_queue *q, char *name)
 }
 EXPORT_SYMBOL(elevator_init);
 
-void elevator_exit(struct request_queue *q, struct elevator_queue *e)
+void __elevator_exit(struct request_queue *q, struct elevator_queue *e)
 {
 	mutex_lock(&e->sysfs_lock);
 	if (e->uses_mq && e->type->ops.mq.exit_sched)
@@ -1128,9 +1128,9 @@ ssize_t elv_iosched_show(struct request_queue *q, char *name)
 		return sprintf(name, "none\n");
 
 	if (!q->elevator) {
-#ifdef CONFIG_HISI_BLK
-		if (q->hisi_queue_ops && q->hisi_queue_ops->mq_iosched_init_fn)
-			len += sprintf(name+len, "[HISI MQ] ");
+#ifdef CONFIG_MAS_BLK
+		if (q->mas_queue_ops && q->mas_queue_ops->mq_iosched_init_fn)
+			len += sprintf(name+len, "[%s] ", q->mas_queue_ops->iosched_name);
 		else
 #endif
 			len += sprintf(name+len, "[none] ");

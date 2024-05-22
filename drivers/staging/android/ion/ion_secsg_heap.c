@@ -19,25 +19,25 @@
 #include <linux/cma.h>
 #include <linux/err.h>
 #include <linux/genalloc.h>
+#include <linux/hisi/hisi_ion.h>
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
-#include <linux/slab.h>
 #include <linux/sizes.h>
+#include <linux/slab.h>
 #include <linux/version.h>
-#include <linux/hisi/hisi_cma.h>
-#include <linux/hisi/hisi_ion.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#include "mm/ion_tee_op.h"
+#include "mm/sec_alloc.h"
+#include "mm_ion_priv.h"
 #include "ion.h"
-#include "hisi/ion_tee_op.h"
-#include "hisi/sec_alloc.h"
-#include "hisi_ion_priv.h"
 
+#define MM_ALLOC_MAX_LATENCY_US	(20 * 1000) /* 20ms */
 
 struct ion_secsg_heap {
 	struct ion_heap heap;
@@ -58,8 +58,23 @@ struct ion_secsg_heap {
 	/* heap attr: secure, protect */
 	u32 heap_attr;
 	u32 pool_flag;
-	int TA_init;
+	int ta_init;
 };
+
+#ifdef CONFIG_HISI_ION_SECSG_DEBUG
+struct ion_secsg_fault_info {
+	size_t total_size;
+	u32 count;
+};
+
+static struct ion_secsg_fault_info fault_info;
+
+void ion_secsg_fault_info_dump(void)
+{
+	pr_err("dump ion secsg fault info: count[0x%x], total_size: 0x%lx\n",
+		fault_info.count, fault_info.total_size);
+}
+#endif
 
 #ifdef CONFIG_SECMEM_TEST
 #define ION_FLAG_ALLOC_TEST (1U << 31)
@@ -73,8 +88,9 @@ static void double_alloc_test(struct ion_secsg_heap *secsg_heap,
 	struct mem_chunk_list mcl;
 	struct tz_pageinfo *pageinfo = NULL;
 	unsigned int nents = table->nents;
-	int ret = 0;
-	u32 size = 0,i;
+	int ret;
+	u32 size = 0;
+	u32 i = 0;
 
 	pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
 	if (!pageinfo)
@@ -113,7 +129,7 @@ static void sion_test(struct ion_secsg_heap *secsg_heap,
 	u32 size = 0;
 	u32 i;
 
-	if (!secsg_heap->TA_init) {
+	if (!secsg_heap->ta_init) {
 		secsg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
 		if (!secsg_heap->context)
 			return;
@@ -124,14 +140,15 @@ static void sion_test(struct ion_secsg_heap *secsg_heap,
 			return;
 		}
 
-		ret = secmem_tee_init(secsg_heap->context, secsg_heap->session);
+		ret = secmem_tee_init(secsg_heap->context,
+			secsg_heap->session, TEE_SECMEM_NAME);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			kfree(secsg_heap->context);
 			kfree(secsg_heap->session);
 			return;
 		}
-		secsg_heap->TA_init = 1;
+		secsg_heap->ta_init = 1;
 	}
 
 	pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
@@ -151,8 +168,9 @@ static void sion_test(struct ion_secsg_heap *secsg_heap,
 	if (buffer->id) {
 		mcl.protect_id = SEC_TASK_DRM;
 		mcl.buff_id = buffer->id;
-	} else
+	} else {
 		mcl.protect_id = SEC_TASK_SEC;
+	}
 
 	ret = secmem_tee_exec_cmd(secsg_heap->session, &mcl, ION_SEC_CMD_TEST);
 	kfree(pageinfo);
@@ -160,8 +178,48 @@ static void sion_test(struct ion_secsg_heap *secsg_heap,
 		pr_err("Test sion Fail\n");
 	else
 		pr_err("Test sion Succ\n");
+
+	secmem_tee_destroy(secsg_heap->context, secsg_heap->session);
+	secsg_heap->ta_init = 0;
 }
 #endif
+
+static bool __secsg_type_filer(u32 heap_attr, u32 flag)
+{
+	if (!(flag & ION_FLAG_SECURE_BUFFER))
+		return false;
+
+	switch (heap_attr) {
+	case SEC_DRM_TEE:
+#ifdef CONFIG_ARM_SMMU_V3
+	case SEC_FACE_ID:
+	case SEC_FACE_ID_3D:
+#endif
+	case SEC_TINY:
+		return true;
+	default:
+		break;
+	}
+
+	return false;
+}
+
+static bool __secsg_tiny_heap_check(struct ion_secsg_heap *secsg_heap)
+{
+	if (secsg_heap->heap_attr == SEC_TINY)
+		return true;
+	return false;
+}
+
+static u32 __secsg_get_protect_id(u32 heap_attr)
+{
+	if (heap_attr == SEC_DRM_TEE)
+		return SEC_TASK_DRM;
+	else if (heap_attr == SEC_TINY)
+		return SEC_TASK_TINY;
+	else
+		return SEC_TASK_SEC;
+}
 
 static int change_scatter_prop(struct ion_secsg_heap *secsg_heap,
 			       struct ion_buffer *buffer,
@@ -173,13 +231,15 @@ static int change_scatter_prop(struct ion_secsg_heap *secsg_heap,
 	struct mem_chunk_list mcl;
 	struct tz_pageinfo *pageinfo = NULL;
 	unsigned int nents = table->nents;
-	int ret = 0;
+	int ret;
 	u32 i;
 
-	if (!secsg_heap->TA_init) {
+	if (!secsg_heap->ta_init) {
 		pr_err("[%s] TA not inited.\n", __func__);
 		return -EINVAL;
 	}
+
+	mcl.protect_id = __secsg_get_protect_id(secsg_heap->heap_attr);
 
 	if (cmd == ION_SEC_CMD_ALLOC) {
 		pageinfo = kcalloc(nents, sizeof(*pageinfo), GFP_KERNEL);
@@ -194,9 +254,7 @@ static int change_scatter_prop(struct ion_secsg_heap *secsg_heap,
 
 		mcl.phys_addr = (void *)pageinfo;
 		mcl.nents = nents;
-		mcl.protect_id = SEC_TASK_DRM;
 	} else if (cmd == ION_SEC_CMD_FREE) {
-		mcl.protect_id = SEC_TASK_DRM;
 		mcl.buff_id = buffer->id;
 		mcl.phys_addr = NULL;
 	} else {
@@ -224,7 +282,7 @@ static struct page *__secsg_alloc_page(struct ion_secsg_heap *secsg_heap,
 				       unsigned long align)
 {
 	struct page *page = NULL;
-	unsigned long offset = 0;
+	unsigned long offset;
 	u32 count = 0;
 
 	if (secsg_heap->pool_flag) {
@@ -259,7 +317,7 @@ static struct page *__secsg_alloc_large(struct ion_secsg_heap *secsg_heap,
 	struct page *page = NULL;
 #ifdef CONFIG_HISI_KERNELDUMP
 	struct page *tmp_page = NULL;
-	u32 count = 0;
+	u32 count;
 	u32 k;
 #endif
 
@@ -280,16 +338,36 @@ static struct page *__secsg_alloc_large(struct ion_secsg_heap *secsg_heap,
 	return page;
 }
 
-static int flush_tlb_cache_send_cmd(struct ion_buffer *buffer, struct sg_table *table,
-					struct ion_secsg_heap *secsg_heap)
+static int flush_tlb_cache_send_cmd(struct ion_buffer *buffer,
+				    unsigned long size,
+				    struct sg_table *table,
+				    struct ion_secsg_heap *secsg_heap)
 {
+	struct platform_device *mm_ion_dev = get_mm_ion_platform_device();
 	int ret;
+	ktime_t _stime, _time1, _etime;
+	s64 _timedelta;
+	const s64 timeout = 5 * 1000; /* 5ms */
 
+	_stime = ktime_get();
 #ifdef CONFIG_NEED_CHANGE_MAPPING
 	flush_tlb_all();
 #endif
-	ion_flush_all_cpus_caches();
 
+	if (size >= MM_ION_FLUSH_ALL_CPUS_CACHES) {
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+		ion_flush_all_cpus_caches_raw();
+#else
+		ion_flush_all_cpus_caches();
+#endif
+	} else {
+		dma_sync_sg_for_cpu(&mm_ion_dev->dev,
+				    table->sgl,
+				    table->nents,
+				    DMA_FROM_DEVICE);
+	}
+
+	_time1 = ktime_get();
 	buffer->sg_table = table;
 
 	/*
@@ -298,23 +376,28 @@ static int flush_tlb_cache_send_cmd(struct ion_buffer *buffer, struct sg_table *
 	 * va map.
 	 * Other user don't need to do this.
 	 */
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
 		ret = change_scatter_prop(secsg_heap, buffer,
 					  ION_SEC_CMD_ALLOC);
 		if (ret)
 			return -1;
 	}
+	_etime = ktime_get();
+	_timedelta = ktime_us_delta(_etime, _stime);
+	if (_timedelta >= timeout)
+		pr_err("%s:total cost:%lld us, sec cmd alloc:%lld us\n",
+			__func__, _timedelta, ktime_us_delta(_etime, _time1));
 
 #ifdef CONFIG_SECMEM_TEST
 	if (buffer->flags & ION_FLAG_ALLOC_TEST) {
 		pr_err("sion TEST start!\n");
-		if (secsg_heap->heap_attr == SEC_DRM_TEE)
-			double_alloc_test(secsg_heap, buffer, ION_SEC_CMD_ALLOC);
+		if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags))
+			double_alloc_test(secsg_heap,
+				buffer, ION_SEC_CMD_ALLOC);
 		sion_test(secsg_heap, buffer);
 		pr_err("sion TEST end!\n");
 	}
 #endif
-
 	sec_debug("%s: exit\n", __func__);
 	return 0;
 }
@@ -330,10 +413,13 @@ int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
 	unsigned long size_remaining = ALIGN(size, per_bit_sz);
 	unsigned long alloc_size = 0;
 	unsigned long nents = ALIGN(size, per_alloc_sz) / per_alloc_sz;
-	int ret = 0;
+	int ret;
 	u32 i = 0;
+	ktime_t _stime, _time1, _time2, _etime;
+	s64 _timedelta;
 
 	sec_debug("%s: enter, ALIGN size 0x%lx\n", __func__, size_remaining);
+	_stime = ktime_get();
 	table = kzalloc(sizeof(*table), GFP_KERNEL);
 	if (!table)
 		return -ENOMEM;
@@ -348,6 +434,8 @@ int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
 	 * be applied for one time.
 	 */
 	sg = table->sgl;
+
+	_time1 = ktime_get();
 	while (size_remaining) {
 		if (size_remaining > per_alloc_sz)
 			alloc_size = per_alloc_sz;
@@ -370,17 +458,30 @@ int __secsg_alloc_scatter(struct ion_secsg_heap *secsg_heap,
 #endif
 		size_remaining -= alloc_size;
 		sg_set_page(sg, page, (u32)alloc_size, 0);
+		if (size < MM_ION_FLUSH_ALL_CPUS_CACHES) {
+			sg_dma_address(sg) = sg_phys(sg);
+			sg_dma_len(sg) = sg->length;
+		}
 		sg = sg_next(sg);
 		i++;
 	}
+	_time2 = ktime_get();
+
 	/*
 	 * After change the pgtable prot, we need flush TLB and cache.
 	 */
-	 ret = flush_tlb_cache_send_cmd(buffer, table, secsg_heap);
-	 if (ret)
-		 goto free_pages;
+	ret = flush_tlb_cache_send_cmd(buffer, size, table, secsg_heap);
+	if (ret)
+		goto free_pages;
 
-	 return 0;
+	_etime = ktime_get();
+	_timedelta = ktime_us_delta(_etime, _stime);
+	if (_timedelta >= MM_ALLOC_MAX_LATENCY_US)
+		pr_err("%s:total cost:%lld us, alloc cost:%lld us, flush:cost:%lld us\n",
+			__func__, _timedelta, ktime_us_delta(_time2, _time1),
+			ktime_us_delta(_etime, _time2));
+
+	return 0;
 free_pages:
 	nents = i;
 	for_each_sg(table->sgl, sg, nents, i) {
@@ -408,12 +509,18 @@ static void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
 {
 	struct sg_table *table = buffer->sg_table;
 	struct scatterlist *sg = NULL;
-	int ret = 0;
+	int ret;
 	u32 i;
 
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
 		ret = change_scatter_prop(secsg_heap, buffer, ION_SEC_CMD_FREE);
 		if (ret) {
+#ifdef CONFIG_HISI_ION_SECSG_DEBUG
+			if (__secsg_tiny_heap_check(secsg_heap)) {
+				fault_info.count++;
+				fault_info.total_size += buffer->size;
+			}
+#endif
 			pr_err("release MPU protect fail! Need check runtime\n");
 			return;
 		}
@@ -422,7 +529,11 @@ static void __secsg_free_scatter(struct ion_secsg_heap *secsg_heap,
 	if (secsg_heap->pool_flag) {
 		buffer->flags |= ION_FLAG_CACHED;
 		ion_heap_buffer_zero(buffer);
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+		ion_flush_all_cpus_caches_raw();
+#else
 		ion_flush_all_cpus_caches();
+#endif
 	}
 
 	for_each_sg(table->sgl, sg, table->nents, i) {
@@ -459,7 +570,7 @@ int ion_secsg_heap_phys(struct ion_heap *heap, struct ion_buffer *buffer,
 
 	secsg_heap = container_of(heap, struct ion_secsg_heap, heap);
 
-	if (secsg_heap->heap_attr != SEC_DRM_TEE) {
+	if (!__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
 		pr_err("%s: sec buffer don't support get phys!\n", __func__);
 		return -EINVAL;
 	}
@@ -485,7 +596,8 @@ static int __secsg_heap_input_check(struct ion_secsg_heap *secsg_heap,
 		return -EINVAL;
 	}
 
-	if (!(flag & ION_FLAG_SECURE_BUFFER)) {
+	if (!__secsg_tiny_heap_check(secsg_heap) &&
+		!(flag & ION_FLAG_SECURE_BUFFER)) {
 		pr_err("invalid alloc flag in heap(%u) flag(%lx)\n",
 		       secsg_heap->heap_attr, flag);
 		return -EINVAL;
@@ -499,40 +611,52 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 				   unsigned long size,
 				   unsigned long flags)
 {
+	int ret = 0;
+	ktime_t _stime, _time1, _etime;
+	s64 _timedelta;
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);
-	int ret = 0;
 
 	sec_debug("enter %s  size 0x%lx heap id %u\n",
 		    __func__, size, heap->id);
-	mutex_lock(&secsg_heap->mutex);
 
+	mutex_lock(&secsg_heap->mutex);
+	_stime = ktime_get();
 	if (__secsg_heap_input_check(secsg_heap, size, flags)) {
 		pr_err("input params failed\n");
 		ret = -EINVAL;
 		goto out;
 	}
 
-	/*init the TA conversion here*/
-	if (secsg_heap->heap_attr == SEC_DRM_TEE && !secsg_heap->TA_init) {
-		ret = secmem_tee_init(secsg_heap->context, secsg_heap->session);
+	/* init the TA conversion here */
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags) &&
+		!secsg_heap->ta_init) {
+		ret = secmem_tee_init(secsg_heap->context,
+			secsg_heap->session, TEE_SECMEM_NAME);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			goto out;
 		}
-		secsg_heap->TA_init = 1;
+		secsg_heap->ta_init = 1;
 	}
-
+	_time1 = ktime_get();
 	if (__secsg_alloc_scatter(secsg_heap, buffer, size)) {
 		ret = -ENOMEM;
 		goto out;
 	}
-
 	secsg_heap->alloc_size += size;
 	sec_debug("secsg heap alloc succ, heap all alloc_size 0x%lx\n",
 		    secsg_heap->alloc_size);
-	mutex_unlock(&secsg_heap->mutex);
 
+	mutex_unlock(&secsg_heap->mutex);
+	_etime = ktime_get();
+	_timedelta = ktime_us_delta(_etime, _stime);
+	if (_timedelta >= MM_ALLOC_MAX_LATENCY_US) {
+		pr_err("heap[%d], size 0x%lx, heap all alloc_size 0x%lx\n",
+			heap->id, size, secsg_heap->alloc_size);
+		pr_err("%s:total cost:%lld us, scatter cost:%lld us\n",
+			__func__, _timedelta, ktime_us_delta(_etime, _time1));
+	}
 	return 0;
 out:
 	if (!(flags & ION_FLAG_ALLOC_NOWARN_BUFFER))
@@ -541,7 +665,7 @@ out:
 	mutex_unlock(&secsg_heap->mutex);
 
 	if (ret == -ENOMEM && !(flags & ION_FLAG_ALLOC_NOWARN_BUFFER))
-		hisi_ion_memory_info(true);
+		mm_ion_memory_info(true);
 
 	return ret;
 }
@@ -551,14 +675,15 @@ static void ion_secsg_heap_free(struct ion_buffer *buffer)
 	struct ion_heap *heap = buffer->heap;
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);
+	int is_lock_recursive;
 
 	sec_debug("%s:enter, heap %d, free size:0x%zx,\n",
 		    __func__, heap->id, buffer->size);
-	mutex_lock(&secsg_heap->mutex);
+	is_lock_recursive = mm_ion_mutex_lock_recursive(&secsg_heap->mutex);
 	__secsg_free_scatter(secsg_heap, buffer);
 	sec_debug("out %s:heap remaining allocate %lx\n",
 		    __func__, secsg_heap->alloc_size);
-	mutex_unlock(&secsg_heap->mutex);
+	mm_ion_mutex_unlock_recursive(&secsg_heap->mutex, is_lock_recursive);
 }
 
 static int ion_secsg_heap_map_user(struct ion_heap *heap,
@@ -568,8 +693,8 @@ static int ion_secsg_heap_map_user(struct ion_heap *heap,
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);
 
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
-		pr_err("heap(%d) DRM don't support map user\n", heap->id);
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
+		pr_err("heap %d DRM don't support map user\n", heap->id);
 		return -EINVAL;
 	}
 
@@ -582,8 +707,8 @@ static void *ion_secsg_heap_map_kernel(struct ion_heap *heap,
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);
 
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
-		pr_err("heap(%d) DRM don't support map user\n", heap->id);
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
+		pr_err("heap %d DRM don't support map user\n", heap->id);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -596,8 +721,8 @@ static void ion_secsg_heap_unmap_kernel(struct ion_heap *heap,
 	struct ion_secsg_heap *secsg_heap =
 		container_of(heap, struct ion_secsg_heap, heap);
 
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
-		pr_err("heap(%d) DRM don't support map user\n", heap->id);
+	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags)) {
+		pr_err("heap %d DRM don't support map user\n", heap->id);
 		return;
 	}
 
@@ -621,7 +746,7 @@ static int __secsg_parse_dt(struct device *dev,
 	u64 per_alloc_sz = 0;
 	u32 heap_attr = 0;
 	u32 pool_flag = 0;
-	int ret = 0;
+	int ret;
 
 	nd = of_get_child_by_name(dev->of_node, heap_data->name);
 	if (!nd) {
@@ -708,6 +833,38 @@ destory_pool:
 	return -ENOMEM;
 }
 
+static int ion_secsg_init_heap_properties(struct ion_secsg_heap *secsg_heap,
+				struct device **dev,
+				struct ion_platform_heap *heap_data)
+{
+	int ret;
+
+	secsg_heap->heap.ops = &secsg_heap_ops;
+	secsg_heap->heap.type = ION_HEAP_TYPE_SECSG;
+	secsg_heap->heap_size = heap_data->size;
+	secsg_heap->alloc_size = 0;
+	*dev = heap_data->priv;
+
+	if (__secsg_parse_dt(*dev, heap_data, secsg_heap))
+		return -EINVAL;
+
+	secsg_heap->cma = get_svc_cma((int)secsg_heap->heap_attr);
+	if (!secsg_heap->cma) {
+		pr_err("can't get heap[%u]'s cma!\n", heap_data->id);
+		return -ENOMEM;
+	}
+
+	if (secsg_heap->pool_flag) {
+		ret = secsg_create_pool(secsg_heap);
+		if (ret) {
+			pr_err("can't crate heap[%u]'s pool!\n", heap_data->id);
+			return -ENOMEM;
+		}
+	}
+
+	return 0;
+}
+
 struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 {
 	struct ion_secsg_heap *secsg_heap = NULL;
@@ -720,31 +877,11 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 
 	mutex_init(&secsg_heap->mutex);
 
-	secsg_heap->heap.ops = &secsg_heap_ops;
-	secsg_heap->heap.type = ION_HEAP_TYPE_SECSG;
-	secsg_heap->heap_size = heap_data->size;
-	secsg_heap->alloc_size = 0;
-	dev = heap_data->priv;
-
-	ret = __secsg_parse_dt(dev, heap_data, secsg_heap);
+	ret = ion_secsg_init_heap_properties(secsg_heap, &dev, heap_data);
 	if (ret)
 		goto free_heap;
 
-	secsg_heap->cma = get_svc_cma((int)secsg_heap->heap_attr);
-	if (!secsg_heap->cma) {
-		pr_err("can't get heap[%u]'s cma!\n", heap_data->id);
-		goto free_heap;
-	}
-
-	if (secsg_heap->pool_flag) {
-		ret = secsg_create_pool(secsg_heap);
-		if (ret) {
-			pr_err("can't crate heap[%u]'s pool!\n", heap_data->id);
-			goto free_heap;
-		}
-	}
-
-	if (secsg_heap->heap_attr == SEC_DRM_TEE) {
+	if (__secsg_type_filer(secsg_heap->heap_attr, ION_FLAG_SECURE_BUFFER)) {
 		secsg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
 		if (!secsg_heap->context)
 			goto free_heap;
@@ -754,7 +891,7 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 			goto free_context;
 	}
 
-	secsg_heap->TA_init = 0;
+	secsg_heap->ta_init = 0;
 
 	pr_err("secsg heap info %s:\n"
 		  "\t\t\t\t\t\t\t heap id : %u\n"

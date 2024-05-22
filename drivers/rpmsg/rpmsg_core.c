@@ -142,7 +142,7 @@ EXPORT_SYMBOL(rpmsg_send);
  */
 int rpmsg_sendto(struct rpmsg_endpoint *ept, void *data, int len, u32 dst)
 {
-	if (WARN_ON(!ept)) /*lint !e146 !e665 */
+	if (WARN_ON(!ept))
 		return -EINVAL;
 	if (!ept->ops->sendto)
 		return -ENXIO;

@@ -31,7 +31,7 @@ config CPU_IDLE_TRIPPLE_DRIVERS
          Allows the cpuidle framework to use different drivers for three clusters.
 		 If unsure say N.
 
-config HISI_IDLE_SLEEP
+config LPCPU_IDLE_SLEEP
         bool "Support cpu idlesleep vote"
         depends on CPU_IDLE_MULTIPLE_DRIVERS
         default n
@@ -53,6 +53,22 @@ config HISI_CPUIDLE_MENU_GOV_HIST
 	default n
 	help
 	  Allows the cpuidle C-state reselect with history record.
+	  If unsure say N.
+
+config HISI_CPUIDLE_LITTLE_SKIP_CORRECTION
+	bool "Little cpu predict time skip correction"
+	depends on HISI_CPUIDLE_MENU_GOV_HIST
+	default n
+	help
+	  Allows little cpu predict time skip correction
+	  If unsure say N.
+
+config HISI_CPUIDLE_SKIP_ALL_CORE_DOWN
+	bool "Last little cpu core down to wfi"
+	depends on CPU_IDLE_GOV_MENU
+	default n
+	help
+	  Allows the last little cpu core down to wfi
 	  If unsure say N.
 
 config HISI_CPUIDLE_LP_MODE

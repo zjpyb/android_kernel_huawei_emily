@@ -17,7 +17,7 @@
  */
 
 #include "zrhung_wp_sochalt.h"
-
+#include <linux/version.h>
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/poll.h>
@@ -156,7 +156,11 @@ void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size)
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+	fd = ksys_open(FASTBOOT_LOG_PATH, O_RDONLY, 0);
+#else
 	fd = sys_open(FASTBOOT_LOG_PATH, O_RDONLY, 0);
+#endif
 	if (fd < 0) {
 		pr_err("%s %d: fail to open fastbootlog\n", __func__, __LINE__);
 		goto out;
@@ -166,7 +170,11 @@ void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size)
 	if (reading_buf == NULL)
 		goto out;
 
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+	while (ksys_read(fd, reading_buf, BUFFER_SIZE_FASTBOOT) > 0) {
+#else
 	while (sys_read(fd, reading_buf, BUFFER_SIZE_FASTBOOT) > 0) {
+#endif
 		plog = strstr(reading_buf, SR_POSITION_KEYWORD);
 		if (!plog)
 			continue;
@@ -187,8 +195,11 @@ void get_sr_position_from_fastboot(char *dst, unsigned int max_dst_size)
 
 out:
 	if (fd >= 0)
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+		ksys_close(fd);
+#else
 		sys_close(fd);
-
+#endif
 	if (reading_buf != NULL)
 		kfree(reading_buf);
 

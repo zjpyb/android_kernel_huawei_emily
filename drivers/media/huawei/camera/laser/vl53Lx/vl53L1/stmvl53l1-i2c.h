@@ -45,6 +45,12 @@
 #include <media/huawei/laser_cfg.h>
 #endif
 
+
+#define LASER_ALWAYS_ON 1
+
+#define VL53L1_IRQ_DISABLE 0
+#define VL53L1_IRQ_ENABLE  1
+
 struct i2c_data {
 	struct i2c_client *client;
 	/** back link to driver for interrupt and clean-up */
@@ -102,13 +108,15 @@ struct i2c_data {
 	 * -1 if no irq hanled
 	*/
 	int irq;
+	int intr_status;
 
 	struct msgtctrl_t {
 		unsigned unhandled_irq_vec:1;
 	} msg_flag;
 #ifdef HIM_ADAPTER
-    hw_laser_ctrl_t *ctrl;
+	hw_laser_ctrl_t *ctrl;
 #endif
+	unsigned int laser_state; /* 1: xsdn always on */
 };
 
 int stmvl53l1_init_i2c(void);

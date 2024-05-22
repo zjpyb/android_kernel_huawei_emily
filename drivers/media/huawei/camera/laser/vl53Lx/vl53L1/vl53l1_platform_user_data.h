@@ -45,14 +45,14 @@ extern "C"
 
 #include <linux/string.h>
 
-#define VL53L1_Dev_t VL53L1_DevData_t
-#define VL53L1_DEV VL53L1_DevData_t *
+#define VL53L1_Dev_t struct VL53L1_DevData_t
+#define VL53L1_DEV struct VL53L1_DevData_t *
 
-#define PALDevDataGet(Dev, field) (Dev->field)
-#define PALDevDataSet(Dev, field, data) ((Dev->field) = (data))
+#define VL53L1DevDataGet(Dev, field) (Dev->field)
+#define VL53L1DevDataSet(Dev, field, data) ((Dev->field) = (data))
 
-#define VL53L1DevStructGetLLDriverHandle(Dev) (&PALDevDataGet(Dev, LLData))
-#define VL53L1DevStructGetLLResultsHandle(Dev) (&PALDevDataGet(Dev, llresults))
+#define VL53L1DevStructGetLLDriverHandle(Dev) (&VL53L1DevDataGet(Dev, LLData))
+#define VL53L1DevStructGetLLResultsHandle(Dev) (&VL53L1DevDataGet(Dev, llresults))
 
 #ifdef __cplusplus
 }

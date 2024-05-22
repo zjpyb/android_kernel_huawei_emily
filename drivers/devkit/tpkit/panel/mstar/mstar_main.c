@@ -2102,18 +2102,18 @@ static int mstar_get_gesture_code(u8 *pPacket, struct ts_fingers *info)
 
 		case KEY_CODE_M:
 			TS_LOG_DEBUG("%s: GESTURE_WAKEUP_MODE_M_CHARACTER_FLAG.\n",__func__);
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &&
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &&
 				tskit_mstar_data->mstar_chip_data->easy_wakeup_info.easy_wakeup_gesture) {
-				nReportGestureType = TS_LETTER_m;
+				nReportGestureType = TS_LETTER_M;
 				nGestureCount = LETTER_LOCUS_NUM;
 			}
 			break;
 
 		case KEY_CODE_W:
 			TS_LOG_DEBUG("%s: GESTURE_WAKEUP_MODE_W_CHARACTER_FLAG.\n",__func__);
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &&
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &&
 				tskit_mstar_data->mstar_chip_data->easy_wakeup_info.easy_wakeup_gesture) {
-				nReportGestureType = TS_LETTER_c;
+				nReportGestureType = TS_LETTER_C;
 				nGestureCount = LETTER_LOCUS_NUM;
 			}
 			break;
@@ -2121,18 +2121,18 @@ static int mstar_get_gesture_code(u8 *pPacket, struct ts_fingers *info)
 		case KEY_CODE_C:
 			TS_LOG_DEBUG("%s: GESTURE_WAKEUP_MODE_C_CHARACTER_FLAG.\n",__func__);
 
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &&
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &&
 				tskit_mstar_data->mstar_chip_data->easy_wakeup_info.easy_wakeup_gesture) {
-				nReportGestureType = TS_LETTER_c;
+				nReportGestureType = TS_LETTER_C;
 				nGestureCount = LETTER_LOCUS_NUM;
 			}
 			break;
 
 		case KEY_CODE_E:
 			TS_LOG_DEBUG("%s: GESTURE_WAKEUP_MODE_E_CHARACTER_FLAG.\n",__func__);
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &&
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &&
 				tskit_mstar_data->mstar_chip_data->easy_wakeup_info.easy_wakeup_gesture) {
-				nReportGestureType = TS_LETTER_e;
+				nReportGestureType = TS_LETTER_E;
 				nGestureCount = LETTER_LOCUS_NUM;
 			}
 			break;
@@ -3814,10 +3814,10 @@ static int mstar_input_config(struct input_dev *input_dev)
     set_bit(BTN_TOOL_FINGER, input_dev->keybit);
     set_bit(TS_PALM_COVERED, input_dev->keybit);
     set_bit(TS_DOUBLE_CLICK, input_dev->keybit);
-    set_bit(TS_LETTER_c, input_dev->keybit);
-    set_bit(TS_LETTER_e, input_dev->keybit);
-    set_bit(TS_LETTER_m, input_dev->keybit);
-    set_bit(TS_LETTER_w, input_dev->keybit);
+    set_bit(TS_LETTER_C, input_dev->keybit);
+    set_bit(TS_LETTER_E, input_dev->keybit);
+    set_bit(TS_LETTER_M, input_dev->keybit);
+    set_bit(TS_LETTER_W, input_dev->keybit);
     set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 
     input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0, 10, 0, 0);

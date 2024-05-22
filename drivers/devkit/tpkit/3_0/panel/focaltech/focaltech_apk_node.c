@@ -1,14 +1,14 @@
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
 
-/*ft_rw_iic_drv main device number*/
+/* ft_rw_iic_drv main device number */
 #define FTS_CHAR_DEVICE_NAME			"ft_rw_iic_drv"
 #define FTS_CHAR_DEVICE_MAJOR			210
 #define FTS_I2C_RDWR_MAX_QUEUE			36
 #define FTS_I2C_SLAVEADDR			11
 #define FTS_I2C_RW				12
 
-/*create apk debug channel*/
+/* create apk debug channel */
 #define PROC_UPGRADE				0
 #define PROC_READ_REGISTER			1
 #define PROC_WRITE_REGISTER			2
@@ -40,25 +40,24 @@ const char __user *buff, size_t count, loff_t *ppos)
 	size_t buflen = count;
 	int writelen = 0;
 	int ret = 0;
-	char upgrade_file_path[128];
 	struct ts_kit_device_data *focal_dev_data = NULL;
 	struct focal_platform_data *focal_pdata = NULL;
 
 	focal_dev_data = focal_get_device_data();
 	focal_pdata = focal_get_platform_data();
 	if(buflen >= WRITE_BUF_SIZE){
-		TS_LOG_DEBUG("%s:buff size is too large",	__func__);
+		TS_LOG_DEBUG("%s:buff size is too large", FOCAL_TAG);
 		return -EINVAL;
 	}
 	if (copy_from_user(&writebuf, buff, buflen)) {
-		TS_LOG_DEBUG("%s:copy from user error",	__func__);
+		TS_LOG_DEBUG("%s:copy from user error", FOCAL_TAG);
 		return -EFAULT;
 	}
 	proc_operate_mode = writebuf[0];
 
 	switch (proc_operate_mode) {
 	case PROC_UPGRADE:
-		TS_LOG_INFO("%s:PROC_UPGRADE is not support!\n", __func__);
+		TS_LOG_INFO("%s:PROC_UPGRADE is not support!\n", FOCAL_TAG);
 	    break;
 	case PROC_SET_TEST_FLAG:
 		break;
@@ -71,7 +70,7 @@ const char __user *buff, size_t count, loff_t *ppos)
 			ret = focal_write(writebuf + 1, writelen);
 		}
 		if (ret < 0) {
-			TS_LOG_DEBUG("%s:write iic error",  __func__);
+			TS_LOG_DEBUG("%s:write iic error", FOCAL_TAG);
 			return ret;
 		}
 		break;
@@ -79,18 +78,19 @@ const char __user *buff, size_t count, loff_t *ppos)
 		writelen = 2;
 		ret = focal_write(writebuf + 1, writelen);
 		if (ret < 0) {
-			TS_LOG_DEBUG("%s:write iic error",  __func__);
+			TS_LOG_DEBUG("%s:write iic error", FOCAL_TAG);
 			return ret;
 		}
 		break;
 	case PROC_AUTOCLB:
-		TS_LOG_DEBUG("%s: autoclb",  __func__);
+		TS_LOG_DEBUG("%s: autoclb", FOCAL_TAG);
 		break;
 	case PROC_READ_DATA:
 		if (TS_BUS_SPI == g_focal_dev_data->ts_platform_data->bops->btype) {
 			writelen = count - 1;
 			if ((writelen >= MAX_COMMAND_LENGTH) || (0 == writelen)) {
-				TS_LOG_ERR("%s:PROC_READ_DATA cmd len(%d) fail\n", __func__, writelen);
+				TS_LOG_ERR("%s:PROC_READ_DATA fail, len:%d\n",
+					FOCAL_TAG, writelen);
 				return -EINVAL;
 			}
 			proc_wbuf[0] = writelen;
@@ -102,7 +102,7 @@ const char __user *buff, size_t count, loff_t *ppos)
 		if (writelen > 0) {
 			ret = focal_write(writebuf + 1, writelen);
 			if (ret < 0) {
-				TS_LOG_DEBUG("%s:write iic error",  __func__);
+				TS_LOG_DEBUG("%s:write iic error", FOCAL_TAG);
 				return ret;
 			}
 		}
@@ -132,7 +132,7 @@ focal_proc_read(struct file *filp, char __user *buff, size_t count, loff_t *ppos
 	u8 buf[READ_BUF_SIZE] ={0};
 
 	if(count >= READ_BUF_SIZE){
-		TS_LOG_DEBUG("%s:read lenth is too large", __func__);
+		TS_LOG_DEBUG("%s:read length is too large", FOCAL_TAG);
 		return -EINVAL;
 	}
 
@@ -155,7 +155,7 @@ focal_proc_read(struct file *filp, char __user *buff, size_t count, loff_t *ppos
 			ret = focal_read(NULL, 0, buf, readlen);
 		}
 		if (ret < 0) {
-			TS_LOG_DEBUG("%s:read iic error",  __func__);
+			TS_LOG_DEBUG("%s:read iic error", FOCAL_TAG);
 			return ret;
 		}
 		num_read_chars = 1;
@@ -168,7 +168,7 @@ focal_proc_read(struct file *filp, char __user *buff, size_t count, loff_t *ppos
 			ret = focal_read(NULL, 0, buf, readlen);
 		}
 		if (ret < 0) {
-			TS_LOG_DEBUG("%s:read iic error",  __func__);
+			TS_LOG_DEBUG("%s:read iic error", FOCAL_TAG);
 			return ret;
 		}
 
@@ -179,13 +179,14 @@ focal_proc_read(struct file *filp, char __user *buff, size_t count, loff_t *ppos
 	default:
 		break;
 	}
-	TS_LOG_DEBUG("%s:num_read_chars =%d ,count = %d",  __func__ ,num_read_chars,count);
+	TS_LOG_DEBUG("%s: num_read_chars = %lu, count = %lu", FOCAL_TAG,
+		num_read_chars, count);
 	if (num_read_chars > count){
-		TS_LOG_DEBUG("%s:buff size is too large",  __func__);
-		return -EINVAL ;
+		TS_LOG_DEBUG("%s: buff size is too large", FOCAL_TAG);
+		return -EINVAL;
 	}
 	if (copy_to_user(buff, buf, num_read_chars)) {
-		TS_LOG_DEBUG("%s:copy to user error",  __func__);
+		TS_LOG_DEBUG("%s: copy to user error", FOCAL_TAG);
 		return -EFAULT;
 	}
 

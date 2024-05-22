@@ -34,8 +34,6 @@ extern void sync_dump(void);
 
 void fencewp_report(long timeout, bool dump)
 {
-	char fence_buf[128] = {0};	/* buffer fize */
-
 	if (dump == true) {
 #ifdef CONFIG_SW_SYNC
 		sync_dump();
@@ -44,8 +42,11 @@ void fencewp_report(long timeout, bool dump)
 #endif
 	}
 
+#ifdef CONFIG_HW_FREEZEDETECTOR
+	char fence_buf[128] = {0}; /* buffer size */
 	snprintf(fence_buf, sizeof(fence_buf), "fence timeout after %dms\n",
 		 jiffies_to_msecs(timeout));
 	zrhung_send_event(ZRHUNG_WP_FENCE, "K", fence_buf);
+#endif
 }
 #endif

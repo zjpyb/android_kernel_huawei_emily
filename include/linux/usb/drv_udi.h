@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description:  Chip drv udi interface declaration.
+ * Create: 2014-06-23
+ */
 
 #ifndef __DRV_UDI_H__
 #define __DRV_UDI_H__
@@ -23,10 +28,10 @@ typedef enum tagUDI_ACM_DEV_TYPE {
 	UDI_USB_ACM_LTE_DIAG,
 	UDI_USB_ACM_OM,
 	UDI_USB_ACM_MODEM,
-	UDI_USB_ACM_GPS,	/* HISO */
-	UDI_USB_ACM_3G_GPS,	/* ashell */
-	UDI_USB_ACM_3G_PCVOICE,	/* reserved */
-	UDI_USB_ACM_PCVOICE,	/* reserved */
+	UDI_USB_ACM_GPS, /* HISO */
+	UDI_USB_ACM_3G_GPS, /* ashell */
+	UDI_USB_ACM_3G_PCVOICE, /* reserved */
+	UDI_USB_ACM_PCVOICE, /* reserved */
 	UDI_USB_ACM_SKYTONE,
 	UDI_USB_ACM_CDMA_LOG,
 	UDI_USB_ACM_MAX
@@ -54,8 +59,8 @@ typedef enum tagUDI_DEVICE_ID {
 
 /* param of open */
 typedef struct tagUDI_OPEN_PARAM {
-	UDI_DEVICE_ID	devid;		/* device ID */
-	void		*pPrivate;	/* device private data */
+	UDI_DEVICE_ID	devid; /* device ID */
+	void *pPrivate; /* device private data */
 } UDI_OPEN_PARAM;
 
 /* IOCTL command code */

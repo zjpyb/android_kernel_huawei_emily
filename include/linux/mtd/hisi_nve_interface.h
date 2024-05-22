@@ -1,23 +1,22 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: vendor/hisi/ap/kernel/include/linux/mtd/hisi_nve_interface.h
+/* Copyright (c) Hisilicon Technologies Co., Ltd. 2012-2019. All rights reserved.
  * Description: define struct hisi_nve_info_user and declear function
  * hisi_nve_direct_access that will be used by other functions or files.
  * if you want to visit NV partition, i.e. read NV items or write NV
  * items in other files, you should include this .h file.
- * Author: jinguojun
- * Create: 2019-06-20
- * Revision history:2019-06-20 zhanghugang NVE CSEC
+ * Author: hisilicon
+ * Create: 2012-06-20
+ * Revision history:2019-06-20 NVE CSEC
  */
 
 #ifndef __HISI_NVE_INTERFACE_H__
 #define __HISI_NVE_INTERFACE_H__
 
 #include <linux/types.h>
-#define NV_NAME_LENGTH 8     /*NV name maximum length*/
-#define NVE_NV_DATA_SIZE 104 /*NV data maximum length*/
+#define NV_NAME_LENGTH 8     /* NV name maximum length */
+#define NVE_NV_DATA_SIZE 104 /* NV data maximum length */
 
-#define NV_WRITE 0 /*NV write operation*/
-#define NV_READ 1  /*NV read  operation*/
+#define NV_WRITE 0 /* NV write operation */
+#define NV_READ 1  /* NV read  operation */
 
 struct hisi_nve_info_user {
 	uint32_t nv_operation;

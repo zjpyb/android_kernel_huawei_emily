@@ -15,7 +15,7 @@ struct sec_ts_data *tsp_info;
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../tpkit_platform_adapter.h"
+#include "tpkit_platform_adapter.h"
 
 static struct mutex wrong_touch_lock;
 static struct completion roi_data_done;
@@ -2272,10 +2272,10 @@ static int sec_ts_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);
@@ -3305,11 +3305,13 @@ static int sec_ts_remove(void)
 
 	ts->lowpower_mode = false;
 	ts->probe_done = false;
-	tsp_info = NULL;
 	sec_ts_power(ts, false);
 	kfree(ts->event_buff);
+	ts->event_buff = NULL;
 	kfree(ts->pFrame);
+	ts->pFrame = NULL;
 	kfree(ts);
+	tsp_info = NULL;
 	return 0;
 }
 

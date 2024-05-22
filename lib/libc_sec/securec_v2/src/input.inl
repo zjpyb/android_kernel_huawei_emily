@@ -14,16 +14,12 @@
  * [reason] Always used in the performance critical path,
  *          and sufficient input validation is performed before calling
  */
-
 #ifndef INPUT_INL_5D13A042_DC3F_4ED9_A8D1_882811274C27
 #define INPUT_INL_5D13A042_DC3F_4ED9_A8D1_882811274C27
 
 #if SECUREC_IN_KERNEL
 #if !defined(SECUREC_CTYPE_MACRO_ADAPT)
 #include <linux/ctype.h>
-#endif
-#ifndef EOF
-#define EOF  (-1)
 #endif
 #else
 #if !defined(SECUREC_SYSAPI4VXWORKS) && !defined(SECUREC_CTYPE_MACRO_ADAPT)
@@ -34,26 +30,29 @@
 #endif
 #endif
 
+#ifndef EOF
+#define EOF  (-1)
+#endif
+
 #define SECUREC_NUM_WIDTH_SHORT                 0
 #define SECUREC_NUM_WIDTH_INT                   1
 #define SECUREC_NUM_WIDTH_LONG                  2
 #define SECUREC_NUM_WIDTH_LONG_LONG             3 /* Also long double */
 
-#define SECUREC_BUFFERED_BLOK_SIZE              1024
+#define SECUREC_BUFFERED_BLOK_SIZE              1024U
 
 #if defined(SECUREC_VXWORKS_PLATFORM) && !defined(va_copy) && !defined(__va_copy)
 /* The name is the same as system macro. */
-#define __va_copy(d, s) do { \
-    size_t size_of_d = (size_t)sizeof(d); \
-    size_t size_of_s = (size_t)sizeof(s); \
-    if (size_of_d != size_of_s) { \
-        (void)memcpy((d), (s), sizeof(va_list)); \
+#define __va_copy(dest, src) do { \
+    size_t destSize_ = (size_t)sizeof(dest); \
+    size_t srcSize_ = (size_t)sizeof(src); \
+    if (destSize_ != srcSize_) { \
+        (void)memcpy((dest), (src), sizeof(va_list)); \
     } else { \
-        (void)memcpy(&(d), &(s), sizeof(va_list)); \
+        (void)memcpy(&(dest), &(src), sizeof(va_list)); \
     } \
 } SECUREC_WHILE_ZERO
 #endif
-
 
 #define SECUREC_MULTI_BYTE_MAX_LEN              6
 
@@ -73,11 +72,11 @@
 #define SECUREC_MAX_64BITS_VALUE_CUT_LAST_DIGIT 18446744073709551610ULL
 #define SECUREC_MIN_64BITS_NEG_VALUE            9223372036854775808ULL
 #define SECUREC_MAX_64BITS_POS_VALUE            9223372036854775807ULL
-#define SECUREC_MIN_32BITS_NEG_VALUE            2147483648ULL
-#define SECUREC_MAX_32BITS_POS_VALUE            2147483647ULL
-#define SECUREC_MAX_32BITS_VALUE                4294967295ULL
-#define SECUREC_MAX_32BITS_VALUE_INC            4294967296ULL
-#define SECUREC_MAX_32BITS_VALUE_DIV_TEN        429496729ULL
+#define SECUREC_MIN_32BITS_NEG_VALUE            2147483648UL
+#define SECUREC_MAX_32BITS_POS_VALUE            2147483647UL
+#define SECUREC_MAX_32BITS_VALUE                4294967295UL
+#define SECUREC_MAX_32BITS_VALUE_INC            4294967296UL
+#define SECUREC_MAX_32BITS_VALUE_DIV_TEN        429496729UL
 #define SECUREC_LONG_BIT_NUM                    ((unsigned int)(sizeof(long) << 3U))
 /* Use ULL to clean up cl6x compilation alerts */
 #define SECUREC_MAX_LONG_POS_VALUE              ((unsigned long)(1ULL << (SECUREC_LONG_BIT_NUM - 1)) - 1)
@@ -92,10 +91,17 @@
 
 #define SECUREC_LP64_BIT_WIDTH                  64
 #define SECUREC_LP32_BIT_WIDTH                  32
+
+#define SECUREC_CONVERT_IS_SIGNED(conv) ((conv) == 'd' || (conv) == 'i')
 #endif
 
-#define SECUREC_CHAR(x)                         (x)
 #define SECUREC_BRACE                           '{'     /* [ to { */
+#define SECUREC_FILED_WIDTH_ENOUGH(spec) ((spec)->widthSet == 0 || (spec)->width > 0)
+#define SECUREC_FILED_WIDTH_DEC(spec) do { \
+    if ((spec)->widthSet != 0) { \
+        --(spec)->width; \
+    } \
+} SECUREC_WHILE_ZERO
 
 #ifdef SECUREC_FOR_WCHAR
 /* Bits for all wchar, size is 65536/8, only supports wide characters with a maximum length of two bytes */
@@ -113,13 +119,8 @@
     ((spec).isWCharOrLong <= 0 && (spec).arrayWidth > SECUREC_STRING_MAX_LEN) || \
     ((spec).isWCharOrLong > 0 && (spec).arrayWidth > SECUREC_WCHAR_STRING_MAX_LEN))
 #else
-#define SECUREC_ARRAY_WIDTH_IS_WRONG(spec) ((spec).arrayWidth == 0 || \
-    ((spec).isWCharOrLong <= 0 && (spec).arrayWidth > SECUREC_STRING_MAX_LEN))
+#define SECUREC_ARRAY_WIDTH_IS_WRONG(spec) ((spec).arrayWidth == 0 || (spec).arrayWidth > SECUREC_STRING_MAX_LEN)
 #endif
-
-/* For next %n */
-#define SECUREC_MEET_EOF_BEFORE_NEXT_N(ch, format) (((ch) == SECUREC_EOF) && \
-    ((*(format) != SECUREC_CHAR('%')) || (*((format) + 1) != SECUREC_CHAR('n'))))
 
 typedef struct {
 #ifdef SECUREC_FOR_WCHAR
@@ -140,76 +141,128 @@ typedef struct {
 typedef struct {
     size_t floatStrTotalLen;       /* Initialization must be length of buffer in charater */
     size_t floatStrUsedLen;        /* Store float string len */
-    SecChar buffer[SECUREC_FLOAT_BUFSIZE + 1];
     SecChar *floatStr;             /* Initialization must point to buffer */
     SecChar *allocatedFloatStr;    /* Initialization must be NULL  to store alloced point */
+    SecChar buffer[SECUREC_FLOAT_BUFSIZE + 1];
 } SecFloatSpec;
 #endif
+
+#define SECUREC_NUMBER_STATE_DEFAULT 0U
+#define SECUREC_NUMBER_STATE_STARTED 1U
 
 typedef struct {
     SecInt ch;            /* Char read from input */
     int charCount;        /* Number of characters processed */
-    SecUnsignedInt64 number64;
-    unsigned long number;
-    int numberWidth;      /* 0 = SHORT, 1 = int, > 1  long or L_DOUBLE */
-    int isInt64Arg;       /* 1 for 64-bit integer, 0 otherwise */
-    int negative;         /* 0 is positive */
-#if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
-    int beyondMax;        /* Non-zero means beyond */
-#endif
-    void *argPtr;         /* Variable parameter pointer */
+    void *argPtr;         /* Variable parameter pointer, point to the end of the string */
     size_t arrayWidth;    /* Length of pointer Variable parameter, in charaters */
+    SecUnsignedInt64 number64; /* Store input number64 value */
+    unsigned long number; /* Store input number32 value */
+    int numberWidth;      /* 0 = SHORT, 1 = int, > 1  long or L_DOUBLE */
+    int numberArgType;       /* 1 for 64-bit integer, 0 otherwise. use it as decode function index */
+    unsigned int negative;         /* 0 is positive */
+#if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
+    unsigned int beyondMax;        /* Non-zero means beyond */
+#endif
+    unsigned int numberState; /* Identifies whether to start processing numbers, 1 is can input number*/
     int width;            /* Width number in format */
     int widthSet;         /* 0 is not set width in format */
     int convChr;          /* Lowercase format conversion characters */
     int oriConvChr;       /* Store  original format conversion, convChr may change when parsing integers */
     signed char isWCharOrLong;  /* -1/0 not wchar or long, 1 for wchar or long */
-    char suppress;              /* 0 is not have %* in format */
+    unsigned char suppress;     /* 0 is not have %* in format */
 } SecScanSpec;
-
-#if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
-#define SECUREC_INIT_NUMBER_SPEC { 0, 0, 0, 0, 0, 0, NULL, 0, 0, 0, 0, 0, 0 }
-#else
-#define SECUREC_INIT_NUMBER_SPEC { 0, 0, 0, 0, 0, 0, NULL, 0, 0, 0, 0, 0 }
-#endif
 
 #ifdef SECUREC_FOR_WCHAR
 #define SECUREC_GETC fgetwc
 #define SECUREC_UN_GETC ungetwc
-#define SECUREC_CHAR_MASK 0xffff
+/* Only supports wide characters with a maximum length of two bytes in format string */
+#define SECUREC_BRACKET_CHAR_MASK 0xffffU
 #else
 #define SECUREC_GETC fgetc
 #define SECUREC_UN_GETC ungetc
-#define SECUREC_CHAR_MASK 0xff
+#define SECUREC_BRACKET_CHAR_MASK 0xffU
 #endif
 
+#define SECUREC_CHAR_SIZE ((unsigned int)(sizeof(SecChar)))
+/* To avoid 648, mask high bit: 0x00ffffff 0x0000ffff or 0x00000000 */
+#define SECUREC_CHAR_MASK_HIGH (((((((((unsigned int)(-1) >> SECUREC_CHAR_SIZE) >> SECUREC_CHAR_SIZE) >> \
+    SECUREC_CHAR_SIZE) >> SECUREC_CHAR_SIZE) >> \
+    SECUREC_CHAR_SIZE) >> SECUREC_CHAR_SIZE) >> \
+    SECUREC_CHAR_SIZE) >> SECUREC_CHAR_SIZE)
+
+/* For char is 0xff, wcahr_t is 0xffff or 0xffffffff. */
+#define SECUREC_CHAR_MASK (~((((((((((unsigned int)(-1) & SECUREC_CHAR_MASK_HIGH) << \
+    SECUREC_CHAR_SIZE) << SECUREC_CHAR_SIZE) << \
+    SECUREC_CHAR_SIZE) << SECUREC_CHAR_SIZE) << \
+    SECUREC_CHAR_SIZE) << SECUREC_CHAR_SIZE) << \
+    SECUREC_CHAR_SIZE) << SECUREC_CHAR_SIZE))
+
+/* According wchar_t has multiple bytes, so use sizeof */
+#define SECUREC_GET_CHAR(stream, outCh) do { \
+    if ((stream)->count >= sizeof(SecChar)) { \
+        *(outCh) = (SecInt)(SECUREC_CHAR_MASK & \
+            (unsigned int)(int)(*((const SecChar *)(const void *)(stream)->cur))); \
+        (stream)->cur += sizeof(SecChar); \
+        (stream)->count -= sizeof(SecChar); \
+    } else { \
+        *(outCh) = SECUREC_EOF; \
+    } \
+} SECUREC_WHILE_ZERO
+
+#define SECUREC_UN_GET_CHAR(stream) do { \
+    if ((stream)->cur > (stream)->base) { \
+        (stream)->cur -= sizeof(SecChar); \
+        (stream)->count += sizeof(SecChar); \
+    } \
+} SECUREC_WHILE_ZERO
+
+/* Convert wchar_t to int and then to unsigned int  to keep data clearing warning */
+#define SECUREC_TO_LOWERCASE(chr) ((int)((unsigned int)(int)(chr) | (unsigned int)('a' - 'A')))
+
 /* Record a flag for each bit */
-#define SECUREC_BRACKET_INDEX(x)  ((unsigned int)(x) >> 3)
-#define SECUREC_BRACKET_VALUE(x)  ((unsigned char)(1 << ((unsigned int)(x) & 7)))
+#define SECUREC_BRACKET_INDEX(x)  ((unsigned int)(x) >> 3U)
+#define SECUREC_BRACKET_VALUE(x)  ((unsigned char)(1U << ((unsigned int)(x) & 7U)))
+#if SECUREC_IN_KERNEL
+#define SECUREC_CONVERT_IS_UNSIGNED(conv) ((conv) == 'x' || (conv) == 'o' || (conv) == 'u')
+#endif
 
 /*
- * Set char in %[xxx] into table, only supports  wide characters with a maximum length of two bytes
+ * Set char in %[xxx] into table, only supports wide characters with a maximum length of two bytes
  */
 SECUREC_INLINE void SecBracketSetBit(unsigned char *table, SecUnsignedChar ch)
 {
-    unsigned int tableIndex = SECUREC_BRACKET_INDEX(((unsigned int)(int)(ch) & SECUREC_CHAR_MASK));
-    unsigned int tableValue = SECUREC_BRACKET_VALUE(((unsigned int)(int)(ch) & SECUREC_CHAR_MASK));
+    unsigned int tableIndex = SECUREC_BRACKET_INDEX(((unsigned int)(int)ch & SECUREC_BRACKET_CHAR_MASK));
+    unsigned int tableValue = SECUREC_BRACKET_VALUE(((unsigned int)(int)ch & SECUREC_BRACKET_CHAR_MASK));
     /* Do not use   |=   optimize this code, it will cause compiling warning */
     table[tableIndex] = (unsigned char)(table[tableIndex] | tableValue);
 }
 
+SECUREC_INLINE void SecBracketSetBitRange(unsigned char *table, SecUnsignedChar startCh, SecUnsignedChar endCh)
+{
+    SecUnsignedChar expCh;
+    /* %[a-z] %[a-a] Format %[a-\xff] end is 0xFF, condition (expCh <= endChar) cause dead loop */
+    for (expCh = startCh; expCh < endCh; ++expCh) {
+        SecBracketSetBit(table, expCh);
+    }
+    SecBracketSetBit(table, endCh);
+}
 /*
  * Determine whether the expression can be satisfied
  */
 SECUREC_INLINE int SecCanInputForBracket(int convChr, SecInt ch, const SecBracketTable *bracketTable)
 {
-    unsigned int tableIndex = SECUREC_BRACKET_INDEX(((unsigned int)(int)(ch) & SECUREC_CHAR_MASK));
-    unsigned int tableValue = SECUREC_BRACKET_VALUE(((unsigned int)(int)(ch) & SECUREC_CHAR_MASK));
+    unsigned int tableIndex = SECUREC_BRACKET_INDEX(((unsigned int)(int)ch & SECUREC_BRACKET_CHAR_MASK));
+    unsigned int tableValue = SECUREC_BRACKET_VALUE(((unsigned int)(int)ch & SECUREC_BRACKET_CHAR_MASK));
 #ifdef SECUREC_FOR_WCHAR
-    return (convChr == SECUREC_BRACE && bracketTable->table != NULL &&
-        ((bracketTable->table[tableIndex] ^ bracketTable->mask) & tableValue));
+    if (((unsigned int)(int)ch & (~(SECUREC_BRACKET_CHAR_MASK))) != 0) {
+        /* The value of the wide character exceeds the size of two bytes */
+        return 0;
+    }
+    return (int)(convChr == SECUREC_BRACE && bracketTable->table != NULL &&
+        ((bracketTable->table[tableIndex] ^ bracketTable->mask) & tableValue) != 0);
 #else
-    return (convChr == SECUREC_BRACE && ((bracketTable->table[tableIndex] ^ bracketTable->mask) & tableValue));
+    return (int)(convChr == SECUREC_BRACE &&
+        ((bracketTable->table[tableIndex] ^ bracketTable->mask) & tableValue) != 0);
 #endif
 }
 
@@ -218,8 +271,8 @@ SECUREC_INLINE int SecCanInputForBracket(int convChr, SecInt ch, const SecBracke
  */
 SECUREC_INLINE int SecCanInputString(int convChr, SecInt ch)
 {
-    return ((convChr) == SECUREC_CHAR('s') &&
-        (!((ch) >= SECUREC_CHAR('\t') && (ch) <= SECUREC_CHAR('\r')) && (ch) != SECUREC_CHAR(' ')));
+    return (int)(convChr == 's' &&
+        (!(ch >= SECUREC_CHAR('\t') && ch <= SECUREC_CHAR('\r')) && ch != SECUREC_CHAR(' ')));
 }
 
 /*
@@ -227,14 +280,14 @@ SECUREC_INLINE int SecCanInputString(int convChr, SecInt ch)
  */
 SECUREC_INLINE int SecCanInputCharacter(int convChr)
 {
-    return (convChr == SECUREC_CHAR('c'));
+    return (int)(convChr == 'c');
 }
 
 /*
  * Determine if it is a 64-bit pointer  function
  * Return 0 is not ,1 is 64bit pointer
  */
-SECUREC_INLINE int SecIs64BitPtr(size_t sizeOfVoidStar)
+SECUREC_INLINE int SecNumberArgType(size_t sizeOfVoidStar)
 {
     /* Point size is 4 or 8 , Under the 64 bit system, the value not 0 */
     /* To clear e778 */
@@ -294,13 +347,12 @@ SECUREC_INLINE int SecAssignFloatW(const SecFloatSpec *floatSpec, const  SecScan
     mbsLen = wcstombs(tempFloatStr, floatSpec->floatStr, tempFloatStrLen - 1);
     SECUREC_END_MASK_MSVC_CRT_WARNING
     /* This condition must satisfy mbsLen is not -1 */
-    if (mbsLen < tempFloatStrLen) {
-        tempFloatStr[mbsLen] = '\0';
-        SecAssignFloat(tempFloatStr, spec->numberWidth, spec->argPtr);
-    } else {
+    if (mbsLen >= tempFloatStrLen) {
         SECUREC_FREE(tempFloatStr);
         return -1;
     }
+    tempFloatStr[mbsLen] = '\0';
+    SecAssignFloat(tempFloatStr, spec->numberWidth, spec->argPtr);
     SECUREC_FREE(tempFloatStr);
     return 0;
 }
@@ -314,7 +366,6 @@ SECUREC_INLINE void SecInitFloatSpec(SecFloatSpec *floatSpec)
     floatSpec->floatStr = floatSpec->buffer;
     floatSpec->allocatedFloatStr = NULL;
     floatSpec->floatStrTotalLen = sizeof(floatSpec->buffer) / sizeof(floatSpec->buffer[0]);
-    floatSpec->floatStr = floatSpec->buffer;
     floatSpec->floatStrUsedLen = 0;
 }
 
@@ -324,7 +375,7 @@ SECUREC_INLINE void SecFreeFloatSpec(SecFloatSpec *floatSpec, int *doneCount)
     if (memset_s(floatSpec->buffer, sizeof(floatSpec->buffer), 0, sizeof(floatSpec->buffer)) != EOK) {
         *doneCount = 0; /* This code just to meet the coding requirements */
     }
-    /* The pFloatStr can be alloced in SecUpdateFloatString function, clear and free it */
+    /* The pFloatStr can be alloced in SecExtendFloatLen function, clear and free it */
     if (floatSpec->allocatedFloatStr != NULL) {
         size_t bufferSize = floatSpec->floatStrTotalLen * sizeof(SecChar);
         if (memset_s(floatSpec->allocatedFloatStr, bufferSize, 0, bufferSize) != EOK) {
@@ -340,9 +391,8 @@ SECUREC_INLINE void SecFreeFloatSpec(SecFloatSpec *floatSpec, int *doneCount)
  * Splice floating point string
  * Return 0 OK
  */
-SECUREC_INLINE int SecUpdateFloatString(SecChar ch, SecFloatSpec *floatSpec)
+SECUREC_INLINE int SecExtendFloatLen(SecFloatSpec *floatSpec)
 {
-    floatSpec->floatStr[floatSpec->floatStrUsedLen++] = ch;
     if (floatSpec->floatStrUsedLen >= floatSpec->floatStrTotalLen) {
         /* Buffer size is len x sizeof(SecChar) */
         size_t oriSize = floatSpec->floatStrTotalLen * sizeof(SecChar);
@@ -350,7 +400,7 @@ SECUREC_INLINE int SecUpdateFloatString(SecChar ch, SecFloatSpec *floatSpec)
         size_t nextSize = (oriSize * 2) + sizeof(SecChar); /* Multiply 2 to extend buffer size */
 
         /* Prevents integer overflow, the maximum length of SECUREC_MAX_WIDTH_LEN is enough */
-        if (nextSize <= SECUREC_MAX_WIDTH_LEN) {
+        if (nextSize <= (size_t)SECUREC_MAX_WIDTH_LEN) {
             void *nextBuffer = (void *)SECUREC_MALLOC(nextSize);
             if (nextBuffer == NULL) {
                 return -1;
@@ -378,102 +428,140 @@ SECUREC_INLINE int SecUpdateFloatString(SecChar ch, SecFloatSpec *floatSpec)
     return 0;
 }
 
-
 /* Do not use localeconv()->decimal_pointif  onlay support  '.' */
 SECUREC_INLINE int SecIsFloatDecimal(SecChar ch)
 {
-    return ((ch) == SECUREC_CHAR('.'));
+    return (int)(ch == SECUREC_CHAR('.'));
 }
 
-/*
- * Scan value of exponent.
- * Return 0 OK
- */
-SECUREC_INLINE int SecInputFloatE(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+SECUREC_INLINE int SecInputFloatSign(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
 {
+    if (!SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        return 0;
+    }
     spec->ch = SecGetChar(stream, &(spec->charCount));
     if (spec->ch == SECUREC_CHAR('+') || spec->ch == SECUREC_CHAR('-')) {
-        if (spec->ch == SECUREC_CHAR('-') && SecUpdateFloatString((SecChar)'-', floatSpec) != 0) {
-            return -1;
+        SECUREC_FILED_WIDTH_DEC(spec); /* Make sure the count after un get char is correct */
+        if (spec->ch == SECUREC_CHAR('-')) {
+            floatSpec->floatStr[floatSpec->floatStrUsedLen] = SECUREC_CHAR('-');
+            ++floatSpec->floatStrUsedLen;
+            if (SecExtendFloatLen(floatSpec) != 0) {
+                return -1;
+            }
         }
-        if (spec->width != 0) {
-            spec->ch = SecGetChar(stream, &(spec->charCount));
-            --spec->width;
-        }
+    } else {
+        SecUnGetChar(spec->ch, stream, &(spec->charCount));
     }
+    return 0;
+}
 
-    while (SecIsDigit(spec->ch) && spec->width-- != 0) {
-        if (SecUpdateFloatString((SecChar)spec->ch, floatSpec) != 0) {
+SECUREC_INLINE int SecInputFloatDigit(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+{
+    /* Now get integral part */
+    while (SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        spec->ch = SecGetChar(stream, &(spec->charCount));
+        if (SecIsDigit(spec->ch) == 0) {
+            SecUnGetChar(spec->ch, stream, &(spec->charCount));
+            return 0;
+        }
+        SECUREC_FILED_WIDTH_DEC(spec); /* Must be behind un get char, otherwise the logic is incorrect */
+        spec->numberState = SECUREC_NUMBER_STATE_STARTED;
+        floatSpec->floatStr[floatSpec->floatStrUsedLen] = (SecChar)spec->ch;
+        ++floatSpec->floatStrUsedLen;
+        if (SecExtendFloatLen(floatSpec) != 0) {
             return -1;
         }
-        spec->ch = SecGetChar(stream, &(spec->charCount));
     }
     return 0;
 }
 
 /*
- * Scan %f.
- * Return 0 OK
- */
-SECUREC_INLINE int SecInputFloat(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+* Scan value of exponent.
+* Return 0 OK
+*/
+SECUREC_INLINE int SecInputFloatE(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
 {
-    int started = -1;
-    spec->ch = SecGetChar(stream, &(spec->charCount));
-
-    floatSpec->floatStrUsedLen = 0;
-    if (spec->ch == SECUREC_CHAR('-')) {
-        floatSpec->floatStr[floatSpec->floatStrUsedLen++] = SECUREC_CHAR('-');
-        --spec->width;
-        spec->ch = SecGetChar(stream, &(spec->charCount));
-    } else if (spec->ch == SECUREC_CHAR('+')) {
-        --spec->width;
-        spec->ch = SecGetChar(stream, &(spec->charCount));
+    if (SecInputFloatSign(stream, spec, floatSpec) == -1) {
+        return -1;
     }
-
-    if (spec->widthSet == 0) {    /* Must care width */
-        spec->width = -1; /* -1 is unlimited */
+    if (SecInputFloatDigit(stream, spec, floatSpec) != 0) {
+        return -1;
     }
+    return 0;
+}
 
-    /* Now get integral part */
-    while (SecIsDigit(spec->ch) && spec->width-- != 0) {
-        started = 0;
-        /* The ch must be '0' - '9' */
-        if (SecUpdateFloatString((SecChar)spec->ch, floatSpec) != 0) {
-            return -1;
+SECUREC_INLINE int SecInputFloatFractional(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+{
+    if (SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        spec->ch = SecGetChar(stream, &(spec->charCount));
+        if (SecIsFloatDecimal((SecChar)spec->ch) == 0) {
+            SecUnGetChar(spec->ch, stream, &(spec->charCount));
+            return 0;
         }
-        spec->ch = SecGetChar(stream, &(spec->charCount));
-    }
-
-    /* Now get fractional part */
-    if (SecIsFloatDecimal((SecChar)spec->ch) && spec->width-- != 0) {
+        SECUREC_FILED_WIDTH_DEC(spec); /* Must be behind un get char, otherwise the logic is incorrect */
         /* Now check for decimal */
-        if (SecUpdateFloatString((SecChar)spec->ch, floatSpec) != 0) {
+        floatSpec->floatStr[floatSpec->floatStrUsedLen] = (SecChar)spec->ch;
+        ++floatSpec->floatStrUsedLen;
+        if (SecExtendFloatLen(floatSpec) != 0) {
             return -1;
         }
-        spec->ch = SecGetChar(stream, &(spec->charCount));
-        while (SecIsDigit(spec->ch) && spec->width-- != 0) {
-            started = 0;
-            if (SecUpdateFloatString((SecChar)spec->ch, floatSpec) != 0) {
-                return -1;
-            }
-            spec->ch = SecGetChar(stream, &(spec->charCount));
+        if (SecInputFloatDigit(stream, spec, floatSpec) != 0) {
+            return -1;
         }
     }
+    return 0;
+}
 
+SECUREC_INLINE int SecInputFloatExponent(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+{
     /* Now get exponent part */
-    if (started == 0 && (spec->ch == SECUREC_CHAR('e') || spec->ch == SECUREC_CHAR('E')) && spec->width-- != 0) {
-        if (SecUpdateFloatString((SecChar)'e', floatSpec) != 0) {
+    if (spec->numberState == SECUREC_NUMBER_STATE_STARTED && SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        spec->ch = SecGetChar(stream, &(spec->charCount));
+        if (spec->ch != SECUREC_CHAR('e') && spec->ch != SECUREC_CHAR('E')) {
+            SecUnGetChar(spec->ch, stream, &(spec->charCount));
+            return 0;
+        }
+        SECUREC_FILED_WIDTH_DEC(spec); /* Must be behind un get char, otherwise the logic is incorrect */
+        floatSpec->floatStr[floatSpec->floatStrUsedLen] = SECUREC_CHAR('e');
+        ++floatSpec->floatStrUsedLen;
+        if (SecExtendFloatLen(floatSpec) != 0) {
             return -1;
         }
         if (SecInputFloatE(stream, spec, floatSpec) != 0) {
             return -1;
         }
     }
-    /* Un set the last character that is not a floating point number */
-    SecUnGetChar(spec->ch, stream, &(spec->charCount));
+    return 0;
+}
+
+/*
+* Scan %f.
+* Return 0 OK
+*/
+SECUREC_INLINE int SecInputFloat(SecFileStream *stream, SecScanSpec *spec, SecFloatSpec *floatSpec)
+{
+    floatSpec->floatStrUsedLen = 0;
+
+    /* The following code sequence is strict */
+    if (SecInputFloatSign(stream, spec, floatSpec) != 0) {
+        return -1;
+    }
+    if (SecInputFloatDigit(stream, spec, floatSpec) != 0) {
+        return -1;
+    }
+    if (SecInputFloatFractional(stream, spec, floatSpec) != 0) {
+        return -1;
+    }
+    if (SecInputFloatExponent(stream, spec, floatSpec) != 0) {
+        return -1;
+    }
+
     /* Make sure  have a string terminator, buffer is large enough */
     floatSpec->floatStr[floatSpec->floatStrUsedLen] = SECUREC_CHAR('\0');
-    return started;
+    if (spec->numberState == SECUREC_NUMBER_STATE_STARTED) {
+        return 0;
+    }
+    return -1;
 }
 #endif
 
@@ -484,9 +572,9 @@ SECUREC_INLINE int SecIsLeadByte(SecInt ch)
 {
     unsigned int c = (unsigned int)ch;
 #if !(defined(_MSC_VER) || defined(_INC_WCTYPE))
-    return (int)(c & 0x80);
+    return (int)(c & 0x80U); /* Use bitwise operation to check if the most significant bit is 1 */
 #else
-    return (int)isleadbyte((int)(c & 0xff));
+    return (int)isleadbyte((int)(c & 0xffU)); /* Use bitwise operations to limit character values to valid ranges */
 #endif
 }
 #endif
@@ -525,14 +613,14 @@ SECUREC_INLINE void SecDecodeScanQualifierL(const SecUnsignedChar **format, SecS
 {
     const SecUnsignedChar *fmt = *format;
     if (*(fmt + 1) == SECUREC_CHAR('l')) {
-        spec->isInt64Arg = 1;
+        spec->numberArgType = 1;
         spec->numberWidth = SECUREC_NUM_WIDTH_LONG_LONG;
         ++fmt;
     } else {
         spec->numberWidth = SECUREC_NUM_WIDTH_LONG;
 #if defined(SECUREC_ON_64BITS) && !(defined(SECUREC_COMPATIBLE_WIN_FORMAT))
         /* On window 64 system sizeof long is 32bit */
-        spec->isInt64Arg = 1;
+        spec->numberArgType = 1;
 #endif
         spec->isWCharOrLong = 1;
     }
@@ -548,7 +636,7 @@ SECUREC_INLINE void SecDecodeScanQualifierI(const SecUnsignedChar **format, SecS
     const SecUnsignedChar *fmt = *format;
     if ((*(fmt + 1) == SECUREC_CHAR('6')) &&
         (*(fmt + 2) == SECUREC_CHAR('4'))) { /* Offset 2 for I64 */
-        spec->isInt64Arg = 1;
+        spec->numberArgType = 1;
         *format = *format + 2; /* Add 2 to skip I64 point to '4' next loop will inc */
     } else if ((*(fmt + 1) == SECUREC_CHAR('3')) &&
                 (*(fmt + 2) == SECUREC_CHAR('2'))) { /* Offset 2 for I32 */
@@ -558,10 +646,10 @@ SECUREC_INLINE void SecDecodeScanQualifierI(const SecUnsignedChar **format, SecS
                 (*(fmt + 1) == SECUREC_CHAR('o')) ||
                 (*(fmt + 1) == SECUREC_CHAR('x')) ||
                 (*(fmt + 1) == SECUREC_CHAR('X'))) {
-        spec->isInt64Arg = SecIs64BitPtr(sizeof(void *));
+        spec->numberArgType = SecNumberArgType(sizeof(void *));
     } else {
         /* For %I */
-        spec->isInt64Arg = SecIs64BitPtr(sizeof(void *));
+        spec->numberArgType = SecNumberArgType(sizeof(void *));
         *finishFlag = 1;
     }
 }
@@ -569,7 +657,7 @@ SECUREC_INLINE void SecDecodeScanQualifierI(const SecUnsignedChar **format, SecS
 SECUREC_INLINE int SecDecodeScanWidth(const SecUnsignedChar **format, SecScanSpec *spec)
 {
     const SecUnsignedChar *fmt = *format;
-    while (SecIsDigit((SecInt)(int)(*fmt))) {
+    while (SecIsDigit((SecInt)(int)(*fmt)) != 0) {
         spec->widthSet = 1;
         if (SECUREC_MUL_TEN_ADD_BEYOND_MAX(spec->width)) {
             return -1;
@@ -587,22 +675,23 @@ SECUREC_INLINE int SecDecodeScanWidth(const SecUnsignedChar **format, SecScanSpe
 SECUREC_INLINE void SecSetDefaultScanSpec(SecScanSpec *spec)
 {
     /* The ch and charCount member variables cannot be initialized here */
+    spec->argPtr = NULL;
+    spec->arrayWidth = 0;
     spec->number64 = 0;
     spec->number = 0;
     spec->numberWidth = SECUREC_NUM_WIDTH_INT;    /* 0 = SHORT, 1 = int, > 1  long or L_DOUBLE */
-    spec->isInt64Arg = 0;                         /* 1 for 64-bit integer, 0 otherwise */
-    spec->negative = 0;
-#if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
-    spec->beyondMax = 0;
-#endif
-    spec->argPtr = NULL;
-    spec->arrayWidth = 0;
+    spec->numberArgType = 0;                         /* 1 for 64-bit integer, 0 otherwise */
     spec->width = 0;
     spec->widthSet = 0;
     spec->convChr = 0;
     spec->oriConvChr = 0;
     spec->isWCharOrLong = 0;
     spec->suppress = 0;
+#if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
+    spec->beyondMax = 0;
+#endif
+    spec->negative = 0;
+    spec->numberState = SECUREC_NUMBER_STATE_DEFAULT;
 }
 
 /*
@@ -611,7 +700,7 @@ SECUREC_INLINE void SecSetDefaultScanSpec(SecScanSpec *spec)
  */
 SECUREC_INLINE void  SecDecodeScanQualifier(const SecUnsignedChar **format, SecScanSpec *spec, int *finishFlag)
 {
-    switch ((int)(unsigned char)(**(format))) {
+    switch (**format) {
         case SECUREC_CHAR('F'): /* fall-through */ /* FALLTHRU */
         case SECUREC_CHAR('N'):
             break;
@@ -622,7 +711,7 @@ SECUREC_INLINE void  SecDecodeScanQualifier(const SecUnsignedChar **format, SecS
 #ifdef SECUREC_COMPATIBLE_LINUX_FORMAT
         case SECUREC_CHAR('j'):
             spec->numberWidth = SECUREC_NUM_WIDTH_LONG_LONG;  /* For intmax_t or uintmax_t */
-            spec->isInt64Arg = 1;
+            spec->numberArgType = 1;
             break;
         case SECUREC_CHAR('t'): /* fall-through */ /* FALLTHRU */
 #endif
@@ -632,7 +721,7 @@ SECUREC_INLINE void  SecDecodeScanQualifier(const SecUnsignedChar **format, SecS
         case SECUREC_CHAR('z'):
 #ifdef SECUREC_ON_64BITS
             spec->numberWidth = SECUREC_NUM_WIDTH_LONG_LONG;
-            spec->isInt64Arg = 1;
+            spec->numberArgType = 1;
 #else
             spec->numberWidth = SECUREC_NUM_WIDTH_LONG;
 #endif
@@ -640,7 +729,7 @@ SECUREC_INLINE void  SecDecodeScanQualifier(const SecUnsignedChar **format, SecS
         case SECUREC_CHAR('L'):    /* For long double */ /* fall-through */ /* FALLTHRU */
         case SECUREC_CHAR('q'):
             spec->numberWidth = SECUREC_NUM_WIDTH_LONG_LONG;
-            spec->isInt64Arg = 1;
+            spec->numberArgType = 1;
             break;
         case SECUREC_CHAR('l'):
             SecDecodeScanQualifierL(format, spec);
@@ -658,7 +747,6 @@ SECUREC_INLINE void  SecDecodeScanQualifier(const SecUnsignedChar **format, SecS
             *finishFlag = 1;
             break;
     }
-
 }
 /*
  * Decode width and qualifier in format
@@ -687,8 +775,8 @@ SECUREC_INLINE int SecDecodeClearFormat(const SecUnsignedChar *format, int *conv
 {
     const SecUnsignedChar *fmt = format;
     /* To lowercase */
-    int ch = (unsigned char)(*fmt) | (SECUREC_CHAR('a') - SECUREC_CHAR('A'));
-    if (!(ch == SECUREC_CHAR('c') || ch == SECUREC_CHAR('s') || ch == SECUREC_BRACE)) {
+    int ch = SECUREC_TO_LOWERCASE(*fmt);
+    if (!(ch == 'c' || ch == 's' || ch == SECUREC_BRACE)) {
         return -1;     /* First argument is not a string type */
     }
     if (ch == SECUREC_BRACE) {
@@ -730,6 +818,26 @@ SECUREC_INLINE void SecAddEndingZero(void *ptr, const SecScanSpec *spec)
     }
 }
 
+SECUREC_INLINE void SecDecodeClearArg(SecScanSpec *spec, va_list argList)
+{
+    va_list argListSave; /* Backup for argList value, this variable don't need initialized */
+    (void)memset(&argListSave, 0, sizeof(va_list)); /* To clear e530 argListSave not initialized */
+#if defined(va_copy)
+    va_copy(argListSave, argList);
+#elif defined(__va_copy)        /* For vxworks */
+    __va_copy(argListSave, argList);
+#else
+    argListSave = argList;
+#endif
+    spec->argPtr = (void *)va_arg(argListSave, void *);
+    /* Get the next argument, size of the array in characters */
+    /* Use 0xffffffffUL mask to Support  pass integer as array length */
+    spec->arrayWidth = ((size_t)(va_arg(argListSave, size_t))) & 0xffffffffUL;
+    va_end(argListSave);
+    /* To clear e438 last value assigned not used , the compiler will optimize this code */
+    (void)argListSave;
+}
+
 #ifdef SECUREC_FOR_WCHAR
 /*
  *  Clean up the first %s %c buffer to zero for wchar version
@@ -742,8 +850,6 @@ void SecClearDestBufW(const wchar_t *buffer, const wchar_t *format, va_list argL
 void SecClearDestBuf(const char *buffer, const char *format, va_list argList)
 #endif
 {
-
-    va_list argListSave;        /* Backup for argList value, this variable don't need initialized */
     SecScanSpec spec;
     int convChr = 0;
     const SecUnsignedChar *fmt = (const SecUnsignedChar *)format;
@@ -766,43 +872,30 @@ void SecClearDestBuf(const char *buffer, const char *format, va_list argList)
 
     /* Update wchar flag for %S %C */
     SecUpdateWcharFlagByType(*fmt, &spec);
-
-    if (spec.suppress != 0 || SecDecodeClearFormat(fmt, &convChr) != 0) {
+    if (spec.suppress != 0) {
         return;
     }
 
-    if (buffer != NULL && *buffer != SECUREC_CHAR('\0') && convChr != SECUREC_CHAR('s')) {
+    if (SecDecodeClearFormat(fmt, &convChr) != 0) {
+        return;
+    }
+
+    if (buffer != NULL && *buffer != SECUREC_CHAR('\0') && convChr != 's') {
         /*
          * When buffer not empty just clear %s.
          * Example call sscanf by  argment of (" \n", "%s", s, sizeof(s))
          */
         return;
     }
-    (void)memset(&argListSave, 0, sizeof(va_list)); /* To clear e530 argListSave not initialized */
-#if defined(va_copy)
-    va_copy(argListSave, argList);
-#elif defined(__va_copy)        /* For vxworks */
-    __va_copy(argListSave, argList);
-#else
-    argListSave = argList;
-#endif
-    do {
-        void *argPtr = (void *)va_arg(argListSave, void *);
-        /* Get the next argument - size of the array in characters */
-        size_t arrayWidth = ((size_t)(va_arg(argListSave, size_t))) & 0xFFFFFFFFUL;
-        va_end(argListSave);
-        /* To clear e438 last value assigned not used , the compiler will optimize this code */
-        (void)argListSave;
-        /* There is no need to judge the upper limit */
-        if (arrayWidth == 0 || argPtr == NULL) {
-            return;
-        }
 
-        /* Clear one char */
-        SecAddEndingZero(argPtr, &spec);
-    } SECUREC_WHILE_ZERO;
+    SecDecodeClearArg(&spec, argList);
+    /* There is no need to judge the upper limit */
+    if (spec.arrayWidth == 0 || spec.argPtr == NULL) {
+        return;
+    }
+    /* Clear one char */
+    SecAddEndingZero(spec.argPtr, &spec);
     return;
-
 }
 
 /*
@@ -811,7 +904,7 @@ void SecClearDestBuf(const char *buffer, const char *format, va_list argList)
 SECUREC_INLINE void SecAssignNumber(const SecScanSpec *spec)
 {
     void *argPtr = spec->argPtr;
-    if (spec->isInt64Arg != 0) {
+    if (spec->numberArgType != 0) {
 #if defined(SECUREC_VXWORKS_PLATFORM)
 #if defined(SECUREC_VXWORKS_PLATFORM_COMP)
         *(SecInt64 UNALIGNED *)argPtr = (SecInt64)(spec->number64);
@@ -845,7 +938,7 @@ SECUREC_INLINE void SecAssignNumber(const SecScanSpec *spec)
  */
 SECUREC_INLINE int SecIsLongBitEqual(int bitNum)
 {
-    return (unsigned int)bitNum == SECUREC_LONG_BIT_NUM;
+    return (int)((unsigned int)bitNum == SECUREC_LONG_BIT_NUM);
 }
 #endif
 
@@ -867,7 +960,7 @@ static void SecDecodeNumberDecimal(SecScanSpec *spec)
 #if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
     unsigned long decimalEdge = SECUREC_MAX_32BITS_VALUE_DIV_TEN;
 #ifdef SECUREC_ON_64BITS
-    if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH)) {
+    if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH) != 0) {
         decimalEdge = (unsigned long)SECUREC_MAX_64BITS_VALUE_DIV_TEN;
     }
 #endif
@@ -878,6 +971,7 @@ static void SecDecodeNumberDecimal(SecScanSpec *spec)
     spec->number = SECUREC_MUL_TEN(spec->number);
 #if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
     if (spec->number == SECUREC_MUL_TEN(decimalEdge)) {
+        /* This code is specially converted to unsigned long type for compatibility */
         SecUnsignedInt64 number64As = (unsigned long)SECUREC_MAX_64BITS_VALUE - spec->number;
         if (number64As < (SecUnsignedInt64)((SecUnsignedInt)spec->ch - SECUREC_CHAR('0'))) {
             spec->beyondMax = 1;
@@ -885,9 +979,7 @@ static void SecDecodeNumberDecimal(SecScanSpec *spec)
     }
 #endif
     spec->number += (unsigned long)((SecUnsignedInt)spec->ch - SECUREC_CHAR('0'));
-
 }
-
 
 /*
  * Parse Hex character to integer for 32bit .
@@ -903,7 +995,6 @@ static void SecDecodeNumberHex(SecScanSpec *spec)
     spec->number += (unsigned long)(unsigned int)SecHexValueOfChar(spec->ch);
 }
 
-
 /*
  * Parse Octal character to integer for 32bit .
  */
@@ -918,59 +1009,59 @@ static void SecDecodeNumberOctal(SecScanSpec *spec)
     spec->number += (unsigned long)((SecUnsignedInt)spec->ch - SECUREC_CHAR('0'));
 }
 
-
 #if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
 /* Compatible with integer negative values other than int */
 SECUREC_INLINE void SecFinishNumberNegativeOther(SecScanSpec *spec)
 {
-    if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+    if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
         if (spec->number > SECUREC_MIN_LONG_NEG_VALUE) {
             spec->number = SECUREC_MIN_LONG_NEG_VALUE;
         } else {
-            spec->number = (unsigned long)(-(long)spec->number);
+            spec->number = (unsigned long)(0U - spec->number); /* Wrap with unsigned long numbers */
         }
         if (spec->beyondMax != 0) {
             if (spec->numberWidth < SECUREC_NUM_WIDTH_INT) {
                 spec->number = 0;
-            } else if (spec->numberWidth == SECUREC_NUM_WIDTH_LONG) {
+            }
+            if (spec->numberWidth == SECUREC_NUM_WIDTH_LONG) {
                 spec->number = SECUREC_MIN_LONG_NEG_VALUE;
             }
         }
     } else { /* For o, u, x, X, p */
-        spec->number = (unsigned long)(-(long)spec->number);
+        spec->number = (unsigned long)(0U - spec->number); /* Wrap with unsigned long numbers */
         if (spec->beyondMax != 0) {
-            spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+            spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
         }
     }
 }
 /* Compatible processing of integer negative numbers */
 SECUREC_INLINE void SecFinishNumberNegativeInt(SecScanSpec *spec)
 {
-    if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+    if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
 #ifdef SECUREC_ON_64BITS
-        if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH)) {
+        if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH) != 0) {
             if ((spec->number > SECUREC_MIN_64BITS_NEG_VALUE)) {
                 spec->number = 0;
             } else {
-                spec->number = (unsigned int)(-(int)spec->number);
+                spec->number = (unsigned int)(0U - (unsigned int)spec->number); /* Wrap with unsigned int numbers */
             }
         }
 #else
-        if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH)) {
+        if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH) != 0) {
             if ((spec->number > SECUREC_MIN_32BITS_NEG_VALUE)) {
                 spec->number = SECUREC_MIN_32BITS_NEG_VALUE;
             } else {
-                spec->number = (unsigned int)(-(int)spec->number);
+                spec->number = (unsigned int)(0U - (unsigned int)spec->number); /* Wrap with unsigned int numbers */
             }
         }
 #endif
         if (spec->beyondMax != 0) {
 #ifdef SECUREC_ON_64BITS
-            if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH)) {
+            if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH) != 0) {
                 spec->number = 0;
             }
 #else
-            if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH)) {
+            if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH) != 0) {
                 spec->number = SECUREC_MIN_32BITS_NEG_VALUE;
             }
 #endif
@@ -980,13 +1071,13 @@ SECUREC_INLINE void SecFinishNumberNegativeInt(SecScanSpec *spec)
         if (spec->number > SECUREC_MAX_32BITS_VALUE_INC) {
             spec->number = SECUREC_MAX_32BITS_VALUE;
         } else {
-            spec->number = (unsigned int)(-(int)spec->number);
+            spec->number = (unsigned int)(0U - (unsigned int)spec->number); /* Wrap with unsigned int numbers */
         }
 #else
-        spec->number = (unsigned int)(-(int)spec->number);
+        spec->number = (unsigned int)(0U - (unsigned int)spec->number); /* Wrap with unsigned int numbers */
 #endif
         if (spec->beyondMax != 0) {
-            spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+            spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
         }
     }
 }
@@ -994,19 +1085,19 @@ SECUREC_INLINE void SecFinishNumberNegativeInt(SecScanSpec *spec)
 /* Compatible with integer positive values other than int */
 SECUREC_INLINE void SecFinishNumberPositiveOther(SecScanSpec *spec)
 {
-    if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+    if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
         if (spec->number > SECUREC_MAX_LONG_POS_VALUE) {
             spec->number = SECUREC_MAX_LONG_POS_VALUE;
         }
         if ((spec->beyondMax != 0 && spec->numberWidth < SECUREC_NUM_WIDTH_INT)) {
-            spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+            spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
         }
         if (spec->beyondMax != 0 && spec->numberWidth == SECUREC_NUM_WIDTH_LONG) {
             spec->number = SECUREC_MAX_LONG_POS_VALUE;
         }
     } else {
         if (spec->beyondMax != 0) {
-            spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+            spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
         }
     }
 }
@@ -1014,23 +1105,23 @@ SECUREC_INLINE void SecFinishNumberPositiveOther(SecScanSpec *spec)
 /* Compatible processing of integer positive numbers */
 SECUREC_INLINE void SecFinishNumberPositiveInt(SecScanSpec *spec)
 {
-    if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+    if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
 #ifdef SECUREC_ON_64BITS
-        if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH)) {
+        if (SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH) != 0) {
             if (spec->number > SECUREC_MAX_64BITS_POS_VALUE) {
-                spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+                spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
             }
         }
-        if (spec->beyondMax != 0 && SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH)) {
-            spec->number |= (unsigned long)SECUREC_MAX_64BITS_VALUE;
+        if (spec->beyondMax != 0 && SecIsLongBitEqual(SECUREC_LP64_BIT_WIDTH) != 0) {
+            spec->number = (unsigned long)SECUREC_MAX_64BITS_VALUE;
         }
 #else
-        if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH)) {
+        if (SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH) != 0) {
             if (spec->number > SECUREC_MAX_32BITS_POS_VALUE) {
                 spec->number = SECUREC_MAX_32BITS_POS_VALUE;
             }
         }
-        if (spec->beyondMax != 0 && SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH)) {
+        if (spec->beyondMax != 0 && SecIsLongBitEqual(SECUREC_LP32_BIT_WIDTH) != 0) {
             spec->number = SECUREC_MAX_32BITS_POS_VALUE;
         }
 #endif
@@ -1077,7 +1168,6 @@ static void SecDecodeNumber64Hex(SecScanSpec *spec)
 #endif
     spec->number64 = SECUREC_MUL_SIXTEEN(spec->number64);
     spec->number64 += (SecUnsignedInt64)(unsigned int)SecHexValueOfChar(spec->ch);
-
 }
 
 /*
@@ -1095,42 +1185,44 @@ static void SecDecodeNumber64Octal(SecScanSpec *spec)
 }
 
 #define SECUREC_DECODE_NUMBER_FUNC_NUM 2
-/* Function name cannot add address symbol, causing 546 alarm */
-static void (*g_secDecodeNumberHex[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = \
-    { SecDecodeNumberHex, SecDecodeNumber64Hex };
-static void (*g_secDecodeNumberOctal[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = \
-    { SecDecodeNumberOctal, SecDecodeNumber64Octal };
-static void (*g_secDecodeNumberDecimal[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = \
-    { SecDecodeNumberDecimal, SecDecodeNumber64Decimal };
 
 /*
  * Parse 64-bit integer formatted input, return 0 when ch is a number.
  */
 SECUREC_INLINE int SecDecodeNumber(SecScanSpec *spec)
 {
-    if (spec->convChr == SECUREC_CHAR('x') || spec->convChr == SECUREC_CHAR('p')) {
-        if (SecIsXdigit(spec->ch)) {
-            (*g_secDecodeNumberHex[spec->isInt64Arg])(spec);
+    /* Function name cannot add address symbol, causing 546 alarm */
+    static void (*secDecodeNumberHex[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = {
+        SecDecodeNumberHex, SecDecodeNumber64Hex
+    };
+    static void (*secDecodeNumberOctal[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = {
+        SecDecodeNumberOctal, SecDecodeNumber64Octal
+    };
+    static void (*secDecodeNumberDecimal[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = {
+        SecDecodeNumberDecimal, SecDecodeNumber64Decimal
+    };
+    if (spec->convChr == 'x' || spec->convChr == 'p') {
+        if (SecIsXdigit(spec->ch) != 0) {
+            (*secDecodeNumberHex[spec->numberArgType])(spec);
         } else {
             return -1;
         }
         return 0;
     }
-    if (!(SecIsDigit(spec->ch))) {
+    if (SecIsDigit(spec->ch) == 0) {
         return -1;
     }
-    if (spec->convChr == SECUREC_CHAR('o')) {
-        if (spec->ch < SECUREC_CHAR('8')) {
-            (*g_secDecodeNumberOctal[spec->isInt64Arg])(spec);
+    if (spec->convChr == 'o') {
+        if (spec->ch < SECUREC_CHAR('8')) { /* Octal maximum limit '8' */
+            (*secDecodeNumberOctal[spec->numberArgType])(spec);
         } else {
             return -1;
         }
     } else { /* The convChr is 'd' */
-        (*g_secDecodeNumberDecimal[spec->isInt64Arg])(spec);
+        (*secDecodeNumberDecimal[spec->numberArgType])(spec);
     }
     return 0;
 }
-
 
 /*
  * Complete the final 32-bit integer formatted input
@@ -1154,11 +1246,11 @@ static void SecFinishNumber(SecScanSpec *spec)
 #else
     if (spec->negative != 0) {
 #if defined(__hpux)
-        if (spec->oriConvChr != SECUREC_CHAR('p')) {
-            spec->number = (unsigned long)(-(long)spec->number);
+        if (spec->oriConvChr != 'p') {
+            spec->number = (unsigned long)(0U - spec->number); /* Wrap with unsigned long numbers */
         }
 #else
-        spec->number = (unsigned long)(-(long)spec->number);
+        spec->number = (unsigned long)(0U - spec->number); /* Wrap with unsigned long numbers */
 #endif
     }
 #endif
@@ -1172,23 +1264,23 @@ static void SecFinishNumber64(SecScanSpec *spec)
 {
 #if (defined(SECUREC_COMPATIBLE_LINUX_FORMAT) && !(defined(SECUREC_ON_UNIX)))
     if (spec->negative != 0) {
-        if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+        if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
             if (spec->number64 > SECUREC_MIN_64BITS_NEG_VALUE) {
                 spec->number64 = SECUREC_MIN_64BITS_NEG_VALUE;
             } else {
-                spec->number64 = (SecUnsignedInt64)(-(SecInt64)spec->number64);
+                spec->number64 = (SecUnsignedInt64)(0U - spec->number64); /* Wrap with unsigned int64 numbers */
             }
             if (spec->beyondMax != 0) {
                 spec->number64 = SECUREC_MIN_64BITS_NEG_VALUE;
             }
         } else {                /* For o, u, x, X, p */
-            spec->number64 = (SecUnsignedInt64)(-(SecInt64)spec->number64);
+            spec->number64 = (SecUnsignedInt64)(0U - spec->number64); /* Wrap with unsigned int64 numbers */
             if (spec->beyondMax != 0) {
                 spec->number64 = SECUREC_MAX_64BITS_VALUE;
             }
         }
     } else {
-        if (spec->oriConvChr == SECUREC_CHAR('d') || spec->oriConvChr == SECUREC_CHAR('i')) {
+        if (SECUREC_CONVERT_IS_SIGNED(spec->oriConvChr)) {
             if (spec->number64 > SECUREC_MAX_64BITS_POS_VALUE) {
                 spec->number64 = SECUREC_MAX_64BITS_POS_VALUE;
             }
@@ -1204,18 +1296,16 @@ static void SecFinishNumber64(SecScanSpec *spec)
 #else
     if (spec->negative != 0) {
 #if defined(__hpux)
-        if (spec->oriConvChr != SECUREC_CHAR('p')) {
-            spec->number64 = (SecUnsignedInt64)(-(SecInt64)spec->number64);
+        if (spec->oriConvChr != 'p') {
+            spec->number64 = (SecUnsignedInt64)(0U - spec->number64); /* Wrap with unsigned int64 numbers */
         }
 #else
-        spec->number64 = (SecUnsignedInt64)(-(SecInt64)spec->number64);
+        spec->number64 = (SecUnsignedInt64)(0U - spec->number64); /* Wrap with unsigned int64 numbers */
 #endif
     }
 #endif
     return;
 }
-static void (*g_secFinishNumber[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = \
-    { SecFinishNumber, SecFinishNumber64 };
 
 #if SECUREC_ENABLE_SCANF_FILE
 
@@ -1224,44 +1314,50 @@ static void (*g_secFinishNumber[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *sp
  */
 SECUREC_INLINE void SecSeekStream(SecFileStream *stream)
 {
-    if ((stream->count <= 0) && feof(stream->pf)) {
-        /* File pointer at the end of file, don't need to seek back */
-        stream->base[0] = '\0';
-        return;
+    if (stream->count == 0) {
+        if (feof(stream->pf) != 0) {
+            /* File pointer at the end of file, don't need to seek back */
+            stream->base[0] = '\0';
+            return;
+        }
     }
-    /* LSD seek to original position, bug fix 2014 1 21 */
-    if (fseek(stream->pf, stream->oriFilePos, SEEK_SET)) {
+    /* Seek to original position, for file read, but nothing to input */
+    if (fseek(stream->pf, stream->oriFilePos, SEEK_SET) != 0) {
         /* Seek failed, ignore it */
         stream->oriFilePos = 0;
         return;
     }
 
-    if (stream->fileRealRead > 0) { /* LSD bug fix. when file reach to EOF, don't seek back */
+    if (stream->fileRealRead > 0) { /* Do not seek without input data */
 #if defined(SECUREC_COMPATIBLE_WIN_FORMAT)
-        int loops;
+        size_t residue = stream->fileRealRead % SECUREC_BUFFERED_BLOK_SIZE;
+        size_t loops;
         for (loops = 0; loops < (stream->fileRealRead / SECUREC_BUFFERED_BLOK_SIZE); ++loops) {
-            if (fread(stream->base, (size_t)1, (size_t)SECUREC_BUFFERED_BLOK_SIZE,
-                stream->pf) != SECUREC_BUFFERED_BLOK_SIZE) {
+            if (fread(stream->base, (size_t)SECUREC_BUFFERED_BLOK_SIZE, (size_t)1, stream->pf) != (size_t)1) {
                 break;
             }
         }
-        if ((stream->fileRealRead % SECUREC_BUFFERED_BLOK_SIZE) != 0) {
-            size_t len = fread(stream->base, (size_t)((unsigned int)stream->fileRealRead % SECUREC_BUFFERED_BLOK_SIZE),
-                               (size_t)1, stream->pf);
-            if ((len == 1 || len == 0) && (ftell(stream->pf) < stream->oriFilePos + stream->fileRealRead)) {
-                (void)fseek(stream->pf, stream->oriFilePos + stream->fileRealRead, SEEK_SET);
+        if (residue != 0) {
+            long curFilePos;
+            if (fread(stream->base, residue, (size_t)1, stream->pf) != (size_t)1) {
+                return;
+            }
+            curFilePos = ftell(stream->pf);
+            if (curFilePos < stream->oriFilePos ||
+                (size_t)(unsigned long)(curFilePos - stream->oriFilePos) < stream->fileRealRead) {
+                /* Try to remedy the problem */
+                (void)fseek(stream->pf, (long)stream->fileRealRead, SEEK_CUR);
             }
         }
-
 #else
-        /* On linux like system */
-        if (fseek(stream->pf, stream->oriFilePos + stream->fileRealRead, SEEK_SET)) {
+        /* Seek from oriFilePos. Regardless of the integer sign problem, call scanf will not read very large data */
+        if (fseek(stream->pf, (long)stream->fileRealRead, SEEK_CUR) != 0) {
             /* Seek failed, ignore it */
             stream->oriFilePos = 0;
+            return;
         }
 #endif
     }
-
     return;
 }
 
@@ -1270,7 +1366,7 @@ SECUREC_INLINE void SecSeekStream(SecFileStream *stream)
  */
 SECUREC_INLINE void SecAdjustStream(SecFileStream *stream)
 {
-    if (stream != NULL && (stream->flag & SECUREC_FILE_STREAM_FLAG) && stream->base != NULL) {
+    if (stream != NULL && (stream->flag & SECUREC_FILE_STREAM_FLAG) != 0 && stream->base != NULL) {
         SecSeekStream(stream);
         SECUREC_FREE(stream->base);
         stream->base = NULL;
@@ -1282,7 +1378,7 @@ SECUREC_INLINE void SecAdjustStream(SecFileStream *stream)
 SECUREC_INLINE void SecSkipSpaceFormat(const SecUnsignedChar **format)
 {
     const SecUnsignedChar *fmt = *format;
-    while (SecIsSpace((SecInt)(int)(*fmt))) {
+    while (SecIsSpace((SecInt)(int)(*fmt)) != 0) {
         ++fmt;
     }
     *format = fmt;
@@ -1292,51 +1388,49 @@ SECUREC_INLINE void SecSkipSpaceFormat(const SecUnsignedChar **format)
 /*
  * Handling multi-character characters
  */
-SECUREC_INLINE int SecDecodeLeadByte(SecScanSpec *spec,
-    const SecUnsignedChar **format, SecFileStream *stream, int *counter)
+SECUREC_INLINE int SecDecodeLeadByte(SecScanSpec *spec, const SecUnsignedChar **format, SecFileStream *stream)
 {
 #if SECUREC_HAVE_MBTOWC
     const SecUnsignedChar *fmt = *format;
     int ch1 = (int)spec->ch;
-    int ch2 = SecGetChar(stream, counter);
+    int ch2 = SecGetChar(stream, &(spec->charCount));
     spec->ch = (SecInt)ch2;
     if (*fmt == SECUREC_CHAR('\0') || (int)(*fmt) != ch2) {
         /* LSD in console mode, ungetc twice may cause problem */
-        SecUnGetChar(ch2, stream, counter);
-        SecUnGetChar(ch1, stream, counter);
+        SecUnGetChar(ch2, stream, &(spec->charCount));
+        SecUnGetChar(ch1, stream, &(spec->charCount));
         return -1;
     }
     ++fmt;
-    if (MB_CUR_MAX >= SECUREC_UTF8_BOM_HEADER_SIZE &&
+    if ((unsigned int)MB_CUR_MAX >= SECUREC_UTF8_BOM_HEADER_SIZE &&
         (((unsigned char)ch1 & SECUREC_UTF8_LEAD_1ST) == SECUREC_UTF8_LEAD_1ST) &&
         (((unsigned char)ch2 & SECUREC_UTF8_LEAD_2ND) == SECUREC_UTF8_LEAD_2ND)) {
         /* This char is very likely to be a UTF-8 char */
         wchar_t tempWChar;
         char temp[SECUREC_MULTI_BYTE_MAX_LEN];
-        int ch3 = (int)SecGetChar(stream, counter);
+        int ch3 = (int)SecGetChar(stream, &(spec->charCount));
         spec->ch = (SecInt)ch3;
+        if (*fmt == SECUREC_CHAR('\0') || (int)(*fmt) != ch3) {
+            SecUnGetChar(ch3, stream, &(spec->charCount));
+            return -1;
+        }
         temp[0] = (char)ch1;
         temp[1] = (char)ch2; /* 1 index of second character */
         temp[2] = (char)ch3; /* 2 index of third character */
         temp[3] = '\0';      /* 3 of string terminator position */
-
         if (mbtowc(&tempWChar, temp, sizeof(temp)) > 0) {
             /* Succeed */
-            if (*fmt == SECUREC_CHAR('\0') || (int)(*fmt) != ch3) {
-                SecUnGetChar(ch3, stream, counter);
-                return -1;
-            }
             ++fmt;
-            *counter = *counter - 1;
+            --spec->charCount;
         } else {
-            SecUnGetChar(ch3, stream, counter);
+            SecUnGetChar(ch3, stream, &(spec->charCount));
         }
     }
-    *counter = *counter - 1;    /* Only count as one character read */
+    --spec->charCount;    /* Only count as one character read */
     *format = fmt;
     return 0;
 #else
-    SecUnGetChar(spec->ch, stream, counter);
+    SecUnGetChar(spec->ch, stream, &(spec->charCount));
     (void)format; /* To clear e438 last value assigned not used , the compiler will optimize this code */
     return -1;
 #endif
@@ -1350,7 +1444,6 @@ SECUREC_INLINE int SecSetupBracketTable(const SecUnsignedChar **format, SecBrack
 {
     const SecUnsignedChar *fmt = *format;
     SecUnsignedChar prevChar = 0;
-    SecUnsignedChar last = 0;
 #if !(defined(SECUREC_COMPATIBLE_WIN_FORMAT))
     if (*fmt == SECUREC_CHAR('{')) {
         return -1;
@@ -1358,10 +1451,10 @@ SECUREC_INLINE int SecSetupBracketTable(const SecUnsignedChar **format, SecBrack
 #endif
     /* For building "table" data */
     ++fmt; /* Skip [ */
-    bracketTable->mask = 0;
+    bracketTable->mask = 0; /* Set all bits to 0 */
     if (*fmt == SECUREC_CHAR('^')) {
         ++fmt;
-        bracketTable->mask = (unsigned char)0xff;
+        bracketTable->mask = (unsigned char)0xffU; /* Use 0xffU to set all bits to 1 */
     }
     if (*fmt == SECUREC_CHAR(']')) {
         prevChar = SECUREC_CHAR(']');
@@ -1369,32 +1462,28 @@ SECUREC_INLINE int SecSetupBracketTable(const SecUnsignedChar **format, SecBrack
         SecBracketSetBit(bracketTable->table, SECUREC_CHAR(']'));
     }
     while (*fmt != SECUREC_CHAR('\0') && *fmt != SECUREC_CHAR(']')) {
-        SecUnsignedChar expCh = *(fmt++);
+        SecUnsignedChar expCh = *fmt;
+        ++fmt;
         if (expCh != SECUREC_CHAR('-') || prevChar == 0 || *fmt == SECUREC_CHAR(']')) {
             /* Normal character */
             prevChar = expCh;
             SecBracketSetBit(bracketTable->table, expCh);
         } else {
             /* For %[a-z] */
-            expCh = *(fmt++);   /* Get end of range */
-            if (prevChar < expCh) { /* %[a-z] */
-                last = expCh;
+            expCh = *fmt;   /* Get end of range */
+            ++fmt;
+            if (prevChar <= expCh) {  /* %[a-z] %[a-a] */
+                SecBracketSetBitRange(bracketTable->table, prevChar, expCh);
             } else {
-                prevChar = expCh;
-#if defined(SECUREC_COMPATIBLE_WIN_FORMAT)
                 /* For %[z-a] */
-                last = prevChar;
+#if defined(SECUREC_COMPATIBLE_WIN_FORMAT)
+                /* Swap start and end characters */
+                SecBracketSetBitRange(bracketTable->table, expCh, prevChar);
 #else
                 SecBracketSetBit(bracketTable->table, SECUREC_CHAR('-'));
                 SecBracketSetBit(bracketTable->table, expCh);
-                continue;
 #endif
             }
-            /* Format %[a-\xff] last is 0xFF, condition (rnch <= last) cause dead loop */
-            for (expCh = prevChar; expCh < last; ++expCh) {
-                SecBracketSetBit(bracketTable->table, expCh);
-            }
-            SecBracketSetBit(bracketTable->table, last);
             prevChar = 0;
         }
     }
@@ -1447,7 +1536,7 @@ SECUREC_INLINE wchar_t SecConvertInputCharToWchar(SecScanSpec *spec, SecFileStre
     temp[0] = (char)spec->ch;
     temp[1] = '\0';
 #if defined(SECUREC_COMPATIBLE_WIN_FORMAT)
-    if (SecIsLeadByte(spec->ch)) {
+    if (SecIsLeadByte(spec->ch) != 0) {
         spec->ch = SecGetChar(stream, &(spec->charCount));
         temp[1] = (char)spec->ch;
         temp[2] = '\0'; /* 2 of string terminator position */
@@ -1457,13 +1546,14 @@ SECUREC_INLINE wchar_t SecConvertInputCharToWchar(SecScanSpec *spec, SecFileStre
         tempWChar = L'?';
     }
 #else
-    if (SecIsLeadByte(spec->ch)) {
+    if (SecIsLeadByte(spec->ch) != 0) {
         int convRes = 0;
         int di = 1;
         /* On Linux like system, the string is encoded in UTF-8 */
         while (convRes <= 0 && di < (int)MB_CUR_MAX && di < SECUREC_MULTI_BYTE_MAX_LEN) {
             spec->ch = SecGetChar(stream, &(spec->charCount));
-            temp[di++] = (char)spec->ch;
+            temp[di] = (char)spec->ch;
+            ++di;
             temp[di] = '\0';
             convRes = mbtowc(&tempWChar, temp, sizeof(temp));
         }
@@ -1484,7 +1574,6 @@ SECUREC_INLINE wchar_t SecConvertInputCharToWchar(SecScanSpec *spec, SecFileStre
     return tempWChar;
 }
 #endif /* SECUREC_HAVE_WCHART */
-
 
 SECUREC_INLINE int SecInputForChar(SecScanSpec *spec, SecFileStream *stream)
 {
@@ -1514,26 +1603,25 @@ SECUREC_INLINE int SecInputForChar(SecScanSpec *spec, SecFileStream *stream)
  */
 SECUREC_INLINE int SecInputNumberDigital(SecFileStream *stream, SecScanSpec *spec)
 {
-    int loopFlag = 0;
-    int started = -1;
-    while (loopFlag == 0) {
+    static void (*secFinishNumber[SECUREC_DECODE_NUMBER_FUNC_NUM])(SecScanSpec *spec) = {
+        SecFinishNumber, SecFinishNumber64
+    };
+    while (SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        spec->ch = SecGetChar(stream, &(spec->charCount));
         /* Decode ch to number */
-        loopFlag = SecDecodeNumber(spec);
-        if (loopFlag == 0) {
-            started = 0;
-            if (spec->widthSet != 0 && --spec->width == 0) {
-                loopFlag = 1;
-            } else {
-                spec->ch = SecGetChar(stream, &(spec->charCount));
-            }
-        } else {
+        if (SecDecodeNumber(spec) != 0) {
             SecUnGetChar(spec->ch, stream, &(spec->charCount));
+            break;
         }
+        SECUREC_FILED_WIDTH_DEC(spec); /* Must be behind un get char, otherwise the logic is incorrect */
+        spec->numberState = SECUREC_NUMBER_STATE_STARTED;
     }
     /* Handling integer negative numbers and beyond max */
-    (*g_secFinishNumber[spec->isInt64Arg])(spec);
-    return started;
-
+    (*secFinishNumber[spec->numberArgType])(spec);
+    if (spec->numberState == SECUREC_NUMBER_STATE_STARTED) {
+        return 0;
+    }
+    return -1;
 }
 
 /*
@@ -1542,59 +1630,53 @@ SECUREC_INLINE int SecInputNumberDigital(SecFileStream *stream, SecScanSpec *spe
  */
 SECUREC_INLINE int SecInputNumber(SecFileStream *stream, SecScanSpec *spec)
 {
-    spec->ch = SecGetChar(stream, &(spec->charCount));
-
+    /* Character already read */
     if (spec->ch == SECUREC_CHAR('+') || spec->ch == SECUREC_CHAR('-')) {
         if (spec->ch == SECUREC_CHAR('-')) {
             spec->negative = 1;
 #if SECUREC_IN_KERNEL
-            if (spec->convChr == SECUREC_CHAR('x') ||
-                spec->convChr == SECUREC_CHAR('o') ||
-                spec->convChr == SECUREC_CHAR('u')) {
-                /* In kernel Refuse to enter negative number */
+            /* In kernel Refuse to enter negative number */
+            if (SECUREC_CONVERT_IS_UNSIGNED(spec->oriConvChr)) {
                 return -1;
             }
 #endif
         }
-        if (spec->widthSet != 0 && --spec->width == 0) {
-            return -1;
-        } else {
-            spec->ch = SecGetChar(stream, &(spec->charCount));
-        }
+        SECUREC_FILED_WIDTH_DEC(spec); /* Do not need to check width here, must be greater than 0 */
+        spec->ch = SecGetChar(stream, &(spec->charCount)); /* Eat + or - */
+        spec->ch = SecGetChar(stream, &(spec->charCount)); /* Get next character, used for the '0' judgments */
+        SecUnGetChar(spec->ch, stream, &(spec->charCount)); /* Not sure if it was actually read, so push back */
     }
 
-    if (spec->oriConvChr == SECUREC_CHAR('i')) {
-        /* The i could be d, o, or x, use d as default */
-        spec->convChr = SECUREC_CHAR('d');
+    if (spec->oriConvChr == 'i') {
+        spec->convChr = 'd'; /* The i could be d, o, or x, use d as default */
     }
 
-    if (spec->oriConvChr == SECUREC_CHAR('x') || spec->oriConvChr == SECUREC_CHAR('i')) {
-        if (spec->ch != SECUREC_CHAR('0')) {
-            /* Scan number */
-            return SecInputNumberDigital(stream, spec);
+    if (spec->ch == SECUREC_CHAR('0') && (spec->oriConvChr == 'x' || spec->oriConvChr == 'i') &&
+        SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        /* Input string begin with 0, may be 0x123  0X123  0123  0x  01  0yy  09  0  0ab 00 */
+        SECUREC_FILED_WIDTH_DEC(spec);
+        spec->ch = SecGetChar(stream, &(spec->charCount)); /* ch is '0' */
+
+        /* Read only '0' due to width limitation */
+        if (!SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+            /* The number or number64 in spec has been set 0 */
+            return 0;
         }
-        /* Now input string may be 0x123 or 0X123 or just 0 */
-        /* Get next char */
-        spec->ch = SecGetChar(stream, &(spec->charCount));
+
+        spec->ch = SecGetChar(stream, &(spec->charCount)); /* Get next char to check x or X, do not dec width */
         if ((SecChar)spec->ch == SECUREC_CHAR('x') || (SecChar)spec->ch == SECUREC_CHAR('X')) {
-            spec->convChr = SECUREC_CHAR('x');
-            spec->ch = SecGetChar(stream, &(spec->charCount));
-            /* Length of 0x is 2 */
-            if (spec->widthSet != 0 && spec->width <= (1 + 1)) {
-                /* Length not enough for "0x" */
-                return -1;
-            }
-            spec->width -= 2; /* Subtract 2 for the length of "0x" */
+            spec->convChr = 'x';
+            SECUREC_FILED_WIDTH_DEC(spec); /* Make incorrect width for x or X */
         } else {
-            if (spec->oriConvChr != SECUREC_CHAR('x')) {
-                spec->convChr = SECUREC_CHAR('o');
+            if (spec->oriConvChr == 'i') {
+                spec->convChr = 'o';
             }
-            /* Unset the character after 0 back to stream, input only '0' result is OK */
+            /* For "0y" "08" "01" "0a" ... ,push the 'y' '8' '1' 'a'  back */
             SecUnGetChar(spec->ch, stream, &(spec->charCount));
-            spec->ch = SECUREC_CHAR('0');
+            /* Since 0 has been read, it indicates that a valid character has been read */
+            spec->numberState = SECUREC_NUMBER_STATE_STARTED;
         }
     }
-    /* Scan number */
     return SecInputNumberDigital(stream, spec);
 }
 
@@ -1609,15 +1691,16 @@ SECUREC_INLINE int SecInputString(SecFileStream *stream, SecScanSpec *spec,
     int suppressed = 0;
     int errNoMem = 0;
 
-    while (spec->widthSet == 0 || spec->width-- != 0) {
+    while (SECUREC_FILED_WIDTH_ENOUGH(spec)) {
+        SECUREC_FILED_WIDTH_DEC(spec);
         spec->ch = SecGetChar(stream, &(spec->charCount));
         /*
          * The char condition or string condition and bracket condition.
          * Only supports wide characters with a maximum length of two bytes
          */
-        if (spec->ch != SECUREC_EOF && (SecCanInputCharacter(spec->convChr) ||
-            SecCanInputString(spec->convChr, spec->ch) ||
-            SecCanInputForBracket(spec->convChr, spec->ch, bracketTable))) {
+        if (spec->ch != SECUREC_EOF && (SecCanInputCharacter(spec->convChr) != 0 ||
+            SecCanInputString(spec->convChr, spec->ch) != 0 ||
+            SecCanInputForBracket(spec->convChr, spec->ch, bracketTable) != 0)) {
             if (spec->suppress != 0) {
                 /* Used to identify processed data for %*, use argPtr to identify will cause 613, so use suppressed */
                 suppressed = 1;
@@ -1647,13 +1730,11 @@ SECUREC_INLINE int SecInputString(SecFileStream *stream, SecScanSpec *spec,
         SecAddEndingZero(startPtr, spec);
         return -1;
     }
-
-    /* No input was scanned */
     if ((spec->suppress != 0 && suppressed == 0) ||
         (spec->suppress == 0 && startPtr == spec->argPtr)) {
+        /* No input was scanned */
         return -1;
     }
-
     if (spec->convChr != 'c') {
         /* Add null-terminate for strings */
         SecAddEndingZero(spec->argPtr, spec);
@@ -1717,19 +1798,17 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
     SecFloatSpec floatSpec;
     SecInitFloatSpec(&floatSpec);
 #endif
-    spec.ch = 0;
-    spec.charCount = 0;
+    spec.ch = 0; /* Need to initialize to 0 */
+    spec.charCount = 0; /* Need to initialize to 0 */
 
     /* Format must not NULL, use err < 1 to claer 845 */
     while (errRet < 1 && *format != SECUREC_CHAR('\0')) {
         /* Skip space in format and space in input */
-        if (SecIsSpace((SecInt)(int)(*format))) {
+        if (SecIsSpace((SecInt)(int)(*format)) != 0) {
             /* Read first no space char */
             spec.ch = SecSkipSpaceChar(stream, &(spec.charCount));
-            if (spec.ch == SECUREC_EOF) {
-                break;
-            }
-            /* Put fist no space char backup */
+            /* Read the EOF cannot be returned directly here, because the case of " %n" needs to be handled */
+            /* Put fist no space char backup. put EOF back is also OK, and to modify the character count */
             SecUnGetChar(spec.ch, stream, &(spec.charCount));
             SecSkipSpaceFormat(&format);
             continue;
@@ -1737,19 +1816,18 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
 
         if (*format != SECUREC_CHAR('%')) {
             spec.ch = SecGetChar(stream, &(spec.charCount));
-            if ((int)(*(format++)) != (int)(spec.ch)) {
+            if ((int)(*format) != (int)(spec.ch)) {
                 SecUnGetChar(spec.ch, stream, &(spec.charCount));
                 break;
             }
+            ++format;
 #if !defined(SECUREC_FOR_WCHAR) && defined(SECUREC_COMPATIBLE_VERSION)
-            if (SecIsLeadByte(spec.ch) && SecDecodeLeadByte(&spec, &format, stream) != 0) {
-                break;
+            if (SecIsLeadByte(spec.ch) != 0) {
+                if (SecDecodeLeadByte(&spec, &format, stream) != 0) {
+                    break;
+                }
             }
 #endif
-
-            if (SECUREC_MEET_EOF_BEFORE_NEXT_N(spec.ch, format)) {
-                break;
-            }
             continue;
         }
 
@@ -1761,20 +1839,19 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
             ++errRet;
             continue;
         }
-        /* Update wchar flag for %S %C */
-        SecUpdateWcharFlagByType(*format, &spec);
-
-        if (spec.widthSet != 0 && spec.width == 0) {
+        if (!SECUREC_FILED_WIDTH_ENOUGH(&spec)) {
             /* 0 width in format */
             ++errRet;
             continue;
         }
 
-        spec.convChr = (unsigned char)(*format) | (SECUREC_CHAR('a') - SECUREC_CHAR('A')); /* To lowercase */
-        spec.oriConvChr = spec.convChr;
+        /* Update wchar flag for %S %C */
+        SecUpdateWcharFlagByType(*format, &spec);
 
-        if (spec.convChr != SECUREC_CHAR('n')) {
-            if (spec.convChr != SECUREC_CHAR('c') && spec.convChr != SECUREC_BRACE) {
+        spec.convChr = SECUREC_TO_LOWERCASE(*format);
+        spec.oriConvChr = spec.convChr; /* convChr may be modified to handle integer logic */
+        if (spec.convChr != 'n') {
+            if (spec.convChr != 'c' && spec.convChr != SECUREC_BRACE) {
                 spec.ch = SecSkipSpaceChar(stream, &(spec.charCount));
             } else {
                 spec.ch = SecGetChar(stream, &(spec.charCount));
@@ -1786,12 +1863,18 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
         }
 
         /* Now no 0 width in format and get one char from input */
-        switch (spec.convChr) {
-            case SECUREC_CHAR('c'): /* Also 'C' */
+        switch (spec.oriConvChr) {
+            case 'c': /* Also 'C' */
+                if (spec.widthSet == 0) {
+                    spec.widthSet = 1;
+                    spec.width = 1;
+                }
                 /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('s'): /* Also 'S': */
+            case 's': /* Also 'S': */
                 /* fall-through */ /* FALLTHRU */
             case SECUREC_BRACE:
+                /* Unset last char to stream */
+                SecUnGetChar(spec.ch, stream, &(spec.charCount));
                 /* Check dest buffer and size */
                 if (spec.suppress == 0) {
                     spec.argPtr = (void *)va_arg(argList, void *);
@@ -1800,9 +1883,10 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                         ++errRet;
                         continue;
                     }
-                    /* Get the next argument - size of the array in characters */
+                    /* Get the next argument, size of the array in characters */
 #ifdef SECUREC_ON_64BITS
-                    spec.arrayWidth = ((size_t)(va_arg(argList, size_t))) & 0xFFFFFFFFUL;
+                    /* Use 0xffffffffUL mask to Support  pass integer as array length */
+                    spec.arrayWidth = ((size_t)(va_arg(argList, size_t))) & 0xffffffffUL;
 #else /* !SECUREC_ON_64BITS */
                     spec.arrayWidth = (size_t)va_arg(argList, size_t);
 #endif
@@ -1812,7 +1896,7 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                         continue;
                     }
                     /* One element is needed for '\0' for %s and %[ */
-                    if (spec.convChr != SECUREC_CHAR('c')) {
+                    if (spec.convChr != 'c') {
                         --spec.arrayWidth;
                     }
                 } else {
@@ -1820,12 +1904,7 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                     spec.argPtr = NULL;
                 }
 
-                if (spec.convChr == 'c') {
-                    if (spec.widthSet == 0) {
-                        spec.widthSet = 1;
-                        spec.width = 1;
-                    }
-                } else if (spec.convChr == SECUREC_BRACE) {
+                if (spec.convChr == SECUREC_BRACE) {
                     /* Malloc when first %[ is meet  for wchar version */
 #ifdef SECUREC_FOR_WCHAR
                     if (SecAllocBracketTable(&bracketTable) != 0) {
@@ -1847,26 +1926,25 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                         continue;
                     }
                 }
-                /* Unset last char to stream */
-                SecUnGetChar(spec.ch, stream, &(spec.charCount));
-                /* Set completed.  Now read string */
+
+                /* Set completed.  Now read string or character */
                 if (SecInputString(stream, &spec, &bracketTable, &doneCount) != 0) {
                     ++errRet;
                     continue;
                 }
                 break;
-            case SECUREC_CHAR('p'):
+            case 'p':
                 /* Make %hp same as %p */
                 spec.numberWidth = SECUREC_NUM_WIDTH_INT;
 #ifdef SECUREC_ON_64BITS
-                spec.isInt64Arg = 1;
+                spec.numberArgType = 1;
 #endif
                 /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('o'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('u'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('d'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('i'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('x'):
+            case 'o': /* fall-through */ /* FALLTHRU */
+            case 'u': /* fall-through */ /* FALLTHRU */
+            case 'd': /* fall-through */ /* FALLTHRU */
+            case 'i': /* fall-through */ /* FALLTHRU */
+            case 'x':
                 /* Unset last char to stream */
                 SecUnGetChar(spec.ch, stream, &(spec.charCount));
                 if (SecInputNumber(stream, &spec) != 0) {
@@ -1884,7 +1962,7 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                     ++doneCount;
                 }
                 break;
-            case SECUREC_CHAR('n'):    /* Char count */
+            case 'n': /* Char count */
                 if (spec.suppress == 0) {
                     spec.argPtr = (void *)va_arg(argList, void *);
                     if (spec.argPtr == NULL) {
@@ -1893,16 +1971,16 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                         continue;
                     }
                     spec.number = (unsigned long)(unsigned int)(spec.charCount);
-                    spec.isInt64Arg = 0;
+                    spec.numberArgType = 0;
                     SecAssignNumber(&spec);
                 }
                 break;
-            case SECUREC_CHAR('e'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('f'):    /* fall-through */ /* FALLTHRU */
-            case SECUREC_CHAR('g'):    /* Scan a float */
-#if SECUREC_ENABLE_SCANF_FLOAT
+            case 'e': /* fall-through */ /* FALLTHRU */
+            case 'f': /* fall-through */ /* FALLTHRU */
+            case 'g': /* Scan a float */
                 /* Unset last char to stream */
                 SecUnGetChar(spec.ch, stream, &(spec.charCount));
+#if SECUREC_ENABLE_SCANF_FLOAT
                 if (SecInputFloat(stream, &spec, &floatSpec) != 0) {
                     ++errRet;
                     continue;
@@ -1924,7 +2002,6 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
 #endif
                     ++doneCount;
                 }
-
                 break;
 #else /* SECUREC_ENABLE_SCANF_FLOAT */
                 ++errRet;
@@ -1937,16 +2014,12 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
                     ++errRet;
                     continue;
                 } else {
-                    --match; /*  Compensate for the self-increment of the following code */
+                    --match; /* Compensate for the self-increment of the following code */
                 }
+                break;
         }
-
         ++match;
         ++format;
-
-        if (SECUREC_MEET_EOF_BEFORE_NEXT_N(spec.ch, format)) {
-            break;
-        }
     }
 
 #ifdef SECUREC_FOR_WCHAR
@@ -1962,18 +2035,27 @@ int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList)
 #endif
 
     if (spec.ch == SECUREC_EOF) {
-        return ((doneCount || match) ? doneCount : SECUREC_SCANF_EINVAL);
-    } else if (formatError != 0 || paraIsNull != 0) {
-        /* Invalid Input Format or parameter */
+        return ((doneCount != 0 || match != 0) ? doneCount : SECUREC_SCANF_EINVAL);
+    }
+    if (formatError != 0 || paraIsNull != 0) {
+        /* Invalid Input Format or parameter, but not meet EOF */
         return SECUREC_SCANF_ERROR_PARA;
     }
-
     return doneCount;
 }
 
 #if SECUREC_ENABLE_SCANF_FILE
-
-#if defined(SECUREC_NO_STD_UNGETC)
+#if SECUREC_USE_STD_UNGETC
+/*
+ *  Get char from stream use std function
+ */
+SECUREC_INLINE SecInt SecGetCharFromStream(const SecFileStream *stream)
+{
+    SecInt ch;
+    ch = SECUREC_GETC(stream->pf);
+    return ch;
+}
+#else
 /*
  *  Get char  from stream or buffer
  */
@@ -1989,68 +2071,22 @@ SECUREC_INLINE SecInt SecGetCharFromStream(SecFileStream *stream)
     }
     return ch;
 }
-#else
-/*
- *  Get char from stream use std function
- */
-SECUREC_INLINE SecInt SecGetCharFromStream(const SecFileStream *stream)
-{
-    SecInt ch;
-    ch = SECUREC_GETC(stream->pf);
-    return ch;
-}
 #endif
 
 /*
- * Make data is aligned to SecChar size
- */
-SECUREC_INLINE void SecMakeDataIsAligned(SecFileStream *stream)
-{
-    int remainder = stream->count % (int)sizeof(SecChar);
-    if (remainder != 0) {
-        int needLen = (int)sizeof(SecChar) - remainder;
-        int len = (int)fread(stream->base + stream->count, (size_t)1, (size_t)(unsigned int)needLen, stream->pf);
-        if (len > 0 && len <= needLen) {
-            /* When encountering the end of a file, the read length is less than needLen */
-            stream->count += len;
-        }
-    }
-}
-
-/*
- * Try to read the BOM header, when meet a BOM head, discard it
+ * Try to read the BOM header, when meet a BOM head, discard it, then data is Aligned to base
  */
 SECUREC_INLINE void SecReadAndSkipBomHeader(SecFileStream *stream)
 {
-    int bomHeadSize;
-#ifdef SECUREC_FOR_WCHAR
-    bomHeadSize = SECUREC_BOM_HEADER_SIZE;
-#else
-    bomHeadSize = SECUREC_UTF8_BOM_HEADER_SIZE;
-#endif
-    stream->count = (int)fread(stream->base, (size_t)1, (size_t)(unsigned int)bomHeadSize, stream->pf);
-    if (stream->count < 0 || stream->count > bomHeadSize) {
+    /* Use size_t type conversion  to clean e747 */
+    stream->count = fread(stream->base, (size_t)1, (size_t)SECUREC_BOM_HEADER_SIZE, stream->pf);
+    if (stream->count > SECUREC_BOM_HEADER_SIZE) {
         stream->count = 0;
     }
-#ifdef SECUREC_FOR_WCHAR
-    if (stream->count >= SECUREC_BOM_HEADER_SIZE &&
-        (((unsigned char)(stream->base[0]) == SECUREC_BOM_HEADER_LE_1ST &&
-        (unsigned char)(stream->base[1]) == SECUREC_BOM_HEADER_LE_2ST) ||
-        ((unsigned char)(stream->base[0]) == SECUREC_BOM_HEADER_BE_1ST &&
-        (unsigned char)(stream->base[1]) == SECUREC_BOM_HEADER_BE_2ST))) {
+    if (SECUREC_BEGIN_WITH_BOM(stream->base, stream->count)) {
         /* It's BOM header, discard it */
         stream->count = 0;
     }
-#else
-    if (stream->count >= SECUREC_UTF8_BOM_HEADER_SIZE &&
-        (unsigned char)(stream->base[0]) == SECUREC_UTF8_BOM_HEADER_1ST &&
-        (unsigned char)(stream->base[1]) == SECUREC_UTF8_BOM_HEADER_2ND &&
-        (unsigned char)(stream->base[2]) == SECUREC_UTF8_BOM_HEADER_3RD) { /* 2 offset of third head character */
-        /* It's BOM header, discard it */
-        stream->count = 0;
-    }
-#endif
-    SecMakeDataIsAligned(stream);
 }
 
 /*
@@ -2059,10 +2095,15 @@ SECUREC_INLINE void SecReadAndSkipBomHeader(SecFileStream *stream)
 SECUREC_INLINE SecInt SecGetCharFromFile(SecFileStream *stream)
 {
     SecInt ch;
-    if (stream->count == 0) {
-        int len;
+    if (stream->count < sizeof(SecChar)) {
         /* Load file to buffer */
-        if (stream->base == NULL) {
+        size_t len;
+        if (stream->base != NULL) {
+            /* Put the last unread data in the buffer head */
+            for (len = 0; len < stream->count; ++len) {
+                stream->base[len] = stream->cur[len];
+            }
+        } else {
             stream->oriFilePos = ftell(stream->pf);   /* Save original file read position */
             if (stream->oriFilePos == -1) {
                 /* It may be a pipe stream */
@@ -2071,19 +2112,20 @@ SECUREC_INLINE SecInt SecGetCharFromFile(SecFileStream *stream)
             }
             /* Reserve the length of BOM head */
             stream->base = (char *)SECUREC_MALLOC(SECUREC_BUFFERED_BLOK_SIZE +
-                SECUREC_BOM_HEADER_SIZE + SECUREC_UTF8_BOM_HEADER_SIZE);
+                SECUREC_BOM_HEADER_SIZE + sizeof(SecChar)); /* To store '\0' and aligned to wide char */
             if (stream->base == NULL) {
                 return SECUREC_EOF;
             }
             /* First read file */
             if (stream->oriFilePos == 0) {
+                /* Make sure the data is aligned to base */
                 SecReadAndSkipBomHeader(stream);
             }
         }
-        /* SecReadAndSkipBomHeader has read part of the data, so add offset */
-        len = (int)fread(stream->base + stream->count,
-            (size_t)1, (size_t)SECUREC_BUFFERED_BLOK_SIZE, stream->pf);
-        if (len < 0 || len > SECUREC_BUFFERED_BLOK_SIZE) {
+
+        /* Skip existing data and read data */
+        len = fread(stream->base + stream->count, (size_t)1, (size_t)SECUREC_BUFFERED_BLOK_SIZE, stream->pf);
+        if (len > SECUREC_BUFFERED_BLOK_SIZE) { /* It won't happen, */
             len = 0;
         }
         stream->count += len;
@@ -2091,15 +2133,10 @@ SECUREC_INLINE SecInt SecGetCharFromFile(SecFileStream *stream)
         stream->flag |= SECUREC_LOAD_FILE_TO_MEM_FLAG;
         stream->base[stream->count] = '\0';   /* For tool Warning string null */
     }
-    /* According wchar_t has two bytes */
-    stream->count -= (int)sizeof(SecChar);
-    ch = (SecInt)((stream->count) >= 0 ? \
-                  (SecInt)(SECUREC_CHAR_MASK & \
-                  (unsigned int)(int)(*((const SecChar *)(const void *)stream->cur))) : SECUREC_EOF);
-    stream->cur += sizeof(SecChar); /* Pointer may be out of bounds, but overread does not occur */
 
-    if (ch != SECUREC_EOF && stream->base != NULL) {
-        stream->fileRealRead += (int)sizeof(SecChar);
+    SECUREC_GET_CHAR(stream, &ch);
+    if (ch != SECUREC_EOF) {
+        stream->fileRealRead += sizeof(SecChar);
     }
     return ch;
 }
@@ -2110,24 +2147,22 @@ SECUREC_INLINE SecInt SecGetCharFromFile(SecFileStream *stream)
  */
 SECUREC_INLINE SecInt SecGetChar(SecFileStream *stream, int *counter)
 {
-    SecInt ch = SECUREC_EOF;
+    *counter = *counter + 1; /* Always plus 1 */
+    /* The main scenario is scanf str */
+    if ((stream->flag & SECUREC_MEM_STR_FLAG) != 0) {
+        SecInt ch;
+        SECUREC_GET_CHAR(stream, &ch);
+        return ch;
+    }
 #if SECUREC_ENABLE_SCANF_FILE
-    if ((stream->flag & SECUREC_PIPE_STREAM_FLAG) > 0) {
-        ch = SecGetCharFromStream(stream);
-    } else if ((stream->flag & SECUREC_FILE_STREAM_FLAG) > 0) {
-        ch = SecGetCharFromFile(stream);
+    if ((stream->flag & SECUREC_FILE_STREAM_FLAG) != 0) {
+        return SecGetCharFromFile(stream);
+    }
+    if ((stream->flag & SECUREC_PIPE_STREAM_FLAG) != 0) {
+        return SecGetCharFromStream(stream);
     }
 #endif
-    if ((stream->flag & SECUREC_MEM_STR_FLAG) > 0) {
-        /* According wchar_t has two bytes */
-        stream->count -= (int)sizeof(SecChar);
-        ch = (SecInt)((stream->count >= 0) ? \
-                      (SecInt)(SECUREC_CHAR_MASK & \
-                      (unsigned int)(int)(*((const SecChar *)(const void *)stream->cur))) : SECUREC_EOF);
-        stream->cur += sizeof(SecChar);
-    }
-    *counter = *counter + 1;
-    return ch;
+    return SECUREC_EOF;
 }
 
 /*
@@ -2135,27 +2170,29 @@ SECUREC_INLINE SecInt SecGetChar(SecFileStream *stream, int *counter)
  */
 SECUREC_INLINE void SecUnGetCharImpl(SecInt ch, SecFileStream *stream)
 {
-    if ((stream->flag & SECUREC_PIPE_STREAM_FLAG) > 0) {
+    if ((stream->flag & SECUREC_MEM_STR_FLAG) != 0) {
+        SECUREC_UN_GET_CHAR(stream);
+        return;
+    }
 #if SECUREC_ENABLE_SCANF_FILE
-#if defined(SECUREC_NO_STD_UNGETC)
+    if ((stream->flag & SECUREC_LOAD_FILE_TO_MEM_FLAG) != 0) {
+        SECUREC_UN_GET_CHAR(stream);
+        if (stream->fileRealRead > 0) {
+            stream->fileRealRead -= sizeof(SecChar);
+        }
+        return;
+    }
+    if ((stream->flag & SECUREC_PIPE_STREAM_FLAG) != 0) {
+#if SECUREC_USE_STD_UNGETC
+        (void)SECUREC_UN_GETC(ch, stream->pf);
+#else
         stream->lastChar = (unsigned int)ch;
         stream->fUnGet = 1;
-#else
-        (void)SECUREC_UN_GETC(ch, stream->pf);
 #endif
+        return;
+    }
 #else
-        (void)ch; /* To clear e438 last value assigned not used , the compiler will optimize this code */
-#endif
-    } else if ((stream->flag & SECUREC_MEM_STR_FLAG) || (stream->flag & SECUREC_LOAD_FILE_TO_MEM_FLAG) > 0) {
-        if (stream->cur > stream->base) {
-            stream->cur -= sizeof(SecChar);
-            stream->count += (int)sizeof(SecChar);
-        }
-    }
-#if SECUREC_ENABLE_SCANF_FILE
-    if ((stream->flag & SECUREC_FILE_STREAM_FLAG) > 0 && stream->base) {
-        stream->fileRealRead -= (int)sizeof(SecChar);
-    }
+    (void)ch; /* To clear e438 last value assigned not used , the compiler will optimize this code */
 #endif
 }
 
@@ -2164,10 +2201,10 @@ SECUREC_INLINE void SecUnGetCharImpl(SecInt ch, SecFileStream *stream)
  */
 SECUREC_INLINE void SecUnGetChar(SecInt ch, SecFileStream *stream, int *counter)
 {
+    *counter = *counter - 1; /* Always mius 1 */
     if (ch != SECUREC_EOF) {
         SecUnGetCharImpl(ch, stream);
     }
-    *counter = *counter - 1;
 }
 
 /*
@@ -2178,8 +2215,11 @@ SECUREC_INLINE SecInt SecSkipSpaceChar(SecFileStream *stream, int *counter)
     SecInt ch;
     do {
         ch = SecGetChar(stream, counter);
-    } while (ch != SECUREC_EOF && SecIsSpace(ch));
+        if (ch == SECUREC_EOF) {
+            break;
+        }
+    } while (SecIsSpace(ch) != 0);
     return ch;
 }
-#endif /* __INPUT_INL__5D13A042_DC3F_4ED9_A8D1_882811274C27 */
+#endif /* INPUT_INL_5D13A042_DC3F_4ED9_A8D1_882811274C27 */
 

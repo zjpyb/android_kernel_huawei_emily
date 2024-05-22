@@ -130,7 +130,14 @@ config F2FS_GRADING_SSR
 
 config F2FS_TURBO_ZONE
 	bool "F2FS turbo zone"
-	depends on F2FS_FS
+	depends on F2FS_FS && MAS_BLK
 	default n
 	help
 	  support turbo zone managemnt with multi devices.
+
+config F2FS_TURBO_ZONE_V2
+	bool "F2FS turbo zone v2"
+	depends on F2FS_TURBO_ZONE
+	default n
+	help
+	  support turbo zone v2 to adapt dynamic slc zone.

@@ -21,4 +21,4 @@
 extern void arch_read_wvr(u64 *buf, u32 len);
 extern void arch_read_wcr(u64 *buf, u32 len);
 
-#endif	/* __ASM_HISI_HW_BREAKPOINT_H */
+#endif /* __ASM_HISI_HW_BREAKPOINT_H */

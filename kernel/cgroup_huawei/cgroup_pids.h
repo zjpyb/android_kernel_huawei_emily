@@ -3,7 +3,7 @@
  *
  * Process number limiting controller header file
  *
- * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

@@ -1,17 +1,8 @@
 /*
- * Copyright (C) Huawei Technologies Co., Ltd. 2013-2015. All rights reserved.
- *
- * mobile@huawei.com
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: This module use for himos tcp state.
+ * Author: fanxiaoyu3@huawei.com
+ * Create: 2018-07-19
  */
 
 #include "hw_himos_stats_common.h"
@@ -23,7 +14,7 @@ void himos_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *new,
 	int inbytes, int outbytes)
 
 {
-	struct himos_stats_common *info;
+	struct himos_stats_common *info = NULL;
 	__s32 uid;
 	int type;
 
@@ -41,7 +32,7 @@ void himos_tcp_stats(struct sock *sk, struct msghdr *old, struct msghdr *new,
 	type = info->type;
 	spin_unlock_bh(&stats_info_lock);
 
-	switch(type) {
+	switch (type) {
 	case HIMOS_STATS_TYPE_AWEME:
 	case HIMOS_STATS_TYPE_KWAI:
 		himos_aweme_tcp_stats(sk, old, new, inbytes, outbytes);

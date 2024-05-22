@@ -41,8 +41,8 @@
 #include <linux/regulator/consumer.h>
 #include <dsm/dsm_pub.h>
 #include <linux/ctype.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>

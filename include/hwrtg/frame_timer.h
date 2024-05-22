@@ -1,9 +1,5 @@
 /*
- * frame_timer.h
- *
- * frame freq timer header
- *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,6 +10,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
+ * frame freq timer header
  */
 
 #ifndef FRAME_TIMER_H

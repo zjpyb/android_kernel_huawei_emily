@@ -16,8 +16,8 @@
 #include <linux/of_gpio.h>
 #include "elan_ts.h"
 #include "elan_mmi.h"
-#include "../../huawei_ts_kit_api.h"
-#include "../../../lcdkit/lcdkit1.0/include/lcdkit_panel.h"
+#include "huawei_ts_kit_api.h"
+#include "lcdkit_panel.h"
 
 static int elan_ktf_chip_detect(struct ts_kit_platform_data *platform_data);
 static int elan_ktf_init_chip(void);
@@ -352,6 +352,8 @@ static ssize_t elan_iap_write(struct file *filp, const char *buff, size_t count,
 	ret = elan_i2c_write(tmp, ELAN_SEND_DATA_LEN);
 	if (ret) {
 		TS_LOG_ERR("[elan]%s:fail to i2c_write,ret=%d\n",__func__,ret);
+		kfree(tmp);
+		tmp = NULL;
 		return -EINVAL;
 	}
 	kfree(tmp);

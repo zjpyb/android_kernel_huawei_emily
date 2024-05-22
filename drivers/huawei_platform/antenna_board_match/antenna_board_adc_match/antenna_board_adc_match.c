@@ -3,7 +3,7 @@
  *
  * Antenna board match driver,match the antenna board by adc.
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +16,6 @@
  *
  */
 
-#include "antenna_board_adc_match.h"
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -25,6 +24,7 @@
 #include <linux/hisi/hisi_adc.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/antenna_board_match/antenna_board_match.h>
+#include "antenna_board_adc_match.h"
 
 /*
  * 2: adc match range array have two member, min and max.
@@ -74,7 +74,7 @@ int get_voltage_by_adc(void)
 }
 
 /* lint -save -e* */
-static void parse_dts(struct antenna_adc_match_info *di)
+static void parse_dts(const struct antenna_adc_match_info *di)
 {
 	struct device_node *np = NULL;
 

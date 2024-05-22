@@ -30,12 +30,12 @@ struct fcp_adapter_device_ops {
 	int (*set_adapter_output_vol)(int *);
 	int (*detect_adapter)(void);
 	int (*is_support_fcp)(void);
-	int (*switch_chip_reset)(void);
-	int (*fcp_adapter_reset)(void);
-	int (*stop_charge_config)(void);
-	int (*is_fcp_charger_type)(void);
+	int (*switch_chip_reset)(void *);
+	int (*fcp_adapter_reset)(void *);
+	int (*stop_charge_config)(void *);
+	int (*is_fcp_charger_type)(void *);
 	int (*fcp_read_adapter_status)(void);
-	int (*fcp_read_switch_status)(void);
+	int (*fcp_read_switch_status)(void *);
 	void (*reg_dump)(char *);
 };
 

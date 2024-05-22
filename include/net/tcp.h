@@ -237,8 +237,13 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 /* TCP initial congestion window as per rfc6928 */
 #define TCP_INIT_CWND		10
 
+#ifdef CONFIG_HUAWEI_TCP_QUICK_START
+#define TCP_QUICK_INIT_CWND     (TCP_INIT_CWND * 5)
+#endif
+
 #ifdef CONFIG_HW_SYN_LINEAR_RETRY
-#define TCP_SYN_SENT_LINEAR_RETRIES 4   /* After 4 linear retries, do exp. backoff */
+/* The rto of the 3 time retry remain unchanged */
+#define TCP_SYN_SENT_LINEAR_RETRIES 2
 #endif
 
 /* Bit Flags for sysctl_tcp_fastopen */
@@ -256,22 +261,27 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 
 #ifdef CONFIG_MPTCP
 /* Flags from tcp_input.c for tcp_ack */
-#define FLAG_DATA               0x01 /* Incoming frame contained data.          */
-#define FLAG_WIN_UPDATE         0x02 /* Incoming ACK was a window update.       */
-#define FLAG_DATA_ACKED         0x04 /* This ACK acknowledged new data.         */
-#define FLAG_RETRANS_DATA_ACKED 0x08 /* "" "" some of which was retransmitted.  */
-#define FLAG_SYN_ACKED          0x10 /* This ACK acknowledged SYN.              */
-#define FLAG_DATA_SACKED        0x20 /* New SACK.                               */
-#define FLAG_ECE                0x40 /* ECE in this ACK                         */
-#define FLAG_LOST_RETRANS       0x80 /* This ACK marks some retransmission lost */
-#define FLAG_SLOWPATH           0x100 /* Do not skip RFC checks for window update.*/
-#define FLAG_ORIG_SACK_ACKED    0x200 /* Never retransmitted data are (s)acked  */
-#define FLAG_SND_UNA_ADVANCED   0x400 /* Snd_una was changed (!= FLAG_DATA_ACKED) */
+#define FLAG_DATA               0x01 /* Incoming frame contained data. */
+#define FLAG_WIN_UPDATE         0x02 /* Incoming ACK was a window update. */
+#define FLAG_DATA_ACKED         0x04 /* This ACK acknowledged new data. */
+#define FLAG_RETRANS_DATA_ACKED 0x08 /* some of which was retransmitted.*/
+#define FLAG_SYN_ACKED          0x10 /* This ACK acknowledged SYN. */
+#define FLAG_DATA_SACKED        0x20 /* New SACK. */
+#define FLAG_ECE                0x40 /* ECE in this ACK */
+/* This ACK marks some retransmission lost */
+#define FLAG_LOST_RETRANS       0x80
+/* Do not skip RFC checks for window update.*/
+#define FLAG_SLOWPATH           0x100
+/* Never retransmitted data are (s)acked */
+#define FLAG_ORIG_SACK_ACKED    0x200
+/* Snd_una was changed (!= FLAG_DATA_ACKED) */
+#define FLAG_SND_UNA_ADVANCED   0x400
 #define FLAG_DSACKING_ACK       0x800 /* SACK blocks contained D-SACK info */
 #define FLAG_SET_XMIT_TIMER     0x1000 /* Set TLP or RTO timer */
 #define FLAG_SACK_RENEGING      0x2000 /* snd_una advanced to a sacked seq */
 #define FLAG_UPDATE_TS_RECENT   0x4000 /* tcp_replace_ts_recent() */
-#define FLAG_NO_CHALLENGE_ACK   0x8000 /* do not call tcp_send_challenge_ack()| */
+/* do not call tcp_send_challenge_ack()| */
+#define FLAG_NO_CHALLENGE_ACK   0x8000
 #define MPTCP_FLAG_DATA_ACKED   0x10000
 
 #define FLAG_ACKED              (FLAG_DATA_ACKED|FLAG_SYN_ACKED)
@@ -342,7 +352,7 @@ static inline bool tcp_under_memory_pressure(const struct sock *sk)
 	    mem_cgroup_under_socket_pressure(sk->sk_memcg))
 		return true;
 
-	return tcp_memory_pressure;
+	return READ_ONCE(tcp_memory_pressure);
 }
 /*
  * The next routines deal with comparing 32 bit unsigned ints
@@ -394,11 +404,11 @@ extern struct proto tcp_prot;
 #define TCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mib.tcp_statistics, field)
 #define TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.tcp_statistics, field, val)
 #ifdef CONFIG_HW_WIFIPRO
-#define WIFIPRO_TCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mib.wifipro_tcp_statistics, field)
+#define WIFIPRO_TCP_INC_STATS(net, field) SNMP_INC_STATS((net)->mib.wifipro_tcp_statistics, field)
 #define WIFIPRO_TCP_INC_STATS_BH(net, field) __SNMP_INC_STATS((net)->mib.wifipro_tcp_statistics, field)
-#define WIFIPRO_TCP_DEC_STATS(net, field)	SNMP_DEC_STATS((net)->mib.wifipro_tcp_statistics, field)
+#define WIFIPRO_TCP_DEC_STATS(net, field) SNMP_DEC_STATS((net)->mib.wifipro_tcp_statistics, field)
 #define WIFIPRO_TCP_ADD_STATS_USER(net, field, val) SNMP_ADD_STATS((net)->mib.wifipro_tcp_statistics, field, val)
-#define WIFIPRO_TCP_ADD_STATS(net, field, val)	SNMP_ADD_STATS((net)->mib.wifipro_tcp_statistics, field, val)
+#define WIFIPRO_TCP_ADD_STATS(net, field, val) SNMP_ADD_STATS((net)->mib.wifipro_tcp_statistics, field, val)
 #endif
 #ifdef CONFIG_MPTCP
 /**** START - Exports needed for MPTCP ****/
@@ -476,6 +486,13 @@ void copy_skb_header(struct sk_buff *new, const struct sk_buff *old);
 
 void inet_twsk_free(struct inet_timewait_sock *tw);
 int tcp_v6_conn_request(struct sock *sk, struct sk_buff *skb);
+int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
+			       bool *fragstolen);
+void tcp_ofo_queue(struct sock *sk);
+void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb);
+int linear_payload_sz(bool first_skb);
+/**** END - Exports needed for MPTCP ****/
+#endif
 /* These states need RST on ABORT according to RFC793 */
 static inline bool tcp_need_reset(int state)
 {
@@ -484,15 +501,8 @@ static inline bool tcp_need_reset(int state)
 		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
 }
 
-int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int hdrlen,
-			       bool *fragstolen);
-void tcp_ofo_queue(struct sock *sk);
-void tcp_data_queue_ofo(struct sock *sk, struct sk_buff *skb);
-int linear_payload_sz(bool first_skb);
-/**** END - Exports needed for MPTCP ****/
-#endif
-
 void tcp_tasklet_init(void);
+void tcp_tcs_tasklet_init(void);
 
 void tcp_v4_err(struct sk_buff *skb, u32);
 
@@ -764,6 +774,10 @@ void tcp_init_xmit_timers(struct sock *);
 static inline void tcp_clear_xmit_timers(struct sock *sk)
 {
 	hrtimer_cancel(&tcp_sk(sk)->pacing_timer);
+
+	if (hrtimer_try_to_cancel(&tcp_sk(sk)->compressed_ack_timer) == 1)
+		__sock_put(sk);
+
 	inet_csk_clear_xmit_timers(sk);
 }
 
@@ -794,7 +808,11 @@ static inline int tcp_bound_to_half_wnd(struct tcp_sock *tp, int pktsize)
 }
 
 /* tcp.c */
-void tcp_get_info(struct sock *, struct tcp_info *);
+void tcp_get_info(struct sock *, struct tcp_info *
+#ifdef CONFIG_MPTCP
+	, bool no_lock
+#endif
+);
 
 /* Read 'sendfile()'-style from a TCP socket */
 int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
@@ -992,8 +1010,7 @@ struct tcp_skb_cb {
 #ifdef CONFIG_MPTCP
 	__u8		mptcp_flags;	/* flags for the MPTCP layer    */
 	__u8		dss_off;	/* Number of 4-byte words until
-					 * seq-number
-					 */
+					 * seq-number */
 #endif
 	__u8		tcp_flags;	/* TCP header flags. (tcp[13])	*/
 
@@ -1515,8 +1532,12 @@ static inline void tcp_slow_start_after_idle_check(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	s32 delta;
 
-	if (!sysctl_tcp_slow_start_after_idle || tp->packets_out ||
-	    ca_ops->cong_control)
+	if (!tp->slow_start_after_idle || !sysctl_tcp_slow_start_after_idle ||
+#ifdef CONFIG_HUAWEI_TCP_QUICK_START
+	    tp->packets_out || ca_ops->cong_control || tp->quick_start)
+#else
+	    tp->packets_out || ca_ops->cong_control)
+#endif
 		return;
 	delta = tcp_jiffies32 - tp->lsndtime;
 	if (delta > inet_csk(sk)->icsk_rto)
@@ -1826,10 +1847,12 @@ static inline void tcp_init_send_head(struct sock *sk)
 }
 
 /* write queue abstraction */
+#ifdef CONFIG_MPTCP
+void tcp_write_queue_purge(struct sock *sk);
+#else
 static inline void tcp_write_queue_purge(struct sock *sk)
 {
 	struct sk_buff *skb;
-
 	tcp_chrono_stop(sk, TCP_CHRONO_BUSY);
 	while ((skb = __skb_dequeue(&sk->sk_write_queue)) != NULL)
 		sk_wmem_free_skb(sk, skb);
@@ -1837,7 +1860,9 @@ static inline void tcp_write_queue_purge(struct sock *sk)
 	tcp_clear_all_retrans_hints(tcp_sk(sk));
 	tcp_init_send_head(sk);
 	tcp_sk(sk)->packets_out = 0;
+	inet_csk(sk)->icsk_backoff = 0;
 }
+#endif
 
 static inline struct sk_buff *tcp_write_queue_head(const struct sock *sk)
 {
@@ -1897,6 +1922,27 @@ static inline void tcp_check_send_head(struct sock *sk, struct sk_buff *skb_unli
 	}
 	if (tcp_sk(sk)->highest_sack == skb_unlinked)
 		tcp_sk(sk)->highest_sack = NULL;
+}
+
+static inline struct sk_buff *tcp_rtx_queue_head(const struct sock *sk)
+{
+	struct sk_buff *skb = tcp_write_queue_head(sk);
+
+	if (skb == tcp_send_head(sk))
+		skb = NULL;
+
+	return skb;
+}
+
+static inline struct sk_buff *tcp_rtx_queue_tail(const struct sock *sk)
+{
+	struct sk_buff *skb = tcp_send_head(sk);
+
+	/* empty retransmit queue, for example due to zero window */
+	if (skb == tcp_write_queue_head(sk))
+		return NULL;
+
+	return skb ? tcp_write_queue_prev(sk, skb) : tcp_write_queue_tail(sk);
 }
 
 static inline void __tcp_add_write_queue_tail(struct sock *sk, struct sk_buff *skb)
@@ -2299,6 +2345,7 @@ static inline void tcp_listendrop(const struct sock *sk)
 }
 
 enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer);
+enum hrtimer_restart tcp_compressed_ack_kick(struct hrtimer *timer);
 
 /*
  * Interface for adding Upper Level Protocols over TCP
@@ -2308,6 +2355,10 @@ enum hrtimer_restart tcp_pace_kick(struct hrtimer *timer);
 #define TCP_ULP_MAX		128
 #define TCP_ULP_BUF_MAX		(TCP_ULP_NAME_MAX*TCP_ULP_MAX)
 
+enum {
+	TCP_ULP_TLS,
+};
+
 struct tcp_ulp_ops {
 	struct list_head	list;
 
@@ -2316,7 +2367,9 @@ struct tcp_ulp_ops {
 	/* cleanup ulp */
 	void (*release)(struct sock *sk);
 
+	int		uid;
 	char		name[TCP_ULP_NAME_MAX];
+	bool		user_visible;
 	struct module	*owner;
 };
 int tcp_register_ulp(struct tcp_ulp_ops *type);

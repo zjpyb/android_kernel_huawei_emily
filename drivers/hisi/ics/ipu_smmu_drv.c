@@ -217,8 +217,18 @@ void * ipu_mem_mngr_add(struct map_data *map) {
 		mutex_unlock(&ipu_mem_mngr_mutex);
 		return 0;
 	}
-	memset(node, 0, sizeof(struct memory_manage_node));
-	memcpy(&node->map, map, sizeof(*map));
+	if (memset_s(node, sizeof(struct memory_manage_node), 0, sizeof(struct memory_manage_node)) != EOK) {
+		printk(KERN_ERR"[%s] IPU_ERROR:memset_s node fail!\n", __func__);
+		kfree(node);
+		mutex_unlock(&ipu_mem_mngr_mutex);
+		return 0;
+	}
+	if (memcpy_s(&node->map,sizeof(*map), map, sizeof(*map)) != EOK) {
+		printk(KERN_ERR"[%s] IPU_ERROR:FATAL: memcpy_s fail!\n", __func__);
+		kfree(node);
+		mutex_unlock(&ipu_mem_mngr_mutex);
+		return 0;
+	}
 	list_add(&node->head, &memory_manager.head);
 
 	mutex_unlock(&ipu_mem_mngr_mutex);
@@ -365,15 +375,16 @@ static struct gen_pool *iova_pool_setup(unsigned long start,
 	struct gen_pool *pool;
 	int ret;
 
-	pool = gen_pool_create((int)order_base_2(align), -1);/*lint !e666 !e835 !e747 !e516 !e866 !e712 */
-	if (!pool) {
-		printk(KERN_ERR"[%s] IPU_ERROR:Create gen pool failed!\n", __func__);
-		return NULL;
-	}
 	/* iova start should not be 0, because return
 	   0 when alloc iova is considered as error */
 	if (!start) {
 		printk(KERN_ERR"[%s] IPU_ERROR:iova start should not be 0!\n", __func__);
+		return NULL;
+	}
+
+	pool = gen_pool_create((int)order_base_2(align), -1);/*lint !e666 !e835 !e747 !e516 !e866 !e712 */
+	if (!pool) {
+		printk(KERN_ERR"[%s] IPU_ERROR:Create gen pool failed!\n", __func__);
 		return NULL;
 	}
 
@@ -667,6 +678,7 @@ long ipu_smmu_map(struct map_data *map)
 
 	table = ion_sg_table(ipu_ion_client, hdl);
 	if (IS_ERR_OR_NULL(table) || !table) { /* Coverity can not understand IS_ERR_OR_NULL, add "!table" */
+		ion_free(ipu_ion_client, hdl);
 		printk(KERN_ERR"[%s]: IPU_ERROR:SETCONFIG_MAP table is error, which is: %pK\n", __func__, table);
 		return -EFAULT;
 	}
@@ -925,7 +937,7 @@ bool ipu_smmu_interrupt_handler(struct smmu_irq_count *irq_count)
 			irq_count->comm_ext_stat++;
 		}
 		if (reg_smmu_comm_status & SMMU_INTCLR_NS_PERMIS_STAT) {
-			/* When the input transaction¡¯s attributes doesn¡¯t match the attributes descripted in the page table,
+			/* When the attributes of the input transaction do not match the attributes descripted in the page table,
 			the mmu will raise a fault for this. */
 			irq_count->comm_permis_stat++;
 		}
@@ -1055,7 +1067,10 @@ bool ipu_smmu_master_get_offset(struct device *dev)
 		return false;
 	}
 
-	memset(offset, 0, sizeof(*offset));// coverity[secure_coding]
+	if (memset_s(offset, sizeof(*offset), 0, sizeof(*offset)) != EOK) { // coverity[secure_coding]
+ 		printk(KERN_ERR"[%s]: IPU_ERROR:memset_s offset error\n", __func__);
+		return false;
+	}
 	property_rd = (unsigned int)of_property_read_u32(node, "smmu-mstr-base-addr", &offset->smmu_mstr_base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-glb-bypass", &offset->smmu_mstr_glb_bypass);
 	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-mstr-end-ack", &offset->smmu_mstr_end_ack);
@@ -1114,7 +1129,10 @@ bool ipu_smmu_common_get_offset (struct device *dev)
 		return false;
 	}
 
-	memset(offset, 0, sizeof(smmu_common_reg_offset));// coverity[secure_coding]
+	if (memset_s(offset, sizeof(smmu_common_reg_offset), 0, sizeof(smmu_common_reg_offset)) != EOK) { // coverity[secure_coding]
+		printk(KERN_ERR"[%s]: IPU_ERROR: memset_s offset error\n", __func__);
+		return false;
+	}
 	property_rd = (unsigned int)of_property_read_u32(node, "smmu-common-base-addr", &offset->smmu_common_base_addr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-scr", &offset->smmu_scr);
 	property_rd |= (unsigned int)of_property_read_u32(node, "smmu-intmask-ns", &offset->smmu_intmask_ns);
@@ -1187,11 +1205,15 @@ void ipu_smmu_dump_strm(void)
 			sz -= dsm_offset;
 		}
 		/* coverity[secure_coding] */
-		dsm_offset = snprintf(perr, sz, "%d: %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n", base,
+		dsm_offset = snprintf_s(perr, sz, sz - 1, "%d: %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n", base,
 		port_out[0], port_out[1], port_out[2],  port_out[3],  port_out[4],  port_out[5],  port_out[6],  port_out[7],
 		port_out[8], port_out[9], port_out[10], port_out[11], port_out[12], port_out[13], port_out[14], port_out[15],
 		port_out[16], port_out[17], port_out[18], port_out[19], port_out[20], port_out[21], port_out[22], port_out[23],
 		port_out[24], port_out[25], port_out[26], port_out[27], port_out[28], port_out[29], port_out[30], port_out[31]);
+		if (dsm_offset < 0) {
+			printk(KERN_ERR"[%s]: snprintf_s is error!\n", __func__);
+		 	return;
+	}
 		#endif  /* CONFIG_HUAWEI_DSM */
 
 	}

@@ -318,7 +318,7 @@ VOS_UINT32 TAF_STD_ConvertStrToDecInt(
 {
     VOS_UINT32                          ulTmp;
     VOS_UINT32                          ultotal;
-    VOS_UINT8                           ulLength;
+    VOS_UINT32                          ulLength;
 
     ulTmp       = 0;
     ultotal     = 0;
@@ -1472,12 +1472,16 @@ VOS_UINT32 TAF_STD_ExtractBitStringToDword(
 )
 {
     VOS_UINT8                          *pucTmpSrc = VOS_NULL_PTR;
-    VOS_UINT32                          ulExtractWord;
+    VOS_UINT32                          ulExtractWord = 0;
     VOS_UINT16                          usRemainBitLen;
-    VOS_UINT8                           ucIndex;
+    VOS_UINT32                          ulIndex;
     VOS_UINT16                          usByteNum;
 
     pucTmpSrc = pucSrcAddr;
+    if (ucOffsetPos > TAF_STD_BIT_LEN_8_BIT) {
+        MN_INFO_LOG("TAF_STD_ExtractBitStringToDword: ucOffsetPos big than 'TAF_STD_BIT_LEN_8_BIT' ");
+        return ulExtractWord;
+    }
 
     if (ucBitLen > TAF_STD_BIT_LEN_32_BIT)
     {
@@ -1503,7 +1507,7 @@ VOS_UINT32 TAF_STD_ExtractBitStringToDword(
     /* 剩余的码流最少为1字节 */
     usByteNum = (usRemainBitLen / TAF_STD_BIT_LEN_8_BIT) + 1;
 
-    for (ucIndex = 0; ucIndex < usByteNum; ucIndex++)
+    for (ulIndex = 0; ulIndex < usByteNum; ulIndex++)
     {
         /* 指向下一个字节 */
         pucTmpSrc++;
@@ -1969,6 +1973,8 @@ VOS_UINT32 TAF_STD_ConvertUcs2ToStr(
                 MN_ERR_LOG("TAF_STD_ConvertUcs2ToStr: Ascii->DefAlpha fail");
                 return TAF_ERR_ERROR;
             }
+
+            ul8BitLen = TAF_MIN(((ulDstStrBuffLen * TAF_STD_BIT_LEN_8_BIT) / TAF_STD_BIT_LEN_7_BIT), ul8BitLen);
 
             /* 压缩成7Bit编码 */
             if (VOS_OK != TAF_STD_Pack7Bit(pucBuffStr + ulUcs2BuffLen, ul8BitLen, 0, pstDstStr->pucStr, &(pstDstStr->ulLen)))

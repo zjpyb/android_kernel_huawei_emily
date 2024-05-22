@@ -22,8 +22,8 @@
 #include <linux/types.h>
 #include <linux/i2c.h>
 #include "linux/interrupt.h"
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 
 #define CONFIG_HMX_DB
 #if defined(CONFIG_HMX_DB)

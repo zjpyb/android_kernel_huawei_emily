@@ -202,10 +202,8 @@ static inline bool svdm_notify_pe_shutdown(
 
 	for (i = 0; i < pd_port->svid_data_cnt; i++) {
 		svid_data = &pd_port->svid_data[i];
-		if (svid_data->ops && svid_data->ops->notify_pe_shutdown) {
-			svid_data->ops->notify_pe_shutdown(
-				pd_port, svid_data);
-		}
+		if (svid_data && svid_data->ops && svid_data->ops->notify_pe_shutdown)
+			svid_data->ops->notify_pe_shutdown(pd_port, svid_data);
 	}
 
 	return 0;

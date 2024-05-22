@@ -36,9 +36,9 @@
 #include "synaptics_tcm_core.h"
 #include "synaptics_tcm_cap_check.h"
 
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_api.h"
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -46,7 +46,7 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define SYSFS_DIR_NAME "testing"
 #define SYNA_TCM_LIMITS_CSV_FILE "/odm/etc/firmware/ts/syna_tcm_cap_limits.csv"
@@ -191,7 +191,8 @@ static void syna_tcm_put_device_info(struct ts_rawdata_info_new *info)
 	char buf_fw_ver[CHIP_INFO_LENGTH] = {0};
 	struct syna_tcm_hcd *tcm_hcd = testing_hcd->tcm_hcd;
 
-	strncpy(info->deviceinfo, "-syna_tcm-", sizeof(info->deviceinfo));
+	strncpy(info->deviceinfo, "-syna_tcm-",
+		(sizeof(info->deviceinfo) - 1));
 	syna_tcm_strncat(info->deviceinfo, tcm_hcd->tcm_mod_info.project_id_string,
 		sizeof(info->deviceinfo));
 
@@ -363,7 +364,7 @@ static int syna_tcm_open_short_test(struct ts_rawdata_info_new *info)
 exit:
 	pts_node->size = open_short_data_size;
 	pts_node->testresult = testresult;
-	pts_node->typeindex = RAW_DATA_TYPE_OpenShort;		
+	pts_node->typeindex = RAW_DATA_TYPE_OPENSHORT;
 	strncpy(pts_node->test_name, "Open_short", TS_RAWDATA_TEST_NAME_LEN-1);
 	snprintf(pts_node->statistics_data, TS_RAWDATA_STATISTICS_DATA_LEN,
 			"[%d,%d,%d]",
@@ -545,7 +546,7 @@ exit:
 
 	pts_node->size = noise_data_size;
 	pts_node->testresult = testresult;
-	pts_node->typeindex = RAW_DATA_TYPE_Noise;		
+	pts_node->typeindex = RAW_DATA_TYPE_NOISE;
 	strncpy(pts_node->test_name, "Noise_delta", TS_RAWDATA_TEST_NAME_LEN-1);
 	snprintf(pts_node->statistics_data, TS_RAWDATA_STATISTICS_DATA_LEN,
 			"[%d,%d,%d]",
@@ -849,8 +850,10 @@ int syna_tcm_cap_test_init(struct syna_tcm_hcd *tcm_hcd)
 	return 0;
 
 err_alloc_testing_hcd:
-	if (testing_hcd)
+	if (testing_hcd) {
 		kfree(testing_hcd);
+		testing_hcd = NULL;
+	}
 
 	return retval;
 }

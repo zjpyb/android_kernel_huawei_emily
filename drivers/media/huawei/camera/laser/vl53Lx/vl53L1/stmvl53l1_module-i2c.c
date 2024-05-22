@@ -224,11 +224,18 @@ static int get_xsdn(struct device *dev, struct i2c_data *i2c_data)
 		goto request_failed;
 	}
 
-	rc = gpio_direction_output(i2c_data->xsdn_gpio, 0);
+	if (i2c_data->laser_state == LASER_ALWAYS_ON) {
+		rc = gpio_direction_output(i2c_data->xsdn_gpio, 1); // high
+		vl53l1_info("get_xsdn always on\n");
+	} else {
+		rc = gpio_direction_output(i2c_data->xsdn_gpio, 0); // low
+	}
+
 	if (rc) {
 		vl53l1_errmsg("fail to configure xsdn as output %d", rc);
 		goto direction_failed;
 	}
+
 	i2c_data->io_flag.xsdn_owned = 1;
 
 	return rc;
@@ -415,12 +422,17 @@ static int stmvl53l1_parse_tree(struct device *dev, struct i2c_data *i2c_data)
 			vl53l1_dbgmsg("gpio ctrl types: %s gpio = %d\n", gpio_tag, gpio[index]);
 		}
 
+		rc = of_property_read_u32(of_node, "laser_state", &(i2c_data->laser_state));
+		if (rc < 0) {
+			i2c_data->laser_state = 0;
+			rc = 0;
+		}
 
 		i2c_data->xsdn_gpio = gpio[XSDN];
 		i2c_data->intr_gpio = gpio[INTR];
 #else
 		/* power : either vdd or pwren_gpio. try reulator first */
-		i2c_data->vdd = regulator_get(dev, "vdd");
+		i2c_data->vdd = regulator_get_optional(dev, "vdd");
 		if (IS_ERR(i2c_data->vdd) || i2c_data->vdd == NULL) {
 			i2c_data->vdd = NULL;
 			/* try gpio */
@@ -617,7 +629,31 @@ int stmvl53l1_remove(struct i2c_client *client)
 	return 0;
 }
 EXPORT_SYMBOL(stmvl53l1_remove);
+#ifdef CONFIG_PM_SLEEP
+static int stmvl53l1_suspend(struct device *dev)
+{
+	struct stmvl53l1_data *data = i2c_get_clientdata(to_i2c_client(dev));
 
+	vl53l1_dbgmsg("Enter\n");
+	mutex_lock(&data->work_mutex);
+	/* Stop ranging */
+	stmvl53l1_pm_suspend_stop(data);
+
+	mutex_unlock(&data->work_mutex);
+
+	vl53l1_dbgmsg("End\n");
+
+	return 0;
+}
+
+static int stmvl53l1_resume(struct device *dev)
+{
+	return 0;
+}
+#endif
+
+
+static SIMPLE_DEV_PM_OPS(stmvl53l1_pm_ops, stmvl53l1_suspend, stmvl53l1_resume);
 static const struct i2c_device_id stmvl53l1_id[] = {
 	{ STMVL53L1_DRV_NAME, 0 },
 	{ },
@@ -632,12 +668,13 @@ static const struct of_device_id st_stmvl53l1_dt_match[] = {
 
 static struct i2c_driver stmvl53l1_driver = {
 	.driver = {
-		.name	= STMVL53L1_DRV_NAME,
-		.owner	= THIS_MODULE,
+		.name = STMVL53L1_DRV_NAME,
+		.owner = THIS_MODULE,
 		.of_match_table = st_stmvl53l1_dt_match,
+		.pm = &stmvl53l1_pm_ops,
 	},
-	.probe	= stmvl53l1_probe,
-	.remove	= stmvl53l1_remove,
+	.probe = stmvl53l1_probe,
+	.remove = stmvl53l1_remove,
 	.id_table = stmvl53l1_id,
 
 };
@@ -921,9 +958,11 @@ int stmvl53l1_start_intr(void *object, int *poll_mode)
 		vl53l1_errmsg("fail to req threaded irq rc=%d\n", rc);
 		*poll_mode = 0;
 	} else {
-		vl53l1_dbgmsg("irq %d now handled\n", i2c_data->irq);
+		vl53l1_info("irq %d now handled with diable irq\n", i2c_data->irq);
 		i2c_data->io_flag.intr_started = 1;
 		*poll_mode = 0;
+		i2c_data->intr_status = VL53L1_IRQ_DISABLE;
+		disable_irq_nosync(i2c_data->irq);
 	}
 	return rc;
 }

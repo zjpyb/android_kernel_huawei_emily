@@ -1,3 +1,21 @@
+/*
+ * verity_handle_4.14.c
+ *
+ * Huawei verity fec handler for 4.14 kernel
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include "dm-verity.h"
 #include "dm-verity-fec.h"
 #include "verity_handle_4.14.h"
@@ -8,30 +26,39 @@
 #include <linux/delay.h>
 
 #define DM_MSG_PREFIX "oem_verity"
+#define PARAMETER_ERR (-1)
+
+struct verity_fec_members {
+	struct dm_verity *v;
+	struct dm_verity_io *io;
+	struct bvec_iter *iter;
+	u8 *want_digest;
+	enum verity_block_type type;
+};
 
 #if defined(CONFIG_HUAWEI_DSM)
 #include <linux/jiffies.h>
 #include <dsm/dsm_pub.h>
 #include <linux/ctype.h>
 
-static struct dsm_dev dm_dsm_dev = {
+#define BUFF_MAX 1024
+static struct dsm_dev g_dm_dsm_dev = {
 	.name        = "dsm_dm_verity",
 	.device_name = NULL,
 	.ic_name     = NULL,
 	.module_name = NULL,
 	.fops        = NULL,
-	.buff_size   = 1024,
+	.buff_size   = BUFF_MAX,
 };
 
 static unsigned long g_timeout;
-static struct dsm_client *dm_dsm_dclient;
+static struct dsm_client *g_dm_dsm_dclient;
 static unsigned long g_err_count;
 #define DSM_REPORT_INTERVAL (1)
 #define DM_VERITY_MAX_PRINT_ERRS 20
 #define HASH_ERR_VALUE 1
 #define ROW_DATA_LENGTH 16
 #define ROW_DATA_PER_HEX_LENGTH 3
-#define PARAMETER_ERR (-1)
 
 enum info_type {
 	CE_INFO = 0,
@@ -43,12 +70,11 @@ enum info_type {
 /* init dsm device  */
 void verity_dsm_init(void)
 {
-	if (!dm_dsm_dclient) {
-		dm_dsm_dclient = dsm_register_client(&dm_dsm_dev);
-		if (dm_dsm_dclient == NULL) {
-			pr_err("[%s]dsm_register_client register fail.\n",
+	if (!g_dm_dsm_dclient) {
+		g_dm_dsm_dclient = dsm_register_client(&g_dm_dsm_dev);
+		if (!g_dm_dsm_dclient)
+			pr_err("[%s]dsm_register_client register fail\n",
 				__func__);
-		}
 	}
 
 	g_timeout = jiffies;
@@ -56,61 +82,47 @@ void verity_dsm_init(void)
 
 /* upload data info */
 static void verity_dsm(struct dm_verity *v, enum verity_block_type type,
-			unsigned long long block, int error_no,
-			enum info_type sub_err)
+	unsigned long long block, int error_no, enum info_type sub_err)
 {
-	const char *type_str;
-	const char *last_ops;
-	const char *current_ops;
+	const char *type_str = NULL;
+	const char *last_ops = NULL;
+	const char *current_ops = NULL;
 	char devname[BDEVNAME_SIZE + 1];
 
 	memset(devname, 0x00, BDEVNAME_SIZE + 1);
 	bdevname(v->data_dev->bdev, devname);
-	switch (type) {
-	case DM_VERITY_BLOCK_TYPE_DATA:
+
+	if (type == DM_VERITY_BLOCK_TYPE_DATA)
 		type_str = "data";
-		break;
-	case DM_VERITY_BLOCK_TYPE_METADATA:
+	else if (type == DM_VERITY_BLOCK_TYPE_METADATA)
 		type_str = "metadata";
-		break;
-	default:
-		/* go on, and we must make sure no execute this case */
-		pr_err("unknown type\n");
-	}
 
 	if (time_after(jiffies, g_timeout)) {
-		if (!dsm_client_ocuppy(dm_dsm_dclient)) {
-			dsm_client_record(dm_dsm_dclient,
-				"%s: %s block %d is corrupted, dmd error num %d sub %d;version:1.0\n",
+		if (!dsm_client_ocuppy(g_dm_dsm_dclient)) {
+			dsm_client_record(g_dm_dsm_dclient,
+				"%s: %s block %llu is corrupted, dmd error num %d sub %d;version:1.0\n",
 				devname, type_str, block,
 				error_no, (int)sub_err);
-			dsm_client_notify(dm_dsm_dclient, error_no);
+			dsm_client_notify(g_dm_dsm_dclient, error_no);
 		}
 
 		g_timeout = jiffies + DSM_REPORT_INTERVAL * HZ;
 	}
 
-	switch (sub_err) {
-	case CE_INFO:
+	if (sub_err == CE_INFO) {
 		last_ops    = "CE hash fail,";
 		current_ops = "soft hash ok,";
-		break;
-	case FEC_INFO:
+	} else if (sub_err == FEC_INFO) {
 		last_ops    = "hash verify fail,";
 		current_ops = "fec correct success,";
-		break;
-	case REREAD_INFO:
+	} else if (sub_err == REREAD_INFO) {
 		last_ops    = "hash verify fail before reread,";
 		current_ops = "hash verify ok after reread,";
-		break;
-	case REREAD_ERR:
+	} else if (sub_err == REREAD_ERR) {
 		last_ops    = "hash verify fail before reread,";
 		current_ops = "hash verify fail after reread,";
-		break;
-	default:
-		/* go on, and we must make sure no execute this case */
-		pr_err("unknown sub_err\n");
 	}
+
 	pr_err("[check image]:%s %s %s block= %llu,block name = %s\n",
 		last_ops, current_ops, type_str, block, devname);
 }
@@ -125,8 +137,9 @@ static int verity_read_write_nv(char *name,
 	struct hisi_nve_info_user nve;
 	int ret;
 
-	if (!name || (opcode != NV_READ && opcode != NV_WRITE))
-		return -1;
+	if (!name || (opcode != NV_READ && opcode != NV_WRITE) ||
+		strlen(name) >= NV_NAME_LENGTH)
+		return 1;
 	memset(&nve, 0, sizeof(nve));
 	strncpy(nve.nv_name, name, strlen(name) + 1);
 	nve.nv_number    = nv_number;
@@ -139,7 +152,7 @@ static int verity_read_write_nv(char *name,
 	if (ret) {
 		DMERR("nve ops fail! nv_name=%s,nv_number=%d,opcode=%d",
 			name, nv_number, opcode);
-		return -1;
+		return 1;
 	}
 	if (opcode == NV_READ)
 		return (int)nve.nv_data[0];
@@ -167,16 +180,12 @@ static void print_block_data(unsigned long long blocknr,
 	unsigned char *data_to_dump,
 	int start, int len)
 {
-	int i, j;
+	int i;
+	int j;
 	int bh_offset = (start / ROW_DATA_LENGTH) * ROW_DATA_LENGTH;
-	char row_data[ROW_DATA_LENGTH + 1];
-	char row_hex[ROW_DATA_LENGTH * ROW_DATA_LENGTH + 1];
 	char ch;
 
-	memset(row_data, 0x00, ROW_DATA_LENGTH + 1);
-	memset(row_hex, 0x00, ROW_DATA_LENGTH * ROW_DATA_LENGTH + 1);
-
-	if (g_err_count >= DM_VERITY_MAX_PRINT_ERRS)
+	if (g_err_count >= DM_VERITY_MAX_PRINT_ERRS || (!data_to_dump))
 		return;
 
 	g_err_count++;
@@ -184,31 +193,23 @@ static void print_block_data(unsigned long long blocknr,
 	pr_err(" block error# : %llu, start offset(byte) : %d\n",
 		blocknr, start);
 	pr_err("printing Hash dump %dbyte\n", len);
-	pr_err("-------------------------------------------------\n");
+	pr_err("--------------------------------------------------------\n");
 
 	for (i = 0; i < (len + ROW_DATA_LENGTH - 1) / ROW_DATA_LENGTH; i++) {
+		pr_err("0x%4.4x : ", bh_offset);
 		for (j = 0; j < ROW_DATA_LENGTH; j++) {
 			ch = *(data_to_dump + bh_offset + j);
 			if (start <= bh_offset + j &&
-				start + len > bh_offset + j) {
-				if (isascii(ch) && isprint(ch))
-					sprintf(row_data + j, "%c", ch);
-				else
-					sprintf(row_data + j, ".");
-
-				sprintf(row_hex + (j * ROW_DATA_PER_HEX_LENGTH),
-					"%2.2x ", ch);
-			} else {
-				sprintf(row_data + j, " ");
-				sprintf(row_hex + (j * ROW_DATA_PER_HEX_LENGTH),
-					"-- ");
-			}
+				start + len > bh_offset + j)
+				pr_err("%2.2x ", ch);
+			else
+				pr_err("-- ");
 		}
 
-		pr_err("0x%4.4x : %s | %s\n", bh_offset, row_hex, row_data);
+		pr_err("\n");
 		bh_offset += ROW_DATA_LENGTH;
 	}
-	pr_err("---------------------------------------------------\n");
+	pr_err("--------------------------------------------------------\n");
 }
 
 /*
@@ -219,20 +220,25 @@ int oem_verity_handle_err(struct dm_verity *v)
 {
 	int value = verity_read_write_nv("VMODE",
 		NVE_VERIFY_MODE_NUM, NV_READ, (char)0);
-
-	if (value < 0) {
-		pr_err("read verify mode nve fail!\n");
+	if (value != 0) {
+		pr_err("read verify mode nve fail\n");
 		/* we need pay attention on this case */
 		return 0;
-	} else if (value == DM_MAX_ERR_COUNT)
+	} else if (value == DM_MAX_ERR_COUNT) {
 		return 1;
+	}
+
+	if (!v) {
+		pr_err("dm_verity pointer is null\n");
+		return 0;
+	}
 
 	if (v->verify_failed_flag == 0) {
-		if (DM_MAX_ERR_COUNT <= (value++))
+		if ((value++) >= DM_MAX_ERR_COUNT)
 			value = DM_MAX_ERR_COUNT;
 		if (verity_read_write_nv("VMODE",
 			NVE_VERIFY_MODE_NUM, NV_WRITE, (char)value))
-			pr_err("write verify mode nve fail!\n");
+			pr_err("write verify mode nve fail\n");
 		v->verify_failed_flag = 1;
 	}
 	return 0;
@@ -241,12 +247,15 @@ int oem_verity_handle_err(struct dm_verity *v)
 #endif
 
 int verity_hash_sel_sha(struct dm_verity *v, struct ahash_request *req,
-		const u8 *data, size_t len, u8 *digest, u32 count)
+	const u8 *data, size_t len, u8 *digest)
 {
 	int r;
 	struct verity_result res;
 
-	r = verity_hash_init(v, req, &res, count);
+	if ((!v) || (!req) || (!data) || (!digest))
+		return 1;
+
+	r = verity_hash_init(v, req, &res, NO_FIRST_TIME_HASH_VERIFY);
 	if (unlikely(r < 0))
 		goto out;
 
@@ -263,52 +272,55 @@ out:
  * compute digest for the DATA TYPE and the METADATA TYPE,
  * and verify
  */
-static int verity_soft_hash(struct dm_verity *v, struct dm_verity_io *io,
-			enum verity_block_type type, u8 *data,
-			struct bvec_iter *iter, u8 *want_digest)
+static int verity_soft_hash(
+	struct verity_fec_members verity_fec, const u8 *data)
 {
 	int r;
 	struct verity_result res;
-	struct ahash_request *req = verity_io_hash_req(v, io);
+	struct ahash_request *req =
+		verity_io_hash_req(verity_fec.v, verity_fec.io);
 
-	if (type == DM_VERITY_BLOCK_TYPE_DATA) {
+	if (!req)
+		return 1;
+
+	if (verity_fec.type == DM_VERITY_BLOCK_TYPE_DATA) {
 		/* we get data from iter for 'DATA TYPE' */
-		r = verity_hash_init(v, req,
+		r = verity_hash_init(verity_fec.v, req,
 			&res, NO_FIRST_TIME_HASH_VERIFY);
 		if (unlikely(r < 0))
 			return r;
 
-		r = verity_for_io_block(v, io, iter, &res);
+		r = verity_for_io_block(verity_fec.v, verity_fec.io,
+			verity_fec.iter, &res);
 		if (unlikely(r < 0))
 			return r;
 
-		r = verity_hash_final(v, req,
-			verity_io_real_digest(v, io), &res);
+		r = verity_hash_final(verity_fec.v, req,
+			verity_io_real_digest(verity_fec.v, verity_fec.io),
+			&res);
 		if (unlikely(r < 0))
 			return r;
-
 	} else {
-		/* we get data from vmalloc for 'METADATA TYPE'.*/
+		/* we get data from vmalloc for 'METADATA TYPE' */
 		/* And the default type is 'METADATA TYPE' */
-		r = verity_hash_sel_sha(v, req,
-					data, 1 << v->hash_dev_block_bits,
-					verity_io_real_digest(v, io),
-					NO_FIRST_TIME_HASH_VERIFY);
+		r = verity_hash_sel_sha(verity_fec.v, req,
+			data, 1 << verity_fec.v->hash_dev_block_bits,
+			verity_io_real_digest(verity_fec.v, verity_fec.io));
 		if (unlikely(r < 0))
 			return r;
 	}
-	if (likely(memcmp(verity_io_real_digest(v, io), want_digest,
-				v->digest_size) == 0))
+	if (likely(memcmp(verity_io_real_digest(verity_fec.v, verity_fec.io),
+		verity_fec.want_digest, verity_fec.v->digest_size) == 0))
 		return 0;
 	return 1;
 }
 
 /*
- *for copy data to iter,
- *we must pay attention to that the iter will be changed.
+ * for copy data to iter,
+ * we must pay attention to that the iter will be changed.
  */
-static int dataops_for_bv_block(struct dm_verity *v, struct dm_verity_io *io,
-	struct bvec_iter *iter, u8 *data)
+static int dataops_for_bv_block(const struct dm_verity *v,
+	struct dm_verity_io *io, struct bvec_iter *iter, const u8 *data)
 {
 	unsigned int todo   = 1 << v->data_dev_block_bits;
 	unsigned int offset = 0;
@@ -340,26 +352,24 @@ static int dataops_for_bv_block(struct dm_verity *v, struct dm_verity_io *io,
 }
 
 static struct dm_bufio_client *read_data_from_ufs_emmc(
-	struct dm_verity *v, struct dm_verity_io *io,
-	struct dm_buffer **bp,
+	const struct dm_verity *v, struct dm_buffer **bp,
 	u8 **data, sector_t block, enum verity_block_type type)
 {
-	struct dm_bufio_client *bufio;
+	struct dm_bufio_client *bufio = NULL;
 	unsigned int verity_block_size;
-	struct block_device *bdev;
+	struct block_device *bdev = NULL;
 	/* we set param for different type. */
 	/* And the default type is "METADATA TYPE" */
 	if (type == DM_VERITY_BLOCK_TYPE_DATA) {
 		verity_block_size = 1 << v->data_dev_block_bits;
-		bdev              = v->data_dev->bdev;
+		bdev = v->data_dev->bdev;
 	} else {
 		verity_block_size = 1 << v->hash_dev_block_bits;
-		bdev              = v->hash_dev->bdev;
+		bdev = v->hash_dev->bdev;
 	}
 
 	bufio = dm_bufio_client_create(bdev,
-						verity_block_size, 1, 0,
-						NULL, NULL);
+		verity_block_size, 1, 0, NULL, NULL);
 	if (IS_ERR(bufio))
 		return NULL;
 	*data = dm_bufio_read(bufio, block, bp);
@@ -372,65 +382,61 @@ static struct dm_bufio_client *read_data_from_ufs_emmc(
  * and verify,
  * when the data verify seccussfuly,copy data to the memory.
  */
-static int verify_hash(struct dm_verity *v, struct dm_verity_io *io,
-	u8 *data, u8 *metadata, struct bvec_iter *iter,
-	u8 *want_digest, enum verity_block_type type)
+static int verify_hash(struct verity_fec_members verity_fec,
+	const u8 *data, u8 *metadata)
 {
 	int r;
 	unsigned int verity_block_size;
-	/* we set param for different type.*/
+	/* we set param for different type */
 	/* And the default type is "METADATA TYPE" */
-	if (type == DM_VERITY_BLOCK_TYPE_DATA)
-		verity_block_size = 1 << v->data_dev_block_bits;
+	if (verity_fec.type == DM_VERITY_BLOCK_TYPE_DATA)
+		verity_block_size = 1 << verity_fec.v->data_dev_block_bits;
 	else
-		verity_block_size = 1 << v->hash_dev_block_bits;
+		verity_block_size = 1 << verity_fec.v->hash_dev_block_bits;
 
-	r = verity_hash_sel_sha(v, verity_io_hash_req(v, io),
-			data, verity_block_size,
-			verity_io_real_digest(v, io),
-			NO_FIRST_TIME_HASH_VERIFY);
+	r = verity_hash_sel_sha(verity_fec.v,
+		verity_io_hash_req(verity_fec.v, verity_fec.io),
+		data, verity_block_size,
+		verity_io_real_digest(verity_fec.v, verity_fec.io));
 	if (unlikely(r < 0))
 		return r;
 
-	r = memcmp(verity_io_real_digest(v, io), want_digest, v->digest_size);
-
-    /* if the data is valid, copy the data */
-	if (r == 0 && (type == DM_VERITY_BLOCK_TYPE_METADATA))
+	r = memcmp(verity_io_real_digest(verity_fec.v, verity_fec.io),
+		verity_fec.want_digest, verity_fec.v->digest_size);
+	/* if the data is valid, copy the data */
+	if (r == 0 && (verity_fec.type == DM_VERITY_BLOCK_TYPE_METADATA))
 		memcpy(metadata, data, verity_block_size);
-	else if (r == 0 && (type == DM_VERITY_BLOCK_TYPE_DATA))
-		dataops_for_bv_block(v, io, iter, data);
+	else if (r == 0 && (verity_fec.type == DM_VERITY_BLOCK_TYPE_DATA))
+		dataops_for_bv_block(verity_fec.v, verity_fec.io,
+			verity_fec.iter, data);
 
 	return r;
 }
 
-static int reread_data_for_verify(struct dm_verity *v, struct dm_verity_io *io,
-					sector_t block, u8 *metadata,
-					struct bvec_iter *iter, u8 *want_digest,
-					enum verity_block_type type)
+static int reread_data_for_verify(struct verity_fec_members verity_fec,
+	sector_t block, u8 *metadata)
 {
 	int r;
 	struct dm_buffer *buf = NULL;
 	u8 *real_data = NULL;
-	struct dm_bufio_client *bufio = read_data_from_ufs_emmc(v, io, &buf,
-		&real_data, block, type);
-	if (bufio == NULL)
+	struct dm_bufio_client *bufio = read_data_from_ufs_emmc(verity_fec.v,
+		&buf, &real_data, block, verity_fec.type);
+	if (!bufio)
 		return 1;
 
-	if (unlikely(IS_ERR(real_data))) {
+	if ((!real_data) || unlikely(IS_ERR(real_data))) {
 		r = 1;
 		goto release_ret;
 	}
 
-	r = verify_hash(v, io, real_data, metadata, iter, want_digest, type);
-
+	r = verify_hash(verity_fec, real_data, metadata);
 #if defined(CONFIG_HUAWEI_DSM)
-	if (r == 0) {
-		verity_dsm(v, type, block,
+	if (r == 0)
+		verity_dsm(verity_fec.v, verity_fec.type, block,
 			DSM_DM_VERITY_ERROR_NO, REREAD_INFO);
-	} else {
-		verity_dsm(v, type, block,
+	else
+		verity_dsm(verity_fec.v, verity_fec.type, block,
 			DSM_DM_VERITY_ERROR_NO, REREAD_ERR);
-	}
 #endif
 	if (buf)
 		dm_bufio_release(buf);
@@ -441,43 +447,79 @@ release_ret:
 	return r;
 }
 
-int oem_verity_fec_decode(struct dm_verity *v,
-	struct dm_verity_io *io, sector_t block, u8 *metadata,
-	struct bvec_iter *iter, struct bvec_iter *start,
-	struct bvec_iter *start1,
-	u8 *want_digest, enum verity_block_type type)
+static int oem_verity_fec_decode(struct verity_fec_members verity_fec,
+	sector_t block, u8 *metadata)
 {
-	int r = 0;
+	int r;
+	struct bvec_iter iter_val = {0};
 
-	if (verity_soft_hash(v, io, type,
-		metadata, iter, want_digest) == 0) {
+	if (verity_fec.iter)
+		iter_val = *(verity_fec.iter);
+	if (verity_soft_hash(verity_fec, metadata) == 0) {
 #if defined(CONFIG_HUAWEI_DSM)
-		hard_hash_fail_verity_dsm(v, type, block,
+		hard_hash_fail_verity_dsm(verity_fec.v, verity_fec.type, block,
 			DSM_DM_VERITY_CE_ERROR_NO, CE_INFO);
 #endif
 		return 0;
 	}
-	if (verity_fec_decode(v, io, type,
-				block, metadata, start) == 0) {
+	if (verity_fec.iter)
+		*(verity_fec.iter) = iter_val;
+	if (verity_fec_decode(verity_fec.v, verity_fec.io, verity_fec.type,
+		block, metadata, verity_fec.iter) == 0) {
 #if defined(CONFIG_HUAWEI_DSM)
-		verity_dsm(v, type, block,
+		verity_dsm(verity_fec.v, verity_fec.type, block,
 			DSM_DM_VERITY_FEC_INFO_NO, FEC_INFO);
 #endif
 		return 0;
 	}
 
-	r = reread_data_for_verify(v, io,
-		block, metadata, start1,
-		want_digest, type);
+	if (verity_fec.iter)
+		*(verity_fec.iter) = iter_val;
+	r = reread_data_for_verify(verity_fec, block, metadata);
 #if defined(CONFIG_HUAWEI_DSM)
 	if (r != 0) {
 		print_block_data((unsigned long long)(block),
-			(unsigned char *)verity_io_real_digest(v, io),
-			0, v->digest_size);
+			(unsigned char *)verity_io_real_digest(verity_fec.v,
+				verity_fec.io),
+			0, verity_fec.v->digest_size);
 		print_block_data((unsigned long long)(block),
-						(unsigned char *)want_digest,
-						0, v->digest_size);
+			(unsigned char *)verity_fec.want_digest, 0,
+			verity_fec.v->digest_size);
 	}
 #endif
 	return r;
+}
+
+int oem_metadata_verity_fec_decode(struct dm_verity *v,
+	struct dm_verity_io *io, sector_t block, u8 *metadata, u8 *want_digest)
+{
+	struct verity_fec_members verity_fec;
+
+	if ((!v) || (!io) || (!metadata) || (!want_digest))
+		return PARAMETER_ERR;
+
+	verity_fec.v = v;
+	verity_fec.io = io;
+	verity_fec.type = DM_VERITY_BLOCK_TYPE_METADATA;
+	verity_fec.iter = NULL;
+	verity_fec.want_digest = want_digest;
+
+	return oem_verity_fec_decode(verity_fec, block, metadata);
+}
+
+int oem_data_verity_fec_decode(struct dm_verity *v, struct dm_verity_io *io,
+	sector_t block, struct bvec_iter *iter, u8 *want_digest)
+{
+	struct verity_fec_members verity_fec;
+
+	if ((!v) || (!io) || (!iter) || (!want_digest))
+		return PARAMETER_ERR;
+
+	verity_fec.v = v;
+	verity_fec.io = io;
+	verity_fec.type = DM_VERITY_BLOCK_TYPE_DATA;
+	verity_fec.iter = iter;
+	verity_fec.want_digest = want_digest;
+
+	return oem_verity_fec_decode(verity_fec, block, NULL);
 }

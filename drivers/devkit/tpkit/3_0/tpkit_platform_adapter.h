@@ -1,13 +1,23 @@
 /*
  * Huawei Touchpanel driver
  *
- * Copyright (C) 2016 Huawei Device Co.Ltd
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- * this head file to adapter hisi/qcom platform for tpkit of huawei
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifndef __TP_KIT_PLATFORM_ADAPTER_H_
 #define __TP_KIT_PLATFORM_ADAPTER_H_
+
+#include <linux/notifier.h>
 
 enum ts_charger_type {
 	TS_CHARGER_TYPE_SDP = 0, /* Standard Downstreame Port */
@@ -18,6 +28,8 @@ enum ts_charger_type {
 	/* other messages */
 	TS_PLEASE_PROVIDE_POWER, /* host mode, provide power */
 };
+
+extern struct ts_kit_platform_data g_ts_kit_platform_data;
 
 int charger_type_notifier_register(struct notifier_block *nb);
 int charger_type_notifier_unregister(struct notifier_block *nb);

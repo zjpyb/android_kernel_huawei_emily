@@ -41,7 +41,7 @@
 
 #include "drv_mailbox_cfg.h"
 #include "audio_hifi.h"
-#include "hifi_om.h"
+#include "dsp_om.h"
 
 enum virtual_call_status {
 	VIRTUAL_CALL_STATUS_OFF = 0,
@@ -58,6 +58,13 @@ enum virtual_proxy_status {
 
 #define VOICE_PROXY_QUEUE_SIZE_MAX 60
 
+#define VIR_MEM_BLOCK_NUM 2
+
+#define VIR_MEM_BLOCK_POOL_USE 0
+#define VIR_MEM_BLOCK_POOL_NOT_USE 1
+#define VIT_MEM_BLOCK_SIZE_VMALLOC 1024
+#define VIT_MEM_BLOCK_MAXNUM_LIMIT 100
+
 /* handle the reply message from hifi,record msg_id and data */
 struct virtual_voice_proxy_rev_msg {
 	unsigned short msg_id;
@@ -71,14 +78,30 @@ struct virtual_voice_proxy_confirm {
 	uint32_t result;
 };
 
-struct virtual_voice_proxy_cnf_cmd_code {
-	struct list_head list_node;
-	uint16_t msg_id;
+struct vir_free_node {
+	struct vir_free_node *next;
+	char *data;
+};
+
+struct vir_mem_block {
+	struct vir_free_node data[VIR_MEM_BLOCK_NUM];
+	struct vir_mem_block *next;
+};
+
+struct virtual_voice_memory_pool {
+	struct vir_free_node *free_node_header;
+	struct vir_mem_block *mem_block_header;
+	spinlock_t mem_lock;
+	uint32_t block_num;
+	uint32_t elem_size;
 };
 
 struct virtual_voice_proxy_cmd_node {
 	struct list_head list_node;
 	uint16_t msg_id;
+	int32_t mem_status;
+	struct virtual_voice_proxy_rev_msg rev_msg;
+	struct vir_free_node *mem_node;
 };
 
 struct virtual_voice_proxy_data_buf {
@@ -89,6 +112,9 @@ struct virtual_voice_proxy_data_buf {
 
 struct virtual_voice_proxy_data_node {
 	struct list_head list_node;
+	int32_t mem_status;
+	struct vir_free_node *mem_node;
+	/* list_data is must at tail */
 	struct virtual_voice_proxy_data_buf list_data;
 };
 
@@ -140,13 +166,23 @@ void virtual_voice_proxy_set_send_sign(bool first,
 	bool *cnf, int64_t *timestamp);
 int64_t virtual_voice_proxy_get_time_ms(void);
 int32_t virtual_voice_proxy_add_work_queue_cmd(uint16_t msg_id);
-int32_t virtual_voice_proxy_create_data_node(
-	struct virtual_voice_proxy_data_node **node,
-	int8_t *data, int32_t size);
 int32_t virtual_voice_proxy_add_cmd(uint16_t msg_id);
 int32_t virtual_voice_proxy_add_data(voice_proxy_add_data_cb callback,
 	int8_t *data, uint32_t size, uint16_t msg_id);
 int32_t voice_proxy_mailbox_send_msg_cb(uint32_t mailcode, uint16_t msg_id,
 	const void *buf, uint32_t size);
+
+void virtual_voice_memory_pool_init(struct virtual_voice_memory_pool *mem_pool,
+	uint32_t elem_size);
+void *virtual_voice_malloc(struct virtual_voice_memory_pool *mem_pool,
+	uint32_t size, int *ret);
+void virtual_voice_free(struct virtual_voice_memory_pool *mem_pool,
+	void **mem, int mem_status);
+void virtual_voice_memory_pool_free(struct virtual_voice_memory_pool *mem_pool);
+int virtual_voice_get_free_node_num(struct virtual_voice_memory_pool *mem_pool);
+bool virtual_voice_memory_pool_free_node_full_idle(
+	struct virtual_voice_memory_pool *mem_pool);
+void virtual_voice_cmd_memory_pool_free(void);
+
 #endif /* end of virtual_voice_proxy.h */
 

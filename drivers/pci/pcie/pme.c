@@ -388,8 +388,8 @@ static int pcie_pme_suspend(struct pcie_device *srv)
 	bool wakeup;
 	int ret;
 
-#ifdef CONFIG_PCIE_KIRIN
-	if (kirin_pcie_bypass_pm(port))
+#ifdef CONFIG_PCIE_KPORT
+	if (kport_pcie_bypass_pm(port))
 		return 0;
 #endif
 
@@ -421,8 +421,8 @@ static int pcie_pme_resume(struct pcie_device *srv)
 {
 	struct pcie_pme_service_data *data = get_service_data(srv);
 
-#ifdef CONFIG_PCIE_KIRIN
-	if (kirin_pcie_bypass_pm(srv->port))
+#ifdef CONFIG_PCIE_KPORT
+	if (kport_pcie_bypass_pm(srv->port))
 		return 0;
 #endif
 
@@ -451,6 +451,7 @@ static void pcie_pme_remove(struct pcie_device *srv)
 
 	pcie_pme_disable_interrupt(srv->port, data);
 	free_irq(srv->irq, srv);
+	cancel_work_sync(&data->work);
 	kfree(data);
 }
 

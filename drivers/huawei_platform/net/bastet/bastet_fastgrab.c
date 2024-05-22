@@ -1,9 +1,10 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2015-2020. All rights reserved.
+ * Description: Process the event for hongbao fastgrab in the kernel.
+ * Author: zhuweichen@huawei.com
+ * Create: 2015-09-30
+ */
 
-
-
-/*****************************************************************************
-  1 头文件包含
-*****************************************************************************/
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -21,1013 +22,1252 @@
 #include <net/inet_sock.h>
 
 #include <huawei_platform/net/bastet/bastet_utils.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/task.h>
 #endif
+#ifdef CONFIG_CHR_NETLINK_MODULE
+#include <hwnet/booster/chr_manager.h>
+#endif
 
-/******************************************************************************
-   2 宏定义
-******************************************************************************/
+#ifdef CONFIG_CHR_NETLINK_MODULE
+#define MSG_LEN 4
+#endif
 
-/*****************************************************************************
-  3 函数声明
-*****************************************************************************/
+struct bst_fg_app_info_stru g_fast_grab_app_info[BST_FG_MAX_APP_NUMBER];
+uid_t g_currnt_acc_uid;
+struct bst_fg_custom_stru g_st_bastet_fg_custom;
+struct bst_fg_hongbao_stru g_st_bastet_fg_hongbao;
 
-/******************************************************************************
-   4 私有定义
-******************************************************************************/
+#ifdef CONFIG_CHR_NETLINK_MODULE
+static notify_event *g_notifier = NULL;
+#endif
 
-/******************************************************************************
-   5 全局变量定义
-******************************************************************************/
-BST_FG_APP_INFO_STRU g_FastGrabAppInfo[BST_FG_MAX_APP_NUMBER];
-uid_t      g_CurrntAccUId;
-BST_FG_CUSTOM_STRU g_stBastetFgCustom;
-BST_FG_HONGBAO_STRU g_stBastetFgHongbao;
-/******************************************************************************
-   6 函数实现
-******************************************************************************/
-
-
-void BST_FG_Init(void)
+/*
+ * bst_fg_init() - initialize the structure of the fast
+ *                 preemption technology
+ *
+ * initialize the global struct.
+ */
+void bst_fg_init(void)
 {
-	uint16_t usLooper1;
-	uint16_t usLooper2;
+	uint16_t i;
+	uint16_t j;
 
-	for (usLooper1 = 0; usLooper1 < BST_FG_MAX_APP_NUMBER; usLooper1++) {
-		g_FastGrabAppInfo[usLooper1].lUid = BST_FG_INVALID_UID;
-		g_FastGrabAppInfo[usLooper1].usIndex = usLooper1;
-		spin_lock_init(&g_FastGrabAppInfo[usLooper1].stLocker);
-		for (usLooper2 = 0; usLooper2 < BST_FG_MAX_KW_NUMBER; usLooper2++)
-			g_FastGrabAppInfo[usLooper1].pstKws[usLooper2] = NULL;
+	for (i = 0; i < BST_FG_MAX_APP_NUMBER; i++) {
+		g_fast_grab_app_info[i].l_uid = BST_FG_INVALID_UID;
+		g_fast_grab_app_info[i].us_version = BST_FG_INVALID_VERSION;
+		g_fast_grab_app_info[i].us_index = i;
+		spin_lock_init(&g_fast_grab_app_info[i].st_locker);
+		for (j = 0; j < BST_FG_MAX_KW_NUMBER; j++)
+			g_fast_grab_app_info[i].pst_kws[j] = NULL;
 	}
-	g_CurrntAccUId = BST_FG_INVALID_UID;
+	g_currnt_acc_uid = BST_FG_INVALID_UID;
 
-	g_stBastetFgCustom.ucAPPNum = 0;
-	for (usLooper1 = 0; usLooper1 < BST_FG_MAX_CUSTOM_APP; usLooper1++) {
-		g_stBastetFgCustom.astCustomInfo[usLooper1].lUid = 0;
-		g_stBastetFgCustom.astCustomInfo[usLooper1].ucProtocolBitMap = 0;
-		g_stBastetFgCustom.astCustomInfo[usLooper1].ucDiscardTimer = 0;
-		g_stBastetFgCustom.astCustomInfo[usLooper1].ucTcpRetranDiscard = 0;
-		g_stBastetFgCustom.astCustomInfo[usLooper1].ucAppType = 0;
+	g_st_bastet_fg_custom.uc_app_num = 0;
+	for (i = 0; i < BST_FG_MAX_CUSTOM_APP; i++) {
+		g_st_bastet_fg_custom.ast_custom_info[i].l_uid = 0;
+		g_st_bastet_fg_custom.ast_custom_info[i].uc_protocol_bitmap = 0;
+		g_st_bastet_fg_custom.ast_custom_info[i].uc_discard_timer = 0;
+		g_st_bastet_fg_custom.ast_custom_info[i].uc_tcp_retran_discard =
+			0;
+		g_st_bastet_fg_custom.ast_custom_info[i].uc_app_type = 0;
 	}
 
-	g_stBastetFgHongbao.ucCongestionProcFlag = false;
-	g_stBastetFgHongbao.ucDurationTime = 0;
+	g_st_bastet_fg_hongbao.uc_congestion_proc_flag = false;
+	g_st_bastet_fg_hongbao.uc_duration_time = 0;
 }
 
-
-static void BST_FG_ProcWXSock(struct sock *pstSock, int state)
+/*
+ * bst_fg_proc_wx_sock() - Processing WeChat Socket Status Changes
+ *
+ * @pstSock: the object of sock
+ * @state: the state of new socket
+ *
+ * process the wechat socket connection states.
+ */
+static void bst_fg_proc_wx_sock(struct sock *pst_sock, int state)
 {
-	/**
-	 * If new socket is built, we think it to "waiting" state
-	 */
-	if (TCP_ESTABLISHED == state) {
-		pstSock->fg_Spec = BST_FG_WECHAT_WAIT_HONGBAO;
-		BASTET_LOGI("BST_FG_ProcWXSock Set To WAIT_HONGBAO, PTR=%p",
-			pstSock);
-	}
-	/**
-	 * Only out put a log. But now wx socket is using "RST" but "Close", so this
-	 * can't be printed;
-	 */
-	else if (TCP_CLOSING == state) {
-		if (BST_FG_WECHAT_HONGBAO == pstSock->fg_Spec)
-			BASTET_LOGI("BST_FG_ProcWXSock Hongbao_socket is Removed");
+	/* If new socket is built, we think it to "waiting" state */
+	if (state == TCP_ESTABLISHED) {
+		pst_sock->fg_Spec = BST_FG_WECHAT_WAIT_HONGBAO;
+		bastet_logi("Set To WAIT_HONGBAO, PTR=%p", pst_sock);
+	} else if (state == TCP_CLOSING) {
+		/*
+		 * Only out put a log. But now wx socket is using "RST"
+		 * but "Close", so this
+		 * can't be printed;
+		 */
+		if (pst_sock->fg_Spec == BST_FG_WECHAT_HONGBAO)
+			bastet_logi("Hongbao_socket is Removed");
 	} else {
 		return;
 	}
 }
 
-
-static bool BST_FG_ProcWXMatchKeyWord_DL(
-	BST_FG_KEYWORD_STRU *pstKwdIns,
-	uint8_t *pData,
-	uint32_t ulLength)
+/*
+ * bst_fg_proc_wx_match_keyword_dl() - process the matched dl keyword
+ *
+ * @pstKwdIns: the key words that needed to matched.
+ * @pData: the received Downlink data(from skbuff)
+ * @ulLength: Maximum valid data length
+ *
+ * This function is used to process WeChat socket downstream hook
+ * packets. This parameter is valid only for push channels.
+ *
+ * Return: true - matche.
+ *         false - not match.
+ */
+static bool bst_fg_proc_wx_match_keyword_dl(
+	struct bst_fg_keyword_stru *pst_kwd_ins,
+	uint8_t *p_data, uint32_t ul_length)
 {
-    uint64_t usTotLen;
+	uint64_t us_tot_len;
 
-	if (NULL == pstKwdIns)
-		return false;
-	/**
-	* probe log, get the packet head
-	*/
-
-
-	/**
-		* match the length of XML to dl packet
-		*/
-	if ((ulLength > pstKwdIns->stLenPorp.usMax)
-		|| (ulLength < pstKwdIns->stLenPorp.usMin))
+	if (pst_kwd_ins == NULL)
 		return false;
 
-	/**
-		* match keywords
-		*/
-    usTotLen = pstKwdIns->stKeyWord.usTotLen;
-	if (0 == memcmp(&pstKwdIns->stKeyWord.aucData[0],
-	pData, usTotLen)) {
+	/*
+	 * probe log, get the packet head
+	 * match the length of XML to dl packet
+	 */
+	if ((ul_length > pst_kwd_ins->st_len_porp.us_max) ||
+		(ul_length < pst_kwd_ins->st_len_porp.us_min))
+		return false;
+
+	/* match keywords */
+	us_tot_len = pst_kwd_ins->st_key_word.us_tot_len;
+	if (memcmp(&pst_kwd_ins->st_key_word.auc_data[0],
+		p_data, us_tot_len) == 0)
 		return true;
-	}
 	return false;
 }
 
-
-static uint8_t BST_FG_ProcWXPacket_DL(
-	struct sock *pstSock,
-	uint8_t *pData,
-	uint32_t ulLength)
+/*
+ * is_satisfied_keyword_version() - is satisfied keyword version
+ *
+ * @version: wechat version.
+ * @min_version: the keyword min version
+ * @max_version: the keyword max version
+ *
+ * Whether the version number corresponding to the keyword matches.
+ *
+ * Return: true - matche.
+ *         false - not match.
+ */
+static bool is_satisfied_keyword_version(
+	int16_t version, int16_t min_version, int16_t max_version)
 {
-	BST_FG_KEYWORD_STRU *pstKwdIns = NULL;
-	BST_FG_KEYWORD_STRU *pstKwdInsNew = NULL;
-	bool bFound = false;
+	int invalid = BST_FG_INVALID_VERSION;
+	if (version == invalid)
+		return false;
 
-	if (BST_FG_WECHAT_PUSH != pstSock->fg_Spec)
-		return 0;
-	/**
-		 * Set the "PUSH"( 0 0 4 ) SIP-Command to be compared object.
-		*/
-	pstKwdIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT)
-		->pstKws[BST_FG_FLAG_WECHAT_PUSH];
-	bFound = BST_FG_ProcWXMatchKeyWord_DL(pstKwdIns,pData,ulLength);
-	if( bFound )
-	{
-		return 1;
+	if ((min_version == invalid) && (max_version == invalid)) {
+		return true;
+	} else if (min_version == invalid) {
+		if (version <= max_version) {
+			return true;
+		}
+	} else if (max_version == invalid) {
+		if (min_version <= version) {
+			return true;
+		}
+	} else {
+		if (min_version <= version && version <= max_version) {
+			return true;
+		}
 	}
+	bastet_logi("is satisfied keyword version version:%d min_ver:%d max_ver%d",
+		version, min_version, max_version);
+	return false;
+}
 
-	pstKwdInsNew = BST_FG_GetAppIns(BST_FG_IDX_WECHAT)
-		->pstKws[BST_FG_FLAG_WECHAT_PUSH_NEW];
-	bFound = BST_FG_ProcWXMatchKeyWord_DL(pstKwdInsNew,pData,ulLength);
-	if( bFound )
-	{
+/*
+ * bst_fg_proc_wx_packet_dl() - handle dl wx packet.
+ *
+ * @pstSock: the object of sock
+ * @pData: the received Downlink data(from skbuff)
+ * @ulLength: Maximum valid data length
+ *
+ * This function is used to process WeChat socket
+ * downstream hook packets. This parameter is valid
+ * only for push channels.
+ */
+static uint8_t bst_fg_proc_wx_packet_dl(struct sock *pst_sock,
+	uint8_t *p_data, uint32_t ul_length)
+{
+	struct bst_fg_keyword_stru *pst_kwd_ins = NULL;
+	struct bst_fg_keyword_stru *pst_kwd_ins_new = NULL;
+	uint16_t version;
+	bool b_found = false;
+
+	if (pst_sock->fg_Spec != BST_FG_WECHAT_PUSH)
+		return 0;
+
+	/* Set the "PUSH"( 0 0 4 ) SIP-Command to be compared object. */
+	pst_kwd_ins = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)
+		->pst_kws[BST_FG_FLAG_WECHAT_PUSH];
+	version = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)->us_version;
+	if (pst_kwd_ins == NULL)
+		return 0;
+	if (is_satisfied_keyword_version(version,
+		pst_kwd_ins->st_key_word.us_min_ver,
+		pst_kwd_ins->st_key_word.us_max_ver))
+		b_found = bst_fg_proc_wx_match_keyword_dl(pst_kwd_ins, p_data, ul_length);
+	if (b_found)
+		return 1;
+	pst_kwd_ins_new = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)
+		->pst_kws[BST_FG_FLAG_WECHAT_PUSH_NEW];
+	if (pst_kwd_ins_new == NULL)
+		return 0;
+	if (is_satisfied_keyword_version(version,
+		pst_kwd_ins_new->st_key_word.us_min_ver,
+		pst_kwd_ins_new->st_key_word.us_max_ver))
+		b_found = bst_fg_proc_wx_match_keyword_dl(pst_kwd_ins_new, p_data, ul_length);
+	if (b_found)
+		return 1;
+	return 0;
+}
+
+/*
+ * bst_fg_proc_send_rpacket_priority() - Determine whether WeChat
+ *     data is processed based on WeChat data.
+ *
+ * @pstSock: the object of sock
+ * @pData: the received Downlink data(forced conversion msg,
+ *          iov user space data)
+ * @ulLength: Maximum valid data length
+ *
+ * this function was invoked in tcp_output.c/tcp_write_xmit.
+ *
+ * Return: 0 - No key data information
+ *         1 - has key data information
+ *
+ */
+uint8_t bst_fg_proc_send_rpacket_priority(struct sock *pst_sock)
+{
+	if (!pst_sock)
+		return 0;
+	if (pst_sock->fg_Spec == BST_FG_WECHAT_HONGBAO) {
+		bastet_logi("Hongbao_packet");
 		return 1;
 	}
 	return 0;
 }
 
-
-
-uint8_t BST_FG_Proc_Send_RPacket_Priority(struct sock *pstSock) {
-    if(!pstSock) {
-        return 0;
-    }
-    if(pstSock->fg_Spec == BST_FG_WECHAT_HONGBAO)
-    {
-        BASTET_LOGI( "BST_FG_Proc_Send_RPacket_Priority Hongbao_packet" );
-        return 1;
-    }
-    return 0;
+static bool judge_the_data_length(uint32_t ul_length,
+	struct bst_fg_keyword_stru *pst_kwd_ins,
+	struct sock *pst_sock)
+{
+	if ((ul_length < pst_kwd_ins->st_len_porp.us_copy) ||
+		(pst_kwd_ins->st_len_porp.us_copy > BST_FG_MAX_US_COPY_NUM) ||
+		(pst_kwd_ins->st_len_porp.us_copy == 0)) {
+		bastet_logi("pstKwdIns->stLenPorp.usCopy is invalid");
+		bst_fg_set_sock_special(pst_sock, BST_FG_NO_SPEC);
+		return false;
+	}
+	return true;
 }
 
-
-static uint8_t BST_FG_ProcWXPacket_UL(
-	struct sock *pstSock,
-	uint8_t *pData,
-	uint32_t ulLength)
+/*
+ * bst_fg_proc_wx_packet_ul() - Processing WeChat Upload hook Packets
+ *
+ * @pstSock: the object of sock
+ * @pData: the received Downlink data(forced conversion msg,
+ *         iov user space data)
+ * @ulLength: Maximum valid data length
+ *
+ * copy the date from user space to kernel,process the wx ul packet.
+ *
+ * Return: 0 - No key data information
+ *         1 - has key data information
+ *
+ */
+static uint8_t bst_fg_proc_wx_packet_ul(
+	struct sock *pst_sock,
+	uint8_t *p_data,
+	uint32_t ul_length)
 {
-	BST_FG_KEYWORD_STRU *pstKwdIns = NULL;
-	char *pcFound = NULL;
-	char *pUsrData = NULL;
-	struct msghdr *pUsrMsgHdr = NULL;
+	struct bst_fg_keyword_stru *pst_kwd_ins = NULL;
+	char *pc_found = NULL;
+	char *p_usr_data = NULL;
+	struct msghdr *p_usr_msg_hdr = NULL;
 
-	/**
+	/*
 	 * If this sock has been matched tob HONGBAO-Server connection,
 	 * return 1 direction to let HP data sending.
 	 */
-	if (BST_FG_WECHAT_HONGBAO == pstSock->fg_Spec) {
-		BASTET_LOGI("BST_FG_ProcWXPacket_UL Hongbao_socket is sending");
+	if (pst_sock->fg_Spec == BST_FG_WECHAT_HONGBAO) {
+		bastet_logi("Hongbao_socket is sending");
 		return 1;
 	}
-	/**
-	 * If this sock is "WAITING" to be matched state, here will Match the first sending packet
+	/*
+	 * If this sock is "WAITING" to be matched state,
+	 * here will Match the first sending packet
 	 * of this sock to find "hongbao"-URL message.
 	 * ATENTION: This function only execute matching one time per sock.
 	 */
-	if (BST_FG_WECHAT_WAIT_HONGBAO == pstSock->fg_Spec) {
-		/**
-		 * Set the "hongbao"-URL to be compared object.
-		 */
-		pstKwdIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT)
-			->pstKws[BST_FG_FLAG_WECHAT_GET];
-		if (NULL == pstKwdIns)
+	if (pst_sock->fg_Spec == BST_FG_WECHAT_WAIT_HONGBAO) {
+		/* Set the "hongbao"-URL to be compared object. */
+		pst_kwd_ins = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)
+			->pst_kws[BST_FG_FLAG_WECHAT_GET];
+		if (pst_kwd_ins == NULL)
 			return 0;
 
-		/**
-		 * too short.
-		 */
-		if ((ulLength < pstKwdIns->stLenPorp.usCopy)||
-			(BST_FG_MAX_US_COPY_NUM < pstKwdIns->stLenPorp.usCopy) ||
-			(0 == pstKwdIns->stLenPorp.usCopy)) {
-			BASTET_LOGI("BST_FG_ProcWXPacket_UL pstKwdIns->stLenPorp.usCopy is invalid");
-			BST_FG_SetSockSpecial(pstSock, BST_FG_NO_SPEC);
+		/* too short. */
+		if (!judge_the_data_length(ul_length, pst_kwd_ins, pst_sock))
 			return 0;
-		}
-		/**
-		 * Think it to be a common sock firstly.
-		 */
-		pstSock->fg_Spec = BST_FG_NO_SPEC;
-		pUsrData = (char *)kmalloc(
-			pstKwdIns->stLenPorp.usCopy, GFP_ATOMIC);
-		if (NULL == pUsrData)
-			return 0;
-		/**
-		 * Copy data from usr space. Set the last byte to '0' for strstr input.
-		 */
-		pUsrMsgHdr = (struct msghdr *)pData;
-		if (copy_from_user(pUsrData, pUsrMsgHdr->msg_iter.iov->iov_base,
-			pstKwdIns->stLenPorp.usCopy)) {
-			kfree(pUsrData);
-			return 0;
-		}
-		pUsrData[pstKwdIns->stLenPorp.usCopy - 1] = 0;
-		pcFound = strstr((const char *)pUsrData,
-			(const char *)&pstKwdIns->stKeyWord.aucData[0]);
-		kfree(pUsrData);
-
-		if (NULL == pcFound) {
-			pstSock->fg_Spec = BST_FG_NO_SPEC;
-			return 0;
-		} else {
-			BST_FG_SetSockSpecial(pstSock, BST_FG_WECHAT_HONGBAO);
-			BASTET_LOGI("BST_FG_ProcWXPacket_UL Find New Hongbao_socket");
-			return 1;
-		}
-	}
-	return 0;
-}
-
-
-static uint8_t BST_FG_ProcWXPacket(
-	struct sock *pstSock,
-	uint8_t *pData,
-	uint32_t ulLength,
-	uint32_t ulRole)
-{
-	uint8_t ucRtn = 0;
-	/**
-	 * Call UL/DL packet proc, according to ROLE
-	 */
-	if (BST_FG_ROLE_RCVER == ulRole)
-		ucRtn = BST_FG_ProcWXPacket_DL(pstSock, pData, ulLength);
-
-	else if (BST_FG_ROLE_SNDER == ulRole)
-		ucRtn = BST_FG_ProcWXPacket_UL(pstSock, pData, ulLength);
-
-	return ucRtn;
-}
-
-
-uint8_t BST_FG_HookPacket(
-	struct sock *pstSock,
-	uint8_t *pData,
-	uint32_t ulLength,
-	uint32_t ulRole)
-{
-	uid_t lSockUid = 0;
-	uint8_t ucRtn = 0;
-	uint16_t usIdx = BST_FG_IDX_INVALID_APP;
-
-	if (IS_ERR_OR_NULL(pstSock)) {
-		BASTET_LOGE("invalid parameter");
-		return 0;
-	}
-	/**
-	 * Get and find the uid in fast-grab message information list.
-	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
-#else
-	lSockUid = sock_i_uid(pstSock);
-#endif
-	for (usIdx = 0; usIdx < BST_FG_MAX_APP_NUMBER; usIdx++) {
-		if (lSockUid == g_FastGrabAppInfo[usIdx].lUid)
-			break;
-	}
-	if (!BST_FG_IsAppIdxValid(usIdx))
-		return 0;
-
-	BASTET_LOGI("BST_FG_Hook1  Length=%u, Role=%u, sk_state=%d",
-				 ulLength, ulRole, pstSock->fg_Spec);
-	/**
-	 * Call different packet proc according the Application Name(Index).
-	 */
-	switch (usIdx) {
-	case BST_FG_IDX_WECHAT:
-		ucRtn = BST_FG_ProcWXPacket(pstSock, pData, ulLength, ulRole);
-		if (ucRtn)
-			post_indicate_packet(BST_IND_FG_KEY_MSG,
-				&lSockUid, sizeof(uid_t));
-		break;
-
-	default:
-		break;
-	}
-	return ucRtn;
-}
-
-
-static int BST_FG_SetHongbaoPushSock(int32_t tid_num, int32_t *tids)
-{
-	struct task_struct *pstTask = NULL;
-	struct files_struct *pstFiles = NULL;
-	struct fdtable *pstFdt = NULL;
-	struct sock *pstSock = NULL;
-	struct sock *pstSockReg = NULL;
-	struct inet_sock *pstInet = NULL;
-	uint16_t usLooper = 0;
-	int fd = -1;
-	uint16_t usFoundPort = 0;
-	int lFoundFd = -1;
-
-	/**
-	 * use pid to proc.
-	 */
-	for (usLooper = 0; usLooper < tid_num; usLooper++) {
-		/**
-		 * Find task message head
-		 */
-		rcu_read_lock();
-		pstTask = find_task_by_vpid(tids[usLooper]);
-		if (NULL == pstTask) {
-			BASTET_LOGE("BST_FG_SetHongbaoPushSock pstTask error");
-			rcu_read_unlock();
-			return -EFAULT;
-		}
-		get_task_struct(pstTask);
-		rcu_read_unlock();
-		/**
-		 * Find File sys head according to task
-		 */
-		pstFiles = pstTask->files;
-		if (NULL == pstFiles) {
-			put_task_struct(pstTask);
-			BASTET_LOGE("BST_FG_SetHongbaoPushSock pstFiles error");
-			return -EFAULT;
-		}
-		put_task_struct(pstTask);
-		/**
-		 * list the fd table
-		 */
-		pstFdt = files_fdtable(pstFiles);
-		for (fd = 0; fd < pstFdt->max_fds; fd++) {
-			/**
-			 * check the state, ip-addr, port-num of this sock
-			 */
-			pstSock = get_sock_by_fd_pid(fd, tids[usLooper]);
-			if (NULL == pstSock)
-				continue;
-
-			if (pstSock->sk_state != TCP_ESTABLISHED) {
-				sock_put(pstSock);
-				continue;
-			}
-			if ( pstSock->sk_socket && pstSock->sk_socket->type != SOCK_STREAM) {
-				sock_put(pstSock);
-				continue;
-			}
-			pstInet = inet_sk(pstSock);
-			if (NULL == pstInet) {
-				sock_put(pstSock);
-				continue;
-			}
-			if ((BST_FG_INVALID_INET_ADDR == pstInet->inet_daddr)
-				&& (BST_FG_INVALID_INET_ADDR == pstInet->inet_dport)) {
-				sock_put(pstSock);
-				continue;
-			}
-
-			/**
-			 * If there no sock be found, set the ptr to tmp-ptr,
-			 */
-			if (NULL == pstSockReg) {
-				lFoundFd = fd;
-				usFoundPort = pstInet->inet_sport;
-				pstSockReg = pstSock;
-			} else {
-				/**
-				 * If there is a sock has been recorded,we will
-				 * check fd/port to judge if it is the same one.
-				 * If it's another one, it means that there is
-				 * not only one sock in this uid, unsuccessful.
-				 */
-				if ((fd == lFoundFd)
-					&& (usFoundPort == pstInet->inet_sport)) {
-					sock_put(pstSock);
-					continue;
-				} else {
-					sock_put(pstSock);
-					sock_put(pstSockReg);
-					BASTET_LOGI("BST_FG_SetHongbaoPushSock More than One Push Socket Found");
-					return 0;
-				}
-			}
-		}
-	}
-	if (NULL != pstSockReg) {
-		/**
-		 * record the PUSH special flag to this sock
-		 */
-		BST_FG_SetSockSpecial(pstSockReg, BST_FG_WECHAT_PUSH);
-		sock_put(pstSockReg);
-		BASTET_LOGI("BST_FG_SetHongbaoPushSock Found Success!");
-	}
-	return 0;
-}
-
-
-static void BST_FG_SaveKeyword(unsigned long arg)
-{
-	void __user *argp = (void __user *)arg;
-	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
-	BST_FG_KEYWORD_STRU *pstKwdSrc = NULL;
-	BST_FG_KEYWORD_STRU *pstKwdDst = NULL;
-	BST_FG_KWS_COMM_STRU stKwsComm = {0};
-	uint16_t usCopyed = 0;
-	uint16_t usLooper = 0;
-
-	/**
-	 * Get keyword head information from usr space
-	 */
-	if (copy_from_user(&stKwsComm, argp, sizeof(BST_FG_KWS_COMM_STRU))) {
-		BASTET_LOGE("BST_FG_SaveKeyword copy_from_user stKwsComm error");
-		return;
-	}
-	if (!BST_FG_IsAppIdxValid(stKwsComm.usIndex))
-		return;
-
-	BASTET_LOGI("BST_FG_SaveKeyword stKwsComm.usIndex=%d",
-		stKwsComm.usIndex);
-	pstKwdSrc = (BST_FG_KEYWORD_STRU *)kmalloc(
-		sizeof(BST_FG_KEYWORD_STRU), GFP_ATOMIC);
-	if (NULL == pstKwdSrc)
-		return;
-
-	pstAppIns = BST_FG_GetAppIns(stKwsComm.usIndex);
-	usLooper = 0;
-	spin_lock_bh(&pstAppIns->stLocker);
-	while (1) {
-		/**
-		 * Get keyword data structure from usr space
-		 */
-		if (copy_from_user(pstKwdSrc,
-			(uint8_t *)argp + usCopyed
-			+ sizeof(BST_FG_KWS_COMM_STRU),
-			sizeof(BST_FG_KEYWORD_STRU))) {
-			BASTET_LOGE("BST_FG_SaveKeyword copy_from_user pstKwdSrc error");
-			break;
-		}
-		if (pstKwdSrc->stKeyWord.usTotLen > BST_FG_MAX_KW_LEN) {
-			break;
-		}
-		pstKwdDst = (BST_FG_KEYWORD_STRU *)kmalloc(
-			sizeof(BST_FG_KEYWORD_STRU)
-			+ pstKwdSrc->stKeyWord.usTotLen,
+		/* Think it to be a common sock firstly. */
+		pst_sock->fg_Spec = BST_FG_NO_SPEC;
+		p_usr_data = kzalloc(pst_kwd_ins->st_len_porp.us_copy,
 			GFP_ATOMIC);
-		if (NULL == pstKwdDst)
-			break;
-
-		memcpy(pstKwdDst, pstKwdSrc, sizeof(BST_FG_KEYWORD_STRU));
-		usCopyed += sizeof(BST_FG_KEYWORD_STRU);
-		if (pstKwdSrc->stKeyWord.usTotLen > 0) {
-			/**
-			 * Get keyword data block from usr space
-			 */
-			if (pstKwdSrc->stKeyWord.usTotLen > BST_FG_MAX_KW_LEN) {
-				kfree(pstKwdDst);
-				break;
-			}
-			if (copy_from_user(&pstKwdDst->stKeyWord.aucData[0],
-				(uint8_t *)argp + usCopyed
-				+ sizeof(BST_FG_KWS_COMM_STRU),
-				pstKwdSrc->stKeyWord.usTotLen)) {
-				BASTET_LOGE("BST_FG_SaveKeyword copy_from_user aucData error");
-				kfree(pstKwdDst);
-				break;
-			}
-			usCopyed += pstKwdSrc->stKeyWord.usTotLen;
-		}
-		if (NULL != pstAppIns->pstKws[usLooper])
-			kfree(pstAppIns->pstKws[usLooper]);
-
-		pstAppIns->pstKws[usLooper] = pstKwdDst;
-
-
-		if (usCopyed > stKwsComm.usKeyLength) {
-			kfree(pstKwdDst);
-			pstAppIns->pstKws[usLooper] = NULL;
-			break;
-		}
-		usLooper += 1;
-		if (usLooper >= (uint16_t)BST_FG_MAX_KW_NUMBER) {
-			break;
-		}
-	}
-	kfree(pstKwdSrc);
-	spin_unlock_bh(&pstAppIns->stLocker);
-}
-
-
-static void BST_FG_SaveUidInfo(unsigned long arg)
-{
-	void __user *argp = (void __user *)arg;
-	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
-	BST_FG_UID_COMM_STRU stUidComm = {0};
-
-	/**
-	 * Get uid message structure from usr space
-	 */
-	if (copy_from_user(&stUidComm, argp, sizeof(BST_FG_UID_COMM_STRU))) {
-		BASTET_LOGE("BST_FG_SaveUidInfo copy_from_user error");
-		return;
-	}
-	if (!BST_FG_IsAppIdxValid(stUidComm.usIndex))
-		return;
-
-	pstAppIns = BST_FG_GetAppIns(stUidComm.usIndex);
-	spin_lock_bh(&pstAppIns->stLocker);
-	pstAppIns->lUid = stUidComm.lUid;
-	BASTET_LOGI("BST_FG_SaveUidInfo app_index=%d, uid=%d",
-		pstAppIns->usIndex, pstAppIns->lUid);
-	spin_unlock_bh(&pstAppIns->stLocker);
-}
-
-
-static void BST_FG_SaveTidInfo(unsigned long arg)
-{
-	void __user *argp = (void __user *)arg;
-	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
-	int32_t *plTids = NULL;
-	BST_FG_TID_COMM_STRU stTidComm = {0};
-	int32_t lTotlen = 0;
-
-	/**
-	 * Get tid message structure from usr space
-	 */
-	if (copy_from_user(&stTidComm, argp, sizeof(BST_FG_TID_COMM_STRU))) {
-		BASTET_LOGE("BST_FG_SaveTidInfo copy_from_user stTidComm error");
-		return;
-	}
-	if (!BST_FG_IsAppIdxValid(stTidComm.usIndex))
-		return;
-	if (((uint32_t)stTidComm.usTotle > BST_FG_MAX_PID_NUMBER)||(0 == stTidComm.usTotle)) { /*lint !e571*/
-		return;
-	}
-
-	lTotlen = stTidComm.usTotle * sizeof(int32_t);
-	plTids = (int32_t *)kmalloc(lTotlen, GFP_ATOMIC);
-	if (NULL == plTids)
-		return;
-
-	/**
-	 * Get tid list from usr space
-	 */
-	if (copy_from_user(plTids, (uint8_t *)argp
-		+ sizeof(BST_FG_TID_COMM_STRU), lTotlen)) {
-		BASTET_LOGE("BST_FG_SaveTidInfo copy_from_user plTids error");
-		kfree(plTids);
-		return;
-	}
-	pstAppIns = BST_FG_GetAppIns(stTidComm.usIndex);
-	spin_lock_bh(&pstAppIns->stLocker);
-
-	if (!BST_FG_IsUidValid(pstAppIns->lUid)) {
-		spin_unlock_bh(&pstAppIns->stLocker);
-		kfree(plTids);
-		return;
-	}
-	switch (stTidComm.usIndex) {
-	case BST_FG_IDX_WECHAT:
-		/**
-		 * If wechat, find the push socket according the pid message
+		if (p_usr_data == NULL)
+			return 0;
+		/*
+		 * Copy data from usr space.
+		 * Set the last byte to '0' for strstr input.
 		 */
-		BST_FG_SetHongbaoPushSock(stTidComm.usTotle, plTids);
-		break;
+		p_usr_msg_hdr = (struct msghdr *)p_data;
+		if (copy_from_user(p_usr_data,
+			p_usr_msg_hdr->msg_iter.iov->iov_base,
+			pst_kwd_ins->st_len_porp.us_copy)) {
+			kfree(p_usr_data);
+			return 0;
+		}
+		p_usr_data[pst_kwd_ins->st_len_porp.us_copy - 1] = 0;
+		pc_found = strstr((const char *)p_usr_data,
+			(const char *)&pst_kwd_ins->st_key_word.auc_data[0]);
+		kfree(p_usr_data);
 
+		if (pc_found == NULL) {
+			pst_sock->fg_Spec = BST_FG_NO_SPEC;
+			return 0;
+		}
+		bst_fg_set_sock_special(pst_sock, BST_FG_WECHAT_HONGBAO);
+		bastet_logi("Find New Hongbao_socket");
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * bst_fg_proc_wx_packet() - Processing WeChat hook Packages
+ *
+ * @pstSock: the object of sock
+ * @pData: the received data.
+ * @ulLength: Maximum valid data length
+ * @ulRole: TX/RX direction
+ *
+ * invoke the dl or ul process method by the ul_role.
+ *
+ * Return: 0 - No key data information
+ *         1 - has key data information
+ */
+static uint8_t bst_fg_proc_wx_packet(struct sock *pst_sock,
+	uint8_t *p_data, uint32_t ul_length,
+	uint32_t ul_role)
+{
+	uint8_t uc_rtn = 0;
+
+	/* Call UL/DL packet proc, according to ROLE */
+	if (ul_role == BST_FG_ROLE_RCVER)
+		uc_rtn = bst_fg_proc_wx_packet_dl(pst_sock, p_data, ul_length);
+
+	else if (ul_role == BST_FG_ROLE_SNDER)
+		uc_rtn = bst_fg_proc_wx_packet_ul(pst_sock, p_data, ul_length);
+
+	return uc_rtn;
+}
+
+#ifdef CONFIG_CHR_NETLINK_MODULE
+void regist_msg_fun(notify_event *notify)
+{
+	if (notify == NULL) {
+		bastet_loge("notify null");
+		return;
+	}
+	g_notifier = notify;
+}
+
+static void notify_fastgrab_chr()
+{
+	struct res_msg_head msg;
+
+	if (g_notifier == NULL) {
+		bastet_loge("g_notifier null");
+		return;
+	}
+	msg.type = FASTGRAB_CHR_RPT;
+	msg.len = MSG_LEN;
+	g_notifier(&msg);
+}
+#endif
+
+/*
+ * bst_fg_hook_packet() - external interface,
+ * Processing the packets sent and received
+ *                       by the external socket
+ *
+ * @pstSock: the object of sock
+ * @pData: the received data.
+ * @ulLength: Maximum valid data length
+ * @ulRole: TX/RX direction
+ *
+ * hook the wx packet by us_idx,if the scenario is grab
+ * hongbao, will start rrc alive timer.
+ *
+ * Return: 0 - No key data information
+ *         1 - has key data information
+ */
+uint8_t bst_fg_hook_packet(
+	struct sock *pst_sock,
+	uint8_t *p_data,
+	uint32_t ul_length,
+	uint32_t ul_role)
+{
+	uid_t l_sock_uid;
+	uint8_t uc_rtn = 0;
+	uint16_t us_idx;
+
+	if (IS_ERR_OR_NULL(pst_sock)) {
+		bastet_loge("invalid parameter");
+		return 0;
+	}
+	/* Get and find the uid in fast-grab message information list. */
+	l_sock_uid = sock_i_uid(pst_sock).val;
+	for (us_idx = 0; us_idx < BST_FG_MAX_APP_NUMBER; us_idx++) {
+		if (l_sock_uid == g_fast_grab_app_info[us_idx].l_uid)
+			break;
+	}
+	if (!bst_fg_is_app_idx_valid(us_idx))
+		return 0;
+
+	bastet_logi("BST_FG_Hook1  Length=%u, Role=%u, sk_state=%d",
+		ul_length, ul_role, pst_sock->fg_Spec);
+
+	/* Call different packet proc according the Application Name(Index). */
+	switch (us_idx) {
+	case BST_FG_IDX_WECHAT:
+		uc_rtn = bst_fg_proc_wx_packet(pst_sock,
+			p_data, ul_length, ul_role);
+		if (uc_rtn) {
+			post_indicate_packet(BST_IND_FG_KEY_MSG,
+				&l_sock_uid, sizeof(uid_t));
+#ifdef CONFIG_CHR_NETLINK_MODULE
+			notify_fastgrab_chr();
+#endif
+		}
+		break;
 	default:
 		break;
 	}
-	kfree(plTids);
-	spin_unlock_bh(&pstAppIns->stLocker);
+	return uc_rtn;
 }
 
 
-extern int g_FastGrabDscp;
-static void BST_FG_SaveDscpInfo(unsigned long arg)
+static struct sock *bst_fg_get_sock_by_fd_pid(int fd, int32_t pid)
 {
-	void __user *argp = (void __user *)arg;
-	int lDscp = 0;
+	struct inet_sock *isk = NULL;
+	struct sock *sk = NULL;
 
-	/**
-	 * Get dscp message from usr space
-	 */
-	if (copy_from_user(&lDscp, argp, sizeof(lDscp))) {
-		BASTET_LOGE("BST_FG_SaveDscpInfo copy_from_user for dscp error");
-		return;
+	sk = get_sock_by_fd_pid(fd, pid);
+	if (sk == NULL)
+		return NULL;
+
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		sock_put(sk);
+		return NULL;
 	}
 
-	g_FastGrabDscp = lDscp;
+	if (sk->sk_socket && sk->sk_socket->type != SOCK_STREAM) {
+		sock_put(sk);
+		return NULL;
+	}
 
-	return;
+	isk = inet_sk(sk);
+	if (isk == NULL) {
+		sock_put(sk);
+		return NULL;
+	}
+
+	if ((isk->inet_daddr == BST_FG_INVALID_INET_ADDR) &&
+		(isk->inet_dport == BST_FG_INVALID_INET_ADDR)) {
+		sock_put(sk);
+		return NULL;
+	}
+	return sk;
 }
 
-
-
-static void BST_FG_Update_Acc(unsigned long arg)
+static bool process_sock_find_result(struct sock **pst_sock_reg,
+	uint16_t *us_found_port, int *l_found_fd, int fd,
+	struct sock **pst_sock, struct inet_sock *pst_inet)
 {
-	void __user *argp = (void __user *)arg;
-	uid_t      lUid = 0;
-	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
-
-	/**
-	 * Get dscp message from usr space
-	 */
-	if (copy_from_user(&lUid, argp, sizeof(lUid))) {
-		BASTET_LOGE("BST_FG_Add_AccUId copy_from_user for uid error\n");
-		return;
+	/* If there no sock be found, set the ptr to tmp-ptr. */
+	if (*pst_sock_reg == NULL) {
+		*l_found_fd = fd;
+		*us_found_port = pst_inet->inet_sport;
+		*pst_sock_reg = *pst_sock;
+	} else {
+		/*
+		 * If there is a sock has been recorded,we will
+		 * check fd/port to judge if it is the same one.
+		 * If it's another one, it means that there is
+		 * not only one sock in this uid, unsuccessful.
+		 */
+		if ((fd == *l_found_fd) && (*us_found_port ==
+			pst_inet->inet_sport)) {
+			sock_put(*pst_sock);
+		} else {
+			sock_put(*pst_sock);
+			sock_put(*pst_sock_reg);
+			bastet_logi("More than One Push Socket Found");
+			return false;
+		}
 	}
-
-	g_CurrntAccUId = lUid;
-
-	pstAppIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT);
-	if ((lUid == pstAppIns->lUid) && (0 != g_stBastetFgHongbao.ucDurationTime))
-	{
-		g_stBastetFgHongbao.ucCongestionProcFlag = true;
-		g_stBastetFgHongbao.ulStartTime = jiffies;
-		BASTET_LOGI("BST_FG_CUSTOM:hongbao congestion start,duration time is %d", g_stBastetFgHongbao.ucDurationTime);
-	}
-
-	return;
+	return true;
 }
 
-
-
-
-
-static bool BST_FG_Check_AccUid(uid_t lUid)
+static struct files_struct *find_file_sys_head_according_to_task(
+	struct task_struct *pst_task)
 {
-	if(!BST_FG_IsUidValid(lUid))
-	{
+	struct files_struct *pst_files = NULL;
+
+	if (pst_task == NULL) {
+		bastet_loge("pstTask error");
+		rcu_read_unlock();
+		return NULL;
+	}
+	get_task_struct(pst_task);
+	rcu_read_unlock();
+
+	/* Find File sys head according to task */
+	pst_files = pst_task->files;
+	if (pst_files == NULL) {
+		put_task_struct(pst_task);
+		bastet_loge("pstFiles error");
+		return NULL;
+	}
+	return pst_files;
+}
+
+static int bst_fg_set_hongbao_push_sock(int32_t tid_num, int32_t *tids)
+{
+	struct task_struct *pst_task = NULL;
+	struct files_struct *pst_files = NULL;
+	struct fdtable *pst_fdt = NULL;
+	struct sock *pst_sock = NULL;
+	struct sock *pst_sock_reg = NULL;
+	struct inet_sock *pst_inet = NULL;
+	uint32_t us_looper;
+	int fd;
+	uint16_t us_found_port = 0;
+	int l_found_fd = -1;
+
+	/* use pid to proc. */
+	for (us_looper = 0; us_looper < tid_num; us_looper++) {
+		/* Find task message head */
+		rcu_read_lock();
+		pst_task = find_task_by_vpid(tids[us_looper]);
+		pst_files = find_file_sys_head_according_to_task(pst_task);
+		if (pst_files == NULL)
+			return -EFAULT;
+		put_task_struct(pst_task);
+		/* list the fd table */
+		pst_fdt = files_fdtable(pst_files);
+		for (fd = 0; fd < pst_fdt->max_fds; fd++) {
+			/* check the state, ip-addr, port-num of this sock */
+			pst_sock = bst_fg_get_sock_by_fd_pid(fd,
+				tids[us_looper]);
+			if (!pst_sock)
+				continue;
+			pst_inet = inet_sk(pst_sock);
+			if (!process_sock_find_result(&pst_sock_reg,
+				&us_found_port, &l_found_fd, fd, &pst_sock,
+				pst_inet))
+				return 0;
+		}
+	}
+	if (pst_sock_reg != NULL) {
+		/* record the PUSH special flag to this sock */
+		bst_fg_set_sock_special(pst_sock_reg, BST_FG_WECHAT_PUSH);
+		sock_put(pst_sock_reg);
+		bastet_logi("Found Success!");
+	}
+	return 0;
+}
+
+static bool get_keyword_data_block_from_user_space(
+	struct bst_fg_keyword_stru **pst_kwd_src,
+	struct bst_fg_keyword_stru **pst_kwd_dst,
+	void __user *argp,
+	uint16_t us_copyed,
+	struct bst_fg_kws_comm_stru st_kws_comm)
+{
+	/* Get keyword data block from usr space */
+	if ((*pst_kwd_src)->st_key_word.us_tot_len > BST_FG_MAX_KW_LEN) {
+		kfree(*pst_kwd_dst);
+		return false;
+	}
+	if (copy_from_user(&((*pst_kwd_dst)->st_key_word.auc_data[0]),
+		(uint8_t *)argp + us_copyed + sizeof(st_kws_comm),
+		(*pst_kwd_src)->st_key_word.us_tot_len)) {
+		bastet_loge("copy_from_user aucData error");
+		kfree(*pst_kwd_dst);
 		return false;
 	}
 
-	if( g_CurrntAccUId == lUid )
-	{
-		return true;
-	}
-	return false;
+	return true;
 }
 
-
-#ifndef CONFIG_HUAWEI_XENGINE
-
-
-void BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
+static bool get_keyword_data_from_user_space(
+	struct bst_fg_keyword_stru **pst_kwd_src,
+	struct bst_fg_keyword_stru **pst_kwd_dst,
+	void __user *argp,
+	uint16_t us_copyed,
+	struct bst_fg_kws_comm_stru st_kws_comm)
 {
-	uid_t lSockUid;
-	bool  bFound = false;
-
-	if(( NULL == pstSock ) || ( NULL == msg ))
-	{
-		return ;
+	/* Get keyword data structure from usr space */
+	if (copy_from_user(*pst_kwd_src,
+		(uint8_t *)argp + us_copyed + sizeof(st_kws_comm),
+		sizeof(**pst_kwd_src))) {
+		bastet_loge("copy_from_user pstKwdSrc error");
+		return false;
 	}
+	if ((*pst_kwd_src)->st_key_word.us_tot_len > BST_FG_MAX_KW_LEN)
+		return false;
+	*pst_kwd_dst = kzalloc(sizeof(**pst_kwd_dst) +
+		(*pst_kwd_src)->st_key_word.us_tot_len,
+		GFP_ATOMIC);
+	if (*pst_kwd_dst == NULL)
+		return false;
 
-	/*if the socket has matched keyword, keep acc always until socket destruct*/
-	if ( BST_FG_WECHAT_HONGBAO == pstSock->fg_Spec )
-	{
-		BST_FG_SetAccState( pstSock,BST_FG_ACC_HIGH );
+	memcpy(*pst_kwd_dst, *pst_kwd_src, sizeof(**pst_kwd_src));
+	return true;
+}
+
+/*
+ * bst_fg_save_keyword() - save the keyword.
+ *
+ * @arg: the iov pointer of user space.
+ *
+ * Save Application Matching Keyword Information.
+ */
+static void bst_fg_save_keyword(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	struct bst_fg_app_info_stru *pst_app_ins = NULL;
+	struct bst_fg_keyword_stru *pst_kwd_src = NULL;
+	struct bst_fg_keyword_stru *pst_kwd_dst = NULL;
+	struct bst_fg_kws_comm_stru st_kws_comm = {0};
+	uint16_t us_copyed = 0;
+	uint16_t us_looper;
+
+	/* Get keyword head information from usr space */
+	if (copy_from_user(&st_kws_comm, argp, sizeof(st_kws_comm))) {
+		bastet_loge("copy_from_user stKwsComm error");
+		return;
+	}
+	if (!bst_fg_is_app_idx_valid(st_kws_comm.us_index))
+		return;
+
+	bastet_logi("stKwsComm.usIndex=%d", st_kws_comm.us_index);
+	pst_kwd_src = kzalloc(sizeof(*pst_kwd_src), GFP_ATOMIC);
+	if (pst_kwd_src == NULL)
+		return;
+
+	pst_app_ins = bst_fg_get_app_ins(st_kws_comm.us_index);
+	us_looper = 0;
+	spin_lock_bh(&pst_app_ins->st_locker);
+	while (1) {
+		if (!get_keyword_data_from_user_space(&pst_kwd_src,
+			&pst_kwd_dst, argp, us_copyed, st_kws_comm))
+			break;
+		us_copyed += sizeof(*pst_kwd_dst);
+		if (pst_kwd_src->st_key_word.us_tot_len > 0) {
+			/* Get keyword data block from usr space */
+			if (!get_keyword_data_block_from_user_space(
+				&pst_kwd_src, &pst_kwd_dst, argp, us_copyed,
+				st_kws_comm))
+				break;
+			us_copyed += pst_kwd_src->st_key_word.us_tot_len;
+		}
+		if (pst_app_ins->pst_kws[us_looper] != NULL)
+			kfree(pst_app_ins->pst_kws[us_looper]);
+
+		pst_app_ins->pst_kws[us_looper] = pst_kwd_dst;
+
+		if (us_copyed > st_kws_comm.us_key_length) {
+			kfree(pst_kwd_dst);
+			pst_app_ins->pst_kws[us_looper] = NULL;
+			break;
+		}
+		us_looper += 1;
+		if (us_looper >= (uint16_t)BST_FG_MAX_KW_NUMBER)
+			break;
+	}
+	kfree(pst_kwd_src);
+	spin_unlock_bh(&pst_app_ins->st_locker);
+}
+
+/*
+ * bst_fg_save_uid_info() - Save the uid info.
+ *
+ * @arg: the iov pointer of user space.
+ *
+ * Save the UID update information of the application.
+ */
+static void bst_fg_save_uid_info(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	struct bst_fg_app_info_stru *pst_app_ins = NULL;
+	struct bst_fg_uid_comm_stru st_uid_comm = {0};
+
+	/* Get uid message structure from usr space */
+	if (copy_from_user(&st_uid_comm, argp, sizeof(st_uid_comm))) {
+		bastet_loge("copy_from_user error");
+		return;
+	}
+	if (!bst_fg_is_app_idx_valid(st_uid_comm.us_index))
+		return;
+
+	pst_app_ins = bst_fg_get_app_ins(st_uid_comm.us_index);
+	spin_lock_bh(&pst_app_ins->st_locker);
+	pst_app_ins->l_uid = st_uid_comm.l_uid;
+	pst_app_ins->us_version = st_uid_comm.us_version;
+	bastet_logi("app_index=%d, uid=%d",
+		pst_app_ins->us_index, pst_app_ins->l_uid);
+	spin_unlock_bh(&pst_app_ins->st_locker);
+}
+
+/*
+ * bst_fg_save_tid_info() - save tid info.
+ *
+ * @arg: the iov pointer of user space.
+ *
+ * Obtaining the Key PID Information List in the Bearer UID
+ */
+static void bst_fg_save_tid_info(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	struct bst_fg_app_info_stru *pst_app_ins = NULL;
+	int32_t *pl_tids = NULL;
+	struct bst_fg_tid_comm_stru st_tid_comm = {0};
+	int32_t l_tot_len;
+
+	/* Get tid message structure from usr space */
+	if (copy_from_user(&st_tid_comm, argp, sizeof(st_tid_comm))) {
+		bastet_loge("copy_from_user stTidComm error");
+		return;
+	}
+	if (!bst_fg_is_app_idx_valid(st_tid_comm.us_index))
+		return;
+	if (((uint32_t)st_tid_comm.us_totle > BST_FG_MAX_PID_NUMBER) ||
+		(st_tid_comm.us_totle == 0)) { /*lint !e571*/
 		return;
 	}
 
-	/*if matched keyword, accelerate socket*/
-	if (BST_FG_NO_SPEC != pstSock->fg_Spec)
-	{
-		if (BST_FG_HookPacket(pstSock, (uint8_t *)msg, (uint32_t)(msg->msg_iter.iov->iov_len), BST_FG_ROLE_SNDER))
-		{
-			BST_FG_SetAccState( pstSock, BST_FG_ACC_HIGH );
+	l_tot_len = st_tid_comm.us_totle * sizeof(int32_t);
+	pl_tids = kzalloc(l_tot_len, GFP_ATOMIC);
+	if (pl_tids == NULL)
+		return;
+
+	/* Get tid list from usr space */
+	if (copy_from_user(pl_tids, (uint8_t *)argp +
+		sizeof(st_tid_comm), l_tot_len)) {
+		bastet_loge("copy_from_user plTids error");
+		kfree(pl_tids);
+		return;
+	}
+	pst_app_ins = bst_fg_get_app_ins(st_tid_comm.us_index);
+	spin_lock_bh(&pst_app_ins->st_locker);
+
+	if (!bst_fg_is_uid_valid(pst_app_ins->l_uid)) {
+		spin_unlock_bh(&pst_app_ins->st_locker);
+		kfree(pl_tids);
+		return;
+	}
+	switch (st_tid_comm.us_index) {
+	case BST_FG_IDX_WECHAT:
+		/* If wechat, find the push socket according the pid message */
+		bst_fg_set_hongbao_push_sock(st_tid_comm.us_totle, pl_tids);
+		break;
+	default:
+		break;
+	}
+	kfree(pl_tids);
+	spin_unlock_bh(&pst_app_ins->st_locker);
+}
+
+/*
+ * bst_fg_save_dscp_info() - save dscp info.
+ *
+ * @arg: the iov pointer of user space.
+ *
+ * Obtains the current dscp value.
+ */
+extern int g_fast_grab_dscp;
+static void bst_fg_save_dscp_info(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	int l_dscp = 0;
+
+	/* Get dscp message from usr space */
+	if (copy_from_user(&l_dscp, argp, sizeof(l_dscp))) {
+		bastet_loge("copy_from_user for dscp error");
+		return;
+	}
+
+	g_fast_grab_dscp = l_dscp;
+}
+
+/**
+ * bst_fg_update_acc() - update acc.
+ *
+ * @uid: uid of the application
+ *
+ * Upper-layer notification acceleration
+ */
+static void bst_fg_update_acc(unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	uid_t l_uid = 0;
+	struct bst_fg_app_info_stru *pst_app_ins = NULL;
+
+	/* Get dscp message from usr space */
+	if (copy_from_user(&l_uid, argp, sizeof(l_uid))) {
+		bastet_loge("BST_FG_Add_AccUId copy_from_user for uid error\n");
+		return;
+	}
+
+	g_currnt_acc_uid = l_uid;
+
+	pst_app_ins = bst_fg_get_app_ins(BST_FG_IDX_WECHAT);
+	if ((l_uid == pst_app_ins->l_uid) &&
+		(g_st_bastet_fg_hongbao.uc_duration_time != 0)) {
+		g_st_bastet_fg_hongbao.uc_congestion_proc_flag = true;
+		g_st_bastet_fg_hongbao.ul_start_time = jiffies;
+		bastet_logi("hongbao congestion start,duration time is %d",
+			g_st_bastet_fg_hongbao.uc_duration_time);
+	}
+}
+
+
+/*
+ * bst_fg_check_acc_uid() - check acc uid.
+ *
+ * @lUid: uid of the application
+ *
+ * Check whether the uplink data packets need to be accelerated.
+ */
+static bool bst_fg_check_acc_uid(uid_t l_uid)
+{
+	if (!bst_fg_is_uid_valid(l_uid))
+		return false;
+
+	if (g_currnt_acc_uid == l_uid)
+		return true;
+	return false;
+}
+
+#ifndef CONFIG_HUAWEI_XENGINE
+/*
+ * bst_fg_hook_ul_stub() - hook the uplink data packets.
+ *
+ * @pstSock: the object of socket
+ * @msg: struct msghdr, the struct of message that was sent.
+ *
+ * if the socket has matched keyword, or uid equals current acc uid
+ * hook the uplink data packets.
+ */
+void bst_fg_hook_ul_stub(struct sock *pst_sock, struct msghdr *msg)
+{
+	uid_t l_sock_uid;
+	bool b_found = false;
+
+	if ((pst_sock == NULL) || (msg == NULL))
+		return;
+
+	/*
+	 * if the socket has matched keyword,
+	 * keep acc always until socket destruct
+	 */
+	if (pst_sock->fg_Spec == BST_FG_WECHAT_HONGBAO) {
+		bst_fg_set_acc_state(pst_sock, BST_FG_ACC_HIGH);
+		return;
+	}
+
+	/* if matched keyword, accelerate socket */
+	if (pst_sock->fg_Spec != BST_FG_NO_SPEC) {
+		if (bst_fg_hook_packet(pst_sock, (uint8_t *)msg,
+			(uint32_t)(msg->msg_iter.iov->iov_len),
+				BST_FG_ROLE_SNDER)) {
+			bst_fg_set_acc_state(pst_sock, BST_FG_ACC_HIGH);
 			return;
 		}
 	}
 
-	/**
-	 * if uid equals current acc uid, accelerate it,else stop it
-	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
-#else
-	lSockUid = sock_i_uid(pstSock);
-#endif
-	bFound  = BST_FG_Check_AccUid(lSockUid);
-	if(bFound)
-	{
-		BST_FG_SetAccState(pstSock, BST_FG_ACC_HIGH );
-	}
+	/* if uid equals current acc uid, accelerate it,else stop it */
+	l_sock_uid = sock_i_uid(pst_sock).val;
+	b_found = bst_fg_check_acc_uid(l_sock_uid);
+	if (b_found)
+		bst_fg_set_acc_state(pst_sock, BST_FG_ACC_HIGH);
 	else
-	{
-		BST_FG_SetAccState(pstSock, BST_FG_ACC_NORMAL );
-	}
-	return;
+		bst_fg_set_acc_state(pst_sock, BST_FG_ACC_NORMAL);
 }
 #else
-
-bool BST_FG_Hook_Ul_Stub(struct sock *pstSock, struct msghdr *msg)
+/*
+ * bst_fg_hook_ul_stub() - hook the uplink data packets.
+ *
+ * @*pstSock: the object of socket
+ * @*msg: struct msghdr, the struct of message that was sent.
+ *
+ * if socket has matched keyword and if uid equals current acc uid
+ * hook the uplink data packets.
+ *
+ * Return: true - hook the ul stub
+ *         false - not matched.
+ */
+bool bst_fg_hook_ul_stub(struct sock *pst_sock, struct msghdr *msg)
 {
-	uid_t lSockUid;
-	bool  bFound = false;
+	uid_t l_sock_uid;
+	bool b_found = false;
 
-	if(( NULL == pstSock ) || ( NULL == msg ))
-	{
+	if ((pst_sock == NULL) || (msg == NULL))
 		return false;
-	}
 
-	/*if the socket has matched keyword, keep acc always until socket destruct*/
-	if ( BST_FG_WECHAT_HONGBAO == pstSock->fg_Spec )
-	{
+	/*
+	 * if the socket has matched keyword, keep acc always
+	 * until socket destruct
+	 */
+	if (pst_sock->fg_Spec == BST_FG_WECHAT_HONGBAO)
 		return true;
-	}
 
-	/*if matched keyword, accelerate socket*/
-	if (BST_FG_NO_SPEC != pstSock->fg_Spec)
-	{
-		if (BST_FG_HookPacket(pstSock, (uint8_t *)msg, (uint32_t)(msg->msg_iter.iov->iov_len), BST_FG_ROLE_SNDER))
-		{
+	/* if matched keyword, accelerate socket */
+	if (pst_sock->fg_Spec != BST_FG_NO_SPEC) {
+		if (bst_fg_hook_packet(pst_sock, (uint8_t *)msg,
+			(uint32_t)(msg->msg_iter.iov->iov_len),
+			BST_FG_ROLE_SNDER))
 			return true;
-		}
 	}
 
-	/**
-	 * if uid equals current acc uid, accelerate it,else stop it
-	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
-#else
-	lSockUid = sock_i_uid(pstSock);
-#endif
-	bFound  = BST_FG_Check_AccUid(lSockUid);
-	return bFound;
+	/* if uid equals current acc uid, accelerate it,else stop it */
+	l_sock_uid = sock_i_uid(pst_sock).val;
+	b_found = bst_fg_check_acc_uid(l_sock_uid);
+	return b_found;
 }
-
 #endif
 
-
-
-static void BST_FG_Save_Custom_Info(unsigned long arg)
+/*
+ * bst_fg_save_custom_info() - save custom info.
+ *
+ * @arg:  the iov pointer of user space.
+ *
+ * Saves the information of application customization.
+ */
+static void bst_fg_save_custom_info(unsigned long arg)
 {
-	uint8_t ucLoop;
+	uint8_t idx;
 	void __user *argp = (void __user *)arg;
-	/**
-	 * Get policy message from usr space
-	 */
-	if (copy_from_user(&g_stBastetFgCustom, argp, sizeof(BST_FG_CUSTOM_STRU))) {
-		BASTET_LOGE("BST_FG_CUSTOM:save custom info error");
+	struct bst_fg_custom_stru *p_bst_fg_custom_stru = NULL;
+
+	/* Get policy message from usr space */
+	if (copy_from_user(&g_st_bastet_fg_custom, argp,
+		sizeof(*p_bst_fg_custom_stru))) {
+		bastet_loge("BST_FG_CUSTOM:save custom info error");
 		return;
 	}
 
-	g_stBastetFgCustom.ucAPPNum = BST_MIN(g_stBastetFgCustom.ucAPPNum, BST_FG_MAX_CUSTOM_APP);
+	g_st_bastet_fg_custom.uc_app_num =
+		bst_min(g_st_bastet_fg_custom.uc_app_num,
+			BST_FG_MAX_CUSTOM_APP);
 
-	g_stBastetFgHongbao.ucDurationTime = g_stBastetFgCustom.ucHongbaoDurationTime;
+	g_st_bastet_fg_hongbao.uc_duration_time =
+		g_st_bastet_fg_custom.uc_hongbao_duration_time;
 
-	for (ucLoop = 0; ucLoop < g_stBastetFgCustom.ucAPPNum; ucLoop++) {
-		BASTET_LOGI("BST_FG_CUSTOM:Save Custom Info UID is %d,discard_timer is %d,app_type is %d,ProtocolBitMap is %d, RetranDiscardFlag is %d",
-																				g_stBastetFgCustom.astCustomInfo[ucLoop].lUid,
-																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucDiscardTimer,
-																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucAppType,
-																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucProtocolBitMap,
-																				g_stBastetFgCustom.astCustomInfo[ucLoop].ucTcpRetranDiscard);
+	for (idx = 0; idx < g_st_bastet_fg_custom.uc_app_num; idx++) {
+		bastet_logi("BST_FG_CUSTOM:Save Custom Info UID is %d",
+			g_st_bastet_fg_custom.ast_custom_info[idx].l_uid);
+		bastet_logi("discard_timer is %d",
+			g_st_bastet_fg_custom
+				.ast_custom_info[idx].uc_discard_timer);
+		bastet_logi("app_type is %d,",
+			g_st_bastet_fg_custom
+				.ast_custom_info[idx].uc_app_type);
+		bastet_logi("ProtocolBitMap is %d",
+			g_st_bastet_fg_custom
+				.ast_custom_info[idx].uc_protocol_bitmap);
+		bastet_logi("RetranDiscardFlag is %d",
+			g_st_bastet_fg_custom
+				.ast_custom_info[idx].uc_tcp_retran_discard);
 	}
-
-	return;
 }
 
-
-uint8_t BST_FG_Encode_Discard_timer(unsigned long ulTimer)
+/*
+ * bst_fg_encode_discard_timer() - To Code the discard_timer field
+ *
+ * @usTimer: the time value(input parameter)
+ *
+ * code the timer by different area.
+ */
+uint8_t bst_fg_encode_discard_timer(unsigned long ul_timer)
 {
-	uint8_t discard_timer = 0;
+	uint8_t discard_timer;
 
-	if ((ulTimer >= 0) && (ulTimer <= 630)) {
-		discard_timer = 0x00 | ((ulTimer + 10 -1) / 10);
-	}else if ((ulTimer > 630) && (ulTimer <= 3160)) {
-		discard_timer = 0x40 | (((ulTimer - 640) + 40 -1) / 40);
-	}else if ((ulTimer > 3160) && (ulTimer <= 9500)) {
-		discard_timer = 0x80 | (((ulTimer - 3200) + 100 -1) / 100);
-	}else if ((ulTimer > 9500) && (ulTimer <= 34800)) {
-		discard_timer = 0xC0 | (((ulTimer - 9600) + 400 -1) / 400);
-	}else {
+	if ((ul_timer >= 0) && (ul_timer <= UL_TIMER_THR_1))
+		discard_timer = 0x00 | ((ul_timer +
+			UL_TIMER_VAL_10 - 1) / UL_TIMER_VAL_10);
+	else if ((ul_timer > UL_TIMER_THR_1) && (ul_timer <= UL_TIMER_THR_2))
+		discard_timer = 0x40 | (((ul_timer - UL_TIMER_VAL_640) +
+			UL_TIMER_VAL_40 - 1) / UL_TIMER_VAL_40);
+	else if ((ul_timer > UL_TIMER_THR_2) && (ul_timer <= UL_TIMER_THR_3))
+		discard_timer = 0x80 | (((ul_timer - UL_TIMER_VAL_3200) +
+			UL_TIMER_VAL_100 - 1) / UL_TIMER_VAL_100);
+	else if ((ul_timer > UL_TIMER_THR_3) && (ul_timer <= UL_TIMER_THR_4))
+		discard_timer = 0xC0 | (((ul_timer - UL_TIMER_VAL_9600) +
+			UL_TIMER_VAL_400 - 1) / UL_TIMER_VAL_400);
+	else
 		discard_timer = 0;
-	}
 
 	return discard_timer;
 }
 
-
-void BST_FG_HongBao_Process(struct sock *pstSock, uid_t lSockUid, uint8_t ucProtocolBitMap)
+/*
+ * bst_fg_hongbao_process() - process hongbao in fastgrab scenario.
+ *
+ * @*pstSock: the object of socket
+ * @lSockUid: the Uid of Sock
+ * @ucTcpOrUdpBitMa: bitmap of TCP or UDP
+ *
+ * The uplink congestion scheduling flag is added to the data gift(hongbao).
+ */
+void bst_fg_hongbao_process(struct sock *pst_sock,
+	uid_t l_sock_uid, uint8_t uc_protocol_bitmap)
 {
-	BST_FG_APP_INFO_STRU *pstAppIns = NULL;
+	struct bst_fg_app_info_stru *pst_app_ins = NULL;
 
-	if (BST_FG_TCP_BITMAP != ucProtocolBitMap)
-	{
+	if (uc_protocol_bitmap != BST_FG_TCP_BITMAP)
 		return;
-	}
 
-	pstAppIns = BST_FG_GetAppIns(BST_FG_IDX_WECHAT);
-	if ((g_stBastetFgHongbao.ucCongestionProcFlag) && (lSockUid == pstAppIns->lUid))
-	{
-		if (before((g_stBastetFgHongbao.ulStartTime + g_stBastetFgHongbao.ucDurationTime*HZ), jiffies))
-		{
-			g_stBastetFgHongbao.ucCongestionProcFlag = false;
-
-			BASTET_LOGI("BST_FG_CUSTOM:hongbao congestion stop,HZ is %u", HZ);
+	pst_app_ins = bst_fg_get_app_ins(BST_FG_IDX_WECHAT);
+	if ((g_st_bastet_fg_hongbao.uc_congestion_proc_flag) &&
+		(l_sock_uid == pst_app_ins->l_uid)) {
+		if (before((g_st_bastet_fg_hongbao.ul_start_time +
+			g_st_bastet_fg_hongbao.uc_duration_time * HZ),
+			jiffies)) {
+			g_st_bastet_fg_hongbao.uc_congestion_proc_flag = false;
+			bastet_logi("hongbao congestion stop,HZ is %u", HZ);
 			return;
 		}
 #ifdef CONFIG_HW_DPIMARK_MODULE
-		BST_FG_SetAppType(pstSock, (BST_FG_ACC_BITMAP | BST_FG_CONGESTION_BITMAP));
+		bst_fg_set_app_type(pst_sock,
+			(BST_FG_ACC_BITMAP | BST_FG_CONGESTION_BITMAP));
 #endif
 	}
 }
 
 #ifdef CONFIG_HUAWEI_BASTET
-
-void BST_FG_Custom_Process(struct sock *pstSock, struct msghdr *msg, uint8_t ucProtocolBitMap)
+static bool detect_sock_state(struct sock *pst_sock)
 {
-	uid_t lSockUid;
-	uint8_t ucLoop;
-	uint8_t ucAPPNum;
-	uint8_t ucDiscardTimer;
+	if ((!sk_fullsock(pst_sock)) || sock_flag(pst_sock, SOCK_DEAD) ||
+		(pst_sock->sk_state == TCP_TIME_WAIT)) {
+		bastet_logd("fail,wrong sk_state");
+		return false;
+	}
+	return true;
+}
+
+static void print_bst_fg_custom_info(uid_t l_sock_uid,
+	uint8_t uc_discard_timer, uint8_t uc_protocol_bitmap,
+	struct bst_fg_custom_info *past_custom_info)
+{
+	bastet_logd("BST_FG_CUSTOM:Find sock UID is %d", l_sock_uid);
+	bastet_logd("discard_timer is %d", uc_discard_timer);
+	bastet_logd("app_type is %d", past_custom_info->uc_app_type);
+	bastet_logd("ProtocolBitMap is %d", uc_protocol_bitmap);
+	bastet_logd("RetranDiscardFlag is %d",
+		past_custom_info->uc_tcp_retran_discard);
+}
+
+static void handle_discard_timer(struct bst_fg_custom_info *past_custom_info,
+	uint8_t *uc_discard_timer, struct sock *pst_sock,
+	struct inet_connection_sock *p_inet_sock)
+{
 	unsigned long timeout;
-	BST_FG_CUSTOM_INFO *pastCustomInfo = NULL;
-	struct inet_connection_sock *pInetSock;
 
-	if ((!sk_fullsock(pstSock)) || sock_flag(pstSock, SOCK_DEAD) ||
-		(pstSock->sk_state == TCP_TIME_WAIT)) {
-		BASTET_LOGD("BST_FG_Custom_Process fail,wrong sk_state");
-		return;
+	if (p_inet_sock->icsk_timeout > jiffies)
+		timeout = p_inet_sock->icsk_timeout - jiffies;
+	else
+		timeout = 0;
+	bastet_logd("BST_FG_CUSTOM:TCP Timeout is 0x%lx", timeout);
+	if ((timeout != 0) && (HZ != 0)) {
+		timeout = ((timeout * BST_FG_US_MS) / HZ) +
+			(BST_FG_TWENTY_TIME *
+			(past_custom_info->uc_tcp_retran_discard & 0x7F));
+		*uc_discard_timer = bst_fg_encode_discard_timer(timeout);
+		bst_fg_set_discard_timer(pst_sock, *uc_discard_timer);
 	}
+}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lSockUid = sock_i_uid(pstSock).val;
-#else
-	lSockUid = sock_i_uid(pstSock);
-#endif
+/*
+ * bst_fg_custom_process() - Application Customization
+ *
+ * @*pstSock: the object of socket
+ * @*msg: struct msghdr, the struct of message that was sent.
+ * @ucTcpOrUdpBitMa: bitmap of TCP or UDP.
+ *
+ * start to process the custom request.
+ */
+void bst_fg_custom_process(struct sock *pst_sock, struct msghdr *msg,
+	uint8_t uc_protocol_bitmap)
+{
+	uid_t l_sock_uid;
+	uint8_t idx;
+	uint8_t uc_app_num;
+	uint8_t uc_discard_timer = 0;
+	struct bst_fg_custom_info *past_custom_info = NULL;
+	struct inet_connection_sock *p_inet_sock = NULL;
 
-	BST_FG_SetDiscardTimer(pstSock, 0);
+	if (!detect_sock_state(pst_sock))
+		return;
+	l_sock_uid = sock_i_uid(pst_sock).val;
+	bst_fg_set_discard_timer(pst_sock, 0);
 #ifdef CONFIG_HW_DPIMARK_MODULE
-	BST_FG_InitAppType(pstSock);
+	bst_fg_init_app_type(pst_sock);
 #endif
 
-	if(!BST_FG_IsUidValid(lSockUid))
-	{
+	if (!bst_fg_is_uid_valid(l_sock_uid))
 		return;
-	}
 
-	BST_FG_HongBao_Process(pstSock, lSockUid, ucProtocolBitMap);
+	bst_fg_hongbao_process(pst_sock, l_sock_uid, uc_protocol_bitmap);
 
-	ucAPPNum = BST_MIN(g_stBastetFgCustom.ucAPPNum, BST_FG_MAX_CUSTOM_APP);
-	for (ucLoop = 0; ucLoop < ucAPPNum; ucLoop++) {
-		if (lSockUid == g_stBastetFgCustom.astCustomInfo[ucLoop].lUid) {
-			pastCustomInfo = &(g_stBastetFgCustom.astCustomInfo[ucLoop]);
+	uc_app_num = bst_min(g_st_bastet_fg_custom.uc_app_num, BST_FG_MAX_CUSTOM_APP);
+	for (idx = 0; idx < uc_app_num; idx++) {
+		if (l_sock_uid == g_st_bastet_fg_custom.ast_custom_info[idx].l_uid) {
+			past_custom_info =
+				&(g_st_bastet_fg_custom.ast_custom_info[idx]);
 			break;
 		}
 	}
 
-	if (NULL == pastCustomInfo) {
+	if (past_custom_info == NULL)
 		return;
-	}
 
-	if (!(ucProtocolBitMap & pastCustomInfo->ucProtocolBitMap)) {
+	if (!(uc_protocol_bitmap & past_custom_info->uc_protocol_bitmap))
 		return;
-	}
 
-	if ((pastCustomInfo->ucTcpRetranDiscard & 0x80) && (BST_FG_TCP_BITMAP == ucProtocolBitMap)) {
-		pInetSock = inet_csk(pstSock);
-		timeout = (pInetSock->icsk_timeout > jiffies) ? (pInetSock->icsk_timeout - jiffies) : 0;
-		BASTET_LOGD("BST_FG_CUSTOM:TCP Timeout is 0x%lx",timeout);
-		if ((0 != timeout) && (0 != HZ)) {
-			timeout = ((timeout * 1000) / HZ) + (20 * (pastCustomInfo->ucTcpRetranDiscard & 0x7F));
-			ucDiscardTimer = BST_FG_Encode_Discard_timer(timeout);
-			BST_FG_SetDiscardTimer(pstSock, ucDiscardTimer);
-		}
-	}else {
-		ucDiscardTimer = pastCustomInfo->ucDiscardTimer;
-		BST_FG_SetDiscardTimer(pstSock, ucDiscardTimer);
+	if ((past_custom_info->uc_tcp_retran_discard & 0x80) &&
+		(uc_protocol_bitmap == BST_FG_TCP_BITMAP)) {
+		p_inet_sock = inet_csk(pst_sock);
+		handle_discard_timer(past_custom_info, &uc_discard_timer,
+			pst_sock, p_inet_sock);
+	} else {
+		uc_discard_timer = past_custom_info->uc_discard_timer;
+		bst_fg_set_discard_timer(pst_sock, uc_discard_timer);
 	}
 #ifdef CONFIG_HW_DPIMARK_MODULE
-	BST_FG_SetAppType(pstSock, pastCustomInfo->ucAppType);
+	bst_fg_set_app_type(pst_sock, past_custom_info->uc_app_type);
 #endif
 #ifdef CONFIG_HW_DPIMARK_MODULE
-	BASTET_LOGD("BST_FG_CUSTOM:DPI_MARK is 0x%x",pstSock->__sk_common.skc_hwdpi_mark);
+	bastet_logd("DPI_MARK is 0x%x", pst_sock->__sk_common.skc_hwdpi_mark);
 #endif
-	BASTET_LOGD("BST_FG_CUSTOM:Find sock UID is %d,discard_timer is %d,app_type is %d,ProtocolBitMap is %d, RetranDiscardFlag is %d",
-																				lSockUid,
-																				ucDiscardTimer,
-																				pastCustomInfo->ucAppType,
-																				ucProtocolBitMap,
-																				pastCustomInfo->ucTcpRetranDiscard);
+	print_bst_fg_custom_info(l_sock_uid, uc_discard_timer,
+		uc_protocol_bitmap, past_custom_info);
 }
 #endif
 
-
-void BST_FG_IoCtrl(unsigned long arg)
+/*
+ * bst_fg_io_ctrl() - ioctrl of fastgrab.
+ *
+ * @arg: iov pointer of User space
+ *
+ * External IoCtrl interfaces of the Fast-grab
+ */
+void bst_fg_io_ctrl(unsigned long arg)
 {
 	void __user *argp = (void __user *)arg;
-	fastgrab_info stIoCmd;
+	struct fastgrab_info st_io_cmd;
 
-	if (NULL == argp)
+	if (argp == NULL)
 		return;
 
-	/**
-	 * Copy io ctrl message of fast-grab from usr space.
-	 */
-	if (copy_from_user(&stIoCmd, argp, sizeof(fastgrab_info))) {
-		BASTET_LOGE("BST_FG_IoCtrl copy_from_user error");
+	/* Copy io ctrl message of fast-grab from usr space. */
+	if (copy_from_user(&st_io_cmd, argp, sizeof(st_io_cmd))) {
+		bastet_loge("copy_from_user error");
 		return;
 	}
-	BASTET_LOGI("BST_FG_IoCtrl command=%d, msg_len=%d",
-		stIoCmd.cmd, stIoCmd.len);
+	bastet_logi("command=%d, msg_len=%d", st_io_cmd.cmd, st_io_cmd.len);
 
-	/**
-	 * Call branched function according to the fast-grab command.
-	 */
-	switch (stIoCmd.cmd) {
+	/* Call branched function according to the fast-grab command. */
+	switch (st_io_cmd.cmd) {
 	case CMD_LOAD_KEYWORDS:
-		BST_FG_SaveKeyword(arg + sizeof(fastgrab_info));
+		bst_fg_save_keyword(arg + sizeof(st_io_cmd));
 		break;
 	case CMD_UPDATE_UID:
-		BST_FG_SaveUidInfo(arg + sizeof(fastgrab_info));
+		bst_fg_save_uid_info(arg + sizeof(st_io_cmd));
 		break;
 	case CMD_UPDATE_TID:
-		BST_FG_SaveTidInfo(arg + sizeof(fastgrab_info));
+		bst_fg_save_tid_info(arg + sizeof(st_io_cmd));
 		break;
 	case CMD_UPDATE_DSCP:
-		BST_FG_SaveDscpInfo(arg + sizeof(fastgrab_info));
+		bst_fg_save_dscp_info(arg + sizeof(st_io_cmd));
 		break;
 	case CMD_UPDATE_ACC_UID:
-		BST_FG_Update_Acc(arg + sizeof(fastgrab_info));
+		bst_fg_update_acc(arg + sizeof(st_io_cmd));
 		break;
 	case CMD_UPDATE_CUSTOM:
-		BST_FG_Save_Custom_Info(arg + sizeof(fastgrab_info));
+		bst_fg_save_custom_info(arg + sizeof(st_io_cmd));
 		break;
 	default:
 		break;
 	}
 }
 
-
-void BST_FG_CheckSockUid(struct sock *pstSock, int state)
+/*
+ * bst_fg_check_sock_uid() - check sock uid.
+ *
+ * @pstSock: sock struct
+ * @state: the state of socket
+ *
+ * Processes the socket status change information related to uid.
+ */
+void bst_fg_check_sock_uid(struct sock *pst_sock, int state)
 {
-	uid_t lUid = BST_FG_INVALID_UID;
-	uint16_t usIdx = BST_FG_IDX_INVALID_APP;
+	uid_t l_uid;
+	uint16_t us_idx;
 
-	 if (IS_ERR_OR_NULL(pstSock)) {
-		BASTET_LOGE("invalid parameter");
+	if (IS_ERR_OR_NULL(pst_sock)) {
+		bastet_loge("invalid parameter");
 		return;
-	 }
+	}
 
-	/**
-	 * Judge the state if it's should be cared.
-	 */
-	if (!BST_FG_IsCaredSkState(state))
+	/* Judge the state if it's should be cared. */
+	if (!bst_fg_is_cared_sk_state(state))
 		return;
 
-	/**
-	 * Reset the sock fg special flag to inited state.
-	 */
-	BST_FG_InitSockSpec(pstSock);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lUid = sock_i_uid(pstSock).val;
-#else
-	lUid = sock_i_uid(pstSock);
-#endif
-	if (!BST_FG_IsUidValid(lUid))
+	/* Reset the sock fg special flag to inited state. */
+	bst_fg_init_sock_spec(pst_sock);
+	l_uid = sock_i_uid(pst_sock).val;
+	if (!bst_fg_is_uid_valid(l_uid))
 		return;
 
-	/**
-	 * Find the application name(index) according to uid.
-	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	lUid = sock_i_uid(pstSock).val;
-#else
-	lUid = sock_i_uid(pstSock);
-#endif
-	for (usIdx = 0; usIdx < BST_FG_MAX_APP_NUMBER; usIdx++) {
-		if (lUid == g_FastGrabAppInfo[usIdx].lUid) {
-			BASTET_LOGI("BST_FG_CheckSockUid Cared Uid Found, uid=%u",
-				lUid);
+	/* Find the application name(index) according to uid. */
+	l_uid = sock_i_uid(pst_sock).val;
+	for (us_idx = 0; us_idx < BST_FG_MAX_APP_NUMBER; us_idx++) {
+		if (l_uid == g_fast_grab_app_info[us_idx].l_uid) {
+			bastet_logi("Cared Uid Found, uid=%u", l_uid);
 			post_indicate_packet(BST_IND_FG_UID_SOCK_CHG,
-				&lUid, sizeof(uid_t));
+				&l_uid, sizeof(uid_t));
 			break;
 		}
 	}
-	if (!BST_FG_IsAppIdxValid(usIdx))
+	if (!bst_fg_is_app_idx_valid(us_idx))
 		return;
+	bastet_logi("AppIdx=%d ", us_idx);
 
-	BASTET_LOGI("BST_FG_CheckSockUid AppIdx=%d ", usIdx);
-	/**
-	 * Call branched function of different application.
-	 */
-	switch (usIdx) {
+	/* Call branched function of different application. */
+	switch (us_idx) {
 	case BST_FG_IDX_WECHAT:
-		BST_FG_ProcWXSock(pstSock, state);
+		bst_fg_proc_wx_sock(pst_sock, state);
 		break;
-
 	default:
 		break;
 	}

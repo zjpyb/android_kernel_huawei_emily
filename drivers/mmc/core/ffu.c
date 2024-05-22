@@ -28,7 +28,7 @@
 #include <linux/swap.h>
 #include <linux/mmc/ffu.h>
 
-#include "mmc_hisi_card.h"
+#include "mmc_zodiac_card.h"
 #include "card.h"
 #include "mmc_ops.h"
 
@@ -191,7 +191,7 @@ static int mmc_ffu_simple_transfer(struct mmc_card *card,
 static int mmc_ffu_map_sg(struct mmc_ffu_mem *mem, unsigned long size,
 	struct scatterlist *sglist, unsigned int max_segs,
 	unsigned int max_seg_sz, unsigned int *sg_len,
-	int min_sg_len)
+	unsigned int min_sg_len)
 {
 	struct scatterlist *sg = NULL;
 	unsigned int i;
@@ -285,7 +285,7 @@ static struct mmc_ffu_mem *mmc_ffu_alloc_mem(unsigned long min_sz,
 	unsigned long max_seg_page_cnt = DIV_ROUND_UP(max_seg_sz, PAGE_SIZE);
 	unsigned long page_cnt = 0;
 	unsigned long limit = nr_free_buffer_pages() >> 4;
-	struct mmc_ffu_mem *mem;
+	struct mmc_ffu_mem *mem = NULL;
 
 	if (max_page_cnt > limit) {
 		max_page_cnt = limit;
@@ -467,7 +467,7 @@ static int mmc_ffu_restart(struct mmc_card *card)
 	struct mmc_blk_data *main_md = NULL;
 	u8 part_config;
 	int err = 0;
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	(void)mmc_cache_ctrl(host,0);
 #else
 	(void)mmc_flush_cache(card);
@@ -486,7 +486,6 @@ static int mmc_ffu_restart(struct mmc_card *card)
 	pr_info("ffu restart part_config = %d, part_curr = %d, part_type = %d\n",
 		part_config, main_md->part_curr, main_md->part_type);
 	main_md->part_curr = part_config;
-
 exit:
 
 	return err;
@@ -524,7 +523,7 @@ static int mmc_host_set_ffu(struct mmc_card *card, u32 ffu_enable)
 int mmc_ffu_download(struct mmc_card *card, struct mmc_command *cmd,
 	u8 *data, unsigned int buf_bytes)
 {
-	u8 *ext_csd;
+	u8 *ext_csd = NULL;
 	int err;
 	int ret;
 	unsigned int tmp;
@@ -611,7 +610,7 @@ EXPORT_SYMBOL(mmc_ffu_download);
 
 int mmc_ffu_install(struct mmc_card *card)
 {
-	u8 *ext_csd;
+	u8 *ext_csd = NULL;
 	int err;
 	u32 ffu_data_len;
 	u32 timeout;

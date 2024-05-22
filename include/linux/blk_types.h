@@ -48,30 +48,39 @@ typedef u8 __bitwise blk_status_t;
 
 struct blk_issue_stat {
 	u64 stat;
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	unsigned int bi_opf;
+#endif
 };
 
-#ifdef CONFIG_HISI_BLK
-#undef  ADDITEM
-#define ADDITEM( _etype, _comment, _func_pointer )      _etype
+#ifdef CONFIG_MAS_BLK
 enum bio_process_stage_enum {
-	#include <linux/hisi_bio_stage_def.h>
-    BIO_PROC_STAGE_MAX
+	BIO_PROC_STAGE_SUBMIT = 0,
+	BIO_PROC_STAGE_ENDBIO,
+	BIO_PROC_STAGE_GENERIC_MAKE_REQ,
+	BIO_PROC_STAGE_WBT,
+	BIO_PROC_STAGE_MAX
 };
 
 enum req_process_stage_enum {
-	#include <linux/hisi_req_stage_def.h>
-    REQ_PROC_STAGE_MAX
+	REQ_PROC_STAGE_INIT_FROM_BIO = 0,
+	REQ_PROC_STAGE_FSEQ_PREFLUSH,
+	REQ_PROC_STAGE_FSEQ_DATA,
+	REQ_PROC_STAGE_FSEQ_POSTFLUSH,
+	REQ_PROC_STAGE_FSEQ_DONE,
+	REQ_PROC_STAGE_START,
+	REQ_PROC_STAGE_MQ_ADDTO_PLUGLIST,
+	REQ_PROC_STAGE_MQ_FLUSH_PLUGLIST,
+	REQ_PROC_STAGE_MQ_ADDTO_SYNC_LIST,
+	REQ_PROC_STAGE_MQ_ADDTO_ASYNC_LIST,
+	REQ_PROC_STAGE_MQ_QUEUE_RQ,
+	REQ_PROC_STAGE_SQ_REQUEUE,
+	REQ_PROC_STAGE_DONE_SFTIRQ,
+	REQ_PROC_STAGE_UPDATE,
+	REQ_PROC_STAGE_FREE,
+	REQ_PROC_STAGE_MAX
 };
-#undef  ADDITEM
 
-enum io_stats_type {
-	IO_STATS_INVALID = 0,
-	IO_STATS_READ,
-	IO_STATS_WRITE,
-	IO_STATS_DISCARD,
-	IO_STATS_FLUSH,
-	IO_STATS_END,
-};
 /*
 * This struct defines all the variable in vendor block layer.
 */
@@ -83,16 +92,18 @@ struct blk_bio_cust {
 	pid_t task_tgid;/* Dispatch IO process TGID */
 	char task_comm[TASK_COMM_LEN];/* Dispatch IO process name */
 
-#define HISI_IO_IN_COUNT_SET	(1 << 0)
-#define HISI_IO_IN_COUNT_SKIP_ENDIO	(1 << 1) /* busy count for the BIO has not been added, so skip it */
-#define HISI_IO_IN_COUNT_ALREADY_ENDED	(1 << 2) /* this BIO has been ended already */
-#define HISI_IO_IN_COUNT_WILL_BE_SEND_AGAIN	(1 << 3)
-#define HISI_IO_IN_COUNT_DONE	(1 << 4)
+#define MAS_IO_IN_COUNT_SET	(1 << 0)
+#define MAS_IO_IN_COUNT_SKIP_ENDIO	(1 << 1) /* busy count for the BIO has not been added, so skip it */
+#define MAS_IO_IN_COUNT_ALREADY_ENDED	(1 << 2) /* this BIO has been ended already */
+#define MAS_IO_IN_COUNT_WILL_BE_SEND_AGAIN	(1 << 3)
+#define MAS_IO_IN_COUNT_DONE	(1 << 4)
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+#define MAS_IO_IN_FG_COUNT_SET	(1 << 5)
+#endif
 
 	unsigned char io_in_count; /*the bio has been count in busy idle module or not */
 	unsigned char fs_io_flag; /* io comes from fs or not */
 	unsigned char bi_async_flush; /* async flush flag */
-	unsigned char hot_cold_id; /* hot cold id */
 
 	/*
 	* Below info is IO latency
@@ -102,18 +113,24 @@ struct blk_bio_cust {
 	volatile int latency_timer_running;
 
 	unsigned int pg_count; /* page count in current bio */
-	enum io_stats_type latency_classify; /* bio classify in latency statistic */
 	struct timespec submit_tp;
 	s64 hw_latency; /* IO latency in low level driver */
+
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
 	/*
-	* Below info is for inline crypto
-	*/
-	void	*ci_key;
-	int	ci_key_len;
-	int	ci_key_index;
-	pgoff_t index;
+	 * Member for Vertical Opti
+	 */
+	unsigned char stream_type;
+	unsigned char cp_tag;
+	unsigned long data_ino;
+	unsigned long data_idx;
+	bool fsync_ind;
+	bool slc_mode;
+	bool fg_io;
+	unsigned int bi_opf;
+#endif
 };
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 
 #ifdef CONFIG_F2FS_CHECK_FS
 struct access_timestamp {
@@ -144,6 +161,9 @@ struct bio {
 	unsigned short		bi_write_hint;
 	blk_status_t		bi_status;
 	u8			bi_partno;
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+	u8			bi_orig_partno;
+#endif
 
 	/* Number of segments in this BIO after
 	 * physical address coalescing is performed.
@@ -167,11 +187,36 @@ struct bio {
 	unsigned int		bi_start_blkaddr;
 #endif
 
-#ifdef CONFIG_HISI_BLK
-	struct blk_bio_cust hisi_bio;
-	struct list_head counted_list_node;
+#ifdef CONFIG_MAS_BLK
+	unsigned long mas_bi_opf;
+
+	struct blk_bio_cust mas_bio;
+	struct list_head cnt_list;
 	void (*dump_fs)(void);
+
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	bool buf_bio;
+	unsigned int bio_nr;
+	struct bvec_iter ori_bi_iter;
+	struct list_head buf_bio_list_node;
+	struct list_head rec_bio_list_node;
 #endif
+#endif
+
+#ifdef CONFIG_F2FS_TURBO_ZONE
+#define IO_TZ_MARK	(1 << 0)
+	u32 flags;
+#endif
+
+	/*
+	 * Below info is for inline crypto
+	 */
+	void	*ci_key;
+	int	ci_key_len;
+	int	ci_key_index;
+	u8	*ci_metadata;
+	pgoff_t index;
+
 #ifdef CONFIG_BLK_DEV_THROTTLING
 	bio_throtl_end_io_t     *bi_throtl_end_io1;
 	void                    *bi_throtl_private1;
@@ -326,10 +371,13 @@ enum req_flag_bits {
 	__REQ_RAHEAD,		/* read ahead, can fail anytime */
 	__REQ_BACKGROUND,	/* background IO */
 	__REQ_FG,		/* foreground IO */
-#ifdef CONFIG_HISI_BLK
+	__REQ_VIP,	/* vip activity */
+	__REQ_FAULT_OUT,	/* FAULT OUT IO */
+	__REQ_BATCH_OUT,	/* BATCH OUT IO */
+	__REQ_TT_RB, 	/* turbo table read buffer IO */
+#ifdef CONFIG_MAS_BLK
 	__REQ_TZ,	/* turbo zone IO */
 	__REQ_CP,	/* IO with command priority set */
-	__REQ_VIP,	/* vip activity */
 #endif
 
 	/* command specific flags for REQ_OP_WRITE_ZEROES: */
@@ -339,6 +387,14 @@ enum req_flag_bits {
 	__REQ_URGENT,           /* urgent request */
 	__REQ_NR_BITS,		/* stops here */
 };
+
+#ifdef CONFIG_MAS_BLK
+enum mas_req_flag_bits {
+	__MAS_REQ_GC,	/* gc IO - unistore */
+	__MAS_REQ_LBA,	/* expected LBA - unistore */
+	__MAS_REQ_RECOVERY,	/* recovery after device reset */
+};
+#endif
 
 #define REQ_FAILFAST_DEV	(1ULL << __REQ_FAILFAST_DEV)
 #define REQ_FAILFAST_TRANSPORT	(1ULL << __REQ_FAILFAST_TRANSPORT)
@@ -355,10 +411,17 @@ enum req_flag_bits {
 #define REQ_RAHEAD		(1ULL << __REQ_RAHEAD)
 #define REQ_BACKGROUND		(1ULL << __REQ_BACKGROUND)
 #define REQ_FG			(1ULL << __REQ_FG)
-#ifdef CONFIG_HISI_BLK
+#define REQ_VIP			(1ULL << __REQ_VIP)
+#define REQ_FAULT_OUT		(1ULL << __REQ_FAULT_OUT)
+#define REQ_BATCH_OUT		(1ULL << __REQ_BATCH_OUT)
+#define REQ_TT_RB		(1ULL << __REQ_TT_RB)
+#ifdef CONFIG_MAS_BLK
 #define REQ_TZ			(1ULL << __REQ_TZ)
 #define REQ_CP			(1ULL << __REQ_CP)
-#define REQ_VIP			(1ULL << __REQ_VIP)
+
+#define MAS_REQ_GC		(1ULL << __MAS_REQ_GC)
+#define MAS_REQ_LBA		(1ULL << __MAS_REQ_LBA)
+#define MAS_REQ_RECOVERY	(1ULL << __MAS_REQ_RECOVERY)
 #endif
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)
@@ -375,6 +438,11 @@ enum req_flag_bits {
 	((bio)->bi_opf & REQ_OP_MASK)
 #define req_op(req) \
 	((req)->cmd_flags & REQ_OP_MASK)
+
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+#define req_lba(req) \
+	((req)->mas_cmd_flags & MAS_REQ_LBA)
+#endif
 
 /* obsolete, don't use in new code */
 static inline void bio_set_op_attrs(struct bio *bio, unsigned op,

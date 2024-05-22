@@ -32,7 +32,7 @@
 #include "zrhung_transtation.h"
 #include "zrhung_common.h"
 
-long zrhung_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+long zrhung_ioctl(struct file *file, unsigned int cmd, uintptr_t arg)
 {
 	long ret = ZRHUNG_CMD_INVALID;
 

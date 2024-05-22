@@ -60,7 +60,7 @@
 #include <linux/io.h>
 #ifdef CONFIG_HISI_AMBA_PL011
 #include <linux/cpumask.h>
-#include "hisi-amba-pl011.h"
+#include "hisi_amba_pl011.h"
 #else
 #include "amba-pl011.h"
 #endif
@@ -78,7 +78,6 @@
 
 #define UART_DR_ERROR		(UART011_DR_OE|UART011_DR_BE|UART011_DR_PE|UART011_DR_FE)
 #define UART_DUMMY_DR_RX	(1 << 16)
-
 
 #ifdef CONFIG_HISI_AMBA_PL011
 #else
@@ -867,10 +866,8 @@ __acquires(&uap->port.lock)
 	if (!uap->using_tx_dma)
 		return;
 
-	/* Avoid deadlock with the DMA engine callback */
-	spin_unlock(&uap->port.lock);	//lint !e455
-	dmaengine_terminate_all(uap->dmatx.chan);
-	spin_lock(&uap->port.lock);
+	dmaengine_terminate_async(uap->dmatx.chan);
+
 	if (uap->dmatx.queued) {
 		dma_unmap_sg(uap->dmatx.chan->device->dev, &uap->dmatx.sg, 1,
 			     DMA_TO_DEVICE);
@@ -1230,7 +1227,7 @@ static void pl011_dma_startup(struct uart_amba_port *uap)
 
 	/* Allocate and map DMA RX buffers */
 #ifdef CONFIG_HISI_AMBA_PL011
-	if(!uap->pm_op_in_progress){
+	if(!uap->pm_op_in_progress && !uap->rx_global_sg_buf_alloced) {
 #endif
 		ret = pl011_sgbuf_init(uap->dmarx.chan, &uap->dmarx.sgbuf_a,
 					   DMA_FROM_DEVICE);
@@ -1250,6 +1247,8 @@ static void pl011_dma_startup(struct uart_amba_port *uap)
 			goto skip_rx;
 		}
 #ifdef CONFIG_HISI_AMBA_PL011
+		if(uap->rx_use_global_sg_buf)
+			uap->rx_global_sg_buf_alloced = true;
 	}
 #endif
 	uap->using_rx_dma = true;
@@ -1331,7 +1330,7 @@ static void pl011_dma_shutdown(struct uart_amba_port *uap)
 		dmaengine_terminate_all(uap->dmarx.chan);
 		/* Clean up the RX DMA */
 #ifdef CONFIG_HISI_AMBA_PL011
-		if(!uap->pm_op_in_progress){
+		if(!uap->pm_op_in_progress && !uap->rx_global_sg_buf_alloced) {
 #endif
 			pl011_sgbuf_free(uap->dmarx.chan, &uap->dmarx.sgbuf_a, DMA_FROM_DEVICE);
 			pl011_sgbuf_free(uap->dmarx.chan, &uap->dmarx.sgbuf_b, DMA_FROM_DEVICE);
@@ -1922,8 +1921,8 @@ static int pl011_startup(struct uart_port *port)
 		goto clk_dis;
 
 #ifdef CONFIG_HISI_AMBA_PL011
-	if (cpu_online(A53_cluster0_cpu1) && uap->bind_int_flag) {
-		retval = irq_set_affinity(uap->port.irq,cpumask_of(A53_cluster0_cpu1));
+	if (cpu_online(A53_CLUSTER0_CPU1) && uap->bind_int_flag) {
+		retval = irq_set_affinity(uap->port.irq,cpumask_of(A53_CLUSTER0_CPU1));
 		if(retval)
 			pr_err("bind uart%d interrupt to cpu1 failed.\n", port->line);
 	}
@@ -2039,8 +2038,7 @@ static void pl011_shutdown(struct uart_port *port)
 #ifdef CONFIG_HISI_AMBA_PL011
 	int retval;
 
-	if (port)
-	    dev_info(port->dev, "%s: ttyAMA%d\n", __func__, port->line);
+	dev_info(port->dev, "%s: ttyAMA%d\n", __func__, port->line);
 
 	disable_irq(uap->port.irq);
 #endif
@@ -2346,6 +2344,24 @@ static int pl011_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return ret;
 }
 
+#ifdef CONFIG_HISI_AMBA_PL011
+static int pl011_ioctl(struct uart_port *port, unsigned int cmd,
+	unsigned long arg)
+{
+	struct uart_amba_port *uap = NULL;
+
+	(void)arg;
+	if (cmd != UART_IOCTL_CMD)
+		return -ENOIOCTLCMD;
+
+	uap = container_of(port, struct uart_amba_port, port);
+	if ((!uap) || (!uap->dmarx.chan) || (!uap->dmarx.chan->private))
+		return 0;
+
+	return *(int *)(uap->dmarx.chan->private);
+}
+#endif
+
 static const struct uart_ops amba_pl011_pops = {
 	.tx_empty	= pl011_tx_empty,
 	.set_mctrl	= pl011_set_mctrl,
@@ -2366,6 +2382,7 @@ static const struct uart_ops amba_pl011_pops = {
 	.verify_port	= pl011_verify_port,
 #ifdef CONFIG_HISI_AMBA_PL011
 	.pm		= pl011_pm,
+	.ioctl  = pl011_ioctl,
 #endif
 #ifdef CONFIG_CONSOLE_POLL
 	.poll_init     = pl011_hwinit,
@@ -2548,6 +2565,10 @@ static int __init pl011_console_setup(struct console *co, char *options)
 #ifdef CONFIG_HISI_AMBA_PL011
 	if (!IS_ERR(uap->pins_default)) {
 		ret = pinctrl_select_state(uap->pinctrl, uap->pins_idle);
+		if (ret)
+			dev_err(uap->port.dev,
+				"could not set default pins,ret:%d\n", ret);
+
 		ret = pinctrl_select_state(uap->pinctrl, uap->pins_default);
 		if (ret) {
 			dev_err(uap->port.dev, "could not set default pins\n");
@@ -2950,8 +2971,11 @@ static int pl011_probe(struct amba_device *dev, const struct amba_id *id)
 		dev_err(&dev->dev, "%s can not get clk freq!\n", __func__);
 	}
 	uap->pm_op_in_progress = 0;
+	uap->rx_global_sg_buf_alloced = false;
 	if (of_property_read_u32(dev->dev.of_node, "bind-interrupt-flag", &uap->bind_int_flag))
 		uap->bind_int_flag = 0;
+	if (of_property_read_u32(dev->dev.of_node, "rx-use-global-sg-buf", &uap->rx_use_global_sg_buf))
+		uap->rx_use_global_sg_buf = 0;
 #endif
 	uap->reg_offset = vendor->reg_offset;
 	uap->vendor = vendor;
@@ -3156,7 +3180,7 @@ static void __exit pl011_exit(void)
 	amba_driver_unregister(&pl011_driver);
 }
 #ifdef CONFIG_HISI_AMBA_PL011
-#include "hisi-amba-pl011.c"
+#include "hisi_amba_pl011.c"
 #endif
 /*
  * While this can be a module, if builtin it's most likely the console

@@ -1,21 +1,30 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 1998-2014. All rights reserved.
+ * hw_kcollect.c
  *
- * File name: hw_kcollect.c
- * Description: This file use to collect kernel state and report it.
- * Author: chenyouzhen@huawei.com
- * Version: 0.1
- * Date: 2014/07/21
+ * This file use to collect kernel state and report it
+ *
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
-#include <linux/time.h>
+
+#include <huawei_platform/power/hw_kcollect.h>
+#include <securec.h>
+#include <linux/err.h>
 #include <linux/init.h>
-#include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/notifier.h>
 #include <linux/suspend.h>
-#include <linux/err.h>
-#include <securec.h>
-#include <huawei_platform/power/hw_kcollect.h>
+#include <linux/time.h>
 #include <huawei_platform/power/hw_kstate.h>
 
 struct kcollect_info {
@@ -30,11 +39,10 @@ static int switch_mask = 0;
 static int killed_pid = -1;
 
 /*
-  * Function: kcollect_cb
-  * Description: kstate call back
-  * Return: -1 -- failed, 0 -- success
-**/
-static int kcollect_cb(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t len)
+ * kstate call back
+ * @return 0 for success
+ */
+static int kcollect_cb(channel_id src, packet_tag tag, const char *data, size_t len)
 {
 	int mask = 0;
 
@@ -50,7 +58,7 @@ static int kcollect_cb(CHANNEL_ID src, PACKET_TAG tag, const char *data, size_t 
 
 	switch_mask = mask;
 
-	pr_debug("hw_kcollect %s: src=%d tag=%d len=%d pg_switch_mask=%d\n", __func__, src, tag, (int) len, switch_mask);
+	pr_debug("hw_kcollect %s: src=%d tag=%d len=%d pg_switch_mask=%d\n", __func__, src, tag, (int)len, switch_mask);
 
 	return 0;
 }
@@ -63,18 +71,16 @@ static struct kstate_opt kcollect_opt = {
 };
 
 /*
-  * Function: report
-  * Description: Packet and Send data to userspace by kstate
-  * Input: mask -- message mask
-  *        fmt -- string
-  * Return: -1--failed, 0--success
-**/
-static int report(int mask,  va_list args, const char *fmt)
+ * packet and send data to userspace by kstate
+ * @param mask: message mask
+ * @return 0 for success
+ */
+static int report(int mask, va_list args, const char *fmt)
 {
 	int ret = -1;
 	struct kcollect_info info;
-	int length = 0;
-	size_t info_len = 0;
+	int length;
+	size_t info_len;
 
 	if (memset_s(&info, sizeof(info), 0, sizeof(info)) != EOK) {
 		pr_err("hw_kcollect %s: failed to memset_s\n", __func__);
@@ -124,12 +130,10 @@ int hw_packet_cb(int uid, int pid)
 }
 
 /*
-  * Function: kcollect
-  * Description: collect the data and report system
-  * Input: mask -- message mask
-  * fmt -- string
-  * Return: -1--failed, 0--success
-**/
+ * collect the data and report system
+ * @param mask: message mask
+ * @return 0 for success
+ */
 int kcollect(int mask, const char *fmt, ...)
 {
 	va_list args;
@@ -146,16 +150,7 @@ int kcollect(int mask, const char *fmt, ...)
 
 static int __init kcollect_init(void)
 {
-	int ret = -1;
-
-	ret = kstate_register_hook(&kcollect_opt);
-	if (ret < 0) {
-		pr_err("hw_kcollect %s: kstate_register_hook error\n", __func__);
-	} else {
-		pr_info("hw_kcollect %s: kstate_register_hook success\n", __func__);
-	}
-
-	return ret;
+	return kstate_register_hook(&kcollect_opt);
 }
 
 static void __exit kcollect_exit(void)
@@ -166,4 +161,6 @@ static void __exit kcollect_exit(void)
 late_initcall(kcollect_init);
 module_exit(kcollect_exit);
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("collect kernel state and report");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the hw_rscan_module.c for root scanner kernel space init and
  *              deinit
  * Author: likun <quentin.lee@huawei.com>
@@ -28,7 +28,8 @@ static void rscan_init_do_work(struct work_struct *data)
 {
 	int result;
 
-	RSLogDebug(TAG, "rscan work init.");
+	(void)data;
+	RSLogDebug(TAG, "rscan work init");
 
 	do {
 		/* init dynamic scanner */
@@ -63,5 +64,3 @@ module_exit(rscan_module_exit);     /* lint -save -e528 */
 
 MODULE_AUTHOR("likun <quentin.lee@huawei.com>");
 MODULE_DESCRIPTION("Huawei root scanner");
-
-

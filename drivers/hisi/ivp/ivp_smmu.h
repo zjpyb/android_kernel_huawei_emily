@@ -1,3 +1,16 @@
+/*
+ * ivp smmu function
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _IVP_SMMU_H_
 #define _IVP_SMMU_H_
 
@@ -11,18 +24,19 @@
 #include <linux/iommu.h>
 #include <linux/hisi-iommu.h>
 #include <dsm/dsm_pub.h>
+#include "securec.h"
 
 enum smmu_arch_version {
-	SMMU_ARCH_VER_10 = 1,   //SMMU arch v1.0
-	SMMU_ARCH_VER_20,     //SMMU arch v2.0
+	SMMU_ARCH_VER_10 = 1,   // SMMU arch v1.0
+	SMMU_ARCH_VER_20,     // SMMU arch v2.0
 };
 
 enum smmu_state {
-	SMMU_STATE_DISABLE,    //SMMU disable
-	SMMU_STATE_ENABLE,    //SMMU enable
+	SMMU_STATE_DISABLE,    // SMMU disable
+	SMMU_STATE_ENABLE,    // SMMU enable
 };
 
-typedef void(*smmu_err_handler_t)(void);
+typedef void (*smmu_err_handler_t)(void);
 
 struct ivp_smmu_dev {
 	struct iommu_domain *domain;
@@ -35,9 +49,9 @@ struct ivp_smmu_dev {
 	unsigned int    version;
 	unsigned int    irq;
 	unsigned int    state;
-	unsigned int    cbidx;  //context bank index
-	unsigned int    vmid;   //virtual machine id
-	unsigned int    cbar;   //context bank attribute
+	unsigned int    cbidx;  // context bank index
+	unsigned int    vmid;   // virtual machine id
+	unsigned int    cbar;   // context bank attribute
 	smmu_err_handler_t  err_handler;
 };
 
@@ -57,14 +71,15 @@ int  ivp_smmu_set_pgd_base(struct ivp_smmu_dev *smmu_dev,
 void ivp_smmu_set_err_handler(struct ivp_smmu_dev *smmu_dev,
 	smmu_err_handler_t err_func);
 
-struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select);
+struct ivp_smmu_dev *ivp_smmu_get_device(
+	unsigned long select __attribute__((unused)));
 
 #else
 static inline int ivp_smmu_invalid_tlb(
 	struct ivp_smmu_dev *smmu_dev,
 	unsigned int vmid)
 {
-	return -1;
+	return -EINVAL;
 }
 
 static inline void ivp_smmu_flush_pgtable(
@@ -72,17 +87,17 @@ static inline void ivp_smmu_flush_pgtable(
 	void *addr,
 	size_t size)
 {
-
+	return;
 }
 
 static inline int ivp_smmu_trans_enable(struct ivp_smmu_dev *smmu_dev)
 {
-	return -1;
+	return -EINVAL;
 }
 
 static inline int ivp_smmu_trans_disable(struct ivp_smmu_dev *smmu_dev)
 {
-	return -1;
+	return -EINVAL;
 }
 
 static inline struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select)
@@ -90,16 +105,17 @@ static inline struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select)
 	return NULL;
 }
 
-int  ivp_smmu_set_pgd_base(
-	struct ivp_smmu_dev *smmu_dev,
+int ivp_smmu_set_pgd_base(struct ivp_smmu_dev *smmu_dev,
 	unsigned long pgd_base)
 {
-	return -1;
+	return -EINVAL;
 }
-void ivp_smmu_set_err_handler(struct ivp_smmu_dev *smmu_dev, smmu_err_handler_t err_func)
+
+void ivp_smmu_set_err_handler(struct ivp_smmu_dev *smmu_dev,
+	smmu_err_handler_t err_func)
 {
-    return;
+	return;
 }
 #endif
 
-#endif /* _IVP_SMMU_H_  */
+#endif /* _IVP_SMMU_H_ */

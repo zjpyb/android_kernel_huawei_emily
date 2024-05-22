@@ -113,18 +113,6 @@ uint8_t tcpm_inquire_typec_local_rp(
 uint8_t tcpm_inquire_request_result(
 	struct tcpc_device *tcpc_dev)
 {
-#if 0
-	uint8_t req_state;
-
-	pd_port_t *pd_port = &tcpc_dev->pd_port;
-
-	mutex_lock(&pd_port->pd_lock);
-	req_state = pd_port->dpm_req_state;
-	pd_port->dpm_req_state = DPM_REQ_NULL;
-	mutex_unlock(&pd_port->pd_lock);
-
-	return req_state;
-#endif
 	/* TODO */
 	return 0;
 }
@@ -143,13 +131,16 @@ int tcpm_typec_set_wake_lock(
 	return ret;
 }
 
-int tcpm_typec_set_usb_sink_curr(
-	struct tcpc_device *tcpc_dev, int curr)
+int tcpm_typec_set_usb_sink_curr(struct tcpc_device *tcpc_dev, int curr)
 {
 	bool force_sink_vbus = true;
+	pd_port_t *pd_port = NULL;
+
+	if (!tcpc_dev)
+		return -EINVAL;
 
 #ifdef CONFIG_USB_POWER_DELIVERY
-	pd_port_t *pd_port = &tcpc_dev->pd_port;
+	pd_port = &tcpc_dev->pd_port;
 	mutex_lock(&pd_port->pd_lock);
 
 	if (pd_port->pd_prev_connected)
@@ -161,10 +152,9 @@ int tcpm_typec_set_usb_sink_curr(
 	if (tcpc_dev->typec_remote_rp_level != TYPEC_CC_VOLT_SNK_DFT)
 		force_sink_vbus = false;
 
-	if (force_sink_vbus) {
-		tcpci_sink_vbus(tcpc_dev,
-			TCP_VBUS_CTRL_TYPEC, TCPC_VBUS_SINK_5V, -1);
-	}
+	if (force_sink_vbus)
+		tcpci_sink_vbus(tcpc_dev, TCP_VBUS_CTRL_TYPEC,
+			TCPC_VBUS_SINK_5V, -1);
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	mutex_unlock(&pd_port->pd_lock);
@@ -205,8 +195,12 @@ int tcpm_typec_notify_direct_charge(void *client, bool dc)
 {
 	struct tcpc_device *tcpc_dev = (struct tcpc_device *)client;
 
+	if (!client)
+		return -EINVAL;
+
 	TCPC_INFO("%s,%d", __func__, __LINE__);
-	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED && tcpc_dev->no_rpsrc_state == 0)
+	if (tcpc_dev->typec_attach_old == TYPEC_UNATTACHED &&
+		tcpc_dev->no_rpsrc_state == 0)
 		return TCPM_ERROR_UNATTACHED;
 
 	TCPC_INFO("%s,%d", __func__, __LINE__);
@@ -220,20 +214,21 @@ int tcpm_typec_change_role(
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
-bool tcpm_inquire_cust_src2_cable_vdo(
-        struct tcpc_device *tcpc_dev, uint32_t *vdos, int size)
+bool tcpm_inquire_cust_src2_cable_vdo(struct tcpc_device *tcpc_dev,
+	uint32_t *vdos, int size)
 {
-	if(!tcpc_dev){
-		return false;
-	}
-	pd_port_t *pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = NULL;
 
-	if (size < VDO_MAX_SIZE){
+	if (!tcpc_dev || !vdos)
 		return false;
-	}
+
+	pd_port = &tcpc_dev->pd_port;
+
+	if (size < VDO_MAX_SIZE)
+		return false;
+
 	mutex_lock(&pd_port->pd_lock);
-	memcpy(vdos, pd_port->cable_vdos,
-		sizeof(uint32_t) * VDO_MAX_SIZE);
+	memcpy(vdos, pd_port->cable_vdos, sizeof(uint32_t) * VDO_MAX_SIZE);
 	mutex_unlock(&pd_port->pd_lock);
 	return true;
 }
@@ -279,50 +274,68 @@ uint8_t tcpm_inquire_pd_vconn_role(
 	return pd_port->vconn_source;
 }
 
-uint8_t tcpm_inquire_cable_current(
-	struct tcpc_device *tcpc_dev)
+uint8_t tcpm_inquire_cable_current(struct tcpc_device *tcpc_dev)
 {
-	pd_port_t* pd_port = &tcpc_dev->pd_port;
-	if (pd_port->power_cable_present) {
+	pd_port_t *pd_port = NULL;
+
+	if (!tcpc_dev)
+		return -EINVAL;
+
+	pd_port = &tcpc_dev->pd_port;
+
+	if (pd_port->power_cable_present)
 		return PD_VDO_CABLE_CURR(
-			pd_port->cable_vdos[VDO_INDEX_CABLE])+1;
-	}
+			pd_port->cable_vdos[VDO_INDEX_CABLE]) + 1;
 
 	return PD_CABLE_CURR_UNKNOWN;
 }
 
 uint32_t tcpm_inquire_dpm_flags(struct tcpc_device *tcpc_dev)
 {
-	pd_port_t* pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = NULL;
 
+	if (!tcpc_dev)
+		return -EINVAL;
+
+	pd_port = &tcpc_dev->pd_port;
 	return pd_port->dpm_flags;
 }
 
 uint32_t tcpm_inquire_dpm_caps(struct tcpc_device *tcpc_dev)
 {
-	pd_port_t* pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = NULL;
 
+	if (!tcpc_dev)
+		return -EINVAL;
+
+	pd_port = &tcpc_dev->pd_port;
 	return pd_port->dpm_caps;
 }
 
 void tcpm_set_dpm_flags(struct tcpc_device *tcpc_dev, uint32_t flags)
 {
-	pd_port_t* pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = NULL;
 
+	if (!tcpc_dev)
+		return;
+
+	pd_port = &tcpc_dev->pd_port;
 	mutex_lock(&pd_port->pd_lock);
 	pd_port->dpm_flags = flags;
 	mutex_unlock(&pd_port->pd_lock);
-	return;
 }
 
 void tcpm_set_dpm_caps(struct tcpc_device *tcpc_dev, uint32_t caps)
 {
-	pd_port_t* pd_port = &tcpc_dev->pd_port;
+	pd_port_t *pd_port = NULL;
 
+	if (!tcpc_dev)
+		return;
+
+	pd_port = &tcpc_dev->pd_port;
 	mutex_lock(&pd_port->pd_lock);
 	pd_port->dpm_caps = caps;
 	mutex_unlock(&pd_port->pd_lock);
-	return;
 }
 
 #endif	/* CONFIG_USB_POWER_DELIVERY */
@@ -481,8 +494,10 @@ int tcpm_get_source_cap(
 	} else {
 		mutex_lock(&pd_port->pd_lock);
 		cap->cnt = pd_port->remote_src_cap.nr;
-		memcpy(cap->pdos, pd_port->remote_src_cap.pdos,
-			sizeof(uint32_t) * cap->cnt);
+		if (cap->cnt <= PD_PORT_PDOS_MAX_SIZE)
+			memcpy(cap->pdos, pd_port->remote_src_cap.pdos,
+				sizeof(cap->cnt) * cap->cnt);
+
 		mutex_unlock(&pd_port->pd_lock);
 	}
 
@@ -510,8 +525,10 @@ int tcpm_get_sink_cap(
 	} else {
 		mutex_lock(&pd_port->pd_lock);
 		cap->cnt = pd_port->remote_snk_cap.nr;
-		memcpy(cap->pdos, pd_port->remote_snk_cap.pdos,
-			sizeof(uint32_t) * cap->cnt);
+		if (cap->cnt <= PD_PORT_PDOS_MAX_SIZE)
+			memcpy(cap->pdos, pd_port->remote_snk_cap.pdos,
+				sizeof(cap->cnt) * cap->cnt);
+
 		mutex_unlock(&pd_port->pd_lock);
 	}
 
@@ -519,18 +536,24 @@ int tcpm_get_sink_cap(
 }
 EXPORT_SYMBOL(tcpm_get_sink_cap);
 
-int tcpm_get_local_sink_cap(
-	struct tcpc_device *tcpc_dev, struct local_sink_cap *cap)
+int tcpm_get_local_sink_cap(struct tcpc_device *tcpc_dev,
+	struct local_sink_cap *cap, int length)
 {
 	int i;
-	pd_port_t *pd_port = &tcpc_dev->pd_port;
-	pd_port_power_caps *snk_cap = &pd_port->local_snk_cap;
+	pd_port_t *pd_port = NULL;
+	pd_port_power_caps *snk_cap = NULL;
 	struct dpm_pdo_info_t sink;
+
+	if (!tcpc_dev || !cap)
+		return -EINVAL;
+
+	pd_port = &tcpc_dev->pd_port;
+	snk_cap = &pd_port->local_snk_cap;
 
 	if (!pd_port->pd_prev_connected)
 		return TCPM_ERROR_NO_PD_CONNECTED;
 
-	for(i = 0; i < snk_cap->nr; i++) {
+	for (i = 0; i < snk_cap->nr && i < length; i++) {
 		dpm_extract_pdo_info(snk_cap->pdos[i], &sink);
 		cap[i].mv = sink.vmin;
 		cap[i].ma = sink.ma;
@@ -811,9 +834,11 @@ int tcpm_notify_vbus_stable(
 EXPORT_SYMBOL(tcpm_notify_vbus_stable);
 
 #ifdef CONFIG_POGO_PIN
-int tcpm_typec_disable_function(
-        struct tcpc_device *tcpc_dev, bool disable)
+int tcpm_typec_disable_function(struct tcpc_device *tcpc_dev, bool disable)
 {
+	if (!tcpc_dev)
+		return -EINVAL;
+
 	if (disable)
 		return tcpc_typec_disable(tcpc_dev);
 

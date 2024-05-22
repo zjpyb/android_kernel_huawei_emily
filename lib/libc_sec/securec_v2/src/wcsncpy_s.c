@@ -16,7 +16,7 @@ SECUREC_INLINE errno_t SecDoCpyLimitW(wchar_t *strDest, size_t destMax, const wc
         SECUREC_CALC_WSTR_LEN(strSrc, destMax, &srcStrLen);
     }
     if (srcStrLen == destMax) {
-        strDest[0] = '\0';
+        strDest[0] = L'\0';
         SECUREC_ERROR_INVALID_RANGE("wcsncpy_s");
         return ERANGE_AND_RESET;
     }
@@ -74,7 +74,7 @@ errno_t wcsncpy_s(wchar_t *strDest, size_t destMax, const wchar_t *strSrc, size_
     if (strDest == NULL || strSrc == NULL) {
         SECUREC_ERROR_INVALID_PARAMTER("wcsncpy_s");
         if (strDest != NULL) {
-            strDest[0] = '\0';
+            strDest[0] = L'\0';
             return EINVAL_AND_RESET;
         }
         return EINVAL;
@@ -85,13 +85,13 @@ errno_t wcsncpy_s(wchar_t *strDest, size_t destMax, const wchar_t *strSrc, size_
             return SecDoCpyLimitW(strDest, destMax, strSrc, destMax - 1);
         }
 #endif
-        strDest[0] = '\0';      /* Clear dest string */
+        strDest[0] = L'\0';      /* Clear dest string */
         SECUREC_ERROR_INVALID_RANGE("wcsncpy_s");
         return ERANGE_AND_RESET;
     }
 
     if (count == 0) {
-        strDest[0] = '\0';
+        strDest[0] = L'\0';
         return EOK;
     }
 

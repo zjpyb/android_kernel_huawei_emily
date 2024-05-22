@@ -23,6 +23,10 @@ enum {
 	RECEIVER_ID,
 	BOX_3RD_ID,
 	BOX_4TH_ID,
+	BOX_5FIF_ID,
+	BOX_6SIX_ID,
+	BOX_7SEV_ID,
+	BOX_8EIG_ID,
 	BOX_NUM_MAX,
 };
 
@@ -30,6 +34,12 @@ enum {
 #define DEVICEBOX_ID_GET_RECEIVER    _IOR('H', 0x02, __u32)
 #define DEVICEBOX_ID_GET_3RDBOX      _IOR('H', 0x03, __u32)
 #define DEVICEBOX_ID_GET_4THBOX      _IOR('H', 0x04, __u32)
+#define DEVICEBOX_ID_GET_5THBOX      _IOR('H', 0x05, __u32)
+#define DEVICEBOX_ID_GET_6THBOX      _IOR('H', 0x06, __u32)
+#define DEVICEBOX_ID_GET_7THBOX      _IOR('H', 0x07, __u32)
+#define DEVICEBOX_ID_GET_8THBOX      _IOR('H', 0x08, __u32)
+#define DEVICEBOX_ID_GET_CONSISTENT_SUPPORT _IOR('H', 0xfd, __u32)
+#define DEVICEBOX_ID_GET_CONSISTENT_TEST    _IOR('H', 0xfe, __u32)
 #define DEVICEBOX_ID_GET_BOX_NUM     _IOR('H', 0xff, __u32)
 
 #ifdef CONFIG_HUAWEI_DEVICEBOX_AUDIO

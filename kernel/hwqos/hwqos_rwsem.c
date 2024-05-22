@@ -24,7 +24,7 @@
 
 static inline bool rwsem_owner_is_writer(struct task_struct *owner)
 {
-	return owner && (!(((unsigned long)owner) & RWSEM_ANONYMOUSLY_OWNED));
+	return owner && (!(((uintptr_t)owner) & RWSEM_ANONYMOUSLY_OWNED));
 }
 
 void rwsem_dynamic_qos_enqueue(struct task_struct *owner,

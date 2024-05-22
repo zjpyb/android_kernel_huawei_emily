@@ -40,8 +40,9 @@ module_param_named(index, ovl_index_def, bool, 0644);
 MODULE_PARM_DESC(ovl_index_def,
 		 "Default to on or off for the inodes index feature");
 
-//static bool __read_mostly ovl_override_creds_def = true;
-static bool __read_mostly ovl_override_creds_def = false;
+
+static bool __read_mostly ovl_override_creds_def = IS_ENABLED(CONFIG_OVERLAY_FS_CREDS_OVERRIDE);
+
 module_param_named(override_creds, ovl_override_creds_def, bool, 0644);
 MODULE_PARM_DESC(ovl_override_creds_def,
 		 "Use mounter's credentials for accesses");
@@ -547,11 +548,11 @@ retry:
 		 * allowed as upper are limited to "normal" ones, where checking
 		 * for the above two errors is sufficient.
 		 */
-		err = vfs_removexattr(NULL, work, XATTR_NAME_POSIX_ACL_DEFAULT);
+		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_DEFAULT);
 		if (err && err != -ENODATA && err != -EOPNOTSUPP)
 			goto out_dput;
 
-		err = vfs_removexattr(NULL, work, XATTR_NAME_POSIX_ACL_ACCESS);
+		err = vfs_removexattr(work, XATTR_NAME_POSIX_ACL_ACCESS);
 		if (err && err != -ENODATA && err != -EOPNOTSUPP)
 			goto out_dput;
 
@@ -1049,7 +1050,7 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 				ufs->noxattr = true;
 				pr_warn("overlayfs: upper fs does not support xattr.\n");
 			} else {
-				vfs_removexattr(NULL, ufs->workdir, OVL_XATTR_OPAQUE);
+				vfs_removexattr(ufs->workdir, OVL_XATTR_OPAQUE);
 			}
 
 			/* Check if upper/work fs supports file handles */

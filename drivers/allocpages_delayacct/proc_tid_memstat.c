@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017. All rights reserved.
+ *
+ */
+
 #include <linux/seq_file.h>
 #include <linux/sched.h>
 #include <linux/delayacct.h>

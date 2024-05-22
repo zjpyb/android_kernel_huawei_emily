@@ -39,6 +39,12 @@ config THREAD_INFO_IN_TASK
 	  One subtle change that will be needed is to use try_get_task_stack()
 	  and put_task_stack() in save_thread_stack_tsk() and get_wchan().
 
+config OPT_COMPILER
+	bool "enable it to using huawei specialized clang compiler"
+	default n
+	help
+	  Say 'Y' to using huawei specialized clang compiler.
+
 menu "General setup"
 
 config BROKEN
@@ -541,6 +547,15 @@ config IKCONFIG_PROC
 	  This option enables access to the kernel configuration file
 	  through /proc/config.gz.
 
+config IKHEADERS
+	tristate "Enable kernel headers through /sys/kernel/kheaders.tar.xz"
+	depends on SYSFS
+	help
+	  This option enables access to the in-kernel headers that are generated during
+	  the build process. These can be used to build eBPF tracing programs,
+	  or similar programs.  If you build the headers as a module, a module called
+	  kheaders.ko is built which can be loaded on-demand to get access to headers.
+
 config LOG_BUF_SHIFT
 	int "Kernel log buffer size (16 => 64KB, 17 => 128KB)"
 	range 12 25
@@ -736,14 +751,7 @@ menuconfig CGROUPS
 
 if CGROUPS
 
-config HW_CGROUP_WORKINGSET
-	bool "workingset cgroup subsystem"
-	depends on CRYPTO_CRC32C
-	depends on TASK_DELAY_ACCT
-	help
-	  Provides a cgroup implementing filepage collector and prereader of workingset.
-	  This cgroup workingset for application, collect it touched filepages and
-	  preread those filepages.
+source "kernel/cgroup_workingset/Kconfig"
 
 config PAGE_COUNTER
        bool
@@ -935,6 +943,16 @@ config PROC_PID_CPUSET
 	depends on CPUSETS
 	default y
 
+config CPUSET_TASKS_CROWDED_WORKAROUND
+	bool "Hisilicon cpuset tasks crowded workaround"
+	depends on CPUSETS
+	depends on ARCH_HISI
+	default n
+	help
+	  This option will enable hisilicon workaround.
+
+	  Say N if unsure.
+
 config CGROUP_IOLIMIT
 	bool "IO bandwidth limit cgroup subsystem"
 	help
@@ -1066,40 +1084,40 @@ config NET_NS
 endif # NAMESPACES
 
 config HISI_EAS_SCHED
-	bool "Hisilicon EAS scheduler optimization"
+	bool "EAS scheduler optimization"
 	default n
 	help
-	  Hisilicon EAS scheduler
+	  EAS scheduler
 
-config HISI_MULTI_MARGIN
-	bool "Hisilicon EAS multiple margin"
+config MULTI_MARGIN
+	bool "EAS multiple margin"
 	depends on HISI_EAS_SCHED
 	default n
 	help
 	  Allow each cluster has its own capacity_margin/sd_capacity_margin.
 
-config HISI_RT_OPT
-	bool "hisilicon rt-threads optimization"
+config RT_OPT
+	bool "rt-threads optimization"
 	default n
 	help
 	  Limit rt-threads to slow cpus for power saving.
 
-config HISI_RT_CAS
-	bool "hisilicon rt-cas optimization"
+config RT_CAS
+	bool "rt-cas optimization"
 	depends on HISI_EAS_SCHED
 	default n
 	help
 	  allow rt-threads to be scheduled according to task_util.
 
-config HISI_RT_ACTIVE_LB
-	bool "hisilicon rt-cas optimization"
+config RT_ACTIVE_LB
+	bool "rt-cas optimization"
 	depends on HISI_EAS_SCHED
 	default n
 	help
 	  allow migrating running rt task.
 
-config HISI_CPU_ISOLATION
-	bool "Hisilicon cpu isolation"
+config CPU_ISOLATION_OPT
+	bool "cpu isolation optimization"
 	depends on SMP
 	default n
 	help
@@ -1110,9 +1128,9 @@ config HISI_CPU_ISOLATION
 	  kthread and IRQS are still allowed to run, this achieve similar
 	  effect as hotplug but at lower latency cost.
 
-config HISI_CPU_ISOLATION_STRICT
-	bool "Hisilicon cpu isolation strict"
-	depends on HISI_CPU_ISOLATION
+config CPU_ISOLATION_STRICT
+	bool "cpu isolation strict"
+	depends on CPU_ISOLATION_OPT
 	default n
 	help
 	  This option controls isolation policy of pinned user thread, if
@@ -1120,34 +1138,35 @@ config HISI_CPU_ISOLATION_STRICT
 	  be migrated to other unisolated cpu, otherwise they can still running
 	  on isolated cpu.
 
-config HISI_CORE_CTRL
-	bool "HIsilicon core control"
-	depends on HISI_CPU_ISOLATION
+config CORE_CTRL
+	bool "core control"
+	depends on CPU_ISOLATION_OPT
+	select SCHED_RUNNING_AVG
 	default n
 	help
 	  This option enables the core control functionality in
 	  the scheduler. Core control automatically isolate and
 	  unisolate cores based on cpu load and utilization.
 
-config HISI_ED_TASK
-	bool "Hisilicon early detection tasks for freq guidance"
+config ED_TASK
+	bool "early detection tasks for freq guidance"
 	depends on HISI_EAS_SCHED
 	depends on SCHED_WALT
 	default n
 	help
 	  early detection tasks for frequency guidance.
 
-config HISI_TASK_RAVG_SUM
-	bool "Hisilicon task normalized running time sum"
+config TASK_RAVG_SUM
+	bool "task normalized running time sum"
 	depends on HISI_EAS_SCHED
 	depends on SCHED_WALT
 	default n
 	help
 	  Sum all normalized running time for each task.
 
-config HISI_ED_TASK_RESET_AT_UPMIGRATION
+config ED_TASK_RESET_AT_UPMIGRATION
 	bool "Reset ed task's run/wait time when migrate to faster cpu"
-	depends on HISI_ED_TASK
+	depends on ED_TASK
 	default n
 	help
 	  This feature reset an ed task's last_wake_ts/last_wake_wait_sum if
@@ -1157,36 +1176,52 @@ config HISI_ED_TASK_RESET_AT_UPMIGRATION
 	  by its earlier running time on little core. Disable this feature
 	  and do not reset ed task on migration is a better choice.
 
-config HISI_MIGRATION_NOTIFY
-	bool "Hisilicon task migration notify freq change"
+config MIGRATION_NOTIFY
+	bool "task migration notify freq change"
 	depends on HISI_EAS_SCHED
 	default n
 	help
 	  tasks migration notify frequency change.
 
-config HISI_RTG
-	bool "Hisilicon related threads group"
+config SCHED_RTG
+	bool "related threads group"
 	depends on HISI_EAS_SCHED
 	depends on SCHED_WALT
 	default n
 	help
 	  set ux related threads into a group.
 
-config HISI_RTG_DEBUG
-	bool "Hisilicon related threads group debug"
-	depends on HISI_RTG
+config SCHED_RTG_DEBUG
+	bool "related threads group debug"
+	depends on SCHED_RTG
 	depends on HISI_DEBUG_FS
 	default n
 	help
-	  hisi related threads group debugfs.
+	  related threads group debugfs.
 
-config HISI_CGROUP_RTG
-	bool "Hisilicon related threads group"
-	depends on HISI_RTG
+config SCHED_CGROUP_RTG
+	bool "related threads group"
+	depends on SCHED_RTG
 	depends on SCHED_TUNE
 	default n
 	help
 	  set schedtune group tasks into a rtg.
+
+config 32BIT_COMPAT
+	bool "supporting 32bit compat"
+	default n
+	help
+	  Bind 32-bit threads to the cpus which support 32 bit.
+
+config SOFTIRQ_OPT
+	bool "Optimize softirq delay"
+	default n
+	help
+	  __do_softirq() will leave pending softirqs to ksoftirqd
+	  if softirqs have already taken 2ms this round.
+	  The '2ms' measurement should use ktime but not jiffies
+	  bacause 2ms turns into 0~4ms in jiffies.
+	  Please say Yes here.
 
 config SCHED_AUTOGROUP
 	bool "Automatic process group scheduling"
@@ -1574,6 +1609,8 @@ config HAVE_FUTEX_CMPXCHG
 	  Architectures should select this if futex_atomic_cmpxchg_inatomic()
 	  is implemented and always working. This removes a couple of runtime
 	  checks.
+
+source "kernel/hw_pi/Kconfig"
 
 config EPOLL
 	bool "Enable eventpoll support" if EXPERT

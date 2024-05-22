@@ -31,7 +31,7 @@ static void iomt_mmc_io_timeout_dsm_action(
 {
 	unsigned int op_arg;
 	unsigned int block_ticks;
-	struct iomt_host_info *iomt_host_info;
+	struct iomt_host_info *iomt_host_info = NULL;
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 	if (host != NULL && host->card != NULL &&
@@ -51,12 +51,11 @@ static void iomt_mmc_io_timeout_dsm_action(
 			block_ticks >> IOMT_OP_BLOCK_SHIFT,
 			(unsigned int)((unsigned short)block_ticks),
 			iomt_host_info->io_timeout_dsm.data_dir);
-
 	}
 #endif
 }
 
-static void *mmc_host_to_iomt(void *mmc_host)
+static void *mmc_host_to_iomt(const void *mmc_host)
 {
 	return (void *)(((struct mmc_host *)mmc_host)->iomt_host_info);
 }
@@ -142,7 +141,7 @@ static void mmc_host_io_timeout_dsm(void *iomt_host_info)
 	iomt_mmc_io_timeout_dsm_action(host);
 }
 
-static char *mmc_host_name(void *host)
+static char *mmc_host_name(const void *host)
 {
 	return (char*)mmc_hostname((struct mmc_host *)host);
 }
@@ -219,8 +218,8 @@ void dsm_iomt_mmc_host_init(struct mmc_host *host)
 	dsm_iomt_host_init((void *)host, &iomt_emmc_host_ops);
 }
 
-void dsm_iomt_mmc_host_exit(struct mmc_host *host)
+void dsm_iomt_mmc_host_exit(const struct mmc_host *host)
 {
-	dsm_iomt_host_exit((void *)host, &iomt_emmc_host_ops);
+	dsm_iomt_host_exit((const void *)host, &iomt_emmc_host_ops);
 }
 

@@ -3,7 +3,7 @@
  *
  * power netlink service head file
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,23 +20,12 @@
 #define _POWER_MESG_SRV_H_
 
 #include <linux/types.h>
-
-enum {
-	POWER_GENL_UNUSED = 0, /* 0 is invalid attr type in kernel(nla_parse) */
-	POWER_GENL_ATTR0,
-	POWER_GENL_ATTR1,
-	__POWER_GENL_ATTR_NUM,
-};
-
-#define TOTAL_POWER_GENL_ATTR       (__POWER_GENL_ATTR_NUM - 1)
-#define BATT_INFO_DEVICE_ATTR       POWER_GENL_ATTR0
-#define BATT_INFO_DATA_ATTR         POWER_GENL_ATTR1
-#define POWER_GENL_RAW_DATA_ATTR    POWER_GENL_ATTR1
-#define POWER_GENL_MAX_ATTR_INDEX   (__POWER_GENL_ATTR_NUM - 1)
+#include <chipset_common/hwpower/common_module/power_genl.h>
 
 enum batt_info_subcmd {
 	CT_PREPARE = 0,
 	SN_PREPARE,
+	ACT_SIGN,
 }; /* should not larger than 255 */
 
 struct nl_dev_info {
@@ -52,30 +41,10 @@ enum batt_ic_type {
 	MAXIM_DS28EL15_TYPE = 1,
 	MAXIM_DS28EL16_TYPE = 2,
 	NXP_A1007_TYPE = 3,
+	RICHTEK_A1_TYPE = 4,
+	IMP_VER20_IC_TYPE_START,
+	INFINEON_SLE95250_TYPE = IMP_VER20_IC_TYPE_START,
 }; /* should not larger than 255 */
-
-struct batt_res {
-	const unsigned char *data;
-	unsigned int len;
-	int type;
-};
-
-/*
- * cmd as below:
- * 00-49 is for battery
- * 50-99 is for wireless charging
- * 100-149 is for directly charging
- * max is 255
- */
-enum {
-	BATT_INFO_CMD = 0,
-	BATT_DMD_CMD = 10,
-	BOARD_INFO_CMD = 40,
-	BATT_FINAL_RESULT_CMD = 49,
-	POWER_CMD_ADAPTOR_ANTIFAKE_HASH = 50,
-	POWER_CMD_WC_ANTIFAKE_HASH = 60,
-	POWER_CMD_TOTAL_NUM = 256,
-};
 
 enum result_stat {
 	FINAL_RESULT_PASS = 0,

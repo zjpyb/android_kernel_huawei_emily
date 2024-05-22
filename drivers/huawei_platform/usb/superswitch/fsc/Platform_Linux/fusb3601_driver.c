@@ -12,7 +12,8 @@
 #include <linux/errno.h>      /* EINVAL, ERANGE, etc */
 #include <linux/of_device.h>  /* Device tree functionality */
 #include <linux/delay.h>
-#include <huawei_platform/power/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
+#include <chipset_common/hwpower/protocol/adapter_protocol_pd.h>
 
 /* Driver-specific includes */
 #include "fusb3601_global.h"  /* Driver-specific structures/types */
@@ -29,16 +30,14 @@
 
 #include "fusb3601_driver.h"
 #ifdef CONFIG_CONTEXTHUB_PD
-#include <linux/hisi/contexthub/tca.h>
+#include <linux/hisi/usb/tca.h>
 #endif
 #include <huawei_platform/usb/hw_pd_dev.h>
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#ifdef CONFIG_CONTEXTHUB_PD
-extern bool hisi_dptx_ready(void);
-#endif
+
 static int dpd_enable = 1;
 static int max_output_current = SOURCE_CURRENT_1500;
 static int use_super_switch_cutoff_wired_channel = 0;
@@ -114,7 +113,7 @@ static void fusb3601_hard_reset(void* client)
     up(&chip->suspend_lock);
 }
 
-static void fusb3601_set_voltage(void* client, int set_voltage)
+static void fusb3601_set_voltage(int set_voltage, void *client)
 {
     struct fusb3601_chip* chip = fusb3601_GetChip();
     pr_debug("%s++\n", __func__);
@@ -159,9 +158,13 @@ static struct pd_dpm_ops tcpc_device_pd_dpm_ops = {
 	.pd_dpm_get_hw_dock_svid_exist = NULL,
 	.pd_dpm_notify_direct_charge_status = NULL,
 	.pd_dpm_set_cc_mode = fusb3601_set_cc_mode,
-	.pd_dpm_hard_reset = fusb3601_hard_reset,
-	.pd_dpm_set_voltage = fusb3601_set_voltage,
 	.pd_dpm_get_cc_state = fusb3601_get_cc_state,
+};
+
+static struct pd_protocol_ops tcpc_device_pd_protocol_ops = {
+	.chip_name = "fusb3601",
+	.hard_reset_master = fusb3601_hard_reset,
+	.set_output_voltage = fusb3601_set_voltage,
 };
 
 static int __init fusb3601_init(void)
@@ -286,6 +289,7 @@ static void fusb3601_probe_work(struct work_struct *work)
 		return;
 	}
 	pd_dpm_ops_register(&tcpc_device_pd_dpm_ops, NULL);
+	pd_protocol_ops_register(&tcpc_device_pd_protocol_ops);
 	moisture_detection_init();
         pr_debug("FUSB  %s - Core is initialized!\n", __func__);
 

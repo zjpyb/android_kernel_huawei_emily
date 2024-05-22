@@ -594,7 +594,8 @@ static int sdcardfs_permission(struct vfsmount *mnt, struct inode *inode, int ma
 	if (unlikely(sbi->blocked_userid >= 0)) {
 		uid_t uid = from_kuid(&init_user_ns, current_fsuid()); /*lint !e666*/
 		if (multiuser_get_user_id(uid) == sbi->blocked_userid &&
-			multiuser_get_app_id(uid) != sbi->appid_excluded)
+			(multiuser_get_app_id(uid) != sbi->appid_excluded &&
+			multiuser_get_app_id(uid) != 1000)) // 1000 means default uid, not magic num
 			return -EACCES;
 	}
 #endif

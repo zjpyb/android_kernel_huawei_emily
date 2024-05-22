@@ -20,7 +20,10 @@
 
 #include <linux/delay.h>
 #include <linux/version.h>
-
+#ifdef CONFIG_GPIO_HI6502
+#include <linux/hisi/hisi_hi6502_gpio.h>
+#endif
+#include <huawei_platform/inputhub/default/sensor_detect.h>
 #include "hall_sensor.h"
 
 #ifdef HWLOG_TAG
@@ -197,6 +200,28 @@ static int ak8789_get_status(struct hall_cdev *cdev)
 
 	return pdata;
 }
+
+static bool ak8789_lightstrap_get_hall_status(void)
+{
+	int value;
+	uint32_t light_status;
+	uint32_t hall_lightstrap_value = get_hall_lightstrap_value();
+
+	value = ak8789_get_status(&data_ak8789->cdev);
+	light_status = (uint32_t)value & hall_lightstrap_value;
+
+	hwlog_info("%s：hall value is %d, status is %d\n",
+		__func__, value, light_status);
+
+	if (!light_status)
+		return false;
+
+	return true;
+}
+
+static struct hall_interface_ops ak8789_ops = {
+	.get_hall_status = ak8789_lightstrap_get_hall_status,
+};
 
 static int ak8789_report_status(struct hall_cdev *cdev)
 {
@@ -428,6 +453,16 @@ static int ak8789_get_common_configs(struct hall_device *hall_dev,
 		hall_dev->hall_int_delay = HALL_DEFAULT_INT_DELAY;
 	}
 
+	ret = of_property_read_u32(node, HALL_HI6502_GPIO,
+		&hall_dev->hi6502_gpio_flag);
+	if (ret != 0) {
+		hwlog_err("%s: Failed to get hi6502_gpio_flag, use normal gpio\n",
+			__func__);
+		hall_dev->hi6502_gpio_flag = HI6502_GPIO_DEFAULT;
+	}
+	hwlog_info("%s: get hi6502_gpio_flag 0x%x\n", __func__,
+		hall_dev->hi6502_gpio_flag);
+
 	hwlog_info("%s: get conf successed\n", __func__);
 	return 0;
 }
@@ -601,6 +636,7 @@ static int ak8789l_request_gpio(struct hall_device *hall_dev,
 
 	if (support_type_north(hall_type)) {
 		gpio = of_get_named_gpio(node, HALL_SINGLE_N_POLE, 0);
+		hwlog_err("north gpio %d\n", gpio);
 		if (!gpio_is_valid(gpio)) {
 			hwlog_err("north pole gpio is invalid\n");
 			return -EINVAL;
@@ -620,12 +656,15 @@ static int ak8789l_request_gpio(struct hall_device *hall_dev,
 				hall_dev->hall_id);
 			return ret;
 		}
+		hall_dev->h_info.hi6502_gpio[NORTH] =
+			hall_dev->hi6502_gpio_flag & 0x01; // bit 0 means north
 	}
 
 	if (support_type_south(hall_type)) {
 		gpio = of_get_named_gpio(node, HALL_SINGLE_S_POLE, 0);
+		hwlog_err("south gpio %d\n", gpio);
 		if (!gpio_is_valid(gpio)) {
-			hwlog_err("north pole gpio is invalid\n");
+			hwlog_err("south pole gpio is invalid\n");
 			return -EINVAL;
 		}
 		ret = gpio_request((unsigned int)gpio, SOUTH_POLE_NAME);
@@ -643,6 +682,8 @@ static int ak8789l_request_gpio(struct hall_device *hall_dev,
 				hall_dev->hall_id);
 			return ret;
 		}
+		hall_dev->h_info.hi6502_gpio[SOUTH] =
+			hall_dev->hi6502_gpio_flag & 0x02; // bit 1 means south
 	}
 
 	hwlog_info("gpio request done\n");
@@ -655,11 +696,19 @@ static int requst_irq_by_hall_type(struct hall_device *hall_dev,
 	unsigned int gpio = hall_dev->h_info.gpio[type];
 	unsigned int gpio_type = hall_dev->hall_gpio_type;
 	unsigned int flag = hall_dev->hall_wakeup_flag;
-	int irq;
+	unsigned int hi6502_gpio = hall_dev->h_info.hi6502_gpio[type];
+	int irq = 0;
 	unsigned int trigger_val;
 	int ret;
 
-	irq = gpio_to_irq(gpio);
+	if (hi6502_gpio) {
+#ifdef CONFIG_GPIO_HI6502
+		irq = hi6502_gpio_to_irq(gpio);
+#endif
+		hwlog_info("hi6502_gpio_to_irq succse %d\n", irq);
+	} else {
+		irq = gpio_to_irq(gpio);
+	}
 	hall_dev->h_info.irq[type] = irq;
 
 	/* judge bit 0 is 1 */
@@ -866,6 +915,7 @@ static int ak8789_probe(struct platform_device *pdev)
 	hwlog_info("ak8789 dsm register success\n");
 #endif
 #endif
+	hall_interface_ops_register(&ak8789_ops);
 
 	platform_set_drvdata(pdev, data);
 #ifdef HALL_DATA_REPORT_INPUTHUB

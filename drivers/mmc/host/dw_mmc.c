@@ -42,6 +42,10 @@
 #include <linux/mmc/dw_mmc.h>
 
 #include "dw_mmc.h"
+#include "dw_mmc_hi3xxx_common.h"
+#ifdef CONFIG_HUAWEI_DSM
+#include <dsm/dsm_pub.h>
+#endif
 
 enum sdhci_cookie {
 	COOKIE_UNMAPPED,
@@ -124,9 +128,6 @@ extern void gic_reg_dump(void);
 
 
 extern void dw_mci_reg_dump(struct dw_mci *host);
-#ifdef CONFIG_MMC_HISI_TRACE
-extern void dw_mci_reg_dump_fortrace(struct mmc_host *mmc);
-#endif
 extern void dw_mci_set_timeout(struct dw_mci *host);
 extern bool dw_mci_stop_abort_cmd(struct mmc_command *cmd);
 extern bool dw_mci_wait_reset(struct device *dev, struct dw_mci *host,unsigned int reset_val);
@@ -134,15 +135,15 @@ extern void dw_mci_ciu_reset(struct device *dev, struct dw_mci *host);
 extern bool dw_mci_fifo_reset(struct device *dev, struct dw_mci *host);
 extern u32 dw_mci_prep_stop(struct dw_mci *host, struct mmc_command *cmd);
 extern bool dw_mci_wait_data_busy(struct dw_mci *host, struct mmc_request *mrq);
-extern void dw_mci_set_cd(struct dw_mci *host);
 extern int dw_mci_start_signal_voltage_switch(struct mmc_host *mmc,struct mmc_ios *ios);
 extern void dw_mci_slowdown_clk(struct mmc_host *mmc, int timing);
 extern void dw_mci_timeout_timer(unsigned long data);
 extern void dw_mci_work_routine_card(struct work_struct *work);
 extern bool mci_wait_reset(struct device *dev, struct dw_mci *host);
 extern int mci_send_cmd(struct dw_mci_slot *slot, u32 cmd, u32 arg);
-extern unsigned int test_sd_data;
+
 #if defined(CONFIG_HISI_DEBUG_FS)
+extern unsigned int test_sd_data;
 extern unsigned int sd_test_reset_flag;
 #endif
 
@@ -395,6 +396,13 @@ static void dw_mci_start_command(struct dw_mci *host,
 		if (!loop_count)
 			dev_err(host->dev, "disable clk low power failed in volt_switch\n");
 
+	} else if ((host->flags & SLOW_IOCTL) && cmd->opcode == MMC_GEN_CMD) {
+		u32 temp;
+
+		temp = mci_readl(host, INTMASK);
+		temp &= ~(SDMMC_INT_DRTO);
+		mci_writel(host, INTMASK, temp);
+		dev_info(host->dev, "IOCTL send\n");
 	}
 	mci_writel(host, CMDARG, cmd->arg);
 	wmb(); /* drain writebuffer */
@@ -527,7 +535,7 @@ static int dw_mci_idmac_init(struct dw_mci *host)
 		return 0;
 	} else {
 		struct idmac_desc_64addr *p;
-		int i;
+		unsigned int i;
 
 		/* Number of descriptors in the ring buffer */
 		host->ring_size = host->desc_sz * DESC_RING_BUF_SZ / sizeof(struct idmac_desc_64addr);
@@ -559,7 +567,7 @@ static int dw_mci_idmac_init(struct dw_mci *host)
 	}
 }
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 static void dw_mci_translate_sglist(struct dw_mci *host, struct mmc_data *data,
 				    unsigned int sg_len)
 {
@@ -826,7 +834,7 @@ err_own_bit:
 static int dw_mci_idmac_start_dma(struct dw_mci *host, unsigned int sg_len)
 {
 	u32 temp;
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	dw_mci_translate_sglist(host, host->data, sg_len);
 #else
 	int ret;
@@ -863,7 +871,7 @@ static int dw_mci_idmac_start_dma(struct dw_mci *host, unsigned int sg_len)
 	/* Start it running */
 	mci_writel(host, PLDMND, 1);
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	return 0;
 #else
 out:
@@ -1068,11 +1076,20 @@ int dw_mci_get_cd(struct mmc_host *mmc)
 		present = 1;
 	else if (brd->get_cd)
 		present = !brd->get_cd(slot->host, slot->id);
+	else if (host->flags & SD_SUPPORT_1135)
+		present = mmc->sdio_1135_present;
 	else if (host->hw_mmc_id == DWMMC_SDIO_ID)
 		present = mmc->sdio_present;
 	else
 		present = (mci_readl(slot->host, CDETECT) & (1 << id))
 			== 0 ? 1 : 0;
+#ifdef CONFIG_HISI_DEBUG_FS
+	if (host->hw_mmc_id == DWMMC_SD_ID && mmc->sim_remove_nano) {
+		present = 0;
+		dev_err(&mmc->class_dev, "nano sd test sim_remove_nano = 1\n");
+	}
+#endif
+
 	if (present)
 		dev_err(&mmc->class_dev, "card is present\n");
 	else
@@ -1513,6 +1530,17 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		}
 	}
 
+#ifdef CONFIG_ZODIAC_MMC
+	if (!dw_mci_wait_host_busy(host, 1)) {
+		dev_err(&mmc->class_dev, "wait host mc busy timeout !\n");
+		mrq->cmd->error = -ENOTRECOVERABLE;/*lint !e570*/
+		mmc_request_done(mmc, mrq);
+		pm_runtime_mark_last_busy(mmc_dev(mmc));
+		pm_runtime_put_autosuspend(mmc_dev(mmc));
+		return;
+	}
+#endif
+
 	spin_lock_bh(&host->lock);
 
 	dw_mci_queue_request(host, slot, mrq);
@@ -1641,7 +1669,7 @@ static void dw_mci_hw_reset(struct mmc_host *mmc)
 {
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct dw_mci *host = slot->host;
-	int reset;
+	unsigned int reset;
 
 	if (host->use_dma == TRANS_MODE_IDMAC)
 		dw_mci_idmac_reset(host);
@@ -1939,10 +1967,12 @@ out:
 
 void dw_mci_print_error(struct dw_mci *host, struct mmc_command *cmd)
 {
-	if((host->hw_mmc_id == DWMMC_SD_ID) && ((cmd->opcode != SD_IO_RW_EXTENDED)
+	if ((host->hw_mmc_id == DWMMC_SD_ID) && ((cmd->opcode != SD_IO_RW_EXTENDED)
 	 && (cmd->opcode != SD_IO_SEND_OP_COND) && (cmd->opcode != SD_IO_RW_DIRECT))) {
 		dev_err(host->dev, "CMD %d(arg=0x%x) REP time out\n", cmd->opcode, cmd->arg);
 	} else if ((host->hw_mmc_id == DWMMC_SDIO_ID) || (host->hw_mmc_id == DWMMC_EMMC_ID)) {
+		dev_err(host->dev, "CMD %d(arg=0x%x) REP time out\n", cmd->opcode, cmd->arg);
+	} else if (host->flags & host->flags & SD_SUPPORT_1135) {
 		dev_err(host->dev, "CMD %d(arg=0x%x) REP time out\n", cmd->opcode, cmd->arg);
 	}
 }
@@ -2046,7 +2076,7 @@ static int pro_state_send_stop(struct dw_mci *host)
 }
 
 /*lint -save -e613 -e570*/
-static int pro_state_send_data(struct dw_mci *host, struct mmc_data *data, enum dw_mci_state state)
+static int pro_state_send_data(struct dw_mci *host, struct mmc_data *data, enum dw_mci_state *state)
 {
 	int ret = 1;
 
@@ -2064,7 +2094,7 @@ static int pro_state_send_data(struct dw_mci *host, struct mmc_data *data, enum 
 		}
 		/* To avoid fifo full condition */
 		dw_mci_fifo_reset(host->dev, host);
-		state = STATE_DATA_ERROR;
+		*state = STATE_DATA_ERROR;
 		return ret;
 	}
 
@@ -2192,14 +2222,13 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			/* fall through */
 
 		case STATE_SENDING_DATA:
-			ret = pro_state_send_data(host, data, state);
+			ret = pro_state_send_data(host, data, &state);
 			if (1 == ret)
 				break;
 
 			set_bit(EVENT_XFER_COMPLETE, &host->completed_events);
 			prev_state = state = STATE_DATA_BUSY;
 			/* fall through */
-
 		case STATE_DATA_BUSY:
 			if (!test_and_clear_bit(EVENT_DATA_COMPLETE,
 						&host->pending_events)) {
@@ -2222,7 +2251,9 @@ static void dw_mci_tasklet_func(unsigned long priv)
 				break;
 			}
 
+#if defined(CONFIG_HISI_DEBUG_FS)
 			status |= test_sd_data;
+#endif
 			if (status & DW_MCI_DATA_ERROR_FLAGS) {
 				if (status & SDMMC_INT_DRTO) {
 					dev_err(host->dev,
@@ -2233,7 +2264,10 @@ static void dw_mci_tasklet_func(unsigned long priv)
 						dev_err(host->dev,
 							"data CRC error\n");
 						dw_mci_reg_dump(host);
-
+#ifdef CONFIG_HUAWEI_DSM
+						if (host->hw_mmc_id == DWMMC_SDIO_ID)
+							dsm_wifi_client_notify(DSM_SDIO_CRC_ERR, "sdio data CRC error.\n");
+#endif
 #ifdef CONFIG_SDIO_HI_CLOCK_RETUNING
 						if (1 == host->all_pass_flag) {
 							host->data_crc_flag = 1;
@@ -2307,7 +2341,7 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			}
 
 			prev_state = state = STATE_SENDING_STOP;
-			if (!data->error)
+			if (!data->error && data->stop)
 				send_stop_cmd(host, data);
 
 			if (test_and_clear_bit(EVENT_DATA_ERROR,
@@ -2348,7 +2382,9 @@ static void dw_mci_tasklet_func(unsigned long priv)
 unlock:
 	spin_unlock(&host->lock);
 
+#if defined(CONFIG_HISI_DEBUG_FS)
 	test_sd_data = 0;
+#endif
 }
 /*lint -restore*/
 /* push final bytes to part_buf, only use during push */
@@ -2783,10 +2819,11 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 	u32 i;
 	u32 temp;
 
+	host->timeout_cnt = 0;
 	pending = mci_readl(host, MINTSTS); /* read-only mask reg */
 
 	if (pending) {
-		
+
 		/*
                  * DTO fix - version 2.10a and below, and only if internal DMA
                  * is configured.
@@ -2842,6 +2879,15 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 		}
 
 		if (pending & SDMMC_INT_DATA_OVER) {
+			/* bit[5:0]=0x3f means command index */
+			u32 cmd = mci_readl(host, CMD) & 0x3f;
+
+			if ((host->flags & SLOW_IOCTL) && cmd == MMC_GEN_CMD) {
+				mci_writel(host, RINTSTS, SDMMC_INT_DRTO);
+				temp = mci_readl(host, INTMASK);
+				temp |= SDMMC_INT_DRTO;
+				mci_writel(host, INTMASK, temp);
+			}
 			if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
 				del_timer(&host->dto_timer);
 
@@ -2922,7 +2968,7 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 static struct device_node *dw_mci_of_find_slot_node(struct dw_mci_slot *slot)
 {
         struct device *dev = slot->mmc->parent;
-        struct device_node *np;
+        struct device_node *np = NULL;
         const __be32 *addr = NULL;
         int len;
 
@@ -3047,6 +3093,7 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	mmc->f_max = host->bus_hz;
 
 	mmc->sdio_present = 0;
+	mmc->sdio_1135_present = 0;
 
 	if (host->pdata->get_ocr)
 		mmc->ocr_avail = host->pdata->get_ocr(id);
@@ -3146,18 +3193,10 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 			host->pins_idle = NULL;
 		}
 	}
-	/*
-	 * comment only for balong
-    	 * sd:vmmc :ldo10 ????;
-       	 * vqmmc:ldo7  I/O ??;
-       	 * buck2/ldo5 ?????????,????????;
 
-    	 * mmc:vmmc:ldo19 vcc ??3V;
-         * vqmmc:ldo5 vccq ????,?????
-	*/
-	host->vmmc = devm_regulator_get(mmc_dev(mmc), "vmmc");
+	host->vmmc = devm_regulator_get_optional(mmc_dev(mmc), "vmmc");
 	if (IS_ERR(host->vmmc)) {
-		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
+		pr_err("%s: no vmmc regulator found\n", mmc_hostname(mmc));
 		host->vmmc = NULL;
 	}/* else {
 		ret = regulator_enable(host->vmmc);
@@ -3168,9 +3207,9 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 		}
 	}*/
 
-	host->vqmmc = devm_regulator_get(mmc_dev(mmc), "vqmmc");
+	host->vqmmc = devm_regulator_get_optional(mmc_dev(mmc), "vqmmc");
 	if (IS_ERR(host->vqmmc)) {
-		pr_warning("%s: no vqmmc regulator found\n", mmc_hostname(mmc));
+		pr_err("%s: no vqmmc regulator found\n", mmc_hostname(mmc));
 		host->vqmmc = NULL;
 	} /*else {
 		ret = regulator_enable(host->vqmmc);
@@ -3183,9 +3222,9 @@ static int dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 
 	if(1 == host->sd_vmmcmosen_switch)
 	{
-		host->vmmcmosen = devm_regulator_get(mmc_dev(mmc), "vmmcmosen");
+		host->vmmcmosen = devm_regulator_get_optional(mmc_dev(mmc), "vmmcmosen");
 		if (IS_ERR(host->vmmcmosen)) {
-			pr_warning("%s: no vmmcmosen regulator found\n", mmc_hostname(mmc));
+			pr_err("%s: no vmmcmosen regulator found\n", mmc_hostname(mmc));
 			host->vmmcmosen = NULL;
 		}
 	}
@@ -3370,6 +3409,9 @@ static void dw_mci_parse_dt_extend(struct dw_mci *host, struct dw_mci_board *pda
 
 	if (DWMMC_SD_ID == host->hw_mmc_id)
 		pdata->caps2 |= MMC_CAP2_NO_PRESCAN_POWERUP;
+
+	if (host->flags & SD_SUPPORT_1135)
+		pdata->caps2 |= MMC_CAP2_NO_PRESCAN_POWERUP;
 }
 
 static struct dw_mci_board *dw_mci_parse_dt(struct dw_mci *host)
@@ -3421,6 +3463,11 @@ static struct dw_mci_board *dw_mci_parse_dt(struct dw_mci *host)
 			return ERR_PTR(ret);/*lint !e429*/
 	}
 	dw_mci_parse_dt_extend(host, pdata, np);
+
+	if (of_find_property(np, "mmc-end-io-err", NULL)) {
+		pdata->caps2 |= MMC_CAP2_END_IO_ERR;
+		pr_err("mmc-end-io-err find\n");
+	}
 
 	if (of_find_property(np, "keep-power-in-suspend", NULL))
 		pdata->pm_caps |= MMC_PM_KEEP_POWER;
@@ -3480,6 +3527,17 @@ static struct dw_mci_board *dw_mci_parse_dt(struct dw_mci *host)
 
 	if (of_find_property(np, "full-pwr-cycle", NULL))
 		pdata->caps2 |= MMC_CAP2_FULL_PWR_CYCLE;
+
+#ifdef CONFIG_ZODIAC_MMC
+	if (of_find_property(np, "no-sdio", NULL))
+		pdata->caps2 |= MMC_CAP2_NO_SDIO;
+
+	if (of_find_property(np, "no-sd", NULL))
+		pdata->caps2 |= MMC_CAP2_NO_SD;
+
+	if (of_find_property(np, "no-mmc", NULL))
+		pdata->caps2 |= MMC_CAP2_NO_MMC;
+#endif
 
 	if (of_find_property(np, "caps2-mmc-ddr50-notify", NULL))
 	{
@@ -3616,7 +3674,7 @@ int dw_mci_probe(struct dw_mci *host)
 	
 	if (host->quirks & DW_MCI_QUIRK_BROKEN_DTO)
                 setup_timer(&host->dto_timer,
-                            dw_mci_dto_timer, (unsigned long)host);
+                            dw_mci_dto_timer, (uintptr_t)host);
 
 	spin_lock_init(&host->lock);
 	INIT_LIST_HEAD(&host->queue);
@@ -3702,7 +3760,7 @@ int dw_mci_probe(struct dw_mci *host)
 	else
 		host->fifo_reg = host->regs + DATA_240A_OFFSET;
 
-	tasklet_init(&host->tasklet, dw_mci_tasklet_func, (unsigned long)host);
+	tasklet_init(&host->tasklet, dw_mci_tasklet_func, (uintptr_t)host);
 
 	host->card_workqueue = alloc_workqueue("dw-mci-card/%d",
 			WQ_MEM_RECLAIM, 1, host->hw_mmc_id);
@@ -3844,6 +3902,7 @@ void dw_mci_remove(struct dw_mci *host)
 		if(regulator_disable(host->vmmc))
 			dev_warn(host->dev, "regulator_disable vmmc failed\n");
 	}
+
 	if (host->vqmmc) {
 		if(regulator_disable(host->vqmmc))
 		    dev_warn(host->dev, "regulator_disable vqmmc failed\n");
@@ -4024,7 +4083,7 @@ int sd_need_retry(struct mmc_card *card, int retry)
 {
 	if (card == NULL)
 		return 0;
-	if ((mmc_card_sd(card) || mmc_card_mmc(card)) && mmc_blk_is_retryable(card->host)) {
+	if (mmc_card_is_removable(card->host) && mmc_blk_is_retryable(card->host)) {
 		if (retry < 5)
 			return 1;
 	}

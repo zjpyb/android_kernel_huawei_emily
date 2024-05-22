@@ -34,6 +34,11 @@ struct user_struct;
 struct writeback_control;
 struct bdi_writeback;
 
+#ifdef CONFIG_MEMORY_AFFINITY
+bool is_affinity_dma_zone_pfn(unsigned long pfn);
+unsigned long affinity_normal_zone_start_pfn(void);
+#endif
+
 void init_mm_internals(void);
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES	/* Don't use mapnrs, do it properly */
@@ -76,6 +81,17 @@ extern unsigned int lb_page_to_gid(struct page *page);
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
+
+/*
+ * Architectures that support memory tagging (assigning tags to memory regions,
+ * embedding these tags into addresses that point to these memory regions, and
+ * checking that the memory and the pointer tags match on memory accesses)
+ * redefine this macro to strip tags from pointers.
+ * It's defined as noop for arcitectures that don't support memory tagging.
+ */
+#ifndef untagged_addr
+#define untagged_addr(addr) (addr)
+#endif
 
 #ifndef __pa_symbol
 #define __pa_symbol(x)  __pa(RELOC_HIDE((unsigned long)(x), 0))
@@ -209,6 +225,13 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HUGEPAGE	0x20000000	/* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
+
+#ifdef CONFIG_VM_COPY
+#define NO_VM_COPY	0x00000001	/* bypass vm_copy */
+#define VM_COPY_COW	0x00000002	/* vm_copy cow for dev */
+#define VM_COPY_DONE	0x00000004	/* vm_copy done */
+#define VM_COPY_CMA	0x00000008	/* contain cma page */
+#endif
 
 #ifdef CONFIG_ARCH_USES_HIGH_VMA_FLAGS
 #define VM_HIGH_ARCH_BIT_0	32	/* bit only usable on 64-bit architectures */
@@ -504,6 +527,7 @@ static inline int get_page_unless_zero(struct page *page)
 }
 
 extern int page_is_ram(unsigned long pfn);
+extern bool page_is_cma(struct page *page);
 
 enum {
 	REGION_INTERSECTS,
@@ -572,6 +596,11 @@ static inline atomic_t *compound_mapcount_ptr(struct page *page)
 	return &page[1].compound_mapcount;
 }
 
+/*
+ * Mapcount of compound page as a whole, does not include mapped sub-pages.
+ *
+ * Must be called only for compound pages or any their tail sub-pages.
+ */
 static inline int compound_mapcount(struct page *page)
 {
 	VM_BUG_ON_PAGE(!PageCompound(page), page);
@@ -591,10 +620,16 @@ static inline void page_mapcount_reset(struct page *page)
 
 int __page_mapcount(struct page *page);
 
+/*
+ * Mapcount of 0-order page; when compound sub-page, includes
+ * compound_mapcount().
+ *
+ * Result is undefined for pages which cannot be mapped into userspace.
+ * For example SLAB or special types of pages. See function page_has_type().
+ * They use this place in struct page differently.
+ */
 static inline int page_mapcount(struct page *page)
 {
-	VM_BUG_ON_PAGE(PageSlab(page), page);
-
 	if (unlikely(PageCompound(page)))
 		return __page_mapcount(page);
 	return atomic_read(&page->_mapcount) + 1;
@@ -1460,46 +1495,36 @@ extern int handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 extern int sysctl_speculative_page_fault;
 extern int __handle_speculative_fault(struct mm_struct *mm,
 				      unsigned long address,
-				      unsigned int flags, struct vm_area_struct *vma);
+				      unsigned int flags,
+				      struct vm_area_struct **vma);
 extern struct vm_area_struct *get_vma(struct mm_struct *mm,
 				      unsigned long addr);
 extern void put_vma(struct vm_area_struct *vma);
 
 static inline int handle_speculative_fault(struct mm_struct *mm,
 					   unsigned long address,
-					   unsigned int flags, unsigned long vm_flags)
+					   unsigned int flags,
+					   unsigned int vm_flags,
+					   struct vm_area_struct **vma)
 {
-	struct vm_area_struct *vma;
-	int seq, ret = VM_FAULT_RETRY;
-
-	if (unlikely(!sysctl_speculative_page_fault))
-		return ret;
-	/*
-	 * Try speculative page fault for multithreaded user space task only.
-	 */
-	if (!(flags & FAULT_FLAG_USER) || atomic_read(&mm->mm_users) == 1)
-		return ret;
-
-	vma = get_vma(mm, address);
-	if (!vma)
-		return ret;
-
-	seq = raw_read_seqcount(&vma->vm_sequence);
-	if (seq & 1)
-		goto out_put;
-
-	if (!vma->anon_vma)
-		goto out_put;
-
-	if (!(READ_ONCE(vma->vm_flags) & vm_flags))
-		goto out_put;
-
-	ret = __handle_speculative_fault(mm, address, flags, vma);
-
-out_put:
-	put_vma(vma);
-	return ret;
+	if (unlikely(!sysctl_speculative_page_fault) ||
+	    !(flags & FAULT_FLAG_USER) ||
+	    atomic_read(&mm->mm_users) == 1) {
+		*vma = NULL;
+		return VM_FAULT_RETRY;
+	}
+	*vma = get_vma(mm, address);
+	if (!*vma)
+		return VM_FAULT_RETRY;
+	if (!(READ_ONCE((*vma)->vm_flags) & vm_flags)) {
+		put_vma(*vma);
+		*vma = NULL;
+		return VM_FAULT_RETRY;
+	}
+	return __handle_speculative_fault(mm, address, flags, vma);
 }
+extern bool can_reuse_spf_vma(struct vm_area_struct *vma,
+			      unsigned long address);
 #endif /* CONFIG_SPECULATIVE_PAGE_FAULT */
 
 extern int fixup_user_fault(struct task_struct *tsk, struct mm_struct *mm,
@@ -2434,6 +2459,9 @@ void task_dirty_inc(struct task_struct *tsk);
 
 /* readahead.c */
 #define VM_MAX_READAHEAD	128	/* kbytes */
+#ifdef CONFIG_HISI_BUFFERED_READAHEAD
+#define VM_MAX_READAHEAD_CR	2048
+#endif
 #define VM_MIN_READAHEAD	16	/* kbytes (includes current page) */
 
 int force_page_cache_readahead(struct address_space *mapping, struct file *filp,
@@ -2679,6 +2707,9 @@ int drop_caches_sysctl_handler(struct ctl_table *, int,
 void cpa_drop_pagecache(void);
 #endif
 
+#ifdef CONFIG_HISI_MEM_OFFLINE
+void mem_offline_drop_pagecache(void);
+#endif
 #endif
 
 void drop_slab(void);
@@ -2739,7 +2770,7 @@ extern int get_hwpoison_page(struct page *page);
 extern int sysctl_memory_failure_early_kill;
 extern int sysctl_memory_failure_recovery;
 extern void shake_page(struct page *p, int access);
-extern atomic_long_t num_poisoned_pages;
+extern atomic_long_t num_poisoned_pages __read_mostly;
 extern int soft_offline_page(struct page *page, int flags);
 
 
@@ -2848,6 +2879,19 @@ struct reclaim_param {
 };
 extern struct reclaim_param reclaim_task_anon(struct task_struct *task,
 		int nr_to_reclaim);
+#endif
+
+#ifdef CONFIG_FSCK_BOOST
+int force_page_cache_readahead_abs(struct address_space *mapping,
+	pgoff_t offset, unsigned long nr_to_read);
+#endif
+
+int should_only_do_gss(void);
+
+#ifdef CONFIG_OVERWRITE_FAULT_AROUND_BYTES
+extern unsigned long sysctl_fault_around_bytes;
+int fault_around_bytes_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *lenp, loff_t *ppos);
 #endif
 
 #endif /* __KERNEL__ */

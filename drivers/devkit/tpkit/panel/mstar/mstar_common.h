@@ -86,7 +86,7 @@
 #include <linux/udp.h>
 #endif //DEBUG_NETLINK
 #include <huawei_platform/log/hw_log.h>
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>

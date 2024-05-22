@@ -3,7 +3,7 @@
  *
  * battery information functions for battery checkers
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -28,5 +28,7 @@ struct batt_checker_entry {
 
 void add_to_batt_checkers_lists(struct batt_checker_entry *entry);
 int send_batt_info_mesg(struct nl_dev_info *info, void *data, unsigned int len);
+int send_power_genl_mesg(unsigned char cmd, void *data, unsigned int len);
+int check_sn_includes_null(const unsigned char *sn, unsigned int sn_len);
 
 #endif /* _BATT_INFO_UTIL_H_ */

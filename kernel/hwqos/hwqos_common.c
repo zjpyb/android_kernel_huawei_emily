@@ -3,7 +3,7 @@
  *
  * Qos schedule implementation
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,30 +18,40 @@
 
 #include <chipset_common/hwqos/hwqos_common.h>
 
+#include <../kernel/sched/sched.h>
+#include <linux/proc_fs.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/slab.h>
-#include <linux/proc_fs.h>
 #include <trace/events/sched.h>
+
+#ifdef CONFIG_HW_RTG_FRAME
+#include <linux/sched/hw_rtg/trans_rtg.h>
+#endif
 #ifdef CONFIG_HW_RTG_SCHED
 #include "hwrtg/trans_rtg.h"
 #endif
+#if defined(CONFIG_HW_MTK_RTG_SCHED) && !defined(CONFIG_HW_RTG)
+#include "mtkrtg/trans_rtg.h"
+#endif
+#include <chipset_common/hwqos/iaware_qos.h>
 
 #define BASE_FLAG 0x00000001
 
 #define get_trans_type(flags, type) \
-	(((unsigned int)flags) & (BASE_FLAG << type))
+	(((unsigned int)(flags)) & (BASE_FLAG << (type)))
 #define set_trans_type(flags, type) \
-	(((unsigned int)flags) | (BASE_FLAG << type))
+	(((unsigned int)(flags)) | (BASE_FLAG << (type)))
 #define remove_trans_type(flags, type) \
-	(((unsigned int)flags) & (~(BASE_FLAG << type)))
+	(((unsigned int)(flags)) & (~(BASE_FLAG << (type))))
+#define SCHED_VIP_PRIO_HIGH 5
 
-// binary:0001, enable qos set by default
-unsigned int g_sysctl_qos_sched = 1;
-
-extern struct trans_qos_allow g_qos_trans_allows[QOS_TRANS_THREADS_NUM];
-extern spinlock_t g_trans_qos_lock;
+// 10 1000 0001
+// bit0: qos set, enable by default
+// bit7: hisi vip sched set, enable by default
+// bit9: minUtil set, enable by default
+unsigned int g_sysctl_qos_sched = 0x281;
 
 static inline struct transact_qos *get_transact_qos(unsigned int type,
 	struct task_struct *task)
@@ -85,7 +95,7 @@ static int get_task_set_qos_inner(struct task_struct *task)
 
 static void register_qos_trans_allows(struct task_struct *task, int qos)
 {
-	int i = 0;
+	int i;
 	unsigned long flags = 0;
 
 	// Avoid to register_qos_trans_allows multiply with same task
@@ -107,17 +117,17 @@ static void register_qos_trans_allows(struct task_struct *task, int qos)
 		g_qos_trans_allows[0].allow_pid = task->pid;
 		g_qos_trans_allows[0].allow_tgid = task->tgid;
 		task->trans_allowed = &g_qos_trans_allows[0];
-		for (i = 1; i < QOS_TRANS_THREADS_NUM; i++) {
-			g_qos_trans_allows[i].allow_pid = 0;
-			g_qos_trans_allows[i].allow_tgid = 0;
-		}
+		for (i = 1; i < QOS_TRANS_THREADS_NUM; i++)
+			memset(&g_qos_trans_allows[i],
+				0,
+				sizeof(g_qos_trans_allows[i]));
 	}
 	spin_unlock_irqrestore(&g_trans_qos_lock, flags);
 }
 
 static void unregister_qos_trans_allows(struct task_struct *task)
 {
-	int i = 0;
+	int i;
 	unsigned long flags = 0;
 
 	if (!task->trans_allowed)
@@ -126,8 +136,9 @@ static void unregister_qos_trans_allows(struct task_struct *task)
 	for (i = 0; i < QOS_TRANS_THREADS_NUM; i++) {
 		if (g_qos_trans_allows[i].allow_tgid != task->tgid)
 			continue;
-		g_qos_trans_allows[i].allow_pid = 0;
-		g_qos_trans_allows[i].allow_tgid = 0;
+		memset(&g_qos_trans_allows[i],
+			0,
+			sizeof(g_qos_trans_allows[i]));
 	}
 	task->trans_allowed = NULL;
 	spin_unlock_irqrestore(&g_trans_qos_lock, flags);
@@ -156,7 +167,10 @@ void set_task_qos_by_pid(struct task_struct *task, int qos)
 			task->pid, task->tgid);
 		return;
 	}
-	unregister_qos_trans_allows(task);
+	if (qos == VALUE_QOS_CRITICAL)
+		register_qos_trans_allows(task, qos);
+	else
+		unregister_qos_trans_allows(task);
 	atomic_set(&task->proc_qos->dynamic_qos, qos);
 	if (atomic_add_negative(1, &task->proc_qos->usage))
 		atomic_set(&task->proc_qos->usage, 1);
@@ -182,17 +196,14 @@ int get_task_trans_qos(struct transact_qos *tq)
 	trans = tq->trans_from;
 	if (!trans)
 		return VALUE_QOS_INVALID;
-	if (trans->allow_pid == tq->trans_pid && trans->allow_pid != 0)
+	if ((trans->allow_pid == tq->trans_pid) && (trans->allow_pid != 0))
 		return VALUE_QOS_CRITICAL;
-	tq->trans_from = NULL;
-	tq->trans_pid = 0;
-	tq->trans_type = DYNAMIC_QOS_TYPE_MAX;
 	return VALUE_QOS_INVALID;
 }
 
 static int get_trans_qos_by_type(struct task_struct *task, unsigned int type)
 {
-	struct transact_qos *tq;
+	struct transact_qos *tq = NULL;
 	int flags = atomic_read(&task->trans_flags);
 
 	if (!get_trans_type(flags, type))
@@ -204,7 +215,7 @@ static int get_trans_qos_by_type(struct task_struct *task, unsigned int type)
 int get_task_qos(struct task_struct *task)
 {
 	unsigned int i;
-	int qos_trans = VALUE_QOS_INVALID;
+	int qos_trans;
 	int qos;
 
 	if (unlikely(!QOS_SCHED_SET_ENABLE))
@@ -223,24 +234,111 @@ int get_task_qos(struct task_struct *task)
 	return qos;
 }
 
-bool dynamic_qos_enqueue(struct task_struct *task,
+#ifdef CONFIG_HW_FUTEX_PI
+int get_task_normal_qos(struct task_struct *task)
+{
+	unsigned int i;
+	int qos_trans;
+	int qos;
+
+	if (unlikely(!QOS_SCHED_SET_ENABLE))
+		return VALUE_QOS_INVALID;
+	if (unlikely(!task))
+		return VALUE_QOS_INVALID;
+	qos = get_task_set_qos_inner(task);
+	if (qos == VALUE_QOS_CRITICAL)
+		return qos;
+	for (i = DYNAMIC_QOS_BINDER; i < DYNAMIC_QOS_TYPE_MAX; i++) {
+		if (i == DYNAMIC_QOS_FUTEX)
+			continue;
+		qos_trans = get_trans_qos_by_type(task, i);
+		qos = (qos > qos_trans) ? qos : qos_trans;
+		if (qos == VALUE_QOS_CRITICAL)
+			break;
+	}
+	return qos;
+}
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+static void dynamic_vip_prio_enqueue(struct task_struct *task,
+	struct task_struct *from, unsigned int type)
+{
+	unsigned int vip_prio_desired;
+
+	if (!VIP_PRIO_TRANS_ENABLE || type != DYNAMIC_QOS_BINDER)
+		return;
+
+	if (task->vip_params.trans_flag)
+		return;
+	if (task->sched_class != &fair_sched_class)
+		return;
+	if (task->vip_prio < SCHED_VIP_PRIO_HIGH &&
+		get_task_set_qos_inner(from) == VALUE_QOS_HIGH)
+		vip_prio_desired = SCHED_VIP_PRIO_HIGH;
+	else if (from->vip_prio > task->vip_prio)
+		vip_prio_desired = from->vip_prio;
+	else
+		return;
+	task->vip_params.value = task->vip_prio;
+	set_vip_prio(task, vip_prio_desired);
+	task->vip_params.trans_flag = true;
+}
+
+static void dynamic_vip_prio_dequeue(struct task_struct *task, unsigned int type)
+{
+	if (!VIP_PRIO_TRANS_ENABLE || type != DYNAMIC_QOS_BINDER)
+		return;
+
+	if (!task->vip_params.trans_flag)
+		return;
+	set_vip_prio(task, task->vip_params.value);
+	task->vip_params.value = 0;
+	task->vip_params.trans_flag = false;
+}
+#endif
+
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+static void dynamic_min_util_enqueue(struct task_struct *task,
+	struct task_struct *from, unsigned int type)
+{
+	unsigned int min_util_desired;
+
+	if (!MIN_UTIL_TRANS_ENABLE || type != DYNAMIC_QOS_BINDER)
+		return;
+
+	if (task->min_util_params.trans_flag)
+		return;
+	min_util_desired = from->uclamp.min_util;
+	if (min_util_desired == 0 || min_util_desired <= task->uclamp.min_util)
+		return;
+	task->min_util_params.value = task->uclamp.min_util;
+	set_task_min_util(task, min_util_desired);
+	task->min_util_params.trans_flag = true;
+}
+
+static void dynamic_min_util_dequeue(struct task_struct *task, unsigned int type)
+{
+	if (!MIN_UTIL_TRANS_ENABLE || type != DYNAMIC_QOS_BINDER)
+		return;
+
+	if (!task->min_util_params.trans_flag)
+		return;
+	set_task_min_util(task, task->min_util_params.value);
+	task->min_util_params.value = 0;
+	task->min_util_params.trans_flag = false;
+}
+#endif
+
+static bool dynamic_qos_enqueue_inner(struct task_struct *task,
 	struct task_struct *from, unsigned int type)
 {
 	bool ret = false;
-	unsigned int i = 0;
+	unsigned int i;
 	struct trans_qos_allow *trans_qos = NULL;
+	int qos = get_task_set_qos_inner(from);
 
-	if (unlikely(!QOS_SCHED_ENQUEUE_ENABLE))
-		return ret;
-	if (unlikely(!is_qos_trans_type_valid(type)))
-		return ret;
-	if (unlikely(!task))
-		return ret;
-	if (get_trans_qos_by_type(task, type) == VALUE_QOS_CRITICAL)
-		return ret;
-	if (unlikely(!from))
-		return ret;
-	if (get_task_set_qos_inner(from) == VALUE_QOS_CRITICAL) {
+	if (qos == VALUE_QOS_CRITICAL) {
 		trans_qos = from->trans_allowed;
 	} else {
 		for (i = DYNAMIC_QOS_BINDER; i < DYNAMIC_QOS_TYPE_MAX; i++) {
@@ -253,7 +351,7 @@ bool dynamic_qos_enqueue(struct task_struct *task,
 		}
 	}
 	if (trans_qos) {
-		int flags = 0;
+		int flags;
 		struct transact_qos *tq = get_transact_qos(type, task);
 
 		tq->trans_from = trans_qos;
@@ -262,6 +360,10 @@ bool dynamic_qos_enqueue(struct task_struct *task,
 #ifdef CONFIG_HW_RTG_SCHED
 		if (RTG_TRANS_ENABLE && (type == DYNAMIC_QOS_BINDER))
 			add_trans_thread(task, from);
+#endif
+#if defined(CONFIG_HW_RTG_FRAME) || defined(CONFIG_HW_MTK_RTG_SCHED)
+		if (RTG_TRANS_ENABLE && (type == DYNAMIC_QOS_BINDER))
+			trans_rtg_sched_enqueue(task, from, type);
 #endif
 		flags = set_trans_type(atomic_read(&task->trans_flags), type);
 		atomic_set(&task->trans_flags, flags); /*lint !e446 !e734*/
@@ -274,11 +376,35 @@ bool dynamic_qos_enqueue(struct task_struct *task,
 	return ret;
 }
 
+bool dynamic_qos_enqueue(struct task_struct *task,
+	struct task_struct *from, unsigned int type)
+{
+	bool ret = false;
+
+	if (unlikely(!QOS_SCHED_ENQUEUE_ENABLE))
+		return ret;
+	if (unlikely(!is_qos_trans_type_valid(type)))
+		return ret;
+	if (unlikely(!task))
+		return ret;
+	if (unlikely(!from))
+		return ret;
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	dynamic_vip_prio_enqueue(task, from, type);
+#endif
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+	dynamic_min_util_enqueue(task, from, type);
+#endif
+	if (get_trans_qos_by_type(task, type) == VALUE_QOS_CRITICAL)
+		return ret;
+	return dynamic_qos_enqueue_inner(task, from, type);
+}
+
 /*lint -save -e502 -e446 -e734*/
 void dynamic_qos_dequeue(struct task_struct *task, unsigned int type)
 {
 	int flags;
-	struct transact_qos *tq;
+	struct transact_qos *tq = NULL;
 
 	if (unlikely(!QOS_SCHED_ENQUEUE_ENABLE))
 		return;
@@ -286,6 +412,14 @@ void dynamic_qos_dequeue(struct task_struct *task, unsigned int type)
 		return;
 	if (unlikely(!task))
 		return;
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	dynamic_vip_prio_dequeue(task, type);
+#endif
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+	dynamic_min_util_dequeue(task, type);
+#endif
+
 	flags = atomic_read(&task->trans_flags);
 	if (!get_trans_type(flags, type))
 		return;
@@ -293,16 +427,18 @@ void dynamic_qos_dequeue(struct task_struct *task, unsigned int type)
 	sched_hwstatus_qos_dequeue(task, type);
 #endif
 	tq = get_transact_qos(type, task);
+	tq->trans_from = NULL;
 	flags = remove_trans_type(atomic_read(&task->trans_flags), type);
 	atomic_set(&task->trans_flags, flags);
-	tq->trans_from = NULL;
 #ifdef CONFIG_HW_RTG_SCHED
 	if (RTG_TRANS_ENABLE && (type == DYNAMIC_QOS_BINDER))
 		remove_trans_thread(task);
 #endif
+#if defined(CONFIG_HW_RTG_FRAME) || defined(CONFIG_HW_MTK_RTG_SCHED)
+	if (RTG_TRANS_ENABLE && (type == DYNAMIC_QOS_BINDER))
+		trans_rtg_sched_dequeue(task, type);
+#endif
 	trace_sched_qos(task, tq, OPERATION_QOS_DEQUEUE);
-	tq->trans_pid = 0;
-	tq->trans_type = DYNAMIC_QOS_TYPE_MAX;
 }
 /*lint -restore*/
 
@@ -334,4 +470,16 @@ void iaware_proc_fork_inherit(struct task_struct *task,
 	atomic_set(&task->thread_qos.dynamic_qos, qos);
 	atomic_set(&task->thread_qos.usage, usage_thread);
 	trace_sched_qos(task, NULL, OPERATION_QOS_SET_THREAD);
+}
+
+bool should_binder_do_set_priority(struct task_struct *task, int desired_prio, bool verify)
+{
+	if (unlikely(!BINDER_SET_PRIO_ENABLE))
+		return true;
+
+	// false indicates that it's called by binder_restore_priority()
+	if (!verify)
+		return true;
+
+	return (task->normal_prio > desired_prio);
 }

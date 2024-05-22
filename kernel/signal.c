@@ -40,6 +40,7 @@
 #include <linux/cn_proc.h>
 #include <linux/compiler.h>
 #include <linux/posix-timers.h>
+#include <linux/xreclaimer.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/signal.h>
@@ -52,6 +53,10 @@
 #include "audit.h"	/* audit_signal_info() */
 #ifdef CONFIG_HUAWEI_KSTATE
 #include <huawei_platform/power/hw_kcollect.h>
+#endif
+
+#ifdef CONFIG_HW_DIE_CATCH
+#include <chipset_common/hwzrhung/hung_wp_screen.h>
 #endif
 
 #ifdef CONFIG_BOOST_KILL
@@ -92,6 +97,11 @@ static int sig_task_ignored(struct task_struct *t, int sig, bool force)
 	if (unlikely(t->signal->flags & SIGNAL_UNKILLABLE) &&
 	    handler == SIG_DFL && !(force && sig_kernel_only(sig)))
 		return 1;
+
+	/* Only allow kernel generated signals to this kthread */
+	if (unlikely((t->flags & PF_KTHREAD) &&
+		     (handler == SIG_KTHREAD_KERNEL) && !force))
+		return true;
 
 	return sig_handler_ignored(handler, sig);
 }
@@ -684,6 +694,48 @@ void signal_wake_up_state(struct task_struct *t, unsigned int state)
 		kick_process(t);
 }
 
+static int dequeue_synchronous_signal(siginfo_t *info)
+{
+	struct task_struct *tsk = current;
+	struct sigpending *pending = &tsk->pending;
+	struct sigqueue *q, *sync = NULL;
+
+	/*
+	 * Might a synchronous signal be in the queue?
+	 */
+	if (!((pending->signal.sig[0] & ~tsk->blocked.sig[0]) & SYNCHRONOUS_MASK))
+		return 0;
+
+	/*
+	 * Return the first synchronous signal in the queue.
+	 */
+	list_for_each_entry(q, &pending->list, list) {
+		/* Synchronous signals have a postive si_code */
+		if ((q->info.si_code > SI_USER) &&
+		    (sigmask(q->info.si_signo) & SYNCHRONOUS_MASK)) {
+			sync = q;
+			goto next;
+		}
+	}
+	return 0;
+next:
+	/*
+	 * Check if there is another siginfo for the same signal.
+	 */
+	list_for_each_entry_continue(q, &pending->list, list) {
+		if (q->info.si_signo == sync->info.si_signo)
+			goto still_pending;
+	}
+
+	sigdelset(&pending->signal, sync->info.si_signo);
+	recalc_sigpending();
+still_pending:
+	list_del_init(&sync->list);
+	copy_siginfo(info, &sync->info);
+	__sigqueue_free(sync);
+	return info->si_signo;
+}
+
 /*
  * Remove signals in mask from the pending set and queue.
  * Returns 1 if any signals were found.
@@ -1184,14 +1236,35 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 	unsigned long flags;
 	int ret = -ESRCH;
 
+#ifdef CONFIG_HW_DIE_CATCH
+	#define DBUG_SIG 35
+	#define SI_CODE_MAGIC 78569
+	unsigned short catch_flags = 0;
+	pid_t to_pid = 0;
+	#define EXIT_CATCH_FORAPP_FLAG      (0x8)
+	#define KILL_CATCH_OLD_FLAG         (KILL_CATCH_FLAG | EXIT_CATCH_FLAG | EXIT_CATCH_ABORT_FLAG)
+	char dst_comm[TASK_COMM_LEN] = {0};
+#endif
+
+#if (defined CONFIG_HW_DIE_CATCH) && (defined CONFIG_HW_ZEROHUNG)
+	unsigned short cur_flags = 0;
+	struct siginfo new_sigino;
+#endif
+
 #ifdef CONFIG_HUAWEI_KSTATE
 	if (sig == SIGKILL || sig == SIGTERM || sig == SIGABRT || sig == SIGQUIT)
 		hwkillinfo(p->tgid, sig);
 #endif
 	if (lock_task_sighand(p, &flags)) {
 #ifdef CONFIG_HW_DIE_CATCH
+		catch_flags = p->signal->unexpected_die_catch_flags;
+		if ((sig == SIGKILL || sig == SIGTERM) && (catch_flags & EXIT_CATCH_FORAPP_FLAG)) {
+			p->signal->unexpected_die_catch_flags = 0;
+			memcpy(dst_comm, p->comm, TASK_COMM_LEN);
+		}
+		to_pid = p->pid;
 		/*if the process have KILL_CATCH_FLAG, need to catch it in android platform*/
-		if (p->signal->unexpected_die_catch_flags & KILL_CATCH_FLAG) {
+		if (catch_flags & KILL_CATCH_FLAG) {
 			pr_warn("ExitCatch: %s(%d) send_sig %d to %s(%d)\n",
 			current->comm, current->pid, sig, p->comm, p->pid);
 			/*if current is init, don't consider it*/
@@ -1204,6 +1277,20 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 		unlock_task_sighand(p, &flags);
 	}
 
+	xreclaimer_cond_quick_reclaim(p, sig, info, (ret != 0) || !fatal_signal_pending(p));
+#if (defined CONFIG_HW_DIE_CATCH) && (defined CONFIG_HW_ZEROHUNG)
+	cur_flags = current->signal->unexpected_die_catch_flags;
+	if ((catch_flags & EXIT_CATCH_FORAPP_FLAG) && !(cur_flags & KILL_CATCH_OLD_FLAG) && hung_wp_screen_getbl()) {
+		if (current->pid != 1 && (sig == SIGKILL || sig == SIGTERM) && to_pid != current->pid) {
+			new_sigino.si_signo = DBUG_SIG;
+			new_sigino.si_errno = 0;
+			new_sigino.si_code = SI_CODE_MAGIC;
+			pr_warn("ExitCatch:%s:%d send signal %d to dst_process %s:%d\n",
+				current->comm, current->pid, sig, dst_comm, to_pid);
+			force_sig_info(DBUG_SIG, &new_sigino, current);
+		}
+	}
+#endif
 	return ret;
 }
 
@@ -1660,7 +1747,7 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 		 * This is only possible if parent == real_parent.
 		 * Check if it has changed security domain.
 		 */
-		if (tsk->parent_exec_id != tsk->parent->self_exec_id)
+		if (tsk->parent_exec_id != READ_ONCE(tsk->parent->self_exec_id))
 			sig = SIGCHLD;
 	}
 
@@ -2266,6 +2353,16 @@ relock:
 		goto relock;
 	}
 
+	/* Has this task already been marked for death? */
+	if (signal_group_exit(signal)) {
+		ksig->info.si_signo = signr = SIGKILL;
+		sigdelset(&current->pending.signal, SIGKILL);
+		trace_signal_deliver(SIGKILL, SEND_SIG_NOINFO,
+				&sighand->action[SIGKILL - 1]);
+		recalc_sigpending();
+		goto fatal;
+	}
+
 	for (;;) {
 		struct k_sigaction *ka;
 
@@ -2279,7 +2376,15 @@ relock:
 			goto relock;
 		}
 
-		signr = dequeue_signal(current, &current->blocked, &ksig->info);
+		/*
+		 * Signals generated by the execution of an instruction
+		 * need to be delivered before any other pending signals
+		 * so that the instruction pointer in the signal stack
+		 * frame points to the faulting instruction.
+		 */
+		signr = dequeue_synchronous_signal(&ksig->info);
+		if (!signr)
+			signr = dequeue_signal(current, &current->blocked, &ksig->info);
 
 		if (!signr)
 			break; /* will return 0 */
@@ -2361,6 +2466,7 @@ relock:
 			continue;
 		}
 
+	fatal:
 		spin_unlock_irq(&sighand->siglock);
 
 		/*

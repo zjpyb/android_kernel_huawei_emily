@@ -1,18 +1,26 @@
 /*
- * hisi_adc.h.
+ * adc.h
  *
- * Copyright (c) 2013 Hisilicon Technologies CO.Ltd.
+ * for the hkadc driver.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
-#ifndef	HISI_ADC_H
-#define	HISI_ADC_H
+#ifndef ADC_H
+#define ADC_H
 #include <iomcu_ddr_map.h>
 
-#ifdef CONFIG_HISI_THERMAL_CONTEXTHUB
+#ifdef CONFIG_THERMAL_CONTEXTHUB
 #define CONTEXTHUB_THERMAL_DDR_HEADER_ADDR      DDR_THERMAL_SHMEM_PHYMEM_BASE_AP
 #define CONTEXTHUB_THERMAL_DDR_MEMBERS_SIZE     (0x600)
 #define CONTEXTHUB_THERMAL_DDR_TOTAL_SIZE       DDR_THERMAL_SHMEM_PHYMEM_SIZE
@@ -32,17 +40,17 @@ struct hw_chan_table {
 	unsigned int table_size;
 };
 
-#ifdef CONFIG_HISI_HKADC
+#ifdef CONFIG_LPM_HKADC
 extern int adc_to_volt(int adc);
 #else
 static inline int adc_to_volt(int adc)
 {
 	return -1;
 }
-#endif /* CONFIG_HISI_HKADC */
+#endif /* CONFIG_HKADC */
 
 /*
- * Function name:hisi_adc_get_value.
+ * Function name:adc_get_value.
  * Discription:get volt from hkadc.
  * Parameters:
  *      @ adc_channel
@@ -52,17 +60,17 @@ static inline int adc_to_volt(int adc)
  *         if return negative, should give up it.
  *         suggestion, could call the interface several times.
  */
-#ifdef CONFIG_HISI_HKADC
+#ifdef CONFIG_LPM_HKADC
 extern int hisi_adc_get_value(int adc_channel);
 #else
 static inline int hisi_adc_get_value(int adc_channel)
 {
 	return -1;
 }
-#endif /* CONFIG_HISI_HKADC */
+#endif /* CONFIG_HKADC */
 
 /*
- * Function name:hisi_adc_get_adc.
+ * Function name:adc_get_adc.
  * Discription:get adc from hkadc.
  * Parameters:
  *      @ adc_channel
@@ -72,7 +80,7 @@ static inline int hisi_adc_get_value(int adc_channel)
  *         if return negative, should give up it.
  *         suggestion, could call the interface several times.
  */
-#ifdef CONFIG_HISI_HKADC
+#ifdef CONFIG_LPM_HKADC
 extern int hisi_adc_get_adc(int adc_channel);
 extern int hisi_adc_get_current(int adc_channel);
 #else
@@ -85,6 +93,6 @@ static inline int hisi_adc_get_current(int adc_channel)
 {
 	return -1;
 }
-#endif /* CONFIG_HISI_HKADC */
+#endif /* CONFIG_HKADC */
 
-#endif /* HISI_ADC_H */
+#endif /* ADC_H */

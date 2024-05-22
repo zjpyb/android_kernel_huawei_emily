@@ -1,11 +1,9 @@
 /*
- *  Hisilicon K3 SOC camera driver source file
+ * hwois.h
  *
- *  Copyright (C) Huawei Technology Co., Ltd.
+ * driver for hwois
  *
- * Author:
- * Email:
- * Date:	  2014-11-15
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +19,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-
 
 #ifndef _HISI_OIS_H_
 #define _HISI_OIS_H_
@@ -39,9 +36,8 @@
 #include <media/huawei/ois_cfg.h>
 #include "cam_log.h"
 #include "hwcam_intf.h"
-#include "../../cci/hw_cci.h"
 
-typedef struct _tag_hw_ois_vtbl hw_ois_vtbl_t;
+struct hw_ois_vtbl;
 
 /* ois controler struct define */
 struct hw_ois_info {
@@ -50,42 +46,38 @@ struct hw_ois_info {
 	int ois_support;
 };
 
-typedef struct _tag_hw_ois_intf
-{
-	hw_ois_vtbl_t *vtbl;
-    struct v4l2_subdev *subdev;
-} hw_ois_intf_t;
+struct hw_ois_intf_t {
+	struct hw_ois_vtbl *vtbl;
+	struct v4l2_subdev *subdev;
+};
 
-
-typedef struct _ois_t {
-	hw_ois_intf_t intf;
+struct ois_t {
+	struct hw_ois_intf_t intf;
 	struct hw_ois_info *ois_info;
-} ois_t;
+};
 
-typedef struct _tag_hw_ois
-{
+struct hw_ois_t {
 	struct v4l2_subdev subdev;
 	struct platform_device *pdev;
-	hw_ois_intf_t *intf;
+	struct hw_ois_intf_t *intf;
 	struct hw_ois_info *ois_info;
 	struct mutex lock;
-} hw_ois_t;
+};
 
 /* ois function table */
-struct _tag_hw_ois_vtbl {
-	int (*ois_match_id) (hw_ois_intf_t *, void *);
-	int (*ois_config) (hw_ois_t *, void *);
-	int (*ois_i2c_read) (hw_ois_intf_t *, void *);
-	int (*ois_i2c_write) (hw_ois_intf_t *, void *);
-	int (*ois_ioctl) (hw_ois_intf_t *, void *);
+struct hw_ois_vtbl {
+	int (*ois_match_id)(struct hw_ois_intf_t *, void *);
+	int (*ois_config)(struct hw_ois_t *, void *);
+	int (*ois_i2c_read)(struct hw_ois_intf_t *, void *);
+	int (*ois_i2c_write)(struct hw_ois_intf_t *, void *);
+	int (*ois_ioctl)(struct hw_ois_intf_t *, void *);
 };
 
 /* extern function declare */
-extern int hw_ois_register(struct platform_device *pdev,
-		hw_ois_intf_t *intf, struct hw_ois_info *hw_ois_info);
-extern void hw_ois_unregister(struct v4l2_subdev* subdev);
-int hw_ois_config(hw_ois_t *hw_ois, void *arg);
-int hw_ois_get_dt_data(struct platform_device *pdev, ois_t *ois);
+int hw_ois_register(struct platform_device *pdev, struct hw_ois_intf_t *intf,
+	struct hw_ois_info *hw_ois_info);
+void hw_ois_unregister(struct v4l2_subdev *subdev);
+int hw_ois_config(struct hw_ois_t *hw_ois, void *arg);
+int hw_ois_get_dt_data(struct platform_device *pdev, struct ois_t *ois);
 
 #endif
-

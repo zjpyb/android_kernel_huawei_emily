@@ -30,14 +30,12 @@
 #include <linux/user_namespace.h>
 #include <linux/binfmts.h>
 #include <linux/personality.h>
-#include <linux/hisi/hisi_hkip.h>
+#ifndef CONFIG_HKIP_PROTECT_CRED
+#include <linux/hisi/hkip.h>
+#endif
 
 #ifdef CONFIG_ANDROID_PARANOID_NETWORK
 #include <linux/android_aid.h>
-#endif
-
-#ifdef CONFIG_HWAA
-#include <huawei_platform/hwaa/hwaa_proc_hooks.h>
 #endif
 
 /*
@@ -82,8 +80,10 @@ int __cap_capable(const struct cred *cred, struct user_namespace *targ_ns,
 {
 	struct user_namespace *ns = targ_ns;
 
+#ifndef CONFIG_HKIP_PROTECT_CRED
 	if (unlikely(hkip_check_uid_root()))
 		return -EPERM;
+#endif
 
 	/* See if cred has the capability in the target user namespace
 	 * by examining the target user namespace and all of the target
@@ -101,7 +101,7 @@ int __cap_capable(const struct cred *cred, struct user_namespace *targ_ns,
 		if (ns->level <= cred->user_ns->level)
 			return -EPERM;
 
-		/* 
+		/*
 		 * The owner of the user namespace in the parent of the
 		 * user namespace has all caps.
 		 */
@@ -750,6 +750,7 @@ int cap_bprm_set_creds(struct linux_binprm *bprm)
 	int ret;
 	kuid_t root_uid;
 
+	new->cap_ambient = old->cap_ambient;
 	if (WARN_ON(!cap_ambient_invariant_ok(old)))
 		return -EPERM;
 
@@ -1013,9 +1014,6 @@ static inline void cap_emulate_setxuid(struct cred *new, const struct cred *old)
  */
 int cap_task_fix_setuid(struct cred *new, const struct cred *old, int flags)
 {
-#ifdef CONFIG_HWAA
-	hwaa_proc_on_caps_setuid(current, new);
-#endif
 	switch (flags) {
 	case LSM_SETID_RE:
 	case LSM_SETID_ID:

@@ -29,15 +29,17 @@
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 #include "pd_dpm_prv.h"
-#endif /* CONFIG_USB_POWER_DELIVERY */
+#endif
 
-#define TCPC_CORE_VERSION		"1.1.6_Huawei"
+#define TCPC_CORE_VERSION "1.1.6_Huawei"
+
+#define TCPC_DESC_INFO_LEN 256
+#define TCPC_CC_STATUS_LEN 32
 
 static ssize_t tcpc_show_property(struct device *dev,
-				  struct device_attribute *attr, char *buf);
+	struct device_attribute *attr, char *buf);
 static ssize_t tcpc_store_property(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count);
+	struct device_attribute *attr, const char *buf, size_t count);
 
 #define TCPC_DEVICE_ATTR(_name, _mode)					\
 {									\
@@ -83,7 +85,7 @@ static const struct attribute_group *tcpc_attr_groups[] = {
 	NULL,
 };
 
-static const char * const role_text[] = {
+static const char *const role_text[] = {
 	"SNK Only",
 	"SRC Only",
 	"DRP",
@@ -92,134 +94,141 @@ static const char * const role_text[] = {
 };
 
 static ssize_t tcpc_show_property(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct tcpc_device *tcpc = to_tcpc_device(dev);
 	const ptrdiff_t offset = attr - tcpc_device_attributes;
 	int i = 0;
 	int vmin, vmax, ioper;
-	uint8_t cc1, cc2;
+	uint8_t cc1 = 0;
+	uint8_t cc2 = 0;
 	bool from_ic = true;
-	char cc1_buf[32] = {0};
-	char cc2_buf[32] = {0};
+	char cc1_buf[TCPC_CC_STATUS_LEN] = { 0 };
+	char cc2_buf[TCPC_CC_STATUS_LEN] = { 0 };
 
 	switch (offset) {
 	case TCPC_DESC_CC_ORIENT_INFO:
-		snprintf(buf, 256, "%s\n", tcpc->typec_polarity ? "2" : "1");
+		snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n",
+			tcpc->typec_polarity ? "2" : "1");
 		TCPC_DBG("%s typec_polarity=%s\n", __func__, buf);
 		break;
 	case TCPC_DESC_CAP_INFO:
-		snprintf(buf+strlen(buf), 256, "%s = %d\n%s = %d\n",
-			"local_selected_cap",
+		snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN,
+			"%s = %d\n%s = %d\n", "local_selected_cap",
 			tcpc->pd_port.local_selected_cap,
 			"remote_selected_cap",
 			tcpc->pd_port.remote_selected_cap);
 
-		snprintf(buf+strlen(buf), 256, "%s\n",
-				"local_src_cap(vmin, vmax, ioper)");
+		snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN, "%s\n",
+			"local_src_cap(vmin, vmax, ioper)");
 		for (i = 0; i < tcpc->pd_port.local_src_cap.nr; i++) {
 			pd_extract_pdo_power(
 				tcpc->pd_port.local_src_cap.pdos[i],
 				&vmin, &vmax, &ioper);
-			snprintf(buf+strlen(buf), 256, "%d %d %d\n",
+			snprintf(buf+strlen(buf), TCPC_DESC_INFO_LEN, "%d %d %d\n",
 				vmin, vmax, ioper);
 		}
-		snprintf(buf+strlen(buf), 256, "%s\n",
-				"local_snk_cap(vmin, vmax, ioper)");
+		snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN, "%s\n",
+			"local_snk_cap(vmin, vmax, ioper)");
 		for (i = 0; i < tcpc->pd_port.local_snk_cap.nr; i++) {
 			pd_extract_pdo_power(
 				tcpc->pd_port.local_snk_cap.pdos[i],
 				&vmin, &vmax, &ioper);
-			snprintf(buf+strlen(buf), 256, "%d %d %d\n",
-				vmin, vmax, ioper);
+			snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN,
+				"%d %d %d\n", vmin, vmax, ioper);
 		}
-		snprintf(buf+strlen(buf), 256, "%s\n",
-				"remote_src_cap(vmin, vmax, ioper)");
+		snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN, "%s\n",
+			"remote_src_cap(vmin, vmax, ioper)");
 		for (i = 0; i < tcpc->pd_port.remote_src_cap.nr; i++) {
 			pd_extract_pdo_power(
 				tcpc->pd_port.remote_src_cap.pdos[i],
 				&vmin, &vmax, &ioper);
-			snprintf(buf+strlen(buf), 256, "%d %d %d\n",
-				vmin, vmax, ioper);
+			snprintf(buf + strlen(buf), TCPC_DESC_INFO_LEN,
+				"%d %d %d\n", vmin, vmax, ioper);
 		}
-		snprintf(buf+strlen(buf), 256, "%s\n",
-				"remote_snk_cap(vmin, vmax, ioper)");
+		snprintf(buf+strlen(buf), TCPC_DESC_INFO_LEN, "%s\n",
+			"remote_snk_cap(vmin, vmax, ioper)");
 		for (i = 0; i < tcpc->pd_port.remote_snk_cap.nr; i++) {
 			pd_extract_pdo_power(
 				tcpc->pd_port.remote_snk_cap.pdos[i],
 				&vmin, &vmax, &ioper);
-			snprintf(buf+strlen(buf), 256, "%d %d %d\n",
-				vmin, vmax, ioper);
+			snprintf(buf+strlen(buf), TCPC_DESC_INFO_LEN,
+				"%d %d %d\n", vmin, vmax, ioper);
 		}
 		break;
 	case TCPC_DESC_ROLE_DEF:
-		snprintf(buf, 256, "%s\n", role_text[tcpc->desc.role_def]);
+		snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n",
+			role_text[tcpc->desc.role_def]);
 		break;
 	case TCPC_DESC_RP_LEVEL:
 		if (tcpc->typec_local_rp_level == TYPEC_CC_RP_DFT)
-			snprintf(buf, 256, "%s\n", "Default");
+			snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n", "Default");
 		else if (tcpc->typec_local_rp_level == TYPEC_CC_RP_1_5)
-			snprintf(buf, 256, "%s\n", "1.5");
+			snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n", "1.5");
 		else if (tcpc->typec_local_rp_level == TYPEC_CC_RP_3_0)
-			snprintf(buf, 256, "%s\n", "3.0");
+			snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n", "3.0");
 		break;
 	case TCPC_DESC_REMOTE_RP_LEVEL:
 		tcpm_inquire_remote_cc(tcpc, &cc1, &cc2, from_ic);
 
 		if (cc1 == TYPEC_CC_VOLT_OPEN)
-			snprintf(cc1_buf, 32, "%s\n", "OPEN");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "OPEN");
 		else if (cc1 == TYPEC_CC_VOLT_RA)
-			snprintf(cc1_buf, 32, "%s\n", "RA");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "RA");
 		else if (cc1 == TYPEC_CC_VOLT_RD)
-			snprintf(cc1_buf, 32, "%s\n", "RD");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "RD");
 		else if (cc1 == TYPEC_CC_VOLT_SNK_DFT)
-			snprintf(cc1_buf, 32, "%s\n", "Default");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "Default");
 		else if (cc1 == TYPEC_CC_VOLT_SNK_1_5)
-			snprintf(cc1_buf, 32, "%s\n", "1.5");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "1.5");
 		else if (cc1 == TYPEC_CC_VOLT_SNK_3_0)
-			snprintf(cc1_buf, 32, "%s\n", "3.0");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "3.0");
 		else if (cc1 == TYPEC_CC_DRP_TOGGLING)
-			snprintf(cc1_buf, 32, "%s\n", "DRP");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "DRP");
 		else
-			snprintf(cc1_buf, 32, "%s\n", "NULL");
+			snprintf(cc1_buf, TCPC_CC_STATUS_LEN, "%s\n", "NULL");
 
 		if (cc2 == TYPEC_CC_VOLT_OPEN)
-			snprintf(cc2_buf, 32, "%s\n", "OPEN");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "OPEN");
 		else if (cc2 == TYPEC_CC_VOLT_RA)
-			snprintf(cc2_buf, 32, "%s\n", "RA");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "RA");
 		else if (cc2 == TYPEC_CC_VOLT_RD)
-			snprintf(cc2_buf, 32, "%s\n", "RD");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "RD");
 		else if (cc2 == TYPEC_CC_VOLT_SNK_DFT)
-			snprintf(cc2_buf, 32, "%s\n", "Default");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "Default");
 		else if (cc2 == TYPEC_CC_VOLT_SNK_1_5)
-			snprintf(cc2_buf, 32, "%s\n", "1.5");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "1.5");
 		else if (cc2 == TYPEC_CC_VOLT_SNK_3_0)
-			snprintf(cc2_buf, 32, "%s\n", "3.0");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "3.0");
 		else if (cc2 == TYPEC_CC_DRP_TOGGLING)
-			snprintf(cc2_buf, 32, "%s\n", "DRP");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "DRP");
 		else
-			snprintf(cc2_buf, 32, "%s\n", "NULL");
+			snprintf(cc2_buf, TCPC_CC_STATUS_LEN, "%s\n", "NULL");
 
-		snprintf(buf, 256, " cc1 %s cc2 %s\n", cc1_buf, cc2_buf);
+		snprintf(buf, TCPC_DESC_INFO_LEN, " cc1 %s cc2 %s\n",
+			cc1_buf, cc2_buf);
 
 		break;
 	case TCPC_DESC_PD_TEST:
-		snprintf(buf,
-			256, "%s\n%s\n%s\n%s\n%s\n", "1: Power Role Swap Test",
-				"2: Data Role Swap Test", "3: Vconn Swap Test",
-				"4: soft reset", "5: hard reset");
+		snprintf(buf, TCPC_DESC_INFO_LEN, "%s\n%s\n%s\n%s\n%s\n",
+			"1: Power Role Swap Test",
+			"2: Data Role Swap Test", "3: Vconn Swap Test",
+			"4: soft reset", "5: hard reset");
 		break;
 	case TCPC_DESC_INFO:
-		i += snprintf(buf + i,
-			256, "|^|==( %s info )==|^|\n", tcpc->desc.name);
-		i += snprintf(buf + i,
-			256, "role = %s\n", role_text[tcpc->desc.role_def]);
+		i += snprintf(buf + i, TCPC_DESC_INFO_LEN,
+			"|^|==( %s info )==|^|\n", tcpc->desc.name);
+		i += snprintf(buf + i, TCPC_DESC_INFO_LEN,
+			"role = %s\n", role_text[tcpc->desc.role_def]);
 		if (tcpc->typec_local_rp_level == TYPEC_CC_RP_DFT)
-			i += snprintf(buf + i, 256, "rplvl = %s\n", "Default");
+			i += snprintf(buf + i, TCPC_DESC_INFO_LEN,
+				"rplvl = %s\n", "Default");
 		else if (tcpc->typec_local_rp_level == TYPEC_CC_RP_1_5)
-			i += snprintf(buf + i, 256, "rplvl = %s\n", "1.5");
+			i += snprintf(buf + i, TCPC_DESC_INFO_LEN,
+				"rplvl = %s\n", "1.5");
 		else if (tcpc->typec_local_rp_level == TYPEC_CC_RP_3_0)
-			i += snprintf(buf + i, 256, "rplvl = %s\n", "3.0");
+			i += snprintf(buf + i, TCPC_DESC_INFO_LEN,
+				"rplvl = %s\n", "3.0");
 		break;
 	default:
 		break;
@@ -229,13 +238,14 @@ static ssize_t tcpc_show_property(struct device *dev,
 
 static int get_parameters(char *buf, long int *param1, int num_of_par)
 {
-	char *token;
+	char *token = NULL;
 	int base, cnt;
 
 	token = strsep(&buf, " ");
 
 	for (cnt = 0; cnt < num_of_par; cnt++) {
 		if (token != NULL) {
+			/* 10:Decimal  16:Hex */
 			if ((token[1] == 'x') || (token[1] == 'X'))
 				base = 16;
 			else
@@ -245,16 +255,15 @@ static int get_parameters(char *buf, long int *param1, int num_of_par)
 				return -EINVAL;
 
 			token = strsep(&buf, " ");
-			}
-		else
+		} else {
 			return -EINVAL;
+		}
 	}
 	return 0;
 }
 
 static ssize_t tcpc_store_property(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct tcpc_device *tcpc = to_tcpc_device(dev);
 	struct tcpm_power_cap cap;
@@ -295,6 +304,7 @@ static ssize_t tcpc_store_property(struct device *dev,
 			dev_err(dev, "get parameters fail\n");
 			return -EINVAL;
 		}
+
 		switch (val) {
 		case 1: /* Power Role Swap */
 			tcpm_power_role_swap(tcpc);
@@ -311,10 +321,10 @@ static ssize_t tcpc_store_property(struct device *dev,
 		case 5: /* Hardware Reset */
 			tcpm_hard_reset(tcpc);
 			break;
-		case 6:
+		case 6: /* Get Source cap */
 			tcpm_get_source_cap(tcpc, &cap);
 			break;
-		case 7:
+		case 7: /* Get Sink cap */
 			tcpm_get_sink_cap(tcpc, &cap);
 			break;
 		default:
@@ -328,11 +338,11 @@ static ssize_t tcpc_store_property(struct device *dev,
 	return count;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+#if (KERNEL_VERSION(3, 9, 0) <= LINUX_VERSION_CODE)
 static int tcpc_match_device_by_name(struct device *dev, const void *data)
 #else
 static int tcpc_match_device_by_name(struct device *dev, void *data)
-#endif
+#endif /* KERNEL_VERSION(3, 9, 0) <= LINUX_VERSION_CODE */
 {
 	const char *name = data;
 	struct tcpc_device *tcpc = dev_get_drvdata(dev);
@@ -342,13 +352,14 @@ static int tcpc_match_device_by_name(struct device *dev, void *data)
 
 struct tcpc_device *tcpc_dev_get_by_name(const char *name)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
-	struct device *dev = class_find_device(tcpc_class,
-			NULL, (const void *)name, tcpc_match_device_by_name);
+#if (KERNEL_VERSION(3, 9, 0) <= LINUX_VERSION_CODE)
+	struct device *dev = class_find_device(tcpc_class, NULL,
+		(const void *)name, tcpc_match_device_by_name);
 #else
-	struct device *dev = class_find_device(tcpc_class,
-			NULL, (void *)name, tcpc_match_device_by_name);
-#endif
+	struct device *dev = class_find_device(tcpc_class, NULL,
+		(void *)name, tcpc_match_device_by_name);
+#endif /* KERNEL_VERSION(3, 9, 0) <= LINUX_VERSION_CODE */
+
 	return dev ? dev_get_drvdata(dev) : NULL;
 }
 
@@ -357,7 +368,7 @@ static void tcpc_device_release(struct device *dev)
 	struct tcpc_device *tcpc_dev = to_tcpc_device(dev);
 
 	pr_info("%s : %s device release\n", __func__, dev_name(dev));
-	if (tcpc_dev == NULL)
+	if (!tcpc_dev)
 		PD_ERR("the tcpc device is NULL\n");
 
 	/* Un-init pe thread */
@@ -371,21 +382,23 @@ static void tcpc_device_release(struct device *dev)
 	devm_kfree(dev, tcpc_dev);
 }
 
-static int pd_dpm_wake_lock_call(struct notifier_block *dpm_nb, unsigned long event, void *data)
+static int pd_dpm_wake_lock_call(struct notifier_block *dpm_nb,
+	unsigned long event, void *data)
 {
-	struct tcpc_device *tcpc = container_of(dpm_nb, struct tcpc_device, dpm_nb);
+	struct tcpc_device *tcpc = container_of(dpm_nb, struct tcpc_device,
+		dpm_nb);
 
 	switch (event) {
 	case PD_WAKE_LOCK:
-		pr_info("%s=en\r\n", __func__);
+		pr_info("%s=en\n", __func__);
 		__pm_stay_awake(&tcpc->attach_wake_lock);
 		break;
 	case PD_WAKE_UNLOCK:
-		pr_info("%s=dis\r\n", __func__);
+		pr_info("%s=dis\n", __func__);
 		__pm_relax(&tcpc->attach_wake_lock);
 		break;
 	default:
-		pr_info("%s unknown event (%ld)\n", __func__, event);
+		pr_info("%s unknown event %ld\n", __func__, event);
 		break;
 	}
 
@@ -397,10 +410,10 @@ static void tcpc_init_work(struct work_struct *work);
 struct tcpc_device *tcpc_device_register(struct device *parent,
 	struct tcpc_desc *tcpc_desc, struct tcpc_ops *ops, void *drv_data)
 {
-	struct tcpc_device *tcpc;
+	struct tcpc_device *tcpc = NULL;
 	int ret = 0;
 
-	pr_info("%s register tcpc device (%s)\n", __func__, tcpc_desc->name);
+	pr_info("%s register tcpc device %s\n", __func__, tcpc_desc->name);
 	tcpc = devm_kzalloc(parent, sizeof(*tcpc), GFP_KERNEL);
 	if (!tcpc) {
 		pr_err("%s : allocate tcpc memeory failed\n", __func__);
@@ -420,7 +433,7 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 
 	ret = device_register(&tcpc->dev);
 	if (ret) {
-		kfree(tcpc);
+		devm_kfree(parent, tcpc);
 		return ERR_PTR(ret);
 	}
 
@@ -433,23 +446,22 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 	sema_init(&tcpc->timer_enable_mask_lock, 1);
 	spin_lock_init(&tcpc->timer_tick_lock);
 
-	/* If system support "WAKE_LOCK_IDLE",
-	 * please use it instead of "WAKE_LOCK_SUSPEND" */
-	wakeup_source_init(&tcpc->attach_wake_lock,
-		"tcpc_attach_wakelock");
+	/*
+	 * If system support "WAKE_LOCK_IDLE",
+	 * please use it instead of "WAKE_LOCK_SUSPEND"
+	 */
+	wakeup_source_init(&tcpc->attach_wake_lock, "tcpc_attach_wakelock");
 	wakeup_source_init(&tcpc->dettach_temp_wake_lock,
 		"tcpc_detach_wakelock");
 
 	tcpc->dpm_nb.notifier_call = pd_dpm_wake_lock_call;
 	ret = register_pd_wake_unlock_notifier(&tcpc->dpm_nb);
 	if (ret < 0)
-	{
-		hwlog_err("%s register_pd_wake_unlock_notifier failed\n", __func__);
-	}
+		hwlog_err("%s register_pd_wake_unlock_notifier failed\n",
+			__func__);
 	else
-	{
-		hwlog_info("%s register_pd_wake_unlock_notifier OK\n", __func__);
-	}
+		hwlog_info("%s register_pd_wake_unlock_notifier OK\n",
+			__func__);
 
 	tcpci_timer_init(tcpc);
 #ifdef CONFIG_USB_POWER_DELIVERY
@@ -467,15 +479,14 @@ struct tcpc_device *tcpc_device_register(struct device *parent,
 }
 EXPORT_SYMBOL(tcpc_device_register);
 
-static int tcpc_device_irq_enable(struct tcpc_device *tcpc)
+int tcpc_device_irq_enable(struct tcpc_device *tcpc)
 {
 	int ret;
 
-	TCPC_DBG("%s\n", __func__ );
+	TCPC_DBG("%s\n", __func__);
 
-	if (!tcpc->ops->init) {
-		pr_err("%s Please implment tcpc ops init function\n",
-		__func__);
+	if (!tcpc || !tcpc->ops->init) {
+		pr_err("%s Please implement tcpc ops init function\n", __func__);
 		return -EINVAL;
 	}
 
@@ -494,7 +505,7 @@ static int tcpc_device_irq_enable(struct tcpc_device *tcpc)
 		return ret;
 	}
 
-	pr_info("%s : tcpc irq enable OK!\n", __func__);
+	pr_info("%s : tcpc irq enable OK\n", __func__);
 	return 0;
 }
 
@@ -520,7 +531,8 @@ static int tcpc_dec_notifier_supply_num(struct tcpc_device *tcp_dev)
 struct tcpc_device *notify_tcp_dev_ready(const char *name)
 {
 	struct tcpc_device *tcpc = tcpc_dev_get_by_name(name);
-	if (tcpc == NULL)
+
+	if (!tcpc)
 		return NULL;
 
 	tcpc_dec_notifier_supply_num(tcpc);
@@ -548,14 +560,14 @@ int tcpc_schedule_init_work(struct tcpc_device *tcpc)
 
 	pr_info("%s wait %d num\n", __func__, tcpc->desc.notifier_supply_num);
 
-	schedule_delayed_work(
-		&tcpc->init_work, msecs_to_jiffies(30*1000));
+	/* 30*1000:delay 30000ms for init_work */
+	schedule_delayed_work(&tcpc->init_work, msecs_to_jiffies(30 * 1000));
 	return 0;
 }
 EXPORT_SYMBOL(tcpc_schedule_init_work);
 
 int register_tcp_dev_notifier(struct tcpc_device *tcp_dev,
-			      struct notifier_block *nb)
+	struct notifier_block *nb)
 {
 	int ret;
 
@@ -569,7 +581,7 @@ int register_tcp_dev_notifier(struct tcpc_device *tcp_dev,
 EXPORT_SYMBOL(register_tcp_dev_notifier);
 
 int unregister_tcp_dev_notifier(struct tcpc_device *tcp_dev,
-				struct notifier_block *nb)
+	struct notifier_block *nb)
 {
 	return srcu_notifier_chain_unregister(&tcp_dev->evt_nh, nb);
 }
@@ -633,7 +645,7 @@ static int __init tcpc_class_init(void)
 	tcpc_class = class_create(THIS_MODULE, "hw_pd");
 	if (IS_ERR(tcpc_class)) {
 		pr_info("Unable to create tcpc class; errno = %ld\n",
-		       PTR_ERR(tcpc_class));
+			PTR_ERR(tcpc_class));
 		return PTR_ERR(tcpc_class);
 	}
 	tcpc_init_attrs(&tcpc_dev_type);

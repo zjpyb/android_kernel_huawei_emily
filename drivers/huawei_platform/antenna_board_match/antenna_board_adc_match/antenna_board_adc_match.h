@@ -3,7 +3,7 @@
  *
  * Antenna boardid detect driver header file which use adc.
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,7 +20,7 @@
 #define KERNEL_INCLUDE_ANTENNA_BOARD_ADC_MATCH
 #include <linux/device.h>
 
-#define DEFAULT_ANTENNA_BOARD_ADC_CHANNEL (7)
+#define DEFAULT_ANTENNA_BOARD_ADC_CHANNEL 7
 
 struct antenna_adc_match_info {
 	struct device *dev;

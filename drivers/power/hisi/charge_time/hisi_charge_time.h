@@ -1,25 +1,33 @@
 /*
- * hisi_charge_time.h  --  Calculate the remaining time of charging.
+ * hisi_charge_time.h
  *
- * Copyright (c) 2019 Huawei Technologies CO., Ltd.
+ * Description: Calculate the remaining time of charging.
  *
- * Author: yangshunlong
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation; either version 2 of the  License, or (at your
- *  option) any later version.
+ * This software is licensed under the terms of the GNU General Public
+ * License, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
 
 #ifndef __HISI_CHARGE_DURATION_H__
 #define __HISI_CHARGE_DURATION_H__
 
+#include <linux/device.h>
+#include <linux/notifier.h>
+#include <linux/workqueue.h>
+
 #define CHG_TYPE_DETECT_TIME	2000
 #define DURATION_PARA_MAX	5
+#define SOC_FULL		100
 
 #define CHG_DUR_FILE_LIMIT	0660
-#define SOC_FULL		100
 
 #define CHG_DUR_SIZE		0x1000
 #define CHG_DUR_OFFSET		0x19000 // offset from 100K
@@ -27,12 +35,11 @@
 #define CHG_DUR_BUF_SHOW_LEN	128
 
 #define NSEC_PRE_SECOND		(1000 * 1000 * 1000)
-
+#define STEP_TIME_MAX (30 * 60) // 30min
 #define MAX_NUM			102
 
 #define PARAM_SIZE		401
 #define MULT_100		100
-#define FULL_SOC		100
 #define NORMAL_TEMP		25
 
 #define TEMP_HIGH		50
@@ -48,7 +55,17 @@
 #define ROW			10
 #define COL			10
 
-/* Add valid flag for framework to check*/
+#define PARA_STANDARD 0
+#define PARA_FCP 1
+#define PARA_LVC 2
+#define PARA_SC 3
+
+#define SEC_PER_MIN 60
+
+#define ave_step(a, b) (((a) + (b)) / 2)
+#define START_CAP 2
+
+/* Add valid flag for framework to check */
 #define VALID_FLAG		0x55000000
 
 static char *charge_type_str_enum[] = {
@@ -137,7 +154,7 @@ struct hisi_chg_time_device {
 	struct device *dev;
 };
 
-#ifdef CONFIG_HISI_CHARGE_TIME
+#ifdef CONFIG_CHARGE_TIME
 extern int hisi_chg_time_remaining(bool with_valid);
 #else
 static inline int hisi_chg_time_remaining(bool with_vaild)
@@ -148,26 +165,26 @@ static inline int hisi_chg_time_remaining(bool with_vaild)
 
 #define CHGDUR_LOG_INFO
 #ifndef CHGDUR_LOG_INFO
-#define ct_dbg(fmt, args...)\
-	do {\
+#define ct_dbg(fmt, args...) \
+	do { \
 	} while (0)
-#define ct_info(fmt, args...)\
-	do {\
+#define ct_info(fmt, args...) \
+	do { \
 	} while (0)
-#define ct_warn(fmt, args...)\
-	do {\
+#define ct_warn(fmt, args...) \
+	do { \
 	} while (0)
-#define chg_time_err(fmt, args...)\
-	do {\
+#define chg_time_err(fmt, args...) \
+	do { \
 	} while (0)
 #else
-#define ct_dbg(fmt, args...)\
+#define ct_dbg(fmt, args...) \
 		pr_info("[hisi_chg_time]" fmt, ##args)
-#define ct_info(fmt, args...)\
+#define ct_info(fmt, args...) \
 		pr_info("[hisi_chg_time]" fmt, ##args)
-#define ct_warn(fmt, args...)\
+#define ct_warn(fmt, args...) \
 		pr_warn("[hisi_chg_time]" fmt, ##args)
-#define ct_err(fmt, args...)\
+#define ct_err(fmt, args...) \
 		pr_err("[hisi_chg_time]" fmt, ##args)
 #endif
 

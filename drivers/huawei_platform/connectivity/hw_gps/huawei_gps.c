@@ -1,13 +1,17 @@
-#include <linux/module.h>
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: gps reference clock related
+ */
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <huawei_platform/connectivity/huawei_gps.h>
 
 GPS_SET_REF_CLK_FUNC g_pfn_set_gps_ref_clk_enable;
 
-void register_gps_set_ref_clk_func(void *pFunc)
+void register_gps_set_ref_clk_func(void *p_func)
 {
-	g_pfn_set_gps_ref_clk_enable = (GPS_SET_REF_CLK_FUNC) pFunc;
+	g_pfn_set_gps_ref_clk_enable = (GPS_SET_REF_CLK_FUNC)p_func;
 }
 EXPORT_SYMBOL(register_gps_set_ref_clk_func);
 

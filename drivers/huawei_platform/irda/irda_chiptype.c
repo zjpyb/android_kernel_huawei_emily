@@ -3,7 +3,7 @@
  *
  * irda chiptype driver registe
  *
- * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,16 +17,15 @@
 
 #include <irda_driver.h>
 
-#define IRDA_BUFF_SIZE		50
-#define IRDA_SUCCESS		0
-#define IRDA_ERROR		-1
-#define DECIMAL_BASE		10
+#define IRDA_BUFF_SIZE 50
+#define IRDA_SUCCESS 0
+#define IRDA_ERROR (-1)
+#define DECIMAL_BASE 10
 
 #define HWLOG_TAG irda_chiptype
 HWLOG_REGIST();
 
 static int g_chip_type;
-extern struct class *irda_class;
 
 struct irda_device {
 	struct platform_device *pdev;
@@ -50,6 +49,7 @@ static int irda_probe(struct platform_device *pdev)
 	int ret;
 	struct device_node *dev_node = NULL;
 	struct irda_device *irda_dev = NULL;
+	struct class *ir_class = get_irda_class();
 
 	g_chip_type = 0;
 	dev_node = pdev->dev.of_node;
@@ -73,7 +73,7 @@ static int irda_probe(struct platform_device *pdev)
 	}
 
 	irda_dev->dev = device_create(
-		irda_class, NULL, MKDEV(0, 0), NULL, "%s", "irda_chip");
+		ir_class, NULL, MKDEV(0, 0), NULL, "%s", "irda_chip");
 	if (IS_ERR(irda_dev->dev)) {
 		ret = PTR_ERR(irda_dev->dev);
 		hwlog_err("Failed to create dev; ret:%d\n", ret);
@@ -92,7 +92,7 @@ static int irda_probe(struct platform_device *pdev)
 	return 0;
 
 free_dev:
-	device_destroy(irda_class, irda_dev->dev->devt);
+	device_destroy(ir_class, irda_dev->dev->devt);
 free_irda_dev:
 	kfree(irda_dev);
 	return ret;
@@ -101,9 +101,10 @@ free_irda_dev:
 static int irda_remove(struct platform_device *pdev)
 {
 	struct irda_device *irda_dev = platform_get_drvdata(pdev);
+	struct class *ir_class = get_irda_class();
 
 	device_remove_file(irda_dev->dev, &dev_attr_ir_chip_type);
-	device_destroy(irda_class, irda_dev->dev->devt);
+	device_destroy(ir_class, irda_dev->dev->devt);
 	kfree(irda_dev);
 
 	return 0;

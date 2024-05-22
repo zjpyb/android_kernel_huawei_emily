@@ -361,10 +361,10 @@ static int verity_verify_level(struct dm_verity *v, struct dm_verity_io *io,
 				  v->digest_size) == 0))
 			aux->hash_verified = 1;
 #if defined(CONFIG_OEM_DEFINE_VERITY_FEC)
-		else if (oem_verity_fec_decode(v, io,
-				hash_block, data, NULL, NULL, NULL,
-				want_digest, DM_VERITY_BLOCK_TYPE_METADATA) == 0)
+		else if (oem_metadata_verity_fec_decode(v, io,
+				hash_block, data, want_digest) == 0) {
 			aux->hash_verified = 1;
+		}
 #else
 		else if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_METADATA,
 			hash_block, data, NULL) == 0)
@@ -591,10 +591,8 @@ static int verity_verify_io(struct dm_verity_io *io)
 			continue;
 		}
 #if defined(CONFIG_OEM_DEFINE_VERITY_FEC)
-		else if (oem_verity_fec_decode(v, io,
-			cur_block, NULL, &start, &start3, &start2,
-		    verity_io_want_digest(v, io),
-		    DM_VERITY_BLOCK_TYPE_DATA) == 0)
+		else if (oem_data_verity_fec_decode(v, io,
+			cur_block, &start, verity_io_want_digest(v, io)) == 0)
 			continue;
 #else
 		else if (verity_fec_decode(v, io, DM_VERITY_BLOCK_TYPE_DATA,

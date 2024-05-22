@@ -3,7 +3,7 @@
  *
  * battery authenticate information
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,6 +18,9 @@
 
 #define BATTCT_KERNEL_SRV_SHARE_VAR
 #include "batt_info.h"
+#include "batt_uuid_binder.h"
+#include "batt_early_param.h"
+#include <linux/delay.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -27,15 +30,20 @@ HWLOG_REGIST();
 
 #define DMD_CONTENT_BASE_LEN 24
 #define DMD_REPORT_CONTENT_LEN 256
+#define CHECKING_WAKELOCK_TIME_IN_SECOND 10
+#define RETRY_TIMES 5
 
 static LIST_HEAD(batt_checkers_head);
 static unsigned int valid_checkers;
+static unsigned int g_total_checkers;
 static unsigned int shield_ct_sign;
 static struct dmd_record_list g_dmd_list;
 #ifdef BATTERY_LIMIT_DEBUG
 static struct timespec64 finish_time;
 #endif
 
+static enum powerct_error_code g_error_code;
+static bool g_is_sn_empty;
 static int prepare_dmd_no(struct batt_chk_rslt *result);
 static void dmd_record_reporter(struct work_struct *work);
 static int get_dmd_no(unsigned int index);
@@ -48,7 +56,7 @@ void add_to_batt_checkers_lists(struct batt_checker_entry *entry)
 }
 
 /* A function to implement bubble sort */
-void bubbleSort(char arr[], int n)
+void bubble_sort(char arr[], int n)
 {
 	int i, j;
 	char temp;
@@ -77,14 +85,14 @@ int get_battery_type(unsigned char *name, unsigned int name_size)
 		checker_data = platform_get_drvdata(pdev);
 		if (checker_data->bco.get_batt_type) {
 			if (checker_data->bco.get_batt_type(checker_data,
-							    &batt_type, &len)) {
+				&batt_type, &len)) {
 				hwlog_err("Get battery type error in %s\n",
-					  __func__);
+					__func__);
 				return -1;
 			}
 			if (len >= name_size) {
 				hwlog_err("buffer is too small found in %s\n",
-					  __func__);
+					__func__);
 				return -1;
 			}
 			memcpy(name, batt_type, len);
@@ -96,6 +104,78 @@ int get_battery_type(unsigned char *name, unsigned int name_size)
 	}
 
 	return -1;
+}
+
+static int compare_battery_sn(struct batt_chk_data *checker_data)
+{
+	const unsigned char *sn = NULL;
+	unsigned char *nv_sn = (unsigned char *)batt_get_nv_sn();
+	struct binded_info bbinfo;
+	unsigned int sn_len;
+
+	if (!nv_sn) {
+		if (power_nv_read(POWER_NV_BBINFO, &bbinfo,
+			sizeof(struct binded_info))) {
+			hwlog_err("[%s]: bbinfo read failed\n", __func__);
+			return -1;
+		}
+		nv_sn = (unsigned char *)&bbinfo.info[0];
+	}
+
+	if (checker_data->bco.get_batt_sn(checker_data, 0, &sn, &sn_len)) {
+		hwlog_err("get battery sn failed in %s\n",
+			__func__);
+		return -1;
+	}
+
+	if (sn_len < MAX_RAW_SN_LEN) {
+		hwlog_err("battery sn len %u error in %s\n",
+			sn_len, __func__);
+		return -1;
+	}
+
+	if (memcmp(nv_sn, sn, MAX_RAW_SN_LEN)) {
+		hwlog_err("battery sn is not same with nv in %s\n",
+			__func__);
+		return 1;
+	}
+
+	return 0;
+}
+
+int check_battery_sn_changed(void)
+{
+	struct batt_checker_entry *temp = NULL;
+	struct platform_device *pdev = NULL;
+	struct batt_chk_data *checker_data = NULL;
+	int same_nums = 0;
+	int ret;
+
+	if (g_total_checkers == 0)
+		return -1;
+
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		pdev = temp->pdev;
+		checker_data = platform_get_drvdata(pdev);
+		if (!checker_data ||
+			!checker_data->bco.get_ic_type ||
+			!checker_data->bco.get_batt_sn)
+			continue;
+
+		ret = compare_battery_sn(checker_data);
+		if (ret)
+			return ret;
+
+		same_nums++;
+	}
+
+	if (same_nums != g_total_checkers) {
+		hwlog_err("battery checkers number is wrong %d:%d\n",
+			same_nums, g_total_checkers);
+		return -1;
+	}
+
+	return 0;
 }
 
 enum phone_work_mode_t {
@@ -123,11 +203,11 @@ static void update_work_mode(void)
 		work_mode = CHARGER_MODE;
 		goto print_work_mode;
 	}
-	if (strstr(saved_command_line, "enter_erecovery=1")) {
+	if (power_cmdline_is_erecovery_mode()) {
 		work_mode = ERECOVERY_MODE;
 		goto print_work_mode;
 	}
-	if (strstr(saved_command_line, "enter_recovery=1")) {
+	if (power_cmdline_is_recovery_mode()) {
 		work_mode = RECOVERY_MODE;
 		goto print_work_mode;
 	}
@@ -148,9 +228,9 @@ static struct platform_device *get_checker_pdev(struct nl_dev_info *dev_info)
 	list_for_each_entry(temp, &batt_checkers_head, node) {
 		pdev = temp->pdev;
 		checker_data = platform_get_drvdata(pdev);
-		if (dev_info->id_in_grp == checker_data->id_in_grp &&
-		    dev_info->id_of_grp == checker_data->id_of_grp &&
-		    dev_info->ic_type == checker_data->ic_type)
+		if ((dev_info->id_in_grp == checker_data->id_in_grp) &&
+			(dev_info->id_of_grp == checker_data->id_of_grp) &&
+			(dev_info->ic_type == checker_data->ic_type))
 			return pdev;
 	}
 
@@ -165,9 +245,10 @@ static struct platform_device *get_checker_pdev(struct nl_dev_info *dev_info)
 static void batt_info_mesg_data_processor(struct platform_device *pdev,
 	unsigned char subcmd, const void *data, int len)
 {
+	int act_result = SIGN_FAIL;
 	struct batt_chk_data *checker_data = NULL;
 	struct completion *comp = NULL;
-	struct batt_res *res = NULL;
+	struct power_genl_attr *res = NULL;
 	unsigned char *mesg_data = NULL;
 
 	checker_data = platform_get_drvdata(pdev);
@@ -180,16 +261,25 @@ static void batt_info_mesg_data_processor(struct platform_device *pdev,
 		comp = &checker_data->sn_prepare_ready;
 		res = &checker_data->sn_res;
 		break;
+	case ACT_SIGN:
+		if (len != sizeof(int))
+			return;
+		memcpy(&act_result, data, len);
+		checker_data->act_state = (enum batt_act_state)act_result;
+		hwlog_info("mesg %c result %d for battery checker\n",
+			subcmd, act_result);
+		complete(&checker_data->act_sign_complete);
+		return;
 	default:
 		hwlog_err("unkown subcmd for checker(NO:%d Group:%d)\n",
-			  checker_data->id_in_grp, checker_data->id_of_grp);
+			checker_data->id_in_grp, checker_data->id_of_grp);
 		return;
 	}
 	/* try to free last res first */
 	kfree(res->data);
 	res->data = NULL;
 	res->len = 0;
-	if (len <= MAX_DATA_LEN && len > 0) {
+	if ((len <= MAX_DATA_LEN) && (len > 0)) {
 		mesg_data = kmalloc(len, GFP_KERNEL);
 		if (mesg_data == NULL)
 			return;
@@ -197,8 +287,24 @@ static void batt_info_mesg_data_processor(struct platform_device *pdev,
 		res->data = mesg_data;
 		res->len = len;
 		complete(comp);
+	} else if (len == 0) {
+		/*
+		 * If subcmd is SN_PREPARE, it's just for nxp A1005. That ic
+		 * will be discarded, and no more maintenance is required.
+		 * This does not affect original logic.
+		 * If subcmd is ACT_SIGN, the program will not run to here.
+		 *
+		 * This is for prohibited id, after setting (data=NULL, len=0)
+		 * in powerct and complete here, the program will think it is
+		 * fail_ic error, and take action.
+		 *
+		 * In other words, processing prohibited id uses the way
+		 * that belongs to other fail, but they are all failed,
+		 * have same action like notification and limiting charge.
+		 */
+		complete(comp);
 	} else {
-		hwlog_err("subcmd get too large data length(%d)\n", len);
+		hwlog_err("subcmd get too large data length %d\n", len);
 	}
 }
 
@@ -220,12 +326,12 @@ static int batt_info_cb(struct sk_buff *skb_in, struct genl_info *info)
 		return -1;
 	}
 
-	dev_attr = info->attrs[BATT_INFO_DEVICE_ATTR];
+	dev_attr = info->attrs[POWER_GENL_BATT_INFO_DEV_ATTR];
 	if (!dev_attr) {
 		hwlog_err("dev_attr is null found in %s\n", __func__);
 		return -1;
 	}
-	data_attr = info->attrs[BATT_INFO_DATA_ATTR];
+	data_attr = info->attrs[POWER_GENL_BATT_INFO_DAT_ATTR];
 	if (!data_attr) {
 		hwlog_err("data_attr is null found in %s\n", __func__);
 		return -1;
@@ -241,24 +347,26 @@ static int batt_info_cb(struct sk_buff *skb_in, struct genl_info *info)
 	pdev = get_checker_pdev(dev_info);
 	if (!pdev) {
 		hwlog_err("Can't find battery checker(NO.:%d in Group:%d)\n",
-			  dev_info->id_in_grp, dev_info->id_of_grp);
+			dev_info->id_in_grp, dev_info->id_of_grp);
 		return -1;
 	}
 
+	hwlog_info("mesg %d for battery checker no.:%d in group:%d\n",
+		dev_info->subcmd, dev_info->id_in_grp, dev_info->id_of_grp);
 	batt_info_mesg_data_processor(pdev, dev_info->subcmd,
-				      nla_data(data_attr), nla_len(data_attr));
+		nla_data(data_attr), nla_len(data_attr));
 
 	return 0;
 }
 
-static char new_board;
+static signed char new_board;
 static struct completion board_info_ready;
 
 static int board_info_cb(unsigned char version, void *data, int len)
 {
 	hwlog_info("board information going to process\n");
 	if (len != strlen(board_info_cb_mesg[NEW_BOARD_MESG_INDEX])) {
-		hwlog_err("board info callback mesg len(%d) illegal\n", len);
+		hwlog_err("board info callback mesg len %d illegal\n", len);
 		new_board = 0;
 		return 0;
 	}
@@ -292,23 +400,27 @@ static char *generate_dmd_content(char *buf, int len, int dmd_no, int times)
 	if ((len % DMD_CONTENT_BASE_LEN) == 0) {
 		if (str)
 			count += snprintf(dmd_content + count,
-					  DMD_REPORT_CONTENT_LEN, str);
+				DMD_REPORT_CONTENT_LEN, str);
 		for (i = 0; i < (len / DMD_CONTENT_BASE_LEN); i++) {
 			value = (int *)buf + offset;
+			/* value[0] : NO, value[1] : Group */
 			count += snprintf(dmd_content + count,
-					  DMD_REPORT_CONTENT_LEN - count,
-					  "NO:%d Group:%d ",
-					  value[0], value[1]);
+				DMD_REPORT_CONTENT_LEN - count,
+				"NO:%d Group:%d ", value[0], value[1]);
+			/*
+			 * value[2] : ic, value[3] : key, value[4] : sn
+			 * value[5] : Y or N
+			 */
 			count += snprintf(dmd_content + count,
-					  DMD_REPORT_CONTENT_LEN - count,
-					  "rlt: ic(%d) key(%d) sn(%d Read:%s)",
-					  value[2], value[3], value[4],
-					  (value[5] > 0) ? "Y" : "N");
+				DMD_REPORT_CONTENT_LEN - count,
+				"rlt: ic(%d) key(%d) sn(%d Read:%s)",
+				value[2], value[3], value[4],
+				(value[5] > 0) ? "Y" : "N");
 			offset += DMD_CONTENT_BASE_LEN;
 		}
 	}
 	snprintf(dmd_content + count, DMD_REPORT_CONTENT_LEN - count,
-		 "Times:%d\n", times);
+		"Times:%d\n", times);
 	return dmd_content;
 }
 
@@ -320,7 +432,7 @@ static int batt_dmd_cb(unsigned char version, void *data, int len)
 	int head = (sizeof(int) + sizeof(int) + sizeof(int) + sizeof(int));
 
 	if (len < head) {
-		hwlog_err("dmd info call back mesg length(%d) illegal\n", len);
+		hwlog_err("dmd info call back mesg length %d illegal\n", len);
 		return 0;
 	}
 	record = kzalloc(sizeof(struct dmd_record), GFP_KERNEL);
@@ -337,13 +449,13 @@ static int batt_dmd_cb(unsigned char version, void *data, int len)
 	ptr += sizeof(int);
 
 	if (len < (head + record->content_len)) {
-		hwlog_err("dmd info call back mesg length(%d:%d) illegal\n",
-			  len, head + record->content_len);
+		hwlog_err("dmd info call back mesg length %d:%d illegal\n",
+			len, head + record->content_len);
 		kfree(record);
 		return 0;
 	}
 	record->content = generate_dmd_content(ptr, record->content_len,
-					       record->dmd_no, times);
+		record->dmd_no, times);
 	INIT_LIST_HEAD(&record->node);
 
 	mutex_lock(&g_dmd_list.lock);
@@ -357,26 +469,34 @@ static int batt_dmd_cb(unsigned char version, void *data, int len)
 
 #define BATT_INFO_NL_CBS_NUM    1
 
-static const struct power_mesg_cbs batt_cbs[BATT_INFO_NL_CBS_NUM] = {
+static const struct power_genl_normal_ops batt_cbs[BATT_INFO_NL_CBS_NUM] = {
 	{
-		.cmd = BATT_INFO_CMD,
+		.cmd = POWER_GENL_CMD_BATT_INFO,
 		.doit = batt_info_cb,
 	},
 };
 
-#define BOARD_INFO_NL_OPS_NUM    3
-static const struct power_mesg_easy_cbs batt_ops[BOARD_INFO_NL_OPS_NUM] = {
+#define BOARD_INFO_NL_OPS_NUM    5
+static const struct power_genl_easy_ops batt_ops[BOARD_INFO_NL_OPS_NUM] = {
 	{
-		.cmd = BOARD_INFO_CMD,
+		.cmd = POWER_GENL_CMD_BOARD_INFO,
 		.doit = board_info_cb,
 	},
 	{
-		.cmd = BATT_FINAL_RESULT_CMD,
+		.cmd = POWER_GENL_CMD_BATT_FINAL_RESULT,
 		.doit = nop_cb,
 	},
 	{
-		.cmd = BATT_DMD_CMD,
+		.cmd = POWER_GENL_CMD_BATT_DMD,
 		.doit = batt_dmd_cb,
+	},
+	{
+		.cmd = POWER_GENL_CMD_BATT_BIND_RD,
+		.doit = batt_uuid_read_cb,
+	},
+	{
+		.cmd = POWER_GENL_CMD_BATT_BIND_WR,
+		.doit = batt_uuid_write_cb,
 	},
 };
 
@@ -388,13 +508,13 @@ static int batt_srv_on_cb(void)
 	return 0;
 }
 
-static struct power_mesg_node batt_info_genl_node = {
-	.target = POWERCT_PORT,
+static struct power_genl_node batt_info_genl_node = {
+	.target = POWER_GENL_TP_POWERCT,
 	.name = "BATT_INFO",
-	.ops = batt_ops,
-	.n_ops = BOARD_INFO_NL_OPS_NUM,
-	.cbs = batt_cbs,
-	.n_cbs = BATT_INFO_NL_CBS_NUM,
+	.easy_ops = batt_ops,
+	.n_easy_ops = BOARD_INFO_NL_OPS_NUM,
+	.normal_ops = batt_cbs,
+	.n_normal_ops = BATT_INFO_NL_CBS_NUM,
 	.srv_on_cb = batt_srv_on_cb,
 };
 
@@ -404,7 +524,7 @@ static int batt_mesg_init(void)
 
 	ret = power_genl_node_register(&batt_info_genl_node);
 	if (ret)
-		hwlog_err("power_genl_add_op failed(%d)!\n", ret);
+		hwlog_err("power_genl_add_op failed %d\n", ret);
 
 	return ret;
 }
@@ -468,12 +588,12 @@ static int get_records_num(const int *dmd_index, int dmd_num)
 	return record_num;
 }
 
-static inline void prepare_dmd_record(int dmd_index, struct dmd_record *record)
+static void prepare_dmd_record(int dmd_index, struct dmd_record *record)
 {
 	record->dmd_type = POWER_DSM_BATTERY_DETECT;
 	record->dmd_no = get_dmd_no(dmd_index);
 	record->content_len = prepare_dmd_content(dmd_index,
-						  &(record->content));
+		&(record->content));
 }
 
 static int prepare_dmd_records(const int *dmd_index, int dmd_num,
@@ -521,7 +641,7 @@ static int get_records_length(struct dmd_record *records, int num)
 	return length;
 }
 
-static inline int copy_record_to_buf(char *buf, struct dmd_record *record)
+static int copy_record_to_buf(char *buf, struct dmd_record *record)
 {
 	char *tmp_ptr = buf;
 
@@ -563,8 +683,8 @@ static void send_result_msg(enum result_stat result_status,
 			msg_ptr += copy_record_to_buf(msg_ptr, records + i);
 	}
 
-	if (power_genl_easy_send(&batt_info_genl_node, BATT_FINAL_RESULT_CMD,
-				 0, (void *)msg_buf, msg_len))
+	if (power_genl_easy_send(POWER_GENL_TP_POWERCT, POWER_GENL_CMD_BATT_FINAL_RESULT,
+		0, (void *)msg_buf, msg_len))
 		hwlog_err("send battery final result status failed\n");
 	kfree(msg_buf);
 
@@ -584,9 +704,9 @@ FREE_DMD_RECORDS:
  * in the future.
  */
 static void send_result_status(struct batt_chk_rslt *result,
-			       enum result_stat result_status)
+	enum result_stat result_status)
 {
-	int dmd_index = DMD_INVALID;
+	int dmd_index;
 
 	if (result) {
 		dmd_index = prepare_dmd_no(result);
@@ -601,8 +721,18 @@ static int send_board_info(void)
 {
 	const char *mesg = board_info_mesg;
 
-	if (power_genl_easy_send(&batt_info_genl_node, BOARD_INFO_CMD, 0,
-				 (void *)mesg, strlen(mesg))) {
+	if (power_genl_easy_send(POWER_GENL_TP_POWERCT, POWER_GENL_CMD_BOARD_INFO, 0,
+		(void *)mesg, strlen(mesg))) {
+		hwlog_err("send board information message failed\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int send_power_genl_mesg(unsigned char cmd, void *data, unsigned int len)
+{
+	if (power_genl_easy_send(POWER_GENL_TP_POWERCT, cmd, 0, data, len)) {
 		hwlog_err("send board information message failed\n");
 		return -1;
 	}
@@ -612,18 +742,18 @@ static int send_board_info(void)
 
 int send_batt_info_mesg(struct nl_dev_info *info, void *data, unsigned int len)
 {
-	struct batt_res res[TOTAL_POWER_GENL_ATTR];
+	struct power_genl_attr res[POWER_GENL_TOTAL_ATTR];
 
 	res[0].data = (const unsigned char *)info;
 	res[0].len = sizeof(*info);
-	res[0].type = BATT_INFO_DEVICE_ATTR;
+	res[0].type = POWER_GENL_BATT_INFO_DEV_ATTR;
 
 	res[1].data = (const unsigned char *)data;
 	res[1].len = len;
-	res[1].type = BATT_INFO_DATA_ATTR;
+	res[1].type = POWER_GENL_BATT_INFO_DAT_ATTR;
 
-	if (power_genl_send_attrs(&batt_info_genl_node, BATT_INFO_CMD, 0, res,
-				  ARRAY_SIZE(res))) {
+	if (power_genl_send(POWER_GENL_TP_POWERCT, POWER_GENL_CMD_BATT_INFO, 0, res,
+		ARRAY_SIZE(res))) {
 		hwlog_err("Send attributes failed in %s\n", __func__);
 		return -1;
 	}
@@ -631,66 +761,33 @@ int send_batt_info_mesg(struct nl_dev_info *info, void *data, unsigned int len)
 	return 0;
 }
 
-#define LAST_RESULT_NV_NUMBER                       388
-#define LAST_RESULT_NV_NAME                         "BLIMSW"
-#define BBINFO_NV_NUMBER                            389
-#define BBINFO_NV_NAME                              "BBINFO"
-static char new_battery;
-
-static int write_nv(uint32_t nv_number, const char *nv_name, const void *data,
-	uint32_t data_len)
+int check_sn_includes_null(const unsigned char *sn, unsigned int sn_len)
 {
-	struct hisi_nve_info_user nvinfo;
-	int ret;
-
-	if (data_len > NVE_NV_DATA_SIZE) {
-		hwlog_err("data length(%u) is too big to write into NV\n",
-			  data_len);
+	if (sn_len > MAX_SN_LEN)
 		return -1;
-	}
-	nvinfo.nv_operation = NV_WRITE;
-	nvinfo.nv_number = nv_number;
-	strlcpy(nvinfo.nv_name, nv_name, NV_NAME_LENGTH);
-	nvinfo.valid_size = data_len;
-	memcpy(&nvinfo.nv_data, data, data_len);
-	ret = hisi_nve_direct_access(&nvinfo);
-	if (ret) {
-		hwlog_err("Write NV(%s) failed(%d).\n", nv_name, ret);
-		return -1;
-	}
 
+	if (!sn)
+		g_is_sn_empty = true;
+	else
+		g_is_sn_empty = strnlen(sn, sn_len) < sn_len;
+
+	hwlog_info("[%s] g_is_sn_empty = %d\n", __func__, g_is_sn_empty);
 	return 0;
 }
 
-static int read_nv(uint32_t nv_number, const char *nv_name, void *data,
-		   uint32_t data_len)
+static signed char new_battery;
+
+static int get_last_check_result(struct batt_info *drv_data,
+	struct batt_chk_rslt *result)
 {
-	struct hisi_nve_info_user nvinfo;
-	int ret;
-
-	if (data_len > NVE_NV_DATA_SIZE) {
-		hwlog_err("data length(%u) is too big to read from NV\n",
-			  data_len);
-		return -1;
+	hwlog_info("[%s] is_first_check_done = %d\n",
+		__func__, drv_data->is_first_check_done);
+	if (drv_data->is_first_check_done) {
+		memcpy(result, &drv_data->result, sizeof(*result));
+		return 0;
 	}
-	nvinfo.nv_operation = NV_READ;
-	nvinfo.nv_number = nv_number;
-	strncpy(nvinfo.nv_name, nv_name, NV_NAME_LENGTH - 1);
-	nvinfo.valid_size = data_len;
-	ret = hisi_nve_direct_access(&nvinfo);
-	if (ret) {
-		hwlog_err("Read NV(%s) failed(%d).\n", nv_name, ret);
-		return -1;
-	}
-	memcpy(data, &nvinfo.nv_data, data_len);
-
-	return 0;
-}
-
-static int get_last_check_result(struct batt_chk_rslt *result)
-{
-	if (read_nv(LAST_RESULT_NV_NUMBER, LAST_RESULT_NV_NAME, result,
-		    sizeof(*result))) {
+	if (power_nv_read(POWER_NV_BLIMSW, result,
+		sizeof(*result))) {
 		hwlog_err("get last check result failed\n");
 		return -1;
 	}
@@ -700,8 +797,8 @@ static int get_last_check_result(struct batt_chk_rslt *result)
 
 static void record_final_check_result(struct batt_chk_rslt *result)
 {
-	if (write_nv(LAST_RESULT_NV_NUMBER, LAST_RESULT_NV_NAME, result,
-		     sizeof(*result)))
+	if (power_nv_write(POWER_NV_BLIMSW, result,
+		sizeof(*result)))
 		hwlog_err("record final check result failed\n");
 }
 
@@ -711,8 +808,8 @@ static void get_sn_from_nv(struct batt_info *drv_data)
 	struct batt_chk_rslt result;
 
 	drv_data->sn = drv_data->sn_buff;
-	if (read_nv(BBINFO_NV_NUMBER, BBINFO_NV_NAME, &bbinfo,
-		    sizeof(struct binded_info))) {
+	if (power_nv_read(POWER_NV_BBINFO, &bbinfo,
+		sizeof(struct binded_info))) {
 		hwlog_err("%s failed\n", __func__);
 		drv_data->sn_len = strlen("NV ERROR");
 		memcpy(drv_data->sn_buff, "NV ERROR", drv_data->sn_len);
@@ -745,8 +842,8 @@ static void get_sn_from_nv(struct batt_info *drv_data)
 
 static int record_sn_to_nv(struct binded_info *bbinfo)
 {
-	if (write_nv(BBINFO_NV_NUMBER, BBINFO_NV_NAME, bbinfo,
-		     sizeof(struct binded_info))) {
+	if (power_nv_write(POWER_NV_BBINFO, bbinfo,
+		sizeof(struct binded_info))) {
 		hwlog_err("%s failed\n", __func__);
 		return -1;
 	}
@@ -778,9 +875,9 @@ static int is_legal_result(const struct batt_chk_rslt *result)
 
 static enum result_stat chk_rs_to_rs_stat(const struct batt_chk_rslt *result)
 {
-	if (result->key_status == KEY_FAIL_TIMEOUT ||
-	    result->sn_status == SN_FAIL_TIMEOUT ||
-	    result->sn_status == SN_FAIL_NV)
+	if ((result->key_status == KEY_FAIL_TIMEOUT) ||
+		(result->sn_status == SN_FAIL_TIMEOUT) ||
+		(result->sn_status == SN_FAIL_NV))
 		return FINAL_RESULT_CRASH;
 	if (is_legal_result(result))
 		return FINAL_RESULT_PASS;
@@ -820,8 +917,8 @@ static int binding_check(struct batt_info *drv_data)
 	unsigned int sn_len = drv_data->sn_len;
 	struct binded_info bbinfo;
 
-	if (read_nv(BBINFO_NV_NUMBER, BBINFO_NV_NAME, &bbinfo,
-	    sizeof(bbinfo))) {
+	if (power_nv_read(POWER_NV_BBINFO, &bbinfo,
+		sizeof(bbinfo))) {
 		drv_data->result.sn_status = SN_FAIL_NV;
 		return -1;
 	}
@@ -847,8 +944,8 @@ static int binding_check(struct batt_info *drv_data)
 		}
 		break;
 	default:
-		hwlog_err("Unkown BBINFO NV version(%u) found in %s\n",
-			  bbinfo.version, __func__);
+		hwlog_err("Unkown BBINFO NV version %u found in %s\n",
+			bbinfo.version, __func__);
 		break;
 	}
 
@@ -870,9 +967,9 @@ static int binding_check(struct batt_info *drv_data)
 		return -1;
 	}
 #else
-	if (drv_data->result.sn_status == SN_OBT_REMATCH ||
-	    drv_data->result.sn_status == SN_OBD_REMATCH ||
-	    drv_data->result.sn_status == SN_NN_REMATCH) {
+	if ((drv_data->result.sn_status == SN_OBT_REMATCH) ||
+		(drv_data->result.sn_status == SN_OBD_REMATCH) ||
+		(drv_data->result.sn_status == SN_NN_REMATCH)) {
 		for (i = MAX_SN_BUFF_LENGTH - 1; i > 0; i--)
 			memcpy(bbinfo.info[i], bbinfo.info[i - 1], MAX_SN_LEN);
 		memcpy(bbinfo.info[0], sn, sn_len);
@@ -888,7 +985,6 @@ static int binding_check(struct batt_info *drv_data)
 
 #define MAX_VALID_CHECKERS      200
 
-/* 0 is match, -1 isn't match */
 static int check_devs_match(struct batt_info *drv_data)
 {
 	struct batt_checker_entry *temp = NULL;
@@ -900,8 +996,8 @@ static int check_devs_match(struct batt_info *drv_data)
 	char *buf = NULL;
 
 	if (valid_checkers > MAX_VALID_CHECKERS) {
-		hwlog_err("too much(%u) valid battery checkers\n",
-			  valid_checkers);
+		hwlog_err("too much %u valid battery checkers\n",
+			valid_checkers);
 		return -1;
 	}
 	buf = kmalloc(valid_checkers, GFP_KERNEL);
@@ -916,33 +1012,121 @@ static int check_devs_match(struct batt_info *drv_data)
 			hwlog_err("%s sn is null\n", checker_data->ic->name);
 			kfree(buf);
 			drv_data->result.sn_status = SN_SNS_UNMATCH;
-			return -1;
+			return 0;
 		}
-		if (!sn && sn_len < 0) {
+		if (!sn && (sn_len < 0)) {
 			sn = checker_data->sn;
 			sn_len = checker_data->sn_len;
 			buf[i++] = sn[sn_len - 1];
 			continue;
 		}
 		if (memcmp(sn, checker_data->sn, sn_len - 1) ||
-		    sn_len != checker_data->sn_len) {
+			(sn_len != checker_data->sn_len)) {
 			drv_data->result.sn_status = SN_SNS_UNMATCH;
 			kfree(buf);
 			hwlog_err("sn body match fail\n");
-			return -1;
+			return 0;
 		}
 		buf[i++] = checker_data->sn[sn_len - 1];
 	}
-	bubbleSort(buf, i);
+	bubble_sort(buf, i);
 	for (j = 0; j < i - 1; j++) {
 		if (buf[j] == buf[j + 1]) {
 			drv_data->result.sn_status = SN_SNS_UNMATCH;
 			kfree(buf);
 			hwlog_err("sn no match fail\n");
-			return -1;
+			return 0;
 		}
 	}
 	kfree(buf);
+
+	return 0;
+}
+
+static enum batt_aut_util_type check_util_type(void)
+{
+	struct batt_checker_entry *temp = NULL;
+	struct batt_chk_data *checker_data = NULL;
+	enum batt_aut_util_type util_type;
+
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		checker_data = platform_get_drvdata(temp->pdev);
+		util_type = checker_util_type(checker_data->ic_type);
+		if (util_type == UTIL_BYC_TYPE)
+			return UTIL_BYC_TYPE;
+	}
+
+	return UTIL_BSC_TYPE;
+}
+
+static bool update_binded_info(struct binded_info *bbinfo, const char *sn,
+	unsigned int sn_len)
+{
+	int i;
+
+	if (!bbinfo)
+		return false;
+
+	if (!sn || (sn_len == 0) || (sn_len >= MAX_SN_LEN))
+		return false;
+
+	for (i = 0; i < MAX_SN_BUFF_LENGTH; i++) {
+		if (memcmp(bbinfo->info[i], sn, sn_len))
+			continue;
+
+		if (i > 0) {
+			move_match_sn_to_head(i, bbinfo);
+			return true;
+		}
+		return false;
+	}
+
+	for (i = MAX_SN_BUFF_LENGTH - 1; i > 0; i--)
+		memcpy(bbinfo->info[i], bbinfo->info[i - 1], MAX_SN_LEN);
+	memcpy(bbinfo->info[0], sn, sn_len);
+	return true;
+}
+
+static int record_batt_sn(struct batt_info *drv_data)
+{
+	int i = 0;
+	bool update_nv = false;
+	struct batt_checker_entry *temp = NULL;
+	struct batt_chk_data *checker_data = NULL;
+	struct binded_info bbinfo;
+
+	memset(&bbinfo, 0, sizeof(bbinfo));
+	if (power_nv_read(POWER_NV_BBINFO, &bbinfo, sizeof(bbinfo)))
+		return -1;
+
+	bbinfo.version = drv_data->sn_version;
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		checker_data = platform_get_drvdata(temp->pdev);
+		if (!checker_data || !checker_data->bco.get_batt_sn)
+			continue;
+
+		if (!checker_data->sn) {
+			if (checker_data->bco.get_batt_sn(checker_data, 0,
+				&checker_data->sn, &checker_data->sn_len))
+				hwlog_err("get battery sn failed in %s\n",
+					__func__);
+		}
+
+		update_nv |= update_binded_info(&bbinfo, checker_data->sn,
+			checker_data->sn_len);
+
+		i++;
+		if (i >= MAX_SN_BUFF_LENGTH)
+			break;
+	}
+
+	if (!update_nv)
+		return 0;
+
+	if (record_sn_to_nv(&bbinfo))
+		hwlog_err("write sn to nv failed in %s\n", __func__);
+	else
+		hwlog_info("write sn to nv success in %s\n", __func__);
 
 	return 0;
 }
@@ -964,6 +1148,7 @@ static int final_sn_checker_1(struct batt_info *drv_data)
 		if (drv_data->result.sn_status == SN_SNS_UNMATCH)
 			return 0;
 	}
+
 	/* get final sn and sn_len here */
 	list_for_each_entry(temp, &batt_checkers_head, node) {
 		pdev = temp->pdev;
@@ -983,6 +1168,10 @@ static int final_sn_checker_1(struct batt_info *drv_data)
 			}
 		}
 	}
+
+	if (check_util_type() == UTIL_BYC_TYPE)
+		return record_batt_sn(drv_data);
+
 	/* sn checking last step final sn binding check */
 	if (binding_check(drv_data)) {
 		hwlog_err("checking battery binded with board failed\n");
@@ -1008,12 +1197,60 @@ static void power_down_ics(void)
 	}
 }
 
+static int prepare_bind_info(void)
+{
+	if (check_util_type() == UTIL_BYC_TYPE)
+		return batt_read_bind_mesg();
+
+	/* board on boot new or old? */
+	if (send_board_info()) {
+		hwlog_err("checking stopped by send get board info failed\n");
+		return -1;
+	}
+	wait_for_completion(&board_info_ready);
+	return 0;
+}
+
+static void run_check_func(struct batt_info *drv_data, int check_strategy_no)
+{
+	unsigned long flags;
+
+	if (!drv_data || (check_strategy_no < CHECK_STRATEGY_INVALID) ||
+		(check_strategy_no > CHECK_STRATEGY_MAX_NO))
+		return;
+
+	hwlog_info("[%s] request_lock locking, is_checking = %d, no = %d\n",
+		__func__, drv_data->is_checking, check_strategy_no);
+
+	spin_lock_irqsave(&drv_data->request_lock, flags);
+	if (drv_data->is_checking) {
+		spin_unlock_irqrestore(&drv_data->request_lock, flags);
+		return;
+	}
+	drv_data->is_checking = true;
+	spin_unlock_irqrestore(&drv_data->request_lock, flags);
+
+	drv_data->check_strategy_no = check_strategy_no;
+	/* start checking work */
+	schedule_work(&drv_data->check_work);
+}
+
+static void check_nv_sn(struct batt_info *info)
+{
+	if (check_battery_sn_changed() != 1)
+		return;
+	info->nv_sn_old = 1;
+	info->dmd_no = DMD_OLD_NV_SN_ERROR;
+	schedule_delayed_work(&info->dmd_report_dw, 5 * HZ);
+}
+
 static void check_func(struct work_struct *work)
 {
 	int ret;
-	enum result_stat result_status = FINAL_RESULT_FAIL;
-	struct batt_chk_rslt last_result;
+	int i;
+	enum result_stat result_status;
 	struct batt_chk_rslt dummy_result;
+	struct batt_chk_rslt *last_result = NULL;
 	struct batt_chk_rslt *final_result = NULL;
 	struct batt_chk_data *checker_data = NULL;
 	struct batt_info *drv_data = NULL;
@@ -1021,18 +1258,50 @@ static void check_func(struct work_struct *work)
 
 	hwlog_info("battery checking started in %s\n", __func__);
 	drv_data = container_of(work, struct batt_info, check_work);
-	final_result = &drv_data->result;
-	/* wait for service powerct ready */
-	wait_for_completion(&ct_srv_ready);
+
+	__pm_wakeup_event(&drv_data->checking_wakelock,
+		jiffies_to_msecs(CHECKING_WAKELOCK_TIME_IN_SECOND * HZ));
+	/*
+	 * wait for service powerct ready when first checking.
+	 * It also can use check_strategy as a flag, but for avoiding
+	 * introducing new problems due to someone does't know, here uses a
+	 * new variable.
+	 *
+	 * is_first_check_done: 0: false, means checking in booting;
+	 *                      1: true, means checking in others
+	 */
+	if (!drv_data->is_first_check_done)
+		wait_for_completion(&ct_srv_ready);
 
 	/* check last result */
-	ret = get_last_check_result(&last_result);
-	if (ret)
-		hwlog_err("get last check result failed\n");
-	else
-		hwlog_info("last result(ic(%d) key(%d) sn(%d) mode(%d)).\n",
-			   last_result.ic_status, last_result.key_status,
-			   last_result.sn_status, last_result.check_mode);
+	last_result = &drv_data->last_result;
+	for (i = 0; i < RETRY_TIMES; i++) {
+		ret = get_last_check_result(drv_data, last_result);
+		if (!ret) {
+			hwlog_info("last result: ic %d, key %d, sn %d, mode %d\n",
+				last_result->ic_status, last_result->key_status,
+				last_result->sn_status, last_result->check_mode);
+			break;
+		}
+
+		/* retry after 1s when reading nv fail */
+		msleep(1000);
+		hwlog_err("get last result failed, retry times: %d\n", i);
+	}
+
+	init_battery_check_result(&drv_data->result);
+	final_result = &drv_data->result;
+
+	if (ret != 0) {
+		hwlog_err("last_result NV still failed, skip check\n");
+		dummy_result.check_mode = 0;
+		dummy_result.ic_status = IC_PASS;
+		dummy_result.key_status = KEY_PASS;
+		dummy_result.sn_status = SN_FAIL_NV;
+		*final_result = dummy_result;
+		schedule_delayed_work(&drv_data->dmd_report_dw, 0);
+		goto exit_check_func;
+	}
 
 	if (shield_ct_sign) {
 		dummy_result.check_mode = 0;
@@ -1041,22 +1310,27 @@ static void check_func(struct work_struct *work)
 		dummy_result.sn_status = SN_PASS;
 		*final_result = dummy_result;
 		result_status = FINAL_RESULT_PASS;
+		if (record_batt_sn(drv_data))
+			hwlog_err("record battery sn failed in %s\n", __func__);
 		hwlog_info("battery ct shielding to dummy result\n");
 		goto process_result_status;
 	}
+
 	/* Follow conditions will trigger real battery check
 	 * 1.get last check result failed
 	 * 2.last check result is illegal
 	 * 3.kernel is factory version
 	 * 4.battery is removed before boot
 	 */
-	if (!(ret || !is_legal_result(&last_result) ||
-	      last_result.check_mode == FACTORY_CHECK_MODE ||
-	      hisi_battery_removed_before_boot())) {
-		*final_result = last_result;
+	if (!(ret || !is_legal_result(last_result) ||
+		(last_result->check_mode == FACTORY_CHECK_MODE) ||
+		power_platform_is_battery_removed())) {
+		*final_result = *last_result;
 		result_status = FINAL_RESULT_PASS;
+		check_nv_sn(drv_data);
 		if (drv_data->sn_checker != final_sn_checker_nop)
 			get_sn_from_nv(drv_data);
+		hwlog_info("battery ct will skip checking in %s\n", __func__);
 		goto skip_result_status;
 	}
 
@@ -1073,10 +1347,10 @@ static void check_func(struct work_struct *work)
 		ret = ic_status_legal(checker_data->result.ic_status);
 		if (!ret) {
 			final_result->ic_status =
-			    checker_data->result.ic_status;
+				checker_data->result.ic_status;
 			hwlog_info("checker(NO:%d Group:%d) status illegal\n",
-				   checker_data->id_in_grp,
-				   checker_data->id_of_grp);
+				checker_data->id_in_grp,
+				checker_data->id_of_grp);
 			goto process_result_status;
 		}
 	}
@@ -1098,34 +1372,29 @@ static void check_func(struct work_struct *work)
 		if (!ret) {
 			*final_result = checker_data->result;
 			hwlog_info("batt(NO:%d Group:%d) key status illegal\n",
-				   checker_data->id_in_grp,
-				   checker_data->id_of_grp);
+				checker_data->id_in_grp,
+				checker_data->id_of_grp);
 			goto process_result_status;
 		}
 	}
 	final_result->key_status = KEY_PASS;
 
-	hwlog_info("getting borad status started in %s\n", __func__);
-	/* board on boot new or old? */
-	if (send_board_info()) {
-		hwlog_err("Checking stopped by send get board info failed\n");
-		return;
-	}
-	wait_for_completion(&board_info_ready);
+	hwlog_info("getting board status started in %s\n", __func__);
+	prepare_bind_info();
 
 	hwlog_info("getting battery status started in %s\n", __func__);
 	/* battery on boot new or old? */
 	list_for_each_entry(temp, &batt_checkers_head, node) {
 		checker_data = platform_get_drvdata(temp->pdev);
 		if (checker_data->batt_rematch_onboot ==
-		    BATTERY_UNREMATCHABLE) {
+			BATTERY_UNREMATCHABLE) {
 			new_battery = BATTERY_UNREMATCHABLE;
 			break;
 		}
 	}
 
 	hwlog_info("checking all battery checkers's sn started in %s\n",
-		   __func__);
+		__func__);
 	/* all battery checkers check its own sn(maybe just get sn) */
 	list_for_each_entry(temp, &batt_checkers_head, node) {
 		checker_data = platform_get_drvdata(temp->pdev);
@@ -1138,12 +1407,11 @@ static void check_func(struct work_struct *work)
 	list_for_each_entry(temp, &batt_checkers_head, node) {
 		checker_data = platform_get_drvdata(temp->pdev);
 		ret = sn_status_legal(checker_data->result.sn_status);
+		final_result->sn_status = checker_data->result.sn_status;
 		if (!ret) {
-			final_result->sn_status =
-			    checker_data->result.sn_status;
 			hwlog_info("batt(NO:%d Group:%d) sn status illegal\n",
-				   checker_data->id_in_grp,
-				   checker_data->id_of_grp);
+				checker_data->id_in_grp,
+				checker_data->id_of_grp);
 			goto process_result_status;
 		}
 	}
@@ -1151,44 +1419,108 @@ static void check_func(struct work_struct *work)
 	/* sn final check */
 	if (drv_data->sn_checker(drv_data)) {
 		hwlog_err("final sn check failed\n");
-		return;
+		goto exit_check_func;
 	}
+	batt_write_bind_mesg();
 
 process_result_status:
-	if (memcmp(&last_result, final_result, sizeof(struct batt_chk_rslt)))
+	if (memcmp(last_result, final_result, sizeof(struct batt_chk_rslt)))
 		record_final_check_result(final_result);
-	schedule_delayed_work(&drv_data->dmd_report_dw, 5 * HZ);
+	schedule_delayed_work(&drv_data->dmd_report_dw, 0);
+skip_result_status:
 	result_status = chk_rs_to_rs_stat(final_result);
 	send_result_status(final_result, result_status);
-
-skip_result_status:
 #ifdef BATTERY_LIMIT_DEBUG
 	finish_time = ktime_to_timespec(ktime_get_boottime());
 #endif
 	if (result_status != FINAL_RESULT_FAIL)
 		power_down_ics();
+
+exit_check_func:
+	if (drv_data->checking_wakelock.active)
+		__pm_relax(&drv_data->checking_wakelock);
+	drv_data->is_first_check_done = true;
+	drv_data->is_checking = false;
+}
+
+static int batt_id_fill(struct batt_chk_data *checker_data,
+	char *buf, int buf_len, char index)
+{
+	const unsigned char *sn = NULL;
+	unsigned int sn_len;
+	int cur_len = strlen(buf);
+
+	if (!checker_data->bco.get_batt_sn)
+		return 0;
+
+	if (checker_data->bco.get_batt_sn(checker_data,
+		&checker_data->sn_res, &sn, &sn_len) ||
+		(sn_len == 0)) {
+		hwlog_err("get battery sn failed in %s\n", __func__);
+		return 0;
+	}
+
+	/* 3 is size of '1' + '\n' + '0' */
+	if ((cur_len + sn_len + 3) >= buf_len) {
+		hwlog_err("battery sn lenght error %d %u %d\n",
+			cur_len, sn_len, buf_len);
+		return -1;
+	}
+
+	memcpy(buf + cur_len, sn, sn_len);
+	buf[sn_len + cur_len] = index;
+	buf[sn_len + cur_len + 1] = '\n';
+	return 0;
+}
+
+static ssize_t batt_id_online(char *buf, int buf_len)
+{
+	struct batt_checker_entry *temp = NULL;
+	struct platform_device *pdev = NULL;
+	struct batt_chk_data *checker_data = NULL;
+	int len;
+	char index = '1';
+
+	memset(buf, 0, buf_len);
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		pdev = temp->pdev;
+		checker_data = platform_get_drvdata(pdev);
+		if (batt_id_fill(checker_data, buf, buf_len, index))
+			goto get_sn_fail;
+
+		index++;
+	}
+
+	len = strlen(buf);
+	if (len > 0)
+		return len;
+
+get_sn_fail:
+	memset(buf, 0, buf_len);
+	len = strlen("IC ERROR");
+	memcpy(buf, "IC ERROR", len);
+	return len;
 }
 
 static ssize_t batt_id_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+	char *buf)
 {
 	struct batt_info *drv_data = NULL;
 	struct batt_checker_entry *entry = NULL;
 	ssize_t len = 0;
 	char i = '1';
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
-	if (!drv_data->sn) {
-		len = strlen("IC ERROR");
-		memcpy(buf, "IC ERROR", len);
-		return len;
-	}
+	if (!drv_data->sn)
+		return batt_id_online(buf, PAGE_SIZE);
+
 	list_for_each_entry(entry, &batt_checkers_head, node) {
 		memcpy(buf + len, drv_data->sn, drv_data->sn_len);
 		buf[drv_data->sn_len + len] = i++;
 		buf[drv_data->sn_len + len + 1] = '\n';
+		/* 2: buf size */
 		len += drv_data->sn_len + 2;
 	}
 	if (len)
@@ -1198,23 +1530,34 @@ static ssize_t batt_id_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t batt_id_v_show(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+	char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 
-	return snprintf(buf, PAGE_SIZE, "%d", drv_data->sn_version);
+	return snprintf(buf, PAGE_SIZE, "%u", drv_data->sn_version);
 }
 
-static ssize_t batt_num_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+static ssize_t nv_sn_good_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
+	if (drv_data && drv_data->nv_sn_old == 1)
+		return snprintf(buf, PAGE_SIZE, "0");
+	return snprintf(buf, PAGE_SIZE, "1");
+}
+
+static ssize_t batt_num_show(struct device *dev, struct device_attribute *attr,
+	char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 
@@ -1222,56 +1565,56 @@ static ssize_t batt_num_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t ic_status_show(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+	char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 	if (ic_status_legal(drv_data->result.ic_status))
 		return snprintf(buf, PAGE_SIZE, "PASS");
 	else
-		return snprintf(buf, PAGE_SIZE, "FAIL(%u)",
-				drv_data->result.ic_status);
+		return snprintf(buf, PAGE_SIZE, "FAIL %u",
+			drv_data->result.ic_status);
 }
 
 static ssize_t key_status_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 	if (key_status_legal(drv_data->result.key_status))
 		return snprintf(buf, PAGE_SIZE, "PASS");
 	else
-		return snprintf(buf, PAGE_SIZE, "FAIL(%u)",
-				drv_data->result.key_status);
+		return snprintf(buf, PAGE_SIZE, "FAIL %u",
+			drv_data->result.key_status);
 }
 
 static ssize_t sn_status_show(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+	char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error driver data");
 	if (sn_status_legal(drv_data->result.sn_status))
 		return snprintf(buf, PAGE_SIZE, "PASS");
 	else
-		return snprintf(buf, PAGE_SIZE, "FAIL(%u)",
-				drv_data->result.sn_status);
+		return snprintf(buf, PAGE_SIZE, "FAIL %u",
+			drv_data->result.sn_status);
 }
 
 static ssize_t check_mode_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 	if (drv_data->result.check_mode == FACTORY_CHECK_MODE)
@@ -1283,11 +1626,11 @@ static ssize_t check_mode_show(struct device *dev,
 }
 
 static ssize_t official_show(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+	char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 	if (is_legal_result(&drv_data->result))
@@ -1297,7 +1640,7 @@ static ssize_t official_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t board_show(struct device *dev, struct device_attribute *attr,
-			  char *buf)
+	char *buf)
 {
 	if (new_board < 0) {
 		if (send_board_info())
@@ -1310,7 +1653,7 @@ static ssize_t board_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t battery_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+	char *buf)
 {
 	struct batt_chk_data *checker_data = NULL;
 	struct batt_checker_entry *temp = NULL;
@@ -1319,7 +1662,7 @@ static ssize_t battery_show(struct device *dev, struct device_attribute *attr,
 		list_for_each_entry(temp, &batt_checkers_head, node) {
 			checker_data = platform_get_drvdata(temp->pdev);
 			if (checker_data->batt_rematch_onboot ==
-			    BATTERY_UNREMATCHABLE) {
+				BATTERY_UNREMATCHABLE) {
 				new_battery = BATTERY_UNREMATCHABLE;
 				break;
 			}
@@ -1329,35 +1672,134 @@ static ssize_t battery_show(struct device *dev, struct device_attribute *attr,
 	return snprintf(buf, PAGE_SIZE, "%s", new_battery ? "New" : "Old");
 }
 
+static ssize_t board_runnable_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d", (shield_ct_sign > 0) ? 0 : 1);
+}
+
+static ssize_t battery_ct_shield_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d", shield_ct_sign);
+}
+
+static ssize_t check_request_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int check_strategy_no = 0;
+	struct batt_info *drv_data = NULL;
+
+	hwlog_info("[%s] buf is %s\n", __func__, buf);
+	if (kstrtoint(buf, POWER_BASE_DEC, &check_strategy_no))
+		return -EINVAL;
+
+	hwlog_info("[%s] strategy_no is %d\n", __func__, check_strategy_no);
+	dev_get_drv_data(drv_data, dev);
+	/*
+	 * if some products don't support checking in running, the function
+	 * would send last result that is getting in booting to powerCt.
+	 */
+	if (!drv_data->can_check_in_running) {
+		hwlog_info("[%s] cannot check in running, using last result\n",
+			__func__);
+		send_result_status(&drv_data->result,
+			chk_rs_to_rs_stat(&drv_data->result));
+		return count;
+	}
+
+	run_check_func(drv_data, check_strategy_no);
+	return count;
+}
+
+static ssize_t check_execute_state_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	return snprintf(buf, PAGE_SIZE, "%d", drv_data->is_checking);
+}
+
+static ssize_t uevent_data_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct batt_info *drv_data = NULL;
+
+	hwlog_info("[%s] buf is %s\n", __func__, buf);
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return -EINVAL;
+
+	bsoh_uevent_rcv(BSOH_EVT_BATT_INFO_UPDATE, buf);
+	return count;
+}
+
+static ssize_t can_check_in_running_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	return snprintf(buf, PAGE_SIZE, "%u", drv_data->can_check_in_running);
+}
+
+/*
+ * if the ic-chip id is in the prohibited id list
+ * powerct will do the follow two things:
+ * 1. return flag data (res.data = NULL, res.len = 0) to kernel by netlink
+ * 2. write error code to here(powerct_error_code_store), but this feature
+ *    just uses for dmd module.
+ *    Because the program use the flag data at the first point above,
+ *    then kernel will occur an error in original logic like paramters invalid.
+ *    The error will make powerct take action.
+ *
+ *    Why program doesn't use the second feature? because it can prevent
+ *    mistakes leading by modifying original logic.
+ */
+static ssize_t powerct_error_code_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	int error_code = 0;
+
+	if (kstrtoint(buf, POWER_BASE_DEC, &error_code))
+		return -EINVAL;
+	hwlog_info("[%s] error_code = %d\n", __func__, error_code);
+	g_error_code = (enum powerct_error_code)error_code;
+	return count;
+}
+
 #ifdef BATTERY_LIMIT_DEBUG
 static ssize_t ftime_show(struct device *dev, struct device_attribute *attr,
-			  char *buf)
+	char *buf)
 {
+	/* 1000 : Convert to nanoseconds */
 	return snprintf(buf, PAGE_SIZE, "%llu.%06llu",
-			(unsigned long long)finish_time.tv_sec,
-			(unsigned long long)finish_time.tv_nsec / 1000);
+		(unsigned long long)finish_time.tv_sec,
+		(unsigned long long)finish_time.tv_nsec / 1000);
 }
 
 static ssize_t ctime_show(struct device *dev, struct device_attribute *attr,
-			  char *buf)
+	char *buf)
 {
 	struct timespec ts;
 
 	ts = ktime_to_timespec(ktime_get_boottime());
 
+	/* 1000 : Convert to nanoseconds */
 	return snprintf(buf, PAGE_SIZE, "%llu.%06llu",
-			(unsigned long long)ts.tv_sec,
-			(unsigned long long)ts.tv_nsec / 1000);
+		(unsigned long long)ts.tv_sec,
+		(unsigned long long)ts.tv_nsec / 1000);
 }
 
 static ssize_t bind_info_show(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+	char *buf)
 {
 	struct binded_info bbinfo;
 	int i;
 	int count = 0;
 
-	if (read_nv(BBINFO_NV_NUMBER, BBINFO_NV_NAME, &bbinfo, sizeof(bbinfo)))
+	if (power_nv_read(POWER_NV_BBINFO, &bbinfo, sizeof(bbinfo)))
 		return snprintf(buf, PAGE_SIZE, "Error:Read NV Fail");
 	for (i = 0; i < MAX_SN_BUFF_LENGTH; i++) {
 		memcpy(buf + count, bbinfo.info[i], MAX_SN_LEN);
@@ -1368,32 +1810,92 @@ static ssize_t bind_info_show(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+static ssize_t bind_info_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct binded_info bbinfo;
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data || !sysfs_streq(buf, "clear"))
+		return -1;
+
+	memset(&bbinfo, 0, sizeof(bbinfo));
+	bbinfo.version = ILLEGAL_BIND_VERSION;
+	if (record_sn_to_nv(&bbinfo))
+		return -1;
+
+	return count;
+}
+
+static ssize_t bind_uuid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_uuid_bind info;
+	int i;
+	int j;
+	int count;
+
+	if (batt_get_bind_uuid(&info))
+		return snprintf(buf, PAGE_SIZE, "error\n");
+
+	count = snprintf(buf, PAGE_SIZE, "%s\n",
+		(info.new_board == OLD_BOARD) ? "old board" : "new board");
+	for (i = 0; i < MAX_BATT_BIND_NUM; i++) {
+		for (j = 0; j < MAX_BATT_UUID_LEN; j++) {
+			count += snprintf(buf + count, PAGE_SIZE - count,
+				"%02X", info.record.uuid[i][j]);
+			/* 4 = sizeof("xx\n") */
+			if ((count + 4) > PAGE_SIZE)
+				return snprintf(buf, PAGE_SIZE, "error\n");
+		}
+		count += snprintf(buf + count, PAGE_SIZE - count, "\n");
+	}
+
+	return count;
+}
+
+static ssize_t bind_uuid_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (!sysfs_streq(buf, "clear"))
+		return -1;
+
+	if (batt_clear_bind_uuid())
+		return -1;
+
+	return count;
+}
+
 static ssize_t check_store(struct device *dev, struct device_attribute *attr,
-			   const char *buf, size_t count)
+	const char *buf, size_t count)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return -1;
-	if (count >= 5 && !memcmp(buf, "check", 5))
-		schedule_work(&drv_data->check_work);
+
+	/* 5: buf size */
+	if ((count >= 5) && !memcmp(buf, "check", 5))
+		run_check_func(drv_data, CHECK_STRATEGY_DEBUG);
 
 	return count;
 }
 
 static ssize_t final_store(struct device *dev, struct device_attribute *attr,
-			   const char *buf, size_t count)
+	const char *buf, size_t count)
 {
 	struct batt_info *drv_data = NULL;
 	int temp;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return -1;
-	if (count >= 6 && !memcmp(buf, "final", 5)) {
+	/* 6: buf size  5: final length */
+	if ((count >= 6) && !memcmp(buf, "final", 5)) {
 		temp = buf[6] - '0';
-		if (temp >= 0 && temp < __FINAL_RESULT_MAX)
+		if ((temp >= 0) && (temp < __FINAL_RESULT_MAX))
 			send_result_status(NULL, (enum result_stat)temp);
 	}
 
@@ -1401,11 +1903,11 @@ static ssize_t final_store(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t sn_checker_show(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 
@@ -1413,18 +1915,18 @@ static ssize_t sn_checker_show(struct device *dev,
 }
 
 static ssize_t sn_checker_store(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct batt_info *drv_data = NULL;
 	int temp;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return -1;
-	if (count >= 5 && !memcmp(buf, "type", 4)) {
+	/* 5: buf size  4: type length */
+	if ((count >= 5) && !memcmp(buf, "type", 4)) {
 		temp = buf[4] - '0';
-		if (temp >= 0 && temp < ARRAY_SIZE(final_sn_checkers))
+		if ((temp >= 0) && (temp < ARRAY_SIZE(final_sn_checkers)))
 			drv_data->sn_checker = final_sn_checkers[temp];
 	}
 
@@ -1432,28 +1934,28 @@ static ssize_t sn_checker_store(struct device *dev,
 }
 
 static ssize_t check_result_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	struct batt_info *drv_data = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return snprintf(buf, PAGE_SIZE, "Error data");
 
 	return snprintf(buf, PAGE_SIZE, "%d %d %d %d",
-			drv_data->result.ic_status,
-			drv_data->result.key_status,
-			drv_data->result.sn_status,
-			drv_data->result.check_mode);
+		drv_data->result.ic_status,
+		drv_data->result.key_status,
+		drv_data->result.sn_status,
+		drv_data->result.check_mode);
 }
 
 #define CHECK_RESUT_STR_SIZE 64
 
 static ssize_t check_result_store(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf, size_t count)
+	struct device_attribute *attr, const char *buf, size_t count)
 {
 	enum result_stat result_status;
+	/* 4: temp size */
 	int temp[4];
 	char str[CHECK_RESUT_STR_SIZE] = { 0 };
 	size_t len;
@@ -1461,7 +1963,7 @@ static ssize_t check_result_store(struct device *dev,
 	char *sub = NULL;
 	char *cur = NULL;
 
-	DEV_GET_DRVDATA(drv_data, dev);
+	dev_get_drv_data(drv_data, dev);
 	if (!drv_data)
 		return -1;
 	len = min_t(size_t, sizeof(str) - 1, count);
@@ -1489,26 +1991,94 @@ static ssize_t check_result_store(struct device *dev,
 
 	return count;
 }
+
+static int batt_snprintf_hex_array(char *buf, char *hex, int size)
+{
+	int i;
+	int count = 0;
+
+	for (i = 0; i < size; i++)
+		count += snprintf(buf + count, PAGE_SIZE, "%02x", hex[i]);
+
+	return count;
+}
+
+static ssize_t batt_param_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int len = 0;
+	struct batt_ic_para *ic_para = batt_get_ic_para();
+	struct batt_info_para *info = batt_get_info_para();
+	struct batt_cert_para *cert = batt_get_cert_para();
+	char *nv_sn = batt_get_nv_sn();
+
+	len += snprintf(buf + len, PAGE_SIZE - len, "ic debug\n");
+	if (!ic_para) {
+		len += snprintf(buf + len, PAGE_SIZE - len, "ic is null\n");
+	} else {
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"ic type: %d, uid: ", ic_para->ic_type);
+		len += batt_snprintf_hex_array(buf + len, ic_para->uid,
+			ic_para->uid_len);
+		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
+	}
+
+	if (!info)
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"battery info is null\n");
+	else
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"battery source: %d, type: %s, sn: %s\n",
+			info->source, info->type, info->sn);
+
+	if (!cert) {
+		len += snprintf(buf + len, PAGE_SIZE - len, "cert is null\n");
+	} else {
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"ecce result: %d, sign: ", cert->key_result);
+		len += batt_snprintf_hex_array(buf + len, cert->signature,
+			cert->sign_len);
+		len += snprintf(buf + len, PAGE_SIZE - len, "\n");
+	}
+
+	if (!nv_sn)
+		len += snprintf(buf + len, PAGE_SIZE - len, "nv_sn is null\n");
+	else
+		len += snprintf(buf + len, PAGE_SIZE - len, "nv_sn: %s\n",
+			nv_sn);
+
+	return len;
+}
 #endif
 
 static const DEVICE_ATTR_RO(ic_status);
 static const DEVICE_ATTR_RO(key_status);
 static const DEVICE_ATTR_RO(sn_status);
 static const DEVICE_ATTR_RO(batt_id);
+static const DEVICE_ATTR_RO(nv_sn_good);
 static const DEVICE_ATTR_RO(batt_id_v);
 static const DEVICE_ATTR_RO(batt_num);
 static const DEVICE_ATTR_RO(check_mode);
 static const DEVICE_ATTR_RO(official);
 static const DEVICE_ATTR_RO(board);
 static const DEVICE_ATTR_RO(battery);
+static const DEVICE_ATTR_RO(board_runnable);
+static const DEVICE_ATTR_RO(battery_ct_shield);
+static const DEVICE_ATTR_WO(check_request);
+static const DEVICE_ATTR_RO(check_execute_state);
+static const DEVICE_ATTR_WO(uevent_data);
+static const DEVICE_ATTR_RO(can_check_in_running);
+static const DEVICE_ATTR_WO(powerct_error_code);
 #ifdef BATTERY_LIMIT_DEBUG
 static const DEVICE_ATTR_RO(ftime);
 static const DEVICE_ATTR_RO(ctime);
-static const DEVICE_ATTR_RO(bind_info);
+static const DEVICE_ATTR_RW(bind_info);
+static const DEVICE_ATTR_RW(bind_uuid);
 static const DEVICE_ATTR_WO(check);
 static const DEVICE_ATTR_WO(final);
 static const DEVICE_ATTR_RW(sn_checker);
 static const DEVICE_ATTR_RW(check_result);
+static const DEVICE_ATTR_RO(batt_param);
 #endif
 
 static const struct attribute *batt_info_attrs[] = {
@@ -1516,29 +2086,39 @@ static const struct attribute *batt_info_attrs[] = {
 	&dev_attr_key_status.attr,
 	&dev_attr_sn_status.attr,
 	&dev_attr_batt_id.attr,
+	&dev_attr_nv_sn_good.attr,
 	&dev_attr_batt_id_v.attr,
 	&dev_attr_batt_num.attr,
 	&dev_attr_check_mode.attr,
 	&dev_attr_official.attr,
 	&dev_attr_board.attr,
 	&dev_attr_battery.attr,
+	&dev_attr_board_runnable.attr,
+	&dev_attr_battery_ct_shield.attr,
+	&dev_attr_check_request.attr,
+	&dev_attr_check_execute_state.attr,
+	&dev_attr_uevent_data.attr,
+	&dev_attr_can_check_in_running.attr,
+	&dev_attr_powerct_error_code.attr,
 #ifdef BATTERY_LIMIT_DEBUG
 	&dev_attr_ftime.attr,
 	&dev_attr_ctime.attr,
 	&dev_attr_bind_info.attr,
+	&dev_attr_bind_uuid.attr,
 	&dev_attr_check.attr,
 	&dev_attr_final.attr,
 	&dev_attr_sn_checker.attr,
 	&dev_attr_check_result.attr,
+	&dev_attr_batt_param.attr,
 #endif
-	NULL,			/* sysfs_create_files need last one be NULL */
+	NULL, /* sysfs_create_files need last one be NULL */
 };
 
 static int batt_info_node_create(struct platform_device *pdev)
 {
 	if (sysfs_create_files(&pdev->dev.kobj, batt_info_attrs)) {
 		hwlog_err("Can't create all expected nodes under %s in %s\n",
-			  pdev->dev.kobj.name, __func__);
+			pdev->dev.kobj.name, __func__);
 		return -1;
 	}
 
@@ -1557,6 +2137,8 @@ static const int batt_info_dmd_no[] = {
 	[DMD_NV_ERROR] = DSM_BATTERY_NV_DATA_READ_FAIL,
 	[DMD_SERVICE_ERROR] = DSM_CERTIFICATION_SERVICE_IS_NOT_RESPONDING,
 	[DMD_UNMATCH_BATTS] = DSM_UNMATCH_BATTERYS,
+	[DMD_OLD_NV_SN_ERROR] = DSM_NEW_BOARD_AND_OLD_BATTERY_UNMATCH,
+	[DMD_CHECK_PASS] = DSM_NEW_BOARD_AND_OLD_BATTERY_UNMATCH,
 };
 
 static const char * const battery_detect_err_str[] = {
@@ -1570,6 +2152,15 @@ static const char * const battery_detect_err_str[] = {
 	[DMD_NV_ERROR] = "DSM_BATTERY_NV_DATA_FAIL:\n",
 	[DMD_SERVICE_ERROR] = "DSM_CERTIFICATION_SERVICE_NOT_RESPOND:\n",
 	[DMD_UNMATCH_BATTS] = "DSM_MULTI_BATTERY_UMATCH:\n",
+	[DMD_OLD_NV_SN_ERROR] = "DMD_OLD_NV_SN_ERROR:\n",
+	[DMD_CHECK_PASS] = "DMD_CHECK_PASS:\n",
+};
+
+static const char * const check_strategy_str[] = {
+	[CHECK_STRATEGY_INVALID] = "",
+	[CHECK_STRATEGY_DEBUG] = "DEBUG:",
+	[CHECK_STRATEGY_BOOTING] = "BOOT_CHECK:",
+	[CHECK_STRATEGY_PERIOD] = "WEEKLY_CHECK:",
 };
 #endif
 
@@ -1595,6 +2186,14 @@ const char *dmd_no_to_str(unsigned int dmd_no)
 
 int prepare_dmd_no(struct batt_chk_rslt *result)
 {
+	hwlog_info("[%s] g_error_code = %d\n", __func__, g_error_code);
+	switch (g_error_code) {
+	case ERROR_CODE_IS_PROHIBITED_ID:
+		return DMD_UNMATCH_BATTS;
+	default:
+		break;
+	}
+
 	switch (result->ic_status) {
 	case IC_FAIL_UNMATCH:
 	case IC_FAIL_UNKOWN:
@@ -1604,8 +2203,7 @@ int prepare_dmd_no(struct batt_chk_rslt *result)
 	case IC_PASS:
 		break;
 	default:
-		hwlog_err("illegal IC checking result(%d)\n",
-			  result->ic_status);
+		hwlog_err("illegal IC checking result %d\n", result->ic_status);
 		break;
 	}
 
@@ -1614,12 +2212,19 @@ int prepare_dmd_no(struct batt_chk_rslt *result)
 		return DMD_SERVICE_ERROR;
 	case KEY_FAIL_UNMATCH:
 		return DMD_IC_KEY_ERROR;
+	case KEY_FAIL_ACT:
+		return DMD_IC_STATE_ERROR;
 	case KEY_PASS:
 		break;
 	default:
-		hwlog_err("illegal KEY checking result(%d)\n",
-			  result->key_status);
+		hwlog_err("illegal KEY checking result %d\n",
+			result->key_status);
 		break;
+	}
+
+	if (g_is_sn_empty) {
+		hwlog_info("[%s] sn is empty\n", __func__);
+		return DMD_NV_ERROR;
 	}
 
 	switch (result->sn_status) {
@@ -1641,26 +2246,28 @@ int prepare_dmd_no(struct batt_chk_rslt *result)
 	case SN_PASS:
 		break;
 	default:
-		hwlog_err("illegal SN checking result(%d)\n",
-			  result->sn_status);
+		hwlog_err("illegal SN checking result %d\n", result->sn_status);
 		break;
 	}
-
+	if (is_legal_result(result))
+		return DMD_CHECK_PASS;
 	return DMD_INVALID;
 }
 
 #define DMD_BUF_SIZE    1023
 static const char *is_sn_read(struct batt_chk_data *checker_data)
 {
-	if (checker_data->sn != NULL && checker_data->sn_len != 0)
+	if ((checker_data->sn != NULL) && (checker_data->sn_len != 0))
 		return "Y";
 
 	return "N";
 }
 
-static char *prepare_dmd_mesg(struct batt_chk_rslt *result, char *buff,
-			      int *dmd_no)
+static char *prepare_dmd_mesg(struct batt_info *info, char *buff,
+	int *dmd_no, int check_strategy_no)
 {
+	struct batt_chk_rslt *result = &info->result;
+	struct batt_chk_rslt *last_result = &info->last_result;
 	struct batt_checker_entry *temp = NULL;
 	struct batt_chk_data *checker_data = NULL;
 	struct platform_device *pdev = NULL;
@@ -1669,34 +2276,47 @@ static char *prepare_dmd_mesg(struct batt_chk_rslt *result, char *buff,
 	if (buff)
 		return buff;
 	hwlog_info("final result(ic:%02x, key:%02x, sn:%02x).\n",
-		   result->ic_status, result->key_status, result->sn_status);
-
-	*dmd_no = prepare_dmd_no(result);
+		result->ic_status, result->key_status, result->sn_status);
+	if (*dmd_no == 0)
+		*dmd_no = prepare_dmd_no(result);
 
 	if (*dmd_no) {
 		buff = kzalloc(DMD_BUF_SIZE + 1, GFP_KERNEL);
 		if (!buff)
 			return NULL;
 		count = 0;
-		count += snprintf(buff + count, DMD_BUF_SIZE,
-				  battery_detect_err_str[*dmd_no]);
+		count += snprintf(buff + count, DMD_BUF_SIZE - count,
+			check_strategy_str[check_strategy_no]);
+		count += snprintf(buff + count, DMD_BUF_SIZE - count,
+			"dmd_index: %d ", *dmd_no);
+		count += snprintf(buff + count, DMD_BUF_SIZE - count,
+			battery_detect_err_str[*dmd_no]);
 		list_for_each_entry(temp, &batt_checkers_head, node) {
 			pdev = temp->pdev;
 			checker_data = platform_get_drvdata(pdev);
 			count += snprintf(buff + count, DMD_BUF_SIZE - count,
-					  "NO:%d Group:%d ",
-					  checker_data->id_in_grp,
-					  checker_data->id_of_grp);
+				"NO:%d Group:%d ",
+				checker_data->id_in_grp,
+				checker_data->id_of_grp);
 			count += snprintf(buff + count, DMD_BUF_SIZE - count,
-					  "rlt:ic(%d) key(%d) sn(%d Read:%s)\n",
-					  checker_data->result.ic_status,
-					  checker_data->result.key_status,
-					  checker_data->result.sn_status,
-					  is_sn_read(checker_data));
+				"rlt:ic %d, key %d, sn %d Read:%s\n",
+				checker_data->result.ic_status,
+				checker_data->result.key_status,
+				checker_data->result.sn_status,
+				is_sn_read(checker_data));
 		}
-	} else
-		return NULL;
 
+		count += snprintf(buff + count, DMD_BUF_SIZE - count,
+			"last_rslt:ic %d, key %d, sn %d, mode %d, batt_removed %d\n",
+			last_result->ic_status,
+			last_result->key_status,
+			last_result->sn_status,
+			last_result->check_mode,
+			power_platform_is_battery_removed());
+		hwlog_info("dmd_buf:%s\n", buff);
+	} else {
+		return NULL;
+	}
 	return buff;
 }
 
@@ -1708,22 +2328,23 @@ static void dmd_report_func(struct work_struct *work)
 {
 	struct delayed_work *dw = container_of(work, struct delayed_work, work);
 	struct batt_info *drv_data =
-	    container_of(dw, struct batt_info, dmd_report_dw);
-	struct batt_chk_rslt *result = &drv_data->result;
+		container_of(dw, struct batt_info, dmd_report_dw);
 	int *dmd_no = &drv_data->dmd_no;
 	static char *dmd_buf;
 
-	dmd_buf = prepare_dmd_mesg(result, dmd_buf, dmd_no);
+	dmd_buf = prepare_dmd_mesg(drv_data, dmd_buf, dmd_no,
+		 drv_data->check_strategy_no);
 	if (dmd_buf) {
-		if (power_dsm_dmd_report(POWER_DSM_BATTERY_DETECT,
-					 batt_info_dmd_no[*dmd_no], dmd_buf)) {
+		if (power_dsm_report_dmd(POWER_DSM_BATTERY_DETECT,
+			batt_info_dmd_no[*dmd_no], dmd_buf)) {
 			hwlog_err("dmd report failed in %s\n", __func__);
+			/* 30: dmd report retry time */
 			if (drv_data->dmd_retry++ < 30) {
 				schedule_delayed_work(&drv_data->dmd_report_dw,
-						      (drv_data->dmd_retry / 2 +
-						       3) * HZ);
+					/* 2s, 3s */
+					(drv_data->dmd_retry / 2 + 3) * HZ);
+				return;
 			}
-			return;
 		}
 		kfree(dmd_buf);
 		dmd_buf = NULL;
@@ -1741,19 +2362,18 @@ void dmd_record_reporter(struct work_struct *work)
 
 	mutex_lock(&g_dmd_list.lock);
 	list_for_each_entry_safe(pos, tmp, &g_dmd_list.dmd_head, node) {
-		if (report_sign ||
-		    power_dsm_dmd_report(pos->dmd_type, pos->dmd_no,
-					 pos->content)) {
+		if (report_sign || power_dsm_report_dmd(pos->dmd_type, pos->dmd_no,
+			pos->content)) {
 			if (!report_sign)
 				hwlog_err("dmd failed in %s\n", __func__);
 			mutex_unlock(&g_dmd_list.lock);
 			/* 3s */
 			schedule_delayed_work(&g_dmd_list.dmd_record_report,
-					      3 * HZ);
+				3 * HZ);
 			return;
 		}
 		hwlog_info("report dmd record %d %d\n", pos->dmd_no,
-			   pos->content_len);
+			pos->content_len);
 
 		list_del_init(&pos->node);
 		kfree(pos->content);
@@ -1783,6 +2403,15 @@ static void init_shield_ct_sign(struct platform_device *pdev)
 		shield_ct_sign = 0;
 }
 
+static void init_can_check_in_running(struct platform_device *pdev)
+{
+	struct batt_info *drv_data = platform_get_drvdata(pdev);
+
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), pdev->dev.of_node,
+		"can_check_in_running",
+		(u32 *)&drv_data->can_check_in_running, 0);
+}
+
 static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 {
 	struct batt_info *drv_data = NULL;
@@ -1791,22 +2420,21 @@ static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 	struct device_node *next = NULL;
 	int ret;
 
-	/*set up device's driver data now */
+	/* set up device's driver data now */
 	drv_data = devm_kzalloc(&pdev->dev, sizeof(*drv_data), GFP_KERNEL);
 	if (!drv_data)
 		return NULL;
 	platform_set_drvdata(pdev, drv_data);
-
 	ret = of_property_read_u32(pdev->dev.of_node, "sn-check-type",
-				   &sn_check_type);
-	if (ret || sn_check_type >= ARRAY_SIZE(final_sn_checkers)) {
+		&sn_check_type);
+	if (ret || (sn_check_type >= ARRAY_SIZE(final_sn_checkers))) {
 		hwlog_err("%s read sn_check_type failed\n", pdev->name);
 		return NULL;
 	}
 	ret = of_property_read_u32(pdev->dev.of_node, "sn-version",
-				   &drv_data->sn_version);
-	if (ret || drv_data->sn_version == ILLEGAL_BIND_VERSION ||
-	    drv_data->sn_version >= LEFT_UNUSED_VERSION) {
+		&drv_data->sn_version);
+	if (ret || (drv_data->sn_version == ILLEGAL_BIND_VERSION) ||
+		(drv_data->sn_version >= LEFT_UNUSED_VERSION)) {
 		hwlog_err("%s read sn_version failed\n", pdev->name);
 		return NULL;
 	}
@@ -1816,7 +2444,9 @@ static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 	init_shield_ct_sign(pdev);
 	INIT_DELAYED_WORK(&drv_data->dmd_report_dw, dmd_report_func);
 	INIT_WORK(&drv_data->check_work, check_func);
-	init_battery_check_result(&drv_data->result);
+
+	spin_lock_init(&drv_data->request_lock);
+	init_can_check_in_running(pdev);
 
 	while ((next = of_get_next_available_child(pdev->dev.of_node, prev))) {
 		prev = next;
@@ -1827,6 +2457,7 @@ static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 		return NULL;
 	}
 
+	g_total_checkers = drv_data->total_checkers;
 	return drv_data;
 }
 
@@ -1859,7 +2490,7 @@ static int battery_info_probe(struct platform_device *pdev)
 	/* find mode need battery checking */
 	update_work_mode();
 	/* under recovery mode no further checking */
-	if (work_mode == RECOVERY_MODE || work_mode == ERECOVERY_MODE) {
+	if ((work_mode == RECOVERY_MODE) || (work_mode == ERECOVERY_MODE)) {
 		hwlog_info("Recovery mode not support now\n");
 		return BATTERY_DRIVER_SUCCESS;
 	}
@@ -1870,21 +2501,22 @@ static int battery_info_probe(struct platform_device *pdev)
 		hwlog_err("battery information driver data init failed\n");
 		return BATTERY_DRIVER_FAIL;
 	}
+	wakeup_source_init(&drv_data->checking_wakelock, pdev->name);
 	set_up_static_vars();
 	/* init mesg interface(used to communicate with native server) */
 	if (batt_mesg_init()) {
 		hwlog_err("%s general netlink initialize failed\n", pdev->name);
-		return BATTERY_DRIVER_FAIL;
+		goto trash_wakelock;
 	}
 	/* battery node initialization */
 	if (batt_info_node_create(pdev)) {
 		hwlog_err("%s battery information nodes create failed\n",
-			  pdev->name);
-		return BATTERY_DRIVER_FAIL;
+			pdev->name);
+		goto trash_wakelock;
 	}
 
 	/* start checking work */
-	schedule_work(&drv_data->check_work);
+	run_check_func(drv_data, CHECK_STRATEGY_BOOTING);
 
 	/*
 	 * for batt_info compatible not contain "simple-bus"
@@ -1894,10 +2526,17 @@ static int battery_info_probe(struct platform_device *pdev)
 	hwlog_info("Battery information driver was probed successfully\n");
 
 	return BATTERY_DRIVER_SUCCESS;
+
+trash_wakelock:
+	wakeup_source_trash(&drv_data->checking_wakelock);
+	return BATTERY_DRIVER_FAIL;
 }
 
 static int battery_info_remove(struct platform_device *pdev)
 {
+	struct batt_info *drv_data = platform_get_drvdata(pdev);
+
+	wakeup_source_trash(&drv_data->checking_wakelock);
 	return BATTERY_DRIVER_SUCCESS;
 }
 

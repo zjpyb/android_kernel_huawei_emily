@@ -3,14 +3,14 @@ menu "Hisi lowmem killer"
 config HISI_LOWMEM
 	bool "Hisilicon Low Memory Killer"
 	default n
-	depends on ANDROID_LOW_MEMORY_KILLER
+	depends on ANDROID_LOW_MEMORY_KILLER || ANDROID_LOW_MEMORY_KILLER_DAEMON
 	help
 	  Enables hisi lowmem killer parameter tuning
 
 config HISI_LOWMEM_DBG
 	bool "Hisilicon Low Memory Killer debug"
 	default n
-	depends on ANDROID_LOW_MEMORY_KILLER
+	depends on ANDROID_LOW_MEMORY_KILLER || ANDROID_LOW_MEMORY_KILLER_DAEMON
 	help
 	  print processes info when lmk happen per several seconds
 

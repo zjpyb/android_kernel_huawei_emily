@@ -31,6 +31,7 @@
 #include <linux/usb.h>
 #include <linux/usb/quirks.h>
 #include <linux/usb/hcd.h>
+#include <linux/hisi/usb/chip_usb_debug_framework.h>
 
 #include "usb.h"
 
@@ -472,11 +473,6 @@ static int usb_unbind_interface(struct device *dev)
 	if (driver->supports_autosuspend)
 		pm_runtime_disable(dev);
 	pm_runtime_set_suspended(dev);
-
-	/* Undo any residual pm_autopm_get_interface_* calls */
-	for (r = atomic_read(&intf->pm_usage_cnt); r > 0; --r)
-		usb_autopm_put_interface_no_suspend(intf);
-	atomic_set(&intf->pm_usage_cnt, 0);
 
 	if (!error)
 		usb_autosuspend_device(udev);
@@ -1172,14 +1168,12 @@ static int usb_suspend_device(struct usb_device *udev, pm_message_t msg)
 	}
 	status = udriver->suspend(udev, msg);
 
+#ifdef CONFIG_USB_AUTOSUSPEND_DELAY_QUIRK
+	/* mv this form hub_probe, Avoiding some U Disk enumeration failures */
 #ifdef CONFIG_PM
-	/*
-	 * - Change autosuspend delay of hub can avoid unnecessary auto
-	 *   suspend timer for hub, also may decrease power consumption
-	 *   of USB bus.
-	 */
 	if (!status && USB_CLASS_HUB == udev->descriptor.bDeviceClass)
 		pm_runtime_set_autosuspend_delay(&udev->dev, 0);
+#endif
 #endif
 
  done:
@@ -1487,7 +1481,7 @@ int usb_suspend(struct device *dev, pm_message_t msg)
 {
 	struct usb_device	*udev = to_usb_device(dev);
 
-#ifdef CONFIG_HISI_USB_SKIP_RESUME
+#ifdef CONFIG_USB_SKIP_RESUME
 	if (udev->bus->skip_resume) {
 		if (udev->state != USB_STATE_SUSPENDED) {
 			dev_err(dev, "abort suspend\n");
@@ -1526,7 +1520,7 @@ int usb_resume(struct device *dev, pm_message_t msg)
 	struct usb_device	*udev = to_usb_device(dev);
 	int			status;
 
-#ifdef CONFIG_HISI_USB_SKIP_RESUME
+#ifdef CONFIG_USB_SKIP_RESUME
 	/*
 	 * Some buses would like to keep their devices in suspend
 	 * state after system resume.  Their resume happen when
@@ -1550,6 +1544,8 @@ int usb_resume(struct device *dev, pm_message_t msg)
 		pm_runtime_set_active(dev);
 		pm_runtime_enable(dev);
 		unbind_marked_interfaces(udev);
+	} else {
+		usb_debug_event_notify(USB_CORE_HOST_RESUME_ERR);
 	}
 
 	/* Avoid PM error messages for devices disconnected while suspended
@@ -1674,7 +1670,6 @@ void usb_autopm_put_interface(struct usb_interface *intf)
 	int			status;
 
 	usb_mark_last_busy(udev);
-	atomic_dec(&intf->pm_usage_cnt);
 	status = pm_runtime_put_sync(&intf->dev);
 	dev_vdbg(&intf->dev, "%s: cnt %d -> %d\n",
 			__func__, atomic_read(&intf->dev.power.usage_count),
@@ -1703,7 +1698,6 @@ void usb_autopm_put_interface_async(struct usb_interface *intf)
 	int			status;
 
 	usb_mark_last_busy(udev);
-	atomic_dec(&intf->pm_usage_cnt);
 	status = pm_runtime_put(&intf->dev);
 	dev_vdbg(&intf->dev, "%s: cnt %d -> %d\n",
 			__func__, atomic_read(&intf->dev.power.usage_count),
@@ -1725,7 +1719,6 @@ void usb_autopm_put_interface_no_suspend(struct usb_interface *intf)
 	struct usb_device	*udev = interface_to_usbdev(intf);
 
 	usb_mark_last_busy(udev);
-	atomic_dec(&intf->pm_usage_cnt);
 	pm_runtime_put_noidle(&intf->dev);
 }
 EXPORT_SYMBOL_GPL(usb_autopm_put_interface_no_suspend);
@@ -1756,8 +1749,6 @@ int usb_autopm_get_interface(struct usb_interface *intf)
 	status = pm_runtime_get_sync(&intf->dev);
 	if (status < 0)
 		pm_runtime_put_sync(&intf->dev);
-	else
-		atomic_inc(&intf->pm_usage_cnt);
 	dev_vdbg(&intf->dev, "%s: cnt %d -> %d\n",
 			__func__, atomic_read(&intf->dev.power.usage_count),
 			status);
@@ -1791,8 +1782,6 @@ int usb_autopm_get_interface_async(struct usb_interface *intf)
 	status = pm_runtime_get(&intf->dev);
 	if (status < 0 && status != -EINPROGRESS)
 		pm_runtime_put_noidle(&intf->dev);
-	else
-		atomic_inc(&intf->pm_usage_cnt);
 	dev_vdbg(&intf->dev, "%s: cnt %d -> %d\n",
 			__func__, atomic_read(&intf->dev.power.usage_count),
 			status);
@@ -1816,7 +1805,6 @@ void usb_autopm_get_interface_no_resume(struct usb_interface *intf)
 	struct usb_device	*udev = interface_to_usbdev(intf);
 
 	usb_mark_last_busy(udev);
-	atomic_inc(&intf->pm_usage_cnt);
 	pm_runtime_get_noresume(&intf->dev);
 }
 EXPORT_SYMBOL_GPL(usb_autopm_get_interface_no_resume);
@@ -1937,13 +1925,10 @@ int usb_runtime_idle(struct device *dev)
 	return -EBUSY;
 }
 
-int usb_set_usb2_hardware_lpm(struct usb_device *udev, int enable)
+static int usb_set_usb2_hardware_lpm(struct usb_device *udev, int enable)
 {
 	struct usb_hcd *hcd = bus_to_hcd(udev->bus);
 	int ret = -EPERM;
-
-	if (enable && !udev->usb2_hw_lpm_allowed)
-		return 0;
 
 	if (hcd->driver->set_usb2_hw_lpm) {
 		ret = hcd->driver->set_usb2_hw_lpm(hcd, udev, enable);
@@ -1952,6 +1937,24 @@ int usb_set_usb2_hardware_lpm(struct usb_device *udev, int enable)
 	}
 
 	return ret;
+}
+
+int usb_enable_usb2_hardware_lpm(struct usb_device *udev)
+{
+	if (!udev->usb2_hw_lpm_capable ||
+	    !udev->usb2_hw_lpm_allowed ||
+	    udev->usb2_hw_lpm_enabled)
+		return 0;
+
+	return usb_set_usb2_hardware_lpm(udev, 1);
+}
+
+int usb_disable_usb2_hardware_lpm(struct usb_device *udev)
+{
+	if (!udev->usb2_hw_lpm_enabled)
+		return 0;
+
+	return usb_set_usb2_hardware_lpm(udev, 0);
 }
 
 #endif /* CONFIG_PM */

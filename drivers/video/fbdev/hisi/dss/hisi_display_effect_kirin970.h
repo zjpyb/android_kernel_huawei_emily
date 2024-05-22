@@ -172,6 +172,7 @@ struct gamma_info {
 };
 
 struct hiace_info {
+	int disp_panel_id;
 	uint32_t image_info;
 	uint32_t half_block_info;
 	uint32_t xyweight;
@@ -233,9 +234,9 @@ struct dss_effect {
 	bool arsr2p_sharp_support;
 	bool arsr1p_sharp_support;
 	bool acm_support;
-	bool sbl_support;
 	bool ace_support;
 	bool hiace_support;
+	bool post_hihdr_support;
 	bool lcp_igm_support;
 	bool lcp_gmp_support;
 	bool lcp_xcc_support;
@@ -251,6 +252,7 @@ struct dss_reg{
 
 /* ioctl update info */
 struct dss_effect_info {
+	int disp_panel_id; /* 0: inner panel; 1: outer panel */
 	uint32_t modules;
 	bool arsr1p_rog_initialized;
 
@@ -262,8 +264,8 @@ struct dss_effect_info {
 	struct hiace_info hiace;
 };
 
-/* hisifb save info */
-struct hisifb_effect_info {
+/* dpufb save info */
+struct dpufb_effect_info {
 	uint32_t modules;
 	bool arsr1p_rog_initialized;
 

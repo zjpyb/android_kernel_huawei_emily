@@ -1,3 +1,20 @@
+/*
+ * cpuidle.h
+ *
+ * menu governor trace events
+ *
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM cpuidle
 
@@ -6,7 +23,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(menu_update, /* [false alarm]:原生宏定义 */
+TRACE_EVENT(menu_update,
 	TP_PROTO(unsigned int last_residency, int last_state, s64 hist_etime, int hist_inv_data, int hist_inv_repeat, int hist_inv_predict, unsigned int hrtime_addtime),
 	TP_ARGS(last_residency, last_state, hist_etime, hist_inv_data, hist_inv_repeat, hist_inv_predict, hrtime_addtime),
 	TP_STRUCT__entry(
@@ -38,7 +55,7 @@ TRACE_EVENT(menu_update, /* [false alarm]:原生宏定义 */
 		)
 );
 
-TRACE_EVENT(menu_hist_data, /* [false alarm]:原生宏定义 */
+TRACE_EVENT(menu_hist_data,
 	TP_PROTO(int idx, struct menu_hist_cstate_data *hist_data),
 	TP_ARGS(idx, hist_data),
 	TP_STRUCT__entry(
@@ -64,8 +81,7 @@ TRACE_EVENT(menu_hist_data, /* [false alarm]:原生宏定义 */
 		)
 );
 
-
-TRACE_EVENT(menu_hist_info, /* [false alarm]:原生宏定义 */
+TRACE_EVENT(menu_hist_info,
 	TP_PROTO(struct menu_hist_state_info *stat_info, unsigned int thresh, s64 stime),
 	TP_ARGS(stat_info, thresh, stime),
 	TP_STRUCT__entry(
@@ -100,9 +116,7 @@ TRACE_EVENT(menu_hist_info, /* [false alarm]:原生宏定义 */
 		)
 );
 
-
-
-TRACE_EVENT(menu_hrtimerout, /* [false alarm]:原生宏定义 */
+TRACE_EVENT(menu_hrtimerout,
 	TP_PROTO(unsigned int cpu, int wakeup_status, unsigned int hrtime_us),
 	TP_ARGS(cpu, wakeup_status, hrtime_us),
 	TP_STRUCT__entry(
@@ -122,8 +136,7 @@ TRACE_EVENT(menu_hrtimerout, /* [false alarm]:原生宏定义 */
 		)
 );
 
-
-TRACE_EVENT(menu_select, /* [false alarm]:原生宏定义 */
+TRACE_EVENT(menu_select,
 	TP_PROTO(unsigned int cpu, int last_state_idx, unsigned int predicted_us, int latency_req, int early_wakeup_status, int org_state_idx, unsigned int next_wakeup_us, unsigned int hrtime_us, s64 delta_next_us, unsigned int expected_interval),
 	TP_ARGS(cpu, last_state_idx, predicted_us, latency_req, early_wakeup_status, org_state_idx, next_wakeup_us, hrtime_us, delta_next_us, expected_interval),
 	TP_STRUCT__entry(
@@ -163,7 +176,6 @@ TRACE_EVENT(menu_select, /* [false alarm]:原生宏定义 */
 		__entry->expected_interval
 		)
 );
-
 
 #endif /* _TRACE_CPUIDLE_H */
 

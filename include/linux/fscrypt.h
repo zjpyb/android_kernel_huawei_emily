@@ -28,6 +28,7 @@ struct fscrypt_info;
 
 /* Maximum value for the third parameter of fscrypt_operations.set_context(). */
 #define FSCRYPT_SET_CONTEXT_MAX_SIZE	108
+#define F2FS_XATTR_SDP_SECE_ENABLE_FLAG	(0x04)
 
 #if __FS_HAS_ENCRYPTION
 #include <linux/fscrypt_supp.h>
@@ -169,8 +170,16 @@ static inline int fscrypt_prepare_lookup(struct inode *dir,
 static inline int fscrypt_prepare_setattr(struct dentry *dentry,
 					  struct iattr *attr)
 {
-	if (attr->ia_valid & ATTR_SIZE)
+	if (attr->ia_valid & ATTR_SIZE) {
+		struct inode *inode = d_inode(dentry);
+		if (IS_ENCRYPTED(inode)) {
+			if (inode->i_crypt_info &&
+				(inode->i_crypt_info->ci_hw_enc_flag & F2FS_XATTR_SDP_SECE_ENABLE_FLAG)) {
+				return 0; // the sece file will success when i_crypt_info is exist for ftruncate
+			}
+		}
 		return fscrypt_require_key(d_inode(dentry));
+	}
 	return 0;
 }
 

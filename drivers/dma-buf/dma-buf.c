@@ -48,33 +48,11 @@ struct dma_buf_list {
 
 static struct dma_buf_list db_list;
 
-static const struct dentry_operations dma_buf_dentry_ops = {
-	.d_dname = simple_dname,
-};
-
-static struct vfsmount *dma_buf_mnt;
-
-static struct dentry *dma_buf_fs_mount(struct file_system_type *fs_type,
-		int flags, const char *name, void *data)
-{
-	return mount_pseudo(fs_type, "dmabuf:", NULL, &dma_buf_dentry_ops,
-			DMA_BUF_MAGIC);
-}
-
-static struct file_system_type dma_buf_fs_type = {
-	.name = "dmabuf",
-	.mount = dma_buf_fs_mount,
-	.kill_sb = kill_anon_super,
-};
-
-static int dma_buf_release(struct inode *inode, struct file *file)
+static void dma_buf_release(struct dentry *dentry)
 {
 	struct dma_buf *dmabuf;
 
-	if (!is_dma_buf_file(file))
-		return -EINVAL;
-
-	dmabuf = file->private_data;
+	dmabuf = dentry->d_fsdata;;
 
 	BUG_ON(dmabuf->vmapping_counter);
 
@@ -104,8 +82,27 @@ static int dma_buf_release(struct inode *inode, struct file *file)
 
 	module_put(dmabuf->owner);
 	kfree(dmabuf);
-	return 0;
 }
+
+static const struct dentry_operations dma_buf_dentry_ops = {
+	.d_dname = simple_dname,
+	.d_release = dma_buf_release,
+};
+
+static struct vfsmount *dma_buf_mnt;
+
+static struct dentry *dma_buf_fs_mount(struct file_system_type *fs_type,
+		int flags, const char *name, void *data)
+{
+	return mount_pseudo(fs_type, "dmabuf:", NULL, &dma_buf_dentry_ops,
+			DMA_BUF_MAGIC);
+}
+
+static struct file_system_type dma_buf_fs_type = {
+	.name = "dmabuf",
+	.mount = dma_buf_fs_mount,
+	.kill_sb = kill_anon_super,
+};
 
 static int dma_buf_mmap_internal(struct file *file, struct vm_area_struct *vma)
 {
@@ -397,7 +394,6 @@ static void dma_buf_show_fdinfo(struct seq_file *m, struct file *file)
 }
 
 static const struct file_operations dma_buf_fops = {
-	.release	= dma_buf_release,
 	.mmap		= dma_buf_mmap_internal,
 	.llseek		= dma_buf_llseek,
 	.poll		= dma_buf_poll,
@@ -423,7 +419,7 @@ struct dma_buf * file_to_dma_buf(struct file *file)
 
 static struct file *dma_buf_getfile(struct dma_buf *dmabuf, int flags)
 {
-	struct file *file;
+	struct file *file = NULL;
 	struct inode *inode = alloc_anon_inode(dma_buf_mnt->mnt_sb);
 
 	if (IS_ERR(inode))
@@ -439,6 +435,7 @@ static struct file *dma_buf_getfile(struct dma_buf *dmabuf, int flags)
 		goto err_alloc_file;
 	file->f_flags = flags & (O_ACCMODE | O_NONBLOCK);
 	file->private_data = dmabuf;
+	file->f_path.dentry->d_fsdata = dmabuf;
 
 	return file;
 
@@ -591,6 +588,43 @@ int dma_buf_fd(struct dma_buf *dmabuf, int flags)
 	return fd;
 }
 EXPORT_SYMBOL_GPL(dma_buf_fd);
+
+#ifdef CONFIG_HISI_LB
+int dma_buf_attach_lb(int fd, unsigned int pid, unsigned long offset,
+		size_t size)
+{
+	int res = 0;
+	struct dma_buf *dbf = NULL;
+
+	dbf = dma_buf_get(fd);
+	if (IS_ERR(dbf))
+		return -EINVAL;
+
+	if (dbf->ops->attach_lb)
+		res = dbf->ops->attach_lb(dbf, pid, offset, size);
+
+	dma_buf_put(dbf);
+
+	return res;
+}
+
+int dma_buf_detach_lb(int fd)
+{
+	int res = 0;
+	struct dma_buf *dbf = NULL;
+
+	dbf = dma_buf_get(fd);
+	if (IS_ERR(dbf))
+		return -EINVAL;
+
+	if (dbf->ops->detach_lb)
+		res = dbf->ops->detach_lb(dbf);
+
+	dma_buf_put(dbf);
+
+	return res;
+}
+#endif
 
 /**
  * dma_buf_get - returns the dma_buf structure related to an fd
@@ -1223,6 +1257,7 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 				   fence->ops->get_driver_name(fence),
 				   fence->ops->get_timeline_name(fence),
 				   dma_fence_is_signaled(fence) ? "" : "un");
+			dma_fence_put(fence);
 		}
 		rcu_read_unlock();
 

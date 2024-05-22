@@ -9,31 +9,30 @@
 
 #define pr_fmt(fmt) "seccg: " fmt
 
+#include <linux/cma.h>
 #include <linux/delay.h>
-#include <linux/err.h>
-#include <linux/mm.h>
-#include <linux/dma-mapping.h>
 #include <linux/dma-contiguous.h>
+#include <linux/dma-mapping.h>
+#include <linux/err.h>
 #include <linux/genalloc.h>
+#include <linux/hisi/hisi_ion.h>
+#include <linux/hisi/hisi_mm.h>
+#include <linux/list.h>
+#include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
 #include <linux/scatterlist.h>
-#include <linux/slab.h>
-#include <linux/cma.h>
 #include <linux/sizes.h>
-#include <linux/list.h>
+#include <linux/slab.h>
 #include <linux/version.h>
-#include <linux/hisi/hisi_cma.h>
-#include <linux/hisi/hisi_ion.h>
-#include <linux/hisi/hisi_mm.h>
 
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#include "mm_ion_priv.h"
+#include "mm/ion_sec_contig.h"
+#include "mm/ion_tee_op.h"
 #include "ion.h"
-#include "hisi/ion_tee_op.h"
-#include "hisi/ion_sec_contig.h"
-#include "hisi_ion_priv.h"
 
 
 static inline void free_alloc_list(struct list_head *head)
@@ -44,7 +43,7 @@ static inline void free_alloc_list(struct list_head *head)
 		pos = list_first_entry(head, struct alloc_list, list);
 		if (pos->addr || pos->size)
 			pr_err("in %s %pK %x failed\n", __func__,
-			       (void *)pos->addr, pos->size);
+			       (void *)(uintptr_t)pos->addr, pos->size);
 
 		list_del(&pos->list);
 		kfree(pos);
@@ -106,7 +105,7 @@ static int cons_phys_struct(struct ion_seccg_heap *seccg_heap, u32 nents,
 	u32 i;
 	int ret = 0;
 
-	if (!seccg_heap->TA_init) {
+	if (!seccg_heap->ta_init) {
 		pr_err("[%s] TA not inited.\n", __func__);
 		return -EINVAL;
 	}
@@ -123,12 +122,12 @@ static int cons_phys_struct(struct ion_seccg_heap *seccg_heap, u32 nents,
 	}
 
 	if (i < nents) {
-		pr_err("[%s], invalid nents(%d) or head!\n", __func__, nents);
+		pr_err("[%s], invalid nents %d or head!\n", __func__, nents);
 		ret = -EINVAL;
 		goto out;
 	}
 
-	/*Call TZ Driver here*/
+	/* Call TZ Driver here */
 	mcl.nents = nents;
 	mcl.phys_addr = (void *)pageinfo;
 	mcl.protect_id = SEC_TASK_SEC;
@@ -144,7 +143,9 @@ static int alloc_range_update(struct page *pg, u64 size,
 {
 	int ret = 0;
 	struct alloc_list *alloc = NULL;
+#ifdef CONFIG_NEED_CHANGE_MAPPING
 	unsigned long virt;
+#endif
 
 	alloc = kzalloc(sizeof(*alloc), GFP_KERNEL);
 	if (!alloc) {
@@ -156,13 +157,17 @@ static int alloc_range_update(struct page *pg, u64 size,
 	list_add_tail(&alloc->list, &seccg_heap->allocate_head);
 
 	if (seccg_heap->heap_attr == HEAP_SECURE_TEE) {
-		virt = (unsigned long)__va(alloc->addr);
 #ifdef CONFIG_NEED_CHANGE_MAPPING
+		virt = (uintptr_t)__va(alloc->addr);
 		change_secpage_range(alloc->addr, virt, size,
 				     __pgprot(PROT_DEVICE_nGnRE));
 		flush_tlb_all();
 #endif
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+		ion_flush_all_cpus_caches_raw();
+#else
 		ion_flush_all_cpus_caches();
+#endif
 		if (cons_phys_struct(seccg_heap, 1,
 				     &seccg_heap->allocate_head,
 				     ION_SEC_CMD_TABLE_SET)) {
@@ -174,13 +179,12 @@ static int alloc_range_update(struct page *pg, u64 size,
 
 	seccg_heap->cma_alloc_size +=  size;
 	gen_pool_free(seccg_heap->pool, page_to_phys(pg), size);
-	sec_debug("out %s %llu MB memory(ret = %d).\n",
+	sec_debug("out %s %llu MB memory(ret = %d)\n",
 		    __func__, size / SZ_1M, ret);
 	return 0;
 err_out2:
 #ifdef CONFIG_NEED_CHANGE_MAPPING
-	change_secpage_range(alloc->addr, virt, size,
-			     PAGE_KERNEL);
+	change_secpage_range(alloc->addr, virt, size, PAGE_KERNEL);
 	flush_tlb_all();
 #endif
 	list_del(&alloc->list);
@@ -309,15 +313,16 @@ static bool gen_pool_bulk_free(struct gen_pool *pool, u32 size)
 	return true;
 }
 
-static void __seccg_pool_release(struct ion_seccg_heap *seccg_heap)
+static int __seccg_pool_clear_sec_attr(struct ion_seccg_heap *seccg_heap)
 {
 	u32 nents;
+
+#ifdef CONFIG_NEED_CHANGE_MAPPING
 	u64 addr;
 	u32 size;
 	unsigned long virt;
-	unsigned long size_remain = 0;
-	unsigned long offset = 0;
 	struct alloc_list *pos = NULL;
+#endif
 
 	if (seccg_heap->heap_attr == HEAP_SECURE_TEE) {
 		nents = count_list_nr(seccg_heap);
@@ -327,69 +332,60 @@ static void __seccg_pool_release(struct ion_seccg_heap *seccg_heap)
 				     ION_SEC_CMD_TABLE_CLEAN)) {
 			pr_err("heap_type:(%u)unconfig failed!!!\n",
 			       seccg_heap->heap_attr);
-			goto out;
+			return -1;
 		}
 	}
 
-	if (!list_empty(&seccg_heap->allocate_head)) {
+#ifdef CONFIG_NEED_CHANGE_MAPPING
+	if (seccg_heap->flag & ION_FLAG_SECURE_BUFFER) {
 		list_for_each_entry(pos, &seccg_heap->allocate_head, list) {
 			addr = pos->addr;
 			size = pos->size;
-			offset = gen_pool_alloc(seccg_heap->pool, size);
-			if (!offset) {
-				pr_err("%s:%d:gen_pool_alloc failed! %llx %x\n",
-				       __func__, __LINE__, addr, size);
-				continue;
-			}
 			virt = (unsigned long)__va(addr);
-#ifdef CONFIG_NEED_CHANGE_MAPPING
-			if (seccg_heap->flag & ION_FLAG_SECURE_BUFFER) {
-				change_secpage_range(addr, virt, size,
-						     PAGE_KERNEL);
-				flush_tlb_all();
-			}
-#endif
-
-			__seccg_cma_release(seccg_heap, phys_to_page(addr),
-					    size >> PAGE_SHIFT, size);
-			pos->addr = 0;
-			pos->size = 0;
+			change_secpage_range(addr, virt, size,
+					     PAGE_KERNEL);
+			flush_tlb_all();
 		}
 	}
-
-	if (!list_empty(&seccg_heap->allocate_head)) {
-		list_for_each_entry(pos, &seccg_heap->allocate_head, list) {
-			addr = pos->addr;
-			size = pos->size;
-			if (!addr || !size)
-				continue;
-
-			if (unlikely(!gen_pool_bulk_free(seccg_heap->pool,
-							 size))) {
-				pr_err("%s:%d:bulk_free failed! %llx %x\n",
-				       __func__, __LINE__, addr, size);
-				continue;
-			}
-
-			virt = (unsigned long)__va(addr);
-#ifdef CONFIG_NEED_CHANGE_MAPPING
-			if (seccg_heap->flag & ION_FLAG_SECURE_BUFFER) {
-				change_secpage_range(addr, virt, size,
-						     PAGE_KERNEL);
-				flush_tlb_all();
-			}
-#endif
-			__seccg_cma_release(seccg_heap, phys_to_page(addr),
-					    size >> PAGE_SHIFT, size);
-			pos->addr = 0;
-			pos->size = 0;
-		}
-		free_alloc_list(&seccg_heap->allocate_head);
-	}
-#ifdef CONFIG_NEED_CHANGE_MAPPING
 	flush_tlb_all();
 #endif
-out:
+	return 0;
+}
+
+static void __seccg_pool_release(struct ion_seccg_heap *seccg_heap)
+{
+	u64 addr;
+	u32 size;
+	unsigned long size_remain;
+	unsigned long offset;
+	struct alloc_list *pos = NULL;
+
+	if (list_empty(&seccg_heap->allocate_head)) {
+		pr_err("%s : list empty\n", __func__);
+		return;
+	}
+
+	list_for_each_entry(pos, &seccg_heap->allocate_head, list) {
+		addr = pos->addr;
+		size = pos->size;
+		offset = gen_pool_alloc(seccg_heap->pool, size);
+		if (!offset) {
+			pr_err("%s:%d:gen_pool_alloc failed! %llx %x\n",
+			       __func__, __LINE__, addr, size);
+			if (unlikely(!gen_pool_bulk_free(seccg_heap->pool,
+							 size))) {
+				pr_err("%s:bulk_free failed! %llx %x\n",
+				       __func__, addr, size);
+				continue;
+			}
+		}
+		__seccg_cma_release(seccg_heap, phys_to_page(addr),
+				    size >> PAGE_SHIFT, size);
+		pos->addr = 0;
+		pos->size = 0;
+	}
+	free_alloc_list(&seccg_heap->allocate_head);
+
 	size_remain = gen_pool_avail(seccg_heap->pool);
 	if (size_remain)
 		pr_err("out %s, size_remain = 0x%lx(0x%lx)\n",
@@ -409,11 +405,11 @@ int __seccg_alloc_contig(struct ion_seccg_heap *seccg_heap,
 		return -ENOMEM;
 
 	if (sg_alloc_table(table, 1, GFP_KERNEL)) {
-		pr_err("[%s] sg_alloc_table failed .\n", __func__);
+		pr_err("[%s] sg_alloc_table failed\n", __func__);
 		ret = -ENOMEM;
 		goto err_out1;
 	}
-	/*align size*/
+	/* align size */
 	offset = gen_pool_alloc(seccg_heap->pool, size);
 	if (!offset) {
 		ret = add_cma_to_pool(seccg_heap, size);
@@ -435,15 +431,18 @@ int __seccg_alloc_contig(struct ion_seccg_heap *seccg_heap,
 	if (seccg_heap->heap_attr == HEAP_NORMAL) {
 		(void)ion_heap_pages_zero(page, size,
 					  pgprot_writecombine(PAGE_KERNEL));
+#ifdef CONFIG_HISI_ION_FLUSH_CACHE_ALL
+		ion_flush_all_cpus_caches_raw();
+#else
 		ion_flush_all_cpus_caches();
+#endif
 	}
 	sg_set_page(table->sgl, page, (unsigned int)size, 0);
 	buffer->sg_table = table;
 	if (seccg_heap->heap_attr != HEAP_NORMAL)
-		pr_info("__seccg_alloc sec buffer phys %lx, size %lx\n",
-			offset, size);
+		pr_info("__seccg_alloc sec buffer phys %lx, size %lx\n", offset, size);
 
-	sec_debug(" out [%s].\n", __func__);
+	sec_debug(" out [%s]\n", __func__);
 	return ret;
 err_out2:
 	sg_free_table(table);
@@ -458,12 +457,12 @@ static void __seccg_free_pool(struct ion_seccg_heap *seccg_heap,
 {
 	struct page *page = sg_page(table->sgl);
 	phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
-	struct platform_device *hisi_ion_dev = get_hisi_ion_platform_device();
+	struct platform_device *mm_ion_dev = get_mm_ion_platform_device();
 
 	if (!(buffer->flags & ION_FLAG_SECURE_BUFFER)) {
 		(void)ion_heap_buffer_zero(buffer);
 		if (buffer->flags & ION_FLAG_CACHED)
-			dma_sync_sg_for_device(&hisi_ion_dev->dev, table->sgl,
+			dma_sync_sg_for_device(&mm_ion_dev->dev, table->sgl,
 					       (int)table->nents,
 					       DMA_BIDIRECTIONAL);
 	}
@@ -517,7 +516,7 @@ int __seccg_fill_watermark(struct ion_seccg_heap *seccg_heap)
 	alloc->size = (unsigned int)size;
 	list_add_tail(&alloc->list, &seccg_heap->allocate_head);
 
-	memset(page_address(pg), 0x0, size);/* unsafe_function_ignore: memset */
+	memset(page_address(pg), 0x0, size); /* unsafe_function_ignore: memset */
 	gen_pool_free(seccg_heap->pool, page_to_phys(pg), size);
 	sec_debug("out %s %llu MB memory.\n",
 		    __func__, (size) / SZ_1M);
@@ -528,14 +527,29 @@ void __seccg_free_contig(struct ion_seccg_heap *seccg_heap,
 			 struct ion_buffer *buffer)
 {
 	struct sg_table *table = buffer->sg_table;
+	u64 water_mark;
+	u64 avail;
 
 	__seccg_free_pool(seccg_heap, table, buffer);
 	WARN_ON(seccg_heap->alloc_size < buffer->size);
 	seccg_heap->alloc_size -= buffer->size;
+
 	if (!seccg_heap->alloc_size) {
 		if (seccg_heap->pre_alloc_attr)
 			cancel_work_sync(&seccg_heap->pre_alloc_work);
+
+		if (__seccg_pool_clear_sec_attr(seccg_heap) < 0)
+			goto out;
+
+		avail = gen_pool_avail(seccg_heap->pool);
+		water_mark = seccg_heap->water_mark;
+		if (water_mark && avail == water_mark) {
+			pr_info("%s : no need to release pool\n", __func__);
+			return;
+		}
 		__seccg_pool_release(seccg_heap);
+
+out:
 		seccg_heap->cma_alloc_size = 0;
 		if (seccg_heap->water_mark &&
 		    __seccg_fill_watermark(seccg_heap))

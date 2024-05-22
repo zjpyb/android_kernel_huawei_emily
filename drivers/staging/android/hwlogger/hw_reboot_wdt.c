@@ -98,10 +98,10 @@ static void insert_pid_list(int pid)
 static ssize_t recv_pid(struct file *file, const char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	char mybuf[LIST_MAX];
+	char mybuf[LIST_MAX] = {0};
 	unsigned int pid = 0;
 	/* read the value from user space */
-	if (count > LIST_MAX)
+	if (count >= LIST_MAX)
 		return -EINVAL;
 
 	if (copy_from_user(mybuf, buf, count)) {

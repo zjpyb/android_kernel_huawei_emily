@@ -29,4 +29,5 @@ void *hung_wp_screen_qcom_pkey_press(int type, int state);
 void hung_wp_screen_powerkey_ncb(unsigned long event);
 void hung_wp_screen_setbl(int level);
 void hung_wp_screen_vkeys_cb(unsigned int knum, unsigned int value);
+int hung_wp_screen_getbl(void);
 #endif

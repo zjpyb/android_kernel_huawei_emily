@@ -1,7 +1,7 @@
 #ifneq ($(TARGET_BUILD_VARIANT),user)
 #ifneq ($(kcov),true)
-ifeq ($(CONFIG_HISI_ISP_DEBUG), y)
-subdir-ccflags-y += -DDEBUG_HISI_ISP
+ifeq ($(CONFIG_HISP_DEBUG), y)
+subdir-ccflags-y += -DDEBUG_HISP
 #endif
 endif
 
@@ -13,13 +13,16 @@ ifneq ($(chip_type),es)
 subdir-ccflags-y += -DCONFIG_CS_ISP
 endif
 
-obj-$(CONFIG_HISI_ISP_RDR) += mntn/
+obj-$(CONFIG_HISP_RDR) += mntn/
 
-obj-$(CONFIG_HISI_HISTAR_ISP) += hisp_rpm.o nonsec.o sec.o \
-                                cma.o smc.o  qos.o \
-                                sensor.o isp.o secisp_ca.o
+obj-$(CONFIG_HISTAR_ISP) += hisp_rpm.o nonsec.o sec.o \
+                                cma.o smc.o  qos.o hisp_dsm.o \
+                                hisp_mempool.o hisp_dtsi.o \
+                                hisp_pwr.o sensor.o isp.o \
+                                secisp_ca.o hisp_rsc.o hisp_vdev.o \
+                                hisp_loadbin.o
 
-ifeq ($(CONFIG_HISI_HISTAR_ISP), y)
+ifeq ($(CONFIG_HISTAR_ISP), y)
 subdir-ccflags-y += -Wall
 subdir-ccflags-y += -I$(srctree)/drivers/hisi/tzdriver \
                     -I$(srctree)/drivers/hisi/load_image \
@@ -27,3 +30,5 @@ subdir-ccflags-y += -I$(srctree)/drivers/hisi/tzdriver \
                     -I$(srctree)/drivers/media/huawei/camera/sensor \
                     -I$(srctree)/drivers/media/huawei/camera/platform
 endif
+
+obj-$(CONFIG_HISP_DPM) += hisp_dpm.o

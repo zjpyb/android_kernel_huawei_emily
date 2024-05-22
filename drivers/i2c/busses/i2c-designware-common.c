@@ -48,20 +48,22 @@
 #define HISI_I2C_READ_REG               0xc5010000
 #define HISI_I2C_WRITE_REG              0xc5010001
 #define HISI_I2C_XFER_LOCK              0xc5010002
-#define HISI_I2C_XFER_UNLOCK    0xc5010003
+#define HISI_I2C_XFER_UNLOCK            0xc5010003
 
-static u32 hisi_secure_dw_readl(int offset)
+
+static u32 secure_dw_readl(u32 base_addr, u32 offset)
 {
-        struct arm_smccc_res res;
-        arm_smccc_1_1_smc(HISI_I2C_READ_REG, offset, &res);//lint !e1514
-        return (u32)res.a1;
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(HISI_I2C_READ_REG, base_addr, offset, &res);
+	return (u32)res.a1;
 }
 
-static void hisi_secure_dw_writel(u32 b, int offset)
+static void secure_dw_writel(u32 base_addr, u32 offset, u32 b)
 {
-        struct arm_smccc_res res;
-        arm_smccc_1_1_smc(HISI_I2C_WRITE_REG, b, offset, &res);//lint !e1514
-        return;
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(HISI_I2C_WRITE_REG, base_addr, offset, b, &res);
 }
 
 static char *abort_sources[] = {
@@ -127,14 +129,14 @@ static char *abort_sources[] = {
 };
 #endif
 
-u32 dw_readl(struct dw_i2c_dev *dev, int offset)
+u32 dw_readl(struct dw_i2c_dev *dev, u32 offset)
 {
 	u32 value;
 
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-        if (dev->secure_mode) {
-                value = hisi_secure_dw_readl(offset);
-        } else {
+	if (dev->secure_mode) {
+		value = secure_dw_readl(dev->reg_base, offset);
+	} else {
 #endif
 		if (dev->flags & ACCESS_16BIT)
 			value = readw_relaxed(dev->base + offset) |
@@ -142,7 +144,7 @@ u32 dw_readl(struct dw_i2c_dev *dev, int offset)
 		else
 			value = readl_relaxed(dev->base + offset);
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-        }
+	}
 #endif
 	if (dev->flags & ACCESS_SWAP)
 		return swab32(value);
@@ -150,14 +152,14 @@ u32 dw_readl(struct dw_i2c_dev *dev, int offset)
 		return value;
 }
 
-void dw_writel(struct dw_i2c_dev *dev, u32 b, int offset)
+void dw_writel(struct dw_i2c_dev *dev, u32 b, u32 offset)
 {
 	if (dev->flags & ACCESS_SWAP)
 		b = swab32(b);
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-        if (dev->secure_mode) {
-                hisi_secure_dw_writel(b, offset);
-        } else {
+	if (dev->secure_mode) {
+		secure_dw_writel(dev->reg_base, offset, b);
+	} else {
 #endif
 		if (dev->flags & ACCESS_16BIT) {
 			writew_relaxed((u16)b, dev->base + offset);
@@ -166,7 +168,7 @@ void dw_writel(struct dw_i2c_dev *dev, u32 b, int offset)
 			writel_relaxed(b, dev->base + offset);
 		}
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-        }
+	}
 #endif
 }
 

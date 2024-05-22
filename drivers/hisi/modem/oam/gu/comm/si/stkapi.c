@@ -340,6 +340,14 @@ VOS_VOID SI_STKGetCurImsiSign(
         return;
     }
 
+    /* 检查pstIMSIMatch中NV数据合法性 */
+    if (VOS_FALSE == SI_STK_CheckDualSimCtrlNvDataValid(enSlotId, pstIMSIMatch))
+    {
+        STK_WARNING_LOG("SI_STKGetCurImsiSign: en_NV_Item_Stk_DualImsi_Ctrl data invalid");
+
+        return;
+    }
+
     /* 在主菜单中匹配，如果匹配失败pusDualIMSIEnable设置为Disable，*/
     for (i = 0; i < pstSetUpMenuData->stSetUpMenu.ulItemNum; i++)
     {

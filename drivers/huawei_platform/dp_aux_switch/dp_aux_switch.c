@@ -26,7 +26,9 @@
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <linux/pm_wakeup.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 #include <linux/ion.h>
+#endif
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
@@ -35,6 +37,7 @@
 #include <linux/regulator/machine.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/audio/usb_analog_hs_interface.h>
+#include "ana_hs_kit/ana_hs.h"
 
 #define HWLOG_TAG dp_aux_switch
 HWLOG_REGIST();
@@ -89,11 +92,13 @@ void dp_aux_uart_switch_enable(void)
 			// ENN L, EN1/EN2 01
 			// SBU1 to SBU2_H, SBU2 to SBU1_H
 			usb_analog_hs_plug_in_out_handle(DP_PLUG_IN_CROSS);
+			ana_hs_plug_handle(DP_PLUG_IN_CROSS);
 			hwlog_info("%s: dp plug in cross\n", __func__);
 		} else {
 			// ENN L, EN1/EN2 00
 			// SBU1 to SBU1_H, SBU2 to SBU2_H
 			usb_analog_hs_plug_in_out_handle(DP_PLUG_IN);
+			ana_hs_plug_handle(DP_PLUG_IN);
 			hwlog_info("%s: dp plug in\n", __func__);
 		}
 
@@ -117,6 +122,7 @@ void dp_aux_uart_switch_disable(void)
 	if (aux_switch_priv.from_fsa4476) {
 		// ENN H, EN1/EN2 00
 		usb_analog_hs_plug_in_out_handle(DP_PLUG_OUT);
+		ana_hs_plug_handle(DP_PLUG_OUT);
 		hwlog_info("%s: dp plug out\n", __func__);
 
 		// aux-uart switch is not existed.

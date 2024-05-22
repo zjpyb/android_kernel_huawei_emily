@@ -34,8 +34,8 @@
 #include <linux/version.h>
 #include <linux/miscdevice.h>
 #include <linux/stringify.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 #if defined(CONFIG_TEE_TUI)
 #include "tui.h"
 #endif

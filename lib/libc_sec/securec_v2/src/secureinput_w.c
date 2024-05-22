@@ -33,19 +33,36 @@
 
 #include "input.inl"
 
-SECUREC_INLINE int SecIsDigit(SecInt ch)
+SECUREC_INLINE unsigned int SecWcharHighBits(SecInt ch)
 {
     /* Convert int to unsigned int clear 571 */
-    return (!((unsigned int)(int)(ch) & 0xff00) && isdigit(((unsigned int)(int)(ch) & 0x00ff)));
+    return ((unsigned int)(int)ch & (~0xffU));
 }
+
+SECUREC_INLINE unsigned char SecWcharLowByte(SecInt ch)
+{
+    /* Convert int to unsigned int clear 571 */
+    return (unsigned char)((unsigned int)(int)ch & 0xffU);
+}
+
+SECUREC_INLINE int SecIsDigit(SecInt ch)
+{
+    if (SecWcharHighBits(ch) != 0) {
+        return 0; /* Same as isdigit */
+    }
+    return isdigit((int)SecWcharLowByte(ch));
+}
+
 SECUREC_INLINE int SecIsXdigit(SecInt ch)
 {
-    return (!((unsigned int)(int)(ch) & 0xff00) && isxdigit(((unsigned int)(int)(ch) & 0x00ff)));
+    if (SecWcharHighBits(ch) != 0) {
+        return 0; /* Same as isxdigit */
+    }
+    return isxdigit((int)SecWcharLowByte(ch));
 }
+
 SECUREC_INLINE int SecIsSpace(SecInt ch)
 {
     return iswspace((wint_t)(int)(ch));
 }
-
-
 

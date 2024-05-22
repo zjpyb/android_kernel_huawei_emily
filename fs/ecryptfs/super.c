@@ -170,8 +170,8 @@ static int ecryptfs_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",ecryptfs_key_bytes=%zd",
 			   mount_crypt_stat->global_default_cipher_key_size);
 #ifdef CONFIG_ECRYPT_FS_FILTER
-        if (mount_crypt_stat->flags & ECRYPTFS_ENABLE_FILTERING)
-                seq_printf(m, ",ecryptfs_enable_filtering");
+	if (mount_crypt_stat->flags & ECRYPTFS_ENABLE_FILTERING)
+		seq_printf(m, ",ecryptfs_enable_filtering");
 #endif
 	if (mount_crypt_stat->flags & ECRYPTFS_PLAINTEXT_PASSTHROUGH_ENABLED)
 		seq_printf(m, ",ecryptfs_passthrough");

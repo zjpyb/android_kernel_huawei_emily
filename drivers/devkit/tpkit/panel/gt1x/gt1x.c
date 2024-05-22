@@ -269,23 +269,24 @@ static int gt1x_send_cfg(struct gt1x_ts_config *cfg_ptr)
 static int gt1x_send_cmd(u8 cmd, u8 data, u8 issleep)
 {
 	s32 ret = 0;
+	int retval;
 	static DEFINE_MUTEX(cmd_mutex);
 	u8 buffer[3] = { cmd, data, 0 };
 
 	TS_LOG_DEBUG("%s: Send command:%u\n", __func__, cmd);
 	mutex_lock(&cmd_mutex);
 	buffer[2] = (u8) ((0 - cmd - data) & 0xFF);
-	ret = gt1x_i2c_write(GTP_REG_CMD + 1, &buffer[1], 2);
-	ret |= gt1x_i2c_write(GTP_REG_CMD, &buffer[0], 1);
-	if(ret < 0){
+	retval = gt1x_i2c_write(GTP_REG_CMD + 1, &buffer[1], 2);
+	ret = gt1x_i2c_write(GTP_REG_CMD, &buffer[0], 1);
+	if (ret < 0)
 		TS_LOG_ERR("%s: i2c_write command fail\n", __func__);
+	if (retval < 0) {
+		TS_LOG_ERR("%s: i2c_write command fail\n", __func__);
+		ret = retval;
 	}
-
-	if(issleep) {
+	if (issleep)
 		msleep(50);
-	}
 	mutex_unlock(&cmd_mutex);
-
 	return ret;
 }
 
@@ -996,8 +997,6 @@ static int gt1x_touch_evt_handler(struct gt1x_ts_data  *ts,
 		info->fingers[id].pressure = w;
 		info->fingers[id].status = TP_FINGER;
 		cur_index |= 1 << id;
-		TS_LOG_DEBUG("%s:[%d](ewx = %d, ewy =  %d, xer=%d, yer=%d, wx=%d, wy=%d)\n", __func__,
-			id, info->fingers[id].ewx, info->fingers[id].ewy, xer, yer,touch_wxy[2 * id], touch_wxy[2 * id + 1]);
 	}
 	info->cur_finger_number = touch_num;
 exit:
@@ -1718,7 +1717,7 @@ static void gt1x_strtolower(const char *str, const int len)
 		ts->project_id[index] = tolower(str[index]); 
 	}
 }
-static int gt1x_get_lcd_hide_module_name(char *module_name)
+static int gt1x_get_lcd_hide_module_name(const char *module_name)
 {
 	struct device_node *dev_node = NULL;
 	char *lcd_hide_module_name = NULL;
@@ -2126,8 +2125,8 @@ static int gt1x_parse_specific_dts(void)
  * Return: 0-succeed, -1-faileds
  */
 
- static int gt1x_parse_cfg_data(const struct firmware *cfg_bin,
-				char *cfg_type, u8 *cfg, int *cfg_len, u8 sid)
+static int gt1x_parse_cfg_data(const struct firmware *cfg_bin,
+	char *cfg_type, u8 *cfg, int *cfg_len, u8 sid)
 {
 	int i = 0, config_status = 0, one_cfg_count = 0;
 
@@ -2562,10 +2561,10 @@ static int gt1x_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 

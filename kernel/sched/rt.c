@@ -21,18 +21,13 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun);
 
 struct rt_bandwidth def_rt_bandwidth;
 
-/*
- * The margin used when comparing utilization with CPU capacity:
- * util * margin < capacity * SCHED_CAPACITY_SCALE
- */
-unsigned int rt_capacity_margin = 1138; /* ~10% */
-#ifdef CONFIG_HISI_RT_CAS
+#ifdef CONFIG_RT_CAS
 unsigned int sysctl_sched_enable_rt_cas = 1;
 #else
 unsigned int sysctl_sched_enable_rt_cas = 0;
 #endif
 
-#ifdef CONFIG_HISI_RT_ACTIVE_LB
+#ifdef CONFIG_RT_ACTIVE_LB
 unsigned int sysctl_sched_enable_rt_active_lb = 1;
 #endif
 
@@ -284,7 +279,7 @@ static void pull_rt_task(struct rq *this_rq);
 static inline bool need_pull_rt_task(struct rq *rq, struct task_struct *prev)
 {
 	/* Try to pull RT tasks here if we lower this rq's prio */
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	return rq->rt.highest_prio.curr > prev->prio &&
 	       !cpu_isolated(cpu_of(rq));
 #else
@@ -988,7 +983,7 @@ static void update_curr_rt(struct rq *rq)
 	if (unlikely((s64)delta_exec <= 0))
 		return;
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	if (use_pelt_freq())
 #endif
 	/* Kick cpufreq (see the comment in kernel/sched/sched.h). */
@@ -1452,7 +1447,7 @@ select_task_rq_rt(struct task_struct *p, int cpu, int sd_flag, int flags,
 	 * This test is optimistic, if we get it wrong the load-balancer
 	 * will have to sort it out.
 	 */
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	if (sysctl_sched_enable_rt_cas ||
 		cpu_isolated(cpu) ||
 		(curr && unlikely(rt_task(curr)) &&
@@ -1675,9 +1670,9 @@ static struct task_struct *pick_highest_pushable_task(struct rq *rq, int cpu)
 
 static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
 
-#ifdef CONFIG_HISI_RTG
+#ifdef CONFIG_SCHED_RTG
 static unsigned int rtg_up_migration_util_filter = 25;
-static inline bool hisi_favor_litte_core(struct task_struct *p)
+static inline bool hisi_favor_little_core(struct task_struct *p)
 {
 	return task_util(p) * 100 < capacity_orig_of(0) * rtg_up_migration_util_filter;
 }
@@ -1689,21 +1684,20 @@ static int find_lowest_rq(struct task_struct *task)
 	struct cpumask *lowest_mask = this_cpu_cpumask_var_ptr(local_cpu_mask);
 	int this_cpu = smp_processor_id();
 	int cpu = -1;
-#ifdef CONFIG_HISI_RT_CAS
+#ifdef CONFIG_RT_CAS
 	int target_cpu;
 	struct cpumask search_cpu, backup_search_cpu;
 	unsigned long cpu_capacity;
 	unsigned long target_capacity;
 	unsigned long util, target_cpu_util = ULONG_MAX;
-	unsigned long tutil = task_util(task);
 	int target_cpu_idle_idx = INT_MAX;
 	int cpu_idle_idx = -1;
 	int prev_cpu = task_cpu(task);
-	struct related_thread_group *grp;
-	struct cpumask *rtg_target_cpus = NULL;
+#ifdef CONFIG_SCHED_RTG
+	struct cpumask *rtg_target = NULL;
+#endif
 	struct sched_group *sg, *sg_target, *sg_backup;
 	bool boosted = schedtune_task_boost(task) > 0;
-	unsigned long boosted_tutil = boosted_task_util(task);
 	bool prefer_idle = schedtune_prefer_idle(task) > 0;
 	struct root_domain *rd = cpu_rq(this_cpu)->rd;
 #endif
@@ -1718,7 +1712,7 @@ static int find_lowest_rq(struct task_struct *task)
 	if (!cpupri_find(&task_rq(task)->rd->cpupri, task, lowest_mask))
 		return -1; /* No targets found */
 
-#ifdef CONFIG_HISI_RT_CAS
+#ifdef CONFIG_RT_CAS
 	if (sysctl_sched_enable_rt_cas) {
 		sg_target = NULL;
 		sg_backup = NULL;
@@ -1726,12 +1720,9 @@ static int find_lowest_rq(struct task_struct *task)
 		target_capacity = ULONG_MAX;
 
 		rcu_read_lock();
-#ifdef CONFIG_HISI_RTG
-		grp = task_related_thread_group(task);
-		if (grp && grp->preferred_cluster)
-			rtg_target_cpus = &grp->preferred_cluster->cpus;
+#ifdef CONFIG_SCHED_RTG
+		rtg_target = find_rtg_target(task);
 #endif
-
 		sd = rcu_dereference(per_cpu(sd_ea, 0));
 		if (!sd) {
 			rcu_read_unlock();
@@ -1755,17 +1746,18 @@ static int find_lowest_rq(struct task_struct *task)
 			}
 
 			cpu = group_first_cpu(sg);
-#ifdef CONFIG_HISI_RTG
+
+#ifdef CONFIG_SCHED_RTG
 			/* honor the rtg tasks */
-			if (rtg_target_cpus) {
-				if (cpumask_test_cpu(cpu, rtg_target_cpus)) {
+			if (rtg_target) {
+				if (cpumask_test_cpu(cpu, rtg_target)) {
 					sg_target = sg;
 					break;
 				}
 
 				/* active LB or big_task favor cpus with more capacity */
-				if (task->state == TASK_RUNNING || boosted || !hisi_favor_litte_core(task)) {
-					if (capacity_orig_of(cpu) > capacity_orig_of(cpumask_any(rtg_target_cpus))) {
+				if (task->state == TASK_RUNNING || boosted || !hisi_favor_little_core(task)) {
+					if (capacity_orig_of(cpu) > capacity_orig_of(cpumask_any(rtg_target))) {
 						sg_target = sg;
 						break;
 					} else {
@@ -1775,24 +1767,19 @@ static int find_lowest_rq(struct task_struct *task)
 				}
 			}
 #endif
+
 			/*
 			 * 1. add margin to support task migration.
-			 * 2. if task_util is high then all cpus, make sure the
+			 * 2. if task_util is higher than all cpus, make sure the
 			 * sg_backup with the most powerful cpus is selected.
 			 */
-			cpu_capacity = capacity_orig_of(cpu);
-			if (tutil * rt_capacity_margin > cpu_capacity * SCHED_CAPACITY_SCALE) {
-				sg_backup = sg;
-				continue;
-			}
-
-			/* support task boost */
-			if (boosted_tutil > cpu_capacity) {
+			if (!task_fits_max(task, cpu)) {
 				sg_backup = sg;
 				continue;
 			}
 
 			/* sg_target: select the sg with smaller capacity */
+			cpu_capacity = capacity_orig_of(cpu);
 			if (cpu_capacity < target_capacity) {
 				target_capacity = cpu_capacity;
 				sg_target = sg;
@@ -1817,7 +1804,7 @@ static int find_lowest_rq(struct task_struct *task)
 retry:
 		cpu = cpumask_first(&search_cpu);
 		do {
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 			if (cpu_isolated(cpu))
 				continue;
 #endif
@@ -1878,7 +1865,7 @@ retry:
 	}
 
 noea:
-#endif /* CONFIG_HISI_RT_CAS */
+#endif /* CONFIG_RT_CAS */
 	cpu = task_cpu(task);
 	/*
 	 * At this point we have built a mask of cpus representing the
@@ -2433,7 +2420,7 @@ static void switched_from_rt(struct rq *rq, struct task_struct *p)
 	if (!task_on_rq_queued(p) || rq->rt.rt_nr_running)
 		return;
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	if (cpu_isolated(cpu_of(rq)))
 		return;
 #endif
@@ -2577,7 +2564,7 @@ static void task_tick_rt(struct rq *rq, struct task_struct *p, int queued)
 	}
 }
 
-#ifdef CONFIG_HISI_RT_ACTIVE_LB
+#ifdef CONFIG_RT_ACTIVE_LB
 static int rt_active_load_balance_cpu_stop(void *data)
 {
 	struct rq *busiest_rq = data;
@@ -2621,11 +2608,7 @@ void check_for_rt_migration(struct rq *rq, struct task_struct *p)
 	bool misfit_task = false;
 	int cpu = task_cpu(p);
 	unsigned long cpu_orig_cap;
-#ifdef CONFIG_HISI_RTG
-	struct related_thread_group *grp = NULL;
-	struct sched_cluster *new_cluster = NULL;
-	int new_cpu = -1;
-#endif
+	struct cpumask *rtg_target = NULL;
 
 	if (!sysctl_sched_enable_rt_active_lb)
 		return ;
@@ -2633,31 +2616,17 @@ void check_for_rt_migration(struct rq *rq, struct task_struct *p)
 	if (p->nr_cpus_allowed == 1)
 		return ;
 
-	rcu_read_lock();
-
 	cpu_orig_cap = capacity_orig_of(cpu);
 	/* cpu has max capacity, no need to do balance */
 	if (cpu_orig_cap == rq->rd->max_cpu_capacity.val)
-		goto out;
+		return;
 
-#ifdef CONFIG_HISI_RTG
-	grp = task_related_thread_group(p);
-	if (grp) {
-		if (!grp->preferred_cluster)
-			goto out;
-
-		new_cluster = grp->preferred_cluster;
-		new_cpu = cpumask_first(&new_cluster->cpus);
-		if (capacity_orig_of(new_cpu) > cpu_orig_cap)
-			misfit_task = true;
-	} else {
-		if (task_util(p) * rt_capacity_margin > cpu_orig_cap * SCHED_CAPACITY_SCALE)
-			misfit_task = true;
-	}
-#else
-	if (task_util(p) * rt_capacity_margin > cpu_orig_cap * SCHED_CAPACITY_SCALE)
-		misfit_task = true;
-#endif
+	rtg_target = find_rtg_target(p);
+	if (rtg_target)
+		misfit_task = capacity_orig_of(cpumask_first(rtg_target)) >
+					cpu_orig_cap;
+	else
+		misfit_task = !task_fits_max(p, cpu);
 
 	if (misfit_task) {
 		raw_spin_lock(&rq->lock);
@@ -2674,9 +2643,6 @@ void check_for_rt_migration(struct rq *rq, struct task_struct *p)
 						rt_active_load_balance_cpu_stop,
 						rq, &rq->rt_active_balance_work);
 	}
-
-out:
-	rcu_read_unlock();
 }
 #endif
 
@@ -2731,6 +2697,9 @@ const struct sched_class rt_sched_class = {
 	.switched_to		= switched_to_rt,
 
 	.update_curr		= update_curr_rt,
+#ifdef CONFIG_SCHED_WALT
+	.fixup_cumulative_runnable_avg = walt_fixup_cumulative_runnable_avg,
+#endif
 };
 
 #ifdef CONFIG_RT_GROUP_SCHED

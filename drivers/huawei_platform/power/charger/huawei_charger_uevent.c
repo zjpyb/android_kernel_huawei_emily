@@ -3,7 +3,7 @@
  *
  * charger uevent driver
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,24 +18,17 @@
 
 #include <huawei_platform/power/huawei_charger_uevent.h>
 #include <huawei_platform/log/hw_log.h>
-#include <linux/power/hisi/hisi_bci_battery.h>
-#include <huawei_platform/power/wireless_charger.h>
-#include <huawei_platform/power/battery_soh.h>
-
+#include <linux/power/hisi/bci_battery.h>
+#include <huawei_platform/power/wireless/wireless_charger.h>
+#include <chipset_common/hwpower/battery/battery_soh.h>
+#include <linux/power/hisi/coul/coul_drv.h>
 #define HWLOG_TAG huawei_charger_uevent
 HWLOG_REGIST();
-
-BLOCKING_NOTIFIER_HEAD(charger_event_notify_head);
-
-void charge_event_notify(int event)
-{
-	blocking_notifier_call_chain(&charger_event_notify_head, event, NULL);
-}
 
 void charge_send_uevent(int input_events)
 {
 	enum charge_status_event events;
-	int charger_online = get_charger_online_flag();
+	int charger_online = charge_get_charger_online();
 	struct charge_device_info *di = huawei_charge_get_di();
 
 	if (!di)
@@ -44,13 +37,13 @@ void charge_send_uevent(int input_events)
 	if (input_events == NO_EVENT) {
 		if (di->charger_source == POWER_SUPPLY_TYPE_MAINS) {
 			events = VCHRG_START_AC_CHARGING_EVENT;
-			charge_event_notify(CHARGER_START_CHARGING_EVENT);
+			power_event_bnc_notify(POWER_BNT_CHG, POWER_NE_CHG_START_CHARGING, NULL);
 		} else if (di->charger_source == POWER_SUPPLY_TYPE_USB) {
 			events = VCHRG_START_USB_CHARGING_EVENT;
-			charge_event_notify(CHARGER_START_CHARGING_EVENT);
+			power_event_bnc_notify(POWER_BNT_CHG, POWER_NE_CHG_START_CHARGING, NULL);
 		} else if (di->charger_source == POWER_SUPPLY_TYPE_BATTERY) {
 			events = VCHRG_STOP_CHARGING_EVENT;
-			charge_event_notify(CHARGER_STOP_CHARGING_EVENT);
+			power_event_bnc_notify(POWER_BNT_CHG, POWER_NE_CHG_STOP_CHARGING, NULL);
 			di->current_full_status = 0;
 			charge_reset_hiz_state();
 #ifdef CONFIG_DIRECT_CHARGER
@@ -68,6 +61,7 @@ void charge_send_uevent(int input_events)
 		events = input_events;
 	}
 
+#ifdef CONFIG_TCPC_CLASS
 	/* avoid passing the wrong charging state */
 	if (!pmic_vbus_irq_is_enabled() &&
 		di->charger_type != CHARGER_TYPE_POGOPIN) {
@@ -81,15 +75,20 @@ void charge_send_uevent(int input_events)
 			events = NO_EVENT;
 		}
 	}
-
+#endif
 	/* valid events need to be sent to hisi_bci */
 	if (events != NO_EVENT) {
-		hisi_coul_charger_event_rcv(events);
+		coul_drv_charger_event_rcv(events);
 		bsoh_event_rcv(events);
 	}
 }
 
-void direct_charge_connect_send_uevent(void)
+void charge_send_icon_uevent(int icon_type)
+{
+	power_ui_event_notify(POWER_UI_NE_ICON_TYPE, &icon_type);
+}
+
+void wired_connect_send_icon_uevent(int icon_type)
 {
 	struct charge_device_info *di = huawei_charge_get_di();
 
@@ -107,28 +106,31 @@ void direct_charge_connect_send_uevent(void)
 		return;
 	}
 
+	charge_send_icon_uevent(icon_type);
 	di->charger_type = CHARGER_TYPE_STANDARD;
 	di->charger_source = POWER_SUPPLY_TYPE_MAINS;
 	charge_send_uevent(NO_EVENT);
 }
 
-void direct_charge_disconnect_send_uevent(void)
+void wired_disconnect_send_icon_uevent(void)
 {
 	struct charge_device_info *di = huawei_charge_get_di();
 
 	if (!di)
 		return;
 
+	charge_send_icon_uevent(ICON_TYPE_INVALID);
 	charge_send_uevent(NO_EVENT);
 }
 
-void wireless_charge_connect_send_uevent(void)
+void wireless_connect_send_icon_uevent(int icon_type)
 {
 	struct charge_device_info *di = huawei_charge_get_di();
 
 	if (!di)
 		return;
 
+	charge_send_icon_uevent(icon_type);
 	di->charger_type = CHARGER_TYPE_WIRELESS;
 	di->charger_source = POWER_SUPPLY_TYPE_MAINS;
 	charge_send_uevent(NO_EVENT);

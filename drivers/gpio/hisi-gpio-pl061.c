@@ -2,9 +2,9 @@
 #include <linux/device.h>
 #include <linux/gpio.h>
 #include <linux/version.h>
-#include <linux/hisi/hisi_log.h>
+#include <pr_log.h>
 
-#define HISI_LOG_TAG HISI_GPIO_TAG
+#define PR_LOG_TAG GPIO_TAG
 
 #ifdef CONFIG_HISI_TUI_PL061
 #define GPIODIR 0x400

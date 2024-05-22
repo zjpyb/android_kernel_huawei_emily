@@ -24,6 +24,7 @@ struct hisi_pmic_ctrl_t *hisi_pmic_ctrl = NULL;
 
 struct dsm_client *client_pmic = NULL;
 int dsm_notify_limit = 0;
+static int pmic_vote_status[VOUT_MAX];
 
 struct dsm_dev dsm_cam_pmic = {
 	.name = "dsm_cam_pmic",
@@ -95,6 +96,105 @@ static irqreturn_t hisi_pmic_interrupt_handler(int vec, void *info)
 		pmic_ctrl->func_tbl->pmic_check_exception(pmic_ctrl);
 	}
 	return IRQ_HANDLED;
+}
+
+void irq_err_time_reset(struct irq_err_monitor *irq_err)
+{
+	if (!irq_err)
+		return;
+	irq_err->last_time.tv_sec = irq_err->now.tv_sec;
+	irq_err->last_time.tv_usec = irq_err->now.tv_usec;
+}
+
+void pmic_fault_reset_check(struct hisi_pmic_ctrl_t *pmic_ctrl,
+	struct irq_err_monitor *irq_err, unsigned int latch_time,
+	const unsigned int sche_work_time)
+{
+	if (!irq_err || !pmic_ctrl)
+		return;
+	if (pmic_ctrl->pmic_info.fault_check == 0) {
+		cam_info("not support fault err check");
+		return;
+	}
+	do_gettimeofday(&irq_err->now);
+	irq_err->irq_time = (irq_err->now.tv_sec - irq_err->last_time.tv_sec) *
+		(1000000L) + (irq_err->now.tv_usec - irq_err->last_time.tv_usec);
+	cam_err("%s err time = %ld", __func__, irq_err->irq_time);
+	if (irq_err->irq_time > latch_time) {
+		cam_err("pmic fault err check after %u", latch_time);
+		irq_err_time_reset(irq_err);
+		schedule_delayed_work(&pmic_ctrl->pmic_err_work,
+			msecs_to_jiffies(sche_work_time));
+	}
+}
+
+static int hisi_pmic_type_ctrl_cfg(struct hisi_pmic_ctrl_t *pmic_ctrl,
+	pmic_seq_index_t idx, u32 vol, int state)
+{
+	int ret;
+
+	if ((pmic_ctrl == NULL) || (pmic_ctrl->func_tbl == NULL) ||
+		(pmic_ctrl->func_tbl->pmic_buck_vote_cfg == NULL) ||
+		(pmic_ctrl->func_tbl->pmic_ldo_vote_cfg == NULL)) {
+		cam_err("pmic_ctrl is NULL, just return");
+		return -1;
+	}
+
+	if (idx > VOUT_LDO_5)
+		ret = pmic_ctrl->func_tbl->pmic_buck_vote_cfg(pmic_ctrl,
+			idx, vol, state);
+	else
+		ret = pmic_ctrl->func_tbl->pmic_ldo_vote_cfg(pmic_ctrl,
+			idx, vol, state);
+	return ret;
+}
+
+int hisi_pmic_vote_cfg(struct hisi_pmic_ctrl_t *pmic_ctrl,
+	pmic_seq_index_t idx, u32 vol, int state)
+{
+	int ret = 0;
+
+	if (idx >= VOUT_MAX)
+		return -1;
+
+	if (state == 0) {
+		if (pmic_vote_status[idx] > PMIC_ENABLE_CNT) {
+			cam_info("%s state_votes = %d, cannot close PMIC-%d",
+				__func__, pmic_vote_status[idx], idx);
+			pmic_vote_status[idx]--;
+		} else if (pmic_vote_status[idx] == PMIC_ENABLE_CNT) {
+			ret = hisi_pmic_type_ctrl_cfg(pmic_ctrl, idx, vol, state);
+			if (ret == 0) {
+				pmic_vote_status[idx] = PMIC_DISABLE_CNT;
+				cam_info("%s close PMIC-%d suc", __func__, idx);
+			} else {
+				cam_err("%s close PMIC-%d err", __func__, idx);
+			}
+		} else {
+			cam_err("%s invalid vote count = %d", __func__,
+				pmic_vote_status[idx]);
+			ret = -1;
+		}
+	} else {
+		if (pmic_vote_status[idx] > PMIC_DISABLE_CNT) {
+			cam_info("%s state_votes = %d, not open PMIC-%d again",
+				__func__, pmic_vote_status[idx], idx);
+			pmic_vote_status[idx]++;
+		} else if (pmic_vote_status[idx] == PMIC_DISABLE_CNT) {
+			ret = hisi_pmic_type_ctrl_cfg(pmic_ctrl, idx, vol, state);
+			if (ret == 0) {
+				pmic_vote_status[idx] = PMIC_ENABLE_CNT;
+				cam_info("%s open PMIC-%d suc", __func__, idx);
+			} else {
+				cam_err("%s open PMIC-%d err", __func__, idx);
+			}
+		} else {
+			cam_err("%s invalid vote count = %d", __func__,
+				pmic_vote_status[idx]);
+			ret = -1;
+		}
+	}
+	return ret;
 }
 
 int hisi_pmic_gpio_boost_enable(struct hisi_pmic_ctrl_t *pmic_ctrl, int state)
@@ -206,8 +306,8 @@ EXPORT_SYMBOL(hisi_pmic_release_intr);
 
 int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-	struct device_node *dev_node;
-	struct hisi_pmic_info *pmic_info;
+	struct device_node *dev_node = NULL;
+	struct hisi_pmic_info *pmic_info = NULL;
 	static bool gpio_req_status = false;
 	int rc = -1;
 
@@ -267,14 +367,17 @@ int hisi_pmic_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 		}
 	}
 
+	rc = of_property_read_u32(dev_node, "hisi,fault_check",
+		&pmic_info->fault_check);
+	if (rc < 0) {
+		cam_info("%s failed set default\n", __func__);
+		pmic_info->fault_check = 0;
+		rc = 0;
+	}
+	cam_info("%s fault_check = %u", __func__, pmic_info->fault_check);
+
 fail:
 	return rc;
-}
-
-
-static struct hisi_pmic_ctrl_t *get_sctrl(struct v4l2_subdev *sd)
-{
-	return container_of(sd, struct hisi_pmic_ctrl_t, subdev);
 }
 
 int hisi_pmic_config(struct hisi_pmic_ctrl_t *pmic_ctrl, void *argp)
@@ -284,40 +387,11 @@ int hisi_pmic_config(struct hisi_pmic_ctrl_t *pmic_ctrl, void *argp)
 
 EXPORT_SYMBOL(hisi_pmic_config);
 
-static long hisi_pmic_subdev_ioctl(struct v4l2_subdev *sd,
-			unsigned int cmd, void *arg)
-{
-	struct hisi_pmic_ctrl_t *pmic_ctrl = get_sctrl(sd);
-
-	if (!pmic_ctrl) {
-		cam_err("%s pmic_ctrl is NULL\n", __func__);
-		return -EBADF;
-	}
-
-	cam_info("%s cmd = 0x%x\n", __func__, cmd);
-
-	switch (cmd) {
-	case 0:
-		return pmic_ctrl->func_tbl->pmic_config(pmic_ctrl, arg);
-	default:
-		cam_err("%s cmd is error .", __func__);
-		return -ENOIOCTLCMD;
-	}
-}
-
-static struct v4l2_subdev_core_ops hisi_pmic_subdev_core_ops = {
-	.ioctl = hisi_pmic_subdev_ioctl,
-};
-
-static struct v4l2_subdev_ops hisi_pmic_subdev_ops = {
-	.core = &hisi_pmic_subdev_core_ops,
-};
-
 int32_t hisi_pmic_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	struct i2c_adapter *adapter;
-	struct hisi_pmic_ctrl_t *pmic_ctrl;
+	struct i2c_adapter *adapter = NULL;
+	struct hisi_pmic_ctrl_t *pmic_ctrl = NULL;
 	int32_t rc=0;
 	dsm_notify_limit = 0;
 
@@ -356,28 +430,6 @@ int32_t hisi_pmic_i2c_probe(struct i2c_client *client,
 	if (rc < 0) {
 		cam_err("%s pmic match failed.\n", __func__);
 		return -EFAULT;
-	}
-
-	if (!pmic_ctrl->pmic_v4l2_subdev_ops)
-		pmic_ctrl->pmic_v4l2_subdev_ops = &hisi_pmic_subdev_ops;
-
-	v4l2_subdev_init(&pmic_ctrl->subdev,
-			pmic_ctrl->pmic_v4l2_subdev_ops);
-
-	snprintf_s(pmic_ctrl->subdev.name,
-		sizeof(pmic_ctrl->subdev.name),sizeof(pmic_ctrl->subdev.name)-1, "%s",
-		pmic_ctrl->pmic_info.name);
-
-	v4l2_set_subdevdata(&pmic_ctrl->subdev, client);
-
-	pmic_ctrl->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
-	init_subdev_media_entity(&pmic_ctrl->subdev,HWCAM_SUBDEV_PMIC);
-	hwcam_cfgdev_register_subdev(&pmic_ctrl->subdev,HWCAM_SUBDEV_PMIC);
-	rc = pmic_ctrl->func_tbl->pmic_register_attribute(pmic_ctrl,
-			&pmic_ctrl->subdev.devnode->dev);
-	if (rc < 0) {
-		cam_err("%s failed to register pmic attribute node.", __func__);
-		return rc;
 	}
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT

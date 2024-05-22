@@ -3,7 +3,7 @@
  *
  * header file for Fairchild fusb301 typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,9 +19,7 @@
 #ifndef _FUSB301_H_
 #define _FUSB301_H_
 
-#ifndef BIT
-#define BIT(x)        (1 << (x))
-#endif
+#include <linux/bitops.h>
 
 #define FUSB301_REGISTER_NUM                        32
 #define FUSB301_DUMP_REG_NUM                        9
@@ -105,4 +103,4 @@
 #define FUSB301_REG_MANUAL_UNATTACHED_DISABLED      BIT(1)
 #define FUSB301_REG_MANUAL_UNATTACHED_ERRORRECOVERY BIT(0)
 
-#endif /*_FUSB301_H_*/
+#endif /* _FUSB301_H_ */

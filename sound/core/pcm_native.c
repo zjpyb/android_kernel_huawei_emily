@@ -81,7 +81,6 @@ static int snd_pcm_hw_params_old_user(struct snd_pcm_substream *substream,
 #endif
 static int snd_pcm_open(struct file *file, struct snd_pcm *pcm, int stream);
 
-extern void snd_pcm_reset_pre_time(struct snd_pcm_substream *substream);
 /*
  *
  */
@@ -1483,6 +1482,14 @@ int snd_pcm_suspend_all(struct snd_pcm *pcm)
 			/* FIXME: the open/close code should lock this as well */
 			if (substream->runtime == NULL)
 				continue;
+
+			/*
+			 * Skip BE dai link PCM's that are internal and may
+			 * not have their substream ops set.
+			 */
+			if (!substream->ops)
+				continue;
+
 			err = snd_pcm_suspend(substream);
 			if (err < 0 && err != -EBUSY)
 				return err;
@@ -1605,7 +1612,6 @@ static int snd_pcm_do_reset(struct snd_pcm_substream *substream, int state)
 		runtime->status->hw_ptr % runtime->period_size;
 	runtime->silence_start = runtime->status->hw_ptr;
 	runtime->silence_filled = 0;
-	snd_pcm_reset_pre_time(substream);
 	return 0;
 }
 
@@ -1940,6 +1946,11 @@ static int snd_pcm_link(struct snd_pcm_substream *substream, int fd)
 	}
 	pcm_file = f.file->private_data;
 	substream1 = pcm_file->substream;
+	if (substream == substream1) {
+		res = -EINVAL;
+		goto _badf;
+	}
+
 	group = kmalloc(sizeof(*group), GFP_KERNEL);
 	if (!group) {
 		res = -ENOMEM;

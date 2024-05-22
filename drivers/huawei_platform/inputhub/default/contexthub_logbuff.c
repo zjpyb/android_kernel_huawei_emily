@@ -1,45 +1,37 @@
 /*
- * contexthub_logbuff.c
- *
- * functions for sensorhub log
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub logbuff source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/slab.h>
-#include <linux/init.h>
+#include "contexthub_logbuff.h"
+
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/platform_device.h>
-#include <linux/irq.h>
+#include <linux/fs.h>
 #include <linux/gpio.h>
-#include <linux/sched.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
-#include <asm/uaccess.h>
-#include <asm/io.h>
-#include <linux/proc_fs.h>
-#include <linux/sysfs.h>
+#include <linux/irq.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
-#include <huawei_platform/log/hw_log.h>
+#include <linux/platform_device.h>
+#include <linux/proc_fs.h>
 #include <linux/reboot.h>
 #include <linux/rtc.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/sysfs.h>
 #include <linux/timer.h>
+
+#include <asm/io.h>
+#include <asm/uaccess.h>
+#include <huawei_platform/log/hw_log.h>
+#include <iomcu_ddr_map.h>
+
 #include "contexthub_route.h"
-#include "contexthub_logbuff.h"
 #include "protocol.h"
-#include  <iomcu_ddr_map.h>
 
 #define LOG_BUFF_SIZE (1024*4)
 #define DDR_LOG_BUFF_UPDATE_NR (DDR_LOG_BUFF_SIZE / LOG_BUFF_SIZE)
@@ -93,7 +85,7 @@ static inline void print_stat(int i)
 		sensorhub_log_buf_rear, sensorhub_log_full_flag);
 }
 
-static inline int sensorhub_log_buff_left(void)
+static int sensorhub_log_buff_left(void)
 {
 	hwlog_debug("%s %d\n", __func__,
 		(sensorhub_log_buf_rear >= sensorhub_log_r) ?
@@ -109,7 +101,7 @@ static inline int sensorhub_log_buff_left(void)
 			sensorhub_log_buf_rear));
 }
 
-static inline void update_local_buff_index(uint32_t new_rear)
+static void update_local_buff_index(uint32_t new_rear)
 {
 	/* update sensorhub_log_r */
 	if (flush_cnt && (sensorhub_log_buff_left() >=
@@ -168,11 +160,12 @@ static ssize_t sensorhub_logbuff_read(
 		error = 0;
 		goto err;
 	}
-	is_new_data_available = 0;
 copy:
 	print_stat(2);
 	hwlog_debug("[%s] copy cnt %d, %x\n", __func__, cnt, sensorhub_log_r);
 	mutex_lock(&logbuff_mutex);
+	is_new_data_available = 0;
+
 	if (sensorhub_log_r > DDR_LOG_BUFF_SIZE) {
 		remain = 0;
 		hwlog_err("%s sensorhub_log_r is too large\n", __func__);
@@ -215,11 +208,11 @@ static const struct file_operations sensorhub_logbuff_operations = {
 	.release = sensorhub_logbuff_release,
 };
 
-static int logbuff_full_callback(const pkt_header_t *head)
+static int logbuff_full_callback(const struct pkt_header *head)
 {
 	int cnt = DDR_LOG_BUFF_COPY_SIZE;
 	int remain;
-	uint32_t update_index = 0;
+	uint32_t update_index;
 	uint32_t new_rear;
 	log_buff_req_t *pkt = (log_buff_req_t *) head;
 
@@ -248,15 +241,16 @@ static int logbuff_full_callback(const pkt_header_t *head)
 	if (!flush_cnt)
 		flush_cnt = 1;
 
-	mutex_unlock(&logbuff_mutex);
 	is_new_data_available = 1;
+	mutex_unlock(&logbuff_mutex);
+
 	/* wake up reader */
 	hwlog_debug("%s wakeup\n", __func__);
 	wake_up_interruptible(&sensorhub_log_waitq);
 	return 0;
 }
 
-static int logbuff_flush_callback(const pkt_header_t *head)
+static int logbuff_flush_callback(const struct pkt_header *head)
 {
 	/* sensorhub has flush tcm log buff
 	 * we need update logbuff global vars and flush it to file system
@@ -295,8 +289,9 @@ static int logbuff_flush_callback(const pkt_header_t *head)
 	if (!flush_cnt)
 		flush_cnt = 1;
 
-	mutex_unlock(&logbuff_mutex);
 	is_new_data_available = 1;
+	mutex_unlock(&logbuff_mutex);
+
 	/* wake up reader */
 	wake_up_interruptible(&sensorhub_log_waitq);
 	is_flush_complete = 1;
@@ -304,9 +299,9 @@ static int logbuff_flush_callback(const pkt_header_t *head)
 	return 0;
 }
 
-static void __manual_flush(pkt_header_t *pkt, int size)
+static void __manual_flush(struct pkt_header *pkt, int size)
 {
-	write_info_t winfo;
+	struct write_info winfo;
 
 	hwlog_debug("flush sensorhub log buff\n");
 	/* do log flush */
@@ -331,8 +326,8 @@ static ssize_t logbuff_config_set(
 	const char *buf,
 	size_t count)
 {
-	write_info_t winfo;
-	pkt_header_t pkt = {
+	struct write_info winfo;
+	struct pkt_header pkt = {
 		.tag = TAG_LOG_BUFF,
 		.resp = NO_RESP,
 		.length = 0
@@ -370,7 +365,7 @@ static ssize_t logbuff_config_show(
 static ssize_t logbuff_flush_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	pkt_header_t pkt = {
+	struct pkt_header pkt = {
 		.tag = TAG_LOG_BUFF,
 		.resp = NO_RESP,
 		.length = 0
@@ -398,7 +393,7 @@ void reset_logbuff(void)
 	sensorhub_log_buf_rear = 0;
 	flush_cnt = 0;
 	/* write the head to ddr config block */
-	pConfigOnDDr->LogBuffCBBackup.mutex = 0;
+	g_config_on_ddr->log_buff_cb_backup.mutex = 0;
 	if (local_log_buff && ddr_log_buff) {
 		memset(local_log_buff, 0, DDR_LOG_BUFF_SIZE);
 		memset(ddr_log_buff, 0, DDR_LOG_BUFF_SIZE);
@@ -416,7 +411,7 @@ void emg_flush_logbuff(void)
 		return;
 	}
 	/* notify userspace */
-	logbuff_full_callback((const pkt_header_t *)&pkt);
+	logbuff_full_callback((const struct pkt_header *)&pkt);
 	msleep(100); // sleep 100 ticks
 }
 
@@ -533,7 +528,7 @@ int mloc_local_log_buff(void)
 	return 0;
 }
 
-static inline void logbuff_init_success(void)
+static void logbuff_init_success(void)
 {
 	memset(local_log_buff, 0, DDR_LOG_BUFF_SIZE);
 	mutex_init(&logbuff_mutex);
@@ -551,7 +546,7 @@ static int sensorhub_logbuff_init(void)
 	if (is_sensorhub_disabled())
 		return -1;
 	hwlog_info("[%s]\n", __func__);
-	if (!getSensorMcuMode()) {
+	if (!get_sensor_mcu_mode()) {
 		hwlog_err("%s :mcu boot fail, logbuff init err\n", __func__);
 		return -1;
 	}

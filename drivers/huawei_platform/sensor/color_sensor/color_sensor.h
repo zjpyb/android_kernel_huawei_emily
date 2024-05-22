@@ -26,7 +26,7 @@
 #include <linux/workqueue.h>
 
 #define MAX_TARGET_CALI_LEN            9
-#define MAX_REPORT_LEN                 9
+#define MAX_REPORT_LEN                 14
 #define MAX_RAW_DATA_LEN               (MAX_REPORT_LEN - 1)
 #define MAX_NAME_STR_LEN               50
 #define MAX_ALGO_TYPE_STR_LEN          16
@@ -51,6 +51,13 @@ enum color_sensor_cal_states {
 	CAL_STATE_GAIN_4,
 	CAL_STATE_GAIN_5,
 	CAL_STATE_GAIN_LAST
+};
+
+struct spetral_sensor_cali_nv_t {
+	uint32_t cali_tar[10];
+	uint32_t cal_f_ratio[8];
+	uint32_t clear_ratio;
+	uint32_t nir_ratio;
 };
 
 struct color_sensor_cali_nv_t {
@@ -138,6 +145,39 @@ struct color_sensor_cali_t {
 	uint32_t cal_g_rst[CAL_STATE_GAIN_LAST];
 	uint32_t cal_b_rst[CAL_STATE_GAIN_LAST];
 	uint32_t cal_w_rst[CAL_STATE_GAIN_LAST];
+
+	uint32_t cal_f1_raw;
+	uint32_t cal_f2_raw;
+	uint32_t cal_f3_raw;
+	uint32_t cal_f4_raw;
+	uint32_t cal_f5_raw;
+	uint32_t cal_f6_raw;
+	uint32_t cal_f7_raw;
+	uint32_t cal_f8_raw;
+	uint32_t cal_nir_raw;
+	uint32_t cal_clear_raw;
+
+	uint32_t cal_f1_tar;
+	uint32_t cal_f2_tar;
+	uint32_t cal_f3_tar;
+	uint32_t cal_f4_tar;
+	uint32_t cal_f5_tar;
+	uint32_t cal_f6_tar;
+	uint32_t cal_f7_tar;
+	uint32_t cal_f8_tar;
+	uint32_t cal_nir_tar;
+	uint32_t cal_clear_tar;
+
+	uint32_t cal_f1_rst;
+	uint32_t cal_f2_rst;
+	uint32_t cal_f3_rst;
+	uint32_t cal_f4_rst;
+	uint32_t cal_f5_rst;
+	uint32_t cal_f6_rst;
+	uint32_t cal_f7_rst;
+	uint32_t cal_f8_rst;
+	uint32_t cal_nir_rst;
+	uint32_t cal_clear_rst;
 };
 
 struct cali_gain_thr_t {
@@ -165,6 +205,9 @@ enum report_type {
 
 	// 16 raw data SEQ: c,r,g,b,w,0,...,0
 	AWB_SENSOR_RAW_SEQ_TYPE_C_R_G_B_W = 2,
+
+	// 16 raw data SEQ: f1,f2,f3,...,nir,clear,0,...,0
+	AWB_SENSOR_RAW_SEQ_TYPE_MULTISPECTRAL = 3,
 
 	AWB_SENSOR_RAW_SEQ_TYPE_COMMON = 9,
 	AWB_SENSOR_RAW_SEQ_TYPE_MAX,
@@ -223,6 +266,9 @@ int color_sensor_set_byte(const struct i2c_client *i2c, uint8_t reg,
 	uint8_t data);
 int color_sensor_read_fifo(struct i2c_client *client, uint8_t reg,
 	void *buf, size_t len);
+int color_sensor_write_fifo(struct i2c_client *i2c, uint8_t reg,
+	const void *buf, size_t len);
+
 int read_color_calibrate_data_from_nv(int nv_number, int nv_size,
 	const char *nv_name, char *temp);
 int write_color_calibrate_data_to_nv(int nv_number, int nv_size,

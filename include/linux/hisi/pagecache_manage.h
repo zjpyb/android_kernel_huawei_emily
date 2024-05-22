@@ -9,7 +9,6 @@
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
  *
- * Author:       HiSilicon Kirin Storage DEV
  * Created Time: Sat 25 Feb 2017 11:12:58 AM CST
  * File Name:    pagecache_manage.h
  *
@@ -58,6 +57,8 @@
 void mount_fs_register_pch(struct vfsmount *mnt);
 void umounting_fs_register_pch(struct super_block *sb);
 void umounted_fs_register_pch(struct super_block *sb);
+extern unsigned long global_dirtyable_memory(void);
+extern int pch_lowmem_check2(void);
 #else
 static inline void mount_fs_register_pch(struct vfsmount *mnt) {}
 static inline void umounting_fs_register_pch(struct super_block *sb) {}

@@ -1,9 +1,9 @@
 /*
  * battery_voltage.h
  *
- * battery boltage for power module
+ * battery voltage for power module
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,11 +19,9 @@
 #ifndef _BATTERY_VOLTAGE_H_
 #define _BATTERY_VOLTAGE_H_
 
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
-#endif
-#ifdef CONFIG_HISI_BCI_BATTERY
-#include <linux/power/hisi/hisi_bci_battery.h>
+#include <linux/power/hisi/coul/coul_drv.h>
+#ifdef CONFIG_BCI_BATTERY
+#include <linux/power/hisi/bci_battery.h>
 #endif
 
 #define HW_BATT_VOL_NUM                  10
@@ -83,7 +81,7 @@ int hw_battery_voltage_ops_register(struct hw_batt_vol_ops *ops,
 #else
 static inline int hw_battery_voltage(enum hw_batt_id batt_id)
 {
-	return hisi_battery_voltage();
+	return coul_drv_battery_voltage();
 }
 
 static inline int hw_battery_get_series_num(void)

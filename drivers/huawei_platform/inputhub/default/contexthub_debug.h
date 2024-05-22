@@ -1,29 +1,18 @@
 /*
- * drivers/inputhub/contexthub_debug.h
- *
- * sensors sysfs header
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub debug header file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
+
 #ifndef __SENSOR_DEBUG_H__
 #define __SENSOR_DEBUG_H__
 
+#include "contexthub_boot.h"
 #include "contexthub_recovery.h"
-#define REGISTER_SENSORHUB_DEBUG_OPERATION(FUNC) \
-register_sensorhub_debug_operation(#FUNC, FUNC);
 
-#define UNREGISTER_SENSORHUB_DEBUG_OPERATION(FUNC) \
-unregister_sensorhub_debug_operation(FUNC);
+#define register_sensorhub_debug_op(_func) \
+register_sensorhub_debug_operation(#_func, _func);
 
 typedef int (*sensor_debug_pfunc) (int tag, int argv[], int argc);
 
@@ -107,7 +96,7 @@ typedef struct ar_data {
 } ar_data_t;
 
 typedef struct ar_data_cmd {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	ar_data_t data;
 } ar_data_cmd_t;
 #pragma pack()
@@ -117,7 +106,7 @@ typedef enum {
 	EVENT_ENTER = 1,
 	EVENT_EXIT = 2,
 	EVENT_BOTH = 3,
-} EVENT_TYPE;
+} event_type;
 
 typedef enum {
 	AR_ACTIVITY_VEHICLE = 0x00,
@@ -137,9 +126,8 @@ typedef enum {
 	AR_FAST_WALK = 0x18,				/* quick walk */
 	AR_STOP_VEHICLE = 0x19,				/* park */
 	AR_UNKNOWN = 0x3F,
-} AR_ACTIVITY_TYPE;
+} ar_activity_type;
 
-//aod
 enum {
 	AOD_DRV_PIXEL_FORMAT_RGB_565,
 	AOD_DRV_PIXEL_FORMAT_RGBX_4444,
@@ -160,22 +148,22 @@ enum {
 	AOD_DRV_PIXEL_FORMAT_YUV_422_I,
 
 	/* YUV Semi-planar */
-	AOD_DRV_PIXEL_FORMAT_YCbCr_422_SP, /* NV16 */
-	AOD_DRV_PIXEL_FORMAT_YCrCb_422_SP,
-	AOD_DRV_PIXEL_FORMAT_YCbCr_420_SP,
-	AOD_DRV_PIXEL_FORMAT_YCrCb_420_SP, /* NV21*/
+	AOD_DRV_PIXEL_FORMAT_YCBCR_422_SP, /* NV16 */
+	AOD_DRV_PIXEL_FORMAT_YCRCB_422_SP,
+	AOD_DRV_PIXEL_FORMAT_YCBCR_420_SP,
+	AOD_DRV_PIXEL_FORMAT_YCRCB_420_SP, /* NV21*/
 
 	/* YUV Planar */
-	AOD_DRV_PIXEL_FORMAT_YCbCr_422_P,
-	AOD_DRV_PIXEL_FORMAT_YCrCb_422_P,
-	AOD_DRV_PIXEL_FORMAT_YCbCr_420_P,
-	AOD_DRV_PIXEL_FORMAT_YCrCb_420_P, /* AOD_DRV_PIXEL_FORMAT_YV12 */
+	AOD_DRV_PIXEL_FORMAT_YCBCR_422_P,
+	AOD_DRV_PIXEL_FORMAT_YCRCB_422_P,
+	AOD_DRV_PIXEL_FORMAT_YCBCR_420_P,
+	AOD_DRV_PIXEL_FORMAT_YCRCB_420_P, /* AOD_DRV_PIXEL_FORMAT_YV12 */
 
 	/* YUV Package */
-	AOD_DRV_PIXEL_FORMAT_YUYV_422_Pkg,
-	AOD_DRV_PIXEL_FORMAT_UYVY_422_Pkg,
-	AOD_DRV_PIXEL_FORMAT_YVYU_422_Pkg,
-	AOD_DRV_PIXEL_FORMAT_VYUY_422_Pkg,
+	AOD_DRV_PIXEL_FORMAT_YUYV_422_PKG,
+	AOD_DRV_PIXEL_FORMAT_UYVY_422_PKG,
+	AOD_DRV_PIXEL_FORMAT_YVYU_422_PKG,
+	AOD_DRV_PIXEL_FORMAT_VYUY_422_PKG,
 };
 
 typedef struct {
@@ -200,59 +188,58 @@ typedef enum {
 	AR_ENVIRONMENT_STATION,
 	AR_ENVIRONMENT_UNKNOWN	= 0x1f,
 	AR_ENVIRONMENT_END	= 0x20,
-} AR_ENVIRONMENT_TYPE;
+} ar_environment_type;
 
 #define SINGLE_STR_LENGTH_MAX 30
 
-#define TIME_DIGIT_HOUR_OFFSET	(10)
-#define TIME_DIGIT_MINU_OFFSET	(50)
-#define TIME_DIGIT_TIME_OFFSET	(20)
-#define SCREEN_RES_X (144)
-#define SCREEN_RES_Y (256)
-#define AOD_SINGLE_CLOCK_OFFSET_X (0)
-#define AOD_SINGLE_CLOCK_OFFSET_Y (0)
-#define AOD_SINGLE_CLOCK_RES_X (144)
-#define AOD_SINGLE_CLOCK_RES_Y (105)
+#define TIME_DIGIT_HOUR_OFFSET 10
+#define TIME_DIGIT_MINU_OFFSET 50
+#define TIME_DIGIT_TIME_OFFSET 20
+#define SCREEN_RES_X 144
+#define SCREEN_RES_Y 256
+#define AOD_SINGLE_CLOCK_OFFSET_X 0
+#define AOD_SINGLE_CLOCK_OFFSET_Y 0
+#define AOD_SINGLE_CLOCK_RES_X 144
+#define AOD_SINGLE_CLOCK_RES_Y 105
 #define AOD_SINGLE_CLOCK_DIGITS_RES_X (15)
 #define AOD_SINGLE_CLOCK_DIGITS_RES_Y (32)
-#define AOD_SINGLE_CLOCK_OFFSET_X_2 (2)
-#define AOD_SINGLE_CLOCK_OFFSET_Y_2 (10)
-#define AOD_SINGLE_CLOCK_RES_X_2 (140)
+#define AOD_SINGLE_CLOCK_OFFSET_X_2 2
+#define AOD_SINGLE_CLOCK_OFFSET_Y_2 10
+#define AOD_SINGLE_CLOCK_RES_X_2 140
 #define MIN_SINGNED_SHORT (-32678)
-#define MAX_SINGNED_SHORT (32767)
-#define ALS_PARAM	25
-#define SET_ALS_TYPE_NUMB_MAX    (2) // permit type number is 0 or 1 or 2
-#define SET_PS_TYPE_NUMB_MAX     (1) // permit type number is 0 or 1
+#define MAX_SINGNED_SHORT 32767
+#define ALS_PARAM 25
+#define SET_ALS_TYPE_NUMB_MAX    2 /* permit type number is 0 or 1 or 2 */
+#define SET_PS_TYPE_NUMB_MAX     1 /* permit type number is 0 or 1 */
 
-#define AOD_DRV_FB_PIXEL_ALIGN(val, al)    (((val) + ((al)-1)) & (~((al)-1)))
-#define AOD_DRV_X_RES_PIXELS_ALIGN (16)
-#define SINGLE_CLOCK_SPACES (4)
+#define aod_drv_fb_pixel_align(val, al) (((val) + (al) - 1) & (~((al) - 1)))
+#define AOD_DRV_X_RES_PIXELS_ALIGN 16
+#define SINGLE_CLOCK_SPACES 4
 #define DIGITS_COUNT (10)
 #define SINGLE_CLOCK_DIGITS_BITMAP_MAX_SIZE (AOD_SINGLE_CLOCK_DIGITS_RES_X * AOD_SINGLE_CLOCK_DIGITS_RES_Y * 2)
-#define FRAMEBUFFER_SIZE (AOD_DRV_FB_PIXEL_ALIGN(SCREEN_RES_X * 2, AOD_DRV_X_RES_PIXELS_ALIGN) * SCREEN_RES_Y)
+#define FRAMEBUFFER_SIZE (aod_drv_fb_pixel_align(SCREEN_RES_X * 2, \
+			AOD_DRV_X_RES_PIXELS_ALIGN) * SCREEN_RES_Y)
 #define SINGLE_CLOCK_DIGITS_BITMAPS_SIZE (DIGITS_COUNT * SINGLE_CLOCK_DIGITS_BITMAP_MAX_SIZE)
 #define DDR_MEMORY_SIZE (FRAMEBUFFER_SIZE + SINGLE_CLOCK_DIGITS_BITMAPS_SIZE + sizeof(uint32_t))
 #define DIGITS_BITMAPS_OFFSET (FRAMEBUFFER_SIZE + sizeof(uint32_t))
 
-#define SAR_SET_REGISTER (1)
-#define SAR_SET_THRESHOLD (2)
-#define SAR_SET_THRESHOLD_AND_REGISTER (3)
-#define SEMTECH_SAR_INIT_REG_VAL_LENGTH (17)
-#define SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH (8)
-#define SAR_DEBUG_MODE (1)
-#define SAR_NORMAL_MODE (0)
+#define SAR_SET_REGISTER 1
+#define SAR_SET_THRESHOLD 2
+#define SAR_SET_THRESHOLD_AND_REGISTER 3
+#define SEMTECH_SAR_INIT_REG_VAL_LENGTH 17
+#define SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH 8
+#define SAR_DEBUG_MODE 1
+#define SAR_NORMAL_MODE 0
 
-extern struct CONFIG_ON_DDR *pConfigOnDDr;
+extern struct config_on_ddr *g_config_on_ddr;
 extern struct class *sensors_class;
-extern int iom3_need_recovery(int modid, exp_source_t f);
 extern int iomcu_dubai_log_fetch(uint32_t event_type, void* data, uint32_t length);
 
-extern struct als_platform_data als_data;
-extern struct ps_platform_data ps_data;
-extern struct sar_platform_data sar_pdata;
-extern char sensor_chip_info[SENSOR_MAX][MAX_CHIP_INFO_LEN];
-
-extern int g_iom3_state;
-extern int iom3_power_state;
+iomcu_power_status *get_global_iomcu_power_status(void);
+const char *get_str_begin(const char *cmd_buf);
+const char *get_str_end(const char *cmd_buf);
+bool str_fuzzy_match(const char *cmd_buf, const char *target);
+bool get_arg(const char *str, int *arg);
+void create_debug_files(void);
 
 #endif

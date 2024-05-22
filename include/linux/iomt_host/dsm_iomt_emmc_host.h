@@ -4,7 +4,7 @@
  * description
  * stat io latency scatter at driver level,
  * show it in kernel log and host attr node.
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -31,25 +31,25 @@ static inline unsigned char iomt_host_mrq_dir(struct mmc_request *mrq)
 
 static inline void iomt_host_latency_mrq_init(struct mmc_request *mrq)
 {
-	mrq->io_start_ticks = 0;
+	mrq->iomt_start_time.ktime = 0;
 }
 
 static inline void iomt_host_latency_mrq_start_once(struct mmc_request *mrq)
 {
-	if (mrq->io_start_ticks == 0)
-		mrq->io_start_ticks = jiffies;
+	if (mrq->iomt_start_time.ktime == 0)
+		mrq->iomt_start_time.ktime = ktime_get();
 }
 
 static inline void iomt_host_latency_mrq_start(struct mmc_request *mrq)
 {
-	mrq->io_start_ticks = jiffies;
+	mrq->iomt_start_time.ktime = ktime_get();
 }
 
 static inline void iomt_host_latency_mrq_end(struct mmc_host *mmc_host,
 						struct mmc_request *mrq)
 {
-	struct iomt_host_io_timeout_dsm *io_timeout_dsm;
-	struct iomt_host_info *iomt_host_info;
+	struct iomt_host_io_timeout_dsm *io_timeout_dsm = NULL;
+	struct iomt_host_info *iomt_host_info = NULL;
 	unsigned int i;
 	unsigned char dir;
 
@@ -60,7 +60,7 @@ static inline void iomt_host_latency_mrq_end(struct mmc_host *mmc_host,
 
 	dir = iomt_host_mrq_dir(mrq);
 
-	i = iomt_host_stat_latency(iomt_host_info, mrq->io_start_ticks, dir);
+	i = iomt_host_io_latency(iomt_host_info, &(mrq->iomt_start_time), dir, 0);
 
 	if (unlikely(i == IOMT_LATENCY_INVALID_INDEX))
 		return;
@@ -78,13 +78,15 @@ static inline void iomt_host_latency_mrq_end(struct mmc_host *mmc_host,
 				IOMT_OP_BLOCK_SHIFT);
 		}
 
-		io_timeout_dsm->block_ticks =
-			(unsigned short)(jiffies - mrq->io_start_ticks);
 
-		if (mrq->data)
+		io_timeout_dsm->block_ticks  = ktime_to_ms(ktime_sub(ktime_get(), mrq->iomt_start_time.ktime));
+
+		if (mrq->data) {
 			io_timeout_dsm->block_ticks |=
 				(((unsigned int)mrq->data->blocks) <<
 				IOMT_OP_BLOCK_SHIFT);
+			io_timeout_dsm->op_arg = (unsigned int) mrq->cmdq_req->blk_addr;
+		}
 	}
 }
 
@@ -98,6 +100,6 @@ static inline void iomt_host_latency_mrq_end(struct mmc_host *mmc_host,
 
 void dsm_iomt_mmc_host_init(struct mmc_host *host);
 
-void dsm_iomt_mmc_host_exit(struct mmc_host *host);
+void dsm_iomt_mmc_host_exit(const struct mmc_host *host);
 
 #endif

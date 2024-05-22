@@ -5,7 +5,6 @@
  * Create: 2014-02-25
  */
 
-#define SECUREC_INLINE_INIT_FILE_STREAM_FILE 1
 #include "secinput.h"
 
 /*
@@ -45,7 +44,7 @@ int vfscanf_s(FILE *stream, const char *format, va_list argList)
     }
 
     SECUREC_LOCK_FILE(stream);
-    SecInitFileStreamFromFile(&fStr, stream);
+    SECUREC_FILE_STREAM_FROM_FILE(&fStr, stream);
     retVal = SecInputS(&fStr, format, argList);
     SECUREC_UNLOCK_FILE(stream);
     if (retVal < 0) {
@@ -55,5 +54,4 @@ int vfscanf_s(FILE *stream, const char *format, va_list argList)
 
     return retVal;
 }
-
 

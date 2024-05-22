@@ -40,9 +40,9 @@ static inline int rscan_trigger(void)
  */
 
 #ifdef CONFIG_HW_ROOT_SCAN
-int root_scan_pause(unsigned int op_mask, void *reserved);
+int root_scan_pause(unsigned int op_mask, const void *reserved);
 #else
-static inline int root_scan_pause(unsigned int op_mask, void *reserved)
+static inline int root_scan_pause(unsigned int op_mask, const void *reserved)
 {
 	return 0;
 }

@@ -1,3 +1,21 @@
+/*
+ * platform_helpers.h
+ *
+ * platform_helpers driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef __FUSB_PLATFORM_HELPERS_H_
 #define __FUSB_PLATFORM_HELPERS_H_
 
@@ -5,6 +23,10 @@
 #include "FSCTypes.h"
 #define INIT_DELAY_MS   500     // Time to wait before initializing the device, in ms
 #define RETRIES_I2C 3           // Number of retries for I2C reads/writes
+
+#ifdef CONFIG_CONTEXTHUB_PD
+extern void hw_pd_wait_dptx_ready(void);
+#endif
 
 /*********************************************************************************************************************/
 /*********************************************************************************************************************/
@@ -237,4 +259,8 @@ void fusb_force_sink(void);
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 FSC_S32 fusb_dual_role_phy_init(void);
 #endif
+
+extern void ls_i2c_mutex_lock(void);
+extern void ls_i2c_mutex_unlock(void);
+
 #endif  // __FUSB_PLATFORM_HELPERS_H_

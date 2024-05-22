@@ -151,7 +151,7 @@ static int get_sysctrl_base(void)
 	return 0;
 }
 
-static void __get_dump_region_list(struct device_node* dump_node,  char* prop_name, dump_loc_t loc)
+static void __get_dump_region_list(struct device_node* dump_node,  char* prop_name, enum dump_loc loc)
 {
 	int i, cnt;
 	struct property* prop = NULL;
@@ -165,10 +165,10 @@ static void __get_dump_region_list(struct device_node* dump_node,  char* prop_na
 		if (of_property_read_u32_array(dump_node, prop_name, g_dump_region_list[loc - 1], cnt)) {
 			hwlog_err("%s read %s from dts fail!\n", __func__, prop_name);
 		} else {
-		    for (i = 0; i < cnt; i++) {
-		        pConfigOnDDr->dump_config.elements[g_dump_region_list[loc - 1][i]].loc = loc;
-		        hwlog_info("region [%d]\n", g_dump_region_list[loc - 1][i]);
-		    }
+			for (i = 0; i < cnt; i++) {
+				pConfigOnDDr->dump_config.elements[g_dump_region_list[loc - 1][i]].loc = loc;
+				hwlog_info("region [%d]\n", g_dump_region_list[loc - 1][i]);
+			}
 		}
 	}
 }
@@ -180,40 +180,36 @@ static void get_dump_config_from_dts(void)
 	dump_node = of_find_node_by_name(NULL, "sensorhub_dump");
 
 	if (!dump_node) {
-	    hwlog_err("%s failed to find dts node sensorhub_dump\n", __func__);
-	    goto OUT;
+		hwlog_err("%s failed to find dts node sensorhub_dump\n", __func__);
+		goto OUT;
 	}
 
-	if (of_property_read_u32(dump_node, "enable", &g_enable_dump)) {
-	    hwlog_err("%s failed to find property enable\n", __func__);
-	}
+	if (of_property_read_u32(dump_node, "enable", &g_enable_dump))
+		hwlog_err("%s failed to find property enable\n", __func__);
 
-	if (!g_enable_dump) {
-	    goto OUT;
-	}
+	if (!g_enable_dump)
+		goto OUT;
 
 	__get_dump_region_list(dump_node, "tcm_regions", DL_TCM);
 
-	if (of_property_read_u32(dump_node, "extend_region_size", &g_dump_extend_size)) {
-	    hwlog_err("%s failed to find property extend_region_size\n", __func__);
-	}
+	if (of_property_read_u32(dump_node, "extend_region_size", &g_dump_extend_size))
+		hwlog_err("%s failed to find property extend_region_size\n", __func__);
 
 	hwlog_info("%s sensorhub extend_region_size is 0x%x\n", __func__, g_dump_extend_size);
 
-	if (g_dump_extend_size) {
-	    __get_dump_region_list(dump_node, "ext_regions", DL_EXT);
-	}
+	if (g_dump_extend_size)
+		__get_dump_region_list(dump_node, "ext_regions", DL_EXT);
 
 	if (of_property_read_string(dump_node, "dump_dir", (const char**)&pStr)) {
-	    hwlog_err("%s failed to find property dump_dir use default\n", __func__);
-	    memset(g_dump_dir, 0 , sizeof(g_dump_dir));
-	    strncpy(g_dump_dir, SH_DMP_DIR, PATH_MAXLEN - 1);
+		hwlog_err("%s failed to find property dump_dir use default\n", __func__);
+		memset(g_dump_dir, 0 , sizeof(g_dump_dir));
+		strncpy(g_dump_dir, SH_DMP_DIR, PATH_MAXLEN - 1);
 	}
 
 	if (of_property_read_string(dump_node, "dump_fs", (const char**)&pStr)) {
-	    hwlog_err("%s failed to find property dump_dir use default\n", __func__);
-	    memset(g_dump_fs, 0, sizeof(g_dump_fs));
-	    strncpy(g_dump_fs, SH_DMP_FS, PATH_MAXLEN - 1);
+		hwlog_err("%s failed to find property dump_dir use default\n", __func__);
+		memset(g_dump_fs, 0, sizeof(g_dump_fs));
+		strncpy(g_dump_fs, SH_DMP_FS, PATH_MAXLEN - 1);
 	}
 
 OUT:
@@ -226,8 +222,8 @@ OUT:
 static int write_ramdump_info_to_sharemem(void)
 {
 	if (pConfigOnDDr == NULL) {
-	    hwlog_err("pConfigOnDDr is NULL, maybe ioremap (%x) failed!\n", IOMCU_CONFIG_START);
-	    return -1;
+		hwlog_err("pConfigOnDDr is NULL, maybe ioremap %x failed\n", IOMCU_CONFIG_START);
+		return -1;
 	}
 
 	pConfigOnDDr->dump_config.finish = SH_DUMP_INIT;
@@ -238,17 +234,17 @@ static int write_ramdump_info_to_sharemem(void)
 	pConfigOnDDr->dump_config.reason = 0;
 
 	hwlog_warn("%s dumpaddr low is %x, dumpaddr high is %x, dumplen is %x, end!\n",
-	 	__func__, (u32) (pConfigOnDDr->dump_config.dump_addr),
-	 		(u32) ((pConfigOnDDr->dump_config.dump_addr) >> 32), pConfigOnDDr->dump_config.dump_size);
+		__func__, (u32)(pConfigOnDDr->dump_config.dump_addr),
+		(u32)((pConfigOnDDr->dump_config.dump_addr) >> 32), pConfigOnDDr->dump_config.dump_size);
 	return 0;
 }
 
 static void __send_nmi(void)
 {
-	if (sysctrl_base != NULL && nmi_reg != 0) {
-	    writel(0x2, sysctrl_base + nmi_reg);
-	} else
-	    hwlog_err("sysctrl_base is %pK, nmi_reg is %d!\n", sysctrl_base, nmi_reg);
+	if (sysctrl_base != NULL && nmi_reg != 0)
+		writel(0x2, sysctrl_base + nmi_reg);
+	else
+		hwlog_err("sysctrl_base is %pK, nmi_reg is %d\n", sysctrl_base, nmi_reg);
 }
 
 static void notify_rdr_thread(void)
@@ -277,8 +273,8 @@ static int clean_rdr_memory(struct rdr_register_module_result rdr_info)
 
 	dump_vir_addr = (unsigned int*)hisi_bbox_map(rdr_info.log_addr, rdr_info.log_len);
 	if (dump_vir_addr == NULL) {
-	    hwlog_err("hisi_bbox_map (%llx) failed in %s!\n", rdr_info.log_addr, __func__);
-	    return -1;
+		hwlog_err("hisi_bbox_map %llx failed in %s\n", rdr_info.log_addr, __func__);
+		return -1;
 	}
 	memset(dump_vir_addr, 0, rdr_info.log_len);
 	return ret;
@@ -325,9 +321,9 @@ static int sh_register_exception(void)
 	einfo.e_from_core = RDR_IOM3;
 	einfo.e_upload_flag = RDR_UPLOAD_YES;
 	memcpy(einfo.e_from_module, sh_module_name,
-	       sizeof(sh_module_name) > MODULE_NAME_LEN ? MODULE_NAME_LEN : sizeof(sh_module_name));
+		sizeof(sh_module_name) > MODULE_NAME_LEN ? MODULE_NAME_LEN : sizeof(sh_module_name));
 	memcpy(einfo.e_desc, sh_module_desc,
-	       sizeof(sh_module_desc) > STR_EXCEPTIONDESC_MAXLEN ? STR_EXCEPTIONDESC_MAXLEN : sizeof(sh_module_desc));
+		sizeof(sh_module_desc) > STR_EXCEPTIONDESC_MAXLEN ? STR_EXCEPTIONDESC_MAXLEN : sizeof(sh_module_desc));
 	ret = rdr_register_exception(&einfo);
 	if (!ret)
 	{ return ret; }
@@ -336,7 +332,7 @@ static int sh_register_exception(void)
 	einfo.e_modid_end = SENSORHUB_USER_MODID;
 	einfo.e_exce_type = IOM3_S_USER_EXCEPTION;
 	memcpy(einfo.e_desc, sh_module_user_desc,
-	       sizeof(sh_module_user_desc) > STR_EXCEPTIONDESC_MAXLEN ? STR_EXCEPTIONDESC_MAXLEN : sizeof(sh_module_user_desc));
+		sizeof(sh_module_user_desc) > STR_EXCEPTIONDESC_MAXLEN ? STR_EXCEPTIONDESC_MAXLEN : sizeof(sh_module_user_desc));
 	ret = rdr_register_exception(&einfo);
 	hwlog_info("%s end!\n", __func__);
 	return ret;
@@ -368,23 +364,23 @@ static int __sh_create_dir(char* path)
 	mm_segment_t old_fs;
 
 	if (path == NULL) {
-	    hwlog_err("invalid  parameter. path:%pK.\n", path);
-	    return -1;
+		hwlog_err("invalid  parameter. path:%pK.\n", path);
+		return -1;
 	}
 
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	fd = sys_access(path, 0);
 	if (0 != fd) {
-	    hwlog_info("sh: need create dir %s !\n", path);
-	    fd = sys_mkdir(path, DIR_LIMIT);
-	    if (fd < 0) {
-	        hwlog_err("sh: create dir %s failed! ret = %d\n", path, fd);
-	        set_fs(old_fs);
-	        return fd;
-	    }
+		hwlog_info("sh: need create dir %s\n", path);
+		fd = sys_mkdir(path, DIR_LIMIT);
+		if (fd < 0) {
+			hwlog_err("sh: create dir %s failed ret = %d\n", path, fd);
+			set_fs(old_fs);
+			return fd;
+		}
 
-	    hwlog_info("sh: create dir %s successed [%d]!!!\n", path, fd);
+		hwlog_info("sh: create dir %s successed %d\n", path, fd);
 	}
 	set_fs(old_fs);
 	return 0;
@@ -398,11 +394,11 @@ static void sh_wait_fs(char* path)
 	set_fs(KERNEL_DS);
 
 	do {
-	    fd = sys_access(path, 0);
-	    if (fd) {
-	        msleep(10);
-	        hwlog_info("%s wait ...\n", __func__);
-	    }
+		fd = sys_access(path, 0);
+		if (fd) {
+			msleep(10);
+			hwlog_info("%s wait ...\n", __func__);
+		}
 	}
 	while (fd);
 	set_fs(old_fs);
@@ -416,11 +412,10 @@ static int sh_savebuf2fs(char* logpath, char* filename, void* buf, u32 len, u32 
 	mm_segment_t old_fs;
 	char path[PATH_MAXLEN];
 
-	if (logpath == NULL || filename == NULL || buf == NULL || len <= 0)
-	{
-	    hwlog_err("invalid  parameter. path:%pK, name:%pK buf:%pK len:0x%x\n", logpath, filename, buf, len);
-	    ret = -1;
-	    goto out2;
+	if (logpath == NULL || filename == NULL || buf == NULL || len <= 0) {
+		hwlog_err("invalid  parameter. path:%pK, name:%pK buf:%pK len:0x%x\n", logpath, filename, buf, len);
+		ret = -1;
+		goto file_open_err;
 	}
 
 	snprintf(path, PATH_MAXLEN, "%s/%s", logpath, filename);
@@ -430,34 +425,31 @@ static int sh_savebuf2fs(char* logpath, char* filename, void* buf, u32 len, u32 
 
 	flags = O_CREAT | O_RDWR | (is_append ? O_APPEND : O_TRUNC);
 	fp = filp_open(path, flags, FILE_LIMIT);
-	if (IS_ERR(fp))
-	{
-	    set_fs(old_fs);
-	    hwlog_err("%s():create file %s err.\n", __func__, path);
-	    ret = -1;
-	    goto out2;
+	if (IS_ERR(fp)) {
+		set_fs(old_fs);
+		hwlog_err("%s():create file %s err.\n", __func__, path);
+		ret = -1;
+		goto file_open_err;
 	}
 
 	vfs_llseek(fp, 0L, SEEK_END);
 	ret = vfs_write(fp, buf, len, &(fp->f_pos));
-	if (ret != len)
-	{
-	    hwlog_err("%s:write file %s exception with ret %d.\n", __func__, path, ret);
-	    goto out1;
+	if (ret != len) {
+		hwlog_err("%s:write file %s exception with ret %d.\n", __func__, path, ret);
+		goto write_err;
 	}
 
 	vfs_fsync(fp, 0);
-out1:
+write_err:
 	filp_close(fp, NULL);
 #ifdef CONFIG_HISI_BB
 	/*根据权限要求，hisi_logs目录及子目录群组调整为root-system */
 	ret = (int)bbox_chown((const char __user*)path, ROOT_UID, SYSTEM_GID, false);
-	if (ret) {
-	    hwlog_err("[%s], chown %s uid [%d] gid [%d] failed err [%d]!\n", __func__, path, ROOT_UID, SYSTEM_GID, ret);
-	}
+	if (ret)
+		hwlog_err("%s, chown %s uid %d gid %d failed err %d\n", __func__, path, ROOT_UID, SYSTEM_GID, ret);
 #endif
 	set_fs(old_fs);
-out2:
+file_open_err:
 	return ret;
 }
 
@@ -468,10 +460,9 @@ static int sh_readfs2buf(char* logpath, char* filename, void* buf, u32 len)
 	mm_segment_t old_fs;
 	char path[PATH_MAXLEN];
 
-	if (logpath == NULL || filename == NULL || buf == NULL || len <= 0)
-	{
-	    hwlog_err("invalid  parameter. path:%pK, name:%pK buf:%pK len:0x%x\n", logpath, filename, buf, len);
-	    goto out2;
+	if (logpath == NULL || filename == NULL || buf == NULL || len <= 0) {
+		hwlog_err("invalid  parameter. path:%pK, name:%pK buf:%pK len:0x%x\n", logpath, filename, buf, len);
+		goto para_err;
 	}
 
 	snprintf(path, PATH_MAXLEN, "%s/%s", logpath, filename);
@@ -479,31 +470,27 @@ static int sh_readfs2buf(char* logpath, char* filename, void* buf, u32 len)
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
-	if (0 != sys_access(path, 0))
-	{
-	    goto out1;
-	}
+	if (sys_access(path, 0) != 0)
+		goto access_file_err;
 
 	flags = ( O_RDWR );
 	fp = filp_open(path, flags, FILE_LIMIT);
-	if (IS_ERR(fp))
-	{
-	    hwlog_err("%s():open file %s err.\n", __func__, path);
-	    goto out1;
+	if (IS_ERR(fp)) {
+		hwlog_err("%s():open file %s err.\n", __func__, path);
+		goto access_file_err;
 	}
 
 	vfs_llseek(fp, 0L, SEEK_SET);
 	ret = vfs_read(fp, buf, len, &(fp->f_pos));
-	if (ret != len)
-	{
-	    hwlog_err("%s:read file %s exception with ret %d.\n",
-	              __func__, path, ret);
-	    ret = -1;
+	if (ret != len) {
+		hwlog_err("%s:read file %s exception with ret %d.\n",
+			__func__, path, ret);
+		ret = -1;
 	}
 	filp_close(fp, NULL);
-out1:
+access_file_err:
 	set_fs(old_fs);
-out2:
+para_err:
 	return ret;
 }
 
@@ -513,21 +500,20 @@ static int sh_create_dir(const char* path)
 	int index = 0;
 
 	if (path == NULL) {
-	    hwlog_err("invalid  parameter. path:%pK\n", path);
-	    return -1;
+		hwlog_err("invalid  parameter. path:%pK\n", path);
+		return -1;
 	}
 	memset(cur_path, 0, 64);
 	if (*path != '/')
-	{ return -1; }
+		return -1;
 	cur_path[index++] = *path++;
-	while (*path != '\0')
-	{
-	    if (*path == '/')
-	    { __sh_create_dir(cur_path); }
+	while (*path != '\0') {
+		if (*path == '/')
+			__sh_create_dir(cur_path);
 
-	    cur_path[index] = *path;
-	    path++;
-	    index++;
+		cur_path[index] = *path;
+		path++;
+		index++;
 	}
 	return 0;
 }
@@ -540,13 +526,9 @@ extern u64 rdr_get_tick(void);
 static int get_dump_reason_idx(void)
 {
 	if (pConfigOnDDr->dump_config.reason >= ARRAY_SIZE(sh_reset_reasons))
-	{
 		return ARRAY_SIZE(sh_reset_reasons) - 1;
-	}
 	else
-	{
 		return pConfigOnDDr->dump_config.reason;
-	}
 }
 
 static int write_sh_dump_history(void)
@@ -580,7 +562,7 @@ static int write_sh_dump_history(void)
 	//write history file
 	memset(buf, 0, HISTORY_LOG_SIZE);
 	snprintf(buf, HISTORY_LOG_SIZE, "reason [%s], [%02d], time [%s]\n",
-	     sh_reset_reasons[get_dump_reason_idx()], g_dump_index, date);
+		sh_reset_reasons[get_dump_reason_idx()], g_dump_index, date);
 	sh_savebuf2fs(g_dump_dir, "history.log", buf, strlen(buf), 1);
 	return ret;
 }
@@ -591,15 +573,15 @@ static void get_max_dump_cnt(void)
 	uint32_t index;
 	//find max index
 	ret = sh_readfs2buf(g_dump_dir, "dump_max", &index, sizeof(index));
-	if (ret < 0) {
-	    g_dump_index = -1;
-	} else {
-	    g_dump_index = index;
-	}
+	if (ret < 0)
+		g_dump_index = -1;
+	else
+		g_dump_index = index;
+
 	g_dump_index++;
-	if (MAX_DUMP_CNT == g_dump_index) {
-	    g_dump_index = 0;
-	}
+	if (g_dump_index == MAX_DUMP_CNT)
+		g_dump_index = 0;
+
 	sh_savebuf2fs(g_dump_dir, "dump_max", &g_dump_index, sizeof(g_dump_index), 0);
 }
 
@@ -607,7 +589,7 @@ static int write_sh_dump_file(void)
 {
 	char date[DATATIME_MAXLEN];
 	char path[PATH_MAXLEN];
-	dump_zone_head_t* dzh;
+	struct dump_zone_head* dzh;
 	memset(date, 0, DATATIME_MAXLEN);
 #ifdef CONFIG_HISI_BB
 	snprintf(date, DATATIME_MAXLEN, "%s-%08lld", rdr_get_timestamp(), rdr_get_tick());
@@ -623,31 +605,29 @@ static int write_sh_dump_file(void)
 
 	//write share part
 	if (g_sensorhub_dump_buff) {
-	    dzh = (dump_zone_head_t*)g_sensorhub_dump_buff;
-	    sh_savebuf2fs(g_dump_dir, path, g_sensorhub_dump_buff, min(pConfigOnDDr->dump_config.dump_size, dzh->len), 0);
+		dzh = (struct dump_zone_head *)g_sensorhub_dump_buff;
+		sh_savebuf2fs(g_dump_dir, path, g_sensorhub_dump_buff, min(pConfigOnDDr->dump_config.dump_size, dzh->len), 0);
 	}
 	//write extend part
 	if (g_sensorhub_extend_dump_buff) {
-	    dzh = (dump_zone_head_t*)g_sensorhub_extend_dump_buff;
-	    sh_savebuf2fs(g_dump_dir, path, g_sensorhub_extend_dump_buff, min(pConfigOnDDr->dump_config.ext_dump_size, dzh->len), 1);
+		dzh = g_sensorhub_extend_dump_buff;
+		sh_savebuf2fs(g_dump_dir, path, g_sensorhub_extend_dump_buff, min(pConfigOnDDr->dump_config.ext_dump_size, dzh->len), 1);
 	}
 	return 0;
 }
 
 static int save_sh_dump_file(void)
 {
-	if (!g_enable_dump)
-	{
-	    hwlog_info("%s skipped!\n", __func__);
-	    return 0;
+	if (!g_enable_dump) {
+		hwlog_info("%s skipped\n", __func__);
+		return 0;
 	}
 	sh_wait_fs(g_dump_fs);
 	hwlog_info("%s fs ready\n", __func__);
 	//check and create dump dir
-	if (sh_create_dir(g_dump_dir))
-	{
-	    hwlog_err("%s failed to create dir %s\n", __func__, g_dump_dir);
-	    return -1;
+	if (sh_create_dir(g_dump_dir)) {
+		hwlog_err("%s failed to create dir %s\n", __func__, g_dump_dir);
+		return -1;
 	}
 	get_max_dump_cnt();
 	//write history file
@@ -663,31 +643,29 @@ static int rdr_sh_thread(void* arg)
 	hwlog_warn("%s start!\n", __func__);
 
 	while (1) {
-	    timeout = 2000;
-	    down(&rdr_sh_sem);
+		timeout = 2000;
+		down(&rdr_sh_sem);
 
-	    if (g_enable_dump) {
-	        hwlog_warn(" ===========dump sensorhub log start==========\n");
-	        while (SH_DUMP_FINISH != pConfigOnDDr->dump_config.finish && timeout--)
-	        {
-	            mdelay(1);
-	        }
-	        hwlog_warn(" ===========sensorhub dump finished==========\n");
-	        hwlog_warn("dump reason idx %d\n", pConfigOnDDr->dump_config.reason);
-	        //write to fs
-	        save_sh_dump_file();
-	        //free buff
-	        if (g_sensorhub_extend_dump_buff)
-	        {
-	            hwlog_info("%s free alloc\n", __func__);
-	            kfree(g_sensorhub_extend_dump_buff);
-	            g_sensorhub_extend_dump_buff = NULL;
-	        }
-	        hwlog_warn(" ===========dump sensorhub log end==========\n");
-	    }
-	    __pm_relax(&rdr_wl);
-	    peri_used_release();
-	    complete_all(&sensorhub_rdr_completion);
+		if (g_enable_dump) {
+			hwlog_warn(" ===========dump sensorhub log start==========\n");
+			while (pConfigOnDDr->dump_config.finish != SH_DUMP_FINISH && timeout--)
+				mdelay(1);
+
+			hwlog_warn(" ===========sensorhub dump finished==========\n");
+			hwlog_warn("dump reason idx %d\n", pConfigOnDDr->dump_config.reason);
+			//write to fs
+			save_sh_dump_file();
+			//free buff
+			if (g_sensorhub_extend_dump_buff) {
+				hwlog_info("%s free alloc\n", __func__);
+				kfree(g_sensorhub_extend_dump_buff);
+				g_sensorhub_extend_dump_buff = NULL;
+			}
+			hwlog_warn(" ===========dump sensorhub log end==========\n");
+		}
+		__pm_relax(&rdr_wl);
+		peri_used_release();
+		complete_all(&sensorhub_rdr_completion);
 	}
 
 	return 0;
@@ -696,11 +674,10 @@ static int rdr_sh_thread(void* arg)
 static int rdr_exce_thread(void* arg)
 {
 	hwlog_warn("%s start!\n", __func__);
-	while (1)
-	{
-	    down(&rdr_exce_sem);
-	    hwlog_warn(" ==============trigger exception==============\n");
-	    iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_INTERNELFAULT);
+	while (1) {
+		down(&rdr_exce_sem);
+		hwlog_warn(" ==============trigger exception==============\n");
+		iom3_need_recovery(SENSORHUB_MODID, SH_FAULT_INTERNELFAULT);
 	}
 
 	return 0;
@@ -711,29 +688,26 @@ int register_iom3_recovery_notifier(struct notifier_block* nb)
 	return blocking_notifier_chain_register(&iom3_recovery_notifier_list, nb);
 }
 
-int iom3_rec_sys_callback(const pkt_header_t* head)
+int iom3_rec_sys_callback(const struct pkt_header* head)
 {
 	int ret = 0;
 
-	if (IOM3_RECOVERY_MINISYS == atomic_read(&iom3_rec_state))
-	{
-	    if (ST_MINSYSREADY == ((pkt_sys_statuschange_req_t*) head)->status)
-	    {
-	        hwlog_info("REC sys ready mini!\n");
-	        ret = send_fileid_to_mcu();
-	        if (ret)
-	            hwlog_err("REC get sensors cfg data from dts fail,ret=%d, use default config data!\n", ret);
-	        else
-	            hwlog_info("REC get sensors cfg data from dts success!\n");
-	    } else if (ST_MCUREADY == ((pkt_sys_statuschange_req_t*) head)->status)
-	    {
-	        hwlog_info("REC mcu all ready!\n");
-	        ret = sensor_set_cfg_data();
-	        if (ret < 0)
-	            hwlog_err("REC sensor_chip_detect ret=%d\n", ret);
-	        else
-	        { complete(&iom3_rec_done); }
-	    }
+	if (atomic_read(&iom3_rec_state) == IOM3_RECOVERY_MINISYS) {
+		if (((pkt_sys_statuschange_req_t *)head)->status == ST_MINSYSREADY) {
+			hwlog_info("REC sys ready mini!\n");
+			ret = send_fileid_to_mcu();
+			if (ret)
+				hwlog_err("REC get sensors cfg data from dts fail,ret=%d, use default config data\n", ret);
+			else
+				hwlog_info("REC get sensors cfg data from dts success\n");
+		} else if (((pkt_sys_statuschange_req_t *)head)->status == ST_MCUREADY) {
+			hwlog_info("REC mcu all ready\n");
+			ret = sensor_set_cfg_data();
+			if (ret < 0)
+				hwlog_err("REC sensor_chip_detect ret=%d\n", ret);
+			else
+				complete(&iom3_rec_done);
+		}
 	}
 
 	return 0;
@@ -744,7 +718,7 @@ int iom3_rec_sys_callback(const pkt_header_t* head)
 static void notify_modem_when_iom3_recovery_finish(void)
 {
 	uint16_t status = ST_RECOVERY_FINISH;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 
 	hwlog_info("notify_modem_when_iom3_recovery_finish\n");
 
@@ -759,7 +733,7 @@ static void notify_modem_when_iom3_recovery_finish(void)
 static void disable_key_when_sysreboot(void)
 {
 	int ret = 0;
-	write_info_t winfo;
+	struct write_info winfo;
 
 	if (strlen(sensor_chip_info[KEY]) == 0) {
 		hwlog_err("no key\n");
@@ -851,17 +825,16 @@ static int rdr_sensorhub_init_early(void)
 		{ return ret; }
 	get_dump_config_from_dts();
 	g_sensorhub_dump_buff = (uint8_t*) ioremap_wc(SENSORHUB_DUMP_BUFF_ADDR, SENSORHUB_DUMP_BUFF_SIZE);
-	if (!g_sensorhub_dump_buff)
-	{
-	    hwlog_err("%s failed remap dump buff\n", __func__);
-	    return -EINVAL;
+	if (!g_sensorhub_dump_buff) {
+		hwlog_err("%s failed remap dump buff\n", __func__);
+		return -EINVAL;
 	}
 	/*regitster exception.*/
 	ret = sh_register_exception();	/*0:error*/
 	if (ret == 0)
-		{ ret = -EINVAL; }
+		ret = -EINVAL;
 	else
-		{ ret = 0; }
+		ret = 0;
 	return ret;
 }
 #endif
@@ -875,19 +848,23 @@ static int sensorhub_panic_notify(struct notifier_block *nb, unsigned long actio
 	__send_nmi();
 	hwlog_warn("sensorhub_panic_notify\n");
 
-	while (SH_DUMP_FINISH != pConfigOnDDr->dump_config.finish && timeout--)
-	{
-	    mdelay(1);
-	}
+	while (pConfigOnDDr->dump_config.finish != SH_DUMP_FINISH && timeout--)
+		mdelay(1);
+
 	hwlog_warn("%s done\n", __func__);
 	return NOTIFY_OK;
 }
 
 int sensorhub_noc_notify(int value)
 {
-	if(value <= 1){
-	    hwlog_warn("%s :read err,no need recovery iomcu\n", __func__);
-	    return 0;
+	if (is_sensorhub_disabled()) {
+		hwlog_err("[%s]do not handle noc as sensorhub is disabled\n", __func__);
+		return 0;
+	}
+
+	if (value <= 1) {
+		hwlog_warn("%s :read err,no need recovery iomcu\n", __func__);
+		return 0;
 	}
 
 	hwlog_warn("%s start\n", __func__);
@@ -908,16 +885,14 @@ static int get_nmi_offset(void)
 	struct device_node* sh_node = NULL;
 
 	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub_nmi");
-	if (!sh_node)
-	{
-	    hwlog_err("%s, can not find node  sensorhub_nmi \n", __func__);
-	    return -1;
+	if (!sh_node) {
+		hwlog_err("%s, can not find node  sensorhub_nmi\n", __func__);
+		return -1;
 	}
 
-	if (of_property_read_u32(sh_node, "nmi_reg", &nmi_reg))
-	{
-	    hwlog_err("%s:read nmi reg err:value is %d \n", __func__, nmi_reg);
-	    return -1;
+	if (of_property_read_u32(sh_node, "nmi_reg", &nmi_reg)) {
+		hwlog_err("%s:read nmi reg err:value is %d \n", __func__, nmi_reg);
+		return -1;
 	}
 
 	hwlog_info("%s arch nmi reg is 0x%x\n", __func__, nmi_reg);
@@ -928,21 +903,18 @@ static int get_iomcu_cfg_base(void)
 {
 	struct device_node* np = NULL;
 
-	if (iomcu_cfg_base == NULL)
-	{
-	    np = of_find_compatible_node(NULL, NULL, "hisilicon,iomcuctrl");
-	    if (!np)
-	    {
-	        hwlog_err("can not find  iomcuctrl node !\n");
-	        return -1;
-	    }
+	if (iomcu_cfg_base == NULL) {
+		np = of_find_compatible_node(NULL, NULL, "hisilicon,iomcuctrl");
+		if (!np) {
+			hwlog_err("can not find  iomcuctrl node\n");
+			return -1;
+		}
 
-	    iomcu_cfg_base = of_iomap(np, 0);
-	    if (iomcu_cfg_base == NULL)
-	    {
-	        hwlog_err("get iomcu_cfg_base  error !\n");
-	        return -1;
-	    }
+		iomcu_cfg_base = of_iomap(np, 0);
+		if (iomcu_cfg_base == NULL) {
+			hwlog_err("get iomcu_cfg_base  error\n");
+			return -1;
+		}
 	}
 
 	return 0;
@@ -951,11 +923,11 @@ static int get_iomcu_cfg_base(void)
 static inline void show_iom3_stat(void)
 {
 	hwlog_err("CLK_SEL:0x%x,DIV0:0x%x,DIV1:0x%x,CLKSTAT0:0x%x, RSTSTAT0:0x%x\n",
-              readl(iomcu_cfg_base + IOMCU_CLK_SEL),
-              readl(iomcu_cfg_base + IOMCU_CFG_DIV0),
-              readl(iomcu_cfg_base + IOMCU_CFG_DIV1),
-              readl(iomcu_cfg_base + CLKSTAT0_OFFSET),
-              readl(iomcu_cfg_base + RSTSTAT0_OFFSET));
+		readl(iomcu_cfg_base + IOMCU_CLK_SEL),
+		readl(iomcu_cfg_base + IOMCU_CFG_DIV0),
+		readl(iomcu_cfg_base + IOMCU_CFG_DIV1),
+		readl(iomcu_cfg_base + CLKSTAT0_OFFSET),
+		readl(iomcu_cfg_base + RSTSTAT0_OFFSET));
 }
 
 static void reset_i2c_0_controller(void)
@@ -974,15 +946,14 @@ static void reset_i2c_0_controller(void)
 static void reset_sensor_power(void)
 {
 	int ret = 0;
-	if(!need_reset_io_power)
-	{
-	    hwlog_warn("%s: no need to reset sensor power\n", __func__);
-	    return;
+	if (!need_reset_io_power) {
+		hwlog_warn("%s: no need to reset sensor power\n", __func__);
+		return;
 	}
 
-	if(IS_ERR(sensorhub_vddio)){
-           hwlog_err("%s: regulator_get fail!\n", __func__);
-	    return;
+	if (IS_ERR(sensorhub_vddio)) {
+		hwlog_err("%s: regulator_get fail\n", __func__);
+		return;
 	}
 	ret = regulator_disable(sensorhub_vddio);
 	if (ret< 0) {
@@ -1002,8 +973,8 @@ static void reset_sensor_power(void)
 	if (ret< 0) {
 		hwlog_err("failed to enable regulator sensorhub_vddio\n");
 		return;
-       }
-       hwlog_info("%s done\n", __FUNCTION__);
+	}
+	hwlog_info("%s done\n", __FUNCTION__);
 }
 
 static void iom3_recovery_work(struct work_struct* work)
@@ -1092,7 +1063,7 @@ recovery_iom3:
 	return;
 }
 
-int iom3_need_recovery(int modid, exp_source_t f)
+int iom3_need_recovery(int modid, enum exp_source f)
 {
 	int ret = 0;
 	int old_state;

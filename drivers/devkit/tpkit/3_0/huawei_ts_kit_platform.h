@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,15 +18,6 @@
 #define __HUAWEI_TS_KIT_PLATFORM_H_
 
 #include <linux/kernel.h>
-
-/* marco define */
-#ifndef strict_strtoul
-#define strict_strtoul kstrtoul
-#endif
-
-#ifndef strict_strtol
-#define strict_strtol kstrtol
-#endif
 
 #define RAWDATA_SIZE_LIMIT 2
 
@@ -48,18 +39,14 @@
 #define DIFF_DATA_WAKEUP 2
 #define DIFF_DATA_IGNORE 3
 
-
-
 #define ANTI_FALSE_TOUCH_FEATURE_ALL "feature_all"
 /* for driver */
 #define ANTI_FALSE_TOUCH_LCD_WIDTH "lcd_width"
 #define ANTI_FALSE_TOUCH_LCD_HEIGHT "lcd_height"
 #define ANTI_FALSE_TOUCH_DRV_STOP_WIDTH "drv_stop_width"
 
-
 #define WACOM_TOOL_TYPE_NONE 0
-
-#define WACOM_PEN_TO_RUBBER 249	/* after code 248-Mute */
+#define WACOM_PEN_TO_RUBBER 249 /* after code 248-Mute */
 #define WACOM_RUBBER_TO_PEN 250
 
 #define TS_FB_LOOP_COUNTS 100
@@ -76,7 +63,7 @@
 #define I2C_DEFAULT_ADDR 0x70
 #define TS_SUSPEND_LEVEL 1
 
-#define I2C_WAIT_TIME 25	/* 25ms wait period */
+#define I2C_WAIT_TIME 25 /* 25ms wait period */
 
 #define TS_NO_KEY_PRESS 0
 #define TS_IO_UNDEFINE (-1)
@@ -104,7 +91,10 @@
 #define TS_GESTURE_INVALID_CONTROL_NO 0xFF
 /* move length (pixels) */
 #define PEN_MOV_LENGTH 120
-/* the time pen checked after finger released shouldn't less than this value(ms) */
+/*
+ * the time pen checked after finger released
+ * shouldn't less than this value(ms)
+ */
 #define FINGER_REL_TIME 300
 
 #define RAWDATA_TESTTMP_NUM 10
@@ -117,7 +107,6 @@ enum ts_irq_config {
 	TS_IRQ_FALL_EDGE,
 };
 
-
 void ts_check_touch_window(struct ts_fingers *finger);
 int ts_kit_proc_command_directly(struct ts_cmd_node *cmd);
 
@@ -125,8 +114,9 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd);
 void ts_kit_tui_secos_init(void);
 void ts_kit_tui_secos_exit(void);
 #endif
-void ts_film_touchplus(struct ts_fingers *finger, int finger_num,
-		       struct input_dev *input_dev);
 
+void ts_film_touchplus(struct ts_fingers *finger, int finger_num,
+	struct input_dev *input_dev);
 int ts_count_fingers(struct ts_fingers *fingers);
+
 #endif

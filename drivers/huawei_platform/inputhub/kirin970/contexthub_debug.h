@@ -46,16 +46,16 @@ typedef struct ar_activity_event {
 } ar_activity_event_t;
 
 typedef struct ar_config_event {
-    unsigned int   event_type;
-    unsigned int   activity;
-    unsigned int   len;
-    char   buf[];
+	unsigned int   event_type;
+	unsigned int   activity;
+	unsigned int   len;
+	char   buf[];
 } ar_config_event_t;
 
 typedef struct ar_config {
-    unsigned int report_interval;
-    unsigned int   num;
-    ar_config_event_t   activity_list[];
+	unsigned int report_interval;
+	unsigned int   num;
+	ar_config_event_t   activity_list[];
 } ar_config_t;
 
 typedef struct {
@@ -66,22 +66,22 @@ typedef struct {
 }core_subcmd_t;
 
 typedef struct ar_start_cmd{
-    core_subcmd_t core_cmd;
-    ar_config_t   start_param;
+	core_subcmd_t core_cmd;
+	ar_config_t   start_param;
 }ar_start_cmd_t;
 
 typedef struct ar_update_cmd{
-    core_subcmd_t core_cmd;
-    ar_config_t   update_param;
+	core_subcmd_t core_cmd;
+	ar_config_t   update_param;
 }ar_update_cmd_t;
 
 typedef struct ar_stop_cmd{
-    core_subcmd_t core_cmd;
-    unsigned int   para;
+	core_subcmd_t core_cmd;
+	unsigned int   para;
 }ar_stop_cmd_t;
 
 typedef struct ar_flush_cmd{
-    core_subcmd_t core_cmd;
+	core_subcmd_t core_cmd;
 }ar_flush_cmd_t;
 
 typedef struct ar_data {
@@ -89,7 +89,7 @@ typedef struct ar_data {
 } ar_data_t;
 
 typedef struct ar_data_cmd {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	ar_data_t data;
 } ar_data_cmd_t;
 #pragma pack()
@@ -102,23 +102,23 @@ typedef enum {
 } EVENT_TYPE;
 
 typedef enum {
-    AR_ACTIVITY_VEHICLE = 0x00,
-    AR_ACTIVITY_RIDING = 0x01,
-    AR_ACTIVITY_WALK_SLOW = 0x02,
-    AR_ACTIVITY_RUN_FAST = 0x03,
-    AR_ACTIVITY_STATIONARY = 0x04,
-    AR_ACTIVITY_TILT = 0x05,
-    AR_ACTIVITY_END = 0x10,
-    AR_VE_BUS = 0x11,				/* 大巴 */
-    AR_VE_CAR = 0x12,				/* 小车 */
-    AR_VE_METRO = 0x13,				/* 地铁 */
-    AR_VE_HIGH_SPEED_RAIL = 0x14,	/* 高铁 */
-    AR_VE_AUTO = 0x15,				/* 公路交通 */
-    AR_VE_RAIL = 0x16,				/* 铁路交通 */
-    AR_CLIMBING_MOUNT = 0x17,          /*爬山*/
-    AR_FAST_WALK = 0x18,                   /*快走*/
-    AR_STOP_VEHICLE = 0x19, 		/*停车*/
-    AR_UNKNOWN = 0x3F,
+	AR_ACTIVITY_VEHICLE = 0x00,
+	AR_ACTIVITY_RIDING = 0x01,
+	AR_ACTIVITY_WALK_SLOW = 0x02,
+	AR_ACTIVITY_RUN_FAST = 0x03,
+	AR_ACTIVITY_STATIONARY = 0x04,
+	AR_ACTIVITY_TILT = 0x05,
+	AR_ACTIVITY_END = 0x10,
+	AR_VE_BUS = 0x11,
+	AR_VE_CAR = 0x12,
+	AR_VE_METRO = 0x13,
+	AR_VE_HIGH_SPEED_RAIL = 0x14,
+	AR_VE_AUTO = 0x15,
+	AR_VE_RAIL = 0x16,
+	AR_CLIMBING_MOUNT = 0x17,
+	AR_FAST_WALK = 0x18,
+	AR_STOP_VEHICLE = 0x19,
+	AR_UNKNOWN = 0x3F,
 } AR_ACTIVITY_TYPE;
 
 //aod
@@ -162,10 +162,10 @@ enum {
 
 typedef struct
 {
-    uint8_t power_status;
-    uint8_t app_status[TAG_END];
-    uint32_t idle_time;
-    uint64_t active_app_during_suspend;
+	uint8_t power_status;
+	uint8_t app_status[TAG_END];
+	uint32_t idle_time;
+	uint64_t active_app_during_suspend;
 } iomcu_power_status;
 
 struct power_dbg {
@@ -179,11 +179,11 @@ typedef struct {
 } rpc_test_ioctl_t;
 typedef enum
 {
-    AR_ENVIRONMENT_HOME,
-    AR_ENVIRONMENT_OFFICE,
-    AR_ENVIRONMENT_STATION,
-    AR_ENVIRONMENT_UNKNOWN	= 0x1f,
-    AR_ENVIRONMENT_END	= 0x20,
+	AR_ENVIRONMENT_HOME,
+	AR_ENVIRONMENT_OFFICE,
+	AR_ENVIRONMENT_STATION,
+	AR_ENVIRONMENT_UNKNOWN	= 0x1f,
+	AR_ENVIRONMENT_END	= 0x20,
 } AR_ENVIRONMENT_TYPE;
 
 #define SINGLE_STR_LENGTH_MAX 30

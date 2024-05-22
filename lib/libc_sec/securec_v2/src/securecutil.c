@@ -33,24 +33,28 @@ int mbtowc(wchar_t *pwc, const char *s, size_t n)
 #endif
 #endif
 
-/* The V100R001C01 version num is 0x5 */
-#define SECUREC_C_VERSION     (0x5 << 8)
-#define SECUREC_SPC_VERSION   9
-#define SECUREC_VERSION_STR   "Huawei Secure C V100R001C01SPC009B003"
+/* The V100R001C01 version num is 0x5 (High 8 bits) */
+#define SECUREC_C_VERSION     0x500U
+#define SECUREC_SPC_VERSION   0xaU
+#define SECUREC_VERSION_STR   "Huawei Secure C V100R001C01SPC010B002"
 
 /*
- * SPC verNumber<->verStr like:
- * 0X201<->C01
- * 0X202<->SPC001   Redefine numbers after this version
- * 0X502<->SPC002
- * 0X503<->SPC003
+ * Get version string and version number.
+ * The rules for version number are as follows:
+ * 1) SPC verNumber<->verStr like:
+ * 0x201<->C01
+ * 0x202<->C01SPC001   Redefine numbers after this version
+ * 0x502<->C01SPC002
+ * 0x503<->C01SPC003
  * ...
  * 0X50a<->SPC010
  * 0X50b<->SPC011
  * ...
- */
-/*
- * CP  verNumber<->verStr like:
+ * 0x700<->C02
+ * 0x701<->C01SPC001
+ * 0x702<->C02SPC002
+ * ...
+ * 2) CP verNumber<->verStr like:
  * 0X601<->CP0001
  * 0X602<->CP0002
  * ...

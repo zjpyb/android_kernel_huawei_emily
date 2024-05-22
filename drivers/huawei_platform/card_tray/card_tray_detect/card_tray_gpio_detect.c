@@ -8,19 +8,19 @@
  * Date:  2019/04/27
  *
  */
+#include "card_tray_gpio_detect.h"
+#include <linux/device.h>
 #include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/gpio.h>
-#include <linux/of_gpio.h>
-#include <linux/slab.h>
-#include <linux/device.h>
-#include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/of_gpio.h>
+#include <linux/platform_device.h>
+#include <linux/slab.h>
 #include <huawei_platform/log/hw_log.h>
 #include <securec.h>
-#include "card_tray_gpio_detect.h"
 #define HWLOG_TAG card_tray_detect
 HWLOG_REGIST();
 
@@ -29,7 +29,7 @@ static int card_tray_gpio = -1;
 static ssize_t card_tray_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int gpio_value = -1;
+	int gpio_value;
 
 	if (card_tray_gpio < 0) {
 		hwlog_err("%s : The card_tray_gpio is error!\n", __func__);
@@ -59,7 +59,7 @@ static const struct attribute_group card_tray_sysfs_attr_group = {
 static int card_tray_detect_probe(struct platform_device *pdev)
 {
 	/* create a node for card tray detect gpio */
-	int ret = 0;
+	int ret;
 	struct card_tray_info *di = NULL;
 	struct device_node *card_tray_node = pdev->dev.of_node;
 	struct device *card_tray_dev = NULL;

@@ -1,3 +1,18 @@
+/*
+ * add nano sd function definition.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2019. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _DW_MMC_MUX_SD_SIM_
 #define _DW_MMC_MUX_SD_SIM_
 
@@ -14,14 +29,14 @@
 
 
 enum sdsim_gpio_mode {
-	SDSIM_MODE_GPIO_DETECT = 0, /*gpio detect mode for detect sd or sim*/
-	SDSIM_MODE_SD_NORMAL = 1, /*sd normal mode*/
-	SDSIM_MODE_SD_IDLE = 2, /*sd idle/lowpower mode*/
-	SDSIM_MODE_SIM_NORMAL = 3, /*sim normal mode*/
-	SDSIM_MODE_SIM_IDLE = 4, /*sim idle/lowpower mode*/
+	SDSIM_MODE_GPIO_DETECT = 0, /* gpio detect mode for detect sd or sim */
+	SDSIM_MODE_SD_NORMAL = 1, /* sd normal mode */
+	SDSIM_MODE_SD_IDLE = 2, /* sd idle/lowpower mode */
+	SDSIM_MODE_SIM_NORMAL = 3, /* sim normal mode */
+	SDSIM_MODE_SIM_IDLE = 4, /* sim idle/lowpower mode */
 };
 
-/*hisilicon iomux xml and pinctrl framework can't support such SD-SIM-IO-MUX case,wo need config different five modes here manully in code*/
+/* iomux xml and pinctrl framework can't support such SD-SIM-IO-MUX case,wo need config different five modes here manully in code */
 int config_sdsim_gpio_mode(enum sdsim_gpio_mode gpio_mode);
 
 char* detect_status_to_string(void);
@@ -47,7 +62,6 @@ int sd_sim_detect_run(void *dw_mci_host, int status, int current_module, int nee
 extern struct semaphore sem_mux_sdsim_detect;
 extern struct dw_mci *host_from_sd_module;
 
-
 #define SD_SIM_DETECT_STATUS_UNDETECTED            0
 #define SD_SIM_DETECT_STATUS_SD                    1
 #define SD_SIM_DETECT_STATUS_SIM                   2
@@ -56,6 +70,8 @@ extern struct dw_mci *host_from_sd_module;
 extern int sd_sim_detect_status_current;
 
 #define SLEEP_MS_TIME_FOR_DETECT_UNSTABLE   40
+/* if define this macro,4-pin gpio status detect is not used,only by cmd1 response to judge sd or sim */
+#undef SDSIM_MUX_DETECT_SOLUTION_CMD1_ONLY
 
 #define DRIVER_STRENGTH_2MA_0  0x00
 #define DRIVER_STRENGTH_4MA_0  0x10
@@ -91,12 +107,9 @@ extern int sd_cmd_driver_strength;
 extern int sd_data_driver_strength;
 
 extern void notify_sim_while_sd_success(struct mmc_host *mmc);
-
 extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 
-
-
-/*980 config here*/
+/* 980 config here */
 #define GPIO_160 160
 #define GPIO_161 161
 #define GPIO_162 162
@@ -104,13 +117,14 @@ extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 #define GPIO_164 164
 #define GPIO_165 165
 
-/*990 config here*/
+/* 990 config here */
 #define GPIO_104 104
 #define GPIO_105 105
 #define GPIO_106 106
 #define GPIO_107 107
 #define GPIO_108 108
 #define GPIO_109 109
+#define GPIO_120 120
 
 #ifdef CONFIG_MMC_DW_MUX_SDSIM_LIBRA
 /* sim config here */
@@ -132,12 +146,14 @@ extern void notify_sim_while_sd_fail(struct mmc_host *mmc);
 #define GPIO_DEFAULT_NUMBER_FOR_SIM_DATA    GPIO_171
 #endif
 
-extern void register_gpio_number_group(int start_gpio_number_for_SD_CLK);
+extern void register_gpio_number_group(int gpionum);
 
 #define SWITCH_GPIO_DEFAULT_NUMBER  0xFFFF
 extern int switch_gpio_number_0;
 extern int switch_gpio_number_1;
 extern int switch_gpio_number_2;
 extern int switch_gpio_number_3;
+
+#define SDSIM_MUX_DETECT_SOLUTION_CMD1_ONLY
 
 #endif

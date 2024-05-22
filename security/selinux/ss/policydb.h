@@ -24,6 +24,10 @@
 #ifndef _SS_POLICYDB_H_
 #define _SS_POLICYDB_H_
 
+#ifndef CONFIG_HKIP_SELINUX_PROT
+#include <linux/flex_array.h>
+#endif
+
 #include "symtab.h"
 #include "avtab.h"
 #include "sidtab.h"
@@ -249,22 +253,21 @@ struct policydb {
 #define p_cats symtab[SYM_CATS]
 
 	/* symbol names indexed by (value - 1) */
-
+#ifdef CONFIG_HKIP_SELINUX_PROT
 	char **sym_val_to_name[SYM_NUM];
-#define p_common_val_to_name sym_val_to_name[SYM_COMMONS]
-#define p_class_val_to_name sym_val_to_name[SYM_CLASSES]
-#define p_role_val_to_name sym_val_to_name[SYM_ROLES]
-#define p_type_val_to_name sym_val_to_name[SYM_TYPES]
-#define p_user_val_to_name sym_val_to_name[SYM_USERS]
-#define p_bool_val_to_name sym_val_to_name[SYM_BOOLS]
-#define p_sens_val_to_name sym_val_to_name[SYM_LEVELS]
-#define p_cat_val_to_name sym_val_to_name[SYM_CATS]
+#else
+	struct flex_array *sym_val_to_name[SYM_NUM];
+#endif
 
 	/* class, role, and user attributes indexed by (value - 1) */
 	struct class_datum **class_val_to_struct;
 	struct role_datum **role_val_to_struct;
 	struct user_datum **user_val_to_struct;
+#ifdef CONFIG_HKIP_SELINUX_PROT
 	struct type_datum **type_val_to_struct;
+#else
+	struct flex_array *type_val_to_struct_array;
+#endif
 
 	/* type enforcement access vectors and transitions */
 	struct avtab te_avtab;
@@ -301,7 +304,11 @@ struct policydb {
 	struct hashtab *range_tr;
 
 	/* type -> attribute reverse mapping */
+#ifdef CONFIG_HKIP_SELINUX_PROT
 	struct ebitmap *type_attr_map;
+#else
+	struct flex_array *type_attr_map_array;
+#endif
 
 	struct ebitmap policycaps;
 
@@ -373,6 +380,20 @@ static inline int put_entry(const void *buf, size_t bytes, int num, struct polic
 
 	return 0;
 }
+
+#ifdef CONFIG_HKIP_SELINUX_PROT
+static inline char *sym_name(struct policydb *p, unsigned int sym_num, unsigned int element_nr)
+{
+	return p->sym_val_to_name[sym_num][element_nr];
+}
+#else
+static inline char *sym_name(struct policydb *p, unsigned int sym_num, unsigned int element_nr)
+{
+	struct flex_array *fa = p->sym_val_to_name[sym_num];
+
+	return flex_array_get_ptr(fa, element_nr);
+}
+#endif
 
 extern u16 string_to_security_class(struct policydb *p, const char *name);
 extern u32 string_to_av_perm(struct policydb *p, u16 tclass, const char *name);

@@ -1,9 +1,19 @@
 /*
- * File:   fusb30x_driver.c
- * Author: Tim Bremm <tim.bremm@fairchildsemi.com>
- * Company: Fairchild Semiconductor
+ * fusb30x_driver.c
  *
- * Created on September 2, 2015, 10:22 AM
+ * fusb30x_driver driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 /* Standard Linux includes */
@@ -34,11 +44,9 @@
 
 #include "fusb30x_driver.h"
 #include <huawei_platform/usb/hw_pd_dev.h>
-#include <huawei_platform/power/power_devices_info.h>
-
-#ifdef CONFIG_POGO_PIN
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 #include <huawei_platform/usb/hw_pogopin.h>
-#endif
+
 /******************************************************************************
 * Driver functions
 ******************************************************************************/
@@ -162,8 +170,8 @@ static int fusb30x_probe (struct i2c_client* client,
                           const struct i2c_device_id* id)
 {
     int ret = 0;
-    struct fusb30x_chip* chip;
-    struct i2c_adapter* adapter;
+	struct fusb30x_chip *chip = NULL;
+	struct i2c_adapter *adapter = NULL;
 	struct power_devices_info_data *power_dev_info = NULL;
     int need_not_config_extra_pmic=0;
     if (of_property_read_u32(of_find_compatible_node(NULL,NULL, "huawei,pd_dpm"),"need_not_config_extra_pmic", &need_not_config_extra_pmic)) {

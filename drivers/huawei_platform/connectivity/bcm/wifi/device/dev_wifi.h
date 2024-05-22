@@ -180,7 +180,7 @@ struct WIFI_VCC_CMD_S {
 #ifdef CONFIG_LLT_TEST
 struct UT_TEST {
 	void (*read_from_global_buf)(unsigned char *);
-	int (*char2_byte)( char *, char *);
+	int (*char2_byte)(char *, unsigned char *);
 	int (*read_from_mac_file)(unsigned char *);
 	ssize_t (*show_wifi_open_state)(struct device *,struct device_attribute *, char *);
 

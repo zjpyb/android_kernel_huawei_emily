@@ -65,8 +65,8 @@
 #include "mmc_ops.h"
 #include "quirks.h"
 #include "sd_ops.h"
-#ifdef CONFIG_HISI_MMC
-#include "mmc_hisi_card.h"
+#ifdef CONFIG_ZODIAC_MMC
+#include "mmc_zodiac_card.h"
 #endif
 
 
@@ -74,8 +74,7 @@
 #include <linux/mmc/hw_write_protect.h>
 #endif
 
-#include "hisi_partition.h"
-
+#include "partition_macro.h"
 #ifdef CONFIG_HW_SD_HEALTH_DETECT
 #include "mmc_health_diag.h"
 #endif
@@ -108,7 +107,7 @@ MODULE_ALIAS("mmc:block");
 #define MMC_EXTRACT_INDEX_FROM_ARG(x) ((x & 0x00FF0000) >> 16)
 #define MMC_EXTRACT_VALUE_FROM_ARG(x) ((x & 0x0000FF00) >> 8)
 /*lint -e547*/
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 #define mmc_req_rel_wr(req)	((req->cmd_flags & REQ_FUA) && \
 				  (rq_data_dir(req) == WRITE))
 #endif
@@ -135,7 +134,7 @@ static int max_devices;
 static DECLARE_BITMAP(name_use, MAX_DEVICES);
 
 static DEFINE_IDA(mmc_blk_ida);
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 /*
  * There is one mmc_blk_data per slot.
  */
@@ -591,7 +590,7 @@ static int __mmc_blk_ioctl_cmd(struct mmc_card *card, struct mmc_blk_data *md,
 		return -EINVAL;
 
 	if (md->area_type & MMC_BLK_DATA_AREA_RPMB){
-#ifndef CONFIG_HISI_RPMB_MMC
+#ifndef CONFIG_RPMB_MMC
 		/* enable secure rpmb will block access rpmb from ioctl */
 		return -EINVAL;
 #else
@@ -674,6 +673,7 @@ static int __mmc_blk_ioctl_cmd(struct mmc_card *card, struct mmc_blk_data *md,
 		return err;
 	}
 #endif
+
 	err = mmc_blk_part_switch(card, md->part_type);
 	if (err)
 		return err;
@@ -1474,19 +1474,6 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 			return ERR_NOMEDIUM;
 		return ERR_ABORT;
 	}
-#ifdef CONFIG_MMC_HISI_TRACE
-	if (status & (R1_CARD_ECC_FAILED | R1_ERROR) ||
-		!(status & R1_READY_FOR_DATA)) {
-		pr_err("%s: card status is %x \n", req->rq_disk->disk_name, status);
-		pr_err("%s: card CURRENT_STATE is %x \n", req->rq_disk->disk_name, R1_CURRENT_STATE(status));
-		if(status & R1_CARD_ECC_FAILED)
-			pr_err("%s: card ECC \n", req->rq_disk->disk_name);
-		if(!(status & R1_READY_FOR_DATA))
-			pr_err("%s: card not ready \n", req->rq_disk->disk_name);
-		if(status & R1_ERROR)
-			pr_err("%s: card general or unknown \n", req->rq_disk->disk_name);
-	}
-#endif
 	/* Flag ECC errors */
 	if ((status & R1_CARD_ECC_FAILED) ||
 	    (brq->stop.resp[0] & R1_CARD_ECC_FAILED) ||
@@ -2360,10 +2347,12 @@ static void mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *new_req)
 			}
 			break;
 		case MMC_BLK_CMD_ERR:
+#ifdef CONFIG_MMC_DW
 			if (sd_need_retry(card, retry)) {
 				retry++;
 				break;
 			}
+#endif
 			req_pending = mmc_blk_rw_cmd_err(md, card, brq, old_req, req_pending);
 			if (mmc_blk_reset(md, card->host, type)) {
 				if (req_pending)
@@ -2385,10 +2374,12 @@ static void mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *new_req)
 				break;
 			/* Fall through */
 		case MMC_BLK_ABORT:
+#ifdef CONFIG_MMC_DW
 			if (sd_need_retry(card, retry)) {
 				retry++;
 				break;
 			}
+#endif
 			if (!mmc_blk_reset(md, card->host, type))
 				break;
 #ifdef CONFIG_HUAWEI_SDCARD_DSM
@@ -2403,10 +2394,12 @@ static void mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *new_req)
 		case MMC_BLK_DATA_ERR: {
 			int err;
 
+#ifdef CONFIG_MMC_DW
 			if (sd_need_retry(card, retry)) {
 				retry++;
 				break;
 			}
+#endif
 			err = mmc_blk_reset(md, card->host, type);
 			if (!err)
 				break;
@@ -2415,14 +2408,25 @@ static void mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *new_req)
 				mmc_blk_rw_try_restart(mq, new_req, mqrq_cur);
 				return;
 			}
+			if ((card->host->caps2 & MMC_CAP2_END_IO_ERR) &&
+				mmc_card_sd(card) && err == -EEXIST) {
+				dev_err(mmc_dev(card->host), "io err, end current request\n");
+				blk_end_request_all(old_req, BLK_STS_IOERR);
+				req_pending = 0;
+				mq->qcnt--;
+				mmc_blk_rw_try_restart(mq, new_req, mqrq_cur);
+				return;
+			}
 			/* Fall through */
 		}
 		case MMC_BLK_ECC_ERR: /*lint !e616*/
+#ifdef CONFIG_MMC_DW
 			if (sd_need_retry(card, retry)) {
 				retry++;
 				break;
 			}
-#ifdef CONFIG_HISI_MMC
+#endif
+#ifdef CONFIG_ZODIAC_MMC
 			if (!mmc_blk_reset(md, card->host, type))
 				break;
 #endif
@@ -2574,10 +2578,10 @@ extern int mmc_blk_cmdq_issue_rq(struct mmc_queue *mq, struct request *req);
 extern void mmc_blk_cmdq_err(struct mmc_queue *mq);
 extern void mmc_blk_cmdq_shutdown(struct mmc_queue *mq);
 extern enum blk_eh_timer_return mmc_blk_cmdq_req_timed_out(struct request *req);
-extern void mmc_blk_cmdq_dump_status(struct request_queue *q, enum blk_dump_scenario dump_type);
+extern void mmc_blk_cmdq_dump_status(struct request_queue *q, enum blk_dump_scene dump_type);
 #endif
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 void mmc_blk_hisi_stub_emmc_for_ufs(struct mmc_card *card)
 {
 	struct mmc_host *host = card->host;
@@ -2598,10 +2602,36 @@ void mmc_blk_hisi_stub_emmc_for_ufs(struct mmc_card *card)
 }
 #endif
 
-#ifdef CONFIG_HISI_BLK
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
+void mmc_blk_sd_dump_status(
+	struct request_queue *q, enum blk_dump_scene dump_type)
+{
+	struct mmc_card *card = NULL;
+	struct mmc_blk_data *md = NULL;
+	struct mmc_queue *mq = q->queuedata;
+	char cap_str[10];
+
+	if (!mq)
+		return;
+
+	card = mq->card;
+	if (!card)
+		return;
+
+	md = mq->blkdata;
+	if (!md)
+		return;
+
+	if (dump_type == BLK_DUMP_PANIC) {
+		string_get_size((u64)get_capacity(md->disk), 512, STRING_UNITS_2, cap_str, sizeof(cap_str));
+		pr_err("%s: %s %s %s manfid:0x%02x,date:%u/%u\n", md->disk->disk_name, mmc_card_name(card), cap_str,
+				md->read_only ? "(ro)" : "", card->cid.manfid, card->cid.year, card->cid.month);
+	}
+}
+
+#ifdef CONFIG_MAS_BLK
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
 extern int hisi_mmc_manual_bkops_config(struct request_queue *q);
-extern bool hisi_mmc_is_bkops_needed(struct mmc_card *card);
+extern bool zodiac_mmc_is_bkops_needed(struct mmc_card *card);
 #endif
 #define HISI_MMC_IO_LATENCY_MS	2000
 #define HISI_SD_IO_LATENCY_MS	2000
@@ -2615,19 +2645,19 @@ static void mmc_blk_hisi_cfg_queue_feature(struct mmc_card *card, struct mmc_blk
 #else
 			blk_queue_dump_register(md->queue.queue, NULL);
 #endif
-			blk_queue_busy_idle_enable(md->queue.queue, 1);
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
-			if (card->ext_csd.man_bkops_en && hisi_mmc_is_bkops_needed(card))
+			blk_queue_busyidle_enable(md->queue.queue, 1);
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
+			if (card->ext_csd.man_bkops_en && zodiac_mmc_is_bkops_needed(card))
 				hisi_mmc_manual_bkops_config(md->queue.queue);
 #endif
 
 		} else if (mmc_card_sd(card)) {
 			blk_queue_latency_warning_set(md->queue.queue, HISI_SD_IO_LATENCY_MS);
-			blk_queue_dump_register(md->queue.queue, NULL);
+			blk_queue_dump_register(md->queue.queue, mmc_blk_sd_dump_status);
 		}
 	}
 }
-#endif /* CONFIG_HISI_BLK */
+#endif /* CONFIG_MAS_BLK */
 
 static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 					      struct device *parent,
@@ -2766,16 +2796,18 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 
 #ifdef CONFIG_MMC_CQ_HCI
 	if (card->cmdq_init) {
-		md->flags |= MMC_BLK_CMD_QUEUE;
-		md->queue.cmdq_complete_fn = mmc_blk_cmdq_complete_rq;
-		md->queue.cmdq_issue_fn = mmc_blk_cmdq_issue_rq;
-		md->queue.cmdq_error_fn = mmc_blk_cmdq_err;
-		md->queue.cmdq_shutdown = mmc_blk_cmdq_shutdown;
+                md->flags |= MMC_BLK_CMD_QUEUE;
+                md->queue.cmdq_error_fn = mmc_blk_cmdq_err;
+                md->queue.cmdq_shutdown = mmc_blk_cmdq_shutdown;
+#ifndef CONFIG_MMC_MQ_CQ_HCI
+                md->queue.cmdq_complete_fn = mmc_blk_cmdq_complete_rq;
+                md->queue.cmdq_issue_fn = mmc_blk_cmdq_issue_rq;
 		md->queue.cmdq_req_timed_out = mmc_blk_cmdq_req_timed_out;
+#endif
 	}
 #endif
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	mmc_blk_hisi_cfg_queue_feature(card, md, area_type);
 #endif
 
@@ -2897,6 +2929,7 @@ static void mmc_blk_remove_req(struct mmc_blk_data *md)
 			}
 #endif
 		}
+		blk_set_queue_dying(md->queue.queue);
 		mmc_cleanup_queue(&md->queue);
 		mmc_blk_put(md);
 	}
@@ -2960,12 +2993,12 @@ force_ro_fail:
 	return ret;
 }
 
-#ifdef CONFIG_HISI_MMC_FLUSH_REDUCE_WHITE_LIST
-static inline void __maybe_unused en_emmc_flush_reduce(struct mmc_card *card, int data)
+#ifdef CONFIG_HISI_MMC_FLUSH_REDUCE
+static inline void en_emmc_flush_reduce(
+	struct mmc_card *card, unsigned int data)
 {
-        /*only eMMC support flush reduce*/
-        if (0 == card->host->index)
-                card->host->mmc_flush_reduce_enable = 1;
+	/* only eMMC support flush reduce */
+	card->host->mmc_flush_reduce_enable = (card->host->index == 0) ? 1 : 0;
 } /*lint !e715*/
 #endif
 
@@ -3189,7 +3222,7 @@ static int mmc_blk_direct_flush(struct request_queue *q)
 	int ret = 0;
 	printk(KERN_EMERG "<%s>\r\n", __func__);
 
-	ret = mmc_get_card_hisi(card, false);/*lint !e838*/
+	ret = mmc_get_card_zodiac(card, false);/*lint !e838*/
 	/*mmc is suspended,no need to flush*/
 	if (-EHOSTDOWN == ret)
 		return 0;
@@ -3203,10 +3236,14 @@ static int mmc_blk_direct_flush(struct request_queue *q)
 	return ret;
 }
 
-static void hisi_blk_flush_ctrl(struct mmc_blk_data *md, struct mmc_card *card)
+static void mas_blk_flush_ctrl(struct mmc_blk_data *md, struct mmc_card *card)
 {
-	blk_queue_direct_flush_register(md->queue.queue,card->host->mmc_flush_reduce_enable ? mmc_blk_direct_flush : NULL);
-	blk_queue_flush_reduce_config(md->queue.queue,card->host->mmc_flush_reduce_enable);
+	blk_queue_direct_flush_register(md->queue.queue,
+					card->host->mmc_flush_reduce_enable ?
+						mmc_blk_direct_flush :
+						NULL);
+	blk_queue_flush_reduce_config(md->queue.queue,
+				      card->host->mmc_flush_reduce_enable);
 }
 #endif
 
@@ -3269,12 +3306,10 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 #ifdef CONFIG_HISI_MMC_FLUSH_REDUCE
 #ifndef CONFIG_HISI_MMC_FLUSH_REDUCE_WHITE_LIST
-	/*only eMMC support flush reduce*/
-	if (0 == card->host->index)
-		card->host->mmc_flush_reduce_enable = 1;
+	en_emmc_flush_reduce(card, 0U);
 #endif
 
-	hisi_blk_flush_ctrl(md, card);
+	mas_blk_flush_ctrl(md, card);
 #endif
 
 	if (mmc_add_disk(md))
@@ -3486,4 +3521,3 @@ module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Multimedia Card (MMC) block device driver");
-

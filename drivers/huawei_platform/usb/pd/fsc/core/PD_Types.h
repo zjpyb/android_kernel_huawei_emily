@@ -1,3 +1,21 @@
+/*
+ * PD_Types.h
+ *
+ * PD_Types driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef __USBPD_TYPES_H__
 #define __USBPD_TYPES_H__
 
@@ -15,9 +33,6 @@
 
 /* PD Voltage values in 50mV resolution */
 #define PD_09_V                 180
-
-#define PD_18_W    36000
-#define PD_9_W     18000
 
 // Device FIFO Token Definitions
 #define TXON                    0xA1

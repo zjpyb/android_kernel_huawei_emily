@@ -188,6 +188,7 @@ enum {
 	LFS = 0,
 	SSR,
 	ASSR,
+	PREALLOC,
 };
 
 /*
@@ -292,12 +293,19 @@ struct inmem_pages {
 	block_t old_addr;		/* for revoking when fail to commit */
 };
 
+#ifdef CONFIG_F2FS_CHECK_FS
+#define SIT_VBLOCK_MAP_NUM 4
+#else
+#define SIT_VBLOCK_MAP_NUM 3
+#endif
+
 struct sit_info {
 	const struct segment_allocation *s_ops;
 
 	block_t sit_base_addr;		/* start block address of SIT area */
 	block_t sit_blocks;		/* # of blocks used by SIT area */
 	block_t written_valid_blocks;	/* # of valid blocks in main area */
+	char *bitmap;			/* all bitmaps pointer */
 	char *sit_bitmap;		/* SIT bitmap pointer */
 #ifdef CONFIG_F2FS_CHECK_FS
 	char *sit_bitmap_mir;		/* SIT bitmap mirror */
@@ -380,6 +388,12 @@ struct sit_entry_set {
 	unsigned int entry_cnt;		/* the # of sit entries in set */
 };
 
+/* for preallocate files */
+void __set_sit_entry_type(struct f2fs_sb_info *sbi, int type,
+					unsigned int segno, int modified);
+void write_sum_page(struct f2fs_sb_info *sbi,
+			struct f2fs_summary_block *sum_blk, block_t blk_addr);
+
 /*
  * inline functions
  */
@@ -432,10 +446,37 @@ static inline void dec_free_segs_in_tz(struct f2fs_sb_info *sbi,
 	if (is_in_turbo_zone(sbi, segno))
 		sbi->tz_info.free_segs--;
 }
+
+/* for now switchable should be set after return */
+static inline int get_unavailabe_segments(struct f2fs_sb_info *sbi)
+{
+	if (is_tz_existed(sbi) && !sbi->tz_info.switchable)
+		return FDEV(F2FS_TURBO_DEV).total_segments
+					- sbi->tz_info.total_segs;
+
+	return 0;
+}
+
+/* Since TZ exists, so all substraction is safe. */
+static inline unsigned int get_free_segs_in_normal_zone(struct f2fs_sb_info *sbi)
+{
+	unsigned int free_segs;
+
+	free_segs = FREE_I(sbi)->free_segments -
+			(FDEV(F2FS_TURBO_DEV).total_segments -
+				sbi->tz_info.total_segs);
+
+	if (sbi->tz_info.enabled || !sbi->tz_info.switchable)
+		return free_segs - sbi->tz_info.free_segs;
+
+	return FREE_I(sbi)->free_segments;
+}
 #endif
 
 static inline struct curseg_info *CURSEG_I(struct f2fs_sb_info *sbi, int type)
 {
+	if (type == CURSEG_COLD_DATA_PINNED)
+		type = CURSEG_COLD_DATA;
 	return (struct curseg_info *)(SM_I(sbi)->curseg_array + type);
 }
 
@@ -727,14 +768,21 @@ static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi,
 	int node_secs = get_blocktype_secs(sbi, F2FS_DIRTY_NODES);
 	int dent_secs = get_blocktype_secs(sbi, F2FS_DIRTY_DENTS);
 	int imeta_secs = get_blocktype_secs(sbi, F2FS_DIRTY_IMETA);
+	int unavailabe_secs = 0;
 
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		return false;
 
-	if (free_sections(sbi) + freed == reserved_sections(sbi) + needed &&
+#ifdef CONFIG_F2FS_TURBO_ZONE
+	unavailabe_secs = get_unavailabe_segments(sbi) / sbi->segs_per_sec;
+	if (free_sections(sbi) <= unavailabe_secs)
+		return true;
+#endif
+	if (free_sections(sbi) - unavailabe_secs + freed
+				== reserved_sections(sbi) + needed &&
 			has_curseg_enough_space(sbi))
 		return false;
-	return (free_sections(sbi) + freed) <=
+	return (free_sections(sbi) - unavailabe_secs + freed) <=
 		(node_secs + 2 * dent_secs + imeta_secs +
 		reserved_sections(sbi) + needed);
 }
@@ -897,6 +945,7 @@ static inline int check_block_count(struct f2fs_sb_info *sbi,
 				"Mismatch valid blocks %d vs. %d",
 					GET_SIT_VBLOCKS(raw_sit), valid_blocks);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		return -EINVAL;
 	}
 #endif
@@ -907,6 +956,7 @@ static inline int check_block_count(struct f2fs_sb_info *sbi,
 				"Wrong valid blocks %d or segno %u",
 					GET_SIT_VBLOCKS(raw_sit), segno);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		return -EINVAL;
 	}
 	return 0;

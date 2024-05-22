@@ -75,7 +75,9 @@
 #define FP_IOC_CMD_GET_BIGDATA     _IO(FP_IOC_MAGIC, 11)
 #define FP_IOC_CMD_SEND_SENSORID_UD      _IO(FP_IOC_MAGIC, 12)
 #define FP_IOC_CMD_NOTIFY_DISPLAY_FP_DOWN_UD  _IO(FP_IOC_MAGIC, 13)
-
+#define FP_IOC_CMD_SET_POWERON      _IO(FP_IOC_MAGIC, 14)
+#define FP_IOC_CMD_GET_BRIGHTNESS_MODE    _IO(FP_IOC_MAGIC, 15)
+#define FP_IOC_CMD_SET_BRIGHTNESS_LEVEL  _IO(FP_IOC_MAGIC, 16)
 #define MAX_SENSOR_ID_UD_LENGTH 20
 #define FP_POWER_LDO_VOLTAGE    3300000
 #define FP_POWER_ENABLE         1
@@ -109,9 +111,15 @@ enum fp_irq_scheme {
 	FP_IRQ_SCHEME_ONE = 1,
 };
 
+enum fp_ldo_type {
+	FP_LDO_TYPE_EXTERN = 1,
+	FP_LDO_TYPE_DVDD = 2,
+};
+
 enum fp_poweroff_scheme {
 	FP_POWEROFF_SCHEME_ONE = 1,
 	FP_POWEROFF_SCHEME_TWO = 2,
+	FP_POWEROFF_SCHEME_THREE = 3,
 };
 
 enum fp_custom_timing_scheme {
@@ -192,6 +200,11 @@ struct fp_data {
 	unsigned int use_tp_irq;
 	int sub_pmic_num;
 	int sub_ldo_num;
+	char dvdd_ldo_name[MAX_EXT_LDO_NAME_LEN];
+	int dvdd_ldo_num;
+	int dvdd_vol;
+	int poweroff_scheme;
+	int poweroff_scheme_dvdd;
 #if defined(CONFIG_FB)
 	struct notifier_block fb_fp_notify;
 	unsigned int notify_enable;

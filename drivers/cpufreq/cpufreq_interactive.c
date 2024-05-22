@@ -417,7 +417,7 @@ static void eval_target_freq(struct interactive_cpu *icpu)
 	unsigned long flags;
 	int cpu_load;
 	int cpu = smp_processor_id();
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 	struct cpufreq_govinfo govinfo;
 #endif
 
@@ -441,7 +441,7 @@ static void eval_target_freq(struct interactive_cpu *icpu)
 	icpu->prev_cpu_load = cpu_load;
 #endif
 
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 	/*
 	 * Send govinfo notification.
 	 * Govinfo notification could potentially wake up another thread

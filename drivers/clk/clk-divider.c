@@ -19,7 +19,11 @@
 #include <linux/log2.h>
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-#include "hisi-clk-debug.h"
+#ifndef CONFIG_ARCH_HISI_CLK_EXTREME
+#include "hisi/debug/clk-debug.h"
+#else
+#include "hisi_extreme/debug/clk-debug.h"
+#endif
 #endif
 
 /*

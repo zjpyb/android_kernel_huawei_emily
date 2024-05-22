@@ -30,6 +30,7 @@
 #ifndef _MPTCP_H
 #define _MPTCP_H
 
+#include <linux/version.h>
 #include <linux/inetdevice.h>
 #include <linux/ipv6.h>
 #include <linux/list.h>
@@ -127,6 +128,23 @@ enum mptcp_hw_cmd {
 	MPTCP_HW_EXT_SET_CONF_HAG = 0x08000000,
 	MPTCP_HW_EXT_SET_CONF_HAG_GW_INFO,
 	MPTCP_HW_EXT_SET_CONF_HAG_CONFIG,
+
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF = 0x09000000,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_SO_BUF,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_SCHEDULER_TYPE,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_MPTCP_INFO,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_SCHED_PARAMS,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_PROXY_INFO,
+	MPTCP_HW_EXT_PID_DIP_DPORT_CONF_SUBFLOW_PRIO,
+
+	MPTCP_HW_EXT_SRV_PID_CONF = 0x0a000000,
+	MPTCP_HW_EXT_SRV_PID_CONF_SO_BUF,
+	MPTCP_HW_EXT_SRV_PID_CONF_SCHEDULER_TYPE,
+	MPTCP_HW_EXT_SRV_PID_CONF_MPTCP_INFO,
+	MPTCP_HW_EXT_SRV_PID_CONF_SCHED_PARAMS,
+	MPTCP_HW_EXT_SRV_PID_CONF_PROXY_INFO,
+	MPTCP_HW_EXT_SRV_PID_CONF_SUBFLOW_PRIO,
+
 	MPTCP_HW_EXT_CMD_MAX_INVALID
 };
 
@@ -258,6 +276,18 @@ struct mptcp_hw_dip_dport {
 		dport_range[MPTCP_PORT_RANGE_NUM_MAX];
 };
 
+struct mptcp_hw_pid_dip_dport {
+	__s32 uid;
+	__s32 pid;
+	uint32_t dip;
+	uint16_t dport;
+};
+
+struct mptcp_hw_srv_pid {
+	__s32 uid;
+	__s32 pid;
+};
+
 #define MPTCP_IF_CARRIER_NUM_MAX 2
 struct mptcp_hw_carrier_info {
 	char if_name[IFNAMSIZ];
@@ -269,6 +299,8 @@ struct mptcp_hw_ext {
 	char if_name[IFNAMSIZ];
 	union {
 		__s32 uid;
+		struct mptcp_hw_pid_dip_dport pid_dip_dport;
+		struct mptcp_hw_srv_pid srv_pid;
 		struct mptcp_hw_pid_fd pid_fd;
 		struct mptcp_hw_dip_dport dip_dport;
 		struct mptcp_hw_carrier_info carrier_info;
@@ -282,41 +314,50 @@ struct mptcp_hw_ext {
 };
 
 enum mptcp_hw_ext_sock_cap {
-    MPTCP_CAP_UID = 1,
-    MPTCP_CAP_UID_DIP_DPORT,
-    MPTCP_CAP_PID_FD,
-    MPTCP_CAP_ALL_APP,
+	MPTCP_CAP_UID = 1,
+	MPTCP_CAP_UID_DIP_DPORT,
+	MPTCP_CAP_PID_FD,
+	MPTCP_CAP_ALL_APP,
+	MPTCP_CAP_PID_DIP_DPORT,
+	MPTCP_CAP_PID_LISTEN,
 };
 
+static inline bool mptcp_cap_is_local(u32 cap)
+{
+	return (cap == MPTCP_CAP_PID_DIP_DPORT || cap == MPTCP_CAP_PID_LISTEN);
+}
+
 struct mptcp_hw_ext_sock {
-    enum mptcp_hw_ext_sock_cap type;
-    int32_t uid;
-    int32_t pid;
-    int32_t fd;
-    uint32_t dip;
-    char port[MPTCP_HW_EXT_PORT_KEY_MAX_LEN];
+	enum mptcp_hw_ext_sock_cap type;
+	int32_t uid;
+	int32_t pid;
+	int32_t fd;
+	uint32_t dip;
+	char port[MPTCP_HW_EXT_PORT_KEY_MAX_LEN];
 };
 
 struct mptcp_hw_ext_sock_path_switch {
-    struct mptcp_hw_ext_sock sock;
-    char src_path[IFNAMSIZ];
-    char dst_path[IFNAMSIZ];
-    int32_t src_rtt;
-    int32_t dst_rtt;
+	struct mptcp_hw_ext_sock sock;
+	char src_path[IFNAMSIZ];
+	char dst_path[IFNAMSIZ];
+	int32_t src_rtt;
+	int32_t dst_rtt;
 };
 
 struct mptcp_hw_ext_proxy_fallback {
-    int32_t uid;
-    int32_t reason;
+	int32_t uid;
+	int32_t reason;
 };
 
 struct mptcp_hw_ext_fallback {
-    struct mptcp_hw_ext_sock sock;
+	struct mptcp_hw_ext_sock sock;
 };
 
 struct mptcp_loc4 {
 	u8		loc4_id;
-	u8		low_prio:1;
+	u8		low_prio:1,
+			no_arp:1,
+			wlan_5g:1;
 	int		if_idx;
 	struct in_addr	addr;
 };
@@ -329,7 +370,9 @@ struct mptcp_rem4 {
 
 struct mptcp_loc6 {
 	u8		loc6_id;
-	u8		low_prio:1;
+	u8		low_prio:1,
+			no_arp:1,
+			wlan_5g:1;
 	int		if_idx;
 	struct in6_addr	addr;
 };
@@ -938,6 +981,7 @@ static inline int mptcp_sub_len_dss(const struct mp_dss *m, const int csum)
 }
 
 #define MPTCP_SYSCTL	1
+#define MPTCP_TEST	2
 
 extern int sysctl_mptcp_enabled;
 extern int sysctl_mptcp_version;
@@ -982,7 +1026,13 @@ extern struct workqueue_struct *mptcp_wq;
 #define mptcp_for_each_bit_unset(b, i)					\
 	mptcp_for_each_bit_set(~b, i)
 
-#define MPTCP_INC_STATS(net, field)	SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
+#define MPTCP_INC_STATS(net, field) do { \
+		unsigned long flags; \
+		local_irq_save(flags); \
+		SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field); \
+		local_irq_restore(flags); \
+	} while (0)
+
 #define MPTCP_INC_STATS_BH(net, field)	__SNMP_INC_STATS((net)->mptcp.mptcp_statistics, field)
 
 enum
@@ -1103,7 +1153,7 @@ int mptcp_create_master_sk(struct sock *meta_sk, __u64 remote_key,
 int mptcp_check_req_fastopen(struct sock *child, struct request_sock *req);
 int mptcp_check_req_master(struct sock *sk, struct sock *child,
 			   struct request_sock *req, const struct sk_buff *skb,
-			   int drop);
+			   int drop, u32 tsoff);
 struct sock *mptcp_check_req_child(struct sock *meta_sk,
 				   struct sock *child,
 				   struct request_sock *req,
@@ -1127,7 +1177,6 @@ int mptcp_write_wakeup(struct sock *meta_sk, int mib);
 void mptcp_sub_close_wq(struct work_struct *work);
 void mptcp_sub_close(struct sock *sk, unsigned long delay);
 struct sock *mptcp_select_ack_sock(const struct sock *meta_sk);
-void mptcp_fallback_meta_sk(struct sock *meta_sk);
 void mptcp_prepare_for_backlog(struct sock *sk, struct sk_buff *skb);
 int mptcp_backlog_rcv(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_ack_handler(unsigned long);
@@ -1145,7 +1194,7 @@ unsigned int mptcp_xmit_size_goal(const struct sock *meta_sk, u32 mss_now,
 int mptcp_init_tw_sock(struct sock *sk, struct tcp_timewait_sock *tw);
 void mptcp_twsk_destructor(struct tcp_timewait_sock *tw);
 void mptcp_time_wait(struct sock *sk, int state, int timeo);
-void mptcp_disconnect(struct sock *sk);
+void mptcp_disconnect(struct sock *meta_sk);
 bool mptcp_should_expand_sndbuf(const struct sock *sk);
 int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb);
 void mptcp_tsq_flags(struct sock *sk);
@@ -1174,7 +1223,7 @@ void mptcp_disable_static_key(void);
 void mptcp_cookies_reqsk_init(struct request_sock *req,
 			      struct mptcp_options_received *mopt,
 			      struct sk_buff *skb);
-void mptcp_sock_destruct(struct sock *sk);
+void mptcp_mpcb_put(struct mptcp_cb *mpcb);
 int mptcp_finish_handshake(struct sock *child, struct sk_buff *skb);
 int mptcp_get_info(const struct sock *meta_sk, char __user *optval, int optlen);
 void mptcp_clear_sk(struct sock *sk, int size);
@@ -1226,6 +1275,8 @@ extern struct mptcp_sched_ops mptcp_sched_default_adv;
 #define MPTCP_HW_CONF_KEY_UID_SWITCH            (0x00000006)
 #define MPTCP_HW_CONF_KEY_UID_FIRST_PATH        (0x00000007)
 #define MPTCP_HW_CONF_KEY_HAG_ALL_APP           (0x00000008)
+#define MPTCP_HW_CONF_KEY_PID_DIP_DPORT		(0x00000009)
+#define MPTCP_HW_CONF_KEY_PID_LISTEN		(0x0000000a)
 
 #define MPTCP_HW_EXT_MAX_VALUE_TYPE 24
 #define mptcp_hw_ext_get_cmd_type(cmd_type) (((uint32_t)cmd_type) >> MPTCP_HW_EXT_MAX_VALUE_TYPE)
@@ -1255,9 +1306,10 @@ struct mptcp_hw_ext_conf_value {
 
 int32_t mptcp_hw_ext_get_port_key(struct sock *sk, char *port_key, size_t len);
 int mptcp_is_subflow_from_iface(struct sock *sk, const char *iface_name);
-void mptcp_hw_get_ifname_fr_sock(struct sock *sk, char *ifname);
+void mptcp_hw_get_ifname_fr_sock(struct sock *sk, char *ifname, size_t ifname_len);
 bool mptcp_hw_ext_get_switch_by_uid(int32_t uid);
 void mptcp_init_tcp_sock(struct sock *sk,struct sockaddr_in *daddr, int addr_len);
+void mptcp_init_tcp_listen_sock(struct sock *sk);
 void mptcp_init_sub_sock(struct sock *sk, bool master_sk);
 char *anonymousIPv4addr(__be32 ip, char *buf, size_t size);
 bool check_ip_addrss_for_mptcp_available(struct sockaddr *addr);
@@ -1562,7 +1614,9 @@ static inline void mptcp_set_rto(struct sock *sk)
 
 	mptcp_for_each_sk(tp->mpcb, sk_it) {
 		if ((mptcp_sk_can_send(sk_it) || sk_it->sk_state == TCP_SYN_RECV) &&
-		    inet_csk(sk_it)->icsk_rto > max_rto)
+			inet_csk(sk_it)->icsk_retransmits == 0 &&
+			inet_csk(sk_it)->icsk_backoff == 0 &&
+			inet_csk(sk_it)->icsk_rto > max_rto)
 			max_rto = inet_csk(sk_it)->icsk_rto;
 	}
 	if (max_rto) {
@@ -1622,8 +1676,9 @@ static inline bool mptcp_fallback_infinite(struct sock *sk, int flag)
 	mptcp_sub_force_close_all(mpcb, sk);
 
 	MPTCP_INC_STATS(sock_net(sk), MPTCP_MIB_FBACKINIT);
+#ifdef CONFIG_HUAWEI_XENGINE
 	xengine_report_fallback(tp->meta_sk);
-
+#endif
 	return false;
 }
 
@@ -1663,6 +1718,14 @@ static inline bool mptcp_v6_is_v4_mapped(const struct sock *sk)
 	       ipv6_addr_type(&inet6_sk(sk)->saddr) == IPV6_ADDR_MAPPED;
 }
 
+/* We are in or are becoming to be in infinite mapping mode */
+static inline bool mptcp_in_infinite_mapping_weak(const struct mptcp_cb *mpcb)
+{
+	return mpcb->infinite_mapping_rcv ||
+	       mpcb->infinite_mapping_snd ||
+	       mpcb->send_infinite_mapping;
+}
+
 static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 {
 	/* Has been removed from the tk-table. Thus, no new subflows.
@@ -1680,10 +1743,10 @@ static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 
 /* MPTCP proxy functions */
 void mptcp_hw_add_syn_options(const struct sock *sk, struct tcp_out_options *opts,
-                       unsigned int *remaining);
+	unsigned int *remaining);
 void mptcp_hw_add_options_write(__be32 *ptr, struct tcp_sock *tp,
-                         const struct tcp_out_options *opts,
-                         struct sk_buff *skb);
+	const struct tcp_out_options *opts,
+	struct sk_buff *skb);
 void mptcp_hw_add_rewrite_dst_addr(struct sock *sk, struct sockaddr *uaddr);
 
 /* TCP and MPTCP mpc flag-depending functions */

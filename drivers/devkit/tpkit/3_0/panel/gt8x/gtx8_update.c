@@ -120,7 +120,7 @@ static void gtx8_release_firmware(struct firmware_data *fw_data)
  */
 static int gtx8_parse_firmware(struct firmware_data *fw_data)
 {
-	const struct firmware *firmware;
+	const struct firmware *firmware = NULL;
 	struct firmware_info *fw_info = NULL;
 	unsigned int i = 0, fw_offset = 0, info_offset = 0;
 	u16 checksum = 0;
@@ -338,11 +338,6 @@ static int gtx8_hold_dsp_gt7382(void)
 			__func__);
 		return -EINVAL;
 	}
-	if (ret == 0) {
-		TS_LOG_ERR("%s:write 0x06 to 0x50c0 and check fail!",
-			__func__);
-		return -EINVAL;
-	}
 
 	/* clear watchdog */
 	write_value = 0x00;
@@ -435,6 +430,7 @@ static int gtx8_load_isp_gt7382(struct firmware_data *fw_data)
 	struct fw_subsys_info *fw_isp = NULL;
 	u8 retry_cnt = GTX8_RETRY_NUM_3;
 	u8 data;
+	u8 state_reg[GTX8_REG_LEN] = {0};
 
 	TS_LOG_INFO("%s run\n", __func__);
 
@@ -459,7 +455,7 @@ static int gtx8_load_isp_gt7382(struct firmware_data *fw_data)
 		}
 	}
 	if (fw_isp == NULL) {
-		ret = 0;
+		ret = -EINVAL;
 		TS_LOG_ERR("%s no isp in bin file\n", __func__);
 		goto exit;
 	}
@@ -471,7 +467,7 @@ static int gtx8_load_isp_gt7382(struct firmware_data *fw_data)
 			break;
 	}
 
-	if (i > retry_cnt) {
+	if (i >= retry_cnt) {
 		TS_LOG_INFO("%s:down load isp code to ram fail\n", __func__);
 		goto exit;
 	}
@@ -516,6 +512,13 @@ static int gtx8_load_isp_gt7382(struct firmware_data *fw_data)
 	ret = gtx8_wait_sta_gt7382(HW_REG_DOWNL_STATE, 0xff, 1000);
 	if (ret < 0) {
 		TS_LOG_ERR("%s: fw update isp don't run\n", __func__);
+		ret = gtx8_ts->ops.i2c_read(GT738X_ISP_STATE_REG,
+			state_reg, GTX8_REG_LEN);
+		if (ret)
+			TS_LOG_ERR("%s:read isp reg state error\n", __func__);
+		TS_LOG_INFO("%s, [0x4195]:%02x,[0x4196]:%02x,[0x4197]:%02x,[0x4198]:%02x\n",
+			__func__, state_reg[0], state_reg[1], state_reg[2],
+			state_reg[3]);
 		goto exit;
 	}
 	ret = 0;
@@ -533,20 +536,31 @@ exit:
  */
 static int gtx8_update_prepare_gt7382(void)
 {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
+#endif
 	u8 retry_cnt = GTX8_RETRY_NUM_20;
 	int ret;
 	int i;
 	u8 spi_dis;
 	int len;
-
 	TS_LOG_INFO("%s run\n", __func__);
 	/* reset ic */
 	TS_LOG_INFO("fwupdate chip reset\n");
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_low);
+#else
 	gpio_direction_output(reset_gpio, 0);
+#endif
 	udelay(2000); /* hold reset low level 2ms */
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_high);
+#else
 	gpio_direction_output(reset_gpio, 1);
-	mdelay(10); /* ic need delay */
+#endif
+	udelay(10000); /* ic need delay */
 	/* hold dsp */
 	ret = gtx8_hold_dsp_gt7382();
 	if (ret < 0) {
@@ -555,10 +569,10 @@ static int gtx8_update_prepare_gt7382(void)
 	}
 	TS_LOG_INFO("hold dsp sucessful\n");
 
-	spi_dis = 0; /* disable spi */
 	len = 1; /* read/write data len */
 	for (i = 0; i < retry_cnt; i++) {
 		/* disable spi between GM11 and G1 */
+		spi_dis = 0; /* disable spi */
 		ret = gtx8_ts->ops.i2c_write(HW_REG_SPI_ACCESS, &spi_dis, len);
 		if (ret >= 0) {
 			ret = gtx8_ts->ops.i2c_read(HW_REG_SPI_STATE,
@@ -619,7 +633,7 @@ static int gtx8_set_checksum_gt7382(u8 *code, u32 len)
 	int ret;
 
 	for (i = 0; i < len; i += sizeof(u32)) {
-		tmp = *(u32 *)(code + i);
+		tmp = le32_to_cpup((__le32 *)(code + i));
 		chksum += tmp;
 	}
 	ret = gtx8_write_u32_gt7382(HW_REG_PACKET_CHECKSUM, chksum);
@@ -1015,7 +1029,9 @@ static int gtx8_update_prepare(void)
 {
 	u8 reg_val[4] = { 0x00 };
 	u8 temp_buf[8] = { 0x00};
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
+#endif
 	int retry = 20;
 	int ret = NO_ERR;
 	int iic_dis_retry;
@@ -1024,9 +1040,19 @@ static int gtx8_update_prepare(void)
 	gtx8_ts->ops.i2c_write(0x4506, temp_buf, 8);
 
 	TS_LOG_INFO("fwupdate chip reset\n");
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_low);
+#else
 	gpio_direction_output(reset_gpio, 0);
+#endif
 	udelay(2000);
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_high);
+#else
 	gpio_direction_output(reset_gpio, 1);
+#endif
 	udelay(10000);
 
 	if (gtx8_ts->ic_type == IC_TYPE_6861) {
@@ -1091,11 +1117,16 @@ static int gtx8_update_prepare(void)
 
 	reg_val[0] = 0x95;
 	ret = gtx8_reg_write(0x2318, reg_val, 1);
+	if (ret < 0)
+		TS_LOG_ERR("Failed to disable watchdog timer\n");
+
 	reg_val[0] = 0x00;
-	ret |= gtx8_reg_write(0x20B0, reg_val, 1);
+	ret = gtx8_reg_write(0x20B0, reg_val, 1);
+	if (ret < 0)
+		TS_LOG_ERR("Failed to disable watchdog\n");
 
 	reg_val[0] = 0x27;
-	ret |= gtx8_reg_write(0x2318, reg_val, 1);
+	ret = gtx8_reg_write(0x2318, reg_val, 1);
 	if (ret < 0) {
 		TS_LOG_ERR("Failed to disable watchdog\n");
 		return ret;

@@ -9,8 +9,8 @@
  * History: 2018-09-27 zhaozhijian Code base quality improvement
  */
 
-#ifndef __SECUREC_H__5D13A042_DC3F_4ED9_A8D1_882811274C27
-#define __SECUREC_H__5D13A042_DC3F_4ED9_A8D1_882811274C27
+#ifndef SECUREC_H_5D13A042_DC3F_4ED9_A8D1_882811274C27
+#define SECUREC_H_5D13A042_DC3F_4ED9_A8D1_882811274C27
 
 #include "securectype.h"
 #ifndef SECUREC_HAVE_STDARG_H
@@ -22,21 +22,21 @@
 #endif
 
 #ifndef SECUREC_HAVE_ERRNO_H
-#if SECUREC_IN_KERNEL
-#define SECUREC_HAVE_ERRNO_H 0
-#else
 #define SECUREC_HAVE_ERRNO_H 1
-#endif
 #endif
 
 /* EINVAL ERANGE may defined in errno.h */
 #if SECUREC_HAVE_ERRNO_H
+#if SECUREC_IN_KERNEL
+#include <linux/errno.h>
+#else
 #include <errno.h>
+#endif
 #endif
 
 /* Define error code */
 #if defined(SECUREC_NEED_ERRNO_TYPE) || !defined(__STDC_WANT_LIB_EXT1__) || \
-    (defined(__STDC_WANT_LIB_EXT1__) && (__STDC_WANT_LIB_EXT1__ == 0))
+    (defined(__STDC_WANT_LIB_EXT1__) && (!__STDC_WANT_LIB_EXT1__))
 #ifndef SECUREC_DEFINED_ERRNO_TYPE
 #define SECUREC_DEFINED_ERRNO_TYPE
 /* Just check whether macrodefinition exists. */
@@ -57,8 +57,8 @@ typedef int errno_t;
 #endif
 
 #ifndef EINVAL_AND_RESET
-/* Once the error is detected, the dest buffer must be reseted! */
-#define EINVAL_AND_RESET (22 | 128)
+/* Once the error is detected, the dest buffer must be reseted! Value is 22 xor 128 */
+#define EINVAL_AND_RESET 150
 #endif
 
 #ifndef ERANGE
@@ -67,13 +67,13 @@ typedef int errno_t;
 #endif
 
 #ifndef ERANGE_AND_RESET
-/* Once the error is detected, the dest buffer must be reseted! */
-#define ERANGE_AND_RESET  (34 | 128)
+/* Once the error is detected, the dest buffer must be reseted! Value is 34 xor 128 */
+#define ERANGE_AND_RESET  162
 #endif
 
 #ifndef EOVERLAP_AND_RESET
-/* Once the buffer overlap is detected, the dest buffer must be reseted! */
-#define EOVERLAP_AND_RESET (54 | 128)
+/* Once the buffer overlap is detected, the dest buffer must be reseted! Value is 54 xor 128 */
+#define EOVERLAP_AND_RESET 182
 #endif
 
 /* If you need export the function of this library in Win32 dll, use __declspec(dllexport) */
@@ -102,7 +102,7 @@ extern "C" {
 #endif
     /*
      * Description: The GetHwSecureCVersion function get SecureC Version string and version number.
-     * Parameter: verNumber - to store version number
+     * Parameter: verNumber - to store version number (for example value is 0x500 | 0xa)
      * Return:   version string
      */
     SECUREC_API const char *GetHwSecureCVersion(unsigned short *verNumber);
@@ -124,7 +124,7 @@ extern "C" {
 #define SECUREC_ONLY_DECLARE_MEMSET     0
 #endif
 
-#if SECUREC_ONLY_DECLARE_MEMSET == 0
+#if !SECUREC_ONLY_DECLARE_MEMSET
 
 #if SECUREC_ENABLE_MEMMOVE
     /*
@@ -371,7 +371,7 @@ extern "C" {
     SECUREC_API char *strtok_s(char *strToken, const char *strDelimit, char **context);
 #endif
 
-#if SECUREC_ENABLE_GETS && SECUREC_IN_KERNEL == 0
+#if SECUREC_ENABLE_GETS && !SECUREC_IN_KERNEL
     /*
      * Description: The gets_s function reads at most one less than the number of characters specified
      * by destMax from the stream pointed to by stdin, into the array pointed to by buffer
@@ -381,7 +381,6 @@ extern "C" {
      */
     SECUREC_API char *gets_s(char *buffer, size_t destMax);
 #endif
-
 
 #if SECUREC_ENABLE_WCHAR_FUNC
 #if SECUREC_ENABLE_MEMCPY
@@ -615,17 +614,11 @@ extern "C" {
     (((((unsigned long long)(destMax) & (unsigned long long)(-2)) < SECUREC_MEM_MAX_LEN)) ? \
     memset_sOptTc((dest), (destMax), (c), (count)) : ERANGE) : \
     memset_sOptAsm((dest), (destMax), (c), (count))))
-#else
-#define strcpy_sp   strcpy_s
-#define strncpy_sp  strncpy_s
-#define strcat_sp   strcat_s
-#define strncat_sp  strncat_s
-#define memcpy_sp   memcpy_s
-#define memset_sp   memset_s
+
 #endif
 
 #ifdef __cplusplus
 }
-#endif /* __cplusplus */
-#endif /* __SECUREC_H__5D13A042_DC3F_4ED9_A8D1_882811274C27 */
+#endif
+#endif
 

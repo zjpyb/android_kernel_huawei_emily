@@ -143,7 +143,7 @@ static ssize_t write_irq_affinity(int type, struct file *file,
 		goto free_cpumask;
 	}
 
-#ifdef CONFIG_HISI_CPU_ISOLATION_STRICT
+#ifdef CONFIG_CPU_ISOLATION_STRICT
 	if (cpumask_subset(new_value, cpu_isolated_mask)) {
 		err = -EINVAL;
 		goto free_cpumask;

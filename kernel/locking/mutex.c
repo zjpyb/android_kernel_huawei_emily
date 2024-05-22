@@ -39,6 +39,10 @@
 #include <chipset_common/hwqos/hwqos_common.h>
 #endif
 
+#ifdef CONFIG_HW_VIP_THREAD
+#include <chipset_common/hwcfs/hwcfs_mutex.h>
+#endif
+
 void
 __mutex_init(struct mutex *lock, const char *name, struct lock_class_key *key)
 {

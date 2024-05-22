@@ -27,6 +27,9 @@
 #include <linux/sizes.h>
 #include <linux/dma-contiguous.h>
 #include <linux/cma.h>
+#ifdef CONFIG_HISI_CMA_DEBUG
+#include <linux/hisi/hisi_cma_debug.h>
+#endif
 
 #ifdef CONFIG_CMA_SIZE_MBYTES
 #define CMA_SIZE_MBYTES CONFIG_CMA_SIZE_MBYTES
@@ -251,7 +254,7 @@ static int __init rmem_cma_setup(struct reserved_mem *rmem)
 	int len;
 	unsigned long long order_per_bit = 0;
 	struct cma *cma;
-	const __be32 *prop;
+	const __be32 *prop = NULL;
 	int err;
 
 	if (!of_get_flat_dt_prop(node, "reusable", NULL) ||
@@ -272,6 +275,9 @@ static int __init rmem_cma_setup(struct reserved_mem *rmem)
 		pr_err("Reserved memory: unable to setup CMA region\n");
 		return err;
 	}
+#ifdef CONFIG_HISI_CMA_DEBUG
+	cma_set_flag(cma, node);
+#endif
 	/* Architecture specific contiguous memory fixup. */
 	dma_contiguous_early_fixup(rmem->base, rmem->size);
 

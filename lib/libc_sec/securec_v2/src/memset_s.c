@@ -12,14 +12,10 @@
 
 #include "securecutil.h"
 
-#ifndef SECUREC_MEMSET_WITH_PERFORMANCE
-#define SECUREC_MEMSET_WITH_PERFORMANCE 0
-#endif
-
 #define SECUREC_MEMSET_PARAM_OK(dest, destMax, count) (SECUREC_LIKELY((destMax) <= SECUREC_MEM_MAX_LEN && \
     (dest) != NULL && (count) <= (destMax)))
 
-#if SECUREC_WITH_PERFORMANCE_ADDONS || SECUREC_MEMSET_WITH_PERFORMANCE
+#if SECUREC_WITH_PERFORMANCE_ADDONS
 
 /* Use union to clear strict-aliasing warning */
 typedef union {
@@ -54,7 +50,6 @@ typedef union {
     SecStrBuf4 buf4;
     SecStrBuf3 buf3;
     SecStrBuf2 buf2;
-    SecStrBuf1 buf1;
 } SecStrBuf32Union;
 /* C standard initializes the first member of the consortium. */
 static const SecStrBuf32 g_allZero = {{
@@ -81,107 +76,112 @@ SECUREC_INLINE const SecStrBuf32Union *SecStrictAliasingCast(const SecStrBuf32 *
 #endif
 
 #define SECUREC_UNALIGNED_SET(dest, c, count) do { \
-    char *pcDest = (char *)(dest); \
+    unsigned char *pDest_ = (unsigned char *)(dest); \
     switch (count) { \
         case 32: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 31: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 30: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 29: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 28: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 27: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 26: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 25: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 24: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 23: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 22: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 21: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 20: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 19: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 18: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 17: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 16: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 15: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 14: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 13: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 12: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 11: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 10: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 9: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 8: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 7: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 6: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 5: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 4: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 3: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 2: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         case 1: \
-            *(pcDest++) = (char)(c); \
+            *(pDest_++) = (unsigned char)(c); \
             /* fall-through */ /* FALLTHRU */ \
         default: \
+            /* Do nothing */ \
             break; \
     } \
+} SECUREC_WHILE_ZERO
+
+#define SECUREC_SET_VALUE_BY_STRUCT(dest, dataName, n) do { \
+    *(SecStrBuf##n *)(dest) = *(const SecStrBuf##n *)(&((SecStrictAliasingCast(&(dataName)))->buf##n)); \
 } SECUREC_WHILE_ZERO
 
 #define SECUREC_ALIGNED_SET_OPT_ZERO_FF(dest, c, count) do { \
@@ -189,213 +189,216 @@ SECUREC_INLINE const SecStrBuf32Union *SecStrictAliasingCast(const SecStrBuf32 *
         case 0: \
             switch (count) { \
                 case 1: \
-                    *(SecStrBuf1 *)(dest) = *(const SecStrBuf1 *)(&((SecStrictAliasingCast(&g_allZero))->buf1)); \
+                    *(unsigned char *)(dest) = (unsigned char)0; \
                     break; \
                 case 2: \
-                    *(SecStrBuf2 *)(dest) = *(const SecStrBuf2 *)(&((SecStrictAliasingCast(&g_allZero))->buf2)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 2); \
                     break; \
                 case 3: \
-                    *(SecStrBuf3 *)(dest) = *(const SecStrBuf3 *)(&((SecStrictAliasingCast(&g_allZero))->buf3)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 3); \
                     break; \
                 case 4: \
-                    *(SecStrBuf4 *)(dest) = *(const SecStrBuf4 *)(&((SecStrictAliasingCast(&g_allZero))->buf4)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 4); \
                     break; \
                 case 5: \
-                    *(SecStrBuf5 *)(dest) = *(const SecStrBuf5 *)(&((SecStrictAliasingCast(&g_allZero))->buf5)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 5); \
                     break; \
                 case 6: \
-                    *(SecStrBuf6 *)(dest) = *(const SecStrBuf6 *)(&((SecStrictAliasingCast(&g_allZero))->buf6)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 6); \
                     break; \
                 case 7: \
-                    *(SecStrBuf7 *)(dest) = *(const SecStrBuf7 *)(&((SecStrictAliasingCast(&g_allZero))->buf7)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 7); \
                     break; \
                 case 8: \
-                    *(SecStrBuf8 *)(dest) = *(const SecStrBuf8 *)(&((SecStrictAliasingCast(&g_allZero))->buf8)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 8); \
                     break; \
                 case 9: \
-                    *(SecStrBuf9 *)(dest) = *(const SecStrBuf9 *)(&((SecStrictAliasingCast(&g_allZero))->buf9)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 9); \
                     break; \
                 case 10: \
-                    *(SecStrBuf10 *)(dest) = *(const SecStrBuf10 *)(&((SecStrictAliasingCast(&g_allZero))->buf10)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 10); \
                     break; \
                 case 11: \
-                    *(SecStrBuf11 *)(dest) = *(const SecStrBuf11 *)(&((SecStrictAliasingCast(&g_allZero))->buf11)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 11); \
                     break; \
                 case 12: \
-                    *(SecStrBuf12 *)(dest) = *(const SecStrBuf12 *)(&((SecStrictAliasingCast(&g_allZero))->buf12)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 12); \
                     break; \
                 case 13: \
-                    *(SecStrBuf13 *)(dest) = *(const SecStrBuf13 *)(&((SecStrictAliasingCast(&g_allZero))->buf13)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 13); \
                     break; \
                 case 14: \
-                    *(SecStrBuf14 *)(dest) = *(const SecStrBuf14 *)(&((SecStrictAliasingCast(&g_allZero))->buf14)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 14); \
                     break; \
                 case 15: \
-                    *(SecStrBuf15 *)(dest) = *(const SecStrBuf15 *)(&((SecStrictAliasingCast(&g_allZero))->buf15)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 15); \
                     break; \
                 case 16: \
-                    *(SecStrBuf16 *)(dest) = *(const SecStrBuf16 *)(&((SecStrictAliasingCast(&g_allZero))->buf16)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 16); \
                     break; \
                 case 17: \
-                    *(SecStrBuf17 *)(dest) = *(const SecStrBuf17 *)(&((SecStrictAliasingCast(&g_allZero))->buf17)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 17); \
                     break; \
                 case 18: \
-                    *(SecStrBuf18 *)(dest) = *(const SecStrBuf18 *)(&((SecStrictAliasingCast(&g_allZero))->buf18)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 18); \
                     break; \
                 case 19: \
-                    *(SecStrBuf19 *)(dest) = *(const SecStrBuf19 *)(&((SecStrictAliasingCast(&g_allZero))->buf19)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 19); \
                     break; \
                 case 20: \
-                    *(SecStrBuf20 *)(dest) = *(const SecStrBuf20 *)(&((SecStrictAliasingCast(&g_allZero))->buf20)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 20); \
                     break; \
                 case 21: \
-                    *(SecStrBuf21 *)(dest) = *(const SecStrBuf21 *)(&((SecStrictAliasingCast(&g_allZero))->buf21)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 21); \
                     break; \
                 case 22: \
-                    *(SecStrBuf22 *)(dest) = *(const SecStrBuf22 *)(&((SecStrictAliasingCast(&g_allZero))->buf22)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 22); \
                     break; \
                 case 23: \
-                    *(SecStrBuf23 *)(dest) = *(const SecStrBuf23 *)(&((SecStrictAliasingCast(&g_allZero))->buf23)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 23); \
                     break; \
                 case 24: \
-                    *(SecStrBuf24 *)(dest) = *(const SecStrBuf24 *)(&((SecStrictAliasingCast(&g_allZero))->buf24)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 24); \
                     break; \
                 case 25: \
-                    *(SecStrBuf25 *)(dest) = *(const SecStrBuf25 *)(&((SecStrictAliasingCast(&g_allZero))->buf25)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 25); \
                     break; \
                 case 26: \
-                    *(SecStrBuf26 *)(dest) = *(const SecStrBuf26 *)(&((SecStrictAliasingCast(&g_allZero))->buf26)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 26); \
                     break; \
                 case 27: \
-                    *(SecStrBuf27 *)(dest) = *(const SecStrBuf27 *)(&((SecStrictAliasingCast(&g_allZero))->buf27)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 27); \
                     break; \
                 case 28: \
-                    *(SecStrBuf28 *)(dest) = *(const SecStrBuf28 *)(&((SecStrictAliasingCast(&g_allZero))->buf28)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 28); \
                     break; \
                 case 29: \
-                    *(SecStrBuf29 *)(dest) = *(const SecStrBuf29 *)(&((SecStrictAliasingCast(&g_allZero))->buf29)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 29); \
                     break; \
                 case 30: \
-                    *(SecStrBuf30 *)(dest) = *(const SecStrBuf30 *)(&((SecStrictAliasingCast(&g_allZero))->buf30)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 30); \
                     break; \
                 case 31: \
-                    *(SecStrBuf31 *)(dest) = *(const SecStrBuf31 *)(&((SecStrictAliasingCast(&g_allZero))->buf31)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 31); \
                     break; \
                 case 32: \
-                    *(SecStrBuf32 *)(dest) = *(const SecStrBuf32 *)(&((SecStrictAliasingCast(&g_allZero))->buf32)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allZero, 32); \
                     break; \
                 default: \
+                    /* Do nothing */ \
                     break; \
             } \
             break; \
         case 0xFF: \
             switch (count) { \
                 case 1: \
-                    *(SecStrBuf1 *)(dest) = *(const SecStrBuf1 *)(&((SecStrictAliasingCast(&g_allFF))->buf1)); \
+                    *(unsigned char *)(dest) = (unsigned char)0xffU; \
                     break; \
                 case 2: \
-                    *(SecStrBuf2 *)(dest) = *(const SecStrBuf2 *)(&((SecStrictAliasingCast(&g_allFF))->buf2)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 2); \
                     break; \
                 case 3: \
-                    *(SecStrBuf3 *)(dest) = *(const SecStrBuf3 *)(&((SecStrictAliasingCast(&g_allFF))->buf3)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 3); \
                     break; \
                 case 4: \
-                    *(SecStrBuf4 *)(dest) = *(const SecStrBuf4 *)(&((SecStrictAliasingCast(&g_allFF))->buf4)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 4); \
                     break; \
                 case 5: \
-                    *(SecStrBuf5 *)(dest) = *(const SecStrBuf5 *)(&((SecStrictAliasingCast(&g_allFF))->buf5)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 5); \
                     break; \
                 case 6: \
-                    *(SecStrBuf6 *)(dest) = *(const SecStrBuf6 *)(&((SecStrictAliasingCast(&g_allFF))->buf6)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 6); \
                     break; \
                 case 7: \
-                    *(SecStrBuf7 *)(dest) = *(const SecStrBuf7 *)(&((SecStrictAliasingCast(&g_allFF))->buf7)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 7); \
                     break; \
                 case 8: \
-                    *(SecStrBuf8 *)(dest) = *(const SecStrBuf8 *)(&((SecStrictAliasingCast(&g_allFF))->buf8)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 8); \
                     break; \
                 case 9: \
-                    *(SecStrBuf9 *)(dest) = *(const SecStrBuf9 *)(&((SecStrictAliasingCast(&g_allFF))->buf9)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 9); \
                     break; \
                 case 10: \
-                    *(SecStrBuf10 *)(dest) = *(const SecStrBuf10 *)(&((SecStrictAliasingCast(&g_allFF))->buf10)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 10); \
                     break; \
                 case 11: \
-                    *(SecStrBuf11 *)(dest) = *(const SecStrBuf11 *)(&((SecStrictAliasingCast(&g_allFF))->buf11)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 11); \
                     break; \
                 case 12: \
-                    *(SecStrBuf12 *)(dest) = *(const SecStrBuf12 *)(&((SecStrictAliasingCast(&g_allFF))->buf12)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 12); \
                     break; \
                 case 13: \
-                    *(SecStrBuf13 *)(dest) = *(const SecStrBuf13 *)(&((SecStrictAliasingCast(&g_allFF))->buf13)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 13); \
                     break; \
                 case 14: \
-                    *(SecStrBuf14 *)(dest) = *(const SecStrBuf14 *)(&((SecStrictAliasingCast(&g_allFF))->buf14)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 14); \
                     break; \
                 case 15: \
-                    *(SecStrBuf15 *)(dest) = *(const SecStrBuf15 *)(&((SecStrictAliasingCast(&g_allFF))->buf15)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 15); \
                     break; \
                 case 16: \
-                    *(SecStrBuf16 *)(dest) = *(const SecStrBuf16 *)(&((SecStrictAliasingCast(&g_allFF))->buf16)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 16); \
                     break; \
                 case 17: \
-                    *(SecStrBuf17 *)(dest) = *(const SecStrBuf17 *)(&((SecStrictAliasingCast(&g_allFF))->buf17)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 17); \
                     break; \
                 case 18: \
-                    *(SecStrBuf18 *)(dest) = *(const SecStrBuf18 *)(&((SecStrictAliasingCast(&g_allFF))->buf18)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 18); \
                     break; \
                 case 19: \
-                    *(SecStrBuf19 *)(dest) = *(const SecStrBuf19 *)(&((SecStrictAliasingCast(&g_allFF))->buf19)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 19); \
                     break; \
                 case 20: \
-                    *(SecStrBuf20 *)(dest) = *(const SecStrBuf20 *)(&((SecStrictAliasingCast(&g_allFF))->buf20)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 20); \
                     break; \
                 case 21: \
-                    *(SecStrBuf21 *)(dest) = *(const SecStrBuf21 *)(&((SecStrictAliasingCast(&g_allFF))->buf21)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 21); \
                     break; \
                 case 22: \
-                    *(SecStrBuf22 *)(dest) = *(const SecStrBuf22 *)(&((SecStrictAliasingCast(&g_allFF))->buf22)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 22); \
                     break; \
                 case 23: \
-                    *(SecStrBuf23 *)(dest) = *(const SecStrBuf23 *)(&((SecStrictAliasingCast(&g_allFF))->buf23)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 23); \
                     break; \
                 case 24: \
-                    *(SecStrBuf24 *)(dest) = *(const SecStrBuf24 *)(&((SecStrictAliasingCast(&g_allFF))->buf24)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 24); \
                     break; \
                 case 25: \
-                    *(SecStrBuf25 *)(dest) = *(const SecStrBuf25 *)(&((SecStrictAliasingCast(&g_allFF))->buf25)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 25); \
                     break; \
                 case 26: \
-                    *(SecStrBuf26 *)(dest) = *(const SecStrBuf26 *)(&((SecStrictAliasingCast(&g_allFF))->buf26)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 26); \
                     break; \
                 case 27: \
-                    *(SecStrBuf27 *)(dest) = *(const SecStrBuf27 *)(&((SecStrictAliasingCast(&g_allFF))->buf27)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 27); \
                     break; \
                 case 28: \
-                    *(SecStrBuf28 *)(dest) = *(const SecStrBuf28 *)(&((SecStrictAliasingCast(&g_allFF))->buf28)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 28); \
                     break; \
                 case 29: \
-                    *(SecStrBuf29 *)(dest) = *(const SecStrBuf29 *)(&((SecStrictAliasingCast(&g_allFF))->buf29)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 29); \
                     break; \
                 case 30: \
-                    *(SecStrBuf30 *)(dest) = *(const SecStrBuf30 *)(&((SecStrictAliasingCast(&g_allFF))->buf30)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 30); \
                     break; \
                 case 31: \
-                    *(SecStrBuf31 *)(dest) = *(const SecStrBuf31 *)(&((SecStrictAliasingCast(&g_allFF))->buf31)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 31); \
                     break; \
                 case 32: \
-                    *(SecStrBuf32 *)(dest) = *(const SecStrBuf32 *)(&((SecStrictAliasingCast(&g_allFF))->buf32)); \
+                    SECUREC_SET_VALUE_BY_STRUCT((dest), g_allFF, 32); \
                     break; \
                 default: \
+                    /* Do nothing */ \
                     break; \
             } \
             break; \
         default: \
             SECUREC_UNALIGNED_SET((dest), (c), (count)); \
+            break; \
     } /* END switch */ \
 } SECUREC_WHILE_ZERO
 
-#define SECUREC_SMALL_MEM_SET(dest, c, count); do { \
+#define SECUREC_SMALL_MEM_SET(dest, c, count) do { \
     if (SECUREC_ADDR_ALIGNED_8((dest))) { \
         SECUREC_ALIGNED_SET_OPT_ZERO_FF((dest), (c), (count)); \
     } else { \
@@ -462,11 +465,7 @@ SECUREC_INLINE errno_t SecMemsetError(void *dest, size_t destMax, int c, size_t 
 errno_t memset_s(void *dest, size_t destMax, int c, size_t count)
 {
     if (SECUREC_MEMSET_PARAM_OK(dest, destMax, count)) {
-#if SECUREC_MEMSET_WITH_PERFORMANCE
-        SECUREC_MEMSET_OPT(dest, c, count);
-#else
         SECUREC_MEMSET_WARP_OPT(dest, c, count);
-#endif
         return EOK;
     }
     /* Meet some runtime violation, return error code */

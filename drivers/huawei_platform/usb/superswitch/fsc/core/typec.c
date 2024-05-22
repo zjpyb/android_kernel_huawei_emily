@@ -11,9 +11,10 @@
 #include "protocol.h"
 #include "policy.h"
 #include "callbacks.h"
+#include "ana_hs_kit/ana_hs_core/ana_hs_core.h"
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
-#include <linux/hisi/usb/hisi_hifi_usb.h>
+#include <linux/hisi/usb/hifi_usb.h>
 #define HWLOG_TAG FUSB3601_TAG
 HWLOG_REGIST();
 #define IN_FUNCTION hwlog_info("%s ++\n", __func__);
@@ -270,6 +271,7 @@ void FUSB3601_StateMachineAttachWaitSource(struct Port *port)
 			hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
 			if (port->vconn_term_ == SRC_RA) {
 				usb_analog_hs_fsa4476_set_gpio_state(0, 0, 0);
+				ana_hs_set_gpio_state(ANA_HS_ENABLE);
 			}
 		}
 	}
@@ -412,8 +414,8 @@ void FUSB3601_StateMachineAttachedSource(struct Port *port)
 			} else {
 				FUSB3601_TimerDisable(&port->cc_debounce_timer_);
 				hwlog_info("cc_debounce_timer_\n");
-				hisi_usb_check_hifi_usb_status(HIFI_USB_TCPC);
-				hwlog_info("hisi_usb_check_hifi_usb_status\n");
+				check_hifi_usb_status(HIFI_USB_TCPC);
+				hwlog_info("check_hifi_usb_status\n");
 			}
 		}
 			/* Look for detach on CC1 */
@@ -794,6 +796,7 @@ void FUSB3601_SetStateUnattached(struct Port *port)
 	}
 	hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
 	usb_analog_hs_fsa4476_set_gpio_state(1, 0, 0);
+	ana_hs_set_gpio_state(ANA_HS_DISABLE);
 }
 
 #ifdef FSC_HAVE_SNK
@@ -964,6 +967,7 @@ void FUSB3601_SetStateAttachedSink(struct Port *port)
 	hwlog_info("%s: port->cc_term = %d, port->vconn_term = %d\n", __func__, port->cc_term_, port->vconn_term_);
 	if (port->vconn_term_ == SRC_RA) {
 		usb_analog_hs_fsa4476_set_gpio_state(0, 0, 0);
+		ana_hs_set_gpio_state(ANA_HS_ENABLE);
 	}
 }
 #endif /* FSC_HAVE_SNK */

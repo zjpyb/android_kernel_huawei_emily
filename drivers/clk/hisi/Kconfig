@@ -1,11 +1,3 @@
-config HI3xxx_CLK_CORE
-	bool "Core clock driver of Hi3xxx Soc"
-	default n if COMMON_CLK
-
-config HI3620_CLK_MIPI_DSI
-	bool "MIPI DSI clock driver of Hi3620 SoC"
-	default y if COMMON_CLK && FB_HI3620
-
 config HISI_CLK
 	bool "clock driver of Soc"
 	default n
@@ -18,18 +10,6 @@ config HISI_CLK_PM_MONITOR
 	bool "clock pm_monitor spec"
 	default n
 
-config HISI_CLK_HI3660
-	bool "hi3660 clock spec"
-	default n
-
-config HISI_CLK_KIRIN
-        bool "boston and the version behind of boston clock spec"
-        default n
-
-config HISI_HI6250_CLK
-	bool "6250 clock spec"
-	default n
-
 config HISI_CLK_MAILBOX_SUPPORT
 	depends on HISI_CLK
 	depends on HISI_MAILBOX
@@ -39,4 +19,24 @@ config HISI_CLK_MAILBOX_SUPPORT
 config HISI_CLK_DEBUG
 	depends on DEBUG_FS
 	bool "HiSilicon clock driver debug"
+	default n
+
+config HISI_CKM_MODULE
+	depends on HISI_CLK
+	bool "HiSilicon clk monitor driver"
+	default n
+
+config HISI_CLK_SMC_SUPPORT
+	depends on HISI_CLK
+	bool "HiSilicon clk SMC handler"
+	default n
+
+config HISI_PLL_LOCK_RETRY
+	depends on HISI_CLK
+	bool "HiSilicon clk pll lock retry"
+	default n
+
+config HISI_CLK_WAIT_DONE
+	depends on HISI_CLK
+	bool "HiSilicon clk wait div done"
 	default n

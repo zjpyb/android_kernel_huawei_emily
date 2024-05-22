@@ -73,6 +73,12 @@
 #include <crypto/hash.h>
 #include <linux/scatterlist.h>
 
+#ifdef CONFIG_HUAWEI_XENGINE
+#include <emcom/emcom_xengine.h>
+#endif
+#ifdef CONFIG_HW_NETWORK_SLICE
+#include <hwnet/booster/network_slice_route.h>
+#endif
 
 #ifndef CONFIG_MPTCP
 static void	tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb);
@@ -257,6 +263,14 @@ int tcp_v6_connect(struct sock *sk, struct sockaddr *uaddr,
 
 		return err;
 	}
+
+#ifdef CONFIG_HUAWEI_XENGINE
+	emcom_xengine_mpflow_ai_bind2device(sk, uaddr);
+#endif
+
+#ifdef CONFIG_HW_NETWORK_SLICE
+	slice_rules_lookup(sk, uaddr, IPPROTO_TCP);
+#endif
 
 	if (!ipv6_addr_any(&sk->sk_v6_rcv_saddr))
 		saddr = &sk->sk_v6_rcv_saddr;
@@ -855,8 +869,10 @@ const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 };
 
 #ifdef CONFIG_MPTCP
-static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32 seq,
-				 u32 ack, u32 data_ack, u32 win, u32 tsval, u32 tsecr,
+static void tcp_v6_send_response(const struct sock *sk,
+				 struct sk_buff *skb, u32 seq,
+				 u32 ack, u32 data_ack, u32 win,
+				 u32 tsval, u32 tsecr,
 				 int oif, struct tcp_md5sig_key *key, int rst,
 				 u8 tclass, __be32 label, int mptcp)
 #else
@@ -930,9 +946,9 @@ static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32
 	if (mptcp) {
 		/* Construction of 32-bit data_ack */
 		*topt++ = htonl((TCPOPT_MPTCP << 24) |
-				((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
-				(0x20 << 8) |
-				(0x01));
+			((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
+			(0x20 << 8) |
+			(0x01));
 		*topt++ = htonl(data_ack);
 	}
 #endif
@@ -1047,9 +1063,11 @@ void tcp_v6_send_reset(const struct sock *sk, struct sk_buff *skb)
 
 	oif = sk ? sk->sk_bound_dev_if : 0;
 #ifdef CONFIG_MPTCP
-	tcp_v6_send_response(sk, skb, seq, ack_seq, 0, 0, 0, 0, oif, key, 1, 0, 0, 0);
+	tcp_v6_send_response(sk, skb, seq, ack_seq, 0, 0, 0,
+		0, oif, key, 1, 0, 0, 0);
 #else
-	tcp_v6_send_response(sk, skb, seq, ack_seq, 0, 0, 0, oif, key, 1, 0, 0);
+	tcp_v6_send_response(sk, skb, seq, ack_seq, 0, 0, 0,
+		oif, key, 1, 0, 0);
 #endif
 #ifdef CONFIG_TCP_MD5SIG
 out:
@@ -1058,13 +1076,16 @@ out:
 }
 
 #ifdef CONFIG_MPTCP
-static void tcp_v6_send_ack(const struct sock *sk, struct sk_buff *skb, u32 seq,
-			    u32 ack, u32 data_ack, u32 win, u32 tsval, u32 tsecr, int oif,
-			    struct tcp_md5sig_key *key, u8 tclass,
-			    __be32 label, int mptcp)
+static void tcp_v6_send_ack(const struct sock *sk,
+				struct sk_buff *skb, u32 seq,
+				u32 ack, u32 data_ack, u32 win,
+				u32 tsval, u32 tsecr, int oif,
+				struct tcp_md5sig_key *key, u8 tclass,
+				__be32 label, int mptcp)
 {
-	tcp_v6_send_response(sk, skb, seq, ack, data_ack, win, tsval, tsecr, oif,
-			     key, 0, tclass, label, mptcp);
+	tcp_v6_send_response(sk, skb, seq, ack, data_ack, win,
+						tsval, tsecr, oif,
+						key, 0, tclass, label, mptcp);
 }
 #else
 static void tcp_v6_send_ack(const struct sock *sk, struct sk_buff *skb, u32 seq,
@@ -1093,13 +1114,15 @@ static void tcp_v6_timewait_ack(struct sock *sk, struct sk_buff *skb)
 			data_ack,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcp_time_stamp_raw() + tcptw->tw_ts_offset,
-			tcptw->tw_ts_recent, tw->tw_bound_dev_if, tcp_twsk_md5_key(tcptw),
+			tcptw->tw_ts_recent, tw->tw_bound_dev_if,
+			tcp_twsk_md5_key(tcptw),
 			tw->tw_tclass, cpu_to_be32(tw->tw_flowlabel), mptcp);
 #else
 	tcp_v6_send_ack(sk, skb, tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcp_time_stamp_raw() + tcptw->tw_ts_offset,
-			tcptw->tw_ts_recent, tw->tw_bound_dev_if, tcp_twsk_md5_key(tcptw),
+			tcptw->tw_ts_recent, tw->tw_bound_dev_if,
+			tcp_twsk_md5_key(tcptw),
 			tw->tw_tclass, cpu_to_be32(tw->tw_flowlabel));
 #endif
 	inet_twsk_put(tw);
@@ -1667,7 +1690,7 @@ process:
 			if (sock_owned_by_user(sk)) {
 				mptcp_prepare_for_backlog(sk, skb);
 				if (unlikely(sk_add_backlog(sk, skb,
-							    sk->sk_rcvbuf + sk->sk_sndbuf))) {
+					sk->sk_rcvbuf + sk->sk_sndbuf))) {
 					reqsk_put(req);
 
 					bh_unlock_sock(sk);
@@ -1750,19 +1773,27 @@ process:
 		meta_sk = sk;
 		bh_lock_sock_nested(sk);
 	}
-	tcp_segs_in(tcp_sk(sk), skb);
-	ret = 0;
-	if (!sock_owned_by_user(meta_sk)) {
-		ret = tcp_v6_do_rcv(sk, skb);
-	} else if (tcp_add_backlog(meta_sk, skb)) {
-		goto discard_and_relse;
-	}
-
-	bh_unlock_sock(meta_sk);
 #else
 	bh_lock_sock_nested(sk);
+#endif
 	tcp_segs_in(tcp_sk(sk), skb);
 	ret = 0;
+
+#ifdef CONFIG_HUAWEI_BASTET
+	if (bastet_sock_recv_prepare(sk, skb)) {
+		bh_unlock_sock(sk);
+		sock_put(sk);
+		return ret;
+	}
+#endif
+
+#ifdef CONFIG_MPTCP
+	if (!sock_owned_by_user(meta_sk))
+		ret = tcp_v6_do_rcv(sk, skb);
+	else if (tcp_add_backlog(meta_sk, skb))
+		goto discard_and_relse;
+	bh_unlock_sock(meta_sk);
+#else
 	if (!sock_owned_by_user(sk)) {
 		ret = tcp_v6_do_rcv(sk, skb);
 	} else if (tcp_add_backlog(sk, skb)) {
@@ -1770,6 +1801,7 @@ process:
 	}
 	bh_unlock_sock(sk);
 #endif
+
 put_and_return:
 	if (refcounted)
 		sock_put(sk);

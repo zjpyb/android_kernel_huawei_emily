@@ -124,18 +124,19 @@ extern int memcpy_s(void *dest, size_t destMax, const void *src, size_t count);
 
 
 VL53L1_Error VL53L1_decode_calibration_data_buffer(
-	uint16_t                   buf_size,
-	uint8_t                   *pbuffer,
-	VL53L1_calibration_data_t *pdata)
+	uint16_t                         buf_size,
+	uint8_t                          *pbuffer,
+	struct VL53L1_calibration_data_t *pdata)
 {
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
 	LOG_FUNCTION_START("");
 
-	if (sizeof(VL53L1_calibration_data_t) > buf_size)
+	if (sizeof(struct VL53L1_calibration_data_t) > buf_size)
 		return VL53L1_ERROR_COMMS_BUFFER_TOO_SMALL;
 
-	memcpy_s(pdata, sizeof(VL53L1_calibration_data_t), pbuffer, sizeof(VL53L1_calibration_data_t));
+	memcpy_s(pdata, sizeof(struct VL53L1_calibration_data_t),
+		pbuffer, sizeof(struct VL53L1_calibration_data_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -145,7 +146,7 @@ VL53L1_Error VL53L1_decode_calibration_data_buffer(
 
 VL53L1_Error VL53L1_get_nvm_debug_data(
 	VL53L1_DEV                          Dev,
-	VL53L1_decoded_nvm_data_t          *pdata)
+	struct VL53L1_decoded_nvm_data_t    *pdata)
 {
 
 
@@ -174,7 +175,7 @@ VL53L1_Error VL53L1_get_nvm_debug_data(
 
 VL53L1_Error VL53L1_get_histogram_debug_data(
 	VL53L1_DEV                          Dev,
-	VL53L1_histogram_bin_data_t        *pdata)
+	struct VL53L1_histogram_bin_data_t  *pdata)
 {
 
 
@@ -183,16 +184,16 @@ VL53L1_Error VL53L1_get_histogram_debug_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
 
 
 	memcpy_s(
-		pdata,sizeof(VL53L1_histogram_bin_data_t),
+		pdata,sizeof(struct VL53L1_histogram_bin_data_t),
 		&(pdev->hist_data),
-		sizeof(VL53L1_histogram_bin_data_t));
+		sizeof(struct VL53L1_histogram_bin_data_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -205,7 +206,7 @@ VL53L1_Error VL53L1_get_histogram_debug_data(
 
 VL53L1_Error VL53L1_get_additional_data(
 	VL53L1_DEV                       Dev,
-	VL53L1_additional_data_t        *pdata)
+	struct VL53L1_additional_data_t  *pdata)
 {
 
 
@@ -214,7 +215,7 @@ VL53L1_Error VL53L1_get_additional_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -254,7 +255,7 @@ VL53L1_Error VL53L1_get_additional_data(
 
 VL53L1_Error VL53L1_get_xtalk_debug_data(
 	VL53L1_DEV                          Dev,
-	VL53L1_xtalk_debug_data_t          *pdata)
+	struct VL53L1_xtalk_debug_data_t    *pdata)
 {
 
 
@@ -263,7 +264,7 @@ VL53L1_Error VL53L1_get_xtalk_debug_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -271,33 +272,33 @@ VL53L1_Error VL53L1_get_xtalk_debug_data(
 
 	memcpy_s(
 		&(pdata->customer),
-		sizeof(VL53L1_customer_nvm_managed_t),
+		sizeof(struct VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
-		sizeof(VL53L1_customer_nvm_managed_t));
+		sizeof(struct VL53L1_customer_nvm_managed_t));
 
 	memcpy_s(
 		&(pdata->xtalk_cfg),
-		sizeof(VL53L1_xtalk_config_t),
+		sizeof(struct VL53L1_xtalk_config_t),
 		&(pdev->xtalk_cfg),
-		sizeof(VL53L1_xtalk_config_t));
+		sizeof(struct VL53L1_xtalk_config_t));
 
 	memcpy_s(
 		&(pdata->hist_data),
-		sizeof(VL53L1_histogram_bin_data_t),
+		sizeof(struct VL53L1_histogram_bin_data_t),
 		&(pdev->hist_data),
-		sizeof(VL53L1_histogram_bin_data_t));
+		sizeof(struct VL53L1_histogram_bin_data_t));
 
 	memcpy_s(
 		&(pdata->xtalk_shapes),
-		sizeof(VL53L1_xtalk_histogram_data_t),
+		sizeof(struct VL53L1_xtalk_histogram_data_t),
 		&(pdev->xtalk_shapes),
-		sizeof(VL53L1_xtalk_histogram_data_t));
+		sizeof(struct VL53L1_xtalk_histogram_data_t));
 
 	memcpy_s(
 		&(pdata->xtalk_results),
-		sizeof(VL53L1_xtalk_range_results_t),
+		sizeof(struct VL53L1_xtalk_range_results_t),
 		&(pdev->xtalk_results),
-		sizeof(VL53L1_xtalk_range_results_t));
+		sizeof(struct VL53L1_xtalk_range_results_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -307,7 +308,7 @@ VL53L1_Error VL53L1_get_xtalk_debug_data(
 
 VL53L1_Error VL53L1_get_offset_debug_data(
 	VL53L1_DEV                          Dev,
-	VL53L1_offset_debug_data_t         *pdata)
+	struct VL53L1_offset_debug_data_t   *pdata)
 {
 
 
@@ -316,7 +317,7 @@ VL53L1_Error VL53L1_get_offset_debug_data(
 
 	VL53L1_Error  status = VL53L1_ERROR_NONE;
 
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -324,33 +325,33 @@ VL53L1_Error VL53L1_get_offset_debug_data(
 
 	memcpy_s(
 		&(pdata->customer),
-		sizeof(VL53L1_customer_nvm_managed_t),
+		sizeof(struct VL53L1_customer_nvm_managed_t),
 		&(pdev->customer),
-		sizeof(VL53L1_customer_nvm_managed_t));
+		sizeof(struct VL53L1_customer_nvm_managed_t));
 
 	memcpy_s(
 		&(pdata->fmt_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t),
+		sizeof(struct VL53L1_dmax_calibration_data_t),
 		&(pdev->fmt_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t));
+		sizeof(struct VL53L1_dmax_calibration_data_t));
 
 	memcpy_s(
 		&(pdata->cust_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t),
+		sizeof(struct VL53L1_dmax_calibration_data_t),
 		&(pdev->cust_dmax_cal),
-		sizeof(VL53L1_dmax_calibration_data_t));
+		sizeof(struct VL53L1_dmax_calibration_data_t));
 
 	memcpy_s(
 		&(pdata->add_off_cal_data),
-		sizeof(VL53L1_additional_offset_cal_data_t),
+		sizeof(struct VL53L1_additional_offset_cal_data_t),
 		&(pdev->add_off_cal_data),
-		sizeof(VL53L1_additional_offset_cal_data_t));
+		sizeof(struct VL53L1_additional_offset_cal_data_t));
 
 	memcpy_s(
 		&(pdata->offset_results),
-		sizeof(VL53L1_offset_range_results_t),
+		sizeof(struct VL53L1_offset_range_results_t),
 		&(pdev->offset_results),
-		sizeof(VL53L1_offset_range_results_t));
+		sizeof(struct VL53L1_offset_range_results_t));
 
 	LOG_FUNCTION_END(status);
 
@@ -388,7 +389,7 @@ void  VL53L1_signed_fixed_point_sprintf(
 
 
 
-	sign_bit       =  signed_fp_value >> 31;
+	sign_bit       =  signed_fp_value >> 31; /* move get the data offset */
 
 	if (sign_bit > 0) {
 		fp_value = 0x80000000 -
@@ -404,7 +405,7 @@ void  VL53L1_signed_fixed_point_sprintf(
 
 
 
-	dec_points =   2;
+	dec_points =   2; /* init value */
 	dec_scaler = 100;
 
 	while (dec_scaler < unity_fp_value) {
@@ -424,7 +425,7 @@ void  VL53L1_signed_fixed_point_sprintf(
 
 
 	tmp_long_int  = (uint64_t)frac_part * (uint64_t)dec_scaler;
-	tmp_long_int += (uint64_t)unity_fp_value/2;
+	tmp_long_int += (uint64_t)unity_fp_value / 2; /* count value of tmp_long_init */
 
 	tmp_long_int = do_division_u(tmp_long_int, (uint64_t)unity_fp_value);
 
@@ -441,9 +442,9 @@ void  VL53L1_signed_fixed_point_sprintf(
 
 
 void VL53L1_print_static_nvm_managed(
-	VL53L1_static_nvm_managed_t   *pdata,
-	char                          *pprefix,
-	uint32_t                       trace_flags)
+	struct VL53L1_static_nvm_managed_t   *pdata,
+	char                                 *pprefix,
+	uint32_t                             trace_flags)
 {
 
 
@@ -531,9 +532,9 @@ void VL53L1_print_static_nvm_managed(
 
 
 void VL53L1_print_customer_nvm_managed(
-	VL53L1_customer_nvm_managed_t *pdata,
-	char                          *pprefix,
-	uint32_t                       trace_flags)
+	struct VL53L1_customer_nvm_managed_t *pdata,
+	char                                 *pprefix,
+	uint32_t                             trace_flags)
 {
 
 
@@ -671,9 +672,9 @@ void VL53L1_print_customer_nvm_managed(
 
 
 void VL53L1_print_nvm_copy_data(
-	VL53L1_nvm_copy_data_t      *pdata,
-	char                        *pprefix,
-	uint32_t                     trace_flags)
+	struct VL53L1_nvm_copy_data_t  *pdata,
+	char                           *pprefix,
+	uint32_t                       trace_flags)
 {
 
 
@@ -1019,9 +1020,9 @@ void VL53L1_print_nvm_copy_data(
 
 
 void VL53L1_print_histogram_bin_data(
-	VL53L1_histogram_bin_data_t *pdata,
-	char                        *pprefix,
-	uint32_t                     trace_flags)
+	struct VL53L1_histogram_bin_data_t *pdata,
+	char                               *pprefix,
+	uint32_t                           trace_flags)
 {
 
 
@@ -1290,9 +1291,9 @@ void VL53L1_print_histogram_bin_data(
 
 
 void VL53L1_print_xtalk_histogram_shape_data(
-	VL53L1_xtalk_histogram_shape_t *pdata,
-	char                           *pprefix,
-	uint32_t                        trace_flags)
+	struct VL53L1_xtalk_histogram_shape_t *pdata,
+	char                                  *pprefix,
+	uint32_t                              trace_flags)
 {
 
 
@@ -1412,9 +1413,9 @@ void VL53L1_print_xtalk_histogram_shape_data(
 
 
 void VL53L1_print_xtalk_histogram_data(
-	VL53L1_xtalk_histogram_data_t *pdata,
-	char                          *pprefix,
-	uint32_t                       trace_flags)
+	struct VL53L1_xtalk_histogram_data_t *pdata,
+	char                                 *pprefix,
+	uint32_t                             trace_flags)
 {
 
 
@@ -1441,9 +1442,9 @@ void VL53L1_print_xtalk_histogram_data(
 
 
 void VL53L1_print_range_data(
-	VL53L1_range_data_t *pdata,
-	char                *pprefix,
-	uint32_t             trace_flags)
+	struct VL53L1_range_data_t *pdata,
+	char                       *pprefix,
+	uint32_t                   trace_flags)
 {
 
 
@@ -1752,9 +1753,9 @@ void VL53L1_print_range_data(
 
 
 void VL53L1_print_range_results(
-	VL53L1_range_results_t *pdata,
-	char                   *pprefix,
-	uint32_t                trace_flags)
+	struct VL53L1_range_results_t *pdata,
+	char                          *pprefix,
+	uint32_t                      trace_flags)
 {
 
 
@@ -1850,9 +1851,9 @@ void VL53L1_print_range_results(
 
 
 void VL53L1_print_offset_range_results(
-	VL53L1_offset_range_results_t *pdata,
-	char                          *pprefix,
-	uint32_t                       trace_flags)
+	struct VL53L1_offset_range_results_t *pdata,
+	char                                 *pprefix,
+	uint32_t                             trace_flags)
 {
 
 
@@ -1923,9 +1924,9 @@ void VL53L1_print_offset_range_results(
 
 
 void VL53L1_print_offset_range_data(
-	VL53L1_offset_range_data_t *pdata,
-	char                       *pprefix,
-	uint32_t                    trace_flags)
+	struct VL53L1_offset_range_data_t *pdata,
+	char                              *pprefix,
+	uint32_t                          trace_flags)
 {
 
 
@@ -2025,9 +2026,9 @@ void VL53L1_print_offset_range_data(
 
 
 void VL53L1_print_cal_peak_rate_map(
-	VL53L1_cal_peak_rate_map_t *pdata,
-	char                       *pprefix,
-	uint32_t                    trace_flags)
+	struct VL53L1_cal_peak_rate_map_t *pdata,
+	char                              *pprefix,
+	uint32_t                          trace_flags)
 {
 
 
@@ -2113,9 +2114,9 @@ void VL53L1_print_cal_peak_rate_map(
 }
 
 void VL53L1_print_additional_data(
-	VL53L1_additional_data_t *pdata,
-	char                     *pprefix,
-	uint32_t                 trace_flags)
+	struct VL53L1_additional_data_t *pdata,
+	char                            *pprefix,
+	uint32_t                        trace_flags)
 {
 
 
@@ -2221,9 +2222,9 @@ void VL53L1_print_additional_data(
 
 
 void VL53L1_print_additional_offset_cal_data(
-	VL53L1_additional_offset_cal_data_t *pdata,
-	char                                *pprefix,
-	uint32_t                             trace_flags)
+	struct VL53L1_additional_offset_cal_data_t *pdata,
+	char                                       *pprefix,
+	uint32_t                                   trace_flags)
 {
 
 
@@ -2287,9 +2288,9 @@ void VL53L1_print_additional_offset_cal_data(
 
 
 void VL53L1_print_gain_calibration_data(
-	VL53L1_gain_calibration_data_t *pdata,
-	char                           *pprefix,
-	uint32_t                        trace_flags)
+	struct VL53L1_gain_calibration_data_t *pdata,
+	char                                  *pprefix,
+	uint32_t                              trace_flags)
 {
 
 
@@ -2327,9 +2328,9 @@ void VL53L1_print_gain_calibration_data(
 
 
 void VL53L1_print_zone_calibration_data(
-	VL53L1_zone_calibration_data_t *pdata,
-	char                           *pprefix,
-	uint32_t                        trace_flags)
+	struct VL53L1_zone_calibration_data_t *pdata,
+	char                                  *pprefix,
+	uint32_t                              trace_flags)
 {
 
 
@@ -2426,9 +2427,9 @@ void VL53L1_print_zone_calibration_data(
 
 
 void VL53L1_print_zone_calibration_results(
-	VL53L1_zone_calibration_results_t *pdata,
-	char                              *pprefix,
-	uint32_t                           trace_flags)
+	struct VL53L1_zone_calibration_results_t *pdata,
+	char                                     *pprefix,
+	uint32_t                                 trace_flags)
 {
 
 
@@ -2531,7 +2532,7 @@ void VL53L1_print_zone_calibration_results(
 }
 
 void VL53L1_print_xtalk_range_results(
-	VL53L1_xtalk_range_results_t *pdata,
+	struct VL53L1_xtalk_range_results_t *pdata,
 	char                         *pprefix,
 	uint32_t                      trace_flags)
 {
@@ -2544,7 +2545,7 @@ void VL53L1_print_xtalk_range_results(
 	char *ppre_text = &(pre_text[0]);
 	uint8_t  i = 0;
 
-	VL53L1_histogram_bin_data_t *pbin_data = NULL;
+	struct VL53L1_histogram_bin_data_t *pbin_data = NULL;
 
 	trace_print(
 		VL53L1_TRACE_LEVEL_INFO,
@@ -2652,9 +2653,9 @@ void VL53L1_print_xtalk_range_results(
 
 
 void VL53L1_print_xtalk_range_data(
-	VL53L1_xtalk_range_data_t *pdata,
-	char                      *pprefix,
-	uint32_t                   trace_flags)
+	struct VL53L1_xtalk_range_data_t *pdata,
+	char                             *pprefix,
+	uint32_t                         trace_flags)
 {
 
 
@@ -2714,9 +2715,9 @@ void VL53L1_print_xtalk_range_data(
 
 
 void VL53L1_print_xtalk_calibration_results(
-	VL53L1_xtalk_calibration_results_t *pdata,
-	char                               *pprefix,
-	uint32_t                            trace_flags)
+	struct VL53L1_xtalk_calibration_results_t *pdata,
+	char                                      *pprefix,
+	uint32_t                                  trace_flags)
 {
 
 
@@ -2768,9 +2769,9 @@ void VL53L1_print_xtalk_calibration_results(
 
 
 void VL53L1_print_xtalk_config(
-	VL53L1_xtalk_config_t *pdata,
-	char                  *pprefix,
-	uint32_t               trace_flags)
+	struct VL53L1_xtalk_config_t *pdata,
+	char                         *pprefix,
+	uint32_t                     trace_flags)
 {
 
 
@@ -2922,9 +2923,9 @@ void VL53L1_print_xtalk_config(
 
 
 void VL53L1_print_xtalk_extract_config(
-	VL53L1_xtalkextract_config_t *pdata,
-	char                         *pprefix,
-	uint32_t                      trace_flags)
+	struct VL53L1_xtalkextract_config_t *pdata,
+	char                                *pprefix,
+	uint32_t                            trace_flags)
 {
 
 
@@ -3013,9 +3014,9 @@ void VL53L1_print_xtalk_extract_config(
 
 
 void VL53L1_print_zone_cal_config(
-	VL53L1_zonecal_config_t *pdata,
-	char                    *pprefix,
-	uint32_t                 trace_flags)
+	struct VL53L1_zonecal_config_t *pdata,
+	char                           *pprefix,
+	uint32_t                       trace_flags)
 {
 
 
@@ -3078,9 +3079,9 @@ void VL53L1_print_zone_cal_config(
 }
 
 void VL53L1_print_offset_cal_config(
-	VL53L1_offsetcal_config_t *pdata,
-	char                      *pprefix,
-	uint32_t                   trace_flags)
+	struct VL53L1_offsetcal_config_t *pdata,
+	char                             *pprefix,
+	uint32_t                         trace_flags)
 {
 
 
@@ -3142,9 +3143,9 @@ void VL53L1_print_offset_cal_config(
 
 
 void VL53L1_print_dmax_calibration_data(
-	VL53L1_dmax_calibration_data_t *pdata,
-	char                           *pprefix,
-	uint32_t                        trace_flags)
+	struct VL53L1_dmax_calibration_data_t *pdata,
+	char                                  *pprefix,
+	uint32_t                              trace_flags)
 {
 
 
@@ -3221,9 +3222,9 @@ void VL53L1_print_dmax_calibration_data(
 
 
 void VL53L1_print_calibration_data(
-	VL53L1_calibration_data_t *pdata,
-	char                      *pprefix,
-	uint32_t                   trace_flags)
+	struct VL53L1_calibration_data_t *pdata,
+	char                             *pprefix,
+	uint32_t                         trace_flags)
 {
 
 
@@ -3283,9 +3284,9 @@ void VL53L1_print_calibration_data(
 
 
 void VL53L1_print_xtalk_debug_data(
-	VL53L1_xtalk_debug_data_t *pdata,
-	char                      *pprefix,
-	uint32_t                   trace_flags)
+	struct VL53L1_xtalk_debug_data_t *pdata,
+	char                             *pprefix,
+	uint32_t                         trace_flags)
 {
 
 
@@ -3328,9 +3329,9 @@ void VL53L1_print_xtalk_debug_data(
 
 
 void VL53L1_print_offset_debug_data(
-	VL53L1_offset_debug_data_t *pdata,
-	char                       *pprefix,
-	uint32_t                    trace_flags)
+	struct VL53L1_offset_debug_data_t *pdata,
+	char                              *pprefix,
+	uint32_t                          trace_flags)
 {
 
 
@@ -3368,9 +3369,9 @@ void VL53L1_print_offset_debug_data(
 
 
 void VL53L1_print_zone_config(
-	VL53L1_zone_config_t *pdata,
-	char                 *pprefix,
-	uint32_t              trace_flags)
+	struct VL53L1_zone_config_t *pdata,
+	char                        *pprefix,
+	uint32_t                    trace_flags)
 {
 
 
@@ -3408,9 +3409,9 @@ void VL53L1_print_zone_config(
 
 
 void VL53L1_print_optical_centre(
-	VL53L1_optical_centre_t  *pdata,
-	char                     *pprefix,
-	uint32_t                  trace_flags)
+	struct VL53L1_optical_centre_t  *pdata,
+	char                            *pprefix,
+	uint32_t                        trace_flags)
 {
 
 
@@ -3448,9 +3449,9 @@ void VL53L1_print_optical_centre(
 
 
 void VL53L1_print_user_zone(
-	VL53L1_user_zone_t   *pdata,
-	char                 *pprefix,
-	uint32_t              trace_flags)
+	struct VL53L1_user_zone_t   *pdata,
+	char                        *pprefix,
+	uint32_t                    trace_flags)
 {
 
 
@@ -3487,9 +3488,9 @@ void VL53L1_print_user_zone(
 
 
 void VL53L1_print_spad_rate_data(
-	VL53L1_spad_rate_data_t  *pspad_rates,
-	char                     *pprefix,
-	uint32_t                  trace_flags)
+	struct VL53L1_spad_rate_data_t  *pspad_rates,
+	char                            *pprefix,
+	uint32_t                        trace_flags)
 {
 
 
@@ -3546,9 +3547,9 @@ void VL53L1_print_spad_rate_data(
 
 
 void VL53L1_print_spad_rate_map(
-	VL53L1_spad_rate_data_t  *pspad_rates,
-	char                     *pprefix,
-	uint32_t                  trace_flags)
+	struct VL53L1_spad_rate_data_t  *pspad_rates,
+	char                            *pprefix,
+	uint32_t                        trace_flags)
 {
 
 

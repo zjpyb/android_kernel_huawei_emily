@@ -65,6 +65,16 @@ struct cpuidle_state {
 			      int index);
 };
 
+#ifdef CONFIG_HISI_CPUIDLE_SKIP_ALL_CORE_DOWN
+extern spinlock_t g_idle_spin_lock;
+extern struct cpumask g_idle_cpus_mask;
+extern struct cpumask g_core_idle_cpus_mask;
+#define __g_idle_cpus_mask ((const struct cpumask *)&g_idle_cpus_mask)
+#define __g_core_idle_cpus_mask ((const struct cpumask *)&g_core_idle_cpus_mask)
+#define num_idle_cpus()		cpumask_weight(__g_idle_cpus_mask)
+#define num_core_idle_cpus()	cpumask_weight(__g_core_idle_cpus_mask)
+#endif
+
 /* Idle State Flags */
 #define CPUIDLE_FLAG_NONE       (0x00)
 #define CPUIDLE_FLAG_POLLING	(0x01) /* polling state */

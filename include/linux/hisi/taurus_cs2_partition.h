@@ -1,7 +1,7 @@
 #ifndef _TAURUS_CS2_PARTITION_H_
 #define _TAURUS_CS2_PARTITION_H_
 
-#include "hisi_partition.h"
+#include "partition_macro.h"
 #include "partition_def.h"
 
 static const struct partition partition_table_emmc[] =
@@ -59,7 +59,15 @@ static const struct partition partition_table_emmc[] =
   {PART_RECOVERY,                  671*1024,         85*1024,    EMMC_USER_PART},/* recovery          85M    p47*/
   {PART_ERECOVERY,                 756*1024,         12*1024,    EMMC_USER_PART},/* erecovery         12M    p48*/
   {PART_METADATA,                  768*1024,         16*1024,    EMMC_USER_PART},/* metadata          16M    p49*/
-  {PART_RESERVED,                  784*1024,         47*1024,    EMMC_USER_PART},/* reserved          47M    p50*/
+  {PART_KPATCH,                    784*1024,         47*1024,    EMMC_USER_PART},/* reserved          47M    p50*/
+#elif defined CONFIG_FACTORY_MODE
+  {PART_ERECOVERY_RAMDISK,         586*1024,         32*1024,    EMMC_USER_PART},/* erecovery_ramdisk 32M    p44*/
+  {PART_ERECOVERY_VENDOR,          618*1024,         24*1024,    EMMC_USER_PART},/* erecovery_vendor  24M    p45*/
+  {PART_BOOT,                      642*1024,         25*1024,    EMMC_USER_PART},/* boot              25M    p46*/
+  {PART_RECOVERY,                  667*1024,         41*1024,    EMMC_USER_PART},/* recovery          41M    p47*/
+  {PART_ERECOVERY,                 708*1024,         41*1024,    EMMC_USER_PART},/* erecovery         41M    p48*/
+  {PART_METADATA,                  749*1024,         16*1024,    EMMC_USER_PART},/* metadata          16M    p49*/
+  {PART_KPATCH,                    765*1024,         66*1024,    EMMC_USER_PART},/* reserved          66M    p50*/
 #else
   {PART_ERECOVERY_RAMDISK,         586*1024,         32*1024,    EMMC_USER_PART},/* erecovery_ramdisk 32M    p44*/
   {PART_ERECOVERY_VENDOR,          618*1024,         16*1024,    EMMC_USER_PART},/* erecovery_vendor  16M    p45*/
@@ -67,7 +75,7 @@ static const struct partition partition_table_emmc[] =
   {PART_RECOVERY,                  659*1024,         45*1024,    EMMC_USER_PART},/* recovery          45M    p47*/
   {PART_ERECOVERY,                 704*1024,         45*1024,    EMMC_USER_PART},/* erecovery         45M    p48*/
   {PART_METADATA,                  749*1024,         16*1024,    EMMC_USER_PART},/* metadata          16M    p49*/
-  {PART_RESERVED,                  765*1024,         66*1024,    EMMC_USER_PART},/* reserved          66M    p50*/
+  {PART_KPATCH,                    765*1024,         66*1024,    EMMC_USER_PART},/* reserved          66M    p50*/
 #endif
   {PART_ENG_SYSTEM,                831*1024,         12*1024,    EMMC_USER_PART},/* eng_system        12M    p51*/
   {PART_RAMDISK,                   843*1024,          2*1024,    EMMC_USER_PART},/* ramdisk           32M    p52*/
@@ -77,12 +85,21 @@ static const struct partition partition_table_emmc[] =
   {PART_VBMETA_CUST,               848*1024,          1*1024,    EMMC_USER_PART},/* vbmeta_cust        1M    p56*/
   {PART_VBMETA_HW_PRODUCT,         849*1024,          1*1024,    EMMC_USER_PART},/* vbmeta_hw_product  1M    p57*/
   {PART_RECOVERY_RAMDISK,          850*1024,         32*1024,    EMMC_USER_PART},/* recovery_ramdisk  32M    p58*/
+#ifdef CONFIG_FACTORY_MODE
+  {PART_RECOVERY_VENDOR,           882*1024,         24*1024,    EMMC_USER_PART},/* recovery_vendor   24M    p59*/
+  {PART_SECURITY_DTB,              906*1024,          2*1024,    EMMC_USER_PART},/* security_dtb       2M    p60*/
+  {PART_DTBO,                      908*1024,         16*1024,    EMMC_USER_PART},/* dtoimage          16M    p61*/
+  {PART_TRUSTFIRMWARE,             924*1024,          2*1024,    EMMC_USER_PART},/* trustfirmware      2M    p62*/
+  {PART_MODEM_FW,                  926*1024,        134*1024,    EMMC_USER_PART},/* modem_fw         134M    p63*/
+  {PART_ENG_VENDOR,               1060*1024,         16*1024,    EMMC_USER_PART},/* eng_vendor        16M    p64*/
+#else
   {PART_RECOVERY_VENDOR,           882*1024,         16*1024,    EMMC_USER_PART},/* recovery_vendor   16M    p59*/
-  {PART_SECURITY_DTB,              898*1024,          2*1024,    EMMC_USER_PART},/* security_dtb   2M        p60*/
+  {PART_SECURITY_DTB,              898*1024,          2*1024,    EMMC_USER_PART},/* security_dtb       2M    p60*/
   {PART_DTBO,                      900*1024,         20*1024,    EMMC_USER_PART},/* dtoimage          20M    p61*/
   {PART_TRUSTFIRMWARE,             920*1024,          2*1024,    EMMC_USER_PART},/* trustfirmware      2M    p62*/
   {PART_MODEM_FW,                  922*1024,        134*1024,    EMMC_USER_PART},/* modem_fw         134M    p63*/
   {PART_ENG_VENDOR,               1056*1024,         20*1024,    EMMC_USER_PART},/* eng_vendor        20M    p64*/
+#endif
   {PART_MODEM_PATCH_NV,           1076*1024,         16*1024,    EMMC_USER_PART},/* modem_patch_nv    16M    p65*/
   {PART_MODEM_DRIVER,             1092*1024,         20*1024,    EMMC_USER_PART},/* modem_driver      20M    p66*/
   {PART_RECOVERY_VBMETA,          1112*1024,          2*1024,    EMMC_USER_PART},/* recovery_vbmeta    2M    p67*/
@@ -90,8 +107,68 @@ static const struct partition partition_table_emmc[] =
   {PART_VBMETA,                   1116*1024,          4*1024,    EMMC_USER_PART},/* PART_VBMETA        4M    p69*/
   {PART_MODEMNVM_UPDATE,          1120*1024,         16*1024,    EMMC_USER_PART},/* modemnvm_update   16M    p70*/
   {PART_MODEMNVM_CUST,            1136*1024,         16*1024,    EMMC_USER_PART},/* modemnvm_cust     16M    p71*/
-  {PART_PATCH,                    1152*1024,         32*1024,    EMMC_USER_PART},/* patch             32M    p72*/
+#ifdef CONFIG_NEW_PRODUCT_OCE
+  {PART_PATCH,                    1152*1024,        256*1024,    EMMC_USER_PART},/* patch            256M    p72*/
 #ifdef CONFIG_FACTORY_MODE
+/* oce product, same as internal, EXT4 */
+  {PART_PREAS,                    1408*1024,        368*1024,    EMMC_USER_PART},/* preas            368M    p73*/
+  {PART_PREAVS,                   1776*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
+  {PART_SUPER,                    1808*1024,      10396*1024,    EMMC_USER_PART},/* super          10396M    p75*/
+  {PART_VERSION,                 12204*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
+  {PART_PRELOAD,                 12780*1024,       1400*1024,    EMMC_USER_PART},/* preload         1400M    p77*/
+  {PART_HIBENCH_IMG,             14180*1024,        128*1024,    EMMC_USER_PART},/* hibench_img      128M    p78*/
+  {PART_HIBENCH_DATA,            14308*1024,        512*1024,    EMMC_USER_PART},/* hibench_data     512M    p79*/
+  {PART_FLASH_AGEING,            14820*1024,        512*1024,    EMMC_USER_PART},/* FLASH_AGEING     512M    p80*/
+  {PART_HIBENCH_LOG,             15332*1024,         32*1024,    EMMC_USER_PART},/* HIBENCH_LOG       32M    p81*/
+  {PART_HIBENCH_LPM3,            15364*1024,         32*1024,    EMMC_USER_PART},/* HIBENCH_LPM3      32M    p82*/
+  {PART_SECFLASH_AGEING,         15396*1024,         32*1024,    EMMC_USER_PART},/* secflash_ageing   32M    p83*/
+  {PART_HYPERHOLD,               15428*1024,       2048*1024,    EMMC_USER_PART},/* hyperhold       2048M    p84*/
+  {PART_USERDATA,                17476*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p85*/
+#elif defined CONFIG_MARKET_INTERNAL
+#ifdef CONFIG_USE_EROFS
+/* oce product, internal, EROFS */
+  {PART_PREAS,                    1408*1024,        296*1024,    EMMC_USER_PART},/* preas            296M    p73*/
+  {PART_PREAVS,                   1704*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
+  {PART_SUPER,                    1736*1024,       7000*1024,    EMMC_USER_PART},/* super           7000M    p75*/
+  {PART_VERSION,                  8736*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
+  {PART_PRELOAD,                  9312*1024,       1400*1024,    EMMC_USER_PART},/* preload         1400M    p77*/
+  {PART_HYPERHOLD,               10712*1024,       2048*1024,    EMMC_USER_PART},/* hyperhold       2048M    p78*/
+  {PART_USERDATA,                12760*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p79*/
+#else
+/* oce product, internal, EXT4 */
+  {PART_PREAS,                    1408*1024,        368*1024,    EMMC_USER_PART},/* preas            368M    p73*/
+  {PART_PREAVS,                   1776*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
+  {PART_SUPER,                    1808*1024,      10396*1024,    EMMC_USER_PART},/* super          10396M    p75*/
+  {PART_VERSION,                 12204*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
+  {PART_PRELOAD,                 12780*1024,       1400*1024,    EMMC_USER_PART},/* preload         1400M    p77*/
+  {PART_HYPERHOLD,               14180*1024,       2048*1024,    EMMC_USER_PART},/* hyperhold       2048M    p78*/
+  {PART_USERDATA,                16228*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p79*/
+#endif
+#else
+#ifdef CONFIG_USE_EROFS
+/* oce product, oversea, EROFS */
+  {PART_PREAS,                    1408*1024,       1024*1024,    EMMC_USER_PART},/* preas           1024M    p73*/
+  {PART_PREAVS,                   2432*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
+  {PART_SUPER,                    2464*1024,       7192*1024,    EMMC_USER_PART},/* super           7192M    p75*/
+  {PART_VERSION,                  9656*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
+  {PART_PRELOAD,                 10232*1024,       1400*1024,    EMMC_USER_PART},/* preload         1400M    p77*/
+  {PART_HYPERHOLD,               11632*1024,       2048*1024,    EMMC_USER_PART},/* hyperhold       2048M    p78*/
+  {PART_USERDATA,                13680*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p79*/
+#else
+/* oce product, oversea, EXT4 */
+  {PART_PREAS,                    1408*1024,       1280*1024,    EMMC_USER_PART},/* preas           1280M    p73*/
+  {PART_PREAVS,                   2688*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
+  {PART_SUPER,                    2720*1024,       10404*1024,   EMMC_USER_PART},/* super          10404M    p75*/
+  {PART_VERSION,                 13124*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
+  {PART_PRELOAD,                 13700*1024,       1400*1024,    EMMC_USER_PART},/* preload         1400M    p77*/
+  {PART_HYPERHOLD,               15100*1024,       2048*1024,    EMMC_USER_PART},/* hyperhold       2048M    p78*/
+  {PART_USERDATA,                17148*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p79*/
+#endif
+#endif // Corresponds to ifdef CONFIG_FACTORY_MODE, oce product
+#else // Corresponds to ifdef CONFIG_NEW_PRODUCT_OCE
+#ifdef CONFIG_FACTORY_MODE
+/* old product, same as internal, EXT4 */
+  {PART_PATCH,                  1152 * 1024,       32 * 1024,    EMMC_USER_PART}, /* patch             32M    p72 */
   {PART_PREAS,                    1184*1024,        368*1024,    EMMC_USER_PART},/* preas            368M    p73*/
   {PART_PREAVS,                   1552*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
   {PART_SUPER,                    1584*1024,       9168*1024,    EMMC_USER_PART},/* super           9168M    p75*/
@@ -102,16 +179,21 @@ static const struct partition partition_table_emmc[] =
   {PART_FLASH_AGEING,            13112*1024,        512*1024,    EMMC_USER_PART},/* FLASH_AGEING     512M    p80*/
   {PART_HIBENCH_LOG,             13624*1024,         32*1024,    EMMC_USER_PART},/* HIBENCH_LOG       32M    p81*/
   {PART_HIBENCH_LPM3,            13656*1024,         32*1024,    EMMC_USER_PART},/* HIBENCH_LPM3      32M    p82*/
-  {PART_USERDATA,                13688*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p83*/
+  {PART_SECFLASH_AGEING,         13688*1024,         32*1024,    EMMC_USER_PART}, /* secflash_ageing   32M    p83 */
+  {PART_USERDATA,                13720*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p84*/
 #elif defined CONFIG_MARKET_INTERNAL
 #ifdef CONFIG_USE_EROFS
-  {PART_PREAS,                    1184*1024,        296*1024,    EMMC_USER_PART},/* preas            296M    p73*/
-  {PART_PREAVS,                   1480*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
-  {PART_SUPER,                    1512*1024,       6792*1024,    EMMC_USER_PART},/* super           6792M    p75*/
+/* old product, internal, EROFS */
+  {PART_PATCH,                  1152 * 1024,       96 * 1024,    EMMC_USER_PART}, /* patch             96M    p72 */
+  {PART_PREAS,                  1248 * 1024,      296 * 1024,    EMMC_USER_PART}, /* preas            296M    p73 */
+  {PART_PREAVS,                 1544 * 1024,       32 * 1024,    EMMC_USER_PART}, /* preavs            32M    p74 */
+  {PART_SUPER,                  1576 * 1024,     6728 * 1024,    EMMC_USER_PART}, /* super           6728M    p75 */
   {PART_VERSION,                  8304*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
   {PART_PRELOAD,                  8880*1024,       1144*1024,    EMMC_USER_PART},/* preload         1144M    p77*/
   {PART_USERDATA,                10024*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p78*/
 #else
+/* old product, internal, EXT4 */
+  {PART_PATCH,                  1152 * 1024,       32 * 1024,    EMMC_USER_PART}, /* patch             32M    p72 */
   {PART_PREAS,                    1184*1024,        368*1024,    EMMC_USER_PART},/* preas            368M    p73*/
   {PART_PREAVS,                   1552*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
   {PART_SUPER,                    1584*1024,       9168*1024,    EMMC_USER_PART},/* super           9168M    p75*/
@@ -121,13 +203,17 @@ static const struct partition partition_table_emmc[] =
 #endif
 #else
 #ifdef CONFIG_USE_EROFS
-  {PART_PREAS,                    1184*1024,       1024*1024,    EMMC_USER_PART},/* preas           1024M    p73*/
-  {PART_PREAVS,                   2208*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
-  {PART_SUPER,                    2240*1024,       6768*1024,    EMMC_USER_PART},/* super           6768M    p75*/
+/* old product, oversea, EROFS */
+  {PART_PATCH,                  1152 * 1024,       96 * 1024,    EMMC_USER_PART}, /* patch             96M    p72 */
+  {PART_PREAS,                  1248 * 1024,     1024 * 1024,    EMMC_USER_PART}, /* preas           1024M    p73 */
+  {PART_PREAVS,                 2272 * 1024,       32 * 1024,    EMMC_USER_PART}, /* preavs            32M    p74 */
+  {PART_SUPER,                  2304 * 1024,     6704 * 1024,    EMMC_USER_PART}, /* super           6704M    p75 */
   {PART_VERSION,                  9008*1024,        576*1024,    EMMC_USER_PART},/* version          576M    p76*/
   {PART_PRELOAD,                  9584*1024,       1144*1024,    EMMC_USER_PART},/* preload         1144M    p77*/
   {PART_USERDATA,                10728*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p78*/
 #else
+/* old product, oversea, EXT4 */
+  {PART_PATCH,                  1152 * 1024,       32 * 1024,    EMMC_USER_PART}, /* patch             32M    p72 */
   {PART_PREAS,                    1184*1024,       1280*1024,    EMMC_USER_PART},/* preas           1280M    p73*/
   {PART_PREAVS,                   2464*1024,         32*1024,    EMMC_USER_PART},/* preavs            32M    p74*/
   {PART_SUPER,                    2496*1024,       9384*1024,    EMMC_USER_PART},/* super           9384M    p75*/
@@ -135,10 +221,11 @@ static const struct partition partition_table_emmc[] =
   {PART_PRELOAD,                 12456*1024,       1144*1024,    EMMC_USER_PART},/* preload         1144M    p77*/
   {PART_USERDATA,                13600*1024, (8UL)*1024*1024,    EMMC_USER_PART},/* userdata           8G    p78*/
 #endif
-#endif
+#endif // Corresponds to ifdef CONFIG_FACTORY_MODE, old product
+#endif // Corresponds to ifdef CONFIG_NEW_PRODUCT_OCE
   {"0", 0, 0, 0},                                        /* total 11848M*/
 };
-#ifdef CONFIG_HISI_STORAGE_UFS_PARTITION
+
 static struct partition partition_table_ufs[] =
 {
   {PART_XLOADER,                   0,                 2*1024,    UFS_PART_0},
@@ -194,7 +281,15 @@ static struct partition partition_table_ufs[] =
   {PART_RECOVERY,                  663*1024,         85*1024,    UFS_PART_3},/* recovery          85M    p43*/
   {PART_ERECOVERY,                 748*1024,         12*1024,    UFS_PART_3},/* erecovery         12M    p44*/
   {PART_METADATA,                  760*1024,         16*1024,    UFS_PART_3},/* metadata          16M    p45*/
-  {PART_RESERVED,                  776*1024,         47*1024,    UFS_PART_3},/* reserved          47M    p46*/
+  {PART_KPATCH,                    776*1024,         47*1024,    UFS_PART_3},/* reserved          47M    p46*/
+#elif defined CONFIG_FACTORY_MODE
+  {PART_ERECOVERY_RAMDISK,         578*1024,         32*1024,    UFS_PART_3},/* erecovery_ramdisk 32M    p40*/
+  {PART_ERECOVERY_VENDOR,          610*1024,         24*1024,    UFS_PART_3},/* erecovery_vendor  24M    p41*/
+  {PART_BOOT,                      634*1024,         25*1024,    UFS_PART_3},/* boot              25M    p42*/
+  {PART_RECOVERY,                  659*1024,         41*1024,    UFS_PART_3},/* recovery          41M    p43*/
+  {PART_ERECOVERY,                 700*1024,         41*1024,    UFS_PART_3},/* erecovery         41M    p44*/
+  {PART_METADATA,                  741*1024,         16*1024,    UFS_PART_3},/* metadata          16M    p45*/
+  {PART_KPATCH,                    757*1024,         66*1024,    UFS_PART_3},/* reserved          66M    p46*/
 #else
   {PART_ERECOVERY_RAMDISK,         578*1024,         32*1024,    UFS_PART_3},/* erecovery_ramdisk 32M    p40*/
   {PART_ERECOVERY_VENDOR,          610*1024,         16*1024,    UFS_PART_3},/* erecovery_vendor  16M    p41*/
@@ -202,7 +297,7 @@ static struct partition partition_table_ufs[] =
   {PART_RECOVERY,                  651*1024,         45*1024,    UFS_PART_3},/* recovery          45M    p43*/
   {PART_ERECOVERY,                 696*1024,         45*1024,    UFS_PART_3},/* erecovery         45M    p44*/
   {PART_METADATA,                  741*1024,         16*1024,    UFS_PART_3},/* metadata          16M    p45*/
-  {PART_RESERVED,                  757*1024,         66*1024,    UFS_PART_3},/* reserved          66M    p46*/
+  {PART_KPATCH,                    757*1024,         66*1024,    UFS_PART_3},/* reserved          66M    p46*/
 #endif
   {PART_ENG_SYSTEM,                823*1024,         12*1024,    UFS_PART_3},/* eng_system        12M    p47*/
   {PART_RAMDISK,                   835*1024,          2*1024,    UFS_PART_3},/* ramdisk           32M    p48*/
@@ -212,12 +307,21 @@ static struct partition partition_table_ufs[] =
   {PART_VBMETA_CUST,               840*1024,          1*1024,    UFS_PART_3},/* vbmeta_cust        1M    p52*/
   {PART_VBMETA_HW_PRODUCT,         841*1024,          1*1024,    UFS_PART_3},/* vbmeta_hw_product  1M    p53*/
   {PART_RECOVERY_RAMDISK,          842*1024,         32*1024,    UFS_PART_3},/* recovery_ramdisk  32M    p54*/
+#ifdef CONFIG_FACTORY_MODE
+  {PART_RECOVERY_VENDOR,           874*1024,         24*1024,    UFS_PART_3},/* recovery_vendor   24M    p55*/
+  {PART_SECURITY_DTB,              898*1024,          2*1024,    UFS_PART_3},/* security_dtb       2M    p56*/
+  {PART_DTBO,                      900*1024,         16*1024,    UFS_PART_3},/* dtoimage          16M    p57*/
+  {PART_TRUSTFIRMWARE,             916*1024,          2*1024,    UFS_PART_3},/* trustfirmware      2M    p58*/
+  {PART_MODEM_FW,                  918*1024,        134*1024,    UFS_PART_3},/* modem_fw         134M    p59*/
+  {PART_ENG_VENDOR,               1052*1024,         16*1024,    UFS_PART_3},/* eng_vendor        16M    p60*/
+#else
   {PART_RECOVERY_VENDOR,           874*1024,         16*1024,    UFS_PART_3},/* recovery_vendor   16M    p55*/
-  {PART_SECURITY_DTB,              890*1024,          2*1024,    UFS_PART_3},/* security_dtb   2M        p56*/
+  {PART_SECURITY_DTB,              890*1024,          2*1024,    UFS_PART_3},/* security_dtb       2M    p56*/
   {PART_DTBO,                      892*1024,         20*1024,    UFS_PART_3},/* dtoimage          20M    p57*/
   {PART_TRUSTFIRMWARE,             912*1024,          2*1024,    UFS_PART_3},/* trustfirmware      2M    p58*/
   {PART_MODEM_FW,                  914*1024,        134*1024,    UFS_PART_3},/* modem_fw         134M    p59*/
   {PART_ENG_VENDOR,               1048*1024,         20*1024,    UFS_PART_3},/* eng_vendor        20M    p60*/
+#endif
   {PART_MODEM_PATCH_NV,           1068*1024,         16*1024,    UFS_PART_3},/* modem_patch_nv    16M    p61*/
   {PART_MODEM_DRIVER,             1084*1024,         20*1024,    UFS_PART_3},/* modem_driver      20M    p62*/
   {PART_RECOVERY_VBMETA,          1104*1024,          2*1024,    UFS_PART_3},/* recovery_vbmeta    2M    p63*/
@@ -225,8 +329,68 @@ static struct partition partition_table_ufs[] =
   {PART_VBMETA,                   1108*1024,          4*1024,    UFS_PART_3},/* PART_VBMETA        4M    p65*/
   {PART_MODEMNVM_UPDATE,          1112*1024,         16*1024,    UFS_PART_3},/* modemnvm_update   16M    p66*/
   {PART_MODEMNVM_CUST,            1128*1024,         16*1024,    UFS_PART_3},/* modemnvm_cust     16M    p67*/
-  {PART_PATCH,                    1144*1024,         32*1024,    UFS_PART_3},/* patch             32M    p68*/
+#ifdef CONFIG_NEW_PRODUCT_OCE
+  {PART_PATCH,                    1144*1024,        256*1024,    UFS_PART_3},/* patch            256M    p68*/
 #ifdef CONFIG_FACTORY_MODE
+/* oce product, same as internal, EXT4 */
+  {PART_PREAS,                    1400*1024,        368*1024,    UFS_PART_3},/* preas            368M    p69*/
+  {PART_PREAVS,                   1768*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
+  {PART_SUPER,                    1800*1024,      10396*1024,    UFS_PART_3},/* super          10396M    p71*/
+  {PART_VERSION,                 12196*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
+  {PART_PRELOAD,                 12772*1024,       1400*1024,    UFS_PART_3},/* preload         1400M    p73*/
+  {PART_HIBENCH_IMG,             14172*1024,        128*1024,    UFS_PART_3},/* hibench_img      128M    p74*/
+  {PART_HIBENCH_DATA,            14300*1024,        512*1024,    UFS_PART_3},/* hibench_data     512M    p75*/
+  {PART_FLASH_AGEING,            14812*1024,        512*1024,    UFS_PART_3},/* FLASH_AGEING     512M    p76*/
+  {PART_HIBENCH_LOG,             15324*1024,         32*1024,    UFS_PART_3},/* HIBENCH_LOG       32M    p77*/
+  {PART_HIBENCH_LPM3,            15356*1024,         32*1024,    UFS_PART_3},/* HIBENCH_LPM3      32M    p78*/
+  {PART_SECFLASH_AGEING,         15388*1024,         32*1024,    UFS_PART_3},/* secflash_ageing   32M    p79 */
+  {PART_HYPERHOLD,               15420*1024,       2048*1024,    UFS_PART_3},/* hyperhold       2048M    p80*/
+  {PART_USERDATA,                17468*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p81*/
+#elif defined CONFIG_MARKET_INTERNAL // Corresponds to ifdef CONFIG_FACTORY_MODE, oce product
+#ifdef CONFIG_USE_EROFS
+/* oce product, internal, EROFS */
+  {PART_PREAS,                    1400*1024,        296*1024,    UFS_PART_3},/* preas            296M    p69*/
+  {PART_PREAVS,                   1696*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
+  {PART_SUPER,                    1728*1024,       7000*1024,    UFS_PART_3},/* super           7000M    p71*/
+  {PART_VERSION,                  8728*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
+  {PART_PRELOAD,                  9304*1024,       1400*1024,    UFS_PART_3},/* preload         1400M    p73*/
+  {PART_HYPERHOLD,               10704*1024,       2048*1024,    UFS_PART_3},/* hyperhold       2048M    p74*/
+  {PART_USERDATA,                12752*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p75*/
+#else
+/* oce product, internal, EXT4 */
+  {PART_PREAS,                    1400*1024,        368*1024,    UFS_PART_3},/* preas            368M    p69*/
+  {PART_PREAVS,                   1768*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
+  {PART_SUPER,                    1800*1024,      10396*1024,    UFS_PART_3},/* super          10396M    p71*/
+  {PART_VERSION,                 12196*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
+  {PART_PRELOAD,                 12772*1024,       1400*1024,    UFS_PART_3},/* preload         1400M    p73*/
+  {PART_HYPERHOLD,               14172*1024,       2048*1024,    UFS_PART_3},/* hyperhold       2048M    p74*/
+  {PART_USERDATA,                16220*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p75*/
+#endif
+#else
+#ifdef CONFIG_USE_EROFS
+/* oce product, oversea, EROFS */
+  {PART_PREAS,                    1400*1024,       1024*1024,    UFS_PART_3},/* preas           1024M    p69*/
+  {PART_PREAVS,                   2424*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
+  {PART_SUPER,                    2456*1024,       7192*1024,    UFS_PART_3},/* super           7192M    p71*/
+  {PART_VERSION,                  9648*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
+  {PART_PRELOAD,                 10224*1024,       1400*1024,    UFS_PART_3},/* preload         1400M    p73*/
+  {PART_HYPERHOLD,               11624*1024,       2048*1024,    UFS_PART_3},/* hyperhold       2048M    p74*/
+  {PART_USERDATA,                13672*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p75*/
+#else
+/* oce product, oversea, EXT4 */
+  {PART_PREAS,                    1400*1024,       1280*1024,    UFS_PART_3},/* preas           1280M    p69*/
+  {PART_PREAVS,                   2680*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
+  {PART_SUPER,                    2712*1024,      10404*1024,    UFS_PART_3},/* super          10404M    p71*/
+  {PART_VERSION,                 13116*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
+  {PART_PRELOAD,                 13692*1024,       1400*1024,    UFS_PART_3},/* preload         1400M    p73*/
+  {PART_HYPERHOLD,               15092*1024,       2048*1024,    UFS_PART_3},/* hyperhold       2048M    p74*/
+  {PART_USERDATA,                17140*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p75*/
+#endif
+#endif // Corresponds to ifdef CONFIG_FACTORY_MODE, oce product
+#else // Corresponds to ifdef CONFIG_NEW_PRODUCT_OCE
+#ifdef CONFIG_FACTORY_MODE
+/* old product, same as internal, EXT4 */
+  {PART_PATCH,                  1144 * 1024,       32 * 1024,    UFS_PART_3}, /* patch             32M    p68 */
   {PART_PREAS,                    1176*1024,        368*1024,    UFS_PART_3},/* preas            368M    p69*/
   {PART_PREAVS,                   1544*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
   {PART_SUPER,                    1576*1024,       9168*1024,    UFS_PART_3},/* super           9168M    p71*/
@@ -237,16 +401,21 @@ static struct partition partition_table_ufs[] =
   {PART_FLASH_AGEING,            13104*1024,        512*1024,    UFS_PART_3},/* FLASH_AGEING     512M    p76*/
   {PART_HIBENCH_LOG,             13616*1024,         32*1024,    UFS_PART_3},/* HIBENCH_LOG       32M    p77*/
   {PART_HIBENCH_LPM3,            13648*1024,         32*1024,    UFS_PART_3},/* HIBENCH_LPM3      32M    p78*/
-  {PART_USERDATA,                13680*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p79*/
-#elif defined CONFIG_MARKET_INTERNAL
+  {PART_SECFLASH_AGEING,         13680*1024,         32*1024,    UFS_PART_3}, /* secflash_ageing   32M    p79 */
+  {PART_USERDATA,                13712*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p80*/
+#elif defined CONFIG_MARKET_INTERNAL // Corresponds to ifdef CONFIG_FACTORY_MODE, old product
 #ifdef CONFIG_USE_EROFS
-  {PART_PREAS,                    1176*1024,        296*1024,    UFS_PART_3},/* preas            296M    p69*/
-  {PART_PREAVS,                   1472*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
-  {PART_SUPER,                    1504*1024,       6792*1024,    UFS_PART_3},/* super           6792M    p71*/
+/* old product, internal, EROFS */
+  {PART_PATCH,                  1144 * 1024,       96 * 1024,    UFS_PART_3}, /* patch             96M    p68 */
+  {PART_PREAS,                  1240 * 1024,      296 * 1024,    UFS_PART_3}, /* preas            296M    p69 */
+  {PART_PREAVS,                 1536 * 1024,       32 * 1024,    UFS_PART_3}, /* preavs            32M    p70 */
+  {PART_SUPER,                  1568 * 1024,     6728 * 1024,    UFS_PART_3}, /* super           6728M    p71 */
   {PART_VERSION,                  8296*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
   {PART_PRELOAD,                  8872*1024,       1144*1024,    UFS_PART_3},/* preload         1144M    p73*/
   {PART_USERDATA,                10016*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p74*/
 #else
+/* old product, internal, EXT4 */
+  {PART_PATCH,                  1144 * 1024,       32 * 1024,    UFS_PART_3}, /* patch             32M    p68 */
   {PART_PREAS,                    1176*1024,        368*1024,    UFS_PART_3},/* preas            368M    p69*/
   {PART_PREAVS,                   1544*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
   {PART_SUPER,                    1576*1024,       9168*1024,    UFS_PART_3},/* super           9168M    p71*/
@@ -256,13 +425,17 @@ static struct partition partition_table_ufs[] =
 #endif
 #else
 #ifdef CONFIG_USE_EROFS
-  {PART_PREAS,                    1176*1024,       1024*1024,    UFS_PART_3},/* preas           1024M    p69*/
-  {PART_PREAVS,                   2200*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
-  {PART_SUPER,                    2232*1024,       6768*1024,    UFS_PART_3},/* super           6768M    p71*/
+/* old product, oversea, EROFS */
+  {PART_PATCH,                  1144 * 1024,       96 * 1024,    UFS_PART_3}, /* patch             96M    p68 */
+  {PART_PREAS,                  1240 * 1024,     1024 * 1024,    UFS_PART_3}, /* preas           1024M    p69 */
+  {PART_PREAVS,                 2264 * 1024,       32 * 1024,    UFS_PART_3}, /* preavs            32M    p70 */
+  {PART_SUPER,                  2296 * 1024,     6704 * 1024,    UFS_PART_3}, /* super           6704M    p71 */
   {PART_VERSION,                  9000*1024,        576*1024,    UFS_PART_3},/* version          576M    p72*/
   {PART_PRELOAD,                  9576*1024,       1144*1024,    UFS_PART_3},/* preload         1144M    p73*/
   {PART_USERDATA,                10720*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p74*/
 #else
+/* old product, oversea, EXT4 */
+  {PART_PATCH,                  1144 * 1024,       32 * 1024,    UFS_PART_3}, /* patch             32M    p68 */
   {PART_PREAS,                    1176*1024,       1280*1024,    UFS_PART_3},/* preas           1280M    p69*/
   {PART_PREAVS,                   2456*1024,         32*1024,    UFS_PART_3},/* preavs            32M    p70*/
   {PART_SUPER,                    2488*1024,       9384*1024,    UFS_PART_3},/* super           9384M    p71*/
@@ -270,12 +443,12 @@ static struct partition partition_table_ufs[] =
   {PART_PRELOAD,                 12448*1024,       1144*1024,    UFS_PART_3},/* preload         1144M    p73*/
   {PART_USERDATA,                13592*1024, (8UL)*1024*1024,    UFS_PART_3},/* userdata           8G    p74*/
 #endif
-#endif
+#endif // Corresponds to ifdef CONFIG_FACTORY_MODE, old product
+#endif // Corresponds to ifdef CONFIG_NEW_PRODUCT_OCE
   {PART_PTABLE_LU4,                        0,              512,   UFS_PART_4},/* ptable_lu4        512K    p0*/
   {PART_RESERVED12,                      512,             1536,   UFS_PART_4},/* reserved12       1536K    p1*/
   {PART_USERDATA2,                      2048,  (4UL)*1024*1024,   UFS_PART_4},/* userdata2           4G    p2*/
   {"0", 0, 0, 0},
 };
-#endif
 
 #endif

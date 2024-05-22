@@ -12,7 +12,7 @@ config REMOTEPROC
 
 if REMOTEPROC
 
-config HISI_REMOTEPROC
+config HISP_REMOTEPROC
 	tristate "Histar remoteproc support"
 	depends on ARCH_HISI
 	select RPMSG_VIRTIO

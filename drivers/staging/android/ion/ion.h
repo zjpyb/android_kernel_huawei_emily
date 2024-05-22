@@ -89,12 +89,14 @@ struct ion_buffer {
 	struct list_head attachments;
 	char task_comm[TASK_COMM_LEN];
 	pid_t pid;
-#ifdef CONFIG_ION_HISI_SECSG
+#if defined(CONFIG_ION_HISI_SECSG) || defined(CONFIG_ION_HISI_DMA_POOL)
 	unsigned int id;
 #endif
 
 #ifdef CONFIG_HISI_LB
 	unsigned int plc_id;
+	unsigned long offset;
+	size_t lb_size;
 #endif
 };
 void ion_buffer_destroy(struct ion_buffer *buffer);
@@ -343,8 +345,13 @@ struct ion_page_pool {
 struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order);
 void ion_page_pool_destroy(struct ion_page_pool *pool);
 struct page *ion_page_pool_alloc(struct ion_page_pool *pool);
+#ifdef CONFIG_ZONE_MEDIA_OPT
+struct page *ion_page_pool_alloc_with_gfp(struct ion_page_pool *pool,
+					  gfp_t gfp_mask);
+#endif
 void ion_page_pool_free(struct ion_page_pool *pool, struct page *page);
-void ion_page_pool_free_immediate(struct ion_page_pool *, struct page *);
+void ion_page_pool_free_immediate(struct ion_page_pool *pool,
+					struct page *page);
 int ion_page_pool_total(struct ion_page_pool *pool, bool high);
 
 /** ion_page_pool_shrink - shrinks the size of the memory cached in the pool
@@ -360,8 +367,6 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 int ion_query_heaps(struct ion_heap_query *query);
-
-bool is_ion_dma_buf(struct dma_buf *dmabuf);
 
 struct ion_device *get_ion_device(void);
 

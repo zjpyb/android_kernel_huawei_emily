@@ -27,7 +27,7 @@
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
 #include "synaptics.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define CHAR_DEVICE_NAME "rmi"
 #define DEVICE_CLASS_NAME "rmidev"

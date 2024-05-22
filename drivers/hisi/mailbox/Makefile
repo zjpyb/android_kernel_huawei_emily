@@ -1,1 +1,1 @@
-obj-y += hisi_mailbox/
+obj-y += ipc_mailbox/

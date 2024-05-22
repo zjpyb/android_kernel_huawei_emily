@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2021 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,48 +34,74 @@
 #include <linux/workqueue.h>
 #include <linux/vmalloc.h>
 #include <linux/notifier.h>
-#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
-#include <linux/of_irq.h>
-#endif
-
-#define CREATE_TRACE_POINTS
-#include "trace-events-touch.h"
-
+#include <linux/io.h>
+#include <linux/hwspinlock.h>
+#include <linux/version.h>
 #include <huawei_ts_kit.h>
 #include <huawei_ts_kit_platform.h>
 #include <huawei_ts_kit_misc.h>
 #include <tpkit_platform_adapter.h>
 #include <huawei_ts_kit_api.h>
 #include <huawei_ts_kit_algo.h>
-#include <linux/hwspinlock.h>
-#include "hwspinlock_internal.h"
 
-#if defined(CONFIG_TEE_TUI)
-#include "tui.h"
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+#include <linux/of_irq.h>
+#endif
+#ifdef CONFIG_MTK_CHARGER
+#include <mt-plat/mtk_charger.h>
 #endif
 
-#if defined(CONFIG_HISI_BCI_BATTERY)
-#include <linux/power/hisi/hisi_bci_battery.h>
+#if defined(CONFIG_BCI_BATTERY)
+#include <linux/power/hisi/bci_battery.h>
 #endif
 
-#include <linux/version.h>
 #if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <uapi/linux/sched/types.h>
+#endif
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)) && (defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+#include <linux/timer.h>
 #endif
 
 #ifdef CONFIG_HUAWEI_DEVKIT_HISI
 #include <huawei_platform/sensor/hw_comm_pmic.h>
 #endif
 
-#define SCHEDULE_DELAY_MILLiSECOND 200
+#define CREATE_TRACE_POINTS
+#include "trace-events-touch.h"
+#include "hwspinlock_internal.h"
+
+#if (!defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0) && (!defined CONFIG_HUAWEI_DEVKIT_MTK_3_0)
+#include <linux/i3c/master.h>
+#endif
+
+#if defined(CONFIG_TEE_TUI)
+#include "tui.h"
+#endif
+
+#if (!(defined CONFIG_LCD_KIT_DRIVER) && (defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+#include "dsi_panel.h"
+#endif
+
+#ifdef CONFIG_HUAWEI_DEVKIT_QCOM_3_0
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
+#endif
+#define SCHEDULE_DELAY_MILLISECOND 200
+#define SCHEDULE_DEFAULT_PRIORITY 99
 #define PROJECT_ID_LEN 10
 #define TS_GAMMA_DATA_LEN 146
 #define RAWDATA_NUM_OF_TRX_MAX 100
+
+#if defined(CONFIG_TEE_TUI)
+#define GIC_REGISTER_BASE 0xFE400110
+#define TP_IRQ_NUM_GROUP_BIT 10
+#endif
+
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 
 #define LDO17_PHYS_ADDR 0X93
 #define LSW50_PHYS_ADDR 0xAC
+#define DSM_BUF_SIZE 1024
 static struct dsm_dev dsm_tp = {
 	.name = "dsm_tp",
 	.device_name = "TP",
@@ -83,20 +109,21 @@ static struct dsm_dev dsm_tp = {
 	.ic_name = "syn",
 	.module_name = "NNN",
 	.fops = NULL,
-	.buff_size = 1024,
+	.buff_size = DSM_BUF_SIZE,
 };
 
-struct dsm_client *ts_dclient = NULL;
+struct dsm_client *ts_dclient;
 EXPORT_SYMBOL(ts_dclient);
 #endif
-#define	EDGE_WIDTH_DEFAULT 10
+#define EDGE_WIDTH_DEFAULT 10
 struct ts_kit_platform_data g_ts_kit_platform_data;
 EXPORT_SYMBOL(g_ts_kit_platform_data);
 #if defined(CONFIG_TEE_TUI)
 struct ts_tui_data tee_tui_data;
 EXPORT_SYMBOL(tee_tui_data);
 #endif
-u8 g_ts_kit_log_cfg = 0;
+u8 g_ts_kit_log_cfg;
+EXPORT_SYMBOL(g_ts_kit_log_cfg);
 
 #ifdef CONFIG_HUAWEI_DEVKIT_HISI
 static struct hw_comm_pmic_cfg_t tp_pmic_ldo_set;
@@ -111,8 +138,14 @@ extern const struct attribute_group ts_attr_group;
 extern atomic_t g_ts_kit_data_report_over;
 /* global variable declare */
 #ifdef CONFIG_HUAWEI_THP
-extern int thp_project_id_provider(char *project_id);
+extern int thp_project_id_provider(char *project_id,
+	unsigned int len);
 #endif
+
+static int parse_feature_config(void);
+static int huawei_ts_kit_platform_init(void);
+
+#ifdef CONFIG_LCD_KIT_DRIVER
 int ts_kit_ops_register(struct ts_kit_ops *ops);
 int ts_kit_get_gesture_mode(void);
 int tskit_get_status_by_type(int type, int *status);
@@ -123,6 +156,7 @@ struct ts_kit_ops ts_kit_ops = {
 	.get_tp_status_by_type = tskit_get_status_by_type,
 	.read_otp_gamma  = ts_gamma_data_info,
 };
+
 int ts_gamma_data_info(u8 *buf, int len)
 {
 	int error = NO_ERR;
@@ -145,19 +179,18 @@ int ts_gamma_data_info(u8 *buf, int len)
 		goto out;
 	}
 
-	cmd = (struct ts_cmd_node *)kzalloc(sizeof(struct ts_cmd_node),
-					  GFP_KERNEL);
+	cmd = kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
 	if (!cmd) {
 		TS_LOG_ERR("%s: malloc failed\n", __func__);
 		error = -ENOMEM;
 		goto out;
 	}
-	info = (struct ts_oem_info_param *)kzalloc(sizeof(struct ts_oem_info_param), GFP_KERNEL);
-		if (!info) {
-			TS_LOG_ERR("%s: malloc failed\n", __func__);
-			error = -ENOMEM;
-			goto out;
-		}
+	info = kzalloc(sizeof(struct ts_oem_info_param), GFP_KERNEL);
+	if (!info) {
+		TS_LOG_ERR("%s: malloc failed\n", __func__);
+		error = -ENOMEM;
+		goto out;
+	}
 	info->op_action = TS_ACTION_READ;
 	cmd->command = TS_GAMMA_INFO_SWITCH;
 	cmd->cmd_param.prv_params = (void *)info;
@@ -182,7 +215,6 @@ free_cmd:
 	cmd = NULL;
 	TS_LOG_DEBUG("%s: done\n", __func__);
 	return error;
-
 }
 
 int tskit_get_status_by_type(int type, int *status)
@@ -204,11 +236,12 @@ int tskit_get_status_by_type(int type, int *status)
 	}
 	return ret;
 }
+#endif
 
 static int tskit_get_project_id(char *project_id)
 {
 	if (atomic_read(&g_ts_kit_platform_data.register_flag) !=
-			TS_REGISTER_DONE) {
+		TS_REGISTER_DONE) {
 		TS_LOG_ERR("%s not registered, return!!\n", __func__);
 		return -EINVAL;
 	}
@@ -232,6 +265,8 @@ static int tskit_get_project_id(char *project_id)
 
 int tp_project_id_provider(char *project_id, uint8_t len)
 {
+	int ret;
+
 	if (project_id == NULL) {
 		TS_LOG_ERR("%s null pointer error!!\n", __func__);
 		return -EINVAL;
@@ -244,16 +279,17 @@ int tp_project_id_provider(char *project_id, uint8_t len)
 
 	if (g_ts_kit_platform_data.node) {
 		TS_LOG_INFO("%s is tskit project\n", __func__);
-		return tskit_get_project_id(project_id);
+		ret = tskit_get_project_id(project_id);
 	} else {
 #ifdef CONFIG_HUAWEI_THP
-		return thp_project_id_provider(project_id);
+		ret = thp_project_id_provider(project_id, len);
 #else
-		return -EIO;
+		ret = -EIO;
 #endif
 	}
+	TS_LOG_INFO("%s get project id ret: %d\n", __func__, ret);
+	return ret;
 }
-
 EXPORT_SYMBOL(tp_project_id_provider);
 
 int ts_kit_get_esd_status(void)
@@ -268,11 +304,49 @@ void ts_kit_clear_esd_status(void)
 }
 EXPORT_SYMBOL(ts_kit_clear_esd_status);
 
+#define TP_VENDOR_NAME_TAIL_LEN 2
+static char *tp_vendor_name_cat(const char *str1, const char *str2)
+{
+	int rc;
+	static bool vendor_name_init_done;
+	char *name = (char *)g_ts_kit_platform_data.multi_vendor_name;
+
+	if (name == NULL) {
+		TS_LOG_ERR("%s: tp have not inited\n", __func__);
+		return NULL;
+	}
+	if (vendor_name_init_done)
+		return name;
+
+	rc = snprintf(name, TP_VENDOR_NAME_LEN, "%s,%s", str1, str2);
+	if (rc < 0) {
+		TS_LOG_ERR("%s:snprintf failed\n", __func__);
+		return NULL;
+	}
+	vendor_name_init_done = true;
+	TS_LOG_INFO("multi vendor name is :%s\n", name);
+	return name;
+}
+
 #ifdef CONFIG_HUAWEI_THP
 extern const char *thp_get_vendor_name(void);
 #endif
 const char *ts_kit_get_vendor_name(void)
 {
+	const char *thp_vendor_name =
+#ifdef CONFIG_HUAWEI_THP
+		thp_get_vendor_name();
+#else
+		"null";
+#endif
+	const char *tskit_vendor_name = (g_ts_kit_platform_data.chip_data &&
+		g_ts_kit_platform_data.chip_data->vendor_name) ?
+		g_ts_kit_platform_data.chip_data->vendor_name : "null";
+
+	if (g_ts_kit_platform_data.support_multi_panel_attach &&
+		g_ts_kit_platform_data.chip_data)
+		return tp_vendor_name_cat(thp_vendor_name, tskit_vendor_name);
+
 	return g_ts_kit_platform_data.chip_data ?
 		g_ts_kit_platform_data.chip_data->vendor_name :
 #ifdef CONFIG_HUAWEI_THP
@@ -285,8 +359,6 @@ EXPORT_SYMBOL(ts_kit_get_vendor_name);
 
 static void tp_init_work_fn(struct work_struct *work);
 int ts_kit_proc_command_directly(struct ts_cmd_node *cmd);
-static int ts_get_brightness_info_cmd(void);
-
 
 /*
  * The following is a stub function. For hisilicon platform,
@@ -294,8 +366,8 @@ static int ts_get_brightness_info_cmd(void);
  * For qualcomm platform, it has not been implemented.
  * Thus the stub function can avoid compilation errors.
  */
-__attribute__ ((weak))
-int tpmodule_notifier_call_chain(unsigned long val, void *v)
+__attribute__ ((weak)) int tpmodule_notifier_call_chain(
+	unsigned long val, void *v)
 {
 	TS_LOG_INFO("No provide panel_id for sensor\n");
 	return 0;
@@ -357,76 +429,76 @@ static void ts_set_recovery_window(void)
 }
 
 static int seq_print_freq(struct seq_file *m, char *buf,
-			int tx_num, int rx_num)
+	int tx_num, int rx_num)
 {
 	char ii;
 	char jj;
 	unsigned char *head = NULL;
 	unsigned char *report_data_8 = NULL;
+	const int data_size = 2;
+	const int data_len = 4;
 
 	head = (unsigned char *)buf;
 
-	seq_printf(m, "Calibration Image - Coarse & Fine\n");
+	seq_puts(m, "Calibration Image - Coarse & Fine\n");
 	report_data_8 = (unsigned char *)buf;
 	/* point to second byte of F54 report data */
 	report_data_8++;
 	for (ii = 0; ii < rx_num; ii++) {
 		for (jj = 0; jj < tx_num; jj++) {
 			seq_printf(m, "%02x ", *report_data_8);
-			report_data_8 += 2;
-
+			report_data_8 += data_size;
 		}
-		seq_printf(m, "\n");
+		seq_puts(m, "\n");
 	}
 
-	seq_printf(m, "\nCalibration Image - Detail\n");
+	seq_puts(m, "\nCalibration Image - Detail\n");
 	report_data_8 = head;
 	for (ii = 0; ii < rx_num; ii++) {
 		for (jj = 0; jj < tx_num; jj++) {
 			seq_printf(m, "%02x ", *report_data_8);
-			report_data_8 += 2;
-
+			report_data_8 += data_size;
 		}
-		seq_printf(m, "\n");
+		seq_puts(m, "\n");
 	}
 
-	seq_printf(m, "\nCalibration Noise - Coarse & Fine\n");
+	seq_puts(m, "\nCalibration Noise - Coarse & Fine\n");
 	/* point to first byte of data */
 	report_data_8 = (unsigned char *)buf;
-	report_data_8 += (tx_num * rx_num * 2 + 1);
-	for (ii = 0; ii < rx_num * 2; ii++) {
+	report_data_8 += (tx_num * rx_num * data_size + 1);
+	for (ii = 0; ii < rx_num * data_size; ii++) {
 		seq_printf(m, "%02x ", *report_data_8);
-		report_data_8 += 2;
+		report_data_8 += data_size;
 
 		if ((ii + 1) % tx_num == 0)
-			seq_printf(m, "\n");
+			seq_puts(m, "\n");
 	}
 
-	seq_printf(m, "\nCalibration Noise - Detail\n");
+	seq_puts(m, "\nCalibration Noise - Detail\n");
 	report_data_8 = (unsigned char *)buf;
-	report_data_8 += (tx_num * rx_num * 2);
-	for (ii = 0; ii < rx_num * 2; ii++) {
+	report_data_8 += (tx_num * rx_num * data_size);
+	for (ii = 0; ii < rx_num * data_size; ii++) {
 		seq_printf(m, "%02x ", *report_data_8);
-		report_data_8 += 2;
+		report_data_8 += data_size;
 
 		if ((ii + 1) % tx_num == 0)
-			seq_printf(m, "\n");
+			seq_puts(m, "\n");
 	}
 
-	seq_printf(m, "\nCalibration button - Coarse & Fine\n");
+	seq_puts(m, "\nCalibration button - Coarse & Fine\n");
 	report_data_8 = (unsigned char *)buf;
-	report_data_8 += (tx_num * rx_num * 2 + rx_num * 4 + 1);
-	for (ii = 0; ii < 4; ii++) {
+	report_data_8 += (tx_num * rx_num * data_size + rx_num * data_len + 1);
+	for (ii = 0; ii < data_len; ii++) {
 		seq_printf(m, "%02x ", *report_data_8);
-		report_data_8 += 2;
+		report_data_8 += data_size;
 	}
 
-	seq_printf(m, "\nCalibration button - Detail\n");
+	seq_puts(m, "\nCalibration button - Detail\n");
 	report_data_8 = (unsigned char *)buf;
-	report_data_8 += (tx_num * rx_num * 2 + rx_num * 4);
-	for (ii = 0; ii < 4; ii++) {
+	report_data_8 += (tx_num * rx_num * data_size + rx_num * data_len);
+	for (ii = 0; ii < data_len; ii++) {
 		seq_printf(m, "%02x ", *report_data_8);
-		report_data_8 += 2;
+		report_data_8 += data_size;
 	}
 
 	return 0;
@@ -437,6 +509,9 @@ static int calibration_proc_show(struct seq_file *m, void *v)
 	struct ts_calibration_data_info *info = NULL;
 	struct ts_cmd_node *cmd = NULL;
 	int error;
+	const int data_size = 2;
+	const int data_len = 4;
+	const int buff_size = 2048;
 
 	if (!g_ts_kit_platform_data.chip_data->should_check_tp_calibration_info) {
 		TS_LOG_ERR("No calibration data\n");
@@ -444,15 +519,14 @@ static int calibration_proc_show(struct seq_file *m, void *v)
 		goto out;
 	}
 
-	cmd = (struct ts_cmd_node *)kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
+	cmd = kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
 	if (!cmd) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
 		goto out;
 	}
 
-	info = (struct ts_calibration_data_info *)kzalloc(sizeof(struct ts_calibration_data_info),
-			GFP_KERNEL);
+	info = kzalloc(sizeof(struct ts_calibration_data_info), GFP_KERNEL);
 	if (!info) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
@@ -474,47 +548,45 @@ static int calibration_proc_show(struct seq_file *m, void *v)
 
 	seq_write(m, info->data, info->used_size);
 
-	seq_printf(m, "\n\nCollect data for freq: 0\n\n");
+	seq_puts(m, "\n\nCollect data for freq: 0\n\n");
 	seq_print_freq(m, info->data, info->tx_num, info->rx_num);
 
-	seq_printf(m, "\n\nCollect data for freq: 1\n\n");
+	seq_puts(m, "\n\nCollect data for freq: 1\n\n");
 	/* shift 2D */
-	seq_print_freq(m, info->data + info->tx_num * info->rx_num * 2 +
-			info->rx_num * 2 * 2 +	/* shift noise */
-			4 * 2,	/* shift 0D */
-			info->tx_num, info->rx_num);
+	seq_print_freq(m, info->data + info->tx_num * info->rx_num * data_size +
+		info->rx_num * data_size * data_size + /* shift noise */
+		data_len * data_size, /* shift 0D */
+		info->tx_num, info->rx_num);
 
-	seq_printf(m, "\n\nCollect data for freq: 2\n\n");
+	seq_puts(m, "\n\nCollect data for freq: 2\n\n");
 	/* shift 2D */
-	seq_print_freq(m, info->data + (info->tx_num * info->rx_num * 2 +
-			info->rx_num * 2 * 2 +	/* shift noise */
-			4 * 2) * 2,	/* shift 0D */
-		       info->tx_num, info->rx_num);
+	seq_print_freq(m, info->data + (info->tx_num * info->rx_num * data_size +
+		info->rx_num * data_size * data_size + /* shift noise */
+		data_len * data_size) * data_size, /* shift 0D */
+		info->tx_num, info->rx_num);
 
-	seq_printf(m, "\n\nCollect data for interval scan\n\n");
-	seq_print_freq(m, info->data + 2048, info->tx_num, info->rx_num);
+	seq_puts(m, "\n\nCollect data for interval scan\n\n");
+	seq_print_freq(m, info->data + buff_size, info->tx_num, info->rx_num);
 
 	kfree(info);
- out_free_cmd:
+out_free_cmd:
 	kfree(cmd);
- out:
+out:
 	return 0;
 }
 
 void ts_kit_rotate_rawdata_abcd2cbad(int row, int column,
-					int *data_start,
-					int rotate_type)
+	int *data_start, int rotate_type)
 {
 	int *rawdatabuf_temp = NULL;
 	int row_index;
 	int column_index;
-	int row_size = 0;
-	int column_size = 0;
+	int row_size;
+	int column_size;
 	int i = 0;
 
 	TS_LOG_INFO("\n");
-	rawdatabuf_temp = (int *)kzalloc(row * column * sizeof(int),
-		GFP_KERNEL);
+	rawdatabuf_temp = kzalloc(row * column * sizeof(int), GFP_KERNEL);
 	if (!rawdatabuf_temp) {
 		TS_LOG_ERR("Failed to alloc buffer for rawdatabuf_temp\n");
 		return;
@@ -528,24 +600,19 @@ void ts_kit_rotate_rawdata_abcd2cbad(int row, int column,
 		/* src column to dst row */
 		row_size = column;
 		column_size = row;
-		for (column_index = column_size - 1; column_index >= 0;
-				column_index--) {
-			for (row_index = row_size - 1; row_index >= 0;
-					row_index--)
-				data_start[i++] =
-				rawdatabuf_temp[row_index *
-				column_size + column_index];
+		for (column_index = column_size - 1; column_index >= 0; column_index--) {
+			for (row_index = row_size - 1; row_index >= 0; row_index--)
+				data_start[i++] = rawdatabuf_temp[row_index *
+					column_size + column_index];
 		}
 		break;
 	case TS_RAWDATA_TRANS_ABCD2ADCB:
 		/* src column to dst row */
 		row_size = column;
 		column_size = row;
-		for (column_index = 0; column_index < column_size;
-				column_index++) {
+		for (column_index = 0; column_index < column_size; column_index++) {
 			for (row_index = 0; row_index < row_size; row_index++)
-				data_start[i++] =
-					rawdatabuf_temp[row_index *
+				data_start[i++] = rawdatabuf_temp[row_index *
 					column_size + column_index];
 		}
 		break;
@@ -555,128 +622,213 @@ void ts_kit_rotate_rawdata_abcd2cbad(int row, int column,
 	kfree(rawdatabuf_temp);
 	rawdatabuf_temp = NULL;
 }
-
 EXPORT_SYMBOL(ts_kit_rotate_rawdata_abcd2cbad);
 
-static void rawdata_proc_printf(struct seq_file *m,
-				struct ts_rawdata_info *info, int range_size,
-				int row_size)
+static void rawdata_proc_printf_itocap_data(struct seq_file *m,
+	const struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int i;
+	int j;
+
+	if ((row_size <= 0) || (range_size <= 0) || !info ||
+		(row_size > RAWDATA_NUM_OF_TRX_MAX) ||
+		(range_size > RAWDATA_NUM_OF_TRX_MAX)) {
+		TS_LOG_ERR("%s range_size OR row_size is wrong value\n",
+			__func__);
+		return;
+	}
+	seq_puts(m, "\nito cap data begin\n");
+	for (i = 0; i < range_size; i++) {
+		for (j = 0; j < row_size; j++)
+			seq_printf(m, "%d,", info->self_buff[row_size * i + j]);
+		seq_puts(m, "\n");
+	}
+	seq_puts(m, "\nito cap data end\n");
+}
+
+static void rawdata_proc_printf_selfdata(struct seq_file *m,
+	const struct ts_rawdata_info *info, int tx_num, int rx_num)
+{
+	int i;
+	unsigned long j;
+
+	if ((tx_num <= 0) || (rx_num <= 0) || !info ||
+		(tx_num > RAWDATA_NUM_OF_TRX_MAX) ||
+		(rx_num > RAWDATA_NUM_OF_TRX_MAX)) {
+		TS_LOG_ERR("%s tx_num OR rx_num is wrong value\n", __func__);
+		return;
+	}
+	j = tx_num * rx_num;
+	seq_puts(m, "\nself calibrate data begin\n");
+	seq_printf(m, "ix1 force %d\n", info->self_buff[j]);
+	j++;
+	seq_printf(m, "ix1 sense %d\n", info->self_buff[j]);
+	j++;
+	seq_puts(m, "rx ix sense:\n");
+	for (i = 0; i < rx_num; i++)
+		seq_printf(m, "%d,", info->self_buff[i + j]);
+	j += rx_num;
+	seq_puts(m, "\n rx cx sense:\n");
+	for (i = 0; i < rx_num; i++)
+		seq_printf(m, "%d,", info->self_buff[i + j]);
+	j += rx_num;
+	seq_puts(m, "\ntx ix force:\n");
+	for (i = 0; i < tx_num; i++)
+		seq_printf(m, "%d,", info->self_buff[j + i]);
+	j += tx_num;
+	seq_puts(m, "\ntx cx force:\n");
+	for (i = 0; i < tx_num; i++)
+		seq_printf(m, "%d,", info->self_buff[j + i]);
+	seq_puts(m, "\nself calibrate data end\n");
+}
+
+static void rawdata_proc_printf_basic_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int index;
+	int index1;
+	const int index_size = 2;
+
+	for (index = 0; row_size * index + index_size < info->used_size; index++) {
+		if (index == 0)
+			seq_puts(m, "rawdata begin\n"); /* print the title */
+		for (index1 = 0; index1 < row_size; index1++)
+			seq_printf(m, "%d,", info->buff[index_size + row_size * index + index1]); /* print oneline */
+		seq_puts(m, "\n ");
+
+		if ((range_size - 1) == index) {
+			seq_puts(m, "rawdata end\n");
+			seq_puts(m, "noisedata begin\n");
+		}
+	}
+	seq_puts(m, "noisedata end\n");
+}
+
+static void rawdata_proc_printf_rawdata(struct seq_file *m,
+	struct ts_rawdata_info *info)
+{
+	int index;
+	int index1;
+	int rx_num = info->hybrid_buff[0];
+	int tx_num = info->hybrid_buff[1];
+	const int index_size = 2;
+
+	index1 = tx_num + rx_num + index_size;
+	/* hybrid_buff   |rx_num|tx_num|noize_rx|noize_tx|raw_rx|raw_tx| */
+	if ((index1 <= TS_RAWDATA_RESULT_MAX / index_size) &&
+		g_ts_kit_platform_data.chip_data->self_cap_test) {
+		seq_puts(m, "selfcap rawdata begin\n"); /* print the title */
+		seq_puts(m, "rx:\n");
+		if (g_ts_kit_platform_data.chip_data->support_forcekey_cap_value_test) {
+			for (index = CAP_TEST_FORCEKEY_VALUE_NUM;
+				index < rx_num + CAP_TEST_FORCEKEY_VALUE_NUM;
+				index++)
+				seq_printf(m, "%d,", info->hybrid_buff[index1 + index]); /* print  rx oneline */
+		} else {
+			for (index = 0; index < rx_num; index++)
+				seq_printf(m, "%d,", info->hybrid_buff[index1 + index]); /* print  rx oneline */
+		}
+		seq_puts(m, "\ntx:\n");
+		if (g_ts_kit_platform_data.chip_data->support_forcekey_cap_value_test) {
+			for (index = CAP_TEST_FORCEKEY_VALUE_NUM;
+				index < tx_num + CAP_TEST_FORCEKEY_VALUE_NUM;
+				index++)
+				seq_printf(m, "%d,", info->hybrid_buff[index1 + index + rx_num]); /* print tx oneline */
+		} else {
+			for (index = 0; index < tx_num; index++)
+				seq_printf(m, "%d,", info->hybrid_buff[index1 + index + rx_num]); /* print tx oneline */
+		}
+		seq_puts(m, "\nselfcap rawdata end\n");
+		seq_puts(m, "selfcap noisedata begin\n");
+		seq_puts(m, "rx:\n");
+		for (index = 0; index < rx_num; index++)
+			seq_printf(m, "%d,", info->hybrid_buff[index_size + index]); /* print oneline */
+
+		seq_puts(m, "\ntx:\n");
+		for (index = 0; index < tx_num; index++)
+			seq_printf(m, "%d,", info->hybrid_buff[index_size + index + rx_num]); /* print oneline */
+
+		seq_puts(m, "\nselfcap noisedata end\n");
+	}
+}
+
+static void rawdata_proc_printf_forcekey(struct seq_file *m,
+	struct ts_rawdata_info *info)
 {
 	int index = 0;
-	int index1 = 0;
-	int index2 = 0;
+	int index1;
+	int index2;
+	int rx_num = info->hybrid_buff[0];
+	int tx_num = info->hybrid_buff[1];
+	const int index_size = 2;
+	struct ts_kit_device_data *cd = g_ts_kit_platform_data.chip_data;
+
+	index1 = tx_num + rx_num + index_size;
+	if (info->hybrid_buff_used_size > (index1 + tx_num + rx_num)) {
+		index2 = info->hybrid_buff_used_size -
+			(index1 + tx_num + rx_num);
+		seq_puts(m, "\nforcekey value : ");
+		if (cd->support_forcekey_cap_value_test)
+			index1 = index1 + CAP_TEST_FORCEKEY_VALUE_NUM;
+		for (index = 0; index < index2; index++)
+			seq_printf(m, "%d, ",
+				info->hybrid_buff[index + index1 +
+				tx_num + rx_num]);
+
+		seq_puts(m, "\n");
+	}
+}
+
+static void rawdata_proc_printf_sharp_selcap_data(struct seq_file *m,
+	struct ts_rawdata_info *info)
+{
+	int index;
+
+	seq_puts(m, "selfcap touchdelta begin\n");
+	for (index = 0;
+		index < info->used_sharp_selcap_touch_delta_size;
+		index++)
+		seq_printf(m, "%d,", info->buff[info->used_size + index]);
+
+	seq_puts(m, "\n ");
+	seq_puts(m, "selfcap touchdelta end\n");
+	seq_puts(m, "selfcap singleenddelta begin\n");
+	for (index = 0; index < info->used_sharp_selcap_single_ended_delta_size;
+		index++)
+		seq_printf(m, "%d,",
+			info->buff[info->used_size +
+			info->used_sharp_selcap_touch_delta_size + index]);
+
+	seq_puts(m, "\n ");
+	seq_puts(m, "selfcap singleenddelta end\n");
+}
+
+static void rawdata_proc_printf(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size)
+{
 	int rx_num = info->hybrid_buff[0];
 	int tx_num = info->hybrid_buff[1];
 
-	if ((0 == range_size) || (0 == row_size)) {
+	if ((range_size == 0) || (row_size == 0)) {
 		TS_LOG_ERR("%s  range_size OR row_size is 0\n", __func__);
 		return;
 	}
-	if (rx_num <= 0 || rx_num > RAWDATA_NUM_OF_TRX_MAX || tx_num <= 0
-	    || tx_num > RAWDATA_NUM_OF_TRX_MAX) {
+	if ((rx_num <= 0) || (rx_num > RAWDATA_NUM_OF_TRX_MAX) ||
+		(tx_num <= 0) || (tx_num > RAWDATA_NUM_OF_TRX_MAX)) {
 		TS_LOG_ERR("%s  rx_num or tx_num is wrong value\n", __func__);
 		return;
 	}
-	for (index = 0; row_size * index + 2 < info->used_size; index++) {
-		if (0 == index) {
-			seq_printf(m, "rawdata begin\n");	/*print the title */
-		}
-		for (index1 = 0; index1 < row_size; index1++) {
-			seq_printf(m, "%d,", info->buff[2 + row_size * index + index1]);	/*print oneline */
-		}
-		/*index1 = 0; */
-		seq_printf(m, "\n ");
-
-		if ((range_size - 1) == index) {
-			seq_printf(m, "rawdata end\n");
-			seq_printf(m, "noisedata begin\n");
-		}
-	}
-	seq_printf(m, "noisedata end\n");
-
-	index1 = tx_num + rx_num + 2;
-
-	/*********hybrid_buff   |rx_num|tx_num|noize_rx|noize_tx|raw_rx|raw_tx|****/
-	if ((index1 <= TS_RAWDATA_RESULT_MAX / 2)
-	    && g_ts_kit_platform_data.chip_data->self_cap_test) {
-		seq_printf(m, "selfcap rawdata begin\n");	/*print the title */
-		seq_printf(m, "rx:\n");
-		if (g_ts_kit_platform_data.chip_data->
-		    support_forcekey_cap_value_test) {
-			for (index = CAP_TEST_FORCEKEY_VALUE_NUM;
-			     index < rx_num + CAP_TEST_FORCEKEY_VALUE_NUM;
-			     index++) {
-				seq_printf(m, "%d,", info->hybrid_buff[index1 + index]);	/*print  rx oneline */
-			}
-		} else {
-			for (index = 0; index < rx_num; index++) {
-				seq_printf(m, "%d,", info->hybrid_buff[index1 + index]);	/*print  rx oneline */
-			}
-		}
-		seq_printf(m, "\ntx:\n");
-		if (g_ts_kit_platform_data.chip_data->
-		    support_forcekey_cap_value_test) {
-			for (index = CAP_TEST_FORCEKEY_VALUE_NUM;
-			     index < tx_num + CAP_TEST_FORCEKEY_VALUE_NUM;
-			     index++) {
-				seq_printf(m, "%d,", info->hybrid_buff[index1 + index + rx_num]);	/*print tx oneline */
-			}
-		} else {
-			for (index = 0; index < tx_num; index++) {
-				seq_printf(m, "%d,", info->hybrid_buff[index1 + index + rx_num]);	/*print tx oneline */
-			}
-		}
-		seq_printf(m, "\nselfcap rawdata end\n");
-
-		seq_printf(m, "selfcap noisedata begin\n");
-		seq_printf(m, "rx:\n");
-		for (index = 0; index < rx_num; index++) {
-			seq_printf(m, "%d,", info->hybrid_buff[2 + index]);	/*print oneline */
-		}
-		seq_printf(m, "\ntx:\n");
-		for (index = 0; index < tx_num; index++) {
-			seq_printf(m, "%d,", info->hybrid_buff[2 + index + rx_num]);	/*print oneline */
-		}
-		seq_printf(m, "\nselfcap noisedata end\n");
-	}
-
+	rawdata_proc_printf_basic_data(m, info, row_size, range_size);
+	rawdata_proc_printf_rawdata(m, info);
+	if (g_ts_kit_platform_data.chip_data->support_self_calibrate_test)
+		rawdata_proc_printf_selfdata(m, info, tx_num, rx_num);
+	if (g_ts_kit_platform_data.chip_data->support_ito_cap_test)
+		rawdata_proc_printf_itocap_data(m, info, row_size, range_size);
 	if (g_ts_kit_platform_data.chip_data->forcekey_test_support ||
-	    g_ts_kit_platform_data.chip_data->support_forcekey_cap_value_test) {
-		if (info->hybrid_buff_used_size > (index1 + tx_num + rx_num)) {
-			index2 =
-			    info->hybrid_buff_used_size - (index1 + tx_num +
-							   rx_num);
-			seq_printf(m, "\nforcekey value : ");
-			if (g_ts_kit_platform_data.chip_data->
-			    support_forcekey_cap_value_test)
-				index1 = index1 + CAP_TEST_FORCEKEY_VALUE_NUM;
-			for (index = 0; index < index2; index++) {
-				seq_printf(m, "%d, ",
-					   info->hybrid_buff[index + index1 +
-							     tx_num + rx_num]);
-			}
-			seq_printf(m, "\n");
-		}
-	}
-
-	if (info->used_sharp_selcap_single_ended_delta_size) {
-		seq_printf(m, "selfcap touchdelta begin\n");
-		for (index = 0;
-		     index < info->used_sharp_selcap_touch_delta_size;
-		     index++) {
-			seq_printf(m, "%d,",
-				   info->buff[info->used_size + index]);
-		}
-		seq_printf(m, "\n ");
-		seq_printf(m, "selfcap touchdelta end\n");
-		seq_printf(m, "selfcap singleenddelta begin\n");
-		for (index = 0; index < info->used_sharp_selcap_single_ended_delta_size; index++) {
-			seq_printf(m, "%d,",
-				   info->buff[info->used_size + info->used_sharp_selcap_touch_delta_size + index]);
-		}
-		seq_printf(m, "\n ");
-		seq_printf(m, "selfcap singleenddelta end\n");
-	}
+		g_ts_kit_platform_data.chip_data->support_forcekey_cap_value_test)
+		rawdata_proc_printf_forcekey(m, info);
+	if (info->used_sharp_selcap_single_ended_delta_size)
+		rawdata_proc_printf_sharp_selcap_data(m, info);
 	if (g_ts_kit_platform_data.chip_data->trx_delta_test_support) {
 		seq_printf(m, "%s\n", (char *)info->tx_delta_buf);
 		seq_printf(m, "%s\n", (char *)info->rx_delta_buf);
@@ -685,150 +837,219 @@ static void rawdata_proc_printf(struct seq_file *m,
 		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_one);
 		seq_printf(m, "%s\n", (char *)info->td43xx_rt95_part_two);
 	}
-	return;
 }
 
-static int rawdata_proc_parade_printf(struct seq_file *m,
-					struct ts_rawdata_info *info,
-					int range_size, int row_size)
+static int rawdata_prade_cm_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
 {
-	int rdIndex = RAWDATA_SIZE_LIMIT;
+	int rd_index = RAWDATA_SIZE_LIMIT;
 	int index;
 	int index1;
 
 	/* print the title */
-	seq_printf(m, "cm data begin\n");
+	seq_puts(m, "cm data begin\n");
 	for (index = 0; index < range_size; index++) {
 		for (index1 = 0; index1 < row_size; index1++) {
-			if (rdIndex < info->used_size)
-				seq_printf(m, "%d,", info->buff[rdIndex++]);
-			else {
-				seq_printf(m, "\n ");
-				goto out;
+			if (rd_index < info->used_size) {
+				seq_printf(m, "%d,", info->buff[rd_index++]);
+			} else {
+				seq_puts(m, "\n ");
+				return RESULT_ERR;
 			}
 		}
-		seq_printf(m, "\n ");
+		seq_puts(m, "\n ");
 	}
 	/* print the title */
-	seq_printf(m, "cm data end\n");
-	/* print the title */
-	seq_printf(m, "mutual noise data begin\n");
-	for (index = 0; index < range_size; index++) {
-		for (index1 = 0; index1 < row_size; index1++) {
-			if (rdIndex < info->used_size)
-				seq_printf(m, "%d,", info->buff[rdIndex++]);
-			else {
-				seq_printf(m, "\n ");
-				goto out;
-			}
-		}
-		seq_printf(m, "\n ");
-	}
-	/* print the title */
-	seq_printf(m, "mutual noise data end\n");
-	/* print the title */
-	seq_printf(m, "self noise data begin\n");
-	seq_printf(m, "-rx:,");
-	for (index1 = 0; index1 < row_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "-tx:,");
-	for (index1 = 0; index1 < range_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "self noise data end\n");	/*print the title */
-	seq_printf(m, "cm gradient(10x real value) begin\n");	/*print the title */
-	seq_printf(m, "-rx:,");
-	for (index1 = 0; index1 < row_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "-tx:,");
-	for (index1 = 0; index1 < range_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "cm gradient end\n");	/*print the title */
-	seq_printf(m, "cp begin\n");	/*print the title */
-	seq_printf(m, "-rx:,");
-	for (index1 = 0; index1 < row_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "-tx:,");
-	for (index1 = 0; index1 < range_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "cp end\n");	/*print the title */
-	seq_printf(m, "cp delta begin\n");	/*print the title */
-	seq_printf(m, "-rx:,");
-	for (index1 = 0; index1 < row_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "-tx:,");
-	for (index1 = 0; index1 < range_size; index1++) {
-		if (rdIndex < info->used_size)
-			seq_printf(m, "%d,", info->buff[rdIndex++]);
-		else {
-			seq_printf(m, "\n ");
-			goto out;
-		}
-	}
-	seq_printf(m, "\n ");
-	seq_printf(m, "cp detlat end\n");	/*print the title */
-	seq_printf(m, "*************end data*************\n");
+	seq_puts(m, "cm data end\n");
 
 	return NO_ERR;
- out:
+}
+
+static int rawdata_prade_mutual_noise_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int rd_index = RAWDATA_SIZE_LIMIT;
+	int index;
+	int index1;
+
+	/* print the title */
+	seq_puts(m, "mutual noise data begin\n");
+	for (index = 0; index < range_size; index++) {
+		for (index1 = 0; index1 < row_size; index1++) {
+			if (rd_index < info->used_size) {
+				seq_printf(m, "%d,", info->buff[rd_index++]);
+			} else {
+				seq_puts(m, "\n ");
+				return RESULT_ERR;
+			}
+		}
+		seq_puts(m, "\n ");
+	}
+	/* print the title */
+	seq_puts(m, "mutual noise data end\n");
+
+	return NO_ERR;
+}
+
+static int rawdata_prade_self_noise_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int rd_index = RAWDATA_SIZE_LIMIT;
+	int index1;
+
+	/* print the title */
+	seq_puts(m, "self noise data begin\n");
+	seq_puts(m, "-rx:,");
+	for (index1 = 0; index1 < row_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "-tx:,");
+	for (index1 = 0; index1 < range_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "self noise data end\n"); /* print the title */
+
+	return NO_ERR;
+}
+
+static int rawdata_prade_cm_gradient_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int rd_index = RAWDATA_SIZE_LIMIT;
+	int index1;
+
+	seq_puts(m, "cm gradient(10x real value) begin\n"); /* print the title */
+	seq_puts(m, "-rx:,");
+	for (index1 = 0; index1 < row_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "-tx:,");
+	for (index1 = 0; index1 < range_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "cm gradient end\n"); /* print the title */
+
+	return NO_ERR;
+}
+
+static int rawdata_prade_cp_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int rd_index = RAWDATA_SIZE_LIMIT;
+	int index1;
+
+	seq_puts(m, "cp begin\n"); /* print the title */
+	seq_puts(m, "-rx:,");
+	for (index1 = 0; index1 < row_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "-tx:,");
+	for (index1 = 0; index1 < range_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "cp end\n"); /* print the title */
+
+	return NO_ERR;
+}
+
+static int rawdata_prade_cp_delta_data(struct seq_file *m,
+	struct ts_rawdata_info *info, int row_size, int range_size)
+{
+	int rd_index = RAWDATA_SIZE_LIMIT;
+	int index1;
+
+	seq_puts(m, "cp delta begin\n"); /* print the title */
+	seq_puts(m, "-rx:,");
+	for (index1 = 0; index1 < row_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "-tx:,");
+	for (index1 = 0; index1 < range_size; index1++) {
+		if (rd_index < info->used_size) {
+			seq_printf(m, "%d,", info->buff[rd_index++]);
+		} else {
+			seq_puts(m, "\n ");
+			return RESULT_ERR;
+		}
+	}
+	seq_puts(m, "\n ");
+	seq_puts(m, "cp detlat end\n"); /* print the title */
+
+	return NO_ERR;
+}
+
+static int rawdata_proc_parade_printf(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size)
+{
+	if (rawdata_prade_cm_data(m, info, row_size, range_size))
+		goto out;
+	if (rawdata_prade_mutual_noise_data(m, info, row_size, range_size))
+		goto out;
+	if (rawdata_prade_self_noise_data(m, info, row_size, range_size))
+		goto out;
+	if (rawdata_prade_cm_gradient_data(m, info, row_size, range_size))
+		goto out;
+	if (rawdata_prade_cp_data(m, info, row_size, range_size))
+		goto out;
+	if (rawdata_prade_cp_delta_data(m, info, row_size, range_size))
+		goto out;
+	seq_puts(m, "*************end data*************\n");
+
+	return NO_ERR;
+out:
 	return RESULT_ERR;
 }
 
 static void rawdata_proc_3d_func_printf(struct seq_file *m,
-					struct ts_rawdata_info *info)
+	struct ts_rawdata_info *info)
 {
 	int index;
 	int index1;
 	int row_size;
 	int range_size;
+	const int index_size = 2;
 
 	TS_LOG_INFO("print 3d data\n");
 	row_size = info->buff_3d[0];
@@ -841,184 +1062,254 @@ static void rawdata_proc_3d_func_printf(struct seq_file *m,
 
 	seq_printf(m, "rx: %d, tx : %d(3d)\n", row_size, range_size);
 
-	for (index = 0; row_size * index + 2 < info->used_size_3d; index++) {
+	for (index = 0; row_size * index + index_size < info->used_size_3d; index++) {
 		if (index == 0)
 			/* print the title */
-			seq_printf(m, "rawdata begin(3d)\n");
+			seq_puts(m, "rawdata begin(3d)\n");
 		for (index1 = 0; index1 < row_size; index1++)
 			/* print oneline */
 			seq_printf(m, "%d,",
-				info->buff_3d[2 + row_size * index + index1]);
-		seq_printf(m, "\n ");
+				info->buff_3d[index_size + row_size * index + index1]);
+		seq_puts(m, "\n ");
 
 		if ((range_size - 1) == index) {
-			seq_printf(m, "rawdata end(3d)\n");
-			seq_printf(m, "noisedata begin(3d)\n");
+			seq_puts(m, "rawdata end(3d)\n");
+			seq_puts(m, "noisedata begin(3d)\n");
 		}
 	}
-	seq_printf(m, "noisedata end(3d)\n");
+	seq_puts(m, "noisedata end(3d)\n");
 }
 
-static void rawdata_proc_newformat_printf(struct seq_file *m,
-					  struct ts_rawdata_info_new *info)
+#define RESULT_ID_0 0
+#define RESULT_ID_1 1
+#define RESULT_ID_2 2
+#define RESULT_ID_3 2
+static void rawdata_proc_basic_info(struct seq_file *m,
+	struct ts_rawdata_info_new *info)
 {
 	struct ts_rawdata_newnodeinfo *rawdatanode = NULL;
-	int index = 0;
-	int index1 = 0;
-	int tx_n = 0, rx_n = 0;
-	int row_size = info->tx;
-	int rawtest_size = info->tx * info->rx;
-	char pfstatus[RAW_DATA_END]={0};//0-NA,'P' pass,'F' false
-	char resulttemp[TS_RAWDATA_RESULT_CODE_LEN]={0};
-
-	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d\n",
-		__func__, info->deviceinfo, info->listnodenum);
+	char pfstatus[RAW_DATA_END] = {0}; /* 0-NA,'P' pass,'F' false */
+	char resulttemp[TS_RAWDATA_RESULT_CODE_LEN] = {0};
 
 	/* i2c info */
 	seq_printf(m, "%s", info->i2cinfo);
 	seq_printf(m, "%s", "-");
 	/* row data p or f */
-	list_for_each_entry(rawdatanode, &info->rawdata_head, node){
-	    if (rawdatanode->typeindex < RAW_DATA_END){
-			if (pfstatus[rawdatanode->typeindex] == 0 || pfstatus[rawdatanode->typeindex]=='P'){
-				pfstatus[rawdatanode->typeindex] = rawdatanode->testresult;
-			}
-    	}
+	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
+		if (rawdatanode->typeindex < RAW_DATA_END) {
+			if (pfstatus[rawdatanode->typeindex] == 0 ||
+				pfstatus[rawdatanode->typeindex] == 'P')
+				pfstatus[rawdatanode->typeindex] =
+					rawdatanode->testresult;
+		}
 	}
-	list_for_each_entry(rawdatanode, &info->rawdata_head, node){
-		if (rawdatanode->typeindex < RAW_DATA_END){
-			if(pfstatus[rawdatanode->typeindex] != 0){
-				if(rawdatanode->typeindex < RAW_DATA_TYPE_forcekey){
-					resulttemp[0] = rawdatanode->typeindex + '0';
-					resulttemp[1] = pfstatus[rawdatanode->typeindex]; //default result_code is failed
-					resulttemp[2] = '\0';
-					seq_printf(m, "%s",resulttemp);
-					seq_printf(m, "%s","-");
-					pfstatus[rawdatanode->typeindex] = 0;
-				} else {
-					resulttemp[0] = (rawdatanode->typeindex % RAWDATA_TESTTMP_NUM) + 1 + '0';
-					resulttemp[1] = (rawdatanode->typeindex % RAWDATA_TESTTMP_NUM) + '0';
-					resulttemp[2] = pfstatus[rawdatanode->typeindex]; //default result_code is failed
-					resulttemp[3] = '\0';
-					seq_printf(m, "%s",resulttemp);
-					seq_printf(m, "%s","-");
-					pfstatus[rawdatanode->typeindex] = 0;
-				}
+	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
+		if ((rawdatanode->typeindex < RAW_DATA_END) &&
+			(pfstatus[rawdatanode->typeindex] != 0)) {
+			if (rawdatanode->typeindex < RAW_DATA_TYPE_FORCEKEY) {
+				resulttemp[RESULT_ID_0] =
+					rawdatanode->typeindex + '0';
+				/* default result_code is failed */
+				resulttemp[RESULT_ID_1] =
+					pfstatus[rawdatanode->typeindex];
+				resulttemp[RESULT_ID_2] = '\0';
+				seq_printf(m, "%s", resulttemp);
+				seq_printf(m, "%s", "-");
+				pfstatus[rawdatanode->typeindex] = 0;
+			} else {
+				resulttemp[RESULT_ID_0] =
+					(rawdatanode->typeindex %
+					RAWDATA_TESTTMP_NUM) + 1 + '0';
+				resulttemp[RESULT_ID_1] =
+					(rawdatanode->typeindex %
+					RAWDATA_TESTTMP_NUM) + '0';
+				/* default result_code is failed */
+				resulttemp[RESULT_ID_2] =
+					pfstatus[rawdatanode->typeindex];
+				resulttemp[RESULT_ID_3] = '\0';
+				seq_printf(m, "%s", resulttemp);
+				seq_printf(m, "%s", "-");
+				pfstatus[rawdatanode->typeindex] = 0;
 			}
 		}
 	}
+}
+
+static void rawdata_proc_result_info(struct seq_file *m,
+	struct ts_rawdata_info_new *info)
+{
+	char resulttemp[TS_RAWDATA_RESULT_CODE_LEN] = {0};
+	struct ts_rawdata_newnodeinfo *rawdatanode = NULL;
+
 	/* statistics_data info */
 	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
-		if (strlen(rawdatanode->statistics_data) > 0) {
+		if (strlen(rawdatanode->statistics_data) > 0)
 			seq_printf(m, "%s", rawdatanode->statistics_data);
-		}
 	}
 
 	/* result info */
 	if (strlen(info->i2cerrinfo) > 0) {
-		resulttemp[0] = RAW_DATA_TYPE_IC + '0';
-		resulttemp[1] = '\0';
-		seq_printf(m, "%s",resulttemp);
-		seq_printf(m, "%s",info->i2cerrinfo);
-		seq_printf(m, "%s","-");
+		resulttemp[RESULT_ID_0] = RAW_DATA_TYPE_IC + '0';
+		resulttemp[RESULT_ID_1] = '\0';
+		seq_printf(m, "%s", resulttemp);
+		seq_printf(m, "%s", info->i2cerrinfo);
+		seq_printf(m, "%s", "-");
 	}
 	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
 		if (strlen(rawdatanode->tptestfailedreason) > 0) {
-			resulttemp[0] = rawdatanode->typeindex + '0';
-			resulttemp[1] = '\0';
-			seq_printf(m, "%s",resulttemp);
-			seq_printf(m, "%s",rawdatanode->tptestfailedreason);
-			seq_printf(m, "%s","-");
+			resulttemp[RESULT_ID_0] = rawdatanode->typeindex + '0';
+			resulttemp[RESULT_ID_1] = '\0';
+			seq_printf(m, "%s", resulttemp);
+			seq_printf(m, "%s", rawdatanode->tptestfailedreason);
+			seq_printf(m, "%s", "-");
 		}
 	}
+}
+
+static void rawdata_proc_tx_rx_delta_info(struct ts_rawdata_info_new *info,
+	struct seq_file *m, struct ts_rawdata_newnodeinfo *datanode)
+{
+	int rawtest_size = info->tx * info->rx;
+	int index;
+	int tx_n = 0;
+	int rx_n = 0;
+
+	if (g_ts_kit_platform_data.chip_data->print_all_trx_diffdata_flag) {
+		seq_puts(m, "RX:\n");
+		for (index = 0; index < rawtest_size; index++) {
+			seq_printf(m, "%d,", datanode->values[index]);
+			tx_n++;
+			if (tx_n == info->tx) {
+				seq_puts(m, "\n");
+				tx_n = 0;
+			}
+		}
+		seq_puts(m, "\nTX:\n");
+		for (index = 0; index < rawtest_size; index++) {
+			seq_printf(m, "%d,",
+				datanode->values[rawtest_size + index]);
+			rx_n++;
+			if (rx_n == info->tx) {
+				seq_puts(m, "\n");
+				rx_n = 0;
+			}
+		}
+		seq_puts(m, "\n");
+	} else {
+		seq_puts(m, "RX:\n");
+		for (index = 0; index < (rawtest_size - info->tx); index++) {
+			seq_printf(m, "%d,", datanode->values[index]);
+			tx_n++;
+			if (tx_n == info->tx) {
+				seq_puts(m, "\n");
+				tx_n = 0;
+			}
+		}
+		seq_puts(m, "\nTX:\n");
+		for (index = 0; index < (rawtest_size - info->rx); index++) {
+			seq_printf(m, "%d,",
+				datanode->values[rawtest_size + index]);
+			rx_n++;
+			if (rx_n == (info->tx - 1)) {
+				seq_puts(m, "\n");
+				rx_n = 0;
+			}
+		}
+		seq_puts(m, "\n");
+	}
+}
+
+static void rawdata_proc_self_cap_info(struct ts_rawdata_info_new *info,
+	struct seq_file *m, struct ts_rawdata_newnodeinfo *datanode)
+{
+	int index;
+
+	seq_puts(m, "rx:\n");
+	for (index = 0;  index < info->rx; index++)
+		/* print  rx oneline */
+		seq_printf(m, "%d,", datanode->values[index]);
+
+	seq_puts(m, "\ntx:\n");
+	for (index = 0; index < info->tx; index++)
+		/* print tx oneline */
+		seq_printf(m, "%d,", datanode->values[index + info->rx]);
+
+	seq_puts(m, "\n");
+}
+
+static void rawdata_proc_self_noise_info(struct ts_rawdata_info_new *info,
+	struct seq_file *m, struct ts_rawdata_newnodeinfo *datanode)
+{
+	int index;
+
+	seq_puts(m, "rx:\n");
+	for (index = 0; index < info->rx; index++)
+		/* print oneline */
+		seq_printf(m, "%d,", datanode->values[index]);
+
+	seq_puts(m, "\ntx:\n");
+	for (index = 0; index < info->tx; index++)
+		/* print oneline */
+		seq_printf(m, "%d,",
+			datanode->values[index + info->rx]);
+	seq_puts(m, "\n");
+}
+
+static void rawdata_proc_other_info(struct ts_rawdata_info_new *info,
+	struct seq_file *m, struct ts_rawdata_newnodeinfo *datanode)
+{
+	int index;
+	int index1;
+	int row_size = info->tx;
+
+	for (index = 0; row_size * index < datanode->size; index++) {
+		for (index1 = 0; (index1 < row_size) &&
+			((row_size * index + index1) <
+			datanode->size); index1++)
+			/* print oneline */
+			seq_printf(m, "%d,",
+				datanode->values[row_size * index + index1]);
+		seq_puts(m, "\n");
+	}
+}
+
+static void rawdata_proc_data_info(struct seq_file *m,
+	struct ts_rawdata_info_new *info)
+{
+	struct ts_rawdata_newnodeinfo *rawdatanode = NULL;
 
 	/* dev info */
 	seq_printf(m, "%s", info->deviceinfo);
-	seq_printf(m, "\n");
+	seq_puts(m, "\n");
 
-	seq_printf(m, "*************touch data*************\n");
+	seq_puts(m, "*************touch data*************\n");
 	seq_printf(m, "tx: %d, rx : %d\n", info->tx, info->rx);
-    list_for_each_entry(rawdatanode, &info->rawdata_head, node){
-		if(rawdatanode->size > 0)
-	seq_printf(m, "%s begin\n",rawdatanode->test_name);
-		if(rawdatanode->typeindex == RAW_DATA_TYPE_TrxDelta && rawdatanode->size > 0){
-			if (g_ts_kit_platform_data.chip_data->print_all_trx_diffdata_for_newformat_flag) {
-				seq_puts(m, "RX:\n");
-				for (index = 0; index < rawtest_size; index++) {
-					seq_printf(m, "%d,", rawdatanode->values[index]);
-					tx_n++;
-					if (tx_n == info->tx) {
-						seq_puts(m, "\n");
-						tx_n = 0;
-					}
-				}
-				seq_puts(m, "\nTX:\n");
-				for (index = 0; index < rawtest_size; index++) {
-					seq_printf(m, "%d,", rawdatanode->values[rawtest_size + index]);
-					rx_n++;
-					if (rx_n == info->tx) {
-						seq_puts(m, "\n");
-						rx_n = 0;
-					}
-				}
-				seq_puts(m, "\n");
-			} else {
-				seq_printf(m, "RX:\n");
-				for(index = 0; index < (rawtest_size - info->tx); index++) {
-					seq_printf(m, "%d,", rawdatanode->values[index]);
-					tx_n++;
-					if(tx_n == info->tx){
-						seq_printf(m, "\n");
-						tx_n = 0;
-					}
-				}
-				seq_printf(m, "\nTX:\n");
-				for(index = 0; index < (rawtest_size - info->rx); index++) {
-					seq_printf(m, "%d,", rawdatanode->values[rawtest_size + index]);
-					rx_n++;
-					if(rx_n == info->tx-1){
-						seq_printf(m, "\n");
-						rx_n = 0;
-					}
-				}
-				seq_printf(m, "\n");
-			}
-		}
-		else if (rawdatanode->typeindex == RAW_DATA_TYPE_SelfCap && rawdatanode->size > 0){
-			seq_printf(m, "rx:\n");
-			for (index = 0;  index < info->rx; index++) {
-				seq_printf(m, "%d,", rawdatanode->values[index]);	/*print  rx oneline */
-			}
-			seq_printf(m, "\ntx:\n");
-			for (index = 0; index < info->tx; index++) {
-				seq_printf(m, "%d,", rawdatanode->values[index + info->rx]);	/*print tx oneline */
-			}
-			seq_printf(m, "\n");
-		} else if (rawdatanode->typeindex == RAW_DATA_TYPE_SelfNoisetest && rawdatanode->size > 0){
-			seq_printf(m, "rx:\n");
-			for (index =0;	index < info->rx; index++) {
-				seq_printf(m, "%d,", rawdatanode->values[index]); /*print oneline */
-			}
-			seq_printf(m, "\ntx:\n");
-			for (index =0; index < info->tx; index++) {
-				seq_printf(m, "%d,", rawdatanode->values[index + info->rx]); /*print oneline */
-			}
-			seq_printf(m, "\n");
+	list_for_each_entry(rawdatanode, &info->rawdata_head, node) {
+		if (rawdatanode->size > 0)
+			seq_printf(m, "%s begin\n", rawdatanode->test_name);
+		if (rawdatanode->typeindex == RAW_DATA_TYPE_TRXDELTA && rawdatanode->size > 0) {
+			rawdata_proc_tx_rx_delta_info(info, m, rawdatanode);
+		} else if (rawdatanode->typeindex == RAW_DATA_TYPE_SELFCAP && rawdatanode->size > 0) {
+			rawdata_proc_self_cap_info(info, m, rawdatanode);
+		} else if (rawdatanode->typeindex == RAW_DATA_TYPE_SELFNOISETEST && rawdatanode->size > 0) {
+			rawdata_proc_self_noise_info(info, m, rawdatanode);
 		} else {
-			for (index = 0; row_size * index < rawdatanode->size; index++) {
-
-				for (index1 = 0; (index1 < row_size)&&((row_size * index + index1)<rawdatanode->size); index1++) {
-					seq_printf(m, "%d,", rawdatanode->values[row_size * index + index1]);	/*print oneline */
-				}
-				/*index1 = 0;*/
-				seq_printf(m, "\n");
-			}
+			rawdata_proc_other_info(info, m, rawdatanode);
 		}
 		if (rawdatanode->size > 0)
 			seq_printf(m, "%s end\n", rawdatanode->test_name);
 	}
+}
 
-	return;
+static void rawdata_proc_newformat_printf(struct seq_file *m,
+	struct ts_rawdata_info_new *info)
+{
+	TS_LOG_INFO("%s : devinfo:%s,nodenum:%d\n",
+		__func__, info->deviceinfo, info->listnodenum);
+
+	rawdata_proc_basic_info(m, info);
+	rawdata_proc_result_info(m, info);
+	rawdata_proc_data_info(m, info);
 }
 
 void rawdata_proc_freehook(void *infotemp)
@@ -1044,30 +1335,26 @@ void rawdata_proc_freehook(void *infotemp)
 	}
 }
 
-/* lint -save -e* */
 static int rawdata_proc_for_newformat(struct seq_file *m, void *v)
 {
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_rawdata_info_new *info = NULL;
 	int error;
-	int error2 = NO_ERR;
+	int error2;
 
-	TS_LOG_INFO("rawdata_proc_for_newformat, buffer size = %ld\n",
-		m->size);
+	TS_LOG_INFO("%s, buffer size = %ld\n", __func__, m->size);
 	if (m->size <= RAW_DATA_SIZE) {
 		m->count = m->size;
 		return 0;
 	}
 
-	cmd = (struct ts_cmd_node *)kzalloc(sizeof(struct ts_cmd_node),
-		GFP_KERNEL);
+	cmd = kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
 	if (!cmd) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
 		goto out;
 	}
-	info = (struct ts_rawdata_info_new *)kzalloc(sizeof(struct ts_rawdata_info_new),
-		GFP_KERNEL);
+	info = kzalloc(sizeof(struct ts_rawdata_info_new), GFP_KERNEL);
 	if (!info) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
@@ -1100,11 +1387,9 @@ static int rawdata_proc_for_newformat(struct seq_file *m, void *v)
 		goto out;
 	}
 
-	/*
-	 * 1.Start writing data to the node,
-	 */
+	/* Start writing data to the node */
 	rawdata_proc_newformat_printf(m, info);
- out:
+out:
 	if (info) {
 		cmd->command = TS_FREEBUFF;
 		cmd->cmd_param.prv_params = (void *)info;
@@ -1119,21 +1404,20 @@ static int rawdata_proc_for_newformat(struct seq_file *m, void *v)
 	return NO_ERR;
 }
 
-/*lint -restore*/
-/*lint -save -e* */
+#define INDEX_SIZE 2
 static int rawdata_proc_show(struct seq_file *m, void *v)
 {
-	short row_size = 0;
-	int range_size = 0;
+	short row_size;
+	int range_size;
 	int error = NO_ERR;
-	int tx_rx_delta_size = 0;
+	int tx_rx_delta_size;
 	int trx_delta_test_support = g_ts_kit_platform_data.chip_data->trx_delta_test_support;
-	int td43xx_ee_short_test_support = g_ts_kit_platform_data.chip_data->td43xx_ee_short_test_support;
+	int td43xx_test_support = g_ts_kit_platform_data.chip_data->td43xx_ee_short_test_support;
 	struct ts_cmd_node *cmd = NULL;
 	struct ts_rawdata_info *info = NULL;
 
 	if ((m == NULL) || (v == NULL)) {
-		TS_LOG_ERR("rawdata_proc_show, input null ptr\n");
+		TS_LOG_ERR("%s, input null ptr\n", __func__);
 		return -EINVAL;
 	}
 
@@ -1145,26 +1429,26 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 		TS_RAWDATA_NEWFORMAT)
 		return rawdata_proc_for_newformat(m, v);
 
-	TS_LOG_INFO("rawdata_proc_show, buffer size = %ld\n", m->size);
-	if(m->size <= RAW_DATA_SIZE) {
+	TS_LOG_INFO("%s, buffer size = %ld\n", __func__, m->size);
+	if (m->size <= RAW_DATA_SIZE) {
 		m->count = m->size;
 		return 0;
 	}
 
-	cmd = (struct ts_cmd_node *)kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
+	cmd = kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
 	if (!cmd) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
 		goto out;
 	}
 
-	info = (struct ts_rawdata_info *)vmalloc(sizeof(struct ts_rawdata_info));
+	info = vmalloc(sizeof(struct ts_rawdata_info));
 	if (!info) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
 		goto out;
 	}
-	memset(info, 0,sizeof(struct ts_rawdata_info) );
+	memset(info, 0, sizeof(struct ts_rawdata_info));
 	if (!g_ts_kit_platform_data.chip_data->tx_num || !g_ts_kit_platform_data.chip_data->rx_num) {
 		tx_rx_delta_size = TX_RX_BUF_MAX;
 	} else {
@@ -1179,13 +1463,13 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 		tx_rx_delta_size);
 
 	if (trx_delta_test_support) {
-		info->tx_delta_buf = (int *)kzalloc(tx_rx_delta_size, GFP_KERNEL);
+		info->tx_delta_buf = kzalloc(tx_rx_delta_size, GFP_KERNEL);
 		if (!info->tx_delta_buf) {
 			TS_LOG_ERR("malloc failed\n");
 			error = -ENOMEM;
 			goto out;
 		}
-		info->rx_delta_buf =  (int *)kzalloc(tx_rx_delta_size, GFP_KERNEL);
+		info->rx_delta_buf = kzalloc(tx_rx_delta_size, GFP_KERNEL);
 		if (!info->rx_delta_buf) {
 			TS_LOG_ERR("malloc failed\n");
 			error = -ENOMEM;
@@ -1193,15 +1477,15 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 		}
 	}
 
-	if (td43xx_ee_short_test_support) {
-		info->td43xx_rt95_part_one = (signed int *)kzalloc(tx_rx_delta_size, GFP_KERNEL);
+	if (td43xx_test_support) {
+		info->td43xx_rt95_part_one = kzalloc(tx_rx_delta_size, GFP_KERNEL);
 		if (!info->td43xx_rt95_part_one) {
 			TS_LOG_ERR("malloc td43xx_rt95_part_one failed\n");
 			error = -ENOMEM;
 			goto out;
 		}
-		info->td43xx_rt95_part_two =
-		    (signed int *)kzalloc(tx_rx_delta_size, GFP_KERNEL);
+		info->td43xx_rt95_part_two = kzalloc(tx_rx_delta_size,
+			GFP_KERNEL);
 		if (!info->td43xx_rt95_part_two) {
 			TS_LOG_ERR("malloc td43xx_rt95_part_two failed\n");
 			error = -ENOMEM;
@@ -1221,8 +1505,7 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 	} else {
 		if (g_ts_kit_platform_data.chip_data->rawdata_get_timeout)
 			error = ts_kit_put_one_cmd(cmd,
-						   g_ts_kit_platform_data.
-						   chip_data->rawdata_get_timeout);
+				g_ts_kit_platform_data.chip_data->rawdata_get_timeout);
 		else
 			error = ts_kit_put_one_cmd(cmd, SHORT_SYNC_TIMEOUT);
 	}
@@ -1237,82 +1520,71 @@ static int rawdata_proc_show(struct seq_file *m, void *v)
 		goto out;
 	}
 	seq_printf(m, "%s\n", info->result);
-	seq_printf(m, "*************touch data*************\n");
+	seq_puts(m, "*************touch data*************\n");
 
 	row_size = info->buff[0];
 	range_size = info->buff[1];
 
 	if (g_ts_kit_platform_data.chip_data->rawdata_arrange_type == TS_RAWDATA_TRANS_ABCD2CBAD
 		|| g_ts_kit_platform_data.chip_data->rawdata_arrange_type == TS_RAWDATA_TRANS_ABCD2ADCB) {
-		ts_kit_rotate_rawdata_abcd2cbad(row_size, range_size, info->buff + 2,
-				g_ts_kit_platform_data.chip_data->rawdata_arrange_type);
+		ts_kit_rotate_rawdata_abcd2cbad(row_size, range_size, info->buff + INDEX_SIZE,
+			g_ts_kit_platform_data.chip_data->rawdata_arrange_type);
 		ts_kit_rotate_rawdata_abcd2cbad(row_size, range_size,
-				info->buff + 2 + row_size * range_size, g_ts_kit_platform_data.chip_data->rawdata_arrange_type);
+			info->buff + INDEX_SIZE + row_size * range_size, g_ts_kit_platform_data.chip_data->rawdata_arrange_type);
 		row_size = info->buff[1];
 		range_size = info->buff[0];
 	}
 	seq_printf(m, "rx: %d, tx : %d\n", row_size, range_size);
-	if(g_ts_kit_platform_data.chip_data->is_parade_solution == 0){//Not Parade Solution, use default
-		if(g_ts_kit_platform_data.chip_data->is_ic_rawdata_proc_printf == 1){
+	/* Not Parade Solution, use default */
+	if (g_ts_kit_platform_data.chip_data->is_parade_solution == 0) {
+		if (g_ts_kit_platform_data.chip_data->is_ic_rawdata_proc_printf == 1) {
 			if (!g_ts_kit_platform_data.chip_data->ops) {
 				TS_LOG_ERR("ops is NULL\n");
 				error = -ENOMEM;
 				goto out;
 			}
-			if(g_ts_kit_platform_data.chip_data->ops->chip_special_rawdata_proc_printf){
+			if (g_ts_kit_platform_data.chip_data->ops->chip_special_rawdata_proc_printf)
 				g_ts_kit_platform_data.chip_data->ops->chip_special_rawdata_proc_printf(m, info, range_size, row_size);
-			}
-		}else{
+		} else {
 			rawdata_proc_printf(m, info, range_size, row_size);
 		}
 	} else {
-		if (rawdata_proc_parade_printf(m, info, range_size, row_size) < 0) {
+		if (rawdata_proc_parade_printf(m, info, range_size, row_size) < 0)
 			goto out;
-		}
 	}
 
-	if (g_ts_kit_platform_data.chip_data->support_3d_func) {
+	if (g_ts_kit_platform_data.chip_data->support_3d_func)
 		rawdata_proc_3d_func_printf(m, info);
-	}
 
 	error = NO_ERR;
 
- out:
+out:
 	if (info) {
 		if (trx_delta_test_support) {
-			if (info->rx_delta_buf) {
-				kfree(info->rx_delta_buf);
-				info->rx_delta_buf = NULL;
-			}
-			if (info->tx_delta_buf) {
-				kfree(info->tx_delta_buf);
-				info->tx_delta_buf = NULL;
-			}
+			kfree(info->rx_delta_buf);
+			info->rx_delta_buf = NULL;
+
+			kfree(info->tx_delta_buf);
+			info->tx_delta_buf = NULL;
 		}
-		if (td43xx_ee_short_test_support) {
-			if (info->td43xx_rt95_part_one) {
-				kfree(info->td43xx_rt95_part_one);
-				info->td43xx_rt95_part_one = NULL;
-			}
-			if (info->td43xx_rt95_part_two) {
-				kfree(info->td43xx_rt95_part_two);
-				info->td43xx_rt95_part_two = NULL;
-			}
+		if (td43xx_test_support) {
+			kfree(info->td43xx_rt95_part_one);
+			info->td43xx_rt95_part_one = NULL;
+
+			kfree(info->td43xx_rt95_part_two);
+			info->td43xx_rt95_part_two = NULL;
 		}
 		vfree(info);
 		info = NULL;
 	}
 
- free_cmd:
-	if (cmd) {
-		kfree(cmd);
-		cmd = NULL;
-	}
+free_cmd:
+	kfree(cmd);
+	cmd = NULL;
 
 	return error;
 }
 
-/*lint -restore*/
 static int calibration_proc_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, calibration_proc_show, NULL);
@@ -1337,8 +1609,8 @@ static const struct file_operations rawdata_proc_fops = {
 	.release = single_release,
 };
 
-/*external function declare*/
-#if defined (CONFIG_TEE_TUI)
+/* external function declare */
+#if defined(CONFIG_TEE_TUI)
 extern int i2c_init_secos(struct i2c_adapter *adap);
 extern int i2c_exit_secos(struct i2c_adapter *adap);
 extern int spi_exit_secos(unsigned int spi_bus_id);
@@ -1373,67 +1645,54 @@ void ts_i2c_error_dmd_report(u8 *reg_addr)
 		return;
 	}
 	if ((atomic_read(&g_ts_kit_platform_data.power_state) == TS_SLEEP) ||
-		(atomic_read(&g_ts_kit_platform_data.power_state) ==
-		TS_WORK_IN_SLEEP) ||
-		(atomic_read(&g_ts_kit_platform_data.power_state) ==
-		TS_GOTO_SLEEP)) {
+		(atomic_read(&g_ts_kit_platform_data.power_state) == TS_WORK_IN_SLEEP) ||
+		(atomic_read(&g_ts_kit_platform_data.power_state) == TS_GOTO_SLEEP)) {
 		if (reg_addr == NULL) {
 			ts_dmd_report(DSM_TP_ABNORMAL_DONT_AFFECT_USE_NO,
 				"irq_gpio:%d;value:%d;reset_gpio:%d;value:%d;I2C_status:%d\n",
 				g_ts_kit_platform_data.irq_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.irq_gpio),
+				gpio_get_value(g_ts_kit_platform_data.irq_gpio),
 				g_ts_kit_platform_data.reset_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.reset_gpio),
-				g_ts_kit_platform_data.dsm_info.
-				constraints_I2C_status);
+				gpio_get_value(g_ts_kit_platform_data.reset_gpio),
+				g_ts_kit_platform_data.dsm_info.constraints_i2c_status);
 		} else {
 			ts_dmd_report(DSM_TP_ABNORMAL_DONT_AFFECT_USE_NO,
 				"irq_gpio:%d;value:%d;reset_gpio:%d;value:%d;I2C_status:%d;addr:%d\n",
 				g_ts_kit_platform_data.irq_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.irq_gpio),
+				gpio_get_value(g_ts_kit_platform_data.irq_gpio),
 				g_ts_kit_platform_data.reset_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.reset_gpio),
-				g_ts_kit_platform_data.dsm_info.
-				constraints_I2C_status, *reg_addr);
+				gpio_get_value(g_ts_kit_platform_data.reset_gpio),
+				g_ts_kit_platform_data.dsm_info.constraints_i2c_status,
+				*reg_addr);
 		}
 	} else {
 		if (reg_addr == NULL) {
 			ts_dmd_report(DSM_TP_I2C_RW_ERROR_NO,
 				"irq_gpio:%d;value:%d;reset_gpio:%d;value:%d;I2C_status:%d\n",
 				g_ts_kit_platform_data.irq_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.irq_gpio),
+				gpio_get_value(g_ts_kit_platform_data.irq_gpio),
 				g_ts_kit_platform_data.reset_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.reset_gpio),
-				g_ts_kit_platform_data.dsm_info.
-				constraints_I2C_status);
+				gpio_get_value(g_ts_kit_platform_data.reset_gpio),
+				g_ts_kit_platform_data.dsm_info.constraints_i2c_status);
 		} else {
 			ts_dmd_report(DSM_TP_I2C_RW_ERROR_NO,
 				"irq_gpio:%d value:%d reset_gpio:%d  value:%d. I2C_status:%d;addr:%d\n",
 				g_ts_kit_platform_data.irq_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.irq_gpio),
+				gpio_get_value(g_ts_kit_platform_data.irq_gpio),
 				g_ts_kit_platform_data.reset_gpio,
-				gpio_get_value
-				(g_ts_kit_platform_data.reset_gpio),
-				g_ts_kit_platform_data.dsm_info.
-				constraints_I2C_status, *reg_addr);
+				gpio_get_value(g_ts_kit_platform_data.reset_gpio),
+				g_ts_kit_platform_data.dsm_info.constraints_i2c_status,
+				*reg_addr);
 		}
 	}
 }
 #endif
 
 #define GET_HWLOCK_FAIL 0
-
 int tp_i2c_get_hwlock(void)
 {
-	int ret = 0;
-	unsigned long time = 0;
+	int ret;
+	unsigned long time;
 	unsigned long timeout;
 	struct hwspinlock *hwlock = NULL;
 
@@ -1483,16 +1742,17 @@ int ts_i2c_write(u8 *buf, u16 length)
 	do {
 		ret = i2c_master_send(data->client, (const char *)buf, length);
 		if (ret == length) {
-			if (data->i2c_hwlock. tp_i2c_hwlock_flag)
+			if (data->i2c_hwlock.tp_i2c_hwlock_flag)
 				tp_i2c_release_hwlock();
 			trace_touch(TOUCH_TRACE_I2C,
 				TOUCH_TRACE_FUNC_OUT, "write");
 			return NO_ERR;
-		}
+		} else {
+			TS_LOG_DEBUG("ts i2c write status: %d\n", ret);
 #if defined(CONFIG_HUAWEI_DSM)
-		else
-			data->dsm_info.constraints_I2C_status = ret;
+			data->dsm_info.constraints_i2c_status = ret;
 #endif
+		}
 		msleep(I2C_WAIT_TIME);
 	} while (++count < I2C_RW_TRIES);
 
@@ -1502,7 +1762,7 @@ int ts_i2c_write(u8 *buf, u16 length)
 	ts_i2c_error_dmd_report(&buf[0]);
 #endif
 
-	TS_LOG_ERR("ts_i2c_write failed\n");
+	TS_LOG_ERR("%s failed\n", __func__);
 	trace_touch(TOUCH_TRACE_I2C, TOUCH_TRACE_FUNC_OUT, "write");
 	return -EIO;
 }
@@ -1528,13 +1788,14 @@ int ts_spi_write(u8 *buf, u16 length)
 	return NO_ERR;
 }
 
+#define XFER_NUM 2
 int ts_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len)
 {
 	int count = 0;
-	int ret = 0;
-	int msg_len = 0;
+	int ret;
+	int msg_len;
 	struct i2c_msg *msg_addr = NULL;
-	struct i2c_msg xfer[2];
+	struct i2c_msg xfer[XFER_NUM];
 	struct ts_kit_platform_data *data = &g_ts_kit_platform_data;
 
 	trace_touch(TOUCH_TRACE_I2C, TOUCH_TRACE_FUNC_IN, "read");
@@ -1559,17 +1820,17 @@ int ts_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len)
 		do {
 			ret = i2c_transfer(data->client->adapter, xfer, 1);
 			if (ret == 1) {
-				if (data->i2c_hwlock. tp_i2c_hwlock_flag)
+				if (data->i2c_hwlock.tp_i2c_hwlock_flag)
 					tp_i2c_release_hwlock();
 				trace_touch(TOUCH_TRACE_I2C,
 					TOUCH_TRACE_FUNC_OUT, "read");
 				return NO_ERR;
-			}
+			} else {
+				TS_LOG_DEBUG("ts i2c read status: %d\n", ret);
 #if defined(CONFIG_HUAWEI_DSM)
-			else
-				data->dsm_info.constraints_I2C_status = ret;
+				data->dsm_info.constraints_i2c_status = ret;
 #endif
-
+			}
 			msleep(I2C_WAIT_TIME);
 		} while (++count < I2C_RW_TRIES);
 	} else {
@@ -1586,7 +1847,7 @@ int ts_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len)
 		xfer[1].buf = buf;
 
 		if (reg_len > 0) {
-			msg_len = 2;
+			msg_len = XFER_NUM;
 			msg_addr = &xfer[0];
 		} else {
 			msg_len = 1;
@@ -1598,15 +1859,15 @@ int ts_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len)
 			if (ret == msg_len) {
 				if (data->i2c_hwlock.tp_i2c_hwlock_flag)
 					tp_i2c_release_hwlock();
-			trace_touch(TOUCH_TRACE_I2C,
+				trace_touch(TOUCH_TRACE_I2C,
 					TOUCH_TRACE_FUNC_OUT, "read");
 				return NO_ERR;
-			}
+			} else {
+				TS_LOG_DEBUG("ts i2c read status: %d\n", ret);
 #if defined(CONFIG_HUAWEI_DSM)
-			else {
-				data->dsm_info.constraints_I2C_status = ret;
-			}
+				data->dsm_info.constraints_i2c_status = ret;
 #endif
+			}
 			msleep(I2C_WAIT_TIME);
 		} while (++count < I2C_RW_TRIES);
 	}
@@ -1615,7 +1876,7 @@ int ts_i2c_read(u8 *reg_addr, u16 reg_len, u8 *buf, u16 len)
 #if defined(CONFIG_HUAWEI_DSM)
 	ts_i2c_error_dmd_report(reg_addr);
 #endif
-	TS_LOG_ERR("ts_i2c_read failed\n");
+	TS_LOG_ERR("%s failed\n", __func__);
 	trace_touch(TOUCH_TRACE_I2C, TOUCH_TRACE_FUNC_OUT, "read");
 	return -EIO;
 }
@@ -1646,20 +1907,49 @@ static irqreturn_t ts_irq_handler(int irq, void *dev_id)
 	disable_irq_nosync(g_ts_kit_platform_data.irq_id);
 
 	if (ts_kit_put_one_cmd(&cmd, NO_SYNC_TIMEOUT) &&
-		(atomic_read(&g_ts_kit_platform_data.state) != TS_UNINIT)) {
+		(atomic_read(&g_ts_kit_platform_data.state) != TS_UNINIT))
 		enable_irq(g_ts_kit_platform_data.irq_id);
-	}
 
 	trace_touch(TOUCH_TRACE_IRQ_TOP, TOUCH_TRACE_FUNC_OUT, NULL);
 	return IRQ_HANDLED;
 }
 
 #if defined(CONFIG_TEE_TUI)
+__attribute__((weak)) int i2c_init_secos(struct i2c_adapter *adap)
+{
+	return 0;
+}
+
+__attribute__((weak)) int i2c_exit_secos(struct i2c_adapter *adap)
+{
+	return 0;
+}
+
+__attribute__((weak)) int spi_exit_secos(unsigned int spi_bus_id)
+{
+	return 0;
+}
+
+__attribute__((weak)) int spi_init_secos(unsigned int spi_bus_id)
+{
+	return 0;
+}
+
+__attribute__((weak)) int i3c_init_secos(struct i2c_adapter *adap)
+{
+	return 0;
+}
+
+__attribute__((weak)) int i3c_exit_secos(struct i2c_adapter *adap)
+{
+	return 0;
+}
+
 void ts_kit_tui_secos_init(void)
 {
-	unsigned char ts_state = 0;
+	unsigned char ts_state;
 	int times = 0;
-	int ret = 0;
+	int ret;
 
 	while (times < TS_FB_LOOP_COUNTS) {
 		ts_state = atomic_read(&g_ts_kit_platform_data.state);
@@ -1682,7 +1972,10 @@ void ts_kit_tui_secos_init(void)
 				break;
 			}
 		}
-		if (g_ts_kit_platform_data.bops->btype == TS_BUS_I2C) {
+		if (g_ts_kit_platform_data.i2c_driver_type ==
+			I3C_MASTER_I2C_DRIVER) {
+			i3c_init_secos(g_ts_kit_platform_data.client->adapter);
+		} else if (g_ts_kit_platform_data.bops->btype == TS_BUS_I2C) {
 			i2c_init_secos(g_ts_kit_platform_data.client->adapter);
 		} else {
 			ret = spi_init_secos(g_ts_kit_platform_data.bops->bus_id);
@@ -1692,19 +1985,41 @@ void ts_kit_tui_secos_init(void)
 		}
 
 		g_ts_kit_platform_data.chip_data->report_tui_enable = true;
-		TS_LOG_INFO("[tui] ts_kit_tui_secos_init: report_tui_enable is %d\n",
+		TS_LOG_INFO("[tui] %s: report_tui_enable is %d\n", __func__,
 			g_ts_kit_platform_data.chip_data->report_tui_enable);
+		if (g_ts_kit_platform_data.multi_panel_index !=
+			SINGLE_TOUCH_PANEL)
+			tp_tui_data[SUB_TOUCH_PANEL].panel_in_tui = true;
 	}
+}
+
+static void ts_kit_tui_gic_register_set(void)
+{
+	void __iomem *base_iomem = NULL;
+
+	base_iomem = devm_ioremap(&g_ts_kit_platform_data.ts_dev->dev,
+		GIC_REGISTER_BASE, sizeof(unsigned long));
+	if (!base_iomem) {
+		TS_LOG_ERR("%s addr not available\n", __func__);
+		return;
+	}
+	writel((*(volatile unsigned long *)base_iomem |
+		(1 << TP_IRQ_NUM_GROUP_BIT)), base_iomem);
+	devm_iounmap(&g_ts_kit_platform_data.ts_dev->dev, base_iomem);
+	TS_LOG_INFO("%s set gic end\n", __func__);
 }
 
 void ts_kit_tui_secos_exit(void)
 {
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	struct ts_feature_info *info = &g_ts_kit_platform_data.feature_info;
-	int ret = 0;
+	int ret;
 
 	if (g_ts_kit_platform_data.chip_data->report_tui_enable) {
-		if (g_ts_kit_platform_data.bops->btype == TS_BUS_I2C) {
+		if (g_ts_kit_platform_data.i2c_driver_type ==
+			I3C_MASTER_I2C_DRIVER) {
+			i3c_exit_secos(g_ts_kit_platform_data.client->adapter);
+		} else if (g_ts_kit_platform_data.bops->btype == TS_BUS_I2C) {
 			i2c_exit_secos(g_ts_kit_platform_data.client->adapter);
 		} else {
 			ret = spi_exit_secos(g_ts_kit_platform_data.bops->bus_id);
@@ -1714,10 +2029,16 @@ void ts_kit_tui_secos_exit(void)
 		}
 		if (dev->ops->chip_reset)
 			dev->ops->chip_reset();
+		if (g_ts_kit_platform_data.i2c_driver_type !=
+			I3C_MASTER_I2C_DRIVER)
+			if ((dev->tui_special_feature_support &
+				TP_TUI_NEW_IRQ_MASK) ==
+				TP_TUI_NEW_IRQ_SUPPORT)
+				ts_kit_tui_gic_register_set();
 
 		enable_irq(g_ts_kit_platform_data.irq_id);
 		g_ts_kit_platform_data.chip_data->report_tui_enable = false;
-		TS_LOG_INFO("ts_kit_tui_secos_exit: tui_set_flag is %d\n",
+		TS_LOG_INFO("%s: tui_set_flag is %d\n", __func__,
 			g_ts_kit_platform_data.chip_data->tui_set_flag);
 		/*
 		 * When exiting the TUI,according to the latest screen status,
@@ -1734,23 +2055,27 @@ void ts_kit_tui_secos_exit(void)
 		if (g_ts_kit_platform_data.chip_data->tui_set_flag & 0x1) {
 			TS_LOG_INFO("TUI exit, do before suspend\n");
 			ts_kit_power_control_notify(TS_BEFORE_SUSPEND,
-					SHORT_SYNC_TIMEOUT);
+				SHORT_SYNC_TIMEOUT);
 		}
 
 		if (g_ts_kit_platform_data.chip_data->tui_set_flag & 0x2) {
 			TS_LOG_INFO("TUI exit, do suspend\n");
 			ts_kit_power_control_notify(TS_SUSPEND_DEVICE,
-					NO_SYNC_TIMEOUT);
+				NO_SYNC_TIMEOUT);
 		}
 
 		g_ts_kit_platform_data.chip_data->tui_set_flag = 0;
-		TS_LOG_INFO("ts_kit_tui_secos_exit: report_tui_enable is %d\n",
+		TS_LOG_INFO("%s: report_tui_enable is %d\n", __func__,
 			g_ts_kit_platform_data.chip_data->report_tui_enable);
+		if (g_ts_kit_platform_data.multi_panel_index !=
+			SINGLE_TOUCH_PANEL)
+			tp_tui_data[SUB_TOUCH_PANEL].panel_in_tui = false;
 	}
 }
 
-static int tui_tp_init(void *data, int secure)
+static int tui_tp_switch(void *data, int secure)
 {
+	TS_LOG_INFO("%s: tui secure is %d\n", __func__, secure);
 	if (secure)
 		ts_kit_tui_secos_init();
 	else
@@ -1784,7 +2109,7 @@ static void ts_watchdog_work(struct work_struct *work)
 	int error;
 	struct ts_cmd_node cmd;
 
-	TS_LOG_DEBUG("ts_watchdog_work\n");
+	TS_LOG_DEBUG("%s\n", __func__);
 	cmd.command = TS_CHECK_STATUS;
 	if (g_ts_kit_platform_data.chip_data->is_parade_solution)
 		error = ts_kit_proc_command_directly(&cmd);
@@ -1795,6 +2120,19 @@ static void ts_watchdog_work(struct work_struct *work)
 		TS_LOG_ERR("put TS_CHECK_STATUS cmd error :%d\n", error);
 }
 
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)) && (defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+static void ts_watchdog_timer(struct timer_list *t)
+{
+	struct ts_kit_platform_data *cd = from_timer(cd, t, watchdog_timer);
+
+	TS_LOG_DEBUG("Timer triggered\n");
+	if (!cd)
+		return;
+
+	if (!work_pending(&cd->watchdog_work))
+		schedule_work(&cd->watchdog_work);
+}
+#else
 static void ts_watchdog_timer(unsigned long data)
 {
 	struct ts_kit_platform_data *cd = (struct ts_kit_platform_data *)data;
@@ -1806,6 +2144,7 @@ static void ts_watchdog_timer(unsigned long data)
 	if (!work_pending(&cd->watchdog_work))
 		schedule_work(&cd->watchdog_work);
 }
+#endif
 
 void ts_kit_thread_stop_notify(void)
 {
@@ -1833,7 +2172,6 @@ void ts_kit_thread_stop_notify(void)
 	 */
 }
 
-#if defined(CONFIG_HISI_BCI_BATTERY)
 static int ts_charger_detect_cmd(enum ts_charger_state charger_state)
 {
 	int error = NO_ERR;
@@ -1846,7 +2184,7 @@ static int ts_charger_detect_cmd(enum ts_charger_state charger_state)
 
 	if (g_ts_kit_platform_data.feature_info.charger_info.charger_supported == 0) {
 		TS_LOG_DEBUG("%s, do nothing cause charger_supported is zero\n",
-				__func__);
+			__func__);
 		goto out;
 	}
 
@@ -1856,12 +2194,12 @@ static int ts_charger_detect_cmd(enum ts_charger_state charger_state)
 	if (charger_state == USB_PIUG_OUT) {
 		if (info->charger_switch == 0) {
 			TS_LOG_ERR("%s, there is no need to send cmd repeated\n",
-					__func__);
+				__func__);
 			error = -EINVAL;
 			goto out;
 		}
 		info->charger_switch = 0;
-	} else {	/* usb plug in */
+	} else { /* usb plug in */
 		if (info->charger_switch == 1) {
 			TS_LOG_ERR("%s, there is no need to send repeated\n",
 				__func__);
@@ -1877,8 +2215,7 @@ static int ts_charger_detect_cmd(enum ts_charger_state charger_state)
 		goto out;
 	}
 
-	cmd = (struct ts_cmd_node *)kzalloc(sizeof(struct ts_cmd_node),
-		GFP_KERNEL);
+	cmd = kzalloc(sizeof(struct ts_cmd_node), GFP_KERNEL);
 	if (!cmd) {
 		TS_LOG_ERR("malloc failed\n");
 		error = -ENOMEM;
@@ -1892,14 +2229,15 @@ static int ts_charger_detect_cmd(enum ts_charger_state charger_state)
 		goto out;
 	}
 
- out:
+out:
 	if (cmd != NULL)
 		kfree(cmd);
 	return error;
 }
 
+#if defined(CONFIG_BCI_BATTERY)
 static int charger_detect_notifier_callback(struct notifier_block *self,
-					unsigned long event, void *data)
+	unsigned long event, void *data)
 {
 	enum ts_charger_state charger_state = USB_PIUG_OUT;
 
@@ -1940,8 +2278,8 @@ static void ts_kit_charger_notifier_register(void)
 	int error;
 
 	g_ts_kit_platform_data.charger_detect_notify.notifier_call =
-			charger_detect_notifier_callback;
-	error = hisi_register_notifier(&g_ts_kit_platform_data.charger_detect_notify, 1);
+		charger_detect_notifier_callback;
+	error = bci_register_notifier(&g_ts_kit_platform_data.charger_detect_notify, 1);
 	if (error < 0) {
 		TS_LOG_ERR("%s, charger_type_notifier_register failed\n",
 			__func__);
@@ -1949,7 +2287,109 @@ static void ts_kit_charger_notifier_register(void)
 	} else {
 		TS_LOG_INFO("%s, charger notify register succ\n", __func__);
 	}
+}
+#elif defined(CONFIG_MTK_CHARGER)
+static int charger_detect_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data)
+{
+	enum ts_charger_state charger_state = USB_PIUG_OUT;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
 
+	if (!pdata->feature_info.charger_info.charger_supported)
+		return 0;
+
+	switch (event) {
+	case CHARGER_NOTIFY_START_CHARGING:
+		charger_state = USB_PIUG_IN;
+		break;
+	case CHARGER_NOTIFY_STOP_CHARGING:
+		charger_state = USB_PIUG_OUT;
+		break;
+	default:
+		break;
+	}
+
+	if (charger_state != pdata->feature_info.charger_info.status) {
+		TS_LOG_INFO("%s, charger event:%ld, status=%d\n",
+			__func__, event, charger_state);
+		ts_charger_detect_cmd(charger_state);
+	}
+
+	pdata->feature_info.charger_info.status = charger_state;
+	return NO_ERR;
+}
+
+static void ts_kit_charger_notifier_register(void)
+{
+	int error;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	pdata->chr_consumer = charger_manager_get_by_name(&pdata->ts_dev->dev,
+		"touchscreen");
+	if (pdata->chr_consumer != NULL) {
+		pdata->charger_detect_notify.notifier_call =
+			charger_detect_notifier_callback;
+		error = register_charger_manager_notifier(pdata->chr_consumer,
+			&pdata->charger_detect_notify);
+		if (error < 0) {
+			TS_LOG_ERR("%s, charger_notifier_register failed\n",
+				__func__);
+			pdata->charger_detect_notify.notifier_call = NULL;
+		} else {
+			TS_LOG_INFO("%s, charger notify register succ\n",
+				__func__);
+		}
+	}
+}
+
+#elif defined(CONFIG_HUAWEI_DEVKIT_QCOM_3_0)
+static int charger_detect_notifier_callback(struct notifier_block *self,
+	unsigned long event, void *data)
+{
+	enum ts_charger_state charger_state = USB_PIUG_OUT;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if (!pdata->feature_info.charger_info.charger_supported)
+		return 0;
+	TS_LOG_DEBUG("%s charger event %ld\n", __func__, event);
+	switch (event) {
+	case POWER_NE_USB_CONNECT:
+	case POWER_NE_WIRELESS_CONNECT:
+		charger_state = USB_PIUG_IN;
+		break;
+	case POWER_NE_USB_DISCONNECT:
+	case POWER_NE_WIRELESS_DISCONNECT:
+		charger_state = USB_PIUG_OUT;
+		break;
+	default:
+		break;
+	}
+
+	if (charger_state != pdata->feature_info.charger_info.status) {
+		TS_LOG_INFO("%s, charger event:%ld, status=%d\n",
+			__func__, event, charger_state);
+		ts_charger_detect_cmd(charger_state);
+	}
+
+	pdata->feature_info.charger_info.status = charger_state;
+	return NO_ERR;
+}
+
+static void ts_kit_charger_notifier_register(void)
+{
+	int ret;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+
+	if (!pdata->feature_info.charger_info.charger_supported) {
+		TS_LOG_INFO("%s No supported charger\n", __func__);
+		return;
+	}
+	pdata->charger_detect_notify.notifier_call =
+		charger_detect_notifier_callback;
+	ret = charger_type_notifier_register(&pdata->charger_detect_notify);
+	if (ret)
+		pdata->charger_detect_notify.notifier_call = NULL;
+	TS_LOG_INFO("%s, charger notify register succ\n", __func__);
 }
 #endif
 
@@ -1958,79 +2398,79 @@ static int parse_spi_config(void)
 	int retval;
 
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"spi-max-frequency",
-			&g_ts_kit_platform_data.spi_max_frequency);
+		"spi-max-frequency",
+		&g_ts_kit_platform_data.spi_max_frequency);
 	if (retval) {
 		TS_LOG_ERR("%s: get spi_max_frequency failed\n", __func__);
 		goto err_out;
 	}
 
 	retval = of_property_read_u32(g_ts_kit_platform_data.node, "spi-mode",
-			&g_ts_kit_platform_data.spi_mode);
+		&g_ts_kit_platform_data.spi_mode);
 	if (retval) {
 		TS_LOG_ERR("%s: get spi mode failed\n", __func__);
 		goto err_out;
 	}
 
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,interface",
-			&g_ts_kit_platform_data.spidev0_chip_info.iface);
+		"pl022,interface",
+		&g_ts_kit_platform_data.spidev0_chip_info.iface);
 	if (retval) {
 		TS_LOG_ERR("%s: get iface failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,com-mode",
-			&g_ts_kit_platform_data.spidev0_chip_info.com_mode);
+		"pl022,com-mode",
+		&g_ts_kit_platform_data.spidev0_chip_info.com_mode);
 	if (retval) {
 		TS_LOG_ERR("%s: get com_mode failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,rx-level-trig",
-			&g_ts_kit_platform_data.spidev0_chip_info.rx_lev_trig);
+		"pl022,rx-level-trig",
+		&g_ts_kit_platform_data.spidev0_chip_info.rx_lev_trig);
 	if (retval) {
 		TS_LOG_ERR("%s: get rx_lev_trig failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,tx-level-trig",
-			&g_ts_kit_platform_data.spidev0_chip_info.tx_lev_trig);
+		"pl022,tx-level-trig",
+		&g_ts_kit_platform_data.spidev0_chip_info.tx_lev_trig);
 	if (retval) {
 		TS_LOG_ERR("%s: get tx_lev_trig failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,ctrl-len",
-			&g_ts_kit_platform_data.spidev0_chip_info.ctrl_len);
+		"pl022,ctrl-len",
+		&g_ts_kit_platform_data.spidev0_chip_info.ctrl_len);
 	if (retval) {
 		TS_LOG_ERR("%s: get ctrl_len failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,wait-state",
-			&g_ts_kit_platform_data.spidev0_chip_info.wait_state);
+		"pl022,wait-state",
+		&g_ts_kit_platform_data.spidev0_chip_info.wait_state);
 	if (retval) {
 		TS_LOG_ERR("%s: get wait_state failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"pl022,duplex",
-			&g_ts_kit_platform_data.spidev0_chip_info.duplex);
+		"pl022,duplex",
+		&g_ts_kit_platform_data.spidev0_chip_info.duplex);
 	if (retval) {
 		TS_LOG_ERR("%s: get duplex failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"cs_reset_low_delay",
-			&g_ts_kit_platform_data.cs_reset_low_delay);
+		"cs_reset_low_delay",
+		&g_ts_kit_platform_data.cs_reset_low_delay);
 	if (retval) {
 		TS_LOG_ERR("%s: get duplex failed\n", __func__);
 		goto err_out;
 	}
 	retval = of_property_read_u32(g_ts_kit_platform_data.node,
-			"cs_reset_high_delay",
-			&g_ts_kit_platform_data.cs_reset_high_delay);
+		"cs_reset_high_delay",
+		&g_ts_kit_platform_data.cs_reset_high_delay);
 	if (retval) {
 		TS_LOG_ERR("%s: get duplex failed\n", __func__);
 		goto err_out;
@@ -2057,9 +2497,50 @@ static int parse_spi_config(void)
 		g_ts_kit_platform_data.cs_reset_high_delay,
 		g_ts_kit_platform_data.cs_gpio);
 	return 0;
- err_out:
+err_out:
 	return retval;
 }
+
+#if defined(CONFIG_HUAWEI_DEVKIT_MTK_3_0)
+static void ts_parse_mtk_spi_config(void)
+{
+	int rc;
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"mtk_spi_mlsb_config",
+		&g_ts_kit_platform_data.mtk_spi_mlsb_config);
+	if (rc)
+		TS_LOG_INFO("mtk_spi_mlsb not config\n");
+	if (g_ts_kit_platform_data.mtk_spi_mlsb_config) {
+		TS_LOG_INFO("parse mtk_spi_config\n");
+		rc = of_property_read_u32(g_ts_kit_platform_data.node,
+			"mtk_rx_mlsb",
+			&g_ts_kit_platform_data.mtk_spi_config.rx_mlsb);
+		if (rc)
+			TS_LOG_INFO("mtk_rx_mlsb not config\n");
+		rc = of_property_read_u32(g_ts_kit_platform_data.node,
+			"mtk_tx_mlsb",
+			&g_ts_kit_platform_data.mtk_spi_config.tx_mlsb);
+		if (rc)
+			TS_LOG_INFO("mtk_tx_mlsb not config\n");
+		rc = of_property_read_u32(g_ts_kit_platform_data.node,
+			"mtk_cs_pol",
+			&g_ts_kit_platform_data.mtk_spi_config.cs_pol);
+		if (rc)
+			TS_LOG_INFO("mtk_cs_pol not config\n");
+		rc = of_property_read_u32(g_ts_kit_platform_data.node,
+			"mtk_sample_sel",
+			&g_ts_kit_platform_data.mtk_spi_config.sample_sel);
+		if (rc)
+			TS_LOG_INFO("mtk_sample_sel not config\n");
+		rc = of_property_read_u32(g_ts_kit_platform_data.node,
+			"mtk_cs_setuptime",
+			&g_ts_kit_platform_data.mtk_spi_config.cs_setuptime);
+		if (rc)
+			TS_LOG_INFO("mtk_cs_setuptime not config\n");
+	}
+}
+#endif
 
 static int get_ts_board_info(void)
 {
@@ -2067,10 +2548,7 @@ static int get_ts_board_info(void)
 	int rc;
 	int error = NO_ERR;
 	u32 bus_id = 0;
-	u32 hide_plain_id = 0;
-	u32 fp_tp_enable = 0;
-	u32 register_charger_notifier = 0;
-	unsigned int max_fingers = 0;
+
 	g_ts_kit_platform_data.node = NULL;
 	g_ts_kit_platform_data.node =
 		of_find_compatible_node(NULL, NULL, TS_DEV_NAME);
@@ -2081,7 +2559,7 @@ static int get_ts_board_info(void)
 	}
 
 	rc = of_property_read_string(g_ts_kit_platform_data.node, "bus_type",
-			&bus_type);
+		&bus_type);
 	if (rc) {
 		TS_LOG_ERR("bus type read failed:%d\n", rc);
 		error = -EINVAL;
@@ -2104,8 +2582,7 @@ static int get_ts_board_info(void)
 		goto out;
 	}
 
-	rc = of_property_read_u32(g_ts_kit_platform_data.node, "bus_id",
-				&bus_id);
+	rc = of_property_read_u32(g_ts_kit_platform_data.node, "bus_id", &bus_id);
 	if (rc) {
 		TS_LOG_ERR("bus id read failed\n");
 		error = -EINVAL;
@@ -2113,23 +2590,83 @@ static int get_ts_board_info(void)
 	}
 	g_ts_kit_platform_data.bops->bus_id = bus_id;
 	TS_LOG_INFO("bus id :%d\n", bus_id);
+
+	rc = parse_feature_config();
+	if (rc) {
+		TS_LOG_ERR("%s: parse feature config failed\n", __func__);
+		error = -EINVAL;
+	}
+out:
+	return error;
+}
+
+static void parse_extra_feature_config(void)
+{
+	int rc;
+
 	rc = of_property_read_u32(g_ts_kit_platform_data.node,
-				"need_i2c_hwlock",
-				&g_ts_kit_platform_data.i2c_hwlock.
-				tp_i2c_hwlock_flag);
+		"support_factory_mode_extra_cmd",
+		&g_ts_kit_platform_data.factory_extra_cmd.support_factory_mode_extra_cmd);
+	if (rc)
+		TS_LOG_INFO("support_factory_mode_extra_cmd not config\n");
+
+#if defined(CONFIG_TEE_TUI)
+	/* tui_irq_gpio_num is another of the two int gpio num */
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"tui_another_irq_gpio_num",
+		&g_ts_kit_platform_data.tui_another_irq_gpio_num);
+	if (rc)
+		TS_LOG_INFO("tui_another_irq_gpio_num not config\n");
+	TS_LOG_INFO("tui_another_irq_gpio_num = %u\n",
+		g_ts_kit_platform_data.tui_another_irq_gpio_num);
+#endif
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"support_multi_panel_attach",
+		&g_ts_kit_platform_data.support_multi_panel_attach);
+	if (rc)
+		g_ts_kit_platform_data.support_multi_panel_attach = 0;
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"use_aft_slow_status",
+		&g_ts_kit_platform_data.use_aft_slow_status);
+	if (rc)
+		g_ts_kit_platform_data.use_aft_slow_status = 0;
+}
+
+static int parse_feature_config(void)
+{
+	int rc;
+	int error = NO_ERR;
+	u32 hide_plain_id = 0;
+	u32 fp_tp_enable = 0;
+	u32 register_charger_notifier = 0;
+	unsigned int max_fingers = 0;
+	u32 value;
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"need_i2c_hwlock",
+		&g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag);
 	if (rc)
 		TS_LOG_ERR("i2c_hwlock read error\n");
 	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag) {
 		g_ts_kit_platform_data.i2c_hwlock.hwspin_lock =
 			hwspin_lock_request_specific(TP_I2C_HWSPIN_LOCK_CODE);
 		if (!g_ts_kit_platform_data.i2c_hwlock.hwspin_lock) {
-			TS_LOG_INFO("get i2c hwlock failed.\n");
+			TS_LOG_INFO("get i2c hwlock failed\n");
 			error = -EINVAL;
 			goto out;
 		}
-		TS_LOG_INFO("get i2c hwlock success.\n");
+		TS_LOG_INFO("get i2c hwlock success\n");
 	}
 
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"pen_aft_enable", &value);
+	if (rc) {
+		value = 0;
+		TS_LOG_INFO("pen_aft_eanbe read error\n");
+	}
+	g_ts_kit_platform_data.pen_aft_enable_flag = value;
 	rc = of_property_read_u32(g_ts_kit_platform_data.node, "aft_enable",
 		&g_ts_kit_platform_data.aft_param.aft_enable_flag);
 	if (rc)
@@ -2163,9 +2700,40 @@ static int get_ts_board_info(void)
 		error = -EINVAL;
 		goto out;
 	}
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"support_connect_check_gpio",
+		&g_ts_kit_platform_data.support_connect_check_gpio);
+	if (!rc && g_ts_kit_platform_data.support_connect_check_gpio == 1) {
+		TS_LOG_INFO("get connect check gpio config\n");
+		g_ts_kit_platform_data.connect_check_gpio =
+			of_get_named_gpio(g_ts_kit_platform_data.node,
+			"connect_check_gpio", 0);
+	}
 #endif
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"support_ap_shb_i2c_switch",
+		&g_ts_kit_platform_data.support_ap_shb_i2c_switch);
+	if (!rc && g_ts_kit_platform_data.support_ap_shb_i2c_switch == 1) {
+		g_ts_kit_platform_data.i2c_switch_gpio = of_get_named_gpio(
+			g_ts_kit_platform_data.node, "i2c_switch_gpio", 0);
+		TS_LOG_INFO("i2c_switch_gpio:%d\n",
+			g_ts_kit_platform_data.i2c_switch_gpio);
+	}
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"aod_display_support",
+		&g_ts_kit_platform_data.aod_display_support);
+	if (rc)
+		TS_LOG_ERR("aod_display_support read error\n");
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"setting_multi_gesture_mode",
+		&g_ts_kit_platform_data.setting_multi_gesture_mode);
+	if (rc)
+		TS_LOG_ERR("aod_display_support read error\n");
+
 	rc = of_property_read_u32(g_ts_kit_platform_data.node, "fp_tp_enable",
-				&fp_tp_enable);
+		&fp_tp_enable);
 	if (rc) {
 		TS_LOG_ERR(" ts_kit fp_tp_enable is not valid\n");
 		g_ts_kit_platform_data.fp_tp_enable = 0;
@@ -2173,8 +2741,8 @@ static int get_ts_board_info(void)
 		g_ts_kit_platform_data.fp_tp_enable = fp_tp_enable;
 	}
 	rc = of_property_read_u32(g_ts_kit_platform_data.node,
-				"register_charger_notifier",
-				&register_charger_notifier);
+		"register_charger_notifier",
+		&register_charger_notifier);
 	if (rc) {
 		TS_LOG_ERR(" ts_kit register_charger_notifier is not config, use default enable\n");
 		g_ts_kit_platform_data.register_charger_notifier = true;
@@ -2199,7 +2767,7 @@ static int get_ts_board_info(void)
 		g_ts_kit_platform_data.hide_plain_id);
 
 	rc = of_property_read_u32(g_ts_kit_platform_data.node, "max_fingers",
-				  &max_fingers);
+		&max_fingers);
 	if (rc) {
 		max_fingers = TS_MAX_FINGER;
 		TS_LOG_INFO("no max_fingers in dts\n");
@@ -2211,7 +2779,33 @@ static int get_ts_board_info(void)
 	}
 	TS_LOG_INFO("max_fingers:%d\n", max_fingers);
 	g_ts_kit_platform_data.max_fingers = max_fingers;
- out:
+
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"multi_panel_index",
+		&g_ts_kit_platform_data.multi_panel_index);
+	if (rc) {
+		g_ts_kit_platform_data.multi_panel_index =
+			SINGLE_TOUCH_PANEL;
+		TS_LOG_INFO("support_sub_panel not exsit\n");
+	}
+	TS_LOG_INFO("multi_panel_index:%u\n",
+		g_ts_kit_platform_data.multi_panel_index);
+
+#if defined(CONFIG_HUAWEI_DEVKIT_MTK_3_0)
+	ts_parse_mtk_spi_config();
+#endif
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"recovery_update_fw",
+		&g_ts_kit_platform_data.recovery_update_fw);
+	if (rc)
+		TS_LOG_INFO("recovery_update_fw not config\n");
+	rc = of_property_read_u32(g_ts_kit_platform_data.node,
+		"ts_app_info_flag",
+		&g_ts_kit_platform_data.ts_app_info_flag);
+	if (rc)
+		TS_LOG_INFO("ts_app_info_flag not config\n");
+	parse_extra_feature_config();
+out:
 	return error;
 }
 
@@ -2238,11 +2832,11 @@ static void ts_spi_cs_set(u32 control)
 
 static int ts_gpio_request(void)
 {
-	int error = NO_ERR;
+	int error;
 
 	if (g_ts_kit_platform_data.reset_gpio) {
 		error = gpio_request(g_ts_kit_platform_data.reset_gpio,
-				"ts_kit_reset_gpio");
+			"ts_kit_reset_gpio");
 		if (error < 0) {
 			TS_LOG_ERR("Fail request gpio:%d, ret=%d\n",
 				g_ts_kit_platform_data.reset_gpio, error);
@@ -2256,6 +2850,15 @@ static int ts_gpio_request(void)
 			g_ts_kit_platform_data.irq_gpio, error);
 		return error;
 	}
+
+	if (g_ts_kit_platform_data.support_ap_shb_i2c_switch) {
+		error = gpio_request(g_ts_kit_platform_data.i2c_switch_gpio,
+				"ts_kit_i2c_switch_gpio");
+		if (error < 0)
+			TS_LOG_ERR("Fail request gpio:%d, ret=%d\n",
+				g_ts_kit_platform_data.i2c_switch_gpio, error);
+	}
+
 	TS_LOG_INFO("reset_gpio :%d ,irq_gpio :%d\n",
 		g_ts_kit_platform_data.reset_gpio,
 		g_ts_kit_platform_data.irq_gpio);
@@ -2306,11 +2909,11 @@ static int ts_creat_spi_client(void)
 	struct spi_board_info board_info;
 	int error;
 
-	TS_LOG_INFO("ts_creat_spi_client called\n");
+	TS_LOG_INFO("%s called\n", __func__);
 	spi_master = spi_busnum_to_master(g_ts_kit_platform_data.bops->bus_id);
 	if (spi_master == NULL) {
-		TS_LOG_ERR("spi_busnum_to_master(%d) return NULL\n",
-			   g_ts_kit_platform_data.bops->bus_id);
+		TS_LOG_ERR("spi_busnum_to_master %d return NULL\n",
+			g_ts_kit_platform_data.bops->bus_id);
 		return -ENODEV;
 	}
 
@@ -2318,19 +2921,27 @@ static int ts_creat_spi_client(void)
 	board_info.bus_num = g_ts_kit_platform_data.bops->bus_id;
 	board_info.max_speed_hz = g_ts_kit_platform_data.spi_max_frequency;
 	board_info.mode = g_ts_kit_platform_data.spi_mode;
+#if defined(CONFIG_HUAWEI_DEVKIT_MTK_3_0)
+	if (g_ts_kit_platform_data.mtk_spi_mlsb_config)
+		board_info.controller_data =
+			&g_ts_kit_platform_data.mtk_spi_config;
+#else
 	g_ts_kit_platform_data.spidev0_chip_info.hierarchy = SSP_MASTER;
 	g_ts_kit_platform_data.spidev0_chip_info.cs_control = ts_spi_cs_set;
 	board_info.controller_data = &g_ts_kit_platform_data.spidev0_chip_info;
 	error = gpio_request(g_ts_kit_platform_data.cs_gpio, "tpkit_cs");
 	if (error) {
-		TS_LOG_ERR("%s:gpio_request(%d) failed\n",
+		TS_LOG_ERR("%s:gpio_request %d failed\n",
 			__func__, g_ts_kit_platform_data.cs_gpio);
 		return -ENODEV;
 	}
 	gpio_direction_output(g_ts_kit_platform_data.cs_gpio, GPIO_HIGH);
+#endif
 	spi_device = spi_new_device(spi_master, &board_info);
 	if (spi_device == NULL) {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 		gpio_free(g_ts_kit_platform_data.cs_gpio);
+#endif
 		TS_LOG_ERR("spi_new_device fail\n");
 		return -ENODEV;
 	}
@@ -2340,7 +2951,7 @@ static int ts_creat_spi_client(void)
 	if (!ts_dclient)
 		ts_dclient = dsm_register_client(&dsm_tp);
 #endif
-	TS_LOG_INFO("ts_creat_spi_client sucessful\n");
+	TS_LOG_INFO("%s sucessful\n", __func__);
 	return NO_ERR;
 }
 
@@ -2353,7 +2964,7 @@ static int ts_destory_spi_client(void)
 
 static int ts_create_client(void)
 {
-	int error = -EINVAL;
+	int error;
 
 	switch (g_ts_kit_platform_data.bops->btype) {
 	case TS_BUS_I2C:
@@ -2366,13 +2977,14 @@ static int ts_create_client(void)
 		break;
 	default:
 		TS_LOG_ERR("unknown ts's device\n");
+		error = -EINVAL;
 		break;
 	}
 
 	return error;
 }
 
-static int ts_destory_client(void)
+static void ts_destroy_client(void)
 {
 	TS_LOG_ERR("destory touchscreen device\n");
 	switch (g_ts_kit_platform_data.bops->btype) {
@@ -2388,7 +3000,6 @@ static int ts_destory_client(void)
 		TS_LOG_ERR("unknown ts's device\n");
 		break;
 	}
-	return NO_ERR;
 }
 
 static int ts_kit_parse_config(void)
@@ -2425,27 +3036,67 @@ static int ts_kit_parse_config(void)
 
 	TS_LOG_INFO("parse product name :%s\n",
 		g_ts_kit_platform_data.product_name);
- out:
+out:
 	return error;
+}
+
+static void procfs_create_for_multi_panel(void)
+{
+	int ret;
+	char node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
+
+	ret = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d",
+		TP_TOUCHSCREEN_NODE_NAME,
+		g_ts_kit_platform_data.multi_panel_index);
+	if (ret < 0) {
+		TS_LOG_ERR("%s: snprintf err\n", __func__);
+		return;
+	}
+	if (!proc_mkdir((const char *)node_name, NULL))
+		return;
+
+	ret = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d%s",
+		TP_TOUCHSCREEN_NODE_NAME,
+		g_ts_kit_platform_data.multi_panel_index,
+		"/tp_capacitance_data");
+	if (ret < 0) {
+		TS_LOG_ERR("%s: snprintf err\n", __func__);
+		return;
+	}
+	TS_LOG_INFO("%s node_name:%s\n", __func__, node_name);
+	proc_create((const char *)node_name, 0644, NULL, &rawdata_proc_fops);
+
+	ret = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d%s",
+		TP_TOUCHSCREEN_NODE_NAME,
+		g_ts_kit_platform_data.multi_panel_index,
+		"/tp_calibration_data");
+	if (ret < 0) {
+		TS_LOG_ERR("%s: snprintf err\n", __func__);
+		return;
+	}
+	TS_LOG_INFO("%s node_name:%s\n", __func__, node_name);
+	proc_create((const char *)node_name, 0644,
+		NULL, &calibration_proc_fops);
 }
 
 static void procfs_create(void)
 {
+	if (g_ts_kit_platform_data.multi_panel_index != SINGLE_TOUCH_PANEL)
+		return procfs_create_for_multi_panel();
 	if (!proc_mkdir("touchscreen", NULL))
 		return;
-	proc_create("touchscreen/tp_capacitance_data",
-		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, NULL,
+	proc_create("touchscreen/tp_capacitance_data", 0644, NULL,
 		&rawdata_proc_fops);
-	proc_create("touchscreen/tp_calibration_data",
-		S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, NULL,
+	proc_create("touchscreen/tp_calibration_data", 0644, NULL,
 		&calibration_proc_fops);
 }
 
 static int ts_kit_create_sysfs(void)
 {
 	int error;
+	char node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
 
-	TS_LOG_INFO("ts_kit_create_sysfs enter\n");
+	TS_LOG_INFO("%s enter\n", __func__);
 	error = sysfs_create_group(&g_ts_kit_platform_data.ts_dev->dev.kobj,
 		&ts_attr_group);
 	if (error) {
@@ -2455,25 +3106,41 @@ static int ts_kit_create_sysfs(void)
 	TS_LOG_INFO("sysfs_create_group success\n");
 	procfs_create();
 	TS_LOG_INFO("procfs_create success\n");
-	error = sysfs_create_link(NULL,
-		&g_ts_kit_platform_data.ts_dev->dev.kobj, "touchscreen");
+	if (g_ts_kit_platform_data.multi_panel_index ==
+		SINGLE_TOUCH_PANEL) {
+		error = sysfs_create_link(NULL,
+			&g_ts_kit_platform_data.ts_dev->dev.kobj,
+			"touchscreen");
+	} else {
+		error = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d",
+			TP_TOUCHSCREEN_NODE_NAME,
+			g_ts_kit_platform_data.multi_panel_index);
+		if (error < 0) {
+			TS_LOG_ERR("%s: snprintf err\n", __func__);
+			return -EINVAL;
+		}
+		TS_LOG_INFO("%s: node:%s\n", __func__, node_name);
+		error = sysfs_create_link(NULL,
+			&g_ts_kit_platform_data.ts_dev->dev.kobj,
+			(const char *)node_name);
+	}
 	if (error) {
 		TS_LOG_ERR("%s: Fail create link error = %d\n",
 			__func__, error);
 		goto err_free_sysfs;
 	}
 	goto err_out;
- err_free_sysfs:
+err_free_sysfs:
 	sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj,
 		&ts_attr_group);
- err_del_platform_dev:
+err_del_platform_dev:
 	platform_device_del(g_ts_kit_platform_data.ts_dev);
 	platform_device_put(g_ts_kit_platform_data.ts_dev);
- err_out:
+err_out:
 	return error;
 }
 static int ts_parse_chip_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data);
+	struct ts_kit_device_data *chip_data);
 static int ts_kit_chip_init(void)
 {
 	int error = NO_ERR;
@@ -2482,7 +3149,6 @@ static int ts_kit_chip_init(void)
 	TS_LOG_INFO("ts_chip_init called\n");
 	if (ts_parse_chip_config(dev->cnode, dev))
 		TS_LOG_ERR("%s:parse chip config failed\n", __func__);
-
 
 	mutex_init(&ts_kit_easy_wake_guesure_lock);
 	if (dev->is_direct_proc_cmd == 0) {
@@ -2503,7 +3169,7 @@ static int ts_kit_chip_init(void)
 			if (dsm_update_client_vendor_info(&dsm_tp))
 				TS_LOG_ERR("dsm update client_vendor_info is failed\n");
 		} else {
-				TS_LOG_ERR("ic_name, module_name is invalid\n");
+			TS_LOG_ERR("ic_name, module_name is invalid\n");
 		}
 	}
 #endif
@@ -2535,7 +3201,7 @@ static void ts_input_close(struct input_dev *dev)
 
 static int ts_kit_input_tp_device_register(struct input_dev *dev)
 {
-	int error;
+	int error = NO_ERR;
 	struct input_dev *input_dev = NULL;
 	struct ts_kit_platform_data *data = &g_ts_kit_platform_data;
 
@@ -2570,9 +3236,9 @@ static int ts_kit_input_tp_device_register(struct input_dev *dev)
 
 	TS_LOG_INFO("%s exit, %d, error is %d\n", __func__, __LINE__, error);
 	return error;
- err_free_dev:
+err_free_dev:
 	input_free_device(input_dev);
- err_out:
+err_out:
 	return error;
 }
 
@@ -2603,10 +3269,10 @@ static int ts_kit_input_extra_keyevent_device_register(void)
 		goto err_free_dev;
 	}
 	return error;
- err_free_dev:
+err_free_dev:
 	input_free_device(keyevent_dev);
 	g_ts_kit_platform_data.keyevent_dev = NULL;
- err_out:
+err_out:
 	return error;
 }
 
@@ -2614,8 +3280,14 @@ static int ts_kit_input_pen_device_register(struct input_dev *dev)
 {
 	int error;
 	struct input_dev *pen_dev = NULL;
-	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+	struct ts_device_ops *ops = NULL;
 
+	if (!g_ts_kit_platform_data.chip_data) {
+		TS_LOG_ERR("chip_data is null\n");
+		error = -EINVAL;
+		goto err_out;
+	}
+	ops = g_ts_kit_platform_data.chip_data->ops;
 	pen_dev = input_allocate_device();
 	if (!pen_dev) {
 		TS_LOG_ERR("failed to allocate memory for input pen dev\n");
@@ -2625,8 +3297,7 @@ static int ts_kit_input_pen_device_register(struct input_dev *dev)
 
 	pen_dev->name = TS_PEN_DEV_NAME;
 	g_ts_kit_platform_data.pen_dev = pen_dev;
-	if (g_ts_kit_platform_data.chip_data && ops &&
-			ops->chip_input_pen_config) {
+	if (ops && ops->chip_input_pen_config) {
 		error = ops->chip_input_pen_config(g_ts_kit_platform_data.pen_dev);
 		if (error)
 			goto err_free_dev;
@@ -2638,9 +3309,9 @@ static int ts_kit_input_pen_device_register(struct input_dev *dev)
 		goto err_free_dev;
 	}
 	return error;
- err_free_dev:
+err_free_dev:
 	input_free_device(pen_dev);
- err_out:
+err_out:
 	return error;
 }
 
@@ -2675,26 +3346,39 @@ static int ts_kit_input_device_register(struct input_dev *dev)
 	}
 	return error;
 
- err_free_dev:
+err_free_dev:
 	input_free_device(g_ts_kit_platform_data.input_dev);
- err_out:
+err_out:
 	return error;
 }
 
 static int ts_kit_pm_init(void)
 {
-	TS_LOG_DEBUG("ts_kit_pm_init success\n");
+#if (!(defined CONFIG_LCD_KIT_DRIVER) && (defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+	int rc;
+
+	g_ts_kit_platform_data.lcdkit_notify.notifier_call =
+		ts_kit_power_notify_callback;
+	rc = lcdkit_register_notifier(&g_ts_kit_platform_data.lcdkit_notify);
+	if (rc) {
+		TS_LOG_ERR("register lcdkit_notify err: %d\n", rc);
+		return 0;
+	}
+	TS_LOG_INFO("register lcdkit_notify done\n");
+#endif
+	TS_LOG_DEBUG("%s success\n", __func__);
 	return 0;
 }
 
 #if defined(CONFIG_HUAWEI_DEVKIT_MTK_3_0)
+#define IRQ_NUMS 2
 static void ts_gpio_irq_init_config(void)
 {
 	int error;
-	u32 ints[2] = { 0, 0 };
+	u32 ints[IRQ_NUMS] = { 0, 0 };
 
 	error = of_property_read_u32_array(g_ts_kit_platform_data.node,
-			"debounce", ints, ARRAY_SIZE(ints));
+		"debounce", ints, ARRAY_SIZE(ints));
 	if (error) {
 		TS_LOG_ERR("%s: debounce read failed\n", __func__);
 		return;
@@ -2703,7 +3387,6 @@ static void ts_gpio_irq_init_config(void)
 	error = gpio_set_debounce(ints[0], ints[1]);
 	if (error == -ENOTSUPP)
 		TS_LOG_INFO("Warnning : The control is not support debunce\n");
-
 }
 #endif
 
@@ -2742,25 +3425,14 @@ static int ts_kit_irq_init(void)
 	atomic_set(&g_ts_kit_platform_data.state, TS_WORK);
 	atomic_set(&g_ts_kit_platform_data.power_state, TS_WORK);
 	error = request_irq(g_ts_kit_platform_data.irq_id, ts_irq_handler,
-			irq_flags | IRQF_NO_SUSPEND, "ts",
-			&g_ts_kit_platform_data);
+		irq_flags | IRQF_NO_SUSPEND, "ts", &g_ts_kit_platform_data);
 	if (error) {
 		TS_LOG_ERR("ts request_irq failed\n");
 		goto err_out;
 	}
-	TS_LOG_INFO("ts_kit_irq_init success\n");
- err_out:
+	TS_LOG_INFO("%s success\n", __func__);
+err_out:
 	return error;
-}
-
-static void ts_get_brightness_info(void)
-{
-	return;
-}
-
-static int ts_get_brightness_info_cmd(void)
-{
-	return NO_ERR;
 }
 
 static int ts_kit_update_firmware(void)
@@ -2775,14 +3447,15 @@ static int ts_kit_update_firmware(void)
 	/* do not do boot fw update on recovery mode */
 	TS_LOG_INFO("touch_recovery_mode is %d, charge_flag:%u\n",
 		touch_recovery_mode, charge_flag);
-	if (!touch_recovery_mode && !charge_flag) {
+	if ((!touch_recovery_mode && !charge_flag) ||
+		(g_ts_kit_platform_data.recovery_update_fw)) {
 		error = try_update_firmware();
 		if (error) {
 			TS_LOG_ERR("return fail : %d\n", error);
 			goto err_out;
 		}
 	}
- err_out:
+err_out:
 	return error;
 }
 
@@ -2791,10 +3464,14 @@ static void ts_kit_status_check_init(void)
 	if (g_ts_kit_platform_data.chip_data->need_wd_check_status) {
 		TS_LOG_INFO("This chip need watch dog to check status\n");
 		INIT_WORK(&(g_ts_kit_platform_data.watchdog_work),
-			  ts_watchdog_work);
+			ts_watchdog_work);
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)) && (defined CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+		timer_setup(&(g_ts_kit_platform_data.watchdog_timer),
+			ts_watchdog_timer, 0);
+#else
 		setup_timer(&(g_ts_kit_platform_data.watchdog_timer),
-			    ts_watchdog_timer,
-			    (unsigned long)(&g_ts_kit_platform_data));
+			ts_watchdog_timer, (unsigned long)(&g_ts_kit_platform_data));
+#endif
 	}
 }
 
@@ -2839,18 +3516,17 @@ static int ts_send_boot_detection_cmd(void)
 	}
 	return error;
 }
+
 static void ts_boot_detection(void)
 {
-	int value = NO_ERR;
+	int value;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	if (dev->ops->chip_boot_detection && dev->boot_detection_flag) {
 		value = dev->ops->chip_boot_detection();
 		if (value < 0)
-			TS_LOG_ERR("%s: chip_boot_detection failed\n",
-					__func__);
+			TS_LOG_ERR("%s: chip_boot_detection failed\n", __func__);
 	}
-	return;
 }
 
 static void proc_init_cmd(void)
@@ -2891,6 +3567,7 @@ static void tp_init_work_fn(struct work_struct *work)
 	TS_LOG_INFO("%s, chip init done\n", __func__);
 	while (i-- > 0) {
 		spin_lock_irqsave(&q->spin_lock, flags);
+		/* memory barrier */
 		smp_wmb();
 		if (!q->cmd_count) {
 			TS_LOG_DEBUG("queue is empty\n");
@@ -2902,6 +3579,7 @@ static void tp_init_work_fn(struct work_struct *work)
 		q->cmd_count--;
 		q->rd_index++;
 		q->rd_index %= q->queue_size;
+		/* memory barrier */
 		smp_mb();
 		spin_unlock_irqrestore(&q->spin_lock, flags);
 		error = ts_kit_proc_command_directly(cmd);
@@ -2915,7 +3593,7 @@ static void tp_init_work_fn(struct work_struct *work)
 
 int ts_kit_put_one_cmd_direct_sync(struct ts_cmd_node *cmd, int timeout)
 {
-	int error;
+	int error = NO_ERR;
 
 	TS_LOG_INFO("%s Enter\n", __func__);
 	if (g_ts_kit_platform_data.chip_data->is_parade_solution == 0)
@@ -2926,8 +3604,7 @@ int ts_kit_put_one_cmd_direct_sync(struct ts_cmd_node *cmd, int timeout)
 		return error;
 	}
 	if ((atomic_read(&g_ts_kit_platform_data.state) == TS_SLEEP) ||
-		(atomic_read(&g_ts_kit_platform_data.state) ==
-			TS_WORK_IN_SLEEP)) {
+		(atomic_read(&g_ts_kit_platform_data.state) == TS_WORK_IN_SLEEP)) {
 		TS_LOG_INFO("%s In Sleep State\n", __func__);
 		error = -EIO;
 		return error;
@@ -2955,8 +3632,7 @@ int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout)
 	}
 
 	if (timeout) {
-		sync = (struct ts_cmd_sync *)kzalloc(sizeof(struct ts_cmd_sync),
-			GFP_KERNEL);
+		sync = kzalloc(sizeof(struct ts_cmd_sync), GFP_KERNEL);
 		if (sync == NULL) {
 			TS_LOG_ERR("failed to kzalloc completion\n");
 			error = -ENOMEM;
@@ -2985,6 +3661,7 @@ int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout)
 	}
 	cmd->ts_cmd_check_key = TS_CMD_CHECK_KEY;
 	spin_lock_irqsave(&q->spin_lock, flags);
+	/* memory barrier */
 	smp_wmb();
 	if (q->cmd_count == q->queue_size) {
 		spin_unlock_irqrestore(&q->spin_lock, flags);
@@ -2997,6 +3674,7 @@ int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout)
 	q->cmd_count++;
 	q->wr_index++;
 	q->wr_index %= q->queue_size;
+	/* memory barrier */
 	smp_mb();
 	spin_unlock_irqrestore(&q->spin_lock, flags);
 	TS_LOG_DEBUG("put one cmd :%d in ring buff\n", cmd->command);
@@ -3004,22 +3682,22 @@ int ts_kit_put_one_cmd(struct ts_cmd_node *cmd, int timeout)
 	/* wakeup process */
 	wake_up_process(g_ts_kit_platform_data.ts_task);
 	if (timeout &&
-		!(wait_for_completion_timeout(&sync->done,
-			abs(timeout) * HZ))) {
+		!(wait_for_completion_timeout(&sync->done, abs(timeout) * HZ))) {
 		atomic_set(&sync->timeout_flag, TS_TIMEOUT);
 		TS_LOG_ERR("wait for cmd respone timeout\n");
 		error = -EBUSY;
 		goto out;
 	}
+	/* memory barrier */
 	smp_wmb();
- free_sync:
+free_sync:
 	kfree(sync);
 	sync = NULL;
- out:
+out:
 	return error;
 }
-
 EXPORT_SYMBOL(ts_kit_put_one_cmd);
+
 static int get_one_cmd(struct ts_cmd_node *cmd)
 {
 	unsigned long flags;
@@ -3033,6 +3711,7 @@ static int get_one_cmd(struct ts_cmd_node *cmd)
 
 	q = &g_ts_kit_platform_data.queue;
 	spin_lock_irqsave(&q->spin_lock, flags);
+	/* memory barrier */
 	smp_wmb();
 	if (!q->cmd_count) {
 		TS_LOG_DEBUG("queue is empty\n");
@@ -3043,47 +3722,25 @@ static int get_one_cmd(struct ts_cmd_node *cmd)
 	q->cmd_count--;
 	q->rd_index++;
 	q->rd_index %= q->queue_size;
+	/* memory barrier */
 	smp_mb();
 	spin_unlock_irqrestore(&q->spin_lock, flags);
 	TS_LOG_DEBUG("get one cmd :%d from ring buff\n", cmd->command);
 	error = NO_ERR;
- out:
+out:
 	return error;
 }
 
 static void ts_proc_freebuff(struct ts_cmd_node *proc_cmd)
 {
-	if (proc_cmd && proc_cmd->cmd_param.ts_cmd_freehook != NULL &&
-		proc_cmd->cmd_param.prv_params != NULL) {
+	if (proc_cmd && (proc_cmd->cmd_param.ts_cmd_freehook != NULL) &&
+		(proc_cmd->cmd_param.prv_params != NULL))
 		proc_cmd->cmd_param.ts_cmd_freehook(proc_cmd->cmd_param.prv_params);
-	}
 }
 
-static int ts_proc_command(struct ts_cmd_node *cmd)
+static void ts_proc_command_process(struct ts_cmd_node *proc_cmd,
+	struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
 {
-	int error = NO_ERR;
-	struct ts_cmd_sync *sync = NULL;
-	struct ts_cmd_node *proc_cmd = cmd;
-	struct ts_cmd_node *out_cmd = &pang_cmd_buff;
-
-	if (!cmd || cmd->ts_cmd_check_key != TS_CMD_CHECK_KEY) {
-		TS_LOG_ERR("invalid cmd, no need to process\n");
-		goto out;
-	}
-	sync = cmd->sync;
-	/* discard timeout cmd to fix panic */
-	if (sync && atomic_read(&sync->timeout_flag) == TS_TIMEOUT) {
-		kfree(sync);
-		goto out;
-	}
-
-	if (!ts_cmd_need_process(proc_cmd)) {
-		TS_LOG_INFO("no need to process cmd:%d", proc_cmd->command);
-		goto out;
-	}
-
- related_proc:
-	out_cmd->command = TS_INVAILD_CMD;
 	switch (proc_cmd->command) {
 	case TS_INT_PROCESS:
 		ts_proc_bottom_half(proc_cmd, out_cmd);
@@ -3103,6 +3760,12 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 		break;
 	case TS_REPORT_FINGERS_PEN:
 		ts_report_fingers_pen(proc_cmd, out_cmd);
+		break;
+	case TS_ALGO_FINGER_PEN:
+		ts_finger_pen_algo_calibrate(proc_cmd, out_cmd);
+		break;
+	case TS_REPORT_FINGER_PEN_DIRECTLY:
+		ts_report_finger_pen_directly(proc_cmd);
 		break;
 	case TS_REPORT_PEN:
 		ts_report_pen(proc_cmd);
@@ -3219,9 +3882,6 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 	case TS_TEST_CMD:
 		ts_test_cmd(proc_cmd, out_cmd);
 		break;
-	case TS_READ_BRIGHTNESS_INFO:
-		ts_get_brightness_info_cmd();
-		break;
 	case TS_TP_INIT:
 		proc_init_cmd();
 		break;
@@ -3246,6 +3906,34 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 	default:
 		break;
 	}
+}
+
+static void ts_proc_command(struct ts_cmd_node *cmd)
+{
+	int error = NO_ERR;
+	struct ts_cmd_sync *sync = NULL;
+	struct ts_cmd_node *proc_cmd = cmd;
+	struct ts_cmd_node *out_cmd = &pang_cmd_buff;
+
+	if (!cmd || cmd->ts_cmd_check_key != TS_CMD_CHECK_KEY) {
+		TS_LOG_ERR("invalid cmd, no need to process\n");
+		goto out;
+	}
+	sync = cmd->sync;
+	/* discard timeout cmd to fix panic */
+	if (sync && atomic_read(&sync->timeout_flag) == TS_TIMEOUT) {
+		kfree(sync);
+		goto out;
+	}
+
+	if (!ts_cmd_need_process(proc_cmd)) {
+		TS_LOG_INFO("no need to process cmd:%d", proc_cmd->command);
+		goto out;
+	}
+
+related_proc:
+	out_cmd->command = TS_INVAILD_CMD;
+	ts_proc_command_process(proc_cmd, out_cmd, sync);
 
 	TS_LOG_DEBUG("command :%d process result:%d\n", proc_cmd->command,
 		error);
@@ -3258,6 +3946,7 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 	}
 	/* notify wait threads by completion */
 	if (sync) {
+		/* memory barrier */
 		smp_mb();
 		TS_LOG_DEBUG("wakeup threads in waitqueue\n");
 		if (atomic_read(&sync->timeout_flag) == TS_TIMEOUT)
@@ -3266,13 +3955,13 @@ static int ts_proc_command(struct ts_cmd_node *cmd)
 			complete(&sync->done);
 	}
 
- out:
-	return error;
+out:
+	return;
 }
 
 int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 {
-	int error;
+	int error = NO_ERR;
 	struct ts_cmd_node outcmd;
 
 	TS_LOG_DEBUG("%s Enter\n", __func__);
@@ -3289,19 +3978,19 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 	switch (cmd->command) {
 	case TS_INT_PROCESS:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_INPUT_ALGO:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_REPORT_INPUT:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_POWER_CONTROL:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_FW_UPDATE_BOOT:
 		error = ts_fw_update_boot(cmd);
@@ -3311,7 +4000,7 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 		break;
 	case TS_DEBUG_DATA:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_READ_RAW_DATA:
 		error = ts_read_rawdata(cmd, &outcmd, cmd->sync);
@@ -3336,45 +4025,45 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 		break;
 	case TS_CALIBRATE_DEVICE_LPWG:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_DSM_DEBUG:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_GLOVE_SWITCH:
 		error = ts_glove_switch(cmd);
 		break;
 	case TS_TEST_TYPE:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_PALM_SWITCH:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_HAND_DETECT:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_FORCE_RESET:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_INT_ERR_OCCUR:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_ERR_OCCUR:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_CHECK_STATUS:
 		ts_check_status(cmd, &outcmd);
 		break;
 	case TS_WAKEUP_GESTURE_ENABLE:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_HOLSTER_SWITCH:
 		error = ts_holster_switch(cmd);
@@ -3384,26 +4073,23 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 		break;
 	case TS_TOUCH_WINDOW:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_CHARGER_SWITCH:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_REGS_STORE:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_TEST_CMD:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
+			__func__, cmd->command);
 		break;
 	case TS_HARDWARE_TEST:
 		TS_LOG_ERR("%s, command %d does not support direct call!",
-			   __func__, cmd->command);
-		break;
-	case TS_READ_BRIGHTNESS_INFO:
-		error = ts_get_brightness_info_cmd();
+			__func__, cmd->command);
 		break;
 	case TS_TOUCH_SWITCH:
 		ts_touch_switch_cmd();
@@ -3414,13 +4100,13 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 	}
 	mutex_unlock(&g_ts_kit_platform_data.chip_data->device_call_lock);
 	TS_LOG_DEBUG("%s, command :%d process result:%d\n", __func__,
-		     cmd->command, error);
- out:
+		cmd->command, error);
+out:
 	return error;
 }
 
 #if defined(CONFIG_HUAWEI_DSM)
-void ts_dmd_report(int dmd_num, const char *pszFormat, ...)
+void ts_dmd_report(int dmd_num, const char *format, ...)
 {
 	va_list args;
 	char *input_buf = kzalloc(TS_CHIP_DMD_REPORT_SIZE, GFP_KERNEL);
@@ -3431,8 +4117,8 @@ void ts_dmd_report(int dmd_num, const char *pszFormat, ...)
 		goto exit;
 	}
 
-	va_start(args, pszFormat);
-	vsnprintf(input_buf, TS_CHIP_DMD_REPORT_SIZE - 1, pszFormat, args);
+	va_start(args, format);
+	vsnprintf(input_buf, TS_CHIP_DMD_REPORT_SIZE - 1, format, args);
 	va_end(args);
 	snprintf(report_buf, TS_CHIP_DMD_REPORT_SIZE - 1,
 		"%stp state:%d chip_name:%s version_name:%s irq_gpio:%d value:%d ",
@@ -3445,14 +4131,13 @@ void ts_dmd_report(int dmd_num, const char *pszFormat, ...)
 	if (!dsm_client_ocuppy(ts_dclient)) {
 		dsm_client_record(ts_dclient, report_buf);
 		dsm_client_notify(ts_dclient, dmd_num);
-		TS_LOG_INFO("ts_dmd_report %s\n", report_buf);
+		TS_LOG_INFO("%s %s\n", __func__, report_buf);
 	}
 
 exit:
 	kfree(input_buf);
 	kfree(report_buf);
 }
-
 EXPORT_SYMBOL(ts_dmd_report);
 #endif
 
@@ -3481,20 +4166,46 @@ out:
 	return ret;
 }
 
+static void tp_tui_init(struct ts_kit_device_data *dev_data)
+{
+#if defined(CONFIG_TEE_TUI)
+	struct ts_tui_data *tui_data = NULL;
+
+	if (g_ts_kit_platform_data.multi_panel_index == SUB_TOUCH_PANEL)
+		tui_data =
+			&(tp_tui_data[SUB_TOUCH_PANEL].tp_tui_normalized_data.tpkit_tui_data);
+
+	dev_data->tui_data = &tee_tui_data;
+
+	if (g_ts_kit_platform_data.multi_panel_index == SINGLE_TOUCH_PANEL) {
+		register_tui_driver(tui_tp_switch, "tp",
+			dev_data->tui_data);
+	} else {
+		if (g_ts_kit_platform_data.multi_panel_index ==
+			SUB_TOUCH_PANEL) {
+			memcpy(tui_data, &tee_tui_data, sizeof(tee_tui_data));
+			TS_LOG_INFO("%s:%s\n", __func__, tui_data->device_name);
+			tp_tui_data[SUB_TOUCH_PANEL].tui_drv_switch =
+				tui_tp_switch;
+		}
+	}
+#endif
+}
+
 static int ts_kit_init(void *data)
 {
 	int error;
 	struct input_dev *input_dev = NULL;
 	struct ts_kit_device_data *dev_data = g_ts_kit_platform_data.chip_data;
+	char node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
 
 	atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
 	atomic_set(&g_ts_kit_platform_data.ts_esd_state, TS_NO_ESD);
 	atomic_set(&g_ts_kit_platform_data.face_dct_en, 0);
-	TS_LOG_INFO("ts_kit_init\n");
+	TS_LOG_INFO("%s\n", __func__);
 	g_ts_kit_platform_data.edge_wideth = EDGE_WIDTH_DEFAULT;
 	TS_LOG_DEBUG("ts init: cmd queue size : %d\n", TS_CMD_QUEUE_SIZE);
-	wakeup_source_init(&g_ts_kit_platform_data.ts_wake_lock,
-		       "ts_wake_lock");
+	wakeup_source_init(&g_ts_kit_platform_data.ts_wake_lock, "ts_wake_lock");
 	g_ts_kit_platform_data.panel_id = 0xFF;
 	error = ts_kit_parse_config();
 	if (error) {
@@ -3518,8 +4229,7 @@ static int ts_kit_init(void *data)
 		g_ts_kit_platform_data.no_int_queue.rd_index = 0;
 		g_ts_kit_platform_data.no_int_queue.wr_index = 0;
 		g_ts_kit_platform_data.no_int_queue.cmd_count = 0;
-		g_ts_kit_platform_data.no_int_queue.queue_size =
-				TS_CMD_QUEUE_SIZE;
+		g_ts_kit_platform_data.no_int_queue.queue_size = TS_CMD_QUEUE_SIZE;
 		spin_lock_init(&g_ts_kit_platform_data.no_int_queue.spin_lock);
 		INIT_WORK(&tp_init_work, tp_init_work_fn);
 	}
@@ -3542,8 +4252,7 @@ static int ts_kit_init(void *data)
 
 	error = ts_kit_input_device_register(input_dev);
 	if (error) {
-		TS_LOG_ERR("ts init input device register failed : %d\n",
-			   error);
+		TS_LOG_ERR("ts init input device register failed : %d\n", error);
 		goto err_remove_sysfs;
 	}
 	ts_kit_status_check_init();
@@ -3552,23 +4261,17 @@ static int ts_kit_init(void *data)
 		TS_LOG_ERR("ts init pm init failed : %d\n", error);
 		goto err_free_input_dev;
 	}
-#if defined(CONFIG_TEE_TUI)
-	dev_data->tui_data = &tee_tui_data;
-	register_tui_driver(tui_tp_init, "tp",
-		dev_data->tui_data);
-#endif
+	tp_tui_init(dev_data);
 	error = ts_kit_irq_init();
 	if (error) {
 		TS_LOG_ERR("ts init irq_init failed : %d\n", error);
 		goto err_unregister_suspend;
 	}
-	/* get brightness info */
-	ts_get_brightness_info();
+
 	if (g_ts_kit_platform_data.chip_data->recovery_window_supported) {
 		error = ts_send_recovery_window_cmd();
 		if (error)
-			TS_LOG_ERR("%s:send recovery window cmd err\n",
-				__func__);
+			TS_LOG_ERR("%s:send recovery window cmd err\n", __func__);
 	}
 	error = ts_kit_update_firmware();
 	if (error) {
@@ -3576,10 +4279,10 @@ static int ts_kit_init(void *data)
 		goto err_firmware_update;
 	}
 	/* roi function set as default by TP firmware */
-	ts_send_roi_cmd(TS_ACTION_READ, NO_SYNC_TIMEOUT);
+	(void)ts_send_roi_cmd(TS_ACTION_READ, NO_SYNC_TIMEOUT);
 	/* Send this cmd to make sure all the cmd in the init is called */
 	ts_send_init_cmd();
-#if defined(CONFIG_HISI_BCI_BATTERY)
+#if defined(CONFIG_BCI_BATTERY) || defined(CONFIG_MTK_CHARGER) || defined(CONFIG_HUAWEI_DEVKIT_QCOM_3_0)
 	if (g_ts_kit_platform_data.register_charger_notifier) {
 		ts_kit_charger_notifier_register();
 		TS_LOG_INFO("charger notifier is register\n");
@@ -3588,33 +4291,44 @@ static int ts_kit_init(void *data)
 	if (dev_data->ts_platform_data->feature_info.pen_info.supported_pen_alg)
 		ts_pen_open_confirm_init();
 	ts_kit_status_check_start();
-	if (dev_data->boot_detection_flag ==
-			TS_BOOT_DETECTION_SUPPORT)
+	if (dev_data->boot_detection_flag == TS_BOOT_DETECTION_SUPPORT)
 		ts_send_boot_detection_cmd();
 
 	error = NO_ERR;
-	TS_LOG_INFO("ts_kit_init called out\n");
+	TS_LOG_INFO("%s called out\n", __func__);
 	goto out;
- err_firmware_update:
+err_firmware_update:
 	free_irq(g_ts_kit_platform_data.irq_id, &g_ts_kit_platform_data);
- err_unregister_suspend:
- err_free_input_dev:
+err_unregister_suspend:
+err_free_input_dev:
 	input_unregister_device(input_dev);
 	input_free_device(input_dev);
 	ts_kit_misc_destroy();
- err_remove_sysfs:
-	sysfs_remove_link(NULL, "touchscreen");
+err_remove_sysfs:
+	if (g_ts_kit_platform_data.multi_panel_index ==
+		SINGLE_TOUCH_PANEL) {
+		sysfs_remove_link(NULL, "touchscreen");
+	} else {
+		error = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d",
+			TP_TOUCHSCREEN_NODE_NAME,
+			g_ts_kit_platform_data.multi_panel_index);
+		if (error < 0) {
+			TS_LOG_ERR("%s: snprintf err\n", __func__);
+			goto err_out;
+		}
+		sysfs_remove_link(NULL, (const char *)node_name);
+	}
 	sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj,
-			&ts_attr_group);
+		&ts_attr_group);
 	platform_device_del(g_ts_kit_platform_data.ts_dev);
 	platform_device_put(g_ts_kit_platform_data.ts_dev);
- err_out:
+err_out:
 	atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
 	atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
 	wakeup_source_trash(&g_ts_kit_platform_data.ts_wake_lock);
- out:
+out:
 	TS_LOG_INFO("ts_init, g_ts_kit_platform_data.state : %d\n",
-		    atomic_read(&g_ts_kit_platform_data.state));
+		atomic_read(&g_ts_kit_platform_data.state));
 	if (error) {
 		TS_LOG_ERR("ts_init  failed\n");
 #if defined(CONFIG_HUAWEI_DSM)
@@ -3637,6 +4351,8 @@ static void ts_kit_exit(void)
 {
 	struct notifier_block *ntf =
 		&g_ts_kit_platform_data.charger_detect_notify;
+	char node_name[MULTI_PANEL_NODE_BUF_LEN] = {0};
+	int err;
 
 	atomic_set(&g_ts_kit_platform_data.state, TS_UNINIT);
 	atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
@@ -3647,12 +4363,25 @@ static void ts_kit_exit(void)
 	input_unregister_device(g_ts_kit_platform_data.input_dev);
 	input_free_device(g_ts_kit_platform_data.input_dev);
 	ts_kit_misc_destroy();
-	sysfs_remove_link(NULL, "touchscreen");
+	if (g_ts_kit_platform_data.multi_panel_index ==
+		SINGLE_TOUCH_PANEL) {
+		sysfs_remove_link(NULL, "touchscreen");
+	} else {
+		err = snprintf(node_name, MULTI_PANEL_NODE_BUF_LEN, "%s%d",
+			TP_TOUCHSCREEN_NODE_NAME,
+			g_ts_kit_platform_data.multi_panel_index);
+		if (err < 0) {
+			TS_LOG_ERR("%s: snprintf err\n", __func__);
+			goto out;
+		}
+		sysfs_remove_link(NULL, (const char *)node_name);
+	}
 	sysfs_remove_group(&g_ts_kit_platform_data.ts_dev->dev.kobj,
 			&ts_attr_group);
+out:
 	wakeup_source_trash(&g_ts_kit_platform_data.ts_wake_lock);
 	platform_device_unregister(g_ts_kit_platform_data.ts_dev);
-	ts_destory_client();
+	ts_destroy_client();
 	if ((ntf->notifier_call != NULL) &&
 			g_ts_kit_platform_data.register_charger_notifier) {
 		charger_type_notifier_unregister(ntf);
@@ -3668,12 +4397,13 @@ static bool ts_task_continue(void)
 	unsigned long flags;
 
 	TS_LOG_DEBUG("prepare enter idle\n");
- repeat:
+repeat:
 	if (unlikely(kthread_should_stop())) {
 		task_continue = false;
 		goto out;
 	}
 	spin_lock_irqsave(&g_ts_kit_platform_data.queue.spin_lock, flags);
+	/* memory barrier */
 	smp_wmb();
 	if (g_ts_kit_platform_data.queue.cmd_count) {
 		set_current_state(TASK_RUNNING);
@@ -3688,21 +4418,23 @@ static bool ts_task_continue(void)
 		goto repeat;
 	}
 
- out_unlock:
+out_unlock:
 	spin_unlock_irqrestore(&g_ts_kit_platform_data.queue.spin_lock, flags);
- out:
+out:
 	return task_continue;
 }
 
 static int ts_thread(void *p)
 {
 	static const struct sched_param param = {
-		.sched_priority = 99,
+		.sched_priority = SCHEDULE_DEFAULT_PRIORITY,
 	};
+	/* memory barrier */
 	smp_wmb();
-	TS_LOG_INFO("ts_thread\n");
+	TS_LOG_INFO("%s\n", __func__);
 	memset(&ping_cmd_buff, 0, sizeof(struct ts_cmd_node));
 	memset(&pang_cmd_buff, 0, sizeof(struct ts_cmd_node));
+	/* memory barrier */
 	smp_mb();
 	sched_setscheduler(current, SCHED_RR, &param);
 	while (ts_task_continue()) {
@@ -3718,7 +4450,7 @@ static int ts_thread(void *p)
 	ts_kit_exit();
 
 	platform_device_unregister(g_ts_kit_platform_data.ts_dev);
-	ts_destory_client();
+	ts_destroy_client();
 #ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	if (g_ts_kit_platform_data.reset_gpio)
 		gpio_free(g_ts_kit_platform_data.reset_gpio);
@@ -3734,19 +4466,17 @@ void ts_kit_chip_detect(struct ts_kit_device_data *chipdata, int timeout)
 	int error;
 	struct ts_cmd_node cmd;
 
-	TS_LOG_INFO("ts_kit_chip_detect called\n");
+	TS_LOG_INFO("%s called\n", __func__);
 	memset(&cmd, 0, sizeof(struct ts_cmd_node));
 	cmd.command = TS_CHIP_DETECT;
 	cmd.cmd_param.pub_params.chip_data = chipdata;
 	error = ts_kit_put_one_cmd(&cmd, timeout);
 	if (error)
-		TS_LOG_ERR("ts_kit_chip_detect, put cmd error :%d\n", error);
+		TS_LOG_ERR("%s, put cmd error :%d\n", __func__, error);
 }
 
 static int _ts_of_property_read_u32(struct device_node *np,
-					const char *propname,
-					int *out_val,
-					int quiet)
+	const char *propname, int *out_val, int quiet)
 {
 	int ret;
 
@@ -3786,7 +4516,6 @@ static int _ts_of_property_read_u8(struct device_node *np,
 	int ret;
 
 	ret = _ts_of_property_read_u32(np, propname, &val, quiet);
-
 	if (!ret)
 		*out_val = (u8)val;
 
@@ -3807,109 +4536,110 @@ static int _ts_of_property_read_u8(struct device_node *np,
 	_ts_of_property_read_u8(__VA_ARGS__, 1)
 
 static int ts_of_property_read_u32_default(struct device_node *np,
-				const char *propname,
-				unsigned int *out_val, int default_val)
+	const char *propname, unsigned int *out_val, int default_val)
 {
 	int ret = ts_of_property_read_u32(np, propname, out_val);
-
 	if (ret)
 		*out_val = default_val;
 	return ret;
 }
 
 static int ts_parse_hardware_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data)
+	struct ts_kit_device_data *chip_data)
 {
 	ts_of_property_read_u32(np, "slave_address", &chip_data->slave_addr);
-
 	ts_of_property_read_u32(np, "irq_config", &chip_data->irq_config);
 
 	return 0;
 }
 
 static int ts_parse_captest_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data)
+	struct ts_kit_device_data *chip_data)
 {
 	int ret;
-	int array_len = 0;
+	int array_len;
 	int index;
 	const char *raw_data_dts = NULL;
+	int default_report_type = 3;
+	int base = 10;
+	long int value = 0;
 
 	ts_of_property_read_u32_quiet(np, "is_ic_rawdata_proc_printf",
-			&chip_data->is_ic_rawdata_proc_printf);
+		&chip_data->is_ic_rawdata_proc_printf);
 	ts_of_property_read_u8(np, "rawdata_newformatflag",
-			&chip_data->rawdata_newformatflag);
+		&chip_data->rawdata_newformatflag);
 	ts_of_property_read_u8(np, "print_all_trx_diffdata_for_newformat_flag",
-			&chip_data->print_all_trx_diffdata_for_newformat_flag);
+		&chip_data->print_all_trx_diffdata_flag);
 	ts_of_property_read_u32_quiet(np, "boot_detection_addr",
-			&chip_data->boot_detection_addr);
+		&chip_data->boot_detection_addr);
 	ts_of_property_read_u32_quiet(np, "boot_detection_threshold",
-			&chip_data->boot_detection_threshold);
+		&chip_data->boot_detection_threshold);
 	ts_of_property_read_u8(np, "boot_detection_flag",
-			&chip_data->boot_detection_flag);
+		&chip_data->boot_detection_flag);
 
 	ts_of_property_read_u32_quiet(np, "unite_cap_test_interface",
-			&chip_data->unite_cap_test_interface);
+		&chip_data->unite_cap_test_interface);
 	ts_of_property_read_u32_quiet(np, "report_rate_test",
-			&chip_data->report_rate_test);
+		&chip_data->report_rate_test);
 	ts_of_property_read_u32_quiet(np,
-			"huawei,test_capacitance_via_csvfile",
-			&chip_data->test_capacitance_via_csvfile);
+		"huawei,test_capacitance_via_csvfile",
+		&chip_data->test_capacitance_via_csvfile);
 	ts_of_property_read_u32_quiet(np, "rawdata_get_timeout",
-			&chip_data->rawdata_get_timeout);
+		&chip_data->rawdata_get_timeout);
 	ts_of_property_read_u32_default(np, "rawdata_report_type",
-			&chip_data->rawdata_report_type, 3);
+		&chip_data->rawdata_report_type, default_report_type);
 	ts_of_property_read_u32(np, "rawdata_arrange_type",
-			&chip_data->rawdata_arrange_type);
+		&chip_data->rawdata_arrange_type);
 	ts_of_property_read_u32(np, "capacitance_test_config",
-			&chip_data->capacitance_test_config);
+		&chip_data->capacitance_test_config);
 	ts_of_property_read_u32(np, "raw_test_type",
-			&chip_data->raw_test_type);
+		&chip_data->raw_test_type);
 	ts_of_property_read_u32(np, "self_cap_test",
-			&chip_data->self_cap_test);
+		&chip_data->self_cap_test);
 	ts_of_property_read_u32(np, "huawei,support_forcekey_cap_value_test",
-			&chip_data->support_forcekey_cap_value_test);
+		&chip_data->support_forcekey_cap_value_test);
 	ts_of_property_read_u32(np, "should_check_tp_calibration_info",
-			&chip_data->should_check_tp_calibration_info);
+		&chip_data->should_check_tp_calibration_info);
 	ts_of_property_read_u32_quiet(np, "huawei,csvfile_use_product_system",
-			&chip_data->csvfile_use_product_system);
+		&chip_data->csvfile_use_product_system);
 	ts_of_property_read_u32_quiet(np, "huawei,td43xx_ee_short_test",
-			&chip_data->td43xx_ee_short_test_support);
+		&chip_data->td43xx_ee_short_test_support);
 	ts_of_property_read_u32_quiet(np, "huawei,trx_delta_test_support",
-			&chip_data->trx_delta_test_support);
+		&chip_data->trx_delta_test_support);
 	ts_of_property_read_u32_quiet(np,
-			"huawei,threshold_tddi_ee_short_partone",
-			&chip_data->tddi_ee_short_test_partone_limit);
+		"huawei,threshold_tddi_ee_short_partone",
+		&chip_data->tddi_ee_short_test_partone_limit);
 	ts_of_property_read_u32_quiet(np,
-			"huawei,threshold_tddi_ee_short_parttwo",
-			&chip_data->tddi_ee_short_test_parttwo_limit);
+		"huawei,threshold_tddi_ee_short_parttwo",
+		&chip_data->tddi_ee_short_test_parttwo_limit);
+	ts_of_property_read_u32_quiet(np, "tddi_tp_reset_sync",
+		&chip_data->tddi_tp_reset_sync);
 
 	ret = of_property_read_string(np, "tp_test_type",
-			 &chip_data->tp_test_type);
+		&chip_data->tp_test_type);
 	if (ret) {
 		TS_LOG_INFO("tp_test_type not configed, use default\n");
 		/* 17 for 0f 4f */
-		chip_data->tp_test_type =
-			"Normalize_type:judge_different_reslut:17";
+		chip_data->tp_test_type = "Normalize_type:judge_different_reslut:17";
 	}
 
 	if (chip_data->unite_cap_test_interface) {
 		array_len = of_property_count_strings(np, "raw_data_limit");
 		if ((array_len <= 0) || (array_len > RAWDATA_NUM))
 			TS_LOG_ERR("raw_data_limit length invaild or dts number is larger than:%d\n",
-					array_len);
+				array_len);
 
 		for (index = 0; index < array_len; index++) {
 			ret = of_property_read_string_index(np,
-							"raw_data_limit",
-							index, &raw_data_dts);
+					"raw_data_limit", index, &raw_data_dts);
 			if (ret)
 				TS_LOG_ERR("%s: fail to read index = %d,raw_data_limit = %s,ret = %d,\n",
 					__func__, index, raw_data_dts, ret);
 
 			if (!ret) {
-				chip_data->raw_limit_buf[index] =
-				    simple_strtol(raw_data_dts, NULL, 10);
+				chip_data->raw_limit_buf[index] = 0;
+				if (kstrtol(raw_data_dts, base, &value) == 0)
+					chip_data->raw_limit_buf[index] = value;
 				TS_LOG_INFO("rawdatabuf[%d] = %d\n", index,
 					chip_data->raw_limit_buf[index]);
 			}
@@ -3937,6 +4667,8 @@ static int ts_parse_feature_config(struct device_node *np,
 		&chip_data->ts_platform_data->feature_info.holster_info.holster_supported);
 	ts_of_property_read_u8(np, "pen_support",
 		&chip_data->ts_platform_data->feature_info.pen_info.pen_supported);
+	ts_of_property_read_u8(np, "pen_change_protocol",
+		&chip_data->ts_platform_data->feature_info.pen_info.pen_change_protocol);
 	ts_of_property_read_u32(np, "supported_pen_alg",
 		&chip_data->ts_platform_data->feature_info.pen_info.supported_pen_alg);
 	ts_of_property_read_u32(np, "supported_pen_mmitest",
@@ -3975,48 +4707,61 @@ static int ts_parse_feature_config(struct device_node *np,
 		&chip_data->fold_status_supported);
 	ts_of_property_read_u32(np, "recovery_window_supported",
 		&chip_data->recovery_window_supported);
+	ts_of_property_read_u32(np,"send_bt_status_to_fw",
+		&chip_data->send_bt_status_to_fw);
+	ts_of_property_read_u32(np, "need_notify_to_roi_algo",
+		&chip_data->need_notify_to_roi_algo);
+	ts_of_property_read_u32(np, "send_stylus_type_to_fw",
+		&chip_data->send_stylus_type_to_fw);
+	ts_of_property_read_u32(np, "support_stylus3_plam_suppression",
+		&chip_data->support_stylus3_plam_suppression);
 	return 0;
 }
-static int ts_parse_input_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data)
-{
 
-	ts_of_property_read_u32_default(np, "x_max", &chip_data->x_max, 1080);
-	ts_of_property_read_u32_default(np, "y_max", &chip_data->y_max, 1920);
+static int ts_parse_input_config(struct device_node *np,
+	struct ts_kit_device_data *chip_data)
+{
+	int default_x_max = 1080;
+	int defualt_y_max = 1920;
+
+	ts_of_property_read_u32_default(np, "x_max", &chip_data->x_max, default_x_max);
+	ts_of_property_read_u32_default(np, "y_max", &chip_data->y_max, defualt_y_max);
 	ts_of_property_read_u32_default(np, "x_max_mt", &chip_data->x_max_mt,
-					chip_data->x_max);
+		chip_data->x_max);
 	ts_of_property_read_u32_default(np, "y_max_mt", &chip_data->y_max_mt,
-					chip_data->y_max);
+		chip_data->y_max);
 	ts_of_property_read_u32_default(np, "flip_x",
-					&chip_data->flip_x, true);
+		&chip_data->flip_x, true);
 	ts_of_property_read_u32_default(np, "flip_y",
-					&chip_data->flip_y, true);
+		&chip_data->flip_y, true);
 
 	TS_LOG_INFO("x_max = %d, y_max = %d, x_mt = %d,y_mt = %d\n",
 		chip_data->x_max, chip_data->y_max,
 		chip_data->x_max_mt, chip_data->y_max_mt);
 	return 0;
 }
+
 static int ts_kit_get_power_config(struct device_node *chip_node,
-			struct ts_kit_platform_data *cd);
-static int ts_parse_power_config(struct device_node *np,
-			struct ts_kit_device_data *chip_data)
+	struct ts_kit_platform_data *cd);
+static void ts_parse_power_config(struct device_node *np,
+	struct ts_kit_device_data *chip_data)
 {
 	struct ts_kit_platform_data *cd = &g_ts_kit_platform_data;
 
 	ts_kit_get_power_config(np, cd);
 	ts_of_property_read_u32(np, "vddio_default_on",
 		&chip_data->vddio_default_on);
-
-	return NO_ERR;
 }
+
 /*
  * Parse basic hardware about config
  * before call chip detect
  */
 static int ts_parse_chip_base_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data)
+	struct ts_kit_device_data *chip_data)
 {
+	int default_projectid = 10;
+
 	if (!np) {
 		TS_LOG_ERR("%s:devices node invaild\n", __func__);
 		return -EINVAL;
@@ -4027,10 +4772,10 @@ static int ts_parse_chip_base_config(struct device_node *np,
 
 	ts_of_property_read_u32(np, "ic_type", &chip_data->ic_type);
 	ts_of_property_read_u32_default(np, "projectid_len",
-			&chip_data->projectid_len, 10);
+		&chip_data->projectid_len, default_projectid);
 
 	ts_of_property_read_u32_default(np, "is_in_cell",
-			&chip_data->is_in_cell, 0);
+		&chip_data->is_in_cell, 0);
 
 	return NO_ERR;
 }
@@ -4058,58 +4803,58 @@ int ts_parse_panel_specific_config(struct device_node *np,
 	}
 
 	ts_of_property_read_u32(np, "supported_func_indicater",
-			&chip_data->supported_func_indicater);
+		&chip_data->supported_func_indicater);
 	ts_of_property_read_u32(np, "ic_type", &chip_data->ic_type);
 	ts_of_property_read_u16_quiet(np, "charger_switch_bit",
-			&chip_data->ts_platform_data->feature_info.charger_info.charger_switch_bit);
+		&chip_data->ts_platform_data->feature_info.charger_info.charger_switch_bit);
 	ts_of_property_read_u16_quiet(np, "charger_switch_addr",
-			&chip_data->ts_platform_data->feature_info.charger_info.charger_switch_addr);
+		&chip_data->ts_platform_data->feature_info.charger_info.charger_switch_addr);
 	ts_of_property_read_u16_quiet(np, "holster_switch_bit",
-			&chip_data->ts_platform_data->feature_info.holster_info.holster_switch_bit);
+		&chip_data->ts_platform_data->feature_info.holster_info.holster_switch_bit);
 	ts_of_property_read_u16_quiet(np, "holster_switch_addr",
-			&chip_data->ts_platform_data->feature_info.holster_info.holster_switch_addr);
+		&chip_data->ts_platform_data->feature_info.holster_info.holster_switch_addr);
 	ts_of_property_read_u16_quiet(np, "glove_switch_bit",
-			&chip_data->ts_platform_data->feature_info.glove_info.glove_switch_bit);
+		&chip_data->ts_platform_data->feature_info.glove_info.glove_switch_bit);
 	ts_of_property_read_u16_quiet(np, "glove_switch_addr",
-			&chip_data->ts_platform_data->feature_info.glove_info.glove_switch_addr);
+		&chip_data->ts_platform_data->feature_info.glove_info.glove_switch_addr);
 	ts_of_property_read_u16_quiet(np, "roi_control_addr",
-			&chip_data->ts_platform_data->feature_info.roi_info.roi_control_addr);
+		&chip_data->ts_platform_data->feature_info.roi_info.roi_control_addr);
 	ts_of_property_read_u8_quiet(np, "roi_control_bit",
-			&chip_data->ts_platform_data->feature_info.roi_info.roi_control_bit);
+		&chip_data->ts_platform_data->feature_info.roi_info.roi_control_bit);
 	ts_of_property_read_u16_quiet(np, "roi_data_addr",
-			&chip_data->ts_platform_data->feature_info.roi_info.roi_data_addr);
+		&chip_data->ts_platform_data->feature_info.roi_info.roi_data_addr);
 	ts_of_property_read_u32_default(np, "fw_update_logic",
-			&chip_data->fw_update_logic, FW_UPDATE_DIFF);
+		&chip_data->fw_update_logic, FW_UPDATE_DIFF);
 	ts_of_property_read_u32_quiet(np, "noise_state_reg",
-			&chip_data->noise_state_reg);
+		&chip_data->noise_state_reg);
 	ts_of_property_read_u32_quiet(np, "ic_status_reg",
-			&chip_data->ic_status_reg);
+		&chip_data->ic_status_reg);
 
 	/* touch switch regs */
 	ts_of_property_read_u32_quiet(np, "touch_switch_flag",
-			&chip_data->touch_switch_flag);
+		&chip_data->touch_switch_flag);
 	ts_of_property_read_u16_quiet(np, "touch_switch_reg",
-			&chip_data->touch_switch_reg);
+		&chip_data->touch_switch_reg);
 	ts_of_property_read_u16_quiet(np, "touch_switch_hold_off_reg",
-			&chip_data->touch_switch_hold_off_reg);
+		&chip_data->touch_switch_hold_off_reg);
 	ts_of_property_read_u16_quiet(np, "touch_game_reg",
-			&chip_data->touch_game_reg);
+		&chip_data->touch_game_reg);
 	ts_of_property_read_u8_quiet(np, "game_control_bit",
-			&chip_data->game_control_bit);
+		&chip_data->game_control_bit);
 	ts_of_property_read_u16_quiet(np, "touch_scene_reg",
-			&chip_data->touch_scene_reg);
+		&chip_data->touch_scene_reg);
 
 	/* touch switch mode */
 	ts_of_property_read_u32_default(np, "scene_type_mode",
-			&chip_data->scene_type_mode, SCENC_MODE_ORIGINAL);
+		&chip_data->scene_type_mode, SCENC_MODE_ORIGINAL);
 	ts_of_property_read_u32_default(np, "scene_type_num",
-			&chip_data->scene_type_num, 0);
+		&chip_data->scene_type_num, 0);
 	if ((chip_data->scene_type_num <= SCENE_SUPPORT_MAX) &&
 		(chip_data->scene_type_num > 0) &&
 		(chip_data->scene_type_mode == SCENC_MODE_POWERGENIUS)) {
 		retval = of_property_read_u32_array(np, "scene_support_array",
-				&chip_data->scene_support_array[0],
-				chip_data->scene_type_num);
+			&chip_data->scene_support_array[0],
+			chip_data->scene_type_num);
 			if (retval)
 				TS_LOG_ERR("read scene_support_array error\n");
 	} else {
@@ -4117,31 +4862,31 @@ int ts_parse_panel_specific_config(struct device_node *np,
 	}
 
 	ts_of_property_read_u32_quiet(np, "face_dct_support",
-			&chip_data->face_dct_support);
+		&chip_data->face_dct_support);
 	ts_of_property_read_u16_quiet(np, "face_dct_en_reg",
-			&chip_data->face_dct_en_reg);
+		&chip_data->face_dct_en_reg);
 	ts_of_property_read_u16_quiet(np, "face_dct_data_reg",
-			&chip_data->face_dct_data_reg);
+		&chip_data->face_dct_data_reg);
 
 	/* diff data report config */
 	ts_of_property_read_u32(np, "diff_data_len",
-			&chip_data->diff_data_len);
+		&chip_data->diff_data_len);
 	ts_of_property_read_u32(np, "diff_data_control_addr",
-			&chip_data->diff_data_control_addr);
+		&chip_data->diff_data_control_addr);
 
 	if (!ts_of_property_read_u16_quiet(np, "aft_data_addr",
-			&chip_data->aft_data_addr)) {
+		&chip_data->aft_data_addr)) {
 		chip_data->support_aft = 0;
 		TS_LOG_INFO("cannot get chip aft_data_addr, set support_aft disable\n");
 	}
 	ts_of_property_read_u32_quiet(np, "use_new_oem_structure",
-			&chip_data->is_new_oem_structure);
+		&chip_data->is_new_oem_structure);
 	ts_of_property_read_u32_quiet(np, "huawei,support_gammadata_in_tp",
-			&chip_data->support_gammadata_in_tp);
+		&chip_data->support_gammadata_in_tp);
 	ts_of_property_read_u32_quiet(np, "huawei,support_2dbarcode_info",
-			&chip_data->support_2dbarcode_info);
+		&chip_data->support_2dbarcode_info);
 	ts_of_property_read_u32_quiet(np, "huawei,read_2dbarcode_oem_type",
-			&chip_data->read_2dbarcode_oem_type);
+		&chip_data->read_2dbarcode_oem_type);
 
 	return 0;
 }
@@ -4152,7 +4897,7 @@ int ts_parse_panel_specific_config(struct device_node *np,
  * chip_data -- chip driver data
  */
 static int ts_parse_chip_config(struct device_node *np,
-				struct ts_kit_device_data *chip_data)
+	struct ts_kit_device_data *chip_data)
 {
 	ts_parse_input_config(np, chip_data);
 	ts_parse_feature_config(np, chip_data);
@@ -4161,7 +4906,7 @@ static int ts_parse_chip_config(struct device_node *np,
 }
 
 
-#define IS_INVAILD_POWER_ID(x) (x >= TS_KIT_POWER_ID_MAX)
+#define is_invalid_power_id(x) ((x) >= TS_KIT_POWER_ID_MAX)
 
 static char *ts_kit_power_name[TS_KIT_POWER_ID_MAX] = {
 	"ts-kit-iovdd",
@@ -4170,7 +4915,7 @@ static char *ts_kit_power_name[TS_KIT_POWER_ID_MAX] = {
 
 static const char *ts_kit_power_id2name(enum ts_kit_power_id id)
 {
-	return !IS_INVAILD_POWER_ID(id) ? ts_kit_power_name[id] : 0;
+	return !is_invalid_power_id(id) ? ts_kit_power_name[id] : 0;
 }
 
 int ts_kit_power_supply_get(enum ts_kit_power_id power_id)
@@ -4179,7 +4924,7 @@ int ts_kit_power_supply_get(enum ts_kit_power_id power_id)
 	struct ts_kit_power_supply *power = NULL;
 	int ret = 0;
 
-	if (IS_INVAILD_POWER_ID(power_id)) {
+	if (is_invalid_power_id(power_id)) {
 		TS_LOG_ERR("%s: invalid power id %d", __func__, power_id);
 		return -EINVAL;
 	}
@@ -4203,12 +4948,11 @@ int ts_kit_power_supply_get(enum ts_kit_power_id power_id)
 		}
 
 		ret = regulator_set_voltage(power->regulator,
-				power->ldo_value, power->ldo_value);
+			power->ldo_value, power->ldo_value);
 		if (ret) {
 			regulator_put(power->regulator);
 			TS_LOG_ERR("%s:fail to set %s valude %d\n", __func__,
-					ts_kit_power_id2name(power_id),
-					power->ldo_value);
+				ts_kit_power_id2name(power_id), power->ldo_value);
 			return ret;
 		}
 		break;
@@ -4217,8 +4961,7 @@ int ts_kit_power_supply_get(enum ts_kit_power_id power_id)
 			ts_kit_power_id2name(power_id));
 		if (ret) {
 			TS_LOG_ERR("%s:request gpio %d for %s failed\n",
-				__func__, power->gpio,
-				ts_kit_power_id2name(power_id));
+				__func__, power->gpio, ts_kit_power_id2name(power_id));
 			return ret;
 		}
 		break;
@@ -4247,7 +4990,7 @@ int ts_kit_power_supply_put(enum ts_kit_power_id power_id)
 	struct ts_kit_platform_data *cd = &g_ts_kit_platform_data;
 	struct ts_kit_power_supply *power = NULL;
 
-	if (IS_INVAILD_POWER_ID(power_id)) {
+	if (is_invalid_power_id(power_id)) {
 		TS_LOG_ERR("%s: invalid power id %d", __func__, power_id);
 		return -EINVAL;
 	}
@@ -4283,7 +5026,8 @@ int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id,
 	struct ts_kit_platform_data *cd = &g_ts_kit_platform_data;
 	struct ts_kit_power_supply *power = NULL;
 	int rc = 0;
-	if (IS_INVAILD_POWER_ID(power_id)) {
+
+	if (is_invalid_power_id(power_id)) {
 		TS_LOG_ERR("%s: invalid power id %d", __func__, power_id);
 		return -EINVAL;
 	}
@@ -4293,7 +5037,7 @@ int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id,
 		return 0;
 	if (!power->use_count) {
 		TS_LOG_ERR("%s:regulator %s not gotten yet\n", __func__,
-				ts_kit_power_id2name(power_id));
+			ts_kit_power_id2name(power_id));
 		return -ENODEV;
 	}
 	switch (power->type) {
@@ -4335,8 +5079,7 @@ int ts_kit_power_supply_ctrl(enum ts_kit_power_id power_id,
 #define POWER_CONFIG_NAME_MAX 30
 
 static void ts_kit_paser_pmic_power(struct device_node *chip_node,
-				struct ts_kit_platform_data *cd,
-	int power_id)
+	struct ts_kit_platform_data *cd, int power_id)
 {
 	const char *power_name = NULL;
 	char config_name[POWER_CONFIG_NAME_MAX] = {0};
@@ -4373,8 +5116,7 @@ static void ts_kit_paser_pmic_power(struct device_node *chip_node,
 }
 
 static int ts_kit_parse_one_power(struct device_node *chip_node,
-			struct ts_kit_platform_data *cd,
-			int power_id)
+	struct ts_kit_platform_data *cd, int power_id)
 {
 	const char *power_name = NULL;
 	char config_name[POWER_CONFIG_NAME_MAX] = {0};
@@ -4385,7 +5127,7 @@ static int ts_kit_parse_one_power(struct device_node *chip_node,
 	power = &cd->ts_kit_powers[power_id];
 
 	rc = snprintf(config_name, POWER_CONFIG_NAME_MAX - 1,
-			"%s-type", power_name);
+		"%s-type", power_name);
 
 	rc = of_property_read_u32(chip_node, config_name, &power->type);
 	if (rc || power->type == TS_KIT_POWER_UNUSED) {
@@ -4397,7 +5139,7 @@ static int ts_kit_parse_one_power(struct device_node *chip_node,
 	switch (power->type) {
 	case TS_KIT_POWER_GPIO:
 		snprintf(config_name, POWER_CONFIG_NAME_MAX - 1,
-				"%s-gpio", power_name);
+			"%s-gpio", power_name);
 		power->gpio = of_get_named_gpio(chip_node, config_name, 0);
 		if (!gpio_is_valid(power->gpio)) {
 			TS_LOG_ERR("%s:failed to get %s\n",
@@ -4407,7 +5149,7 @@ static int ts_kit_parse_one_power(struct device_node *chip_node,
 		break;
 	case TS_KIT_POWER_LDO:
 		snprintf(config_name, POWER_CONFIG_NAME_MAX - 1,
-				"%s-value", power_name);
+			"%s-value", power_name);
 		rc = of_property_read_u32(chip_node, config_name,
 				&power->ldo_value);
 		if (rc) {
@@ -4428,7 +5170,7 @@ static int ts_kit_parse_one_power(struct device_node *chip_node,
 }
 
 static int ts_kit_get_power_config(struct device_node *chip_node,
-			struct ts_kit_platform_data *cd)
+	struct ts_kit_platform_data *cd)
 {
 	int rc;
 	int i;
@@ -4442,12 +5184,12 @@ static int ts_kit_get_power_config(struct device_node *chip_node,
 	return 0;
 }
 
-static u8 ts_init_flag = 0;
+static u8 ts_init_flag;
 int huawei_ts_chip_register(struct ts_kit_device_data *chipdata)
 {
 	int ret;
 
-	TS_LOG_INFO("huawei_ts_chip_register called here\n");
+	TS_LOG_INFO("%s called here\n", __func__);
 	if (chipdata == NULL) {
 		TS_LOG_ERR("%s chipdata is null\n", __func__);
 		return -EINVAL;
@@ -4472,6 +5214,7 @@ int huawei_ts_chip_register(struct ts_kit_device_data *chipdata)
 
 	return 0;
 }
+EXPORT_SYMBOL(huawei_ts_chip_register);
 
 /************** Begin ts event notify block *********************/
 static BLOCKING_NOTIFIER_HEAD(ts_event_nh);
@@ -4484,8 +5227,8 @@ int ts_event_notifier_register(struct notifier_block *nb)
 	}
 	return blocking_notifier_chain_register(&ts_event_nh, nb);
 }
-
 EXPORT_SYMBOL_GPL(ts_event_notifier_register);
+
 int ts_event_notifier_unregister(struct notifier_block *nb)
 {
 	TS_LOG_INFO("%s +\n", __func__);
@@ -4495,29 +5238,31 @@ int ts_event_notifier_unregister(struct notifier_block *nb)
 	}
 	return blocking_notifier_chain_unregister(&ts_event_nh, nb);
 }
-
 EXPORT_SYMBOL_GPL(ts_event_notifier_unregister);
+
 /*
  * ret: 0 OK, other fail
  * for panel use to notify event
  */
-
-int ts_event_notify(ts_notify_event_type event)
+int ts_event_notify(enum ts_notify_event_type event)
 {
 	return blocking_notifier_call_chain(&ts_event_nh,
-				(unsigned long)event, NULL);
+		(unsigned long)event, NULL);
 }
 
 /************** End ts event notify block *********************/
 
 int ts_kit_get_pt_station_status(int *status)
 {
+#if defined(CONFIG_LCD_KIT_DRIVER)
 	struct lcd_kit_ops *lcd_ops = lcd_kit_get_ops();
 	int retval;
+#endif
 
 	if (!status)
 		return -EINVAL;
 
+#if defined(CONFIG_LCD_KIT_DRIVER)
 	if ((lcd_ops) && (lcd_ops->get_status_by_type)) {
 		retval = lcd_ops->get_status_by_type(PT_STATION_TYPE, status);
 		if (retval < 0) {
@@ -4526,29 +5271,127 @@ int ts_kit_get_pt_station_status(int *status)
 			return retval;
 		}
 	}
+#endif
 
 	return 0;
 }
 
-static int __init huawei_ts_module_init(void)
+static int ts_alloc_platform_mem(void)
+{
+	if (g_ts_kit_platform_data.support_multi_panel_attach) {
+		g_ts_kit_platform_data.multi_vendor_name =
+			kzalloc(TP_VENDOR_NAME_LEN, GFP_KERNEL);
+		if (!g_ts_kit_platform_data.multi_vendor_name) {
+			TS_LOG_ERR("%s: malloc failed\n", __func__);
+			return -ENOMEM;
+		}
+	}
+	return NO_ERR;
+}
+
+static void ts_release_platform_mem(void)
+{
+	if (g_ts_kit_platform_data.support_multi_panel_attach) {
+		kfree(g_ts_kit_platform_data.multi_vendor_name);
+		g_ts_kit_platform_data.multi_vendor_name = NULL;
+	}
+}
+
+static int get_ts_driver_type(void)
+{
+	int rc;
+	const char *bus_type = NULL;
+
+	g_ts_kit_platform_data.node = NULL;
+	g_ts_kit_platform_data.node = of_find_compatible_node(NULL, NULL,
+		TS_DEV_NAME);
+	if (!g_ts_kit_platform_data.node) {
+		TS_LOG_ERR("%s:can't find ts module node\n", __func__);
+		goto err;
+	}
+
+	rc = of_property_read_string(g_ts_kit_platform_data.node, "bus_type",
+			&bus_type);
+	if (rc) {
+		TS_LOG_ERR("%s:bus type read failed:%d\n", __func__, rc);
+		goto err;
+	}
+
+	if (!strcmp(bus_type, "i3c_i2c")) {
+		g_ts_kit_platform_data.i2c_driver_type = I3C_MASTER_I2C_DRIVER;
+		return I3C_MASTER_I2C_DRIVER;
+	}
+err:
+	g_ts_kit_platform_data.i2c_driver_type = TS_KIT_DRIVER_TYPE_INVALID;
+	return TS_KIT_DRIVER_TYPE_INVALID;
+}
+
+static int ts_kit_probe(struct i2c_client *client,
+	const struct i2c_device_id *id)
 {
 	int error;
 
-	ts_init_flag = 0;
-	TS_LOG_INFO("huawei_ts, huawei_ts_module_init called here\n");
-	memset(&g_ts_kit_platform_data, 0, sizeof(struct ts_kit_platform_data));
-	atomic_set(&g_ts_kit_platform_data.register_flag, TS_UNREGISTER);
-	atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
-	error = get_ts_board_info();
+	TS_LOG_INFO("%s:called\n", __func__);
+	if (!client) {
+		TS_LOG_ERR("%s:have null ptr\n", __func__);
+		return -EINVAL;
+	}
+
+	g_ts_kit_platform_data.bops = &ts_bus_i2c_info;
+	error = parse_feature_config();
 	if (error) {
-		TS_LOG_ERR("get bus info failed :%d\n", error);
+		TS_LOG_ERR("parse feature config failed :%d\n", error);
 		goto out;
 	}
-	error = ts_create_client();
-	if (error) {
-		TS_LOG_ERR("create device failed :%d\n", error);
-		goto out;
-	}
+	g_ts_kit_platform_data.client = client;
+	i2c_set_clientdata(client, &g_ts_kit_platform_data);
+#if defined(CONFIG_HUAWEI_DSM)
+	if (!ts_dclient)
+		ts_dclient = dsm_register_client(&dsm_tp);
+#endif
+	error = huawei_ts_kit_platform_init();
+	if (error)
+		TS_LOG_ERR("platform init failed :%d\n", error);
+out:
+	return error;
+}
+
+static int ts_kit_remove(struct i2c_client *client)
+{
+	TS_LOG_INFO("%s: called\n", __func__);
+	return 0;
+}
+
+static const struct of_device_id g_ts_kit_match_table[] = {
+	{.compatible = "huawei,ts_kit",},
+	{ },
+};
+
+#define TS_KIT_DEVICE_NAME "ts_kit_device"
+static const struct i2c_device_id g_ts_kit_device_id[] = {
+	{ TS_KIT_DEVICE_NAME, 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(i2c, g_ts_kit_device_id);
+
+static struct i2c_driver g_ts_kit_i2c_driver = {
+	.probe = ts_kit_probe,
+	.remove = ts_kit_remove,
+	.id_table = g_ts_kit_device_id,
+	.driver = {
+		.name = TS_KIT_DEVICE_NAME,
+		.owner = THIS_MODULE,
+		.bus = &i2c_bus_type,
+		.of_match_table = g_ts_kit_match_table,
+	},
+};
+
+static int huawei_ts_kit_platform_init(void)
+{
+	int error;
+
+	if (ts_alloc_platform_mem())
+		goto err_alloc_mem;
 #ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	error = ts_gpio_request();
 	if (error) {
@@ -4571,34 +5414,43 @@ static int __init huawei_ts_module_init(void)
 
 	ts_init_flag = 1;
 
-	error = ts_kit_ops_register(&ts_kit_ops);
-	if (error) {
-		TS_LOG_ERR("ts_kit_ops_register failed :%d\n", error);
-		goto err_put_platform_dev;
+	/*
+	 * when we use multi-panel and one of them uses thp driver, the
+	 * ts_kit_ops_register function will be called and unregister in
+	 * thp driver.
+	 */
+#if defined(CONFIG_LCD_KIT_DRIVER)
+	if (g_ts_kit_platform_data.multi_panel_index == SINGLE_TOUCH_PANEL) {
+		error = ts_kit_ops_register(&ts_kit_ops);
+		if (error) {
+			TS_LOG_ERR("ts_kit_ops_register failed :%d\n", error);
+			goto err_put_platform_dev;
+		}
 	}
-
+#endif
 	g_ts_kit_platform_data.ts_init_task =
 	    kthread_create(ts_kit_init, &g_ts_kit_platform_data,
-			   "ts_init_thread:%d", 0);
+			"ts_init_thread:%d", 0);
 	if (IS_ERR(g_ts_kit_platform_data.ts_init_task)) {
 		TS_LOG_ERR("create ts_thread failed\n");
-		error = ts_destory_client();
+		ts_destroy_client();
 		memset(&g_ts_kit_platform_data, 0,
-		       sizeof(struct ts_kit_platform_data));
+			sizeof(struct ts_kit_platform_data));
 		error = -EINVAL;
 		goto out;
 	}
 	g_ts_kit_platform_data.ts_task =
-		kthread_create(ts_thread, &g_ts_kit_platform_data, "ts_thread:%d",
-			   0);
+		kthread_create(ts_thread, &g_ts_kit_platform_data,
+			"tskit_thread:%d", 0);
 	if (IS_ERR(g_ts_kit_platform_data.ts_task)) {
 		TS_LOG_ERR("create ts_thread failed\n");
-		error = ts_destory_client();
+		ts_destroy_client();
 		memset(&g_ts_kit_platform_data, 0,
-		       sizeof(struct ts_kit_platform_data));
+			sizeof(struct ts_kit_platform_data));
 		error = -EINVAL;
 		goto out;
 	}
+
 	g_ts_kit_platform_data.queue.rd_index = 0;
 	g_ts_kit_platform_data.queue.wr_index = 0;
 	g_ts_kit_platform_data.queue.cmd_count = 0;
@@ -4624,16 +5476,48 @@ err_remove_gpio:
 		gpio_free(g_ts_kit_platform_data.reset_gpio);
 #endif
 err_remove_client:
-	ts_destory_client();
+	ts_destroy_client();
+err_alloc_mem:
+	ts_release_platform_mem();
+out:
+	return error;
+}
+
+static int __init huawei_ts_module_init(void)
+{
+	int error;
+
+	ts_init_flag = 0;
+	TS_LOG_INFO("huawei_ts, %s called here\n", __func__);
+	memset(&g_ts_kit_platform_data, 0, sizeof(struct ts_kit_platform_data));
+	atomic_set(&g_ts_kit_platform_data.register_flag, TS_UNREGISTER);
+	atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
+
+	if (get_ts_driver_type() == I3C_MASTER_I2C_DRIVER)
+		return i2c_add_driver(&g_ts_kit_i2c_driver);
+	error = get_ts_board_info();
+	if (error) {
+		TS_LOG_ERR("get bus info failed :%d\n", error);
+		goto out;
+	}
+	error = ts_create_client();
+	if (error) {
+		TS_LOG_ERR("create device failed :%d\n", error);
+		goto out;
+	}
+	error = huawei_ts_kit_platform_init();
+	if (error)
+		TS_LOG_ERR("platform init failed :%d\n", error);
 out:
 	return error;
 }
 
 static void __exit huawei_ts_module_exit(void)
 {
-	TS_LOG_INFO("huawei_ts, huawei_ts_module_exit called here\n");
+	TS_LOG_INFO("huawei_ts, %s called here\n", __func__);
 	if (g_ts_kit_platform_data.ts_task)
 		kthread_stop(g_ts_kit_platform_data.ts_task);
+	ts_release_platform_mem();
 #if defined(CONFIG_TEE_TUI)
 	unregister_tui_driver("tp");
 #endif
@@ -4645,8 +5529,6 @@ static void __exit huawei_ts_module_exit(void)
 
 module_init(huawei_ts_module_init);
 module_exit(huawei_ts_module_exit);
-EXPORT_SYMBOL(g_ts_kit_log_cfg);
-EXPORT_SYMBOL(huawei_ts_chip_register);
 MODULE_AUTHOR("Huawei Device Company");
 MODULE_DESCRIPTION("Huawei TouchScreen Driver");
 MODULE_LICENSE("GPL");

@@ -75,8 +75,8 @@ static int pcie_port_resume_noirq(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
 
-#ifdef CONFIG_PCIE_KIRIN
-	if (kirin_pcie_bypass_pm(pdev))
+#ifdef CONFIG_PCIE_KPORT
+	if (kport_pcie_bypass_pm(pdev))
 		return 0;
 #endif
 

@@ -29,7 +29,7 @@
 #include <linux/dma-mapping.h>
 #include <huawei_platform/log/hw_log.h>
 #include <linux/ctype.h>
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 extern struct focal_platform_data *g_focal_pdata ;
 extern  struct ts_kit_device_data *g_focal_dev_data ;
@@ -53,6 +53,7 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_DETECT_SPI_RETRY_TIMES			3
 #define FTS_COMMON_COMMAND_LENGTH			1
 #define FTS_COMMON_COMMAND_VALUE			1
+#define FTS_FT8756_ECC_VALUE 0xA5
 #define FTS_FW_MANUAL_UPDATE_FILE_NAME	"ts/touch_screen_firmware.img"
 
 #define FTS_VDDIO_GPIO_NAME		"ts_vddio_gpio"
@@ -112,8 +113,27 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define CHAR_MAX			127
 #define FTS_FW_STATE_ERROR		0xEF
 #define FTS_FW_DOWNLOAD_MODE         0x02
+#define FTS_FW_DOWNLOAD_MODE_FT8756 0x01
 #define FOCAL_RESET_DELAY_TIME			10
 #define FOCAL_AFTER_WRITE_55_DELAY_TIME 	8
+#define FOCAL_ADC_NUM_OFFSET 6
+#define SET_ON 1
+#define SET_OFF 0
+#define FTS_ESD_HARDWARE_MARK 0xAA
+#define FTS_ESD_NOISE_MARK 0x33
+
+#define FOCAL_DELAY_AFTER_ADC_SCAN 150
+#define FOCAL_DELAY_AFTER_RED_VREF 50
+
+enum data_num {
+	DATA_0 = 0,
+	DATA_1,
+	DATA_2,
+	DATA_3,
+	DATA_4,
+	DATA_5,
+	DATA_6,
+};
 
 enum focal_ic_type {
 	FOCAL_FT8716 = 0,
@@ -124,6 +144,7 @@ enum focal_ic_type {
 	FOCAL_FT8006U,
 	FOCAL_FT5422U,
 	FOCAL_FT3528,
+	FOCAL_FT8756,
 };
 
 enum roi_data_status {
@@ -168,8 +189,7 @@ struct ts_event {
 	int touchs;
 };
 
-struct fts_esdcheck_st
-{
+struct fts_esdcheck_st {
     u8      active              : 1;    /* 1- esd check active, need check esd 0- no esd check */
     u8      suspend             : 1;
     u8      boot_upgrade          : 1;    /* boot upgrade */
@@ -198,6 +218,7 @@ struct focal_platform_data {
 	char vendor_name[FTS_VENDOR_NAME_LEN + 1];
 	struct ts_event touch_data;
 	bool support_get_tp_color;/*for tp color */
+	bool get_tp_color_from_reg; /* get tp color from reg */
 	struct regulator *vddd;
 	struct regulator *vdda;
 	int self_ctrl_power;
@@ -211,6 +232,7 @@ struct focal_platform_data {
 	u32 aft_wxy_enable;
 	u32 roi_pkg_num_addr;
 	int need_distinguish_lcd;
+	int notify_lcd_esd_support;
 	int hide_plain_lcd_log;
 	int fw_only_depend_on_lcd;//0 : fw depend on TP and others ,1 : fw only depend on lcd.
 	char lcd_panel_info[LCD_PANEL_INFO_MAX_LEN];
@@ -218,6 +240,8 @@ struct focal_platform_data {
 	char lcd_hide_module_name[MAX_STR_LEN];
 	int fw_is_running;/* confirm fw is running,default 0 */
 	char fw_name[MAX_STR_LEN];
+	u8 fts_8201_support;
+	u8 fts_control_cs_gpio;
 	u8 lcd_noise_threshold;
 	u8 touch_switch_game_reg;
 	u8 touch_switch_scene_reg;
@@ -226,6 +250,8 @@ struct focal_platform_data {
 	u32 fts_use_pinctrl;
 	u32 use_dma_download_firmware;
 	u32 palm_iron_support;
+	u32 palm_esd_support;
+	u32 capa_test_sequence;
 	struct mutex spilock;
 	unsigned int fw_update_duration_check;
 	/*in the Jordan2 project, the FT3528 IC is a single-layer multi-point scheme,
@@ -240,8 +266,13 @@ enum SPI_COM_MODE {
 	DMA_MODE,
 };
 /* spi interface communication*/
+int fts_bus_init(void);
+void fts_bus_exit(void);
+
 int fts_read(u8 *writebuf, u32 writelen, u8 *readbuf, u32 readlen);
+int fts_read_8756(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen);
 int fts_write(u8 *writebuf, u32 writelen);
+int fts_write_8756(u8 *writebuf, u32 writelen);
 int focal_read(u8 *addr, u16 addr_len, u8 *value, u16 values_size);
 int focal_read_reg(u8 addr, u8 *val);
 int focal_read_default(u8 *values, u16 values_size);
@@ -256,12 +287,14 @@ int focal_hardware_reset_to_rom_update_model(void);
 struct ts_kit_device_data *focal_get_device_data(void);
 struct focal_platform_data *focal_get_platform_data(void);
 
-char *focal_strncat(char *dest, char *src, size_t dest_size);
-char *focal_strncatint(char *dest, int src, char *format, size_t dest_size);
+char *focal_strncat(char *dest, const char *src, size_t dest_size);
+char *focal_strncatint(char *dest, int src, const char *format,
+	size_t dest_size);
 int focal_strtolow(char *src_str, size_t size);
 int focal_esdcheck_set_upgrade_flag(u8 boot_upgrade);
 extern int focal_8201_get_raw_data(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
 extern int focal_get_raw_data(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
+int fts_enter_test_environment(bool test_flag);
 
 #endif
 

@@ -157,8 +157,11 @@ static int ipu_mntn_copy_reg_to_bbox(char *src_addr, unsigned int len)
 		return -ENOMEM ;
 	}
 
-	memcpy(((char*)ipu_mntn_info.rdr_addr + ipu_mntn_info.bbox_addr_offset), src_addr, len);
-	ipu_mntn_info.bbox_addr_offset = temp_offset;
+	if (memcpy_s(((char*)ipu_mntn_info.rdr_addr + ipu_mntn_info.bbox_addr_offset), len, src_addr, len) != EOK) {
+		printk(KERN_ERR"[%s]:IPU_ERROR:memcpy_s is error!\n", __func__);
+		return -ENOMEM;
+	}
+    ipu_mntn_info.bbox_addr_offset = temp_offset;
 
 	return 0;
 
@@ -173,14 +176,18 @@ static void ipu_mntn_write_adapter_info(void)
 {
 	char log_buf[IPU_LINE_MAX + 1] = {0};
 
-	snprintf(log_buf, IPU_LINE_MAX, "npu_status=%d, ttbr0=%lx, inst_set=%d, offchip{set=%x, base=%x}, last_computed_task=%ld.\r\n",
-			 adapter->ipu_power_up,
-			 adapter->smmu_ttbr0,
-			 adapter->boot_inst_set.boot_inst_recorded_is_config,
-			 adapter->boot_inst_set.access_ddr_addr_is_config,
-			 adapter->boot_inst_set.ipu_access_ddr_addr,
-			 adapter->computed_task_cnt);
-
+	int ret = snprintf_s(log_buf, IPU_LINE_MAX + 1, IPU_LINE_MAX, "npu_status=%d, ttbr0=%lx, inst_set=%d,"
+		"offchip{set=%x, base=%x}, last_computed_task=%ld.\r\n",
+		adapter->ipu_power_up,
+		adapter->smmu_ttbr0,
+		adapter->boot_inst_set.boot_inst_recorded_is_config,
+		adapter->boot_inst_set.access_ddr_addr_is_config,
+		adapter->boot_inst_set.ipu_access_ddr_addr,
+		adapter->computed_task_cnt);
+	if (ret < 0) {
+		printk(KERN_ERR"[%s]:IPU_ERROR: snprintf_s is error!\n", __func__);
+		 return;
+	}
 	ipu_mntn_copy_reg_to_bbox(log_buf, strlen(log_buf));
 
 	return;
@@ -195,14 +202,19 @@ static void ipu_mntn_write_peri_reg_info(void)
 {
 	char log_buf[IPU_LINE_MAX + 1] = {0};
 
-	snprintf(log_buf, IPU_LINE_MAX, "peri_stat=%x, ppll_select=%x, power_stat=%x, power_ack=%x, reset_stat=%x, perclken=%x, perstat=%x.\r\n",
-			 ipu_reg_info.peri_reg.peri_stat,
-			 ipu_reg_info.peri_reg.ppll_select,
-			 ipu_reg_info.peri_reg.power_stat,
-			 ipu_reg_info.peri_reg.power_ack,
-			 ipu_reg_info.peri_reg.reset_stat,
-			 ipu_reg_info.peri_reg.perclken0,
-			 ipu_reg_info.peri_reg.perstat0);
+	int ret = snprintf_s(log_buf, IPU_LINE_MAX + 1, IPU_LINE_MAX, "peri_stat=%x, ppll_select=%x, power_stat=%x, "
+		"power_ack=%x, reset_stat=%x, perclken=%x, perstat=%x.\r\n",
+		ipu_reg_info.peri_reg.peri_stat,
+		ipu_reg_info.peri_reg.ppll_select,
+		ipu_reg_info.peri_reg.power_stat,
+		ipu_reg_info.peri_reg.power_ack,
+		ipu_reg_info.peri_reg.reset_stat,
+		ipu_reg_info.peri_reg.perclken0,
+		ipu_reg_info.peri_reg.perstat0);
+	if (ret < 0) {
+		printk(KERN_ERR"[%s]:IPU_ERROR: snprintf_s is error!\n", __func__);
+	return;
+	}
 
 	ipu_mntn_copy_reg_to_bbox(log_buf, strlen(log_buf));
 	return;
@@ -217,14 +229,18 @@ static void ipu_mntn_write_mstr_reg_info(void)
 {
 	char log_buf[IPU_BUF_LEN_MAX + 1] = {0};
 
-	snprintf(log_buf, IPU_BUF_LEN_MAX, "RD_BITMAP=%x, WR_BITMAP=%x, rd_cmd_total_cnt[0-3]={%x, %x, %x}, wr_cmd_total_cnt=%x\n",
-			ipu_reg_info.mstr_reg.rd_bitmap,
-			ipu_reg_info.mstr_reg.wr_bitmap,
-			ipu_reg_info.mstr_reg.rd_cmd_total_cnt0,
-			ipu_reg_info.mstr_reg.rd_cmd_total_cnt0,
-			ipu_reg_info.mstr_reg.rd_cmd_total_cnt2,
-			ipu_reg_info.mstr_reg.wr_cmd_total_cnt);
-
+	int ret = snprintf_s(log_buf, IPU_BUF_LEN_MAX + 1, IPU_BUF_LEN_MAX, "RD_BITMAP=%x, WR_BITMAP=%x,"
+		"rd_cmd_total_cnt[0-3]={%x, %x, %x}, wr_cmd_total_cnt=%x\n",
+		ipu_reg_info.mstr_reg.rd_bitmap,
+		ipu_reg_info.mstr_reg.wr_bitmap,
+		ipu_reg_info.mstr_reg.rd_cmd_total_cnt0,
+		ipu_reg_info.mstr_reg.rd_cmd_total_cnt0,
+		ipu_reg_info.mstr_reg.rd_cmd_total_cnt2,
+		ipu_reg_info.mstr_reg.wr_cmd_total_cnt);
+	if (ret < 0) {
+		printk(KERN_ERR"[%s]:IPU_ERROR: snprintf_s is error!\n", __func__);
+		return;
+	}
 	ipu_mntn_copy_reg_to_bbox(log_buf, strlen(log_buf));
 
 	return;

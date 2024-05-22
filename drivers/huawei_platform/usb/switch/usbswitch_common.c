@@ -3,7 +3,7 @@
  *
  * common interface for usbswitch driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,10 +16,9 @@
  *
  */
 
-#include <linux/errno.h>
-
-#include <huawei_platform/log/hw_log.h>
 #include "usbswitch_common.h"
+#include <linux/errno.h>
+#include <huawei_platform/log/hw_log.h>
 
 #define HWLOG_TAG usbswitch_common
 HWLOG_REGIST();

@@ -152,11 +152,15 @@
 #include <net/busy_poll.h>
 
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
 #endif
 
 #ifdef CONFIG_HW_DPIMARK_MODULE
 #include <hwnet/hw_dpi_mark/dpi_hw_hook.h>
+#endif
+
+#ifdef CONFIG_HUAWEI_TRACK_SOCKET
+#include "net/track_tcp_socket.h"
 #endif
 
 static DEFINE_MUTEX(proto_list_mutex);
@@ -727,8 +731,19 @@ int sock_setsockopt(struct socket *sock, int level, int optname,
 
 	if (optname == SO_XENGINE_SOCKFLAG)
 		return emcom_xengine_setsockflag(sk, optval, optlen);
+
+	if (optname == SO_XENGINE_BINDTODEVICE)
+		return emcom_xengine_setbind2device(sk, optval, optlen);
 #endif
 
+#ifdef CONFIG_HUAWEI_TRACK_SOCKET
+	if (optname == SO_HUAWEI_TRACK_SOCKET) {
+		if (sk->sk_protocol != IPPROTO_TCP)
+			return -ENOTSUPP;
+		else
+			return process_track_socket_cmd(sk, optval, optlen);
+	}
+#endif
 	if (optname == SO_BINDTODEVICE)
 		return sock_setbindtodevice(sk, optval, optlen);
 
@@ -1071,7 +1086,7 @@ set_rcvbuf:
 		break;
 
 	case SO_INCOMING_CPU:
-		sk->sk_incoming_cpu = val;
+		WRITE_ONCE(sk->sk_incoming_cpu, val);
 		break;
 
 	case SO_CNX_ADVICE:
@@ -1383,16 +1398,12 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		break;
 
 	case SO_INCOMING_CPU:
-		v.val = sk->sk_incoming_cpu;
+		v.val = READ_ONCE(sk->sk_incoming_cpu);
 		break;
-
 
 	case SO_MEMINFO:
 	{
 		u32 meminfo[SK_MEMINFO_VARS];
-
-		if (get_user(len, optlen))
-			return -EFAULT;
 
 		sk_get_meminfo(sk, meminfo);
 
@@ -1414,7 +1425,6 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 #endif
 
 #ifdef CONFIG_HUAWEI_XENGINE
-
 	case SO_XENGINE_SOCKFLAG:
 		v.val = sk->hicom_flag;
 		break;
@@ -1611,13 +1621,25 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 #ifdef CONFIG_HW_NETQOS_SCHED
 		sk->sk_netqos_level = -1;
 		sk->sk_netqos_time = 0;
+		sk->sk_netqos_ttime = 0;
+		sk->sk_netqos_tx = 0;
+		sk->sk_netqos_rx = 0;
 #endif
 
 		sock_update_classid(&sk->sk_cgrp_data);
 		sock_update_netprioidx(&sk->sk_cgrp_data);
 
 #ifdef CONFIG_CGROUP_BPF
-		*(sk->sk_process_name) = '\0';
+		sk->sk_process_name[0] = '\0';
+#endif
+
+#ifdef CONFIG_HUAWEI_KSTATE
+		sk->sk_pid = 0;
+#endif
+
+#ifdef CONFIG_HUAWEI_TRACK_SOCKET
+		sk->track_flag = 0;
+		sk->track_index = -1;
 #endif
 	}
 
@@ -1646,8 +1668,6 @@ static void __sk_destruct(struct rcu_head *head)
 		sk_filter_uncharge(sk, filter);
 		RCU_INIT_POINTER(sk->sk_filter, NULL);
 	}
-	if (rcu_access_pointer(sk->sk_reuseport_cb))
-		reuseport_detach_sock(sk);
 
 	sock_disable_timestamp(sk, SK_FLAGS_TIMESTAMP);
 
@@ -1670,7 +1690,14 @@ static void __sk_destruct(struct rcu_head *head)
 
 void sk_destruct(struct sock *sk)
 {
-	if (sock_flag(sk, SOCK_RCU_FREE))
+	bool use_call_rcu = sock_flag(sk, SOCK_RCU_FREE);
+
+	if (rcu_access_pointer(sk->sk_reuseport_cb)) {
+		reuseport_detach_sock(sk);
+		use_call_rcu = true;
+	}
+
+	if (use_call_rcu)
 		call_rcu(&sk->sk_rcu, __sk_destruct);
 	else
 		__sk_destruct(&sk->sk_rcu);
@@ -1774,7 +1801,7 @@ struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 		sock_reset_flag(newsk, SOCK_MPTCP);
 #endif
 		mem_cgroup_sk_alloc(newsk);
-		cgroup_sk_alloc(&newsk->sk_cgrp_data);
+		cgroup_sk_clone(&newsk->sk_cgrp_data);
 
 		rcu_read_lock();
 		filter = rcu_dereference(sk->sk_filter);
@@ -2254,8 +2281,8 @@ static void sk_leave_memory_pressure(struct sock *sk)
 	} else {
 		unsigned long *memory_pressure = sk->sk_prot->memory_pressure;
 
-		if (memory_pressure && *memory_pressure)
-			*memory_pressure = 0;
+		if (memory_pressure && READ_ONCE(*memory_pressure))
+			WRITE_ONCE(*memory_pressure, 0);
 	}
 }
 
@@ -2315,6 +2342,67 @@ bool sk_page_frag_refill(struct sock *sk, struct page_frag *pfrag)
 	return false;
 }
 EXPORT_SYMBOL(sk_page_frag_refill);
+
+int sk_alloc_sg(struct sock *sk, int len, struct scatterlist *sg,
+		int sg_start, int *sg_curr_index, unsigned int *sg_curr_size,
+		int first_coalesce)
+{
+	int sg_curr = *sg_curr_index, use = 0, rc = 0;
+	unsigned int size = *sg_curr_size;
+	struct page_frag *pfrag;
+	struct scatterlist *sge;
+
+	len -= size;
+	pfrag = sk_page_frag(sk);
+
+	while (len > 0) {
+		unsigned int orig_offset;
+
+		if (!sk_page_frag_refill(sk, pfrag)) {
+			rc = -ENOMEM;
+			goto out;
+		}
+
+		use = min_t(int, len, pfrag->size - pfrag->offset);
+
+		if (!sk_wmem_schedule(sk, use)) {
+			rc = -ENOMEM;
+			goto out;
+		}
+
+		sk_mem_charge(sk, use);
+		size += use;
+		orig_offset = pfrag->offset;
+		pfrag->offset += use;
+
+		sge = sg + sg_curr - 1;
+		if (sg_curr > first_coalesce && sg_page(sg) == pfrag->page &&
+		    sg->offset + sg->length == orig_offset) {
+			sg->length += use;
+		} else {
+			sge = sg + sg_curr;
+			sg_unmark_end(sge);
+			sg_set_page(sge, pfrag->page, use, orig_offset);
+			get_page(pfrag->page);
+			sg_curr++;
+
+			if (sg_curr == MAX_SKB_FRAGS)
+				sg_curr = 0;
+
+			if (sg_curr == sg_start) {
+				rc = -ENOSPC;
+				break;
+			}
+		}
+
+		len -= use;
+	}
+out:
+	*sg_curr_size = size;
+	*sg_curr_index = sg_curr;
+	return rc;
+}
+EXPORT_SYMBOL(sk_alloc_sg);
 
 static void __lock_sock(struct sock *sk)
 	__releases(&sk->sk_lock.slock)
@@ -2822,6 +2910,9 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	sk->sk_sndtimeo		=	MAX_SCHEDULE_TIMEOUT;
 
 	sk->sk_stamp = SK_DEFAULT_STAMP;
+#if BITS_PER_LONG==32
+	seqlock_init(&sk->sk_stamp_seq);
+#endif
 	atomic_set(&sk->sk_zckey, 0);
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
@@ -2840,6 +2931,7 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 
 #ifdef CONFIG_HUAWEI_XENGINE
 	sk->hicom_flag = 0;
+	sk->is_mp_flow_bind = 0;
 #endif
 
 #ifdef CONFIG_HW_CHR_TCP_SMALL_WIN_MONITOR
@@ -3484,7 +3576,7 @@ bool sk_busy_loop_end(void *p, unsigned long start_time)
 {
 	struct sock *sk = p;
 
-	return !skb_queue_empty(&sk->sk_receive_queue) ||
+	return !skb_queue_empty_lockless(&sk->sk_receive_queue) ||
 	       sk_busy_loop_timeout(sk, start_time);
 }
 EXPORT_SYMBOL(sk_busy_loop_end);

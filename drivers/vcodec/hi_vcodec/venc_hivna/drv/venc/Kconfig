@@ -1,4 +1,4 @@
-menu "Hisilicon video venc support"
+menu "video venc support"
 config HI_VCODEC_VENC_HIVNA
       #depends on ANDROID_PMEM
       tristate "Support for venc"

@@ -17,14 +17,16 @@
  *
  */
 
-#define pr_fmt(fmt) "ufshcd :" fmt
-
+#include "ufs_debugfs.h"
 #include <linux/random.h>
 #include <linux/version.h>
-#include "ufs_debugfs.h"
 #include "unipro.h"
 #include "ufshcd.h"
+#include "ufs-hpb.h"
 #include "ufshci.h"
+#ifdef CONFIG_HISI_UFS_HC
+#include "ufs-hisi.h"
+#endif
 
 enum field_width {
 	BYTE = 1,
@@ -48,11 +50,16 @@ static int ufshcd_tag_req_type(struct request *rq)
 		rq_type = TS_NOT_SUPPORTED;
 	else if (rq->cmd_flags & REQ_PREFLUSH)
 		rq_type = TS_FLUSH;
+#ifdef CONFIG_MAS_BLK
 	else if (rq_data_dir(rq) == READ)
 		rq_type = (rq->cmd_flags & REQ_URGENT) ?
 			TS_URGENT_READ : TS_READ;
 	else if (rq->cmd_flags & REQ_URGENT)
 		rq_type = TS_URGENT_WRITE;
+#else
+	else if (rq_data_dir(rq) == READ)
+		rq_type = TS_READ;
+#endif
 
 	return rq_type;
 }
@@ -69,10 +76,8 @@ void ufshcd_update_tag_stats(struct ufs_hba *hba, int tag)
 		hba->lrb[tag].cmd ? hba->lrb[tag].cmd->request : NULL;
 	u64 **tag_stats = hba->ufs_stats.tag_stats;
 	int rq_type;
-
 	if (!hba->ufs_stats.enabled)
 		return;
-
 	tag_stats[tag][TS_TAG]++;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	if (!rq || blk_rq_is_passthrough(rq))
@@ -81,9 +86,9 @@ void ufshcd_update_tag_stats(struct ufs_hba *hba, int tag)
 #endif
 		return;
 
-	WARN_ON(hba->ufs_stats.q_depth > hba->nutrs); /*lint !e146 !e665*/
+	WARN_ON(hba->ufs_stats.q_depth > hba->nutrs); /* lint !e146 !e665 */
 	rq_type = ufshcd_tag_req_type(rq);
-	if (!(rq_type < 0 || rq_type > TS_NUM_STATS))
+	if (!((rq_type < 0) || (rq_type > TS_NUM_STATS)))
 		tag_stats[hba->ufs_stats.q_depth++][rq_type]++;
 }
 
@@ -95,7 +100,7 @@ void ufshcd_update_tag_stats_completion(
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	if (rq && !blk_rq_is_passthrough(rq))
 #else
-	if (rq && rq->cmd_type & REQ_TYPE_FS)
+	if (rq && (rq->cmd_type & REQ_TYPE_FS))
 #endif
 		hba->ufs_stats.q_depth--;
 }
@@ -105,33 +110,30 @@ void update_req_stats(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 	int rq_type;
 	struct request *rq = lrbp->cmd ? lrbp->cmd->request : NULL;
 	s64 delta = lrbp->complete_time_stamp - lrbp->issue_time_stamp;
-
 	/* update general request statistics */
 	if (hba->ufs_stats.req_stats[TS_TAG].count == 0)
 		hba->ufs_stats.req_stats[TS_TAG].min = delta;
 	hba->ufs_stats.req_stats[TS_TAG].count++;
 	hba->ufs_stats.req_stats[TS_TAG].sum += delta;
-	if (delta > hba->ufs_stats.req_stats[TS_TAG].max) /*lint !e574*/
+	if (delta > hba->ufs_stats.req_stats[TS_TAG].max) /* lint !e574 */
 		hba->ufs_stats.req_stats[TS_TAG].max = delta;
-	if (delta < hba->ufs_stats.req_stats[TS_TAG].min) /*lint !e574*/
+	if (delta < hba->ufs_stats.req_stats[TS_TAG].min) /* lint !e574 */
 			hba->ufs_stats.req_stats[TS_TAG].min = delta;
-
 	rq_type = ufshcd_tag_req_type(rq);
 	if (rq_type == TS_NOT_SUPPORTED)
 		return;
-
 	/* update request type specific statistics */
 	if (hba->ufs_stats.req_stats[rq_type].count == 0)
 		hba->ufs_stats.req_stats[rq_type].min = delta;
 	hba->ufs_stats.req_stats[rq_type].count++;
 	hba->ufs_stats.req_stats[rq_type].sum += delta;
-	if (delta > hba->ufs_stats.req_stats[rq_type].max) /*lint !e574*/
+	if (delta > hba->ufs_stats.req_stats[rq_type].max) /* lint !e574 */
 		hba->ufs_stats.req_stats[rq_type].max = delta;
-	if (delta < hba->ufs_stats.req_stats[rq_type].min) /*lint !e574*/
+	if (delta < hba->ufs_stats.req_stats[rq_type].min) /* lint !e574 */
 			hba->ufs_stats.req_stats[rq_type].min = delta;
 }
 
-#define UFS_ERR_STATS_PRINT(file, error_index, string, error_seen)	\
+#define ufs_err_stats_print(file, error_index, string, error_seen)	\
 	do {								\
 		if (err_stats[error_index]) {				\
 			seq_printf(file, string,			\
@@ -139,59 +141,56 @@ void update_req_stats(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			error_seen = true;				\
 		}							\
 	} while (0)
-
-#define DOORBELL_CLR_TOUT_US	(1000 * 1000)	/* 1 sec */
-
+#define TIME_TRANS   1000
+#define DOORBELL_CLR_TOUT_US	(TIME_TRANS * TIME_TRANS)	/* 1 sec */
 #define BUFF_LINE_SIZE 16	/* Must be a multiplication of sizeof(u32) */
 #define TAB_CHARS 8
 
 static int ufsdbg_tag_stats_show(struct seq_file *file, void *data)
 {
-	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-	struct ufs_stats *ufs_stats;
+	struct ufs_hba *hba = NULL;
+	struct ufs_stats *ufs_stats = NULL;
 	int i, j;
 	int max_depth;
 	bool is_tag_empty = true;
 	unsigned long flags;
 	char *sep = " | * | ";
 
+	if (file == NULL)
+		return -EINVAL;
+
+	hba = (struct ufs_hba *)file->private;
 	if (!hba)
 		goto exit;
-
 	ufs_stats = &hba->ufs_stats;
-
 	if (!ufs_stats->enabled) {
 		pr_debug("%s: ufs statistics are disabled\n", __func__);
 		seq_puts(file, "ufs statistics are disabled\n");
 		goto exit;
 	}
-
 	max_depth = hba->nutrs;
-
 	spin_lock_irqsave(hba->host->host_lock, flags);
 	/* Header */
 	seq_printf(file,
-		   " Tag Stat\t\t%s Number of pending reqs upon issue (Q fullness)\n",
-		   sep);
-	for (i = 0; i < TAB_CHARS * (TS_NUM_STATS + 4); i++) {
+	" Tag Stat\t\t%s Number of pending reqs upon issue (Q fullness)\n",
+	sep);
+	for (i = 0; i < TAB_CHARS * (TS_NUM_STATS + 0x4); i++) {
 		seq_puts(file, "-");
-		if (i == (TAB_CHARS * 3 - 1))
+		if (i == (TAB_CHARS * 0x3 - 0x1))
 			seq_puts(file, sep);
 	}
 	seq_printf(file,
-		   "\n #\tnum uses\t%s\t #\tAll\tRead\tWrite\tUrg.R\tUrg.W\tFlush\n",
-		   sep);
-
+	"\n #\tnum uses\t%s\t #\tAll\tRead\tWrite\tUrg.R\tUrg.W\tFlush\n",
+	sep);
 	/* values */
 	for (i = 0; i < max_depth; i++) {
 		if (ufs_stats->tag_stats[i][TS_TAG] <= 0 &&
-		    ufs_stats->tag_stats[i][TS_READ] <= 0 &&
-		    ufs_stats->tag_stats[i][TS_WRITE] <= 0 &&
-		    ufs_stats->tag_stats[i][TS_URGENT_READ] <= 0 &&
-		    ufs_stats->tag_stats[i][TS_URGENT_WRITE] <= 0 &&
-		    ufs_stats->tag_stats[i][TS_FLUSH] <= 0)
+		ufs_stats->tag_stats[i][TS_READ] <= 0 &&
+		ufs_stats->tag_stats[i][TS_WRITE] <= 0 &&
+		ufs_stats->tag_stats[i][TS_URGENT_READ] <= 0 &&
+		ufs_stats->tag_stats[i][TS_URGENT_WRITE] <= 0 &&
+		ufs_stats->tag_stats[i][TS_FLUSH] <= 0)
 			continue;
-
 		is_tag_empty = false;
 		seq_printf(file, " %d\t ", i);
 		for (j = 0; j < TS_NUM_STATS; j++) {
@@ -199,16 +198,15 @@ static int ufsdbg_tag_stats_show(struct seq_file *file, void *data)
 			if (j != 0)
 				continue;
 			seq_printf(file, "\t%s\t %d\t%llu\t", sep, i,
-				   ufs_stats->tag_stats[i][TS_READ] +
-				   ufs_stats->tag_stats[i][TS_WRITE] +
-				   ufs_stats->tag_stats[i][TS_URGENT_READ] +
-				   ufs_stats->tag_stats[i][TS_URGENT_WRITE] +
-				   ufs_stats->tag_stats[i][TS_FLUSH]);
+				ufs_stats->tag_stats[i][TS_READ] +
+				ufs_stats->tag_stats[i][TS_WRITE] +
+				ufs_stats->tag_stats[i][TS_URGENT_READ] +
+				ufs_stats->tag_stats[i][TS_URGENT_WRITE] +
+				ufs_stats->tag_stats[i][TS_FLUSH]);
 		}
 		seq_puts(file, "\n");
 	}
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
-
 	if (is_tag_empty)
 		pr_debug("%s: All tags statistics are empty", __func__);
 
@@ -222,24 +220,19 @@ static int ufsdbg_tag_stats_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t ufsdbg_tag_stats_write(struct file *filp,
-				      const char __user *ubuf, size_t cnt,
-				      loff_t *ppos)
+	const char __user *ubuf, size_t cnt, loff_t *ppos)
 {
 	struct ufs_hba *hba = filp->f_mapping->host->i_private;
-	struct ufs_stats *ufs_stats;
+	struct ufs_stats *ufs_stats = &hba->ufs_stats;
 	int val = 0;
-	int ret, bit = 0;
+	int ret, bit;
 	unsigned long flags;
-
 	ret = kstrtoint_from_user(ubuf, cnt, 0, &val);
 	if (ret) {
 		dev_err(hba->dev, "%s: Invalid argument\n", __func__);
 		return ret;
 	}
-
-	ufs_stats = &hba->ufs_stats;
 	spin_lock_irqsave(hba->host->host_lock, flags);
-
 	if (!val) {
 		ufs_stats->enabled = false;
 		pr_debug("%s: Disabling UFS tag statistics", __func__);
@@ -247,17 +240,16 @@ static ssize_t ufsdbg_tag_stats_write(struct file *filp,
 		ufs_stats->enabled = true;
 		pr_debug("%s: Enabling & Resetting UFS tag statistics",
 			 __func__);
-		memset(hba->ufs_stats.tag_stats[0], 0, /* unsafe_function_ignore: memset */
+		memset(hba->ufs_stats.tag_stats[0], 0,
 		       sizeof(**hba->ufs_stats.tag_stats) *
 		       TS_NUM_STATS * hba->nutrs);
 
 		/* initialize current queue depth */
 		ufs_stats->q_depth = 0;
 		for_each_set_bit_from(bit, &hba->outstanding_reqs, hba->nutrs)
-		    ufs_stats->q_depth++;
+			ufs_stats->q_depth++;
 		pr_debug("%s: Enabled UFS tag statistics", __func__);
 	}
-
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 	return cnt;
 }
@@ -271,72 +263,52 @@ static const struct file_operations ufsdbg_tag_stats_fops = {
 static int ufsdbg_err_stats_show(struct seq_file *file, void *data)
 {
 	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-	int *err_stats;
+	int *err_stats = NULL;
 	unsigned long flags;
 	bool error_seen = false;
-
 	if (!hba)
 		goto exit;
-
 	err_stats = hba->ufs_stats.err_stats;
-
 	spin_lock_irqsave(hba->host->host_lock, flags);
-
 	seq_puts(file, "\n==UFS errors that caused controller reset==\n");
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_HIBERN8_EXIT,
-			    "controller reset due to hibern8 exit error:\t %d\n",
-			    error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_VOPS_SUSPEND,
-			    "controller reset due to vops suspend error:\t\t %d\n",
-			    error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_EH,
-			    "controller reset due to error handling:\t\t %d\n",
-			    error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_CLEAR_PEND_XFER_TM,
-			    "controller reset due to clear xfer/tm regs:\t\t %d\n",
-			    error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_INT_FATAL_ERRORS,
-			    "controller reset due to fatal interrupt:\t %d\n",
-			    error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_INT_UIC_ERROR,
-			    "controller reset due to uic interrupt error:\t %d\n",
-			    error_seen);
-
+	ufs_err_stats_print(file, UFS_ERR_HIBERN8_EXIT,
+		"controller reset due to hibern8 exit error:\t %d\n",
+		error_seen);
+	ufs_err_stats_print(file, UFS_ERR_VOPS_SUSPEND,
+		"controller reset due to vops suspend error:\t\t %d\n",
+		error_seen);
+	ufs_err_stats_print(file, UFS_ERR_EH,
+		"controller reset due to error handling:\t\t %d\n",
+		error_seen);
+	ufs_err_stats_print(file, UFS_ERR_CLEAR_PEND_XFER_TM,
+		"controller reset due to clear xfer/tm regs:\t\t %d\n",
+		error_seen);
+	ufs_err_stats_print(file, UFS_ERR_INT_FATAL_ERRORS,
+		"controller reset due to fatal interrupt:\t %d\n",
+		error_seen);
+	ufs_err_stats_print(file, UFS_ERR_INT_UIC_ERROR,
+		"controller reset due to uic interrupt error:\t %d\n",
+		error_seen);
 	if (error_seen)
 		error_seen = false;
 	else
 		seq_puts(file,
-			 "so far, no errors that caused controller reset\n\n");
-
+		"so far, no errors that caused controller reset\n\n");
 	seq_puts(file, "\n\n==UFS other errors==\n");
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_HIBERN8_ENTER,
-			    "hibern8 enter:\t\t %d\n", error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_RESUME,
-			    "resume error:\t\t %d\n", error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_SUSPEND,
-			    "suspend error:\t\t %d\n", error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_LINKSTARTUP,
-			    "linkstartup error:\t\t %d\n", error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_POWER_MODE_CHANGE,
-			    "power change error:\t %d\n", error_seen);
-
-	UFS_ERR_STATS_PRINT(file, UFS_ERR_TASK_ABORT,
-			    "abort callback:\t\t %d\n\n", error_seen);
-
+	ufs_err_stats_print(file, UFS_ERR_HIBERN8_ENTER,
+		"hibern8 enter:\t\t %d\n", error_seen);
+	ufs_err_stats_print(file, UFS_ERR_RESUME,
+		"resume error:\t\t %d\n", error_seen);
+	ufs_err_stats_print(file, UFS_ERR_SUSPEND,
+		"suspend error:\t\t %d\n", error_seen);
+	ufs_err_stats_print(file, UFS_ERR_LINKSTARTUP,
+		"linkstartup error:\t\t %d\n", error_seen);
+	ufs_err_stats_print(file, UFS_ERR_POWER_MODE_CHANGE,
+		"power change error:\t %d\n", error_seen);
+	ufs_err_stats_print(file, UFS_ERR_TASK_ABORT,
+		"abort callback:\t\t %d\n\n", error_seen);
 	if (!error_seen)
 		seq_puts(file, "so far, no other UFS related errors\n\n");
-
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 exit:
 	return 0;
@@ -348,19 +320,15 @@ static int ufsdbg_err_stats_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t ufsdbg_err_stats_write(struct file *filp,
-				      const char __user *ubuf, size_t cnt,
-				      loff_t *ppos)
+	const char __user *ubuf, size_t cnt, loff_t *ppos)
 {
 	struct ufs_hba *hba = filp->f_mapping->host->i_private;
-	struct ufs_stats *ufs_stats;
+	struct ufs_stats *ufs_stats = NULL;
 	unsigned long flags;
-
 	ufs_stats = &hba->ufs_stats;
 	spin_lock_irqsave(hba->host->host_lock, flags);
-
 	pr_debug("%s: Resetting UFS error statistics", __func__);
-	memset(ufs_stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats)); /* unsafe_function_ignore: memset */
-
+	memset(ufs_stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats));
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 	return cnt;
 }
@@ -376,25 +344,24 @@ static int ufshcd_init_statistics(struct ufs_hba *hba)
 	struct ufs_stats *stats = &hba->ufs_stats;
 	int ret = 0;
 	int i;
-
 	stats->enabled = false;
 	stats->tag_stats = kzalloc(sizeof(*stats->tag_stats) * hba->nutrs,
-				   GFP_KERNEL);
-	if (!hba->ufs_stats.tag_stats)
+				GFP_KERNEL);
+	if (!stats->tag_stats)
 		goto no_mem;
-
 	stats->tag_stats[0] = kzalloc(sizeof(**stats->tag_stats) *
-				      TS_NUM_STATS * hba->nutrs, GFP_KERNEL);
+				TS_NUM_STATS * hba->nutrs, GFP_KERNEL);
 	if (!stats->tag_stats[0])
-		goto no_mem;
-
+		goto free_tag_stats;
+	/*lint !e679*/
 	for (i = 1; i < hba->nutrs; i++)
-		stats->tag_stats[i] = &stats->tag_stats[0][i * TS_NUM_STATS];/*lint !e679*/
+		stats->tag_stats[i] = &stats->tag_stats[0][i * TS_NUM_STATS];
 
-	memset(stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats)); /* unsafe_function_ignore: memset */
-
+	memset(stats->err_stats, 0, sizeof(hba->ufs_stats.err_stats));
 	goto exit;
 
+free_tag_stats:
+	kfree(stats->tag_stats);
 no_mem:
 	dev_err(hba->dev, "%s: Unable to allocate UFS tag_stats", __func__);
 	ret = -ENOMEM;
@@ -403,25 +370,25 @@ exit:
 }
 
 static void ufsdbg_pr_buf_to_std(struct ufs_hba *hba, int offset, int num_regs,
-			  const char *str, void *priv)
+	const char *str, void *priv)
 {
 	int i;
-	char linebuf[38];
+	char linebuf[LINE_BUFF_LEN];
 	int size = num_regs * sizeof(u32);
 	int lines = size / BUFF_LINE_SIZE + (size % BUFF_LINE_SIZE ? 1 : 0);
 	struct seq_file *file = priv;
-
 	if (!hba || !file) {
 		pr_err("%s called with NULL pointer\n", __func__);
 		return;
 	}
 
 	for (i = 0; i < lines; i++) {
-		hex_dump_to_buffer(hba->mmio_base + offset + i * BUFF_LINE_SIZE, /*lint !e679*/
-				   min(BUFF_LINE_SIZE, size), BUFF_LINE_SIZE, 4,
-				   linebuf, sizeof(linebuf), false);
+		/* lint !e679 */
+		hex_dump_to_buffer(hba->mmio_base + offset + i * BUFF_LINE_SIZE,
+			min(BUFF_LINE_SIZE, size), BUFF_LINE_SIZE, 0x4,
+			linebuf, sizeof(linebuf), false);
 		seq_printf(file, "%s [%x]: %s\n", str, i * BUFF_LINE_SIZE,
-			   linebuf);
+			linebuf);
 		size -= BUFF_LINE_SIZE / sizeof(u32);
 	}
 }
@@ -429,14 +396,14 @@ static void ufsdbg_pr_buf_to_std(struct ufs_hba *hba, int offset, int num_regs,
 static int ufsdbg_host_regs_show(struct seq_file *file, void *data)
 {
 	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-
 	pm_runtime_get_sync(hba->dev);
+	/* 4 and 14 is kernel version. kernel 4-14 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	ufsdbg_pr_buf_to_std(hba, 0, UFSHCI_REG_SPACE_SIZE / sizeof(u32),
-			     "host regs", file);
+		"host regs", file);
 #else
 	ufsdbg_pr_buf_to_std(hba, 0, REG_SPACE_SIZE / sizeof(u32),
-			     "host regs", file);
+		"host regs", file);
 #endif
 	pm_runtime_put_sync(hba->dev);
 	return 0;
@@ -454,11 +421,10 @@ static const struct file_operations ufsdbg_host_regs_fops = {
 
 static int ufsdbg_dump_device_desc_show(struct seq_file *file, void *data)
 {
-	int err = 0;
+	int err;
 	int buff_len = QUERY_DESC_DEVICE_MAX_SIZE;
 	u8 desc_buf[QUERY_DESC_DEVICE_MAX_SIZE];
 	struct ufs_hba *hba = (struct ufs_hba *)file->private;
-
 	struct desc_field_offset device_desc_field_name[] = {
 		{"bLength", 0x00, BYTE},
 		{"bDescriptorType", 0x01, BYTE},
@@ -488,66 +454,104 @@ static int ufsdbg_dump_device_desc_show(struct seq_file *file, void *data)
 		{"bDeviceRTTCap", 0x1C, BYTE},
 		{"wPeriodicRTCUpdate", 0x1D, WORD}
 	};
-
 	pm_runtime_get_sync(hba->dev);
 	err = ufshcd_read_device_desc(hba, desc_buf, buff_len);
 	pm_runtime_put_sync(hba->dev);
-
 	if (!err) {
 		unsigned int i;
-		struct desc_field_offset *tmp;
+		struct desc_field_offset *tmp = NULL;
 		for (i = 0; i < ARRAY_SIZE(device_desc_field_name); ++i) {
 			tmp = &device_desc_field_name[i];
-
 			if (tmp->width_byte == BYTE) {
 				seq_printf(file,
-					   "Device Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
-					   tmp->offset,
-					   tmp->name,
-					   (u8) desc_buf[tmp->offset]);
+				"Device Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+				tmp->offset, tmp->name,
+				(u8) desc_buf[tmp->offset]);
 			} else if (tmp->width_byte == WORD) {
 				seq_printf(file,
-					   "Device Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
-					   tmp->offset,
-					   tmp->name,
-					   *(u16 *)&desc_buf[tmp->offset]);
+				"Device Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+				tmp->offset, tmp->name,
+				*(u16 *)&desc_buf[tmp->offset]);
 			} else {
 				seq_printf(file,
-					   "Device Descriptor[offset 0x%x]: %s. Wrong Width = %d",
-					   tmp->offset, tmp->name,
-					   tmp->width_byte);
+				"Device Descriptor[offset 0x%x]: %s. Wrong Width = %d",
+				tmp->offset, tmp->name, tmp->width_byte);
 			}
 		}
 	} else {
 		seq_printf(file, "Reading Device Descriptor failed. err = %d\n",
 			   err);
 	}
-
 	return err;
+}
+
+static void ufshpb_dbg_show(struct seq_file *file, void *data)
+{
+	struct ufs_hba *hba = (struct ufs_hba *)file->private;
+
+	if (hba->ufs_hpb) {
+		seq_printf(file, "hba->ufs_hpb->ufs_hpb_support = 0x%x\n",
+			   hba->ufs_hpb->ufs_hpb_support);
+		seq_printf(file, "hba->ufs_hpb->ufshpb_state = 0x%x\n",
+			   hba->ufs_hpb->ufshpb_state);
+		seq_printf(file, "hba->ufs_hpb->hpb_version = 0x%x\n",
+			   hba->ufs_hpb->hpb_version);
+		seq_printf(file, "hba->ufs_hpb->hpb_control_mode = 0x%x\n",
+			   hba->ufs_hpb->hpb_control_mode);
+		seq_printf(file, "hba->ufshpb_4k_total = 0x%llx\n",
+			   hba->ufshpb_4k_total);
+		seq_printf(file, "hba->ufshpb_hit_count = 0x%llx\n",
+			   hba->ufshpb_hit_count);
+		seq_printf(file, "hba->ufshpb_read_buffer_count = 0x%llx\n",
+			   hba->ufshpb_read_buffer_count);
+		seq_printf(file, "hba->ufshpb_read_buffer_fail_count = 0x%llx\n",
+			   hba->ufshpb_read_buffer_fail_count);
+		seq_printf(file, "hba->ufshpb_check_rsp_err = 0x%llx\n",
+			   hba->ufshpb_check_rsp_err);
+		seq_printf(file, "hba->ufshpb_scsi_timeout = 0x%llx\n",
+			   hba->ufshpb_scsi_timeout);
+		seq_printf(file, "hba->ufshpb_reset_count = 0x%llx\n",
+			   hba->ufshpb_reset_count);
+		seq_printf(file, "hba->ufshpb_inactive_count = 0x%llx\n",
+			   hba->ufshpb_inactive_count);
+		seq_printf(file, "hba->ufs_hpb->hpb_lu_max_active_regions = 0x%llx\n",
+			   hba->ufs_hpb->hpb_lu_max_active_regions[HPB_UNIT]);
+		seq_printf(file, "hba->ufs_hpb->memsize = 0x%llx\n",
+			   HPB_ALLOC_MEM_COUNT * HPB_MEMSIZE_PER_LOOP);
+		seq_printf(file, "hba->ufs_hpb->manufacture id = 0x%llx\n",
+			   hba->manufacturer_id);
+		seq_printf(file, "hba->ufshpb_add_node_count = 0x%llx\n",
+			   hba->ufshpb_add_node_count);
+		seq_printf(file, "hba->ufshpb_delete_node_count = 0x%llx\n",
+			   hba->ufshpb_delete_node_count);
+	}
 }
 
 static int ufsdbg_show_hba_show(struct seq_file *file, void *data)
 {
 	struct ufs_hba *hba = (struct ufs_hba *)file->private;
 
+	ufshpb_dbg_show(file, data);
+	seq_printf(file, "hba->error_handle_count = 0x%u\n", hba->error_handle_count);
+	seq_printf(file, "hba->quirks = 0x%x\n", hba->quirks);
 	seq_printf(file, "hba->outstanding_tasks = 0x%x\n",
-		   (u32) hba->outstanding_tasks);
-	seq_printf(file, "hba->outstanding_reqs = 0x%x\n",
-		   (u32) hba->outstanding_reqs);
-
+		(u32) hba->outstanding_tasks);
+	seq_printf(file, "hba->outstanding_reqs = 0x%lx\n",
+		   hba->outstanding_reqs);
 	seq_printf(file, "hba->capabilities = 0x%x\n", hba->capabilities);
+	seq_printf(file, "hba->caps = 0x%x\n", hba->caps);
 	seq_printf(file, "hba->nutrs = %d\n", hba->nutrs);
 	seq_printf(file, "hba->nutmrs = %d\n", hba->nutmrs);
 	seq_printf(file, "hba->ufs_version = 0x%x\n", hba->ufs_version);
+	seq_printf(file, "hba->ufs_device_spec_version = 0x%x\n",
+		   hba->ufs_device_spec_version);
 	seq_printf(file, "hba->irq = 0x%x\n", hba->irq);
 	seq_printf(file, "hba->auto_bkops_enabled = %d\n",
-		   hba->auto_bkops_enabled);
-
+		hba->auto_bkops_enabled);
 	seq_printf(file, "hba->ufshcd_state = 0x%x\n", hba->ufshcd_state);
 	seq_printf(file, "hba->eh_flags = 0x%x\n", hba->eh_flags);
 	seq_printf(file, "hba->intr_mask = 0x%x\n", hba->intr_mask);
 	seq_printf(file, "hba->ee_ctrl_mask = 0x%x\n", hba->ee_ctrl_mask);
-
 	/* HBA Errors */
 	seq_printf(file, "hba->errors = 0x%x\n", hba->errors);
 	seq_printf(file, "hba->uic_error = 0x%x\n", hba->uic_error);
@@ -556,6 +560,8 @@ static int ufsdbg_show_hba_show(struct seq_file *file, void *data)
 
 	hba->vops->dbg_hci_dump(hba);
 	hba->vops->dbg_uic_dump(hba);
+	if (hba->vops && hba->vops->dbg_hufs_dme_dump)
+		hba->vops->dbg_hufs_dme_dump(hba);
 
 	return 0;
 }
@@ -623,8 +629,8 @@ static bool ufsdbg_power_mode_validate(struct ufs_pa_layer_attr *pwr_mode)
 {
 	if (pwr_mode->gear_rx < UFS_PWM_G1 || pwr_mode->gear_rx > UFS_PWM_G7 ||
 	    pwr_mode->gear_tx < UFS_PWM_G1 || pwr_mode->gear_tx > UFS_PWM_G7 ||
-	    pwr_mode->lane_rx < 1 || pwr_mode->lane_rx > 2 ||
-	    pwr_mode->lane_tx < 1 || pwr_mode->lane_tx > 2 ||
+	    pwr_mode->lane_rx < 1 || pwr_mode->lane_rx > UFS_LANE_MAX ||
+	    pwr_mode->lane_tx < 1 || pwr_mode->lane_tx > UFS_LANE_MAX ||
 	    (pwr_mode->pwr_rx != FAST_MODE && pwr_mode->pwr_rx != SLOW_MODE &&
 	     pwr_mode->pwr_rx != FASTAUTO_MODE &&
 	     pwr_mode->pwr_rx != SLOWAUTO_MODE) ||
@@ -645,8 +651,8 @@ static int ufsdbg_cfg_pwr_param(struct ufs_hba *hba,
 	int ret = 0;
 	bool is_dev_sup_hs = false;
 	bool is_new_pwr_hs = false;
-	int dev_pwm_max_rx_gear;
-	int dev_pwm_max_tx_gear;
+	int dev_pwm_max_rx_gear = 0;
+	int dev_pwm_max_tx_gear = 0;
 
 	if (!hba->max_pwr_info.is_valid) {
 		dev_err(hba->dev,
@@ -735,15 +741,21 @@ out:
 }
 
 static int ufsdbg_config_pwr_mode(struct ufs_hba *hba,
-				  struct ufs_pa_layer_attr *desired_pwr_mode)
+	struct ufs_pa_layer_attr *desired_pwr_mode)
 {
 	int ret;
 
 	pm_runtime_get_sync(hba->dev);
 	scsi_block_requests(hba->host);
 	ret = ufshcd_wait_for_doorbell_clr(hba, DOORBELL_CLR_TOUT_US);
-	if (!ret)
+	if (!ret) {
+#ifdef CONFIG_HISI_UFS_HC
+		if (ufshcd_is_hufs_hc(hba))
+			ufs_pwr_change_pre_change(hba,
+							     desired_pwr_mode);
+#endif
 		ret = ufshcd_change_power_mode(hba, desired_pwr_mode);
+	}
 	scsi_unblock_requests(hba->host);
 	pm_runtime_put_sync(hba->dev);
 
@@ -824,7 +836,8 @@ static int ufsdbg_dme_read(void *data, u64 *attr_val, bool peer)
 {
 	int ret;
 	struct ufs_hba *hba = data;
-	u32 attr_id, read_val = 0;
+	u32 attr_id = 0;
+	u32 read_val = 0;
 	int (*read_func) (struct ufs_hba *, u32, u32 *);
 
 	if (!hba)
@@ -937,13 +950,13 @@ static int ufsdbg_req_stats_show(struct seq_file *file, void *data)
 	for (i = 0; i < TS_NUM_STATS; i++)
 		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].max);
 	seq_printf(file, "\n%s:\t", "Avg.");
-	for (i = 0; i < TS_NUM_STATS; i++){
-		if (0 == hba->ufs_stats.req_stats[i].count)
+	for (i = 0; i < TS_NUM_STATS; i++) {
+		if (hba->ufs_stats.req_stats[i].count == 0)
 			continue;
 		seq_printf(file, "%-10llu ",
 			   div64_u64(hba->ufs_stats.req_stats[i].sum,
 				     hba->ufs_stats.req_stats[i].count));
-		}
+	}
 	seq_puts(file, "\n");
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
@@ -1020,7 +1033,7 @@ static int ufsdbg_idle_timeout_val_show(struct seq_file *file, void *data)
 		goto exit;
 
 	spin_lock_irqsave(hba->host->host_lock, flags);
-	seq_printf(file, "%dms\n", hba->idle_timeout_val / 1000);
+	seq_printf(file, "%dms\n", hba->idle_timeout_val / TIME_TRANS);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
 exit:
@@ -1037,6 +1050,7 @@ static ssize_t ufsdbg_idle_timeout_val_write(struct file *filp,
 				      const char __user *ubuf, size_t cnt,
 				      loff_t *ppos)
 {
+#ifdef CONFIG_MAS_BLK
 	struct ufs_hba *hba = filp->f_mapping->host->i_private;
 	int val;
 	int ret;
@@ -1048,15 +1062,18 @@ static ssize_t ufsdbg_idle_timeout_val_write(struct file *filp,
 		return ret;
 	}
 
-	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / 1000)) {
+	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / TIME_TRANS)) {
 		dev_err(hba->dev, "%s: Invalid argument: %d\n", __func__, val);
 		return cnt;
 	}
 
-	hba->idle_timeout_val = val * 1000;
+	hba->idle_timeout_val = val * TIME_TRANS;
 	ufs_idle_intr_toggle(hba, atomic_read(&lld->hw_idle_en));
 
 	return cnt;
+#else
+	return 0;
+#endif
 }
 
 static const struct file_operations ufsdbg_idle_timeout_val_desc = {
@@ -1072,7 +1089,7 @@ static int ufsdbg_idle_intr_check_timer_threshold_show(struct seq_file *file, vo
 	if (!hba)
 		goto exit;
 
-	seq_printf(file, "%ds\n", hba->idle_intr_check_timer_threshold / 1000);
+	seq_printf(file, "%ds\n", hba->idle_intr_check_timer_threshold / TIME_TRANS);
 
 exit:
 	return 0;
@@ -1097,12 +1114,12 @@ static ssize_t ufsdbg_idle_intr_check_timer_threshold_write(struct file *filp,
 		return ret;
 	}
 
-	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / 1000)) {
+	if (val <= 0 || val > (UFSHCD_IDLE_INTR_CHECK_INTERVAL / TIME_TRANS)) {
 		dev_err(hba->dev, "%s: Invalid argument: %d\n", __func__, val);
 		return cnt;
 	}
 
-	hba->idle_intr_check_timer_threshold = val * 1000;
+	hba->idle_intr_check_timer_threshold = val * TIME_TRANS;
 
 	return cnt;
 }
@@ -1305,5 +1322,4 @@ void ufsdbg_remove_debugfs(struct ufs_hba *hba)
 		hba->vops->remove_debugfs(hba);
 	debugfs_remove_recursive(hba->debugfs_files.debugfs_root);
 	kfree(hba->ufs_stats.tag_stats);
-
 }

@@ -116,6 +116,9 @@ enum pageflags {
 #if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
 	PG_protect,
 #endif
+#ifdef CONFIG_HISI_CMA_DEBUG
+	PG_cmapin,
+#endif
 #ifdef CONFIG_HISI_LB
 	PG_lb,
 #endif
@@ -127,9 +130,21 @@ enum pageflags {
 	PG_zspage,
 	PG_drv,
 #endif
+#ifdef CONFIG_VM_COPY
+	PG_vmcpy,
+#endif
 #ifdef CONFIG_ZRAM_NON_COMPRESS
 	PG_non_compress,
 #endif
+#ifdef CONFIG_HMFS_FS
+	PG_cpdata,
+#endif
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	PG_cached,
+#endif
+
+	PG_gpu,
+
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -288,7 +303,7 @@ static inline int TestClearPage##uname(struct page *page) { return 0; }
 
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 PAGEFLAG(Waiters, waiters, PF_ONLY_HEAD) __CLEARPAGEFLAG(Waiters, waiters, PF_ONLY_HEAD)
-PAGEFLAG(Error, error, PF_NO_COMPOUND) TESTCLEARFLAG(Error, error, PF_NO_COMPOUND)
+PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
 PAGEFLAG(Referenced, referenced, PF_HEAD)
 	TESTCLEARFLAG(Referenced, referenced, PF_HEAD)
 	__SETPAGEFLAG(Referenced, referenced, PF_HEAD)
@@ -302,6 +317,9 @@ PAGEFLAG(Workingset, workingset, PF_HEAD)
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
 __PAGEFLAG(SlobFree, slob_free, PF_NO_TAIL)
 PAGEFLAG(Checked, checked, PF_NO_COMPOUND)	   /* Used by some filesystems */
+#ifdef CONFIG_HMFS_FS
+PAGEFLAG(CPdata, cpdata, PF_NO_COMPOUND)
+#endif
 
 /* Xen */
 PAGEFLAG(Pinned, pinned, PF_NO_COMPOUND)
@@ -343,6 +361,11 @@ PAGEFLAG(Reclaim, reclaim, PF_NO_TAIL)
 PAGEFLAG(Readahead, reclaim, PF_NO_COMPOUND)
 	TESTCLEARFLAG(Readahead, reclaim, PF_NO_COMPOUND)
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+TESTPAGEFLAG(Cached, cached, PF_NO_TAIL)
+SETPAGEFLAG(Cached, cached, PF_NO_TAIL)
+CLEARPAGEFLAG(Cached, cached, PF_NO_TAIL)
+#endif
 #ifdef CONFIG_ZRAM_NON_COMPRESS
 PAGEFLAG(NonCompress, non_compress, PF_NO_TAIL)
 	TESTSCFLAG(NonCompress, non_compress, PF_NO_TAIL)
@@ -423,6 +446,12 @@ PAGEFLAG(SKB, skb, PF_ANY)
 PAGEFLAG(Zspage, zspage, PF_ANY)
 PAGEFLAG(Drv, drv, PF_ANY)
 #endif
+
+PAGEFLAG(GPU, gpu, PF_ANY)
+
+#ifdef CONFIG_VM_COPY
+PAGEFLAG(VMcpy, vmcpy, PF_ANY)
+#endif
 /*
  * On an anonymous page mapped into a user virtual memory area,
  * page->mapping points to its anon_vma, not to a struct address_space;
@@ -477,6 +506,26 @@ static __always_inline int PageKsm(struct page *page)
 }
 #else
 TESTPAGEFLAG_FALSE(Ksm)
+#endif
+
+#ifdef CONFIG_HISI_CMA_DEBUG
+/* can be used only when CONFIG_HISI_CMA_DEBUG is defined */
+static inline void SetPageCmaPin(struct page *page)
+{
+	/* use smp_wmb to make sure all write opt to pg is done */
+	smp_wmb();
+	__set_bit(PG_cmapin, &(page)->flags);
+}
+
+static inline int PageCmaPin(struct page *page)
+{
+	return test_bit(PG_cmapin, &(page)->flags);
+}
+
+static inline void ClearPageCmaPin(struct page *page)
+{
+	clear_bit(PG_cmapin, &(page)->flags);
+}
 #endif
 
 u64 stable_page_flags(struct page *page);

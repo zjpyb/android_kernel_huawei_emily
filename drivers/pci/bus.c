@@ -318,7 +318,8 @@ void pci_bus_add_device(struct pci_dev *dev)
 	 */
 	pcibios_bus_add_device(dev);
 	pci_fixup_device(pci_fixup_final, dev);
-#ifndef CONFIG_PCIE_KIRIN
+
+#if defined(CONFIG_PCIE_KPORT_PC) || !defined(CONFIG_PCIE_KPORT)
 	pci_create_sysfs_dev_files(dev);
 	pci_proc_attach_device(dev);
 #endif

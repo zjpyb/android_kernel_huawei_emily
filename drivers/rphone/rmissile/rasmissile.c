@@ -34,7 +34,8 @@ static int rmissile_function(struct RMissile *prm)
 }
 static int rmissile_null(struct RMissile *prm)
 {
-	*(char *)0 = 0;
+	char * nullpt = NULL;
+	*nullpt = 0;
 	return 0;
 }
 static int rmissile_panic(struct RMissile *prm)

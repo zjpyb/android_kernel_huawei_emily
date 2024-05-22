@@ -48,8 +48,6 @@
 static int fill_silence_frames(struct snd_pcm_substream *substream,
 			       snd_pcm_uframes_t off, snd_pcm_uframes_t frames);
 
-extern void snd_pcm_print_timeout(struct snd_pcm_substream *substream, unsigned int timeout_type);
-
 /*
  * fill ring buffer with silence
  * runtime->silence_start: starting pointer to silence area
@@ -1805,11 +1803,14 @@ void snd_pcm_period_elapsed(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime;
 	unsigned long flags;
 
-	if (PCM_RUNTIME_CHECK(substream))
+	if (snd_BUG_ON(!substream))
 		return;
-	runtime = substream->runtime;
 
 	snd_pcm_stream_lock_irqsave(substream, flags);
+	if (PCM_RUNTIME_CHECK(substream))
+		goto _unlock;
+	runtime = substream->runtime;
+
 	if (!snd_pcm_running(substream) ||
 	    snd_pcm_update_hw_ptr0(substream, 1) < 0)
 		goto _end;
@@ -1820,6 +1821,7 @@ void snd_pcm_period_elapsed(struct snd_pcm_substream *substream)
 #endif
  _end:
 	kill_fasync(&runtime->fasync, SIGIO, POLL_IN);
+ _unlock:
 	snd_pcm_stream_unlock_irqrestore(substream, flags);
 }
 EXPORT_SYMBOL(snd_pcm_period_elapsed);
@@ -2137,11 +2139,6 @@ snd_pcm_sframes_t __snd_pcm_lib_xfer(struct snd_pcm_substream *substream,
 
 	is_playback = substream->stream == SNDRV_PCM_STREAM_PLAYBACK;
 
-	if (is_playback)
-		snd_pcm_print_timeout(substream, SND_TIMEOUT_TYPE_WRITE_INTERVAL);
-	else
-		snd_pcm_print_timeout(substream, SND_TIMEOUT_TYPE_READ_INTERVAL);
-
 	if (interleaved) {
 		if (runtime->access != SNDRV_PCM_ACCESS_RW_INTERLEAVED &&
 		    runtime->channels > 1)
@@ -2262,11 +2259,6 @@ snd_pcm_sframes_t __snd_pcm_lib_xfer(struct snd_pcm_substream *substream,
 	if (xfer > 0 && err >= 0)
 		snd_pcm_update_state(substream, runtime);
 	snd_pcm_stream_unlock_irq(substream);
-
-	if (is_playback)
-		snd_pcm_print_timeout(substream, SND_TIMEOUT_TYPE_WRITE_PROC);
-	else
-		snd_pcm_print_timeout(substream, SND_TIMEOUT_TYPE_READ_PROC);
 
 	return xfer > 0 ? (snd_pcm_sframes_t)xfer : err;
 }

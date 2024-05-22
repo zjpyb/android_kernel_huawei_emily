@@ -14,6 +14,9 @@
 #include "f2fs.h"
 #include "segment.h"
 #include "gc.h"
+#ifdef CONFIG_F2FS_TURBO_ZONE
+#include "turbo_zone.h"
+#endif
 
 static struct proc_dir_entry *f2fs_proc_root;
 
@@ -127,6 +130,8 @@ static ssize_t features_show(struct f2fs_attr *a,
 	if (f2fs_sb_has_sb_chksum(sb))
 		len += snprintf(buf + len, PAGE_SIZE - len, "%s%s",
 				len ? ", " : "", "sb_checksum");
+	len += snprintf(buf + len, PAGE_SIZE - len, "%s%s",
+				len ? ", " : "", "pin_file");
 	len += snprintf(buf + len, PAGE_SIZE - len, "\n");
 	return len;
 }
@@ -272,14 +277,17 @@ out:
 		return count;
 	}
 	if (!strcmp(a->attr.name, "gc_idle")) {
-		if (t == GC_IDLE_CB)
+		if (t == GC_IDLE_CB) {
 			sbi->gc_mode = GC_IDLE_CB;
-		else if (t == GC_IDLE_GREEDY)
+		} else if (t == GC_IDLE_GREEDY) {
 			sbi->gc_mode = GC_IDLE_GREEDY;
-		else if (t == GC_IDLE_AT)
+		} else if (t == GC_IDLE_AT) {
+			if (!gc_th || !gc_th->atgc_enabled)
+				return -EINVAL;
 			sbi->gc_mode = GC_IDLE_AT;
-		else
+		} else {
 			sbi->gc_mode = GC_NORMAL;
+		}
 		return count;
 	}
 
@@ -1173,6 +1181,93 @@ static ssize_t f2fs_bd_encrypt_info_write(struct file *file,
 	return length;
 }
 
+#ifdef CONFIG_F2FS_TURBO_ZONE
+static int f2fs_bd_turbo_info_show(struct seq_file *seq, void *p)
+{
+	struct super_block *sb = seq->private;
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);
+
+	bd_mutex_lock(&sbi->bd_mutex);
+	/* echo colum indicates:
+	 * enable switchable total_segs free_segs
+	 * reserved_blks written_valid_blocks
+	 * nz_free_segs
+	 * tz_bg_gc_count  tz_bg_gc_failed
+	 * f2fs_trigger_return_time ioctl_trigger_return_time
+	 * ioctl_migrate_blks_nz_tz tz_ioctl_migrate_blks_tz_nz
+	 * nz_gc_to_tz_blocks tz_bg_gc_to_nz_blocks
+	 * tz_version
+	 */
+
+	if (is_tz_existed(sbi) && (sbi->tz_info.enabled ||
+		!sbi->tz_info.switchable)) {
+		bd->nz_free_segs = FREE_I(sbi)->free_segments -
+				(FDEV(F2FS_TURBO_DEV).total_segments -
+				sbi->tz_info.total_segs) -
+				sbi->tz_info.free_segs;
+	} else {
+		bd->nz_free_segs = FREE_I(sbi)->free_segments;
+	}
+
+	seq_printf(seq, "%u %u %u %u %u %u %u %u %u %lu %lu %lu %lu %lu %lu %u\n",
+			sbi->tz_info.enabled ? 1 : 0,
+			sbi->tz_info.switchable ? 1 : 0,
+			sbi->tz_info.total_segs,
+			sbi->tz_info.free_segs,
+			sbi->tz_info.reserved_blks,
+			sbi->tz_info.written_valid_blocks,
+			bd->nz_free_segs,
+			bd->tz_bg_gc_cnt,
+			bd->tz_bg_gc_fail_cnt,
+			bd->tz_f2fs_trigger_return_time,
+			bd->tz_ioctl_trigger_return_time,
+			bd->tz_ioctl_migrate_blks[NZ_TO_TZ],
+			bd->tz_ioctl_migrate_blks[TZ_TO_NZ],
+			bd->tz_gc_migrate_blks[NZ_TO_TZ],
+			bd->tz_gc_migrate_blks[TZ_TO_NZ],
+			f2fs_get_turbo_version(sbi));
+	bd_mutex_unlock(&sbi->bd_mutex);
+
+	return 0;
+}
+
+static ssize_t f2fs_bd_turbo_info_write(struct file *file,
+					 const char __user *buf,
+					 size_t length, loff_t *ppos)
+{
+	struct seq_file *seq = file->private_data;
+	struct super_block *sb = seq->private;
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);
+	int i;
+	char buffer[F2FS_TURBO_BD_RESET_MAX_LEN] = {0};
+
+	if (!buf || length > (F2FS_TURBO_BD_RESET_MAX_LEN - 1) || length <= 0)
+		return -EINVAL;
+
+	if (copy_from_user(&buffer, buf, length))
+		return -EFAULT;
+
+	if (buffer[0] != '0')
+		return -EINVAL;
+
+	bd_mutex_lock(&sbi->bd_mutex);
+	bd->tz_f2fs_trigger_return_time = 0;
+	bd->tz_ioctl_trigger_return_time = 0;
+	bd->tz_bg_gc_cnt = 0;
+	bd->tz_bg_gc_fail_cnt = 0;
+
+	for (i = 0; i < NR_TZ_MOVE_DIRECTION; i++) {
+		bd->tz_ioctl_migrate_blks[i] = 0;
+		bd->tz_gc_migrate_blks[i] = 0;
+	}
+	bd_mutex_unlock(&sbi->bd_mutex);
+
+	return length;
+}
+#endif
+
 F2FS_BD_PROC_DEF(bd_base_info);
 F2FS_BD_PROC_DEF(bd_discard_info);
 F2FS_BD_PROC_DEF(bd_gc_info);
@@ -1180,6 +1275,9 @@ F2FS_BD_PROC_DEF(bd_cp_info);
 F2FS_BD_PROC_DEF(bd_fsync_info);
 F2FS_BD_PROC_DEF(bd_hotcold_info);
 F2FS_BD_PROC_DEF(bd_encrypt_info);
+#ifdef CONFIG_F2FS_TURBO_ZONE
+F2FS_BD_PROC_DEF(bd_turbo_info);
+#endif
 
 static void f2fs_build_bd_stat(struct f2fs_sb_info *sbi)
 {
@@ -1199,6 +1297,10 @@ static void f2fs_build_bd_stat(struct f2fs_sb_info *sbi)
 				&f2fs_bd_hotcold_info_fops, sb);
 	proc_create_data("bd_encrypt_info", S_IRUGO | S_IWUGO, sbi->s_proc,
 				&f2fs_bd_encrypt_info_fops, sb);
+#ifdef CONFIG_F2FS_TURBO_ZONE
+	proc_create_data("bd_turbo_info", S_IRUGO | S_IWUGO, sbi->s_proc,
+				&f2fs_bd_turbo_info_fops, sb);
+#endif
 }
 
 static void f2fs_destroy_bd_stat(struct f2fs_sb_info *sbi)
@@ -1210,11 +1312,9 @@ static void f2fs_destroy_bd_stat(struct f2fs_sb_info *sbi)
 	remove_proc_entry("bd_fsync_info", sbi->s_proc);
 	remove_proc_entry("bd_hotcold_info", sbi->s_proc);
 	remove_proc_entry("bd_encrypt_info", sbi->s_proc);
-
-	if (sbi->bd_info) {
-		kfree(sbi->bd_info);
-		sbi->bd_info = NULL;
-	}
+#ifdef CONFIG_F2FS_TURBO_ZONE
+	remove_proc_entry("bd_turbo_info", sbi->s_proc);
+#endif
 }
 #else /* !CONFIG_F2FS_STAT_FS */
 #define f2fs_build_bd_stat

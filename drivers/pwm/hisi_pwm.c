@@ -1,20 +1,21 @@
 /*
  * hisi_pwm.c
  *
- * The driver for hisi kirin soc pwm.
+ * pwm module, Provide pwm interface for pmu&soc
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
  */
+
 #include <linux/pwm.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
@@ -131,10 +132,9 @@ static inline void write_reg(void *reg_addr, u32 reg_val)
 
 static void write_partial_reg(void *reg, u32 offset, u32 width, u32 val)
 {
-	u32 mask;
-	u32 tmp;
+	u32 mask, tmp;
 
-	if (width == 0)
+	if (!width)
 		return;
 
 	mask = GENMASK(offset + width - 1, offset);
@@ -149,12 +149,30 @@ static void hisi_pwm_prescaler_config(const struct hisi_pwm_chip *hpc)
 	u32 pr0;
 	u32 pr1;
 
-	pr0 = (hpc->prescaler0 == 0) ? 0 : (hpc->prescaler0 - 1);
-	pr1 = (hpc->prescaler1 == 0) ? 0 : (hpc->prescaler1 - 1);
+	pr0 = (!hpc->prescaler0) ? 0 : (hpc->prescaler0 - 1);
+	pr1 = (!hpc->prescaler1) ? 0 : (hpc->prescaler1 - 1);
 	write_partial_reg(hpc->base + hpc->data->regs.pr0,
 		PWM_PR_OFFSET, PWM_PR_WIDTH, pr0);
 	write_partial_reg(hpc->base + hpc->data->regs.pr1,
 		PWM_PR_OFFSET, PWM_PR_WIDTH, pr1);
+}
+
+static bool hpc_param_check(const struct hisi_pwm_chip *hpc)
+{
+	if ((!hpc->clk_rate) ||
+		(!hpc->prescaler0) ||
+		(!hpc->prescaler1)) {
+		dev_err(hpc->chip.dev, "%s, param is 0\n", __func__);
+		return false;
+	}
+
+	if ((hpc->clk_rate > MAX_PWM_CLK_RATE) ||
+		(hpc->prescaler0 > MAX_PRESCALER) ||
+		(hpc->prescaler1 > MAX_PRESCALER)) {
+		dev_err(hpc->chip.dev, "%s, param exceed limit\n", __func__);
+		return false;
+	}
+	return true;
 }
 
 static void _hisi_config_mrx(const struct hisi_pwm_chip *hpc,
@@ -164,23 +182,12 @@ static void _hisi_config_mrx(const struct hisi_pwm_chip *hpc,
 	u32 divisor;
 	u32 reg_val;
 
-	if ((hpc->clk_rate == 0) ||
-		(hpc->prescaler0 == 0) ||
-		(hpc->prescaler1 == 0)) {
-		dev_err(hpc->chip.dev, "%s, param is 0\n", __func__);
+	if ((!hpc_param_check(hpc)) || (val_ns > NSEC_PER_SEC))
 		return;
-	}
-	if ((hpc->clk_rate > MAX_PWM_CLK_RATE) ||
-		(val_ns > NSEC_PER_SEC) ||
-		(hpc->prescaler0 > MAX_PRESCALER) ||
-		(hpc->prescaler1 > MAX_PRESCALER)) {
-		dev_err(hpc->chip.dev, "%s, param exceed limit\n", __func__);
-		return;
-	}
 
 	dividend = hpc->clk_rate * val_ns;
 	divisor = hpc->prescaler0 * hpc->prescaler1;
-	divisor = (divisor == 0) ? 1 : divisor;
+	divisor = (!divisor) ? 1 : divisor;
 	dividend = DIV_ROUND_CLOSEST_ULL(dividend, divisor);
 	dividend = DIV_ROUND_CLOSEST_ULL(dividend, NSEC_PER_SEC);
 	if (dividend > (u64)U32_MAX) {
@@ -194,7 +201,7 @@ static void _hisi_config_mrx(const struct hisi_pwm_chip *hpc,
 		if (period) {
 			if (reg_val > 0)
 				reg_val -= 1;
-		} else if (reg_val == 0) {
+		} else if (!reg_val) {
 			dev_err(hpc->chip.dev,
 				"%s, single edge, duty is 0\n", __func__);
 			return;
@@ -253,7 +260,7 @@ static void hisi_channel_polarity_config(const struct hisi_pwm_chip *hpc,
 {
 	if (!hpc->support_polarity)
 		return;
-	if (hpc->data->set_polarity == NULL)
+	if (!hpc->data->set_polarity)
 		return;
 	hpc->data->set_polarity(hpc, pwm, polarity);
 }
@@ -308,7 +315,7 @@ static inline void hisi_pwm_enable(const struct hisi_pwm_chip *hpc)
 }
 
 static void hisi_pwm_config(const struct hisi_pwm_chip *hpc,
-	const struct pwm_device *pwm,
+	struct pwm_device *pwm,
 	u32 period_ns, u32 duty_ns, enum pwm_polarity polarity)
 {
 	hisi_pwm_prescaler_config(hpc);
@@ -316,6 +323,9 @@ static void hisi_pwm_config(const struct hisi_pwm_chip *hpc,
 	hisi_channel_duty_config(hpc, pwm->hwpwm, duty_ns);
 	hisi_channel_phase_config(hpc, pwm->hwpwm, 0);
 	hisi_channel_polarity_config(hpc, pwm, polarity);
+	pwm->state.period = period_ns;
+	pwm->state.duty_cycle = duty_ns;
+	pwm->state.polarity = polarity;
 }
 
 /*
@@ -333,7 +343,7 @@ static int hisi_pwm_clk_enable(struct hisi_pwm_chip *hpc)
 	if (hpc->clk_enabled)
 		return 0;
 	ret = clk_enable(hpc->clk);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(hpc->chip.dev, "%s, clk_enable fail\n", __func__);
 		return ret;
 	}
@@ -387,6 +397,7 @@ static bool hisi_all_other_channels_disabled(const struct hisi_pwm_chip *hpc,
 	return true;
 }
 
+
 static void _hisi_calc_state(const struct hisi_pwm_chip *hpc,
 	const struct pwm_device *pwm, struct pwm_state *state)
 {
@@ -396,18 +407,8 @@ static void _hisi_calc_state(const struct hisi_pwm_chip *hpc,
 	void *reg_period = NULL;
 	void *reg_duty = NULL;
 
-	if ((hpc->clk_rate == 0) ||
-		(hpc->prescaler0 == 0) ||
-		(hpc->prescaler1 == 0)) {
-		dev_err(hpc->chip.dev, "%s, param is 0\n", __func__);
+	if (!hpc_param_check(hpc))
 		return;
-	}
-	if ((hpc->clk_rate > MAX_PWM_CLK_RATE) ||
-		(hpc->prescaler0 > MAX_PRESCALER) ||
-		(hpc->prescaler1 > MAX_PRESCALER)) {
-		dev_err(hpc->chip.dev, "%s, param exceed limit\n", __func__);
-		return;
-	}
 
 	reg_offset = hpc->data->regs.cx_mr_base +
 		pwm->hwpwm * hpc->data->regs.cx_mr_step;
@@ -427,11 +428,20 @@ static void _hisi_calc_state(const struct hisi_pwm_chip *hpc,
 
 	state->polarity = PWM_POLARITY_NORMAL;
 	if (hpc->support_polarity) {
-		if (hpc->data->get_polarity != NULL)
+		if (hpc->data->get_polarity)
 			state->polarity = hpc->data->get_polarity(hpc, pwm);
 	}
 
 	state->enabled = hisi_channel_enabled(hpc, pwm);
+}
+
+static bool ptr_null_check(struct pwm_chip *chip, struct pwm_device *pwm,
+	struct pwm_state *state)
+{
+	if (!chip || !pwm || !state)
+		return false;
+
+	return true;
 }
 
 static void hisi_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -439,13 +449,13 @@ static void hisi_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
 {
 	struct hisi_pwm_chip *hpc = NULL;
 
-	if ((chip == NULL) || (pwm == NULL) || (state == NULL))
+	if (!ptr_null_check(chip, pwm, state))
 		return;
 
 	hpc = to_hisi_pwm_chip(chip);
 	spin_lock(&hpc->reg_sequence_lock);
 
-	if (clk_enable(hpc->clk) != 0) {
+	if (clk_enable(hpc->clk)) {
 		spin_unlock(&hpc->reg_sequence_lock);
 		dev_err(chip->dev, "%s, clk_enable fail\n", __func__);
 		return;
@@ -457,20 +467,30 @@ static void hisi_pwm_get_state(struct pwm_chip *chip, struct pwm_device *pwm,
 	spin_unlock(&hpc->reg_sequence_lock);
 }
 
+static bool config_duty_check(struct pwm_state *state, bool enabled,
+	struct pwm_state *cur_state)
+{
+	if (enabled && state->duty_cycle != cur_state->duty_cycle &&
+		state->period == cur_state->period &&
+		state->polarity == cur_state->polarity)
+		return true;
+	return false;
+}
+
 static int hisi_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	struct pwm_state *state)
 {
 	struct hisi_pwm_chip *hpc = NULL;
-	struct pwm_state cur_state;
+	struct pwm_state cur_state = { 0, 0, PWM_POLARITY_NORMAL, false };
 	bool enabled = false;
 
-	if ((chip == NULL) || (pwm == NULL) || (state == NULL))
+	if (!ptr_null_check(chip, pwm, state))
 		return -EINVAL;
 
 	hpc = to_hisi_pwm_chip(chip);
 	spin_lock(&hpc->reg_sequence_lock);
 
-	if (hisi_pwm_clk_enable(hpc) != 0) {
+	if (hisi_pwm_clk_enable(hpc)) {
 		spin_unlock(&hpc->reg_sequence_lock);
 		return -ENODEV;
 	}
@@ -478,13 +498,12 @@ static int hisi_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	hisi_pwm_reg_unlock(hpc);
 
 	pwm_get_state(pwm, &cur_state);
-	enabled = cur_state.enabled;
+	enabled = state->enabled;
 
-	// dynamically config duty
-	if (enabled && state->duty_cycle != cur_state.duty_cycle &&
-		state->period == cur_state.period &&
-		state->polarity == cur_state.polarity) {
+	/* dynamically config duty */
+	if (config_duty_check(state, enabled, &cur_state)) {
 		hisi_channel_duty_config(hpc, pwm->hwpwm, state->duty_cycle);
+		pwm->state.duty_cycle = state->duty_cycle;
 		hisi_pwm_reg_lock(hpc);
 		spin_unlock(&hpc->reg_sequence_lock);
 		return 0;
@@ -512,7 +531,7 @@ static int hisi_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 
 	spin_unlock(&hpc->reg_sequence_lock);
 
-	// read from hw
+	/* read from hw */
 	hisi_pwm_get_state(chip, pwm, state);
 	return 0;
 }
@@ -535,10 +554,10 @@ static int hisi_pwm_parse_dt(struct hisi_pwm_chip *hpc,
 
 	hpc->support_polarity = of_property_read_bool(np, "support_polarity");
 	ret = of_property_read_u32(np, "pre_freq_divisor0", &hpc->prescaler0);
-	if (ret != 0)
+	if (ret)
 		hpc->prescaler0 = PWM_PRESCALER_DEFAULT;
 	ret = of_property_read_u32(np, "pre_freq_divisor1", &hpc->prescaler1);
-	if (ret != 0)
+	if (ret)
 		hpc->prescaler1 = PWM_PRESCALER_DEFAULT;
 	if (of_property_read_bool(np, "double_edge_mode"))
 		hpc->pwm_mode = DOUBLE_EDGE;
@@ -562,7 +581,7 @@ static int hisi_add_pwm_chip(struct hisi_pwm_chip *hpc, struct device *pdev)
 	}
 
 	ret = pwmchip_add(&hpc->chip);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(pdev, "%s, pwmchip_add failed\n", __func__);
 		return ret;
 	}
@@ -581,7 +600,7 @@ static int hisi_clk_prepare(struct hisi_pwm_chip *hpc,
 	}
 
 	ret = clk_prepare_enable(hpc->clk);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(&pdev->dev,
 			"%s, clk_prepare_enable fail\n", __func__);
 		return ret;
@@ -589,7 +608,7 @@ static int hisi_clk_prepare(struct hisi_pwm_chip *hpc,
 	hpc->clk_rate = clk_get_rate(hpc->clk);
 	clk_disable(hpc->clk);
 	hpc->clk_enabled = false;
-	if (hpc->clk_rate == 0) {
+	if (!hpc->clk_rate) {
 		clk_unprepare(hpc->clk);
 		dev_err(&pdev->dev, "%s, clk_rate is 0\n", __func__);
 		return -EINVAL;
@@ -597,24 +616,29 @@ static int hisi_clk_prepare(struct hisi_pwm_chip *hpc,
 	return 0;
 }
 
+static void hisi_clk_unprepare(struct hisi_pwm_chip *hpc)
+{
+	clk_unprepare(hpc->clk);
+}
+
 static int hisi_pwm_probe(struct platform_device *pdev)
-{/*lint --e{429}*/
+{
 	const struct of_device_id *device_id = NULL;
 	struct hisi_pwm_chip *hpc = NULL;
 	struct resource *r = NULL;
 	int ret;
 
-	if (pdev == NULL)
+	if (!pdev)
 		return -EINVAL;
 
 	device_id = of_match_device(hisi_pwm_dt_ids, &pdev->dev);
-	if (device_id == NULL) {
+	if (!device_id) {
 		dev_err(&pdev->dev, "%s, no matched device\n", __func__);
 		return -EINVAL;
 	}
 
 	hpc = devm_kzalloc(&pdev->dev, sizeof(*hpc), GFP_KERNEL);
-	if (hpc == NULL)
+	if (!hpc)
 		return -ENOMEM;
 
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -625,7 +649,7 @@ static int hisi_pwm_probe(struct platform_device *pdev)
 	}
 
 	ret = hisi_clk_prepare(hpc, pdev);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(&pdev->dev, "%s, hisi_clk_prepare fail\n", __func__);
 		return ret;
 	}
@@ -633,21 +657,21 @@ static int hisi_pwm_probe(struct platform_device *pdev)
 	hpc->data = device_id->data;
 
 	ret = hisi_pwm_parse_dt(hpc, pdev->dev.of_node);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(&pdev->dev, "%s, parse_dt fail\n", __func__);
 		goto fail_end;
 	}
 
 	spin_lock_init(&hpc->reg_sequence_lock);
 	ret = hisi_add_pwm_chip(hpc, &pdev->dev);
-	if (ret != 0)
+	if (ret)
 		goto fail_end;
 	platform_set_drvdata(pdev, hpc);
 	dev_info(&pdev->dev, "%s, clk_rate:%lu\n", __func__, hpc->clk_rate);
 	return 0;
 
 fail_end:
-	clk_unprepare(hpc->clk);
+	hisi_clk_unprepare(hpc);
 	return ret;
 }
 
@@ -656,20 +680,20 @@ static int hisi_pwm_remove(struct platform_device *pdev)
 	int ret;
 	struct hisi_pwm_chip *hpc = NULL;
 
-	if (pdev == NULL)
+	if (!pdev)
 		return -EINVAL;
 
 	hpc = platform_get_drvdata(pdev);
-	if (hpc == NULL) {
+	if (!hpc) {
 		dev_err(&pdev->dev, "%s, hpc is NULL\n", __func__);
 		return -EINVAL;
 	}
 
 	hisi_pwm_clk_disable(hpc);
-	clk_unprepare(hpc->clk);
+	hisi_clk_unprepare(hpc);
 
 	ret = pwmchip_remove(&hpc->chip);
-	if (ret != 0) {
+	if (ret) {
 		dev_err(&pdev->dev, "%s, pwmchip_remove fail\n", __func__);
 		return ret;
 	}

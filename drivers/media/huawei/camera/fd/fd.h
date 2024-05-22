@@ -21,27 +21,16 @@ struct fd_smmu_dev{
 #define FD_REG_SET_FIELD(reg, name, val) \
         (reg = ((reg) & ~MASK1(name)) | (((val) & MASK0(name)) << (name##_OFFSET)))
 
-//#define AHFD_IPU_VER_OFFSET     0x0418
 #define AHFD_IPU_VER_OFFSET     fd_offset_list[0]
-//#define AHFD_INT_MASK           0x040C
-//#define AHFD_INT_CLEAR          0x0410
-//#define AHFD_INT_STATUS         0x0414
-//#define AHFD_ERR_STATUS         0x0464
 #define AHFD_INT_MASK           fd_offset_list[1]
 #define AHFD_INT_CLEAR          fd_offset_list[2]
 #define AHFD_INT_STATUS         fd_offset_list[3]
 #define AHFD_ERR_STATUS         fd_offset_list[4]
 
 #define AHFD_MAX_OFFSET         0x1FFFC
-//#define AHFD_PRE_ERR_MASK       0x00FD
-//#define AHFD_TME_ERR_MASK       0x007A
-//#define AHFD_SWRST_ERR_MASK     0x009F
 #define AHFD_PRE_ERR_MASK       fd_offset_list[5]
 #define AHFD_TME_ERR_MASK       fd_offset_list[6]
 #define AHFD_SWRST_ERR_MASK     fd_offset_list[7]
-//#define AHFD_PRE_EN             0x0058
-//#define AHFD_TME_EN             0x031C
-//#define AHFD_IDLE_STATUS                 0x0470
 #define AHFD_PRE_EN              fd_offset_list[8]
 #define AHFD_TME_EN              fd_offset_list[9]
 #define AHFD_IDLE_STATUS    fd_offset_list[10]
@@ -72,9 +61,7 @@ struct mem_base {
 	unsigned long ipu_phys_addr;
 	size_t        ipu_size;
 };
-//#define POWER_CTRL_HW_INTF_FD      (0)
-//#define POWER_CTRL_CFG_REGS_FD     (1)
-//#define POWER_CTRL_INTERFACE_FD    POWER_CTRL_HW_INTF_FD
+
 enum RC_NUM {
     FD_RC_REGULATOR = 1,
     FD_RC_CLK,
@@ -121,16 +108,9 @@ uint32_t smmu_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 uint32_t mstr_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 uint32_t fd_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 
-
-
-//#define POWER_CTRL_HW_INTF      (0)
-//#define POWER_CTRL_CFG_REGS     (1)
-//#define POWER_CTRL_INTERFACE    POWER_CTRL_HW_INTF
 #define MASK0(name)  (((unsigned int)1<<(name##_LEN))-1)
 #define MASK1(name)  ((((unsigned int)1<<(name##_LEN))-1) << (name##_OFFSET))
 
-
-// SMMU_FAMA_CTRL0_NS                      0x0220
 #define FAMA_CTRL0_NS_fama_bps_msb_ns_LEN       6
 #define FAMA_CTRL0_NS_fama_bps_msb_ns_OFFSET    8
 #define FAMA_CTRL0_NS_fama_chn_sel_ns_LEN       1
@@ -138,19 +118,11 @@ uint32_t fd_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 #define FAMA_CTRL0_NS_fama_sdes_msb_ns_LEN      7
 #define FAMA_CTRL0_NS_fama_sdes_msb_ns_OFFSET   0
 
-// SMMU_FAMA_CTRL1_NS                      0x0224
 #define FAMA_CTRL1_NS_fama_ptw_msb_ns_LEN       7
 #define FAMA_CTRL1_NS_fama_ptw_msb_ns_OFFSET    0
-//#define REG_BASE_SMMU_MASTER ((unsigned int)0xE8403000)  //TC
-//#define REG_BASE_SMMU_MASTER ((unsigned int)0xE8303000) //CS
-
-//#define SMRX_START_1 0x2C
-//#define SMTR_END_ACK_0  0x1C
 
 #define SMMU_GLOBAL_BYPASS                   0x0
-//#define REG_BASE_SMMU   ((unsigned int)0xE8420000)  //TC
 #define SMMU_MSTR_GLB_BYPASS  0x0
-//#define FD_INPUT_BUFFER ((unsigned int)0x2E000000)
 #define MIN_FD_SMMU_STREAM_ID           8
 #define MAX_FD_SMMU_STREAM_ID           19
 #define MIN_FD_MSTR_STREAM_ID           0
@@ -166,11 +138,7 @@ uint32_t fd_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 #define SMMU_FAMA_CTRL0_NS          0x220
 #define SMMU_FAMA_CTRL1_NS          0x224
 
-
-
 //master
-
-
 #define SMRX_START_0 0x28
 #define SMMU_MSTR_INPT_SEL 0x34
 #define SMMU_MSTR_SMRX_0_STREAM 0x100  //stream ID 0~10*0x4
@@ -207,6 +175,5 @@ uint32_t fd_offset_list[MAX_FD_OFFSET_LIST_NUM] = { 0 };
 #define SMMU_MSTR_SMRX_0_STREAM_ID_16  (0x100+8*0x4)
 #define SMMU_MSTR_SMRX_0_STREAM_ID_17  (0x100+9*0x4)
 #define SMMU_MSTR_SMRX_0_STREAM_ID_18  (0x100+10*0x4)
-
 
 #endif

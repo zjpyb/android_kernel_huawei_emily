@@ -1,21 +1,20 @@
 /*
- *	slimbus is a kernel driver which is used to manager SLIMbus devices
- *	Copyright (C) 2014	Hisilicon
-
- *	This program is free software: you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation, either version 3 of the License, or
- *	(at your option) any later version.
-
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
-
- *	You should have received a copy of the GNU General Public License
- *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * slimbus is a kernel driver which is used to manager slimbus devices
+ *
+ * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
+
+#include "slimbus_drv.h"
 
 #include <linux/string.h>
 #include <linux/kernel.h>
@@ -30,93 +29,102 @@
 #include <linux/device.h>
 #include <linux/pm_wakeup.h>
 #include <linux/version.h>
-#include <rdr_hisi_audio_adapter.h>
+#include "linux/hisi/audio_log.h"
+#include <rdr_audio_adapter.h>
 
-#include "slimbus_drv.h"
-#include "slimbus.h"
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm_audio/dsm_audio.h>
 #endif
+#include "slimbus.h"
 
 /*lint -e715 -e838 -e730 -e578 -e64 -e647 -e514 -e611*/
+#define LOG_TAG "slimbus_drv"
 
-#define RFC_MAX_DEVICES 						 32
-#define SOC_DEVICE_NUM							 3
-#define HI6402_DEVICE_NUM						 3
-#define ENUMERATION_TIMES						 400
-#define DUMP_SLIMBUS_REGS_SIZE                   0x2FC
-#define SLIMBUS_PORT_NUM						 8
+#define RFC_MAX_DEVICES 32
+#define SOC_DEVICE_NUM 3
+#define DA_COMBINE_DEVICE_NUM 3
+#define ENUMERATION_TIMES 400
+#define DUMP_SLIMBUS_REGS_SIZE 0x2FC
+#define SLIMBUS_PORT_NUM 8
+
+/* 2us */
+#define REG_ACCESS_TIME_DIFF 2
+
+#define GIC_BASE_ADDR 0xE82B0000
+#define GIC_SIZE 0x7fff
 
 /* used for element RD/WR protection*/
-struct mutex	slimbus_mutex;
-spinlock_t		slimbus_spinlock;
+static struct mutex slimbus_mutex;
+static spinlock_t slimbus_spinlock;
 
 /*
  * List of enumerated devices
  */
-typedef struct {
+struct rfc_enumerated_devices {
 	uint8_t devices;
-	uint8_t framerCount;
-	uint8_t genericCount;
-	uint8_t interfaceCount;
-	uint8_t managerCount;
-	uint8_t framerLa[RFC_MAX_DEVICES];
-	uint8_t genericLa[RFC_MAX_DEVICES];
-	uint8_t interfaceLa[RFC_MAX_DEVICES];
-	uint8_t managerLa[RFC_MAX_DEVICES];
-} RFC_EnumeratedDevices;
+	uint8_t framer_cnt;
+	uint8_t generic_cnt;
+	uint8_t interface_cnt;
+	uint8_t manager_cnt;
+	uint8_t framer_logical_addr[RFC_MAX_DEVICES];
+	uint8_t generic_logical_addr[RFC_MAX_DEVICES];
+	uint8_t interface_logical_addr[RFC_MAX_DEVICES];
+	uint8_t manager_logical_addr[RFC_MAX_DEVICES];
+};
 
 /*
  * Requested Values and Information Slices
  */
-typedef struct {
-	uint8_t* ptr;
+struct rfc_internal_reply {
+	uint8_t *ptr;
 	uint8_t size;
-	uint8_t transactionId;
+	uint8_t transaction_id;
 	bool received;
-	bool valueRequested;
-	bool informationRequested;
+	bool value_requested;
+	bool information_requested;
 	bool error;
 	struct completion read_finish;
 	struct completion request_finish;
-} RFC_InternalReply;
+};
 
 /*
  * Variables set by interrupts, used for reporting results
  */
-typedef struct {
-	bool ieUnsupportedMsg;
-	bool ieExError;
-	bool ieReconfigObjection;
-	uint8_t reportedPresence;
-	uint8_t reportedAbsence;
-} RFC_SlimbusEvents;
+struct rfc_slimbus_events {
+	bool ie_unsupported_msg;
+	bool ie_ex_error;
+	bool ie_reconfig_objection;
+	uint8_t reported_presence;
+	uint8_t reported_absence;
+};
 
 /*
  * Global Variables
  */
 
 /* Pointer to driver object */
-static CSMI_OBJ *csmiDrv;
-static void 	*devm_slimbus_priv;
+static CSMI_OBJ *csmi_drv;
+static void *devm_slimbus_priv;
 
-static RFC_EnumeratedDevices		slimbusDevices;
-static RFC_InternalReply	internalReply;
-static RFC_SlimbusEvents	events;
-volatile uint32_t					lostms_times = 0;
-volatile uint32_t					slimbus_drv_log_count = 50;
-int slimbus_irq_state = 0;
-volatile bool int_need_clear = false;
+static struct rfc_enumerated_devices slimbus_devices;
+static struct rfc_internal_reply internal_reply;
+static struct rfc_slimbus_events events;
 
-/* 2us */
-#define REG_ACCESS_TIME_DIFF 2
-static int64_t last_time = 0;
+volatile uint32_t lostms_times;
+volatile uint32_t slimbus_drv_log_count = 50;
+int slimbus_irq_state;
+volatile bool int_need_clear;
+
+static int64_t last_time;
 static uint32_t dsm_notify_limit = 1;
 static uintptr_t asp_base_reg;
-static platform_type_t plat_type = PLATFORM_PHONE;
-static struct workqueue_struct *slimbus_lost_sync_wq = NULL;
+static uintptr_t sctrl_base_addr;
+static enum platform_type plat_type = PLATFORM_PHONE;
+static struct workqueue_struct *slimbus_lost_sync_wq;
 static struct delayed_work slimbus_lost_sync_delay_work;
 static struct wakeup_source slimbus_wake_lock;
+
+static void slimbus_dump_state(enum slimbus_dump_state type);
 
 volatile uint32_t slimbus_drv_lostms_get(void)
 {
@@ -141,7 +149,7 @@ void slimbus_int_need_clear_set(volatile bool flag)
 int64_t get_timeus(void)
 {
 	struct timeval time;
-	int64_t timeus = 0;
+	int64_t timeus;
 
 	do_gettimeofday(&time);
 	timeus = 1000000 * time.tv_sec + time.tv_usec;
@@ -154,22 +162,22 @@ int64_t get_timeus(void)
  * When interrupt from SLIMbus Manager was received,
  * isr() function should be called.
  */
-static irqreturn_t RFC_IrqHandler(int value, void * data)
+static irqreturn_t rfc_irq_handler(int value, void *data)
 {
 	/* Process interrupt by the driver */
 
-	csmiDrv->isr(devm_slimbus_priv);
+	csmi_drv->isr(devm_slimbus_priv);
 
 	return IRQ_HANDLED;
 }
 
-static void RFC_ClearEvents(void)
+static void rfc_clear_events(void)
 {
-	events.ieExError = 0;
-	events.ieReconfigObjection = 0;
-	events.ieUnsupportedMsg = 0;
-	events.reportedPresence = 0;
-	events.reportedAbsence = 0;
+	events.ie_ex_error = 0;
+	events.ie_reconfig_objection = 0;
+	events.ie_unsupported_msg = 0;
+	events.reported_presence = 0;
+	events.reported_absence = 0;
 }
 
 /***********************************************************************************************
@@ -181,171 +189,161 @@ static void RFC_ClearEvents(void)
  * @param[in] logicalAddress Device's Logical Address
  * @return Device Class
  */
-static CSMI_DeviceClass CLBK_DeviceClassHandler(uint8_t logicalAddress)
+static CSMI_DeviceClass device_class_handler(uint8_t logical_addr)
 {
 	uint8_t i;
 
 	/* Active Manager always has 0xFF as logical address */
-	if (logicalAddress == 0xFF)
+	if (logical_addr == 0xFF)
 		return CSMI_DC_MANAGER;
 
 
 	/* Loop through list of enumerated Framer devices */
-	for (i = 0; i < slimbusDevices.framerCount; i++) {
-		if (logicalAddress == slimbusDevices.framerLa[i])
+	for (i = 0; i < slimbus_devices.framer_cnt; i++) {
+		if (logical_addr == slimbus_devices.framer_logical_addr[i])
 			return CSMI_DC_FRAMER;
 	}
 	/* Loop through list of enumerated Generic devices */
-	for (i = 0; i < slimbusDevices.genericCount; i++) {
-		if (logicalAddress == slimbusDevices.genericLa[i])
+	for (i = 0; i < slimbus_devices.generic_cnt; i++) {
+		if (logical_addr == slimbus_devices.generic_logical_addr[i])
 			return CSMI_DC_GENERIC;
 	}
 
 	/* Loop through list of enumerated Interface devices */
-	for (i = 0; i < slimbusDevices.interfaceCount; i++) {
-		if (logicalAddress == slimbusDevices.interfaceLa[i])
+	for (i = 0; i < slimbus_devices.interface_cnt; i++) {
+		if (logical_addr == slimbus_devices.interface_logical_addr[i])
 			return CSMI_DC_INTERFACE;
 	}
 	/* Loop through list of enumerated Generic devices
 	 * Not needed in most cases.
 	 * Usually there is only one manager in the system
-	 * and it's active, so always has 0xFF as logical address */
-	for (i = 0; i < slimbusDevices.managerCount; i++) {
-		if (logicalAddress == slimbusDevices.managerLa[i])
+	 * and it's active, so always has 0xFF as logical address
+	 */
+	for (i = 0; i < slimbus_devices.manager_cnt; i++) {
+		if (logical_addr == slimbus_devices.manager_logical_addr[i])
 			return CSMI_DC_MANAGER;
 	}
 
 	return CSMI_DC_INTERFACE;
 }
 
-static void RFC_PrintIeCoreStatus(CSMI_InformationElements *ie, uint8_t sourceLa, CSMI_DeviceClass deviceClass)
+static void rfc_print_ie_core_status(const CSMI_InformationElements *ie, uint8_t source_logical_addr, CSMI_DeviceClass device_class)
 {
 	if (ie->coreUnsprtdMsg || ie->coreDataTxCol || ie->coreReconfigObjection || ie->coreExError) {
-		SLIMBUS_DEV_LIMIT_INFO("Core: (0x%x,0x%x) UNSPRTD_MSG:%X DATA_TX_COL:%X RECONFIG_OBJECTION:%X EX_ERROR:%X \n",
-			deviceClass, sourceLa, ie->coreUnsprtdMsg, ie->coreDataTxCol, ie->coreReconfigObjection, ie->coreExError);
+		slimbus_dev_limit_info("Core: (0x%x,0x%x) UNSPRTD_MSG:%X DATA_TX_COL:%X RECONFIG_OBJECTION:%X EX_ERROR:%X \n",
+			device_class, source_logical_addr, ie->coreUnsprtdMsg, ie->coreDataTxCol, ie->coreReconfigObjection, ie->coreExError);
 	}
-
-	return;
 }
 
-static void RFC_PrintIeInterfaceStatus(CSMI_InformationElements *ie, uint8_t sourceLa, CSMI_DeviceClass deviceClass)
+static void rfc_print_ie_interface_status(const CSMI_InformationElements *ie, uint8_t source_logical_addr, CSMI_DeviceClass device_class)
 {
 	if (ie->interfaceMcTxCol || ie->interfaceLostFs || ie->interfaceLostSfs || ie->interfaceLostMs || ie->interfaceDataSlotOverlap) {
-		SLIMBUS_DEV_LIMIT_INFO("Interface: (0x%x,0x%x) MC_TX_COL:%X LOST_FS:%X LOST_SFS:%X LOST_MS:%X DATA_SLOT_OVERLAP:%X\n",
-			deviceClass, sourceLa, ie->interfaceMcTxCol, ie->interfaceLostFs, ie->interfaceLostSfs, ie->interfaceLostMs, ie->interfaceDataSlotOverlap);
+		slimbus_dev_limit_info("Interface: (0x%x,0x%x) MC_TX_COL:%X LOST_FS:%X LOST_SFS:%X LOST_MS:%X DATA_SLOT_OVERLAP:%X\n",
+			device_class, source_logical_addr, ie->interfaceMcTxCol, ie->interfaceLostFs, ie->interfaceLostSfs, ie->interfaceLostMs, ie->interfaceDataSlotOverlap);
 	}
-
-	return;
 }
 
-static void RFC_PrintIeManagerStatus(CSMI_InformationElements *ie, uint8_t sourceLa, CSMI_DeviceClass deviceClass)
+static void rfc_print_ie_manager_status(const CSMI_InformationElements *ie, uint8_t source_logical_addr, CSMI_DeviceClass device_class)
 {
-	if (ie->managerActiveManager) {
-		SLIMBUS_DEV_LIMIT_INFO("Manager: (0x%x,0x%x) ACTIVE_MANAGER:%X\n", deviceClass, sourceLa, ie->managerActiveManager);
-	}
-
-	return;
+	if (ie->managerActiveManager)
+		slimbus_dev_limit_info("Manager: (0x%x,0x%x) ACTIVE_MANAGER:%X\n", device_class, source_logical_addr, ie->managerActiveManager);
 }
 
-static void RFC_PrintIeFramerStatus(CSMI_InformationElements *ie, uint8_t sourceLa, CSMI_DeviceClass deviceClass)
+static void rfc_print_ie_framer_status(const CSMI_InformationElements *ie, uint8_t source_logical_addr, CSMI_DeviceClass device_class)
 {
 	if (ie->framerQuality || ie->framerGcTxCol || ie->framerFiTxCol || ie->framerFsTxCol || ie->framerActiveFramer) {
-		SLIMBUS_DEV_LIMIT_INFO("Framer: (0x%x,0x%x) QUALITY:%X GC_TX_COL:%X FI_TX_COL:%X FS_TX_COL:%X ACTIVE_FRAMER:%X\n",
-			deviceClass, sourceLa, ie->framerQuality, ie->framerGcTxCol, ie->framerFiTxCol, ie->framerFsTxCol, ie->framerActiveFramer);
+		slimbus_dev_limit_info("Framer: (0x%x,0x%x) QUALITY:%X GC_TX_COL:%X FI_TX_COL:%X FS_TX_COL:%X ACTIVE_FRAMER:%X\n",
+			device_class, source_logical_addr, ie->framerQuality, ie->framerGcTxCol, ie->framerFiTxCol, ie->framerFsTxCol, ie->framerActiveFramer);
 	}
-
-	return;
 }
 
-
-static void RFC_PrintIeStatus(CSMI_InformationElements *ie, uint8_t sourceLa)
+static void rfc_print_ie_status(const CSMI_InformationElements *ie, uint8_t source_logical_addr)
 {
-	CSMI_DeviceClass deviceClass = CLBK_DeviceClassHandler(sourceLa);
+	CSMI_DeviceClass device_class = device_class_handler(source_logical_addr);
 
-	RFC_PrintIeCoreStatus(ie, sourceLa, deviceClass);
+	rfc_print_ie_core_status(ie, source_logical_addr, device_class);
 
-	RFC_PrintIeInterfaceStatus(ie, sourceLa, deviceClass);
+	rfc_print_ie_interface_status(ie, source_logical_addr, device_class);
 
-	RFC_PrintIeManagerStatus(ie, sourceLa, deviceClass);
+	rfc_print_ie_manager_status(ie, source_logical_addr, device_class);
 
-	RFC_PrintIeFramerStatus(ie, sourceLa, deviceClass);
+	rfc_print_ie_framer_status(ie, source_logical_addr, device_class);
 
 	if (ie->interfaceLostFs || ie->interfaceLostSfs || ie->interfaceLostMs) {
 		if (dsm_notify_limit == SLIMBUS_LOSTMS_COUNT) {
 			slimbus_dump_state(SLIMBUS_DUMP_LOSTMS);
-			#ifdef CONFIG_HUAWEI_DSM
+#ifdef CONFIG_HUAWEI_DSM
 			audio_dsm_report_info(AUDIO_CODEC, DSM_HI6402_SLIMBUS_LOST_MS, "DSM_HI6402_SLIMBUS_LOST_MS\n");
-			#endif
+#endif
 		}
 		dsm_notify_limit++;
 	}
 }
 
-/**
+/*
  * Handler for Logical Address for device driver request
  * Will be called for each device which sent REPORT_PRESENCE Message, if enumerateDevices was enabled.
  * @param[in] enumerationAddress Device's Enumeration Address
  * @param[in] class Device Class
  * @return Logical Address
  */
-static uint8_t CLBK_AssignLogicalAddressHandler(uint64_t enumerationAddress, CSMI_DeviceClass class)
+static uint8_t assign_logical_address_handler(uint64_t enumeration_address, CSMI_DeviceClass class)
 {
-
 	/*
 	 * Valid Logical Addresses are in range 0x00 - 0xEF.
 	 * Logical Addresses 0xF[0-E] are reserved.
 	 * 0xFF = active Manager
 	 * If invalid value is returned, it will be ignored by the driver, and device will not be enumerated.
 	 */
-	uint8_t logicalAddress = 0xF0;
+	uint8_t logical_addr = 0xF0;
 
 	switch (class) {
 	/* New logical address with offset 0x00 */
 	case CSMI_DC_FRAMER:
-		logicalAddress = 0x20 + slimbusDevices.framerCount;
-		slimbusDevices.framerLa[slimbusDevices.framerCount++] = logicalAddress;
+		logical_addr = 0x20 + slimbus_devices.framer_cnt;
+		slimbus_devices.framer_logical_addr[slimbus_devices.framer_cnt++] = logical_addr;
 		break;
 
 	/* New logical address with offset 0x40 */
 	case CSMI_DC_INTERFACE:
-		logicalAddress = 0x40 | slimbusDevices.interfaceCount;
-		slimbusDevices.interfaceLa[slimbusDevices.interfaceCount++] = logicalAddress;
+		logical_addr = 0x40 | slimbus_devices.interface_cnt;
+		slimbus_devices.interface_logical_addr[slimbus_devices.interface_cnt++] = logical_addr;
 		break;
 
 	case CSMI_DC_GENERIC:
-		 /*
-				* Use Enumeration Addresses to assign always the same logical addresses for known devices,
-				* regardless of the presence report order
-				*/
-		switch (enumerationAddress) {
-		/*Device 1 Generic Device, example Enumeration Address, Change might be needed*/
+		/*
+		 * Use Enumeration Addresses to assign always the same logical addresses for known devices,
+		 * regardless of the presence report order
+		 */
+		switch (enumeration_address) {
+		/* Device 1 Generic Device, example Enumeration Address, Change might be needed */
 		case SOC_EA_GENERIC_DEVICE:
-			logicalAddress = SOC_LA_GENERIC_DEVICE;
+			logical_addr = SOC_LA_GENERIC_DEVICE;
 			break;
 
 		/* Device 2 Generic Device, example Enumeration Address, Change might be needed */
-		case HI6402_EA_GENERIC_DEVICE:
-		case (HI6402_EA_GENERIC_DEVICE & 0xfffffffffffe):
-			logicalAddress = HI64XX_LA_GENERIC_DEVICE;
+		case DA_COMBINE_EA_GENERIC_DEVICE:
+		case (DA_COMBINE_EA_GENERIC_DEVICE & 0xfffffffffffe):
+			logical_addr = DA_COMBINE_LA_GENERIC_DEVICE;
 			break;
 
 		/* Unknown Generic Device, New logical address with offset 0x80 */
 		default:
-			logicalAddress = 0x80 | slimbusDevices.genericCount;
+			logical_addr = 0x80 | slimbus_devices.generic_cnt;
 			break;
 		}
-		slimbusDevices.genericLa[slimbusDevices.genericCount++] = logicalAddress;
+		slimbus_devices.generic_logical_addr[slimbus_devices.generic_cnt++] = logical_addr;
 		break;
 
 	/*
-		* In most cases not needed.
-		 * If there is one manager in the system, it will be active, and always have 0xFF as logical address.
-		 * Active Managers don't need enumeration
-		 */
+	 * In most cases not needed.
+	 * If there is one manager in the system, it will be active, and always have 0xFF as logical address.
+	 * Active Managers don't need enumeration
+	 */
 	case CSMI_DC_MANAGER:
 		/* New logical address with offset 0xE0 */
-		logicalAddress = 0xE0 | slimbusDevices.managerCount;
-		slimbusDevices.managerLa[slimbusDevices.managerCount++] = logicalAddress;
+		logical_addr = 0xE0 | slimbus_devices.manager_cnt;
+		slimbus_devices.manager_logical_addr[slimbus_devices.manager_cnt++] = logical_addr;
 		break;
 
 	/* Unknown device class code. Don't assign logical address (Invalid values (0xF[0-F]) are ignored by the driver). */
@@ -353,21 +351,27 @@ static uint8_t CLBK_AssignLogicalAddressHandler(uint64_t enumerationAddress, CSM
 		return 0xF0;
 	}
 
-	slimbusDevices.devices++;
+	slimbus_devices.devices++;
 
-	return logicalAddress;
+	AUDIO_LOGI("dev num %d, framer cnt %d, interface cnt %d, generic cnt %d, manager cnt %d",
+		slimbus_devices.devices,
+		slimbus_devices.framer_cnt,
+		slimbus_devices.interface_cnt,
+		slimbus_devices.generic_cnt,
+		slimbus_devices.manager_cnt);
+
+	return logical_addr;
 }
 
 
 /**
  * Handler for Receiving Message
  * Will be called for message that was received by Manager.
- * @param[in] pD driver's private data.
+ * @param[in] pd driver's private data.
  * @param[in] message received message as structure
  */
-static void CLBK_ReceivedMessageHandler(void* pD, struct CSMI_Message* message)
+static void received_message_handler(void *pd, struct CSMI_Message *message)
 {
-	/* todo: add function */
 	slimbus_irq_state = 0x100 + message->messageCode;
 }
 
@@ -375,10 +379,10 @@ static void CLBK_ReceivedMessageHandler(void* pD, struct CSMI_Message* message)
 /**
  * Handler for Sending Message
  * Will be called for message that will be send by Manager.
- * @param[in] pD driver's private data.
+ * @param[in] pd driver's private data.
  * @param[in] message message to be sent as structure
  */
-static void CLBK_SendingMessageHandler(void* pD, struct CSMI_Message* message)
+static void sending_message_handler(void *pd, struct CSMI_Message *message)
 {
 	/* todo: add function */
 }
@@ -386,162 +390,160 @@ static void CLBK_SendingMessageHandler(void* pD, struct CSMI_Message* message)
 /**
  * Handler for Reported Information Element
  * Will be called for REPORT_INFORMATION message that was received by Manager.
- * @param[in] pD driver's private data.
- * @param[in] sourceLa source device's Logical Address
+ * @param[in] pd driver's private data.
+ * @param[in] source_logical_addr source device's Logical Address
  * @param[in] informationElements Structure with decoded information elements
  */
-static void CLBK_InformationElementsHandler(void* pD, uint8_t sourceLa, struct CSMI_InformationElements* informationElements)
+static void information_elements_handler(void *pd, uint8_t source_logical_addr, struct CSMI_InformationElements *info)
 {
-	RFC_PrintIeStatus(informationElements, sourceLa);
+	rfc_print_ie_status(info, source_logical_addr);
 
 	/* If value or information was requested but it resulted in error, set variables here */
-	if ((internalReply.valueRequested) || (internalReply.informationRequested)) {
-		if ((informationElements->coreUnsprtdMsg) || (informationElements->coreExError)) {
-			internalReply.error = 1;
-			internalReply.valueRequested = 0;
-			internalReply.informationRequested = 0;
+	if ((internal_reply.value_requested) || (internal_reply.information_requested)) {
+		if ((info->coreUnsprtdMsg) || (info->coreExError)) {
+			internal_reply.error = 1;
+			internal_reply.value_requested = 0;
+			internal_reply.information_requested = 0;
 		}
 	}
 
-	if (informationElements->coreExError)
-		events.ieExError = 1;
-	if (informationElements->coreUnsprtdMsg)
-		events.ieUnsupportedMsg = 1;
-	if (informationElements->coreReconfigObjection)
-		events.ieReconfigObjection = 1;
+	if (info->coreExError)
+		events.ie_ex_error = 1;
+	if (info->coreUnsprtdMsg)
+		events.ie_unsupported_msg = 1;
+	if (info->coreReconfigObjection)
+		events.ie_reconfig_objection = 1;
 }
 
 /**
  * Handler for REPLY_VALUE Messages
- * @param[in] pD driver's private data
- * @param[in] sourceLa source device's Logical Address
- * @param[in] transactionId Transaction ID
- * @param[in] valueSlice pointer to received Value data
- * @param[in] valueSliceLength size of received Value
+ * @param[in] pd driver's private data
+ * @param[in] source_logical_addr source device's Logical Address
+ * @param[in] transaction_id Transaction ID
+ * @param[in] value_slice pointer to received Value data
+ * @param[in] value_slice_length size of received Value
  */
-static void CLBK_MsgReplyValue(void* pD, uint8_t sourceLa, uint8_t transactionId, uint8_t* valueSlice, uint8_t valueSliceLength)
+static void msg_reply_value(void *pd, uint8_t source_logical_addr, uint8_t transaction_id, uint8_t *value_slice, uint8_t value_slice_length)
 {
 
 	/*
 	 * If Value was requested and its transaction ID is equal to received reply,
 	 * then copy its value to internal structure
 	 */
-	if (internalReply.valueRequested) {
-		if (internalReply.transactionId == transactionId) {
-			memcpy((void*) internalReply.ptr, (void*) valueSlice, valueSliceLength);
-			internalReply.received = 1;
-			internalReply.valueRequested = 0;
+	if (internal_reply.value_requested) {
+		if (internal_reply.transaction_id == transaction_id) {
+			memcpy((void *) internal_reply.ptr, (void *) value_slice, value_slice_length);
+			internal_reply.received = 1;
+			internal_reply.value_requested = 0;
 			slimbus_irq_state = 3;
-			complete(&(internalReply.read_finish));
+			complete(&(internal_reply.read_finish));
 		} else {
-			pr_err("[%s:%d] transactionId error! (%#x %#x)\n", __FUNCTION__, __LINE__, internalReply.transactionId, transactionId);
+			AUDIO_LOGE("transaction_id error! (%#x %#x)", internal_reply.transaction_id, transaction_id);
 		}
 	} else {
-		pr_err("[%s:%d] replyvalue error!\n", __FUNCTION__, __LINE__);
+		AUDIO_LOGE("replyvalue error");
 	}
 }
 
 /**
  * Handler for REPORT_PRESENCE Messages
- * @param[in] pD driver's private data
- * @param[in] sourceEa source device's Enumeration Address
- * @param[in] deviceClass source device's Device Class
- * @param[in] deviceClassVersion source device's Device Class Version
+ * @param[in] pd driver's private data
+ * @param[in] source_ea source device's Enumeration Address
+ * @param[in] device_class source device's Device Class
+ * @param[in] device_class_version source device's Device Class Version
  */
-static void CLBK_MsgReportPresentHandler(void* pD, uint64_t sourceEa, CSMI_DeviceClass deviceClass, uint8_t deviceClassVersion)
+static void msg_report_present_handler(void *pd, uint64_t source_ea, CSMI_DeviceClass device_class, uint8_t device_class_version)
 {
-	events.reportedPresence++;
+	events.reported_presence++;
 }
 
 
 /**
  * Handler for REPORT_ABSENT Messages
- * @param[in] pD driver's private data
- * @param[in] sourceLa source device's Logical Address
+ * @param[in] pd driver's private data
+ * @param[in] source_logical_addr source device's Logical Address
  */
-static void CLBK_MsgReportAbsentHandler(void* pD, uint8_t sourceLa)
+static void msg_report_absent_handler(void *pd, uint8_t source_logical_addr)
 {
-	events.reportedAbsence++;
+	events.reported_absence++;
 }
 
 
 /**
  * Handler for REPORT_INFORMATION Messages
- * @param[in] pD driver's private data
- * @param[in] sourceLa source device's Logical Address
- * @param[in] elementCode Element Code
- * @param[in] informationSlice pointer to reported Information Slice
- * @param[in] informationSliceLength reported Information Slice size
+ * @param[in] pd driver's private data
+ * @param[in] source_logical_addr source device's Logical Address
+ * @param[in] element_code Element Code
+ * @param[in] information_slice pointer to reported Information Slice
+ * @param[in] information_slice_length reported Information Slice size
  */
-static void CLBK_MsgReportInformationHandler(void* pD, uint8_t sourceLa, uint16_t elementCode, uint8_t* informationSlice, uint8_t informationSliceLength)
+static void msg_report_information_handler(void *pd, uint8_t source_logical_addr, uint16_t element_code, uint8_t *information_slice, uint8_t information_slice_length)
 {
 	/* todo: add function */
 }
 
 /**
  * Handler for REPLY_INFORMATION Messages
- * @param[in] pD driver's private data
- * @param[in] sourceLa source device's Logical Address
- * @param[in] transactionId Transaction ID
- * @param[in] informationSlice pointer to reported Information Slice
- * @param[in] informationSliceLength reported Information Slice size
+ * @param[in] pd driver's private data
+ * @param[in] source_logical_addr source device's Logical Address
+ * @param[in] transaction_id Transaction ID
+ * @param[in] information_slice pointer to reported Information Slice
+ * @param[in] information_slice_length reported Information Slice size
  */
-static void CLBK_MsgReplyInformationHandler(void* pD, uint8_t sourceLa, uint8_t transactionId, uint8_t* informationSlice, uint8_t informationSliceLength)
+static void msg_reply_information_handler(void *pd, uint8_t source_logical_addr, uint8_t transaction_id, uint8_t *information_slice, uint8_t information_slice_length)
 {
 
 	/*
 	 * If Information was requested and its transaction ID is equal to received reply,
 	 * then copy its value to internal structure
 	 */
-	if (internalReply.informationRequested) {
-		if (internalReply.transactionId == transactionId) {
-			memcpy((void*) internalReply.ptr, (void*) informationSlice, informationSliceLength);
-			internalReply.received = 1;
-			internalReply.informationRequested = 0;
+	if (internal_reply.information_requested) {
+		if (internal_reply.transaction_id == transaction_id) {
+			memcpy((void *) internal_reply.ptr, (void *) information_slice, information_slice_length);
+			internal_reply.received = 1;
+			internal_reply.information_requested = 0;
 			slimbus_irq_state = 4;
-			complete(&(internalReply.request_finish));
+			complete(&(internal_reply.request_finish));
 		} else {
-			pr_err("[%s:%d] transactionId error! (%#x %#x)\n", __FUNCTION__, __LINE__, internalReply.transactionId, transactionId);
+			AUDIO_LOGE("transaction_id error! (%#x %#x)", internal_reply.transaction_id, transaction_id);
 		}
 	} else {
-		pr_err("[%s:%d] ReplyInformation error!\n", __FUNCTION__, __LINE__);
+		AUDIO_LOGE("ReplyInformation error!");
 	}
 }
 
 static void slimbus_lost_sync_cb(struct work_struct *work)
 {
-	bool fSync = false;
-	bool sfSync = false;
-	bool mSync = false;
-	bool sfbSync = false;
-	bool phSync = false;
-	uint32_t ret = 0;
+	bool fsync = false;
+	bool sfsync = false;
+	bool msync = false;
+	bool sfbsync = false;
+	bool phsync = false;
+	uint32_t ret;
 	uint32_t wait_timeout = 0;
 
-	while ((!fSync || !sfSync || !mSync) && (wait_timeout++ < 100)) {
-		ret = csmiDrv->getStatusSynchronization(devm_slimbus_priv, &fSync, &sfSync, &mSync, &sfbSync, &phSync);
-		if (ret) {
-			SLIMBUS_DEV_LIMIT_ERR("get sync status error\n");
-		}
+	while ((!fsync || !sfsync || !msync) && (wait_timeout++ < 100)) {
+		ret = csmi_drv->getStatusSynchronization(devm_slimbus_priv, &fsync, &sfsync, &msync, &sfbsync, &phsync);
+		if (ret)
+			slimbus_dev_limit_err("get sync status error\n");
 		usleep_range(300, 350);
 	}
 
-	if (fSync && sfSync && mSync) {
+	if (fsync && sfsync && msync) {
 		ret = slimbus_track_recover();
-		if (ret) {
-			SLIMBUS_DEV_LIMIT_ERR(" track recover failed\n");
-		}
-		SLIMBUS_DEV_LOSTMS_RECOVER("wait_timeout:%d, fSync:%x, sfSync:%x, mSync:%x, sfbSync:%x, phSync:%x\n", wait_timeout, fSync, sfSync, mSync, sfbSync, phSync);
+		if (ret)
+			slimbus_dev_limit_err(" track recover failed\n");
+		slimbus_dev_lostms_recover("wait_timeout:%d, fsync:%x, sfsync:%x, msync:%x, sfbsync:%x, phsync:%x\n", wait_timeout, fsync, sfsync, msync, sfbsync, phsync);
 	} else {
-		SLIMBUS_DEV_LIMIT_ERR("recover failed! wait_timeout:%d \n", wait_timeout);
+		slimbus_dev_limit_err("recover failed! wait_timeout:%d \n", wait_timeout);
 	}
 
 }
 
-static void CLBK_ManagerInterruptsHandler(void* pD, CSMI_Interrupt interrupt)
+static void manager_interrupts_handler(void *pd, CSMI_Interrupt interrupt)
 {
-	if ((interrupt & CSMI_INT_SYNC_LOST) && (slimbusDevices.devices > SOC_DEVICE_NUM)) {
-		SLIMBUS_DEV_LIMIT_ERR("LOST SYNC, interrupt:%#x \n", interrupt);
+	if ((interrupt & CSMI_INT_SYNC_LOST) && (slimbus_devices.devices > SOC_DEVICE_NUM)) {
+		slimbus_dev_limit_err("LOST SYNC, interrupt:%#x \n", interrupt);
 		slimbus_dump_state(SLIMBUS_DUMP_LOSTMS);
 		__pm_wakeup_event(&slimbus_wake_lock, 1000);
 		queue_delayed_work(slimbus_lost_sync_wq, &slimbus_lost_sync_delay_work, msecs_to_jiffies(50));
@@ -551,11 +553,11 @@ static void CLBK_ManagerInterruptsHandler(void* pD, CSMI_Interrupt interrupt)
 /**
  * Create Element Code
  * @param[in] address element address
- * @param[in] byteAccess 1 for byte access, 0 for element access
- * @param[in] sliceSize size of slice
+ * @param[in] byte_access 1 for byte access, 0 for element access
+ * @param[in] slice_size size of slice
  * @return Element Code
  */
-static uint16_t RFC_CreateElementCode(uint16_t address, bool byteAccess, CSMI_SliceSize sliceSize)
+static uint16_t rfc_create_element_code(uint16_t address, bool byte_access, CSMI_SliceSize slice_size)
 {
 	/*
 	 * Element Code
@@ -564,23 +566,23 @@ static uint16_t RFC_CreateElementCode(uint16_t address, bool byteAccess, CSMI_Sl
 	 * [ 3: 3] access type (1 - byte based, 0 - elemental)
 	 * [ 2: 0] value slice size
 	 */
-	return (address << 4) | ((unsigned int)byteAccess << 3) | (sliceSize);
+	return (address << 4) | ((unsigned int)byte_access << 3) | (slice_size);
 }
 
-static uint32_t RFC_CheckEvent(void)
+static uint32_t rfc_check_event(void)
 {
 	uint32_t ret = 0;
 
-	if (events.ieExError)  {
-		pr_err("Bus Reconfiguration failed, one or more devices reported Execution Error.");
+	if (events.ie_ex_error)  {
+		AUDIO_LOGE("Bus Reconfiguration failed, one or more devices reported Execution Error");
 		ret = EIO;
 	}
-	if (events.ieUnsupportedMsg)  {
-		pr_err("Bus Reconfiguration failed, one or more devices reported Unsupported Message.");
+	if (events.ie_unsupported_msg)  {
+		AUDIO_LOGE("Bus Reconfiguration failed, one or more devices reported Unsupported Message");
 		ret = EIO;
 	}
-	if (events.ieReconfigObjection)  {
-		pr_err("Bus Reconfiguration failed, one or more devices reported Reconfig Objection.");
+	if (events.ie_reconfig_objection)  {
+		AUDIO_LOGE("Bus Reconfiguration failed, one or more devices reported Reconfig Objection");
 		ret = EIO;
 	}
 
@@ -592,15 +594,15 @@ static uint32_t RFC_CheckEvent(void)
  * If handler is not used it should have NULL assigned to its pointer.
  */
 static struct CSMI_Callbacks event_callbacks = {
-	.onAssignLogicalAddress 		= CLBK_AssignLogicalAddressHandler,
-	.onDeviceClassRequest			= CLBK_DeviceClassHandler,
-	.onMessageReceived				= CLBK_ReceivedMessageHandler,
-	.onMessageSending				= CLBK_SendingMessageHandler,
-	.onInformationElementReported	= CLBK_InformationElementsHandler,
-	.onDataPortInterrupt			= NULL,
-	.onManagerInterrupt 			= CLBK_ManagerInterruptsHandler,
-	.onRawMessageReceived			= NULL,
-	.onRawMessageSending			= NULL,
+	.onAssignLogicalAddress = assign_logical_address_handler,
+	.onDeviceClassRequest = device_class_handler,
+	.onMessageReceived = received_message_handler,
+	.onMessageSending = sending_message_handler,
+	.onInformationElementReported = information_elements_handler,
+	.onDataPortInterrupt = NULL,
+	.onManagerInterrupt = manager_interrupts_handler,
+	.onRawMessageReceived = NULL,
+	.onRawMessageSending = NULL,
 };
 
 /*
@@ -610,11 +612,11 @@ static struct CSMI_Callbacks event_callbacks = {
  * These handlers can be changed at any time via assignMessageHandlers function.
  */
 static struct CSMI_MessageCallbacks message_callbacks = {
-	.onMsgReportPresent 			= CLBK_MsgReportPresentHandler,
-	.onMsgReportAbsent				= CLBK_MsgReportAbsentHandler,
-	.onMsgReplyInformation			= CLBK_MsgReplyInformationHandler,
-	.onMsgReportInformation 		= CLBK_MsgReportInformationHandler,
-	.onMsgReplyValue				= CLBK_MsgReplyValue,
+	.onMsgReportPresent = msg_report_present_handler,
+	.onMsgReportAbsent = msg_report_absent_handler,
+	.onMsgReplyInformation = msg_reply_information_handler,
+	.onMsgReportInformation = msg_report_information_handler,
+	.onMsgReplyValue = msg_reply_value,
 };
 
 /*
@@ -668,53 +670,70 @@ static CSMI_GenericDeviceConfig device_cfg = {
 	.sinkStartLevel 				= 0,
 };
 
-int slimbus_dev_init(platform_type_t platform_type)
+static int dev_preprocess(void)
 {
-	int ret = 0;
-	int wait_times = 0;
-	uint32_t slimbus_dev_num = SOC_DEVICE_NUM;
-	static uint32_t first_init = 0;
-
-	mutex_lock(&slimbus_mutex);
-	lostms_times = 0;
-
-	RFC_ClearEvents();
-	memset(&slimbusDevices, 0, sizeof(RFC_EnumeratedDevices));
+	int ret;
 
 	/* Initialize the driver and hardware */
-	ret = csmiDrv->init(devm_slimbus_priv, &general_cfg, &event_callbacks);
+	ret = csmi_drv->init(devm_slimbus_priv, &general_cfg, &event_callbacks);
 	if (ret) {
-		pr_err("Init function failed with result: %d \n", ret);
+		AUDIO_LOGE("Init function failed with result: %d", ret);
 		goto exit;
 	}
 
 	/* Assign Message Handlers */
-	ret = csmiDrv->assignMessageCallbacks(devm_slimbus_priv, &message_callbacks);
+	ret = csmi_drv->assignMessageCallbacks(devm_slimbus_priv, &message_callbacks);
 	if (ret) {
-		pr_err("AssignMessageCallbacks function failed with result: %d \n", ret);
+		AUDIO_LOGE("AssignMessageCallbacks function failed with result: %d", ret);
 		goto exit;
 	}
 
 	/* Set Framer Configuration */
-	ret = csmiDrv->setFramerConfig(devm_slimbus_priv, &framer_cfg);
+	ret = csmi_drv->setFramerConfig(devm_slimbus_priv, &framer_cfg);
 	if (ret) {
-		pr_err("SetFramerConfig function failed with result: %d \n", ret);
+		AUDIO_LOGE("SetFramerConfig function failed with result: %d", ret);
 		goto exit;
 	}
 
 	/* Set Generic Device Configuration */
-	ret = csmiDrv->setGenericDeviceConfig(devm_slimbus_priv, &device_cfg);
+	ret = csmi_drv->setGenericDeviceConfig(devm_slimbus_priv, &device_cfg);
 	if (ret) {
-		pr_err("SetGenericDeviceConfig function failed with result: %d \n", ret);
+		AUDIO_LOGE("SetGenericDeviceConfig function failed with result: %d", ret);
 		goto exit;
 	}
 
 	/* Start the Driver and enable Manager and its interrupts */
-	ret = csmiDrv->start(devm_slimbus_priv);
+	ret = csmi_drv->start(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Start function failed with result: %d \n", ret);
+		AUDIO_LOGE("Start function failed with result: %d", ret);
 		goto exit;
 	}
+
+exit:
+	return ret;
+}
+
+int slimbus_dev_init(enum platform_type platform_type)
+{
+	int ret;
+	int wait_times = 0;
+	uint32_t slimbus_dev_num = SOC_DEVICE_NUM;
+	static uint32_t first_init;
+
+	if (platform_type > PLATFORM_FPGA) {
+		AUDIO_LOGE("invalid platform type: %d", platform_type);
+		return -EINVAL;
+	}
+
+	mutex_lock(&slimbus_mutex);
+	lostms_times = 0;
+
+	rfc_clear_events();
+	memset(&slimbus_devices, 0, sizeof(struct rfc_enumerated_devices));
+
+	ret = dev_preprocess();
+	if (ret)
+		goto exit;
 
 	first_init++;
 	int_need_clear = false;
@@ -727,69 +746,80 @@ int slimbus_dev_init(platform_type_t platform_type)
 
 	/* Print number of devices which sent REPORT_PRESENCR message */
 	if (platform_type != PLATFORM_FPGA)
-		slimbus_dev_num = SOC_DEVICE_NUM + HI6402_DEVICE_NUM - ((first_init == 1) ? 1 : 0);
+		slimbus_dev_num = SOC_DEVICE_NUM + DA_COMBINE_DEVICE_NUM - ((first_init == 1) ? 1 : 0);
 
-	while ((slimbusDevices.devices < slimbus_dev_num) && (wait_times < ENUMERATION_TIMES)) {
+	if ((first_init == 1) && slimbus_is_da_combine_reset_in_kernel()) {
+		/* only soc devices(3) can enumerate on armpc platform */
+		AUDIO_LOGI("revise device number on pc platform when first init");
+		slimbus_dev_num = SOC_DEVICE_NUM;
+	}
+
+	while ((slimbus_devices.devices < slimbus_dev_num) && (wait_times < ENUMERATION_TIMES)) {
 		/* enumeration need 4ms normally, wait 40ms here is enough */
 		usleep_range(100, 150);
 		wait_times++;
 	}
 
-	pr_info("platype:%d, Discovered devices: %d, enumerated devices: %d!\n", platform_type, events.reportedPresence, slimbusDevices.devices);
+	AUDIO_LOGI("platype:%d, Discovered devices: %d, enumerated devices: %d", platform_type, events.reported_presence, slimbus_devices.devices);
 
 	mutex_unlock(&slimbus_mutex);
 
-	if ((slimbusDevices.devices <= SOC_DEVICE_NUM) && (slimbus_dev_num > SOC_DEVICE_NUM)) {
+	if ((slimbus_devices.devices <= SOC_DEVICE_NUM) && (slimbus_dev_num > SOC_DEVICE_NUM)) {
 		slimbus_drv_reset_bus();
 		/* wait for bus reset until device enumerated */
 		wait_times = 0;
-		while ((slimbusDevices.devices < slimbus_dev_num) && (wait_times < ENUMERATION_TIMES)) {
+		while ((slimbus_devices.devices < slimbus_dev_num) && (wait_times < ENUMERATION_TIMES)) {
 			/* enumeration need 4ms normally, wait 40ms here is enough */
 			usleep_range(100, 150);
 			wait_times++;
 		}
 
-		pr_info("After busreset, Discovered devices: %d, enumerated devices: %d!\n", events.reportedPresence, slimbusDevices.devices);
-		if (ENUMERATION_TIMES == wait_times) {
-			pr_err("retry fail, please check codec is connected or not\n");
-		}
+		AUDIO_LOGI("After busreset, Discovered devices: %d, enumerated devices: %d", events.reported_presence, slimbus_devices.devices);
+		if (wait_times == ENUMERATION_TIMES)
+			AUDIO_LOGE("retry fail, please check chip is connected or not");
 	}
-	SLIMBUS_DEV_LOSTMS_RECOVER("slimbus init\n");
+	slimbus_dev_lostms_recover("slimbus init\n");
 
 	return ret;
+
 exit:
 	slimbus_dump_state(SLIMBUS_DUMP_LOSTMS);
 	mutex_unlock(&slimbus_mutex);
 	return ret;
 }
 
-int slimbus_drv_init(platform_type_t platform_type, void *slimbus_reg, void *asp_reg, int irq)
+static void resource_init(enum platform_type platform_type,
+	const void *slimbus_reg, const void *asp_reg, const void *sctrl_reg)
 {
-	int ret = 0;
-	uint16_t slimbus_priv_obj_size = 0;
-
 	mutex_init(&slimbus_mutex);
 	spin_lock_init(&slimbus_spinlock);
-	init_completion(&(internalReply.read_finish));
-	init_completion(&(internalReply.request_finish));
+	init_completion(&(internal_reply.read_finish));
+	init_completion(&(internal_reply.request_finish));
 	wakeup_source_init(&slimbus_wake_lock, "slimbus_wake_lock");
 
 	general_cfg.regBase = (uintptr_t)slimbus_reg;
 	asp_base_reg = (uintptr_t)asp_reg;
+	sctrl_base_addr = (uintptr_t)sctrl_reg;
 	plat_type = platform_type;
+}
+
+static int drv_preprocess(void)
+{
+	uint16_t slimbus_priv_obj_size = 0;
+	int ret;
 
 	/* Get API function pointers for this Driver instance */
-	csmiDrv = CSMI_GetInstance();
+	csmi_drv = CSMI_GetInstance();
 
 	/* Probe driver for required memory */
-	ret = csmiDrv->probe(&general_cfg, &slimbus_priv_obj_size);
+	ret = csmi_drv->probe(&general_cfg, &slimbus_priv_obj_size);
 	if (ret) {
-		pr_err("Probe function failed with result: %d \n", ret);
+		AUDIO_LOGE("Probe function failed with result: %d", ret);
 		goto exit;
 	}
 
-	if (0 == slimbus_priv_obj_size) {
-		pr_err("slimbus prve obj size is zero\n");
+	if (slimbus_priv_obj_size == 0) {
+		AUDIO_LOGE("slimbus prve obj size is zero");
 		ret = -ENOMEM;
 		goto exit;
 	}
@@ -797,21 +827,41 @@ int slimbus_drv_init(platform_type_t platform_type, void *slimbus_reg, void *asp
 	/* Allocation of memory required by the driver */
 	devm_slimbus_priv = kmalloc(slimbus_priv_obj_size, GFP_KERNEL);
 	if (!devm_slimbus_priv) {
-		pr_err("malloc private data failed!\n");
+		AUDIO_LOGE("malloc private data failed");
 		ret = -ENOMEM;
 		goto exit;
 	}
 
+exit:
+	return ret;
+}
+
+int slimbus_drv_init(enum platform_type platform_type, const void *slimbus_reg,
+		const void *asp_reg, const void *sctrl_reg, int irq)
+{
+	int ret;
+
+	if (platform_type > PLATFORM_FPGA) {
+		AUDIO_LOGE("invalid platform type: %d", platform_type);
+		return -EINVAL;
+	}
+
+	if (!slimbus_reg || !asp_reg) {
+		AUDIO_LOGE("reg is null");
+		return -EINVAL;
+	}
+
+	resource_init(platform_type, slimbus_reg, asp_reg, sctrl_reg);
+	ret = drv_preprocess();
+	if (ret)
+		goto exit;
+
 	/* Enable SLIMbus interrupt */
-	ret = request_irq(
-					irq,
-					RFC_IrqHandler,
-					IRQF_TRIGGER_HIGH | IRQF_SHARED | IRQF_NO_SUSPEND,
-					"asp_irq_slimbus",
-					devm_slimbus_priv);
+	ret = request_irq(irq, rfc_irq_handler, IRQF_TRIGGER_HIGH | IRQF_SHARED | IRQF_NO_SUSPEND,
+		"asp_irq_slimbus", devm_slimbus_priv);
 
 	if (ret < 0) {
-		pr_err("could not claim irq %d\n", ret);
+		AUDIO_LOGE("could not claim irq: %d", ret);
 		ret = -ENODEV;
 		goto request_irq_failed;
 	}
@@ -824,7 +874,7 @@ int slimbus_drv_init(platform_type_t platform_type, void *slimbus_reg, void *asp
 
 	slimbus_lost_sync_wq = create_singlethread_workqueue("slimbus_lost_sync_wq");
 	if (!slimbus_lost_sync_wq) {
-		pr_err("work queue create failed\n");
+		AUDIO_LOGE("work queue create failed");
 		goto request_irq_failed;
 	}
 	INIT_DELAYED_WORK(&slimbus_lost_sync_delay_work, slimbus_lost_sync_cb);
@@ -845,14 +895,13 @@ exit:
 
 int slimbus_drv_stop(void)
 {
-	int result = 0;
+	int result;
 
 	mutex_lock(&slimbus_mutex);
 
-	result = csmiDrv->stop(devm_slimbus_priv);
-	if (result != 0) {
-		pr_err("SLIMbus stop failed with result: %d \n", result);
-	}
+	result = csmi_drv->stop(devm_slimbus_priv);
+	if (result != 0)
+		AUDIO_LOGE("SLIMbus stop failed with result: %d", result);
 
 	mutex_unlock(&slimbus_mutex);
 	return result;
@@ -863,11 +912,13 @@ int slimbus_drv_release(int irq)
 	free_irq(irq, devm_slimbus_priv);
 	mutex_destroy(&slimbus_mutex);
 	wakeup_source_trash(&slimbus_wake_lock);
-	if(slimbus_lost_sync_wq) {
+
+	if (slimbus_lost_sync_wq) {
 		cancel_delayed_work(&slimbus_lost_sync_delay_work);
 		flush_workqueue(slimbus_lost_sync_wq);
 		destroy_workqueue(slimbus_lost_sync_wq);
 	}
+
 	if (devm_slimbus_priv != NULL) {
 		kfree(devm_slimbus_priv);
 		devm_slimbus_priv = NULL;
@@ -876,40 +927,44 @@ int slimbus_drv_release(int irq)
 	return 0;
 }
 
-int slimbus_drv_bus_configure(slimbus_bus_config_t *bus_config)
+int slimbus_drv_bus_configure(const struct slimbus_bus_config *bus_config)
 {
-	int 				ret 	= 0;
-	CSMI_SubframeMode	sm;
-	CSMI_RootFrequency	rf;
-	CSMI_ClockGear		cg;
+	int ret = 0;
+	CSMI_SubframeMode sm;
+	CSMI_RootFrequency rf;
+	CSMI_ClockGear cg;
+
+	if (!bus_config) {
+		AUDIO_LOGE("bus config is null");
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
-	RFC_ClearEvents();
+	rfc_clear_events();
 
 	/* configure bus */
-	ret += csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-	ret += csmiDrv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
-	ret += csmiDrv->msgNextSubframeMode(devm_slimbus_priv, (CSMI_SubframeMode)bus_config->sm);
-	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
+	ret += csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret += csmi_drv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
+	ret += csmi_drv->msgNextSubframeMode(devm_slimbus_priv, (CSMI_SubframeMode)bus_config->sm);
+	ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Bus reconfiguration failed with error: %d\n", ret);
+		AUDIO_LOGE("Bus reconfiguration failed with error: %d", ret);
 		goto exit;
 	}
 
 	/* wait for param update */
-	if (plat_type == PLATFORM_FPGA) {
+	if (plat_type == PLATFORM_FPGA)
 		usleep_range(10000, 10050);
-	} else {
+	else
 		usleep_range(1000, 1050);
-	}
 
-	csmiDrv->getStatusSlimbus(devm_slimbus_priv, &sm, &cg, &rf);
+	csmi_drv->getStatusSlimbus(devm_slimbus_priv, &sm, &cg, &rf);
 
 	if ((sm != (CSMI_SubframeMode)bus_config->sm)
 		|| (rf != (CSMI_RootFrequency)bus_config->rf)
 		|| (cg != (CSMI_ClockGear)bus_config->cg)) {
-		pr_err("Bus Reconfiguration failed, ret=%d!\n", ret);
+		AUDIO_LOGE("Bus Reconfiguration failed, ret: %d", ret);
 		ret = EINVAL;
 	}
 
@@ -919,48 +974,52 @@ exit:
 	return ret;
 }
 
-int slimbus_drv_request_info(uint8_t  targetLa, uint16_t address, slimbus_slice_size_t sliceSize, void *valueRead)
+int slimbus_drv_request_info(uint8_t target_la, uint16_t address, enum slimbus_slice_size slice_size, void *value_read)
 {
-	int ret = 0;
-	uint16_t elementCode = 0;
+	int ret;
+	uint16_t element_code;
+
+	if (!value_read) {
+		AUDIO_LOGE("input value is null");
+		return -EINVAL;
+	}
+
+	if (slice_size >= SLIMBUS_SS_SLICE_BUT) {
+		AUDIO_LOGE("slice size is invalid, slice_size:%d\n", slice_size);
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
+	internal_reply.received = 0;
+	internal_reply.transaction_id += 1;
+	internal_reply.ptr = value_read;
+	internal_reply.information_requested = 1;
 
-	internalReply.received = 0;
-	internalReply.transactionId += 1;
-	internalReply.ptr = valueRead;
-	internalReply.informationRequested = 1;
+	reinit_completion(&internal_reply.request_finish);
+	/* create element code set byte address mode */
+	element_code = rfc_create_element_code(address, 1, (CSMI_SliceSize)slice_size);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
-	reinit_completion(&internalReply.request_finish);
-#else
-	INIT_COMPLETION(internalReply.request_finish);
-#endif
-
-	/* create element code set byte address mode*/
-	elementCode = RFC_CreateElementCode(address, 1, (CSMI_SliceSize)sliceSize);
-
-	RFC_ClearEvents();
+	rfc_clear_events();
 	mb();
-	ret = csmiDrv->msgRequestInformation(devm_slimbus_priv, 0, targetLa, internalReply.transactionId, elementCode);
+	ret = csmi_drv->msgRequestInformation(devm_slimbus_priv, 0, target_la, internal_reply.transaction_id, element_code);
 	if (ret) {
-		SLIMBUS_DRV_LIMIT_ERR("Sending REQUEST_INFORMATION failed with ret: %d, ID:%#x !\n", ret, internalReply.transactionId);
+		slimbus_drv_limit_err("Sending REQUEST_INFORMATION failed with ret: %d, ID:%#x !\n", ret, internal_reply.transaction_id);
 		goto exit;
 	}
 
 	/* Wait for reply (received using callback) */
-	if (wait_for_completion_timeout(&(internalReply.request_finish), msecs_to_jiffies(500)) == 0) {
-		SLIMBUS_DRV_LIMIT_ERR("REQUEST_INFORMATION Message timeout: received:%#x ID:%#x slimbus_irq_state:%#x !\n",
-			internalReply.received, internalReply.transactionId, slimbus_irq_state);
+	if (wait_for_completion_timeout(&(internal_reply.request_finish), msecs_to_jiffies(500)) == 0) {
+		slimbus_drv_limit_err("REQUEST_INFORMATION Message timeout: received:%#x ID:%#x slimbus_irq_state:%#x !\n",
+			internal_reply.received, internal_reply.transaction_id, slimbus_irq_state);
 		ret = EIO;
 		goto exit;
 	}
 
-	if (internalReply.error) {
-		internalReply.error = 0;
-		internalReply.informationRequested = 0;
+	if (internal_reply.error) {
+		internal_reply.error = 0;
+		internal_reply.information_requested = 0;
 
-		SLIMBUS_DRV_LIMIT_ERR("REQUEST_INFORMATION Message error\n");
+		slimbus_drv_limit_err("REQUEST_INFORMATION Message error\n");
 		ret = EIO;
 	}
 
@@ -970,142 +1029,178 @@ exit:
 	return ret;
 }
 
-#define GIC_BASE_ADDR	0xE82B0000
-#define GIC_SIZE		0x7fff
-void slimbus_dump_state(slimbus_dump_state_t type)
+static void dump_irq(void)
 {
+	uint32_t state[7] = {0};
 	uintptr_t gic_base_addr;
-	uint32_t state[9] = {0};
-	uint32_t i = 0;
-	uint8_t  framersoc = 0;
-	uint8_t  framercodec = 0;
 
-	memset(state, 0, sizeof(state));
+	state[0] = readl((void __iomem *)(general_cfg.regBase + 0x3c));
+	state[1] = readl((void __iomem *)(general_cfg.regBase + 0x24));
+	gic_base_addr = (uintptr_t)ioremap(GIC_BASE_ADDR, GIC_SIZE);
+	if (!gic_base_addr) {
+		AUDIO_LOGE("ioremap failed");
+		return;
+	}
 
+	state[2] = readl((void __iomem *)(gic_base_addr + 0x1214));
+	state[3] = readl((void __iomem *)(gic_base_addr + 0x1314));
+	state[4] = readl((void __iomem *)(gic_base_addr + 0x1414));
+	state[5] = readl((void __iomem *)(gic_base_addr + 0x2014));
+	state[6] = readl((void __iomem *)(gic_base_addr + 0x2018));
+	iounmap((void __iomem *)gic_base_addr);
+	gic_base_addr = (uintptr_t)NULL;
+	slimbus_drv_limit_err("0x3c:%#x 0X24:%#x; gic:(%#x,%#x,%#x,%#x,%#x)!\n",
+		state[0], state[1], state[2], state[3], state[4], state[5], state[6]);
+
+}
+
+static void dump_framer(void)
+{
+	uint8_t framersoc = 0;
+	uint8_t framercodec = 0;
+	uint32_t state = readl((void __iomem *)(general_cfg.regBase + 0x28));
+
+	slimbus_drv_request_info(0x20, SLIMBUS_DRV_ADDRESS, SLIMBUS_SS_1_BYTE, &framersoc);
+	slimbus_drv_request_info(0x21, SLIMBUS_DRV_ADDRESS, SLIMBUS_SS_1_BYTE, &framercodec);
+	AUDIO_LOGI("0x28:%#x, framer(0x20):%#x, framer(0x21):%#x", state, framersoc, framercodec);
+}
+
+static void dump_lostms(void)
+{
+	uint32_t state[13] = {0};
+
+	state[0] = readl((void __iomem *)(general_cfg.regBase + 0x0));
+	state[1] = readl((void __iomem *)(general_cfg.regBase + 0x20));
+	state[2] = readl((void __iomem *)(general_cfg.regBase + 0x24));
+	state[3] = readl((void __iomem *)(general_cfg.regBase + 0x28));
+	state[4] = readl((void __iomem *)(asp_base_reg + 0x8));
+	state[5] = readl((void __iomem *)(asp_base_reg + 0x14));
+	state[6] = readl((void __iomem *)(asp_base_reg + 0x18));
+	state[7] = readl((void __iomem *)(asp_base_reg + 0x20));
+	state[8] = readl((void __iomem *)(asp_base_reg + 0x38));
+	state[9] = readl((void __iomem *)(asp_base_reg + 0x1c));
+	state[10] = readl((void __iomem *)(asp_base_reg + 0x100));
+	state[11] = readl((void __iomem *)(sctrl_base_addr + 0x19c));
+	state[12] = readl((void __iomem *)(sctrl_base_addr + 0x260));
+
+	slimbus_drv_limit_err("0x0:%#x, 0x20:%#x, 0x24:%#x, 0x28:%#x\n", state[0], state[1], state[2], state[3]);
+	slimbus_drv_limit_err("0xe008:%#x, 0xe014:%#x, 0xe018:%#x, 0xe020:%#x, 0xe038:%#x;\n",
+		state[4], state[5], state[6], state[7], state[8]);
+	slimbus_drv_limit_err("0xe01c:%#x, 0xe100:%#x, 0x19c:%#x, 0x260:%#x;\n",
+		state[9], state[10], state[11], state[12]);
+}
+
+static void dump_all(void)
+{
+	uint32_t state[4] = {0};
+	uint32_t i;
+
+	slimbus_drv_limit_err("dump all slimbus regs\n");
+	for (i = 0; i < DUMP_SLIMBUS_REGS_SIZE; i += 0x10) {
+		state[0] = readl((void __iomem *)(general_cfg.regBase + i));
+		state[1] = readl((void __iomem *)(general_cfg.regBase + i + 4));
+		state[2] = readl((void __iomem *)(general_cfg.regBase + i + 8));
+		state[3] = readl((void __iomem *)(general_cfg.regBase + i + 0xc));
+		slimbus_drv_limit_err("0x%x - 0x%x: %#x, %#x, %#x, %#x\n",
+			i, i + 0xC, state[0], state[1], state[2], state[3]);
+	}
+}
+
+
+static void slimbus_dump_state(enum slimbus_dump_state type)
+{
 	if (plat_type == PLATFORM_FPGA) {
-		SLIMBUS_DRV_LIMIT_ERR("fpga platform, don't dump register!\n");
+		slimbus_drv_limit_err("fpga platform, don't dump register!\n");
 		return;
 	}
 
 	switch (type) {
 	case SLIMBUS_DUMP_IRQ:
-		state[0] = readl((void __iomem *)(general_cfg.regBase + 0x3c));
-		state[1] = readl((void __iomem *)(general_cfg.regBase + 0x24));
-		gic_base_addr = (uintptr_t)ioremap(GIC_BASE_ADDR, GIC_SIZE);
-		if (!gic_base_addr) {
-			pr_err("[%s:%d] ioremap failed! \n", __func__, __LINE__);
-			return;
-		}
-		state[2] = readl((void __iomem *)(gic_base_addr + 0x1214));
-		state[3] = readl((void __iomem *)(gic_base_addr + 0x1314));
-		state[4] = readl((void __iomem *)(gic_base_addr + 0x1414));
-		state[5] = readl((void __iomem *)(gic_base_addr + 0x2014));
-		state[6] = readl((void __iomem *)(gic_base_addr + 0x2018));
-		iounmap((void __iomem *)gic_base_addr);
-		SLIMBUS_DRV_LIMIT_ERR("0x3c:%#x 0X24:%#x; gic:(%#x,%#x,%#x,%#x,%#x)!\n",
-			state[0], state[1], state[2], state[3], state[4], state[5], state[6]);
+		dump_irq();
 		break;
-
 	case SLIMBUS_DUMP_FRAMER:
-		state[0] = readl((void __iomem *)(general_cfg.regBase + 0x28));
-		slimbus_drv_request_info(0x20, 0x400, SLIMBUS_SS_1_BYTE, &framersoc);
-		slimbus_drv_request_info(0x21, 0x400, SLIMBUS_SS_1_BYTE, &framercodec);
-		pr_info("[%s:%d] 0x28:%#x, framer(0x20):%#x, framer(0x21):%#x !\n",
-			__func__, __LINE__, state[0], framersoc, framercodec);
+		dump_framer();
 		break;
-
 	case SLIMBUS_DUMP_LOSTMS:
-		state[0] = readl((void __iomem *)(general_cfg.regBase + 0x0));
-		state[1] = readl((void __iomem *)(general_cfg.regBase + 0x20));
-		state[2] = readl((void __iomem *)(general_cfg.regBase + 0x24));
-		state[3] = readl((void __iomem *)(general_cfg.regBase + 0x28));
-		state[4] = readl((void __iomem *)(asp_base_reg + 0x8));
-		state[5] = readl((void __iomem *)(asp_base_reg + 0x14));
-		state[6] = readl((void __iomem *)(asp_base_reg + 0x18));
-		state[7] = readl((void __iomem *)(asp_base_reg + 0x20));
-		state[8] = readl((void __iomem *)(asp_base_reg + 0x38));
-
-		SLIMBUS_DRV_LIMIT_ERR("0x0:%#x, 0x20:%#x, 0x24:%#x, 0x28:%#x\n", state[0], state[1], state[2], state[3]);
-		SLIMBUS_DRV_LIMIT_ERR("0xe008:%#x, 0xe014:%#x, 0xe018:%#x, 0xe020:%#x, 0xe038:%#x;\n",
-			state[4], state[5], state[6], state[7], state[8]);
+		dump_lostms();
 		break;
-
 	case SLIMBUS_DUMP_ALL:
-		SLIMBUS_DRV_LIMIT_ERR("dump all slimbus regs\n");
-		for (i = 0; i < DUMP_SLIMBUS_REGS_SIZE; i += 0x10) {
-			state[0] = readl((void __iomem *)(general_cfg.regBase + i));
-			state[1] = readl((void __iomem *)(general_cfg.regBase + i + 4));
-			state[2] = readl((void __iomem *)(general_cfg.regBase + i + 8));
-			state[3] = readl((void __iomem *)(general_cfg.regBase + i + 0xc));
-			SLIMBUS_DRV_LIMIT_ERR("0x%x - 0x%x: %#x, %#x, %#x, %#x\n",
-				i, i + 0xC, state[0], state[1], state[2], state[3]);
-		}
+		dump_all();
 		break;
-
 	default:
-		pr_err("[%s:%d] default! \n", __func__, __LINE__);
+		AUDIO_LOGE("default");
 		break;
 	}
 }
 
-/*
-* Slimbus Element read
-* @param[in] address 16 bits element address
-* @param[in] slicesize size of slize
-* @param[in] valueRead value of the address
-* @return value of element address
-*/
-int slimbus_drv_element_read(uint8_t  targetLa, uint16_t address, slimbus_slice_size_t sliceSize, void *valueRead)
+spinlock_t *slimbus_drv_get_spinlock(void)
 {
-	int 	 ret = 0;
-	uint16_t elementCode = 0;
+	return &slimbus_spinlock;
+}
+
+/*
+ * Slimbus Element read
+ * @param[in] address 16 bits element address
+ * @param[in] slicesize size of slize
+ * @param[in] value_read value of the address
+ * @return value of element address
+ */
+int slimbus_drv_element_read(uint8_t target_la, uint16_t address, enum slimbus_slice_size slice_size, void *value_read)
+{
+	int ret;
+	uint16_t element_code;
+
+	if (!value_read) {
+		AUDIO_LOGE("input value is null");
+		return -EINVAL;
+	}
+
+	if (slice_size >= SLIMBUS_SS_SLICE_BUT) {
+		AUDIO_LOGE("slice size is invalid, slice_size:%d\n", slice_size);
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
 	/*lint -e666*/
-	if (abs(get_timeus() - last_time) < REG_ACCESS_TIME_DIFF) {
+	if (abs(get_timeus() - last_time) < REG_ACCESS_TIME_DIFF)
 		udelay(2);
-	}
+
 	/*lint +e666*/
-	internalReply.received = 0;
-	internalReply.transactionId += 1;
-	internalReply.valueRequested = 1;
-	internalReply.ptr = valueRead;
+	internal_reply.received = 0;
+	internal_reply.transaction_id += 1;
+	internal_reply.value_requested = 1;
+	internal_reply.ptr = value_read;
 	slimbus_irq_state = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
-	reinit_completion(&internalReply.read_finish);
-#else
-	INIT_COMPLETION(internalReply.read_finish);
-#endif
+	reinit_completion(&internal_reply.read_finish);
+	/* create element code set byte address mode */
+	element_code = rfc_create_element_code(address, 1, (CSMI_SliceSize)slice_size);
 
-	/* create element code set byte address mode*/
-	elementCode = RFC_CreateElementCode(address, 1, (CSMI_SliceSize)sliceSize);
-
-	RFC_ClearEvents();
+	rfc_clear_events();
 	mb();
-	ret = csmiDrv->msgRequestValue(devm_slimbus_priv, 0, targetLa, internalReply.transactionId, elementCode);
+	ret = csmi_drv->msgRequestValue(devm_slimbus_priv, 0, target_la, internal_reply.transaction_id, element_code);
 	if (ret) {
-		SLIMBUS_DRV_LIMIT_ERR("Sending REQUEST_VALUE failed with ret: %d ID:%#x slimbus_irq_state:%#x \n", ret, internalReply.transactionId, slimbus_irq_state);
+		slimbus_drv_limit_err("Sending REQUEST_VALUE failed with ret: %d ID:%#x slimbus_irq_state:%#x \n", ret, internal_reply.transaction_id, slimbus_irq_state);
 		slimbus_dump_state(SLIMBUS_DUMP_IRQ);
 		goto exit;
 	}
 
-	if (wait_for_completion_timeout(&(internalReply.read_finish), msecs_to_jiffies(500)) == 0) {
-		SLIMBUS_DRV_LIMIT_ERR("REQUEST_VALUE Message timeout: received:%#x ID:%#x slimbus_irq_state:%#x !\n", internalReply.received, internalReply.transactionId, slimbus_irq_state);
+	if (wait_for_completion_timeout(&(internal_reply.read_finish), msecs_to_jiffies(500)) == 0) {
+		slimbus_drv_limit_err("REQUEST_VALUE Message timeout: received:%#x ID:%#x slimbus_irq_state:%#x !\n", internal_reply.received, internal_reply.transaction_id, slimbus_irq_state);
 		slimbus_dump_state(SLIMBUS_DUMP_IRQ);
 		ret = EIO;
 		goto exit;
 	}
 
-	if (internalReply.error) {
-		internalReply.error = 0;
-		internalReply.valueRequested = 0;
+	if (internal_reply.error) {
+		internal_reply.error = 0;
+		internal_reply.value_requested = 0;
 
-		SLIMBUS_DRV_LIMIT_ERR("REQUEST_VALUE Message error\n");
+		slimbus_drv_limit_err("REQUEST_VALUE Message error\n");
 		ret = EIO;
 	} else {
-		SLIMBUS_DEV_LOSTMS_RECOVER("slimbus recover!\n");
+		slimbus_dev_lostms_recover("slimbus recover!\n");
 	}
 
 exit:
@@ -1116,35 +1211,44 @@ exit:
 }
 
 /*
-* Slimbus Element write
-* @param[in] address 16 bits element address
-* @param[in] valueWrite value write to element address
-* @param[in] slicesize size of slize
-* @return
-*/
-int slimbus_drv_element_write(uint8_t  targetLa, uint16_t address, slimbus_slice_size_t sliceSize, void *valueWrite)
+ * Slimbus Element write
+ * @param[in] address 16 bits element address
+ * @param[in] value_write value write to element address
+ * @param[in] slicesize size of slize
+ * @return
+ */
+int slimbus_drv_element_write(uint8_t target_la, uint16_t address, enum slimbus_slice_size slice_size, void *value_write)
 {
-	int 	 ret = 0;
-	uint16_t elementCode = 0;
-	uint32_t valuesize[8] = {1,2,3,4,6,8,12,16};
+	int ret;
+	uint16_t element_code;
+	uint32_t value_size[8] = { 1, 2, 3, 4, 6, 8, 12, 16 };
+
+	if (!value_write) {
+		AUDIO_LOGE("input value is null");
+		return -EINVAL;
+	}
+
+	if (slice_size >= SLIMBUS_SS_SLICE_BUT) {
+		AUDIO_LOGE("slice size is invalid, slice_size:%d\n", slice_size);
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
 	/*lint -e666*/
-	if (abs(get_timeus() - last_time) < REG_ACCESS_TIME_DIFF) {
+	if (abs(get_timeus() - last_time) < REG_ACCESS_TIME_DIFF)
 		udelay(2);
-	}
+
 	/*lint +e666*/
-	RFC_ClearEvents();
+	rfc_clear_events();
 
-	elementCode = RFC_CreateElementCode(address, 1, (CSMI_SliceSize)sliceSize);
+	element_code = rfc_create_element_code(address, 1, (CSMI_SliceSize)slice_size);
 
-	ret = csmiDrv->msgChangeValue(devm_slimbus_priv, 0, targetLa, elementCode, (uint8_t *)valueWrite, valuesize[sliceSize]);
-	if (ret) {
-		SLIMBUS_DRV_LIMIT_ERR("Sending CHANGE_VALUE failed with ret: %d \n", ret);
-	} else {
-		SLIMBUS_DEV_LOSTMS_RECOVER("slimbus recover!\n");
-	}
+	ret = csmi_drv->msgChangeValue(devm_slimbus_priv, 0, target_la, element_code, (uint8_t *)value_write, value_size[slice_size]);
+	if (ret)
+		slimbus_drv_limit_err("Sending CHANGE_VALUE failed with ret: %d\n", ret);
+	else
+		slimbus_dev_lostms_recover("slimbus recover!\n");
 
 	last_time = get_timeus();
 
@@ -1153,144 +1257,148 @@ int slimbus_drv_element_write(uint8_t  targetLa, uint16_t address, slimbus_slice
 	return ret;
 }
 
-static int slimbus_drv_connect_track(slimbus_channel_property_t *channel, uint32_t ch_num)
+static int slimbus_drv_connect_track(const struct slimbus_channel_property *channel, uint32_t ch_num)
 {
 	int ret = 0;
-	uint32_t i = 0;
-	uint32_t j = 0;
+	uint32_t i;
+	uint32_t j;
 
 	if (!channel || (ch_num == 0))
 		return ret;
 
-	//connect the active source and sink
+	/* connect the active source and sink */
 	for (i = 0; i < ch_num; i++) {
-		/*Connecting Source to Data Channel */
+		/* Connecting Source to Data Channel */
 
-		ret += csmiDrv->msgConnectSource(devm_slimbus_priv, channel[i].source.la, channel[i].source.pn, channel[i].cn);
+		ret += csmi_drv->msgConnectSource(devm_slimbus_priv, channel[i].source.la, channel[i].source.pn, channel[i].cn);
 
 		/* Connecting Sink(s) to Data Channel */
-		for (j = 0; j < channel[i].sink_num; j++) {
-			ret += csmiDrv->msgConnectSink(devm_slimbus_priv, channel[i].sinks[j].la, channel[i].sinks[j].pn, channel[i].cn);
-		}
-		if (ret) {
-			pr_err("Connecting source or sink(s) failed, i= %d.", ch_num);
-		}
+		for (j = 0; j < channel[i].sink_num; j++)
+			ret += csmi_drv->msgConnectSink(devm_slimbus_priv, channel[i].sinks[j].la, channel[i].sinks[j].pn, channel[i].cn);
+
+		if (ret)
+			AUDIO_LOGE("Connecting source or sink(s) failed, i= %d", ch_num);
 	}
 
 	return ret;
 }
 
-int slimbus_drv_track_activate(slimbus_channel_property_t *channel, uint32_t ch_num)
+int slimbus_drv_track_activate(const struct slimbus_channel_property *channel, uint32_t ch_num)
 {
-	int 	 ret;
-	uint32_t i		= 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret;
+	uint32_t i;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
+
+	if (!channel) {
+		AUDIO_LOGE("channel is null");
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
 	/* configure channels */
-	RFC_ClearEvents();
+	rfc_clear_events();
 
 	ret = slimbus_drv_connect_track(channel, ch_num);
 	if (ret) {
-		pr_err("Connecting source or sink(s) failed.");
+		AUDIO_LOGE("Connecting source or sink(s) failed");
 		goto exit;
 	}
 
 	/* Configure and define Channels */
-	ret = csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret = csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Sending BEGIN_RECONFIGURATION failed with ret: %d \n", ret);
+		AUDIO_LOGE("Sending BEGIN_RECONFIGURATION failed with ret: %d\n", ret);
 		goto exit;
 	}
 
 	for (i = 0; i < ch_num; i++) {
 		/* Configuring Data Channel */
-		ret += csmiDrv->msgNextDefineChannel(devm_slimbus_priv, channel[i].cn, (CSMI_TransportProtocol)channel[i].tp, channel[i].sd, channel[i].sl);
-		ret += csmiDrv->msgNextDefineContent(devm_slimbus_priv, channel[i].cn, channel[i].fl, (CSMI_PresenceRate)channel[i].pr, (CSMI_AuxFieldFormat)channel[i].af, (CSMI_DataType)channel[i].dt, channel[i].cl, channel[i].dl);
+		ret += csmi_drv->msgNextDefineChannel(devm_slimbus_priv, channel[i].cn, (CSMI_TransportProtocol)channel[i].tp, channel[i].sd, channel[i].sl);
+		ret += csmi_drv->msgNextDefineContent(devm_slimbus_priv, channel[i].cn, channel[i].fl, (CSMI_PresenceRate)channel[i].pr, (CSMI_AuxFieldFormat)channel[i].af, (CSMI_DataType)channel[i].dt, channel[i].cl, channel[i].dl);
 		/* Activating Data Channel */
-		ret += csmiDrv->msgNextActivateChannel(devm_slimbus_priv, channel[i].cn);
+		ret += csmi_drv->msgNextActivateChannel(devm_slimbus_priv, channel[i].cn);
 
-		pr_info("[%s:%d] i %d, cn %d, sl %d, sd 0x%x, pr %d, dl %d, tp %d\n",
-			__FUNCTION__, __LINE__, i, channel[i].cn, channel[i].sl,
+		AUDIO_LOGI("i %d, cn %d, sl %d, sd 0x%x, pr %d, dl %d, tp %d\n", i, channel[i].cn, channel[i].sl,
 			channel[i].sd, channel[i].pr, channel[i].dl, channel[i].tp);
 	}
 	if (ret) {
-		pr_err("Configuring and Activating Data Channels failed. ");
+		AUDIO_LOGE("Configuring and Activating Data Channels failed");
 		goto exit;
 	}
 
-	ret = csmiDrv->msgReconfigureNow(devm_slimbus_priv);
+	ret = csmi_drv->msgReconfigureNow(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Sending RECONFIGURE_NOW failed with ret: %d \n", ret);
+		AUDIO_LOGE("Sending RECONFIGURE_NOW failed with ret: %d", ret);
 		goto exit;
 	}
 
-	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+	if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 		delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 	udelay(delaytime);
 
-	if (RFC_CheckEvent()) {
-		pr_err("Channel configuration failed!\n");
-	}
+	if (rfc_check_event())
+		AUDIO_LOGE("Channel configuration failed");
 
 exit:
 	mutex_unlock(&slimbus_mutex);
 	return ret;
 }
 
-
-
-int slimbus_drv_track_deactivate(slimbus_channel_property_t *channel, uint32_t ch_num)
+int slimbus_drv_track_deactivate(const struct slimbus_channel_property *channel, uint32_t ch_num)
 {
-	int 	 ret = 0;
-	uint32_t i		= 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret;
+	uint32_t i;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
+
+	if (!channel) {
+		AUDIO_LOGE("channel is null");
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
-	RFC_ClearEvents();
+	rfc_clear_events();
 
 	/* Configure and remove Channels */
-	ret = csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret = csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Sending BEGIN_RECONFIGURATION failed with ret: %d \n", ret);
+		AUDIO_LOGE("Sending BEGIN_RECONFIGURATION failed with ret: %d", ret);
 		goto exit;
 	}
 
 	for (i = 0; i < ch_num; i++) {
 		/* Deactivating Data Channel */
-		ret += csmiDrv->msgNextDeactivateChannel(devm_slimbus_priv, channel[i].cn);
+		ret += csmi_drv->msgNextDeactivateChannel(devm_slimbus_priv, channel[i].cn);
 
 		/* remove Data Channel */
-		ret += csmiDrv->msgNextRemoveChannel(devm_slimbus_priv, channel[i].cn);
+		ret += csmi_drv->msgNextRemoveChannel(devm_slimbus_priv, channel[i].cn);
 	}
 	if (ret) {
-		pr_err("Configuring and remove Data Channels failed. ");
+		AUDIO_LOGE("Configuring and remove Data Channels failed");
 		goto exit;
 	}
 
-	csmiDrv->msgReconfigureNow(devm_slimbus_priv);
+	csmi_drv->msgReconfigureNow(devm_slimbus_priv);
 	if (ret) {
-		pr_err("Sending RECONFIGURE_NOW failed with ret: %d \n", ret);
+		AUDIO_LOGE("Sending RECONFIGURE_NOW failed with ret: %d", ret);
 		goto exit;
 	}
 
-	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+	if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 		delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 	udelay(delaytime);
 
-	if (RFC_CheckEvent()) {
-		pr_err("Channel removed failed!\n");
-	}
+	if (rfc_check_event())
+		AUDIO_LOGE("Channel removed failed");
 
 exit:
 	mutex_unlock(&slimbus_mutex);
@@ -1298,45 +1406,48 @@ exit:
 	return ret;
 }
 
-int slimbus_drv_switch_framer(uint8_t  laif, uint16_t NCo, uint16_t NCi, slimbus_bus_config_t *bus_config)
+int slimbus_drv_switch_framer(uint8_t laif, uint16_t nco, uint16_t nci, const struct slimbus_bus_config *bus_config)
 {
-	int ret 	= 0;
-	static int8_t last_laif = 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret = 0;
+	static int8_t last_laif;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
+
+	if (!bus_config) {
+		AUDIO_LOGE("bus config is null");
+		return -EINVAL;
+	}
 
 	mutex_lock(&slimbus_mutex);
 
 	if (laif != last_laif)	{
 
-		pr_info("[%s:%d] la:0x%x, NCo:0x%x, NCi:0x%x cg:0x%x !\n", __FUNCTION__, __LINE__, laif, NCo, NCi, bus_config->cg);
-		RFC_ClearEvents();
-		ret += csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-		if (laif == slimbusDevices.framerLa[SLIMBUS_FRAMER_HI6402_ID]) {
-			ret += csmiDrv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
-		}
-		ret += csmiDrv->msgNextActiveFramer(devm_slimbus_priv, laif, NCo, NCi);
-		if (laif == slimbusDevices.framerLa[SLIMBUS_FRAMER_SOC_ID]) {
-			ret += csmiDrv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
-		}
-		ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
+		AUDIO_LOGI("la:0x%x, nco:0x%x, nci:0x%x cg:0x%x", laif, nco, nci, bus_config->cg);
+		rfc_clear_events();
+		ret += csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+		if (laif == slimbus_devices.framer_logical_addr[SLIMBUS_FRAMER_DA_COMBINE_ID])
+			ret += csmi_drv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
+		ret += csmi_drv->msgNextActiveFramer(devm_slimbus_priv, laif, nco, nci);
+		if (laif == slimbus_devices.framer_logical_addr[SLIMBUS_FRAMER_SOC_ID])
+			ret += csmi_drv->msgNextClockGear(devm_slimbus_priv, (CSMI_ClockGear)bus_config->cg);
+		ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
 		if (ret) {
-			pr_err("Bus switch framer failed with error: %d\n", ret);
+			AUDIO_LOGE("Bus switch framer failed with error: %d", ret);
 			goto exit;
 		}
 
-		/*param would be updated in one superframe, 250us*/
-		if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+		/* param would be updated in one superframe, 250us */
+		if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 			delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 		udelay(delaytime);
 
 		last_laif = laif;
 
-	}else {
-		pr_info("[%s:%d] switch to the same framer la:0x%x!\n", __FUNCTION__, __LINE__, laif);
+	} else {
+		AUDIO_LOGI("switch to the same framer la:0x%x", laif);
 	}
 
 exit:
@@ -1345,27 +1456,26 @@ exit:
 	return ret;
 }
 
-int slimbus_drv_pause_clock(slimbus_restart_time_t newrestarttime)
+int slimbus_drv_pause_clock(enum slimbus_restart_time time)
 {
-	int ret 	= 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret = 0;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
 
 	mutex_lock(&slimbus_mutex);
 
 	/* make sure boundary of pause_clock is clean */
 	udelay(300);
-	RFC_ClearEvents();
-	ret += csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-	ret += csmiDrv->msgNextPauseClock(devm_slimbus_priv, (CSMI_RestartTime)newrestarttime);
-	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
-	if (ret) {
-		pr_err("Bus switch framer failed with error: %d\n", ret);
-	}
+	rfc_clear_events();
+	ret += csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret += csmi_drv->msgNextPauseClock(devm_slimbus_priv, (CSMI_RestartTime)time);
+	ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
+	if (ret)
+		AUDIO_LOGE("Bus switch framer failed with error: %d", ret);
 
-	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+	if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 		delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 	udelay(delaytime);
@@ -1377,13 +1487,12 @@ int slimbus_drv_pause_clock(slimbus_restart_time_t newrestarttime)
 
 int slimbus_drv_resume_clock(void)
 {
-	int ret = 0;
+	int ret;
 	mutex_lock(&slimbus_mutex);
 
-	ret = csmiDrv->unfreeze(devm_slimbus_priv);
-	if (ret) {
-		pr_err("unfreeze clock failed with error: %d\n", ret);
-	}
+	ret = csmi_drv->unfreeze(devm_slimbus_priv);
+	if (ret)
+		AUDIO_LOGE("unfreeze clock failed with error: %d", ret);
 
 	lostms_times = 0;
 	slimbus_rdwrerr_times = 0;
@@ -1395,26 +1504,25 @@ int slimbus_drv_resume_clock(void)
 
 int slimbus_drv_reset_bus(void)
 {
-	int ret 	= 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret = 0;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
 
 	mutex_lock(&slimbus_mutex);
 
-	RFC_ClearEvents();
+	rfc_clear_events();
 
-	memset(&slimbusDevices, 0, sizeof(RFC_EnumeratedDevices));
+	memset(&slimbus_devices, 0, sizeof(struct rfc_enumerated_devices));
 
-	ret += csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-	ret += csmiDrv->msgNextResetBus(devm_slimbus_priv);
-	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
-	if (ret) {
-		pr_err("Reset bus failed with error: %d\n", ret);
-	}
+	ret += csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret += csmi_drv->msgNextResetBus(devm_slimbus_priv);
+	ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
+	if (ret)
+		AUDIO_LOGE("Reset bus failed with error: %d", ret);
 
-	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+	if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 		delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 	udelay(delaytime);
@@ -1426,24 +1534,23 @@ int slimbus_drv_reset_bus(void)
 
 int slimbus_drv_shutdown_bus(void)
 {
-	int ret 	= 0;
-	CSMI_SubframeMode	cur_sm;
-	CSMI_RootFrequency	cur_rf;
-	CSMI_ClockGear		cur_cg;
+	int ret = 0;
+	CSMI_SubframeMode cur_sm;
+	CSMI_RootFrequency cur_rf;
+	CSMI_ClockGear cur_cg;
 	unsigned long delaytime = 2000; /* 2000us */
 
 	mutex_lock(&slimbus_mutex);
 
-	RFC_ClearEvents();
+	rfc_clear_events();
 
-	ret += csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-	ret += csmiDrv->msgNextShutdownBus(devm_slimbus_priv);
-	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
-	if (ret) {
-		pr_err("Shutdown bus failed with error: %d\n", ret);
-	}
+	ret += csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+	ret += csmi_drv->msgNextShutdownBus(devm_slimbus_priv);
+	ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
+	if (ret)
+		AUDIO_LOGE("Shutdown bus failed with error: %d", ret);
 
-	if (!csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
+	if (!csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf))
 		delaytime = (1 << (CSMI_CG_10 - cur_cg)) * 300;
 
 	udelay(delaytime);
@@ -1457,12 +1564,12 @@ uint8_t slimbus_drv_get_framerla(int framer_id)
 {
 	uint8_t la = 0;
 
-	if (framer_id < slimbusDevices.framerCount) {
-		la = slimbusDevices.framerLa[framer_id];
+	if (framer_id < slimbus_devices.framer_cnt) {
+		la = slimbus_devices.framer_logical_addr[framer_id];
 	} else {
-		if (slimbusDevices.framerCount > 0)
-			la = slimbusDevices.framerLa[0];
-		pr_info("[%s:%d] wrong framer_id ! framer_id is %d, framerCount is %d. la:%d \n", __FUNCTION__, __LINE__, framer_id, slimbusDevices.framerCount, la);
+		if (slimbus_devices.framer_cnt > 0)
+			la = slimbus_devices.framer_logical_addr[0];
+		AUDIO_LOGI("wrong framer_id ! framer_id is %d, framerCount is %d. la:%d", framer_id, slimbus_devices.framer_cnt, la);
 	}
 
 	return la;
@@ -1470,68 +1577,40 @@ uint8_t slimbus_drv_get_framerla(int framer_id)
 
 static uint32_t set_presence_rate_generation(bool flag)
 {
-	uint32_t i = 0;
-	uint32_t ret = 0;;
-	for (i = 0; i < SLIMBUS_PORT_NUM; i++ )
-		ret += csmiDrv->setPresenceRateGeneration(devm_slimbus_priv, i, flag);
+	uint32_t i;
+	uint32_t ret = 0;
+
+	for (i = 0; i < SLIMBUS_PORT_NUM; i++)
+		ret += csmi_drv->setPresenceRateGeneration(devm_slimbus_priv, i, flag);
 
 	return ret;
 }
 
-static uint32_t set_presence_rate_generation_by_tp(slimbus_transport_protocol_t tp)
+static uint32_t set_presence_rate_generation_by_tp(enum slimbus_transport_protocol tp)
 {
 	bool flag = tp == SLIMBUS_TP_PUSHED ? true : false;
+
 	return set_presence_rate_generation(flag);
 }
 
-int slimbus_drv_track_update(int cg, int sm, int track, struct slimbus_device_info *dev,
-		uint32_t ch_num, slimbus_channel_property_t *channel)
+static int start_channel(struct slimbus_device_info *dev, struct slimbus_channel_property *channel,
+		int track, uint32_t ch_num, unsigned long *msg_count)
 {
-	uint32_t ret;
-	uint32_t i = 0;
-	uint32_t j =0;
-	slimbus_channel_property_t *active_channel = NULL;
+	struct slimbus_channel_property *active_channel = NULL;
 	uint32_t active_ch_num = 0;
-	CSMI_SubframeMode	cur_sm = (CSMI_SubframeMode)0;
-	CSMI_RootFrequency	cur_rf = (CSMI_RootFrequency)0;
-	CSMI_ClockGear		cur_cg = (CSMI_ClockGear)0;
-	unsigned long msg_count = 0;
-	slimbus_presence_rate_t rate;
-	slimbus_transport_protocol_t tp;
-	mutex_lock(&slimbus_mutex);
+	enum slimbus_presence_rate rate;
+	enum slimbus_transport_protocol tp;
+	uint32_t ret = 0;
+	uint32_t i;
+	uint32_t j;
 
-	RFC_ClearEvents();
-
-	pr_info("[%s:%d] track %d, cg %d\n", __FUNCTION__, __LINE__, track, cg);
-	ret = slimbus_drv_connect_track(channel, ch_num);
-	if (ret) {
-		slimbus_dump_state(SLIMBUS_DUMP_ALL);
-		pr_err("Connecting source or sink(s) failed.");
-		goto exit;
-	}
-
-	csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf);
-
-	ret = csmiDrv->msgBeginReconfiguration(devm_slimbus_priv);
-	msg_count++;
-	if (cur_cg != (CSMI_ClockGear)cg) {
-		ret = csmiDrv->msgNextClockGear(devm_slimbus_priv, cg);
-		msg_count++;
-		pr_info("cg change return: %d\n", ret);
-	}
-
-	if (cur_sm != (CSMI_SubframeMode)sm) {
-		ret = csmiDrv->msgNextSubframeMode(devm_slimbus_priv, sm);
-		msg_count++;
-	}
-
-	for (i = 0; i < dev->slimbus_64xx_para->slimbus_track_max; i++) {
+	for (i = 0; i < dev->slimbus_da_combine_para->slimbus_track_max; i++) {
 		active_channel = NULL;
 		active_ch_num = 0;
 
-		if (track_state_is_on(i)) {
-			active_channel = dev->slimbus_64xx_para->track_config_table[i].channel_pro;
-			active_ch_num = dev->slimbus_64xx_para->track_config_table[i].params.channels;
+		if (slimbus_track_state_is_on(i)) {
+			active_channel = dev->slimbus_da_combine_para->track_config_table[i].channel_pro;
+			active_ch_num = dev->slimbus_da_combine_para->track_config_table[i].params.channels;
 		} else if ((i == track) && (channel != NULL)) {
 			active_channel = channel;
 			active_ch_num = ch_num;
@@ -1540,44 +1619,94 @@ int slimbus_drv_track_update(int cg, int sm, int track, struct slimbus_device_in
 		if (active_channel != NULL) {
 			for (j = 0; j < active_ch_num; j++) {
 				/* Configuring Data Channel */
-				ret += csmiDrv->msgNextDefineChannel(devm_slimbus_priv, active_channel[j].cn, (CSMI_TransportProtocol)active_channel[j].tp, active_channel[j].sd, active_channel[j].sl);
-				ret += csmiDrv->msgNextDefineContent(devm_slimbus_priv, active_channel[j].cn, active_channel[j].fl, (CSMI_PresenceRate)active_channel[j].pr, (CSMI_AuxFieldFormat)active_channel[j].af, (CSMI_DataType)active_channel[j].dt, active_channel[j].cl, active_channel[j].dl);
+				ret += csmi_drv->msgNextDefineChannel(devm_slimbus_priv, active_channel[j].cn,
+					(CSMI_TransportProtocol)active_channel[j].tp, active_channel[j].sd, active_channel[j].sl);
+				ret += csmi_drv->msgNextDefineContent(devm_slimbus_priv, active_channel[j].cn,
+					active_channel[j].fl, (CSMI_PresenceRate)active_channel[j].pr, (CSMI_AuxFieldFormat)active_channel[j].af,
+					(CSMI_DataType)active_channel[j].dt, active_channel[j].cl, active_channel[j].dl);
 				rate = active_channel[j].pr;
 				tp = active_channel[j].tp;
 
 				ret += set_presence_rate_generation_by_tp(tp);
 				/* Activating Data Channel */
-				ret += csmiDrv->msgNextActivateChannel(devm_slimbus_priv, active_channel[j].cn);
-				msg_count = msg_count + 3 + SLIMBUS_PORT_NUM;
+				ret += csmi_drv->msgNextActivateChannel(devm_slimbus_priv, active_channel[j].cn);
+				*msg_count = *msg_count + 3 + SLIMBUS_PORT_NUM;
 
-				pr_info("[%s:%d] j %d, cn %d, sl %d, sd 0x%x, pr %d, dl:%d, tp:%d, track:%d\n",
-						__FUNCTION__, __LINE__, j, active_channel[j].cn, active_channel[j].sl,
-						active_channel[j].sd, active_channel[j].pr, active_channel[j].dl,
-						active_channel[j].tp, i);
+				AUDIO_LOGI("j %d, cn %d, sl %d, sd 0x%x, pr %d, dl:%d, tp:%d, track:%d\n", j,
+						active_channel[j].cn, active_channel[j].sl, active_channel[j].sd, active_channel[j].pr,
+						active_channel[j].dl, active_channel[j].tp, i);
 			}
-			if (ret) {
-				pr_err("Configuring and Activating Data Channels i: %d, j: %d failed: %d\n", i, j, ret);
-			}
+			if (ret)
+				AUDIO_LOGE("Configuring and Activating Data Channels i: %d, j: %d failed: %d", i, j, ret);
 		}
 	}
+	return ret;
+}
 
-	ret += csmiDrv->msgReconfigureNow(devm_slimbus_priv);
-	msg_count++;
-	if (ret) {
-		pr_err("cg change failed with error: %d\n", ret);
+int slimbus_drv_track_update(int cg, int sm, int track, struct slimbus_device_info *dev,
+		uint32_t ch_num, struct slimbus_channel_property *channel)
+{
+	uint32_t ret;
+	CSMI_SubframeMode cur_sm = (CSMI_SubframeMode)0;
+	CSMI_RootFrequency cur_rf = (CSMI_RootFrequency)0;
+	CSMI_ClockGear cur_cg = (CSMI_ClockGear)0;
+	unsigned long msg_count = 0;
+
+	if (!dev) {
+		AUDIO_LOGE("invalid input params");
+		return -EINVAL;
 	}
+
+	mutex_lock(&slimbus_mutex);
+	rfc_clear_events();
+
+	AUDIO_LOGI("track %d, cg %d", track, cg);
+	ret = slimbus_drv_connect_track(channel, ch_num);
+	if (ret) {
+		slimbus_dump_state(SLIMBUS_DUMP_ALL);
+		AUDIO_LOGE("Connecting source or sink(s) failed");
+		goto exit;
+	}
+
+	csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf);
+
+	ret = csmi_drv->msgBeginReconfiguration(devm_slimbus_priv);
+	msg_count++;
+	if (cur_cg != (CSMI_ClockGear)cg) {
+		ret = csmi_drv->msgNextClockGear(devm_slimbus_priv, cg);
+		msg_count++;
+		AUDIO_LOGI("cg change return: %d", ret);
+	}
+
+	if (cur_sm != (CSMI_SubframeMode)sm) {
+		ret = csmi_drv->msgNextSubframeMode(devm_slimbus_priv, sm);
+		msg_count++;
+	}
+
+	ret = start_channel(dev, channel, track, ch_num, &msg_count);
+
+	if (ret) {
+		AUDIO_LOGE("Configuring and Activating Data Channels failed");
+		goto exit;
+	}
+
+	ret += csmi_drv->msgReconfigureNow(devm_slimbus_priv);
+	msg_count++;
+	if (ret)
+		AUDIO_LOGE("cg change failed with error: %d", ret);
 
 exit:
-	if (cur_cg == 8) {
+	if (cur_cg == 8)
 		udelay(500 * msg_count + 2000);
-	} else {
+	else
 		udelay(250 * msg_count + 500);
-	}
 
-	csmiDrv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf);
+	csmi_drv->getStatusSlimbus(devm_slimbus_priv, &cur_sm, &cur_cg, &cur_rf);
 
 	if (cur_cg != cg) {
-		pr_err("[%s:%d] cur_cg %d, cg %d\n", __FUNCTION__, __LINE__, cur_cg, cg);
+		AUDIO_LOGE("cur_sm %d, cur_cg %d, cg %d, cur_rf %d", cur_sm, cur_cg, cg, cur_rf);
+		slimbus_dump_state(SLIMBUS_DUMP_ALL);
+		slimbus_dump_state(SLIMBUS_DUMP_LOSTMS);
 		rdr_system_error(RDR_AUDIO_SLIMBUS_LOSTSYNC_MODID, 0, 0);
 	}
 	mutex_unlock(&slimbus_mutex);
@@ -1585,8 +1714,13 @@ exit:
 	return (int)ret;
 }
 
-void slimbus_drv_get_params_la(int track_type, uint8_t *source_la, uint8_t *sink_la, slimbus_transport_protocol_t *tp)
+void slimbus_drv_get_params_la(int track_type, uint8_t *source_la, uint8_t *sink_la, enum slimbus_transport_protocol *tp)
 {
+	if (!source_la || !sink_la || !tp) {
+		AUDIO_LOGE("invalid input params");
+		return;
+	}
+
 	switch (track_type) {
 	case SLIMBUS_TRACK_AUDIO_PLAY:
 	case SLIMBUS_TRACK_DIRECT_PLAY:
@@ -1600,7 +1734,7 @@ void slimbus_drv_get_params_la(int track_type, uint8_t *source_la, uint8_t *sink
 	case SLIMBUS_TRACK_SOUND_TRIGGER:
 	case SLIMBUS_TRACK_DEBUG:
 	case SLIMBUS_TRACK_KWS:
-		*source_la = HI64XX_LA_GENERIC_DEVICE;
+		*source_la = DA_COMBINE_LA_GENERIC_DEVICE;
 		*sink_la = SOC_LA_GENERIC_DEVICE;
 		break;
 
@@ -1609,10 +1743,47 @@ void slimbus_drv_get_params_la(int track_type, uint8_t *source_la, uint8_t *sink
 		break;
 
 	default:
-		pr_err("[%s:%d] track type is invalid: %d\n", __FUNCTION__, __LINE__, track_type);
+		AUDIO_LOGE("track type is invalid: %d", track_type);
 		return;
 	}
+}
 
-	return;
+int slimbus_wait_codec_device_enum(void)
+{
+	int wait_times = 0;
+	int expect_devices = SOC_DEVICE_NUM + DA_COMBINE_DEVICE_NUM - 1;
+	if (slimbus_devices.devices < expect_devices) {
+		/* if current device count is less than expected, delay more */
+		/* enumeration need 4ms */
+		AUDIO_LOGI("delay 4ms if device count is less than expected");
+		udelay(ENUMERATION_TIMES * 10);
+	}
+
+	AUDIO_LOGI("After delay, enumerated devices: %d", slimbus_devices.devices);
+	if (slimbus_devices.devices < expect_devices) {
+		slimbus_drv_reset_bus();
+		/* wait for bus reset until device enumerated */
+		while ((slimbus_devices.devices < expect_devices) && (wait_times < ENUMERATION_TIMES)) {
+			/* enumeration need 4ms normally, wait 40ms here is enough */
+			usleep_range(100, 150);
+			wait_times++;
+		}
+
+		AUDIO_LOGI("After busreset, Discovered devices: %d, enumerated devices: %d",
+			events.reported_presence, slimbus_devices.devices);
+		if (slimbus_devices.devices < expect_devices) {
+			AUDIO_LOGE("retry fail, please check chip is connected or not");
+			return -ENODEV;
+		}
+	}
+
+	AUDIO_LOGI("slimbus codec enumerate success");
+
+	return 0;
+}
+
+void slimbus_clear_port_fifo(uint8_t port)
+{
+	csmi_drv->clearDataPortFifo(devm_slimbus_priv, port);
 }
 

@@ -5,7 +5,7 @@
  * Issue date:  04/30/2005
  * http://www.ouah.org/ogay/sha2/
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and

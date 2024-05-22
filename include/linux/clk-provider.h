@@ -254,7 +254,7 @@ struct clk_ops {
 	int		(*check_selreg)(struct clk_hw *hw);
 	int		(*check_divreg)(struct clk_hw *hw);
 	void __iomem *(*get_reg)(struct clk_hw *hw);
-	int		(*dump_reg)(struct clk_hw *hw, char* buf, struct seq_file *s);
+	int		(*dump_reg)(struct clk_hw *hw, char* buf, int buf_length, struct seq_file *s);
 #endif
 #ifdef CONFIG_HISI_CLK
 	int     (*get_source)(struct clk_hw *hw);
@@ -810,6 +810,9 @@ unsigned int __clk_get_enable_count(struct clk *clk);
 unsigned long clk_hw_get_rate(const struct clk_hw *hw);
 unsigned long __clk_get_flags(struct clk *clk);
 unsigned long clk_hw_get_flags(const struct clk_hw *hw);
+#define clk_hw_can_set_rate_parent(hw) \
+	(clk_hw_get_flags((hw)) & CLK_SET_RATE_PARENT)
+
 bool clk_hw_is_prepared(const struct clk_hw *hw);
 bool clk_hw_is_enabled(const struct clk_hw *hw);
 bool __clk_is_enabled(struct clk *clk);

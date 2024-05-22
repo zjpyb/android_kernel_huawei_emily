@@ -1,19 +1,29 @@
 /*
- * asp_hdmi_dma.h -- asp hdmi dma driver
+ * asp_hdmi_dma.h
  *
- * Copyright (c) 2015 Hisilicon Technologies CO., Ltd.
+ * asp dma driver module for hdmi.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2015-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
 #ifndef __ASP_HDMI_DMA_H__
 #define __ASP_HDMI_DMA_H__
 
-/* ASP_HDMI base addr */
-#define ASP_HDMI_DMA_BASE                            (0xE804E400 - 0xE804E400)
+#include <linux/types.h>
 
-/******************************************************************************/
+/* ASP_HDMI base addr */
+#define ASP_HDMI_DMA_BASE                         (0xE804E400 - 0xE804E400)
+
 #define ASP_HDMI_TX3                              (ASP_HDMI_DMA_BASE + 0x0)
 #define ASP_HDMI_DMA_EN                           (ASP_HDMI_DMA_BASE + 0x4)
 #define ASP_HDMI_DMA_STOP                         (ASP_HDMI_DMA_BASE + 0x8)
@@ -47,65 +57,93 @@
 #define ASP_HDMI_I2S_SET                          (ASP_HDMI_DMA_BASE + 0x41c)
 #define ASP_HDMI_I2S_CLR                          (ASP_HDMI_DMA_BASE + 0x420)
 
-#define ASP_HDMI_SIO_CH_DATA_VLD		(ASP_HDMI_DMA_BASE + 0x444)
-#define ASP_HDMI_SIO_CH0_STATUS1_L	 (ASP_HDMI_DMA_BASE + 0x448)
-#define ASP_HDMI_SIO_CH0_STATUS2_L	 (ASP_HDMI_DMA_BASE + 0x44C)
-#define ASP_HDMI_SIO_CH0_STATUS1_R	 (ASP_HDMI_DMA_BASE + 0x478)
-#define ASP_HDMI_SIO_CH0_STATUS2_R	 (ASP_HDMI_DMA_BASE + 0x47C)
+#define ASP_HDMI_SIO_CH_DATA_VLD                  (ASP_HDMI_DMA_BASE + 0x444)
+#define ASP_HDMI_SIO_CH0_STATUS1_L                (ASP_HDMI_DMA_BASE + 0x448)
+#define ASP_HDMI_SIO_CH0_STATUS2_L                (ASP_HDMI_DMA_BASE + 0x44C)
+#define ASP_HDMI_SIO_CH0_STATUS1_R                (ASP_HDMI_DMA_BASE + 0x478)
+#define ASP_HDMI_SIO_CH0_STATUS2_R                (ASP_HDMI_DMA_BASE + 0x47C)
 
-#define ASP_HDMI_SPDIF_CH0_STATUS1_L	(ASP_HDMI_DMA_BASE + 0x820)
-#define ASP_HDMI_SPDIF_CH0_STATUS2_L	(ASP_HDMI_DMA_BASE + 0x824)
-#define ASP_HDMI_SPDIF_CH0_STATUS1_R	(ASP_HDMI_DMA_BASE + 0x850)
-#define ASP_HDMI_SPDIF_CH0_STATUS2_R	(ASP_HDMI_DMA_BASE + 0x854)
+/* sio_ch 0-3, 1 sio_ch for 2 audio channels */
+#define asp_hdmi_sio_ch_status1_l(sio_ch) (ASP_HDMI_SIO_CH0_STATUS1_L + (sio_ch) * 0x60)
+#define asp_hdmi_sio_ch_status2_l(sio_ch) (ASP_HDMI_SIO_CH0_STATUS2_L + (sio_ch) * 0x60)
+#define asp_hdmi_sio_ch_status1_r(sio_ch) (ASP_HDMI_SIO_CH0_STATUS1_R + (sio_ch) * 0x60)
+#define asp_hdmi_sio_ch_status2_r(sio_ch) (ASP_HDMI_SIO_CH0_STATUS2_R + (sio_ch) * 0x60)
+
+#define ASP_HDMI_SPDIF_CH0_STATUS1_L      (ASP_HDMI_DMA_BASE + 0x820)
+#define ASP_HDMI_SPDIF_CH0_STATUS2_L      (ASP_HDMI_DMA_BASE + 0x824)
+#define ASP_HDMI_SPDIF_CH0_STATUS1_R      (ASP_HDMI_DMA_BASE + 0x850)
+#define ASP_HDMI_SPDIF_CH0_STATUS2_R      (ASP_HDMI_DMA_BASE + 0x854)
 
 /* spdif_ch 0-3, 1 spdif_ch for 2 audio channels */
-#define ASP_HDMI_SPDIF_CH_STATUS1_L(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS1_L + (spdif_ch) * 0x60)
-#define ASP_HDMI_SPDIF_CH_STATUS2_L(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS2_L + (spdif_ch) * 0x60)
-#define ASP_HDMI_SPDIF_CH_STATUS1_R(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS1_R + (spdif_ch) * 0x60)
-#define ASP_HDMI_SPDIF_CH_STATUS2_R(spdif_ch)	(ASP_HDMI_SPDIF_CH0_STATUS2_R + (spdif_ch) * 0x60)
+#define asp_hdmi_spdif_ch_status1_l(spdif_ch) (ASP_HDMI_SPDIF_CH0_STATUS1_L + (spdif_ch) * 0x60)
+#define asp_hdmi_spdif_ch_status2_l(spdif_ch) (ASP_HDMI_SPDIF_CH0_STATUS2_L + (spdif_ch) * 0x60)
+#define asp_hdmi_spdif_ch_status1_r(spdif_ch) (ASP_HDMI_SPDIF_CH0_STATUS1_R + (spdif_ch) * 0x60)
+#define asp_hdmi_spdif_ch_status2_r(spdif_ch) (ASP_HDMI_SPDIF_CH0_STATUS2_R + (spdif_ch) * 0x60)
 
-#define ASP_HDMI_SPDIF_CTRL       	(ASP_HDMI_DMA_BASE + 0x800)
+#ifdef DP_AUDIO_ASP_HDMI_I2S
+#define ASP_HDMI_IO_CH0_STATUS1_L        (ASP_HDMI_SIO_CH0_STATUS1_L)
+#define ASP_HDMI_IO_CH0_STATUS2_L        (ASP_HDMI_SIO_CH0_STATUS2_L)
+#define ASP_HDMI_IO_CH0_STATUS1_R        (ASP_HDMI_SIO_CH0_STATUS1_R)
+#define ASP_HDMI_IO_CH0_STATUS2_R        (ASP_HDMI_SIO_CH0_STATUS2_R)
+
+#define asp_hdmi_io_ch_status1_l(io_ch)  (asp_hdmi_sio_ch_status1_l(io_ch))
+#define asp_hdmi_io_ch_status2_l(io_ch)  (asp_hdmi_sio_ch_status2_l(io_ch))
+#define asp_hdmi_io_ch_status1_r(io_ch)  (asp_hdmi_sio_ch_status1_r(io_ch))
+#define asp_hdmi_io_ch_status2_r(io_ch)  (asp_hdmi_sio_ch_status2_r(io_ch))
+#else
+#define ASP_HDMI_IO_CH0_STATUS1_L        (ASP_HDMI_SPDIF_CH0_STATUS1_L)
+#define ASP_HDMI_IO_CH0_STATUS2_L        (ASP_HDMI_SPDIF_CH0_STATUS2_L)
+#define ASP_HDMI_IO_CH0_STATUS1_R        (ASP_HDMI_SPDIF_CH0_STATUS1_R)
+#define ASP_HDMI_IO_CH0_STATUS2_R        (ASP_HDMI_SPDIF_CH0_STATUS2_R)
+
+#define asp_hdmi_io_ch_status1_l(io_ch)  (asp_hdmi_spdif_ch_status1_l(io_ch))
+#define asp_hdmi_io_ch_status2_l(io_ch)  (asp_hdmi_spdif_ch_status2_l(io_ch))
+#define asp_hdmi_io_ch_status1_r(io_ch)  (asp_hdmi_spdif_ch_status1_r(io_ch))
+#define asp_hdmi_io_ch_status2_r(io_ch)  (asp_hdmi_spdif_ch_status2_r(io_ch))
+#endif
+
+#define ASP_HDMI_SPDIF_CTRL         (ASP_HDMI_DMA_BASE + 0x800)
 #define ASP_HDMI_SPDIF_CONFIG       (ASP_HDMI_DMA_BASE + 0x804)
 
-#define HDMI_DMA_EN_MASK			0x3
-#define HDMI_DMA_DISABLE_MASK		0x0
-#define HDMI_INT_MASK				0x7
-#define HDMI_I2S_SET_MASK			0x901BC
-#define HDMI_I2S_CLR_MASK			0x9000C
-#define HDMI_TX3_EN_MASK			0x1
-#define HDMI_SIO_CONF_MASK		0x0
-#define HDMI_SIO_BITWIDTH_MASK	0x2
-#define HDMI_SIO_BITWIDTH_24BIT	0xB
+#define HDMI_DMA_EN_MASK            0x3
+#define HDMI_DMA_DISABLE_MASK       0x0
+#define HDMI_INT_MASK               0x7
+#define HDMI_I2S_SET_MASK           0x901BC
+#define HDMI_I2S_CLR_MASK           0x9000C
+#define HDMI_TX3_EN_MASK            0x1
+#define HDMI_SIO_CONF_MASK          0x0
+#define HDMI_SIO_BITWIDTH_MASK      0x2
+#define HDMI_SIO_BITWIDTH_24BIT     0xB
 
-#define HDMI_SPDIF_SAMPLE_RATE_MASK	GENMASK(27, 24)
-#define HDMI_SPDIF_SAMPLE_RATE_SHIFT	(24)
-#define HDMI_SPDIF_CHANNEL_TYPE_MASK		GENMASK(23, 20)
-#define HDMI_SPDIF_CHANNEL_TYPE_SHIFT	(20)
+#define HDMI_SPDIF_SAMPLE_RATE_MASK           GENMASK(27, 24)
+#define HDMI_SPDIF_SAMPLE_RATE_SHIFT          24
+#define HDMI_SPDIF_CHANNEL_TYPE_MASK          GENMASK(23, 20)
+#define HDMI_SPDIF_CHANNEL_TYPE_SHIFT         20
 
-#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_MASK	GENMASK(7, 4)
-#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_SHIFT	(4)
-#define HDMI_SPDIF_BITWIDTH_16BIT	0x2
-#define HDMI_SPDIF_BITWIDTH_24BIT	0xB
-#define HDMI_SPDIF_BITWIDTH_MASK	GENMASK(3, 0)
-#define HDMI_SPDIF_BITWIDTH_SHIFT	(0)
+#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_MASK  GENMASK(7, 4)
+#define HDMI_SPDIF_ORIGINAL_SAMPLE_RATE_SHIFT 4
+#define HDMI_SPDIF_BITWIDTH_16BIT             0x2
+#define HDMI_SPDIF_BITWIDTH_24BIT             0xB
+#define HDMI_SPDIF_BITWIDTH_MASK              GENMASK(3, 0)
+#define HDMI_SPDIF_BITWIDTH_SHIFT             0
 
-#define HDMI_SPDIF_SET_MASK	0x3C1
+#define HDMI_SPDIF_SET_MASK 0x3C1
 
-#define HDMI_TX3_EN_BIT	(0)
-#define HDMI_A_INT_EN_BIT	(0)
-#define HDMI_B_INT_EN_BIT	(1)
-#define HDMI_BUS_ERR_EN_BIT	(2)
+#define HDMI_TX3_EN_BIT     0
+#define HDMI_A_INT_EN_BIT   0
+#define HDMI_B_INT_EN_BIT   1
+#define HDMI_BUS_ERR_EN_BIT 2
 
-#define HDMI_PCM_SWITCH_ORDE_BIT		(13)
-#define HDMI_PCM_SWITCH_ORDE_MASK	0x1
+#define HDMI_PCM_SWITCH_ORDE_BIT   13
+#define HDMI_PCM_SWITCH_ORDE_MASK  0x1
 
-#define HDMI_SIO_SAMPLE_RATE_BIT	(24)
-#define HDMI_SIO_HDCP_BIT	(2)
-#define HDMI_SIO_CHANNEL_TYPE_BIT		(20)
-#define HDMI_SIO_BITWIDTH_BIT	(0)
+#define HDMI_SIO_SAMPLE_RATE_BIT   24
+#define HDMI_SIO_HDCP_BIT          2
+#define HDMI_SIO_CHANNEL_TYPE_BIT  20
+#define HDMI_SIO_BITWIDTH_BIT      0
 
-#define HDMI_DMA_ADD_VALID_MASK	0x3
-#define HDMI_DMA_ADDLEN_VALID_MASK	0x1F
+#define HDMI_DMA_ADD_VALID_MASK    0x3
+#define HDMI_DMA_ADDLEN_VALID_MASK 0x1F
 
 /* TX3 config */
 enum tx3_channel_num {
@@ -114,7 +152,7 @@ enum tx3_channel_num {
 	CHANNEL_NUM_4,
 	CHANNEL_NUM_6,
 	CHANNEL_NUM_8,
-	CHANNEL_NUM_MAX,
+	CHANNEL_NUM_MAX
 };
 
 enum tx3_bit_width {
@@ -127,13 +165,13 @@ enum tx3_bit_width {
 	BIT_WIDTH_22,
 	BIT_WIDTH_23,
 	BIT_WIDTH_24,
-	BIT_WIDTH_MAX,
+	BIT_WIDTH_MAX
 };
 
 enum tx3_align_type {
 	ALIGN_16 = 0,
 	ALIGN_32,
-	ALIGN_MAX,
+	ALIGN_MAX
 };
 
 enum sio_sample_rate {
@@ -146,70 +184,34 @@ enum sio_sample_rate {
 	SAMPLE_RATE_176,
 	SAMPLE_RATE_192,
 	SAMPLE_RATE_MAX,
-	SAMPLE_RATE_NO_SUPPORT = SAMPLE_RATE_MAX,
+	SAMPLE_RATE_NO_SUPPORT = SAMPLE_RATE_MAX
 };
 
-typedef struct tx3_config_parameters {
-	unsigned int channel_num;	//tx3_channel_num
-	unsigned int bit_width;	//tx3_bit_width
-	unsigned int align_type;//tx3_align_type
-} tx3_config_parameters;
+struct tx3_config_parameters {
+	unsigned int channel_num; /* tx3_channel_num */
+	unsigned int bit_width;   /* tx3_bit_width */
+	unsigned int align_type;  /* tx3_align_type */
+};
 
-typedef struct sio_config_parameters {
-	tx3_config_parameters *tx3_conf;
-	unsigned int sample_rate;//sio_sample_rate
-	unsigned int div_clk;//sio_div_clk
-	bool is_hdcp; //is data copyright protection
-} sio_config_parameters;
+struct sio_config_parameters {
+	struct tx3_config_parameters *tx3_conf;
+	unsigned int sample_rate; /* sio_sample_rate */
+	unsigned int div_clk;     /* sio_div_clk */
+	bool is_hdcp;             /* is data copyright protection */
+};
 
-/**
- * @Description:根据传输的配置参数，配置HDMI TX3
- * @param parames - 配置参数结构体.
- * @return 成功：0，失败：-1
- */
+
 int asp_hdmi_tx3_config(struct tx3_config_parameters parameters);
-
-/**
- * @Description:配置DMA
- * @param addr - DMA读取数据的BUFFER起始地址
- * @param size - 一个BUFFER的大小，注意，HDMI DMA使用AB BUFFER,所以size只代表A/B BUFFER的大小
- * @return 成功：0，失败：<0
- */
 int asp_hdmi_dma_config(unsigned int addr, unsigned int size);
-
-/**
- * @Description:ASP HDMI中断清零
- * @param value - reg vaule
- * @return
- */
 void asp_hdmi_dma_clear_interrupt(unsigned int value);
-
-/**
- * @Description:读取中断原始状态寄存器
- * @return: 寄存器值
- */
 unsigned int asp_hdmi_reg_read_irsr(void);
-
-/**
- * @Description:使能DMA
- * @return: 寄存器值
- */
 void asp_hdmi_tx3_enable(void);
-
 void asp_hdmi_tx3_disable(void);
-
 bool asp_hdmi_dma_is_stop(void);
-
 void asp_hdmi_dma_enable(void);
-
 int asp_hdmi_dma_start(void);
-
 void asp_hdmi_dma_stop(void);
+void asp_hdmi_io_config(struct sio_config_parameters parameters);
 
-/**
- * @Description:config sio reg with parames, if number of  parames value is  0,reg value is default
- * @param value - see struct sio_config_parames
- */
-void asp_hdmi_spdif_config(struct sio_config_parameters parameters);
-#endif
+#endif /* __ASP_HDMI_DMA_H__ */
 

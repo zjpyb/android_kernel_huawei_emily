@@ -3,7 +3,7 @@
  *
  * idtp9221 otp sram_fw header
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,7 +26,7 @@
 #include <stwlc33_rxfw_sram_1100.h>
 #include <stwlc33_txfw_sram_1100.h>
 
-#include <huawei_platform/power/wireless_charger.h>
+#include <huawei_platform/power/wireless/wireless_charger.h>
 
 struct fw_update_info {
 	const enum wireless_mode fw_sram_mode; /* TX_SRAM or RX_SRAM */

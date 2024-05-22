@@ -135,8 +135,8 @@ static struct blk_queue_tag *__blk_queue_init_tags(struct request_queue *q,
 	atomic_set(&tags->refcnt, 1);
 	tags->alloc_policy = alloc_policy;
 	tags->next_tag = 0;
-#ifdef CONFIG_HISI_BLK
-	hisi_blk_allocated_tags_init(tags);
+#ifdef CONFIG_MAS_BLK
+	mas_blk_allocated_tags_init(tags);
 #endif
 	return tags;
 fail:
@@ -191,7 +191,7 @@ int blk_queue_init_tags(struct request_queue *q, int depth,
 	 * assign it, all done
 	 */
 	q->queue_tags = tags;
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	blk_add_queue_tags(tags,q);
 #endif
 	queue_flag_set_unlocked(QUEUE_FLAG_QUEUED, q);

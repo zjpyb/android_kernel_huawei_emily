@@ -29,6 +29,7 @@
 #include <asm/ioctls.h>
 #include <linux/errno.h>
 
+#include "securec.h"
 #include <chipset_common/hwerecovery/erecovery.h>
 #include <erecovery_common.h>
 
@@ -60,7 +61,7 @@ static inline uint32_t erecovery_get_pos(uint32_t pos, uint32_t len)
 	return new_pos;
 }
 
-static int erecovery_write_from_kernel(uint32_t pos, void *k_data, uint32_t len)
+static int erecovery_write_from_kernel(uint32_t pos, const void *k_data, uint32_t len)
 {
 	uint32_t part_len;
 
@@ -68,9 +69,13 @@ static int erecovery_write_from_kernel(uint32_t pos, void *k_data, uint32_t len)
 		return -1;
 
 	part_len = min((size_t)len, (size_t)(ERECOVERY_RING_BUF_SIZE_MAX - pos));
-	memcpy(erecovery_trans_buf + pos, k_data, part_len);
-	if (part_len < len)
-		memcpy(erecovery_trans_buf, k_data + part_len, len - part_len);
+	if (memcpy_s(erecovery_trans_buf + pos, part_len, k_data, part_len) != EOK)
+		ERECOVERY_ERROR("memcpy erecovery_trans_buf shift pos failed!\n");
+
+	if (part_len < len) {
+		if (memcpy_s(erecovery_trans_buf, len - part_len, k_data + part_len, len - part_len) != EOK)
+			ERECOVERY_ERROR("memcpy erecovery_trans_buf failed!\n");
+	}
 
 	return 0;
 }

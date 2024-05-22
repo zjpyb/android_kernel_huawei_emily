@@ -14,120 +14,116 @@
 #define SECUREC_SCANF_ERROR_PARA         (-2)
 
 /* For internal stream flag */
-#define SECUREC_MEM_STR_FLAG             0X01
-#define SECUREC_FILE_STREAM_FLAG         0X02
-#define SECUREC_PIPE_STREAM_FLAG         0X04
-#define SECUREC_LOAD_FILE_TO_MEM_FLAG    0X08
+#define SECUREC_MEM_STR_FLAG             0x01U
+#define SECUREC_FILE_STREAM_FLAG         0x02U
+#define SECUREC_PIPE_STREAM_FLAG         0x04U
+#define SECUREC_LOAD_FILE_TO_MEM_FLAG    0x08U
 
-#define SECUREC_BOM_HEADER_SIZE          2
-#define SECUREC_BOM_HEADER_BE_1ST        0xFEU
-#define SECUREC_BOM_HEADER_BE_2ST        0xFFU
-#define SECUREC_BOM_HEADER_LE_1ST        0xFFU
-#define SECUREC_BOM_HEADER_LE_2ST        0xFEU
-#define SECUREC_UTF8_BOM_HEADER_SIZE     3
-#define SECUREC_UTF8_BOM_HEADER_1ST      0xEFU
-#define SECUREC_UTF8_BOM_HEADER_2ND      0xBBU
-#define SECUREC_UTF8_BOM_HEADER_3RD      0xBFU
-#define SECUREC_UTF8_LEAD_1ST            0xE0
-#define SECUREC_UTF8_LEAD_2ND            0x80
+#define SECUREC_UCS_BOM_HEADER_SIZE      2U
+#define SECUREC_UCS_BOM_HEADER_BE_1ST    0xfeU
+#define SECUREC_UCS_BOM_HEADER_BE_2ST    0xffU
+#define SECUREC_UCS_BOM_HEADER_LE_1ST    0xffU
+#define SECUREC_UCS_BOM_HEADER_LE_2ST    0xfeU
+#define SECUREC_UTF8_BOM_HEADER_SIZE     3U
+#define SECUREC_UTF8_BOM_HEADER_1ST      0xefU
+#define SECUREC_UTF8_BOM_HEADER_2ND      0xbbU
+#define SECUREC_UTF8_BOM_HEADER_3RD      0xbfU
+#define SECUREC_UTF8_LEAD_1ST            0xe0U
+#define SECUREC_UTF8_LEAD_2ND            0x80U
+
+#define SECUREC_BEGIN_WITH_UCS_BOM(s, len) ((len) >= SECUREC_UCS_BOM_HEADER_SIZE && \
+    (((unsigned char)((s)[0]) == SECUREC_UCS_BOM_HEADER_LE_1ST && \
+    (unsigned char)((s)[1]) == SECUREC_UCS_BOM_HEADER_LE_2ST) || \
+    ((unsigned char)((s)[0]) == SECUREC_UCS_BOM_HEADER_BE_1ST && \
+    (unsigned char)((s)[1]) == SECUREC_UCS_BOM_HEADER_BE_2ST)))
+
+#define SECUREC_BEGIN_WITH_UTF8_BOM(s, len) ((len) >= SECUREC_UTF8_BOM_HEADER_SIZE && \
+    (unsigned char)((s)[0]) == SECUREC_UTF8_BOM_HEADER_1ST && \
+    (unsigned char)((s)[1]) == SECUREC_UTF8_BOM_HEADER_2ND && \
+    (unsigned char)((s)[2]) == SECUREC_UTF8_BOM_HEADER_3RD)
+
+#ifdef SECUREC_FOR_WCHAR
+#define SECUREC_BOM_HEADER_SIZE SECUREC_UCS_BOM_HEADER_SIZE
+#define SECUREC_BEGIN_WITH_BOM(s, len) SECUREC_BEGIN_WITH_UCS_BOM((s), (len))
+#else
+#define SECUREC_BOM_HEADER_SIZE SECUREC_UTF8_BOM_HEADER_SIZE
+#define SECUREC_BEGIN_WITH_BOM(s, len) SECUREC_BEGIN_WITH_UTF8_BOM((s), (len))
+#endif
 
 typedef struct {
     unsigned int flag;          /* Mark the properties of input stream */
-    int count;                  /* The size of buffered string in bytes */
-    const char *cur;            /* The pointer to next read position */
     char *base;                 /* The pointer to the header of buffered string */
+    const char *cur;            /* The pointer to next read position */
+    size_t count;               /* The size of buffered string in bytes */
 #if SECUREC_ENABLE_SCANF_FILE
     FILE *pf;                   /* The file pointer */
+    size_t fileRealRead;
     long oriFilePos;            /* The original position of file offset when fscanf is called */
-    int fileRealRead;
-#ifdef SECUREC_NO_STD_UNGETC
+#if !SECUREC_USE_STD_UNGETC
     unsigned int lastChar;      /* The char code of last input */
     int fUnGet;                 /* The boolean flag of pushing a char back to read stream */
 #endif
 #endif
 } SecFileStream;
 
-#ifdef SECUREC_INLINE_INIT_FILE_STREAM_STR
-/*
- * This initialization for eliminating redundant initialization.
- */
-SECUREC_INLINE void SecInitFileStreamFromString(SecFileStream *stream, const char *cur, int count)
-{
-    stream->flag = SECUREC_MEM_STR_FLAG;
-    stream->count = count;
-    stream->cur = cur;
-    stream->base = NULL;
-#if SECUREC_ENABLE_SCANF_FILE
-    stream->pf = NULL;
-    stream->oriFilePos = 0;
-    stream->fileRealRead = 0;
-#ifdef SECUREC_NO_STD_UNGETC
-    stream->lastChar = 0;
-    stream->fUnGet = 0;
-#endif
-#endif
-}
+#if SECUREC_ENABLE_SCANF_FILE && !SECUREC_USE_STD_UNGETC
+#define SECUREC_FILE_STREAM_INIT_FILE(stream, fp) do { \
+    (stream)->pf = (fp); \
+    (stream)->fileRealRead = 0; \
+    (stream)->oriFilePos = 0; \
+    (stream)->lastChar = 0; \
+    (stream)->fUnGet = 0; \
+} SECUREC_WHILE_ZERO
+#elif SECUREC_ENABLE_SCANF_FILE && SECUREC_USE_STD_UNGETC
+#define SECUREC_FILE_STREAM_INIT_FILE(stream, fp) do { \
+    (stream)->pf = (fp); \
+    (stream)->fileRealRead = 0; \
+    (stream)->oriFilePos = 0; \
+} SECUREC_WHILE_ZERO
+#else
+/* Disable file */
+#define SECUREC_FILE_STREAM_INIT_FILE(stream, fp)
 #endif
 
-#ifdef SECUREC_INLINE_INIT_FILE_STREAM_STDIN
-/*
- * This initialization for eliminating redundant initialization.
- */
-SECUREC_INLINE void SecInitFileStreamFromStdin(SecFileStream *stream)
-{
-    stream->flag = SECUREC_PIPE_STREAM_FLAG;
-    stream->count = 0;
-    stream->cur = NULL;
-    stream->base = NULL;
-#if SECUREC_ENABLE_SCANF_FILE
-    stream->pf = SECUREC_STREAM_STDIN;
-    stream->oriFilePos = 0;
-    stream->fileRealRead = 0;
-#ifdef SECUREC_NO_STD_UNGETC
-    stream->lastChar = 0;
-    stream->fUnGet = 0;
-#endif
-#endif
-}
-#endif
+/* This initialization for eliminating redundant initialization. */
+#define SECUREC_FILE_STREAM_FROM_STRING(stream, buf, cnt) do { \
+    (stream)->flag = SECUREC_MEM_STR_FLAG; \
+    (stream)->base = NULL; \
+    (stream)->cur = (buf); \
+    (stream)->count = (cnt); \
+    SECUREC_FILE_STREAM_INIT_FILE((stream), NULL); \
+} SECUREC_WHILE_ZERO
 
+/* This initialization for eliminating redundant initialization. */
+#define SECUREC_FILE_STREAM_FROM_FILE(stream, fp) do { \
+    (stream)->flag = SECUREC_FILE_STREAM_FLAG; \
+    (stream)->base = NULL; \
+    (stream)->cur = NULL; \
+    (stream)->count = 0; \
+    SECUREC_FILE_STREAM_INIT_FILE((stream), (fp)); \
+} SECUREC_WHILE_ZERO
 
-#ifdef SECUREC_INLINE_INIT_FILE_STREAM_FILE
-/*
- * This initialization for eliminating redundant initialization.
- * Compared with the previous version initialization 0,
- * the current code causes the binary size to increase by some bytes
- */
-SECUREC_INLINE void SecInitFileStreamFromFile(SecFileStream *stream, FILE *file)
-{
-    stream->flag = SECUREC_FILE_STREAM_FLAG;
-    stream->count = 0;
-    stream->cur = NULL;
-    stream->base = NULL;
-#if SECUREC_ENABLE_SCANF_FILE
-    stream->pf = file;
-    stream->oriFilePos = 0;
-    stream->fileRealRead = 0;
-#ifdef SECUREC_NO_STD_UNGETC
-    stream->lastChar = 0;
-    stream->fUnGet = 0;
-#endif
-#endif
-}
-#endif
+/* This initialization for eliminating redundant initialization. */
+#define SECUREC_FILE_STREAM_FROM_STDIN(stream) do { \
+    (stream)->flag = SECUREC_PIPE_STREAM_FLAG; \
+    (stream)->base = NULL; \
+    (stream)->cur = NULL; \
+    (stream)->count = 0; \
+    SECUREC_FILE_STREAM_INIT_FILE((stream), SECUREC_STREAM_STDIN); \
+} SECUREC_WHILE_ZERO
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-    extern int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList);
-    extern void SecClearDestBuf(const char *buffer, const char *format, va_list argList);
-#if SECUREC_IN_KERNEL == 0
-    extern int SecInputSW(SecFileStream *stream, const wchar_t *cFormat, va_list argList);
-    extern void SecClearDestBufW(const wchar_t *buffer, const wchar_t *format, va_list argList);
+    int SecInputS(SecFileStream *stream, const char *cFormat, va_list argList);
+    void SecClearDestBuf(const char *buffer, const char *format, va_list argList);
+#ifdef SECUREC_FOR_WCHAR
+    int SecInputSW(SecFileStream *stream, const wchar_t *cFormat, va_list argList);
+    void SecClearDestBufW(const wchar_t *buffer, const wchar_t *format, va_list argList);
 #endif
+
 /* 20150105 For software and hardware decoupling,such as UMG */
-#if defined(SECUREC_SYSAPI4VXWORKS)
+#ifdef SECUREC_SYSAPI4VXWORKS
 #ifdef feof
 #undef feof
 #endif
@@ -170,11 +166,21 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-/* Reserved file operation macro interface */
+/* Reserved file operation macro interface, s is FILE *, i is fileno zero. */
+#ifndef SECUREC_LOCK_FILE
 #define SECUREC_LOCK_FILE(s)
-#define SECUREC_UNLOCK_FILE(s)
-#define SECUREC_LOCK_STDIN(i, s)
-#define SECUREC_UNLOCK_STDIN(i, s)
 #endif
 
+#ifndef SECUREC_UNLOCK_FILE
+#define SECUREC_UNLOCK_FILE(s)
+#endif
+
+#ifndef SECUREC_LOCK_STDIN
+#define SECUREC_LOCK_STDIN(i, s)
+#endif
+
+#ifndef SECUREC_UNLOCK_STDIN
+#define SECUREC_UNLOCK_STDIN(i, s)
+#endif
+#endif
 

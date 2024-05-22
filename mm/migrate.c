@@ -710,8 +710,10 @@ void migrate_page_states(struct page *newpage, struct page *page)
 		set_page_num(newpage, get_page_num(page));
 	}
 #elif defined(CONFIG_MEMCG_PROTECT_LRU)
-	if (PageProtect(page))
+	if (PageProtect(page)) {
 		SetPageProtect(newpage);
+		ClearPageProtect(page);
+	}
 #endif
 	/*
 	 * Copy NUMA information to the new page, to prevent over-eager
@@ -1452,7 +1454,30 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 		list_for_each_entry_safe(page, page2, from, lru) {
 			cond_resched();
+#ifdef CONFIG_VM_COPY
+			if (PageVMcpy(page)) {
+				int is_file;
 
+				if (PageLRU(page))
+					ClearPageLRU(page);
+				if (PageIsolated(page))
+					__ClearPageIsolated(page);
+				list_del(&page->lru);
+				is_file = page_is_file_cache(page);
+#ifdef CONFIG_ISOLATE_COUNT
+				mod_node_page_state(page_pgdat(page),
+						NR_ISOLATED_ANON,
+						-hpage_nr_pages(page));
+#else
+				mod_node_page_state(page_pgdat(page),
+						NR_ISOLATED_ANON + is_file,
+						-hpage_nr_pages(page));
+#endif
+				mem_cgroup_uncharge(page);
+				put_page(page);
+				continue;
+			}
+#endif
 			if (PageHuge(page))
 				rc = unmap_and_move_huge_page(get_new_page,
 						put_new_page, private, page,
@@ -1683,7 +1708,7 @@ static int do_pages_move(struct mm_struct *mm, nodemask_t task_nodes,
 			err = -EFAULT;
 			if (get_user(p, pages + j + chunk_start))
 				goto out_pm;
-			pm[j].addr = (unsigned long) p;
+			pm[j].addr = (unsigned long)untagged_addr(p);
 
 			if (get_user(node, nodes + j + chunk_start))
 				goto out_pm;

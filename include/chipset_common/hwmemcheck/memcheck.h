@@ -185,7 +185,7 @@ struct task_type_read {
 #ifdef CONFIG_HW_MEMCHECK
 struct file;
 long memcheck_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, char *name,
+int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, const char *name,
 			    enum kill_type ktype, short adj, size_t pss);
 #else /* CONFIG_HW_MEMCHECK */
 static inline long memcheck_ioctl(struct file *file, unsigned int cmd,
@@ -194,7 +194,7 @@ static inline long memcheck_ioctl(struct file *file, unsigned int cmd,
 	return MEMCHECK_CMD_INVALID;
 }
 
-static inline int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, char *name,
+static inline int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, const char *name,
 					  enum kill_type ktype, short adj,
 					  size_t pss)
 {

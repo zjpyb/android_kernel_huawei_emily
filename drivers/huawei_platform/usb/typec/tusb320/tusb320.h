@@ -3,7 +3,7 @@
  *
  * header file for TI tusb320 typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,9 +19,7 @@
 #ifndef _TUSB320_H_
 #define _TUSB320_H_
 
-#ifndef BIT
-#define BIT(x)        (1 << (x))
-#endif
+#include <linux/bitops.h>
 
 #define TUSB320_REGISTER_NUM                    12
 
@@ -64,4 +62,4 @@
 #define TUSB320_REG_SET_DISABLE_RD_RP           BIT(2)
 #define TUSB320_REG_SET_DISABLE_TERM            BIT(0)
 
-#endif /*_TUSB320_H_*/
+#endif /* _TUSB320_H_ */

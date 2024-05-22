@@ -1,11 +1,8 @@
 /*
- *  Hisilicon K3 SOC camera driver source file
- *
- *  Copyright (C) Huawei Technology Co., Ltd.
- *
- * Author:
- * Email:
- * Date:	  2014-11-11
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2020. All rights reserved.
+ * Description: hisp config base header file.
+ * Author: yangkai
+ * Create: 2016-04-01
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,16 +11,16 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
-#ifndef __HW_KERNEL_HWCAM_HISP_CFG_BASE_H__
-#define __HW_KERNEL_HWCAM_HISP_CFG_BASE_H__
+#ifndef __HW_KERNEL_CAM_HISP_CFG_BASE_H__
+#define __HW_KERNEL_CAM_HISP_CFG_BASE_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -49,20 +46,7 @@ typedef struct _tag_hisp_event {
 	hisp_event_kind_t kind;
 } hisp_event_t;
 
-enum mapType
-{
-	MAP_TYPE_DYNAMIC = 0,
-	MAP_TYPE_RAW2YUV,
-	MAP_TYPE_STATIC,
-	MAP_TYPE_STATIC_SEC,
-	MAP_TYPE_DYNAMIC_CARVEOUT,
-	MAP_TYPE_STATIC_ISP_SEC,
-	MAP_TYPE_DYNAMIC_SEC,
-	MAP_TYPE_MAX,
-};
-
-typedef struct addr_params
-{
+typedef struct addr_params {
 	uint32_t moduleAddr;
 	uint32_t iova;
 	uint32_t sharedFd;
@@ -74,7 +58,10 @@ typedef struct addr_params
 	size_t pool_align_size;
 	uint32_t security_isp_mode;
 	uint32_t isApCached;
-}addr_param_t;
+	uint32_t ispCoreIova;
+} addr_param_t;
+
+#define HISP_CFG_DATA_LEN 256
 
 struct hisp_cfg_data {
 	int cfgtype;
@@ -84,11 +71,11 @@ struct hisp_cfg_data {
 
 	union {
 		addr_param_t param;
-		struct { // for buffer operation
+		struct { /* for buffer operation */
 			int share_fd;
 			uint32_t buf_size;
 		};
-		uint32_t cfgdata[256];
+		uint32_t cfgdata[HISP_CFG_DATA_LEN];
 	};
 };
 
@@ -117,6 +104,10 @@ enum hisp_config_type {
 	HISP_CONFIG_RELEASE_MDC_BUFFER,
 	HISP_CONFIG_PHY_CSI_CONNECT,
 	HISP_CONFIG_LOCK_VOLTAGE,
+	HISP_CONFIG_ALLOC_ISP_CPU_MEM,
+	HISP_CONFIG_FREE_ISP_CPU_MEM,
+	HISP_CONFIG_SECBOOT_PREPARE,
+	HISP_CONFIG_SECBOOT_UNPREPARE,
 	HISP_CONFIG_MAX_INDEX
 };
 
@@ -124,17 +115,18 @@ typedef struct _tag_hisp_info {
 	char name[HISP_NAME_SIZE];
 } hisp_info_t;
 
-typedef struct _hisp_system_time_t{
-    struct timeval s_timeval;
-    unsigned int s_system_couter_rate;
-    unsigned long long s_system_counter;
+typedef struct _hisp_system_time_t {
+	struct timeval s_timeval;
+	unsigned int s_system_couter_rate;
+	unsigned long long s_system_counter;
+} hisp_system_time_t;
 
-}hisp_system_time_t;
+#define HISP_IOCTL_POWER_ON _IO('A', BASE_VIDIOC_PRIVATE + 0x01)
+#define HISP_IOCTL_POWER_OFF _IO('A', BASE_VIDIOC_PRIVATE + 0x02)
+#define HISP_IOCTL_GET_INFO _IOR('A', BASE_VIDIOC_PRIVATE + 0x05, hisp_info_t)
+#define HISP_IOCTL_CFG_ISP _IOWR('A', BASE_VIDIOC_PRIVATE + 0x06, \
+	struct hisp_cfg_data)
+#define HISP_IOCTL_GET_SYSTEM_TIME _IOR('A', BASE_VIDIOC_PRIVATE + 0x07, \
+	hisp_system_time_t)
 
-#define HISP_IOCTL_POWER_ON   _IO('A', BASE_VIDIOC_PRIVATE + 0x01)
-#define HISP_IOCTL_POWER_OFF  _IO('A', BASE_VIDIOC_PRIVATE + 0x02)
-#define HISP_IOCTL_GET_INFO   _IOR('A', BASE_VIDIOC_PRIVATE + 0x05, hisp_info_t)
-#define HISP_IOCTL_CFG_ISP    _IOWR('A', BASE_VIDIOC_PRIVATE + 0x06, \
-				struct hisp_cfg_data)
-#define HISP_IOCTL_GET_SYSTEM_TIME   _IOR('A', BASE_VIDIOC_PRIVATE + 0x07, hisp_system_time_t)
-#endif /* __HW_KERNEL_HWCAM_HISP_CFG_BASE_H__ */
+#endif /* __HW_KERNEL_CAM_HISP_CFG_BASE_H__ */

@@ -1,17 +1,31 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2020. All rights reserved.
+ * Description: memory dmd
+ */
+
+#include <huawei_platform/linux/stat_mm.h>
+#include <linux/device.h>
 #include <linux/interrupt.h>
+#include <linux/mm.h>
 #include <linux/sizes.h>
 #include <linux/sched.h>
 #include <linux/bug.h>
-#include <linux/mm.h>
 #include <linux/bitmap.h>
-#include <linux/device.h>
 #include <dsm/dsm_pub.h>
-#include <huawei_platform/linux/stat_mm.h>
 
 #define DSM_MM_ENTRY_MAX_NR 100
 #define STAT_MM_MAX_PARA_NUM 5
 #define STAT_MM_BUFFER_SIZE 128
 #define STAT_MM_STR "stat_mm"
+#define STAT_MM_DECIMAL 10
+
+enum stat_mm_params {
+	STAT_MM_CLIENT,
+	STAT_MM_FMT,
+	STAT_MM_ID,
+	STAT_MM_TYPE,
+	STAT_MM_CURRENT_COMM
+};
 
 struct stat_mm_para {
 	unsigned long int para[STAT_MM_MAX_PARA_NUM];
@@ -33,10 +47,10 @@ static inline bool stat_mm_slab_can_stat(int id,
 					 int type, struct stat_mm_para *para)
 {
 	if (type == 0) {
-		int size = para->para[0];
+		int size = para->para[STAT_MM_CLIENT];
 
 		if (size >= SZ_64K) {
-			para->para[0] = size >> PAGE_SHIFT;
+			para->para[STAT_MM_CLIENT] = size >> PAGE_SHIFT;
 			WARN_ON(1);
 			return true;
 		}
@@ -48,8 +62,8 @@ static inline bool stat_mm_mlock_can_stat(int id,
 					  int type, struct stat_mm_para *para)
 {
 	if (type == 0) {
-		long len = para->para[1];
-		long locked_vm = para->para[2];
+		long len = para->para[STAT_MM_FMT];
+		long locked_vm = para->para[STAT_MM_ID];
 
 		if (len >= SZ_4M || locked_vm > (SZ_32M / PAGE_SIZE))
 			return true;
@@ -63,7 +77,7 @@ static ssize_t stat_mm_mask_store(struct class *class,
 {
 	unsigned int bit = -1U;
 
-	if (kstrtouint(buf, 10, &bit))
+	if (kstrtouint(buf, STAT_MM_DECIMAL, &bit))
 		return -EINVAL;
 	if (unlikely(bit >= DSM_MM_ENTRY_MAX_NR))
 		return -EINVAL;
@@ -95,10 +109,11 @@ static inline void stat_mm_stat_channel_dmd(int id,
 					  id,
 					  type,
 					  current->comm,
-					  para->para[0],
-					  para->para[1],
-					  para->para[2],
-					  para->para[3], para->para[4]);
+					  para->para[STAT_MM_CLIENT],
+					  para->para[STAT_MM_FMT],
+					  para->para[STAT_MM_ID],
+					  para->para[STAT_MM_TYPE],
+					  para->para[STAT_MM_CURRENT_COMM]);
 			dsm_client_notify(stat_mm_client, dsm_id);
 		}
 	}

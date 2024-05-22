@@ -39,4 +39,3 @@ int swprintf_s(wchar_t *strDest, size_t destMax, const wchar_t *format, ...)
     return ret;
 }
 
-

@@ -61,12 +61,10 @@ int vsnprintf_s(char *strDest, size_t destMax, size_t count, const char *format,
 
     if (retVal < 0) {
         strDest[0] = '\0';      /* Empty the dest strDest */
-
         if (retVal == SECUREC_PRINTF_TRUNCATE) {
             /* Buffer too small */
             SECUREC_ERROR_INVALID_RANGE("vsnprintf_s");
         }
-
         SECUREC_ERROR_INVALID_PARAMTER("vsnprintf_s");
         return -1;
     }
@@ -115,7 +113,6 @@ int vsnprintf_truncated_s(char *strDest, size_t destMax, const char *format, va_
     }
 
     retVal = SecVsnprintfImpl(strDest, destMax, format, argList);
-
     if (retVal < 0) {
         if (retVal == SECUREC_PRINTF_TRUNCATE) {
             return (int)(destMax - 1);  /* To skip error handler,  return strlen(strDest) */
@@ -131,5 +128,4 @@ int vsnprintf_truncated_s(char *strDest, size_t destMax, const char *format, va_
 EXPORT_SYMBOL(vsnprintf_truncated_s);
 #endif
 #endif
-
 

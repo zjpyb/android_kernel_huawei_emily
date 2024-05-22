@@ -3,7 +3,7 @@
  *
  * Binary ECC operations
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -388,7 +388,6 @@ static const bitstr_t isotimesamatrix[] = {
 	 0x0E073090, 0x48FB00C9, 0x00000430 }
 };
 
-/* bitstr_parse(kx, "34e3d8bd6f29b5ced97491a71f62f5bca6d73b65d24"); */
 /* 0x0000034E,0x3D8BD6F2,0x9B5CED97,0x491A71F6,0x2F5BCA6D,0x73B65D24 */
 static const bitstr_t epif_kx = {
 	0x73B65D24, 0x2F5BCA6D, 0x491A71F6,
@@ -403,38 +402,38 @@ static const bitstr_t ecc_poly = {
 };
 
 /* some basic bit-manipulation routines that act on these vectors follow */
-#define WORD_GETBIT(x, idx)	(((x) >> (idx)) & 1)
-#define BITSTR_GETBIT(x, idx)	((x[(idx) / BYTES_OF_WORD] >>	\
+#define word_getbit(x, idx)	(((x) >> (idx)) & 1)
+#define bitstr_getbit(x, idx)	((x[(idx) / BYTES_OF_WORD] >> \
 				 ((idx) % BYTES_OF_WORD)) & 1)
-#define BITSTR_SETBIT(x, idx)	(x[(idx) / BYTES_OF_WORD] |=	\
+#define bitstr_setbit(x, idx)	(x[(idx) / BYTES_OF_WORD] |= \
 				 1 << ((idx) % BYTES_OF_WORD))
-#define BITSTR_CLRBIT(x, idx)	(x[(idx) / BYTES_OF_WORD] &=	\
+#define bitstr_clrbit(x, idx)	(x[(idx) / BYTES_OF_WORD] &= \
 				 ~(1 << ((idx) % BYTES_OF_WORD)))
 
-#define BITSTR_CLEAR(x)		memset((x), 0, sizeof(bitstr_t))
+#define bitstr_clear(x)		memset((x), 0, sizeof(bitstr_t))
 
-#define BITSTR_SWAP(x, y)	\
-do {				\
-	bitstr_t h;		\
-	BECC_BITSTR_COPY(h, x);	\
-	BECC_BITSTR_COPY(x, y);	\
-	BECC_BITSTR_COPY(y, h);	\
+#define bitstr_swap(x, y) \
+do { \
+	bitstr_t h; \
+	becc_bitstr_copy(h, x); \
+	becc_bitstr_copy(x, y); \
+	becc_bitstr_copy(y, h); \
 } while (0)
 
-#define BITSTR_IS_EQUAL(x, y)	(!memcmp(x, y, sizeof(bitstr_t)))
-#define FIELD_ADD1(x)		(x[0] ^= 1)
+#define bitstr_is_equal(x, y)	(!memcmp(x, y, sizeof(bitstr_t)))
+#define field_add1(x)		(x[0] ^= 1)
 
-#define FIELD_SET1(x)						\
-do {								\
-	x[0] = 1;						\
-	memset(x + 1, 0, sizeof(bitstr_t) - BECC_STEP_SIZE);	\
+#define field_set1(x) \
+do { \
+	x[0] = 1; \
+	memset(x + 1, 0, sizeof(bitstr_t) - BECC_STEP_SIZE); \
 } while (0)
 
-#define POINT_IS_ZERO(x, y)	(bitstr_is_clear(x) && bitstr_is_clear(y))
-#define POINT_SET_ZERO(x, y)	\
-do {				\
-	BITSTR_CLEAR(x);	\
-	BITSTR_CLEAR(y);	\
+#define point_is_zero(x, y)	(bitstr_is_clear(x) && bitstr_is_clear(y))
+#define point_set_zero(x, y) \
+do { \
+	bitstr_clear(x); \
+	bitstr_clear(y); \
 } while (0)
 
 /* return the number of the highest one-bit + 1 */
@@ -535,7 +534,6 @@ static void red_epif(bitstr_t z, uint32_t *x)
 
 /* Implementation of the point addition and point doubling
  * of elliptic curve points represented in Lambda-coordinates.
- * See:
  * Thomaz Oliveira, Julio Lopez, Diego F. Aranha, Francisco Rodroguez-Henroquez
  * Two is the fastest prime: lambda coordinates for binary elliptic curves.
  * J. Cryptographic Engineering (JCE) 4(1):3-17 (2014)
@@ -649,17 +647,17 @@ void becc_elem2bin(uint8_t *buf, const uint32_t bufsize, const bitstr_t e)
 void becc_to_epif(bitstr_t destination, const bitstr_t x_value)
 {
 	bitstr_t la;
-	uint32_t i = 0;
+	uint32_t i;
 
 	if (!destination || !x_value)
 		return;
-	BITSTR_CLEAR(la);
+	bitstr_clear(la);
 	for (i = 0; i < DEGREE; i++) {
-		if (BITSTR_GETBIT(x_value, i))
+		if (bitstr_getbit(x_value, i))
 			becc_field_add(la, la, isotimesamatrix[i]);
 	}
 	becc_field_add(la, la, epif_kx);
-	BECC_BITSTR_COPY(destination, la);
+	becc_bitstr_copy(destination, la);
 }
 
 void becc_point_mult(bitstr_t x, bitstr_t y, const bitstr_t exp)
@@ -670,17 +668,17 @@ void becc_point_mult(bitstr_t x, bitstr_t y, const bitstr_t exp)
 	if (!x || !y || !exp)
 		return;
 	/* Convert to Lambda coordinates */
-	BECC_BITSTR_COPY(a, x);
+	becc_bitstr_copy(a, x);
 	/* l = y/x+x */
 	becc_field_invert(l, x);
 	becc_field_mult(l, l, y, false);
 	becc_field_add(l, l, x);
-	FIELD_SET1(b);
-	BECC_BITSTR_COPY(y, l);
-	BECC_BITSTR_COPY(z, b);
+	field_set1(b);
+	becc_bitstr_copy(y, l);
+	becc_bitstr_copy(z, b);
 	for (i = bitstr_sizeinbits(exp) - 2; i >= 0; i--) {
 		lambda_double(a, l, b);
-		if (BITSTR_GETBIT(exp, i))
+		if (bitstr_getbit(exp, i))
 			lambda_add(a, l, b, x, y, z);
 	}
 	/* (a/b, a(l-a)/b^2) */
@@ -699,15 +697,15 @@ void becc_field_invert(bitstr_t z, const bitstr_t x)
 
 	if (!z || !x)
 		return;
-	BECC_BITSTR_COPY(la, x);
-	BECC_BITSTR_COPY(lb, ecc_poly);
-	BITSTR_CLEAR(lc);
-	FIELD_SET1(z);
+	becc_bitstr_copy(la, x);
+	becc_bitstr_copy(lb, ecc_poly);
+	bitstr_clear(lc);
+	field_set1(z);
 	while (!field_is1(la)) {
 		i = bitstr_sizeinbits(la) - bitstr_sizeinbits(lb);
 		if (i < 0) {
-			BITSTR_SWAP(la, lb);
-			BITSTR_SWAP(lc, z);
+			bitstr_swap(la, lb);
+			bitstr_swap(lc, z);
 			i = -i;
 		}
 		bitstr_lshift(ld, lb, i);

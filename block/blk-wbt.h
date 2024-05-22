@@ -34,6 +34,9 @@ enum {
 static inline void wbt_clear_state(struct blk_issue_stat *stat)
 {
 	stat->stat &= ~BLK_STAT_RES_MASK;
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	stat->bi_opf = 0;
+#endif
 }
 
 static inline enum wbt_flags wbt_stat_to_mask(struct blk_issue_stat *stat)
@@ -46,6 +49,12 @@ static inline void wbt_track(struct blk_issue_stat *stat, enum wbt_flags wb_acct
 	stat->stat |= ((u64) wb_acct) << BLK_STAT_RES_SHIFT;
 }
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static inline void wbt_bi_opf(struct blk_issue_stat *stat, unsigned int opf)
+{
+	stat->bi_opf |= opf;
+}
+#endif
 static inline bool wbt_is_tracked(struct blk_issue_stat *stat)
 {
 	return (stat->stat >> BLK_STAT_RES_SHIFT) & WBT_TRACKED;

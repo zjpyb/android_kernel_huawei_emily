@@ -68,7 +68,8 @@ SECUREC_INLINE errno_t SecDoCatLimitW(wchar_t *strDest, size_t destMax, const wc
  *    EOK                   Success
  *    EINVAL                strDest is  NULL and destMax != 0 and destMax <= SECUREC_WCHAR_STRING_MAX_LEN
  *    EINVAL_AND_RESET      (strDest unterminated and all other parameters are valid) or
- *                    (strDest != NULL and strSrc is NULLL and destMax != 0 and destMax <= SECUREC_WCHAR_STRING_MAX_LEN)
+ *                          (strDest != NULL and strSrc is NULLL and destMax != 0 and
+ *                           destMax <= SECUREC_WCHAR_STRING_MAX_LEN)
  *    ERANGE                destMax > SECUREC_WCHAR_STRING_MAX_LEN or destMax is 0
  *    ERANGE_AND_RESET      strDest have not enough space  and all other parameters are valid  and not overlap
  *    EOVERLAP_AND_RESET     dest buffer and source buffer are overlapped and all  parameters are valid
@@ -91,7 +92,7 @@ errno_t wcsncat_s(wchar_t *strDest, size_t destMax, const wchar_t *strSrc, size_
     }
     if (count > SECUREC_WCHAR_STRING_MAX_LEN) {
 #ifdef  SECUREC_COMPATIBLE_WIN_FORMAT
-        if (count == ((size_t)-1)) {
+        if (count == ((size_t)(-1))) {
             /* Windows internal functions may pass in -1 when calling this function */
             return SecDoCatLimitW(strDest, destMax, strSrc, destMax);
         }
@@ -102,5 +103,4 @@ errno_t wcsncat_s(wchar_t *strDest, size_t destMax, const wchar_t *strSrc, size_
     }
     return SecDoCatLimitW(strDest, destMax, strSrc, count);
 }
-
 

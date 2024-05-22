@@ -3,7 +3,7 @@
  *
  * a1007 crypto interface
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -22,7 +22,7 @@
 #include "present80.h"
 #include "a1007_crypto.h"
 
-#define CMD_FIRST_BYTE(x) ((x) >> 8)
+#define cmd_first_byte(x) ((x) >> 8)
 #define STEP_SIZE 4
 #define NXP_ZERO_ARRAY_SIZE 8
 #define DIGEST_BUF_SIZE 28
@@ -196,7 +196,7 @@ uint32_t a1007_verify_certz(const uecc_word_t *pubkey, uint16_t devid,
 	/* hash TBSCertificate from compressed cert */
 	a1007_hash_certz(digest, uid, devid, certz);
 	/* verify ECDSA signature with NIST-p224 curve */
-	return A1007_VERIFY_ECDSA_SIGN(pubkey,
+	return a1007_verify_ecdsa_sign(pubkey,
 				&certz[A1007_CERTZ_SIG_OFF],
 				digest);
 }
@@ -205,11 +205,12 @@ uint8_t a1007_crc8_calc(const uint16_t command, const uint8_t *buf,
 			const uint32_t bufsize)
 {
 	uint8_t crc;
-	uint8_t const *p = NULL, *q = NULL;
+	uint8_t const *p = NULL;
+	uint8_t const *q = NULL;
 
 	if (!buf)
 		return 0;
-	crc = crc8_table[(unsigned int)CMD_FIRST_BYTE(command)];
+	crc = crc8_table[(unsigned int)cmd_first_byte(command)];
 	crc = crc8_table[(unsigned int)(crc ^ (uint8_t)command)];
 	for (p = buf, q = (p + bufsize); p != q; p++)
 		crc = crc8_table[(unsigned int)(crc ^ *p)];
@@ -227,9 +228,9 @@ uint32_t a1007_generate_challenge(uint8_t *buf, bitstr_t ecc_r,
 	becc_bin2elem(ecc_r, randbuf, HALF_EXE_ECDH_DATA_LEN - 1);
 	ecc_r[5] &= 0x3; /* just do some mask to make more random */
 	/* compute R := r*G */
-	BECC_BITSTR_COPY(ecc_rgy, ecc_gy); /* Load Gy */
+	becc_bitstr_copy(ecc_rgy, ecc_gy); /* Load Gy */
 	/* store Gx in R(x), because multiplication overwrites 1st operand */
-	BECC_BITSTR_COPY(ecc_rgx, ecc_gx);
+	becc_bitstr_copy(ecc_rgx, ecc_gx);
 	becc_point_mult(ecc_rgx, ecc_rgy, ecc_r);
 	/* r2 := compute sqrt(b)/x_R */
 	becc_field_invert(ecc_rgy, ecc_rgx); /* re-use ecc_rgy as tmp reg */
@@ -296,7 +297,7 @@ uint32_t a1007_compute_key_from_response(const uint8_t *buf,
 	becc_elem2bin(secret, SECRET_LEN, ecc_tmp);
 	/* use KDF on secret to derive MAC key */
 	present80_setkey(maccontext, &secret[SECRET_OFFSET + MAC_KEY_LEN]);
-	present80(maccontext, zero, ctext);
+	present80(maccontext, zero, NXP_ZERO_ARRAY_SIZE, ctext, CTEXT_LEN);
 	/* ic specified */
 	mackey[0] = ctext[6];
 	mackey[1] = ctext[7];
@@ -307,7 +308,7 @@ uint32_t a1007_compute_key_from_response(const uint8_t *buf,
 	mackey[8] = ctext[4];
 	mackey[9] = ctext[5];
 	present80_setkey(maccontext, &secret[SECRET_OFFSET]);
-	present80(maccontext, zero, ctext);
+	present80(maccontext, zero, NXP_ZERO_ARRAY_SIZE, ctext, CTEXT_LEN);
 	/* ic specified */
 	mackey[2] = ctext[6];
 	mackey[3] = ctext[7];

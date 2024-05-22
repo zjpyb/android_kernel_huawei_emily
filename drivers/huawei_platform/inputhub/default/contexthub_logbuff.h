@@ -1,32 +1,22 @@
 /*
- * drivers/inputhub/contexthub_logbuff.h
- *
- * sensors sysfs header
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub logbuff header file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
 #ifndef __LINUX_SENSORHUB_LOGBUFF_H__
 #define __LINUX_SENSORHUB_LOGBUFF_H__
 
 #include "contexthub_boot.h"
+#include "protocol.h"
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t index;
 } log_buff_req_t;
 
-extern struct CONFIG_ON_DDR *pConfigOnDDr;
+extern struct config_on_ddr *g_config_on_ddr;
 extern int set_log_level(int tag, int argv[], int argc);
 
 #endif

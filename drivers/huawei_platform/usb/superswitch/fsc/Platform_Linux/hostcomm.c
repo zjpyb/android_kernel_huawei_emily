@@ -557,7 +557,6 @@ void FUSB3601_ProcessTCPDControl(FSC_U8 *inMsgBuffer, FSC_U8 *outMsgBuffer,
   case 0x01:                              /* Reset the state machine */
     /* TODO - this doesn't actually do anything??? */
     /* TODO - probably check and change this to setstateunattached(port) */
-    port->tc_enabled_ = FALSE;
     port->tc_enabled_ = TRUE;
     break;
   case 0x02:                              /* Disable state machine */

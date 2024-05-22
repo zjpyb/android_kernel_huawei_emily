@@ -24,6 +24,7 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
+#include <linux/string.h>
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/dp_source/dp_factory.h>
@@ -39,6 +40,9 @@ HWLOG_REGIST();
 #ifndef MIN
 #define MIN(x, y)  ((x) < (y) ? (x) : (y))
 #endif
+
+#define EDID_BLOCK_LENGTH 128
+#define EDID_LINE_LENGTH  16
 
 enum dp_resolution_type {
 	RESOLUTION_640_480_60FPS = 1,
@@ -113,6 +117,7 @@ struct dp_source_priv {
 	struct dp_external_info external_info;
 	enum dp_external_disp_type ex_disp_type;
 	struct dp_resolution_info resolution_switch;
+	uint8_t edid[EDID_BLOCK_LENGTH];
 };
 
 struct dp_link_state_to_event {
@@ -148,6 +153,11 @@ static struct dp_device_type dp_ex_info = {
 
 static struct dp_device_type dp_lcd_power = {
 	.name = "power",
+	.index = 0,
+};
+
+static struct dp_device_type dp_edid = {
+	.name = "edid",
 	.index = 0,
 };
 
@@ -265,6 +275,19 @@ int get_current_dp_source_mode(void)
 	return g_dp_priv.source_mode;
 }
 EXPORT_SYMBOL_GPL(get_current_dp_source_mode);
+
+int save_dp_edid(uint8_t *edid_buf, uint32_t buf_len)
+{
+	if (!edid_buf || (buf_len != EDID_BLOCK_LENGTH)) {
+		hwlog_err("%s: edid_buf error\n", __func__);
+		memset(g_dp_priv.edid, 0, EDID_BLOCK_LENGTH);
+		return -EINVAL;
+	}
+	memcpy(g_dp_priv.edid, edid_buf, EDID_BLOCK_LENGTH);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(save_dp_edid);
 
 static ssize_t dp_source_mode_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
@@ -553,6 +576,29 @@ static ssize_t dp_external_display_show(struct device *dev,
 	return ret;
 }
 
+static ssize_t dp_edid_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int len = 0;
+	int i;
+
+	UNUSED(dev);
+	UNUSED(attr);
+	if (!buf) {
+		hwlog_info("%s: buf is null\n", __func__);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < EDID_BLOCK_LENGTH; i++) {
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%02x ", g_dp_priv.edid[i]);
+		if ((i + 1) % EDID_LINE_LENGTH == 0)
+			len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
+	}
+	hwlog_info("edid len = %d\n", len);
+
+	return len;
+}
+
 void dp_send_event(enum dp_event_type event)
 {
 	char event_buf[DP_LINK_EVENT_BUF_MAX] = { 0 };
@@ -594,7 +640,8 @@ void dp_link_state_event(enum dp_link_state state, bool dptx_vr_flag)
 	}
 
 	if (dptx_vr_flag) {
-		hwlog_info("The display is VR, not report event\n", __func__);
+		hwlog_info("%s: The display is VR, not report event\n",
+			__func__);
 		return;
 	}
 
@@ -642,6 +689,8 @@ static struct device_attribute dev_external_display =
 	__ATTR(display_info, 0440, dp_external_display_show, NULL);
 static struct device_attribute dev_lcd_power =
 	__ATTR(lcd_power, 0644, dp_lcd_power_show, dp_lcd_power_store);
+static struct device_attribute dev_edid =
+	__ATTR(edid_info, 0440, dp_edid_show, NULL);
 
 static int dp_source_mode_create_file(void)
 {
@@ -677,9 +726,17 @@ static int dp_source_mode_create_file(void)
 		goto err_out_externel_info;
 	}
 
+	ret = device_create_file(dp_edid.dev, &dev_edid);
+	if (ret) {
+		hwlog_err("%s: dp_edid create failed\n", __func__);
+		goto err_out_lcd;
+	}
+
 	hwlog_info("%s: create success\n", __func__);
 	return 0;
 
+err_out_lcd:
+	device_remove_file(dp_lcd_power.dev, &dev_lcd_power);
 err_out_externel_info:
 	device_remove_file(dp_ex_info.dev, &dev_external_display);
 err_out_vr:
@@ -739,11 +796,13 @@ static int __init dp_source_mode_init(void)
 	DP_DEVICE_CREATE(g_dp_priv, dp_vr);
 	DP_DEVICE_CREATE(g_dp_priv, dp_ex_info);
 	DP_DEVICE_CREATE(g_dp_priv, dp_lcd_power);
+	DP_DEVICE_CREATE(g_dp_priv, dp_edid);
 	if (IS_ERR_OR_NULL(dp_source.dev) ||
 	    IS_ERR_OR_NULL(dp_resolution.dev) ||
 	    IS_ERR_OR_NULL(dp_vr.dev) ||
 	    IS_ERR_OR_NULL(dp_ex_info.dev) ||
-	    IS_ERR_OR_NULL(dp_lcd_power.dev)) {
+	    IS_ERR_OR_NULL(dp_lcd_power.dev) ||
+	    IS_ERR_OR_NULL(dp_edid.dev)) {
 		hwlog_err("%s: some device create failed\n", __func__);
 		ret = -EINVAL;
 		goto err_out;
@@ -762,6 +821,7 @@ err_out:
 	DP_DEVICE_DESTROY(g_dp_priv, dp_vr);
 	DP_DEVICE_DESTROY(g_dp_priv, dp_ex_info);
 	DP_DEVICE_DESTROY(g_dp_priv, dp_lcd_power);
+	DP_DEVICE_DESTROY(g_dp_priv, dp_edid);
 
 	class_destroy(g_dp_priv.class);
 	g_dp_priv.class = NULL;
@@ -778,6 +838,7 @@ static void __exit dp_source_mode_exit(void)
 	DP_REMOVE_FILE(g_dp_priv, dp_vr, dev_vr_mode);
 	DP_REMOVE_FILE(g_dp_priv, dp_ex_info, dev_external_display);
 	DP_REMOVE_FILE(g_dp_priv, dp_lcd_power, dev_source_mode);
+	DP_REMOVE_FILE(g_dp_priv, dp_edid, dev_edid);
 
 	class_destroy(g_dp_priv.class);
 	g_dp_priv.class = NULL;

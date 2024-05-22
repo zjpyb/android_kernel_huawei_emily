@@ -21,6 +21,7 @@
 #include <linux/mutex.h>
 #include <linux/scatterlist.h>
 #include <linux/hisi/hisi_ion.h>
+#include "securec.h"
 
 #define IPU_SMMU_ENABLE
 #define CAMBRICON_IPU_IRQ

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
  * Description: the sescan.h for selinux status checking
  * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
  *         likun <quentin.lee@huawei.com>
@@ -10,7 +10,7 @@
 #ifndef _SESCAN_H_
 #define _SESCAN_H_
 
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <linux/crypto.h>
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
@@ -21,16 +21,24 @@
 #include <crypto/hash.h>
 #include <crypto/hash_info.h>
 #include "./include/hw_rscan_utils.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#include "security.h"
+#endif
 
 /* selinux_enforcing is kernel variable */
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
-extern int selinux_enforcing;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#define SELINUX_ENFORCING enforcing_enabled(&selinux_state) ? 1 : 0
 #else
-#define selinux_enforcing 1
+extern int selinux_enforcing;
+#define SELINUX_ENFORCING selinux_enforcing
+#endif
+#else
+#define SELINUX_ENFORCING 1
 #endif
 
 int get_selinux_enforcing(void);
-int sescan_hookhash(uint8_t *hash);
+int sescan_hookhash(uint8_t *hash, size_t hash_len);
 
 #endif
 

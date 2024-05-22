@@ -3,7 +3,7 @@
  *
  * this is for maxim onewire
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -55,9 +55,9 @@ static const short oddparity[] = {
 };
 
 /*
- *CRC8 Check
- *@data: data to check
- *@length: data length
+ * CRC8 Check
+ * @data: data to check
+ * @length: data length
  */
 static unsigned char check_crc8(unsigned char *data, int length)
 {
@@ -71,12 +71,10 @@ static unsigned char check_crc8(unsigned char *data, int length)
 }
 
 /*
- *CRC16 Check
- *@check_data: data to check
- *@length: data length
- *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- *!!!!Nerver change digits inside this function!!!!
- *!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ * CRC16 Check
+ * @check_data: data to check
+ * @length: data length
+ * Nerver change digits inside this function
  */
 static unsigned short check_crc16(unsigned char *check_data, int length)
 {
@@ -100,8 +98,8 @@ static unsigned short check_crc16(unsigned char *check_data, int length)
 }
 
 /*
- *Read the 64 bits ROM of DS28E15
- *@rom: 64Bits Rom Receiving buffer. User should make sure rom has 8 bytes space
+ * Read the 64 bits ROM of DS28E15
+ * @rom: 64Bits Rom Receiving buffer. User should make sure rom has 8 bytes space
  */
 static unsigned char onewire_read_rom(unsigned char *rom,
 				      struct ow_phy_ops *phy_ops)
@@ -110,7 +108,7 @@ static unsigned char onewire_read_rom(unsigned char *rom,
 	unsigned char crc8;
 
 	/* Reset */
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("1-wire maxim: no slave response in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -119,8 +117,8 @@ static unsigned char onewire_read_rom(unsigned char *rom,
 	phy_ops->write_byte(READ_ROM);
 
 	/*
-	 *Read 8 bytes ROM = 8-bit family code, unique 48-bit serial number, and
-	 *8-bit CRC
+	 * Read 8 bytes ROM = 8-bit family code, unique 48-bit serial number, and
+	 * 8-bit CRC
 	 */
 	for (i = 0; i < MAXIM_ROM_SIZE; i++)
 		rom[i] = phy_ops->read_byte();
@@ -138,12 +136,12 @@ static unsigned char onewire_read_rom(unsigned char *rom,
 }
 
 /*
- *Write DS28E15 EEPROM Data to specified segment in specified page.
- *@segment: specify the location within the selected memory page at which the
- *writing begins.
- *@page: specifies the memory page at which the writing begins.Valid memory page
- *numbers are 0 (page 0) and 1 (page 1).
- *@sendbuff: send data buffer, user should make sure that it has 4 bytes space.
+ * Write DS28E15 EEPROM Data to specified segment in specified page.
+ * @segment: specify the location within the selected memory page at which the
+ * writing begins.
+ * @page: specifies the memory page at which the writing begins.Valid memory page
+ * numbers are 0 (page 0) and 1 (page 1).
+ * @sendbuff: send data buffer, user should make sure that it has 4 bytes space.
  */
 static unsigned char onewire_write_memory(unsigned char segment,
 					  unsigned char page,
@@ -156,12 +154,11 @@ static unsigned char onewire_write_memory(unsigned char segment,
 	unsigned char i;
 	unsigned char cr;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
 	phy_ops->write_byte(SKIP_ROM);
-
 
 	/* write memory command */
 	buf[bufcnt++] = WRITE_MEMORY;
@@ -204,24 +201,23 @@ static unsigned char onewire_write_memory(unsigned char segment,
 		return MAXIM_ONEWIRE_COM_ERROR;
 	}
 	/*
-	 *DATA END:
-	 *1 segment end here & loop from DATA START to write multi segment
+	 * DATA END:
+	 * 1 segment end here & loop from DATA START to write multi segment
 	 */
 
-	/* Reset */
 	phy_ops->reset();
 
 	return MAXIM_ONEWIRE_SUCCESS;
 }
 
 /*
- *Reading  DS28E15 EEPROM Data [seg_start, seg_end)
- *in Specified Page.
- *@segment: specify the location within the selected memory page at which the
- *reading begins.
- *@page: specifies the memory page at which the reading begins.Valid memory page
- *numbers are 0 (page 0) and 1 (page 1).
- *@receiver: read data buffer, user should make sure that it has 32 bytes space.
+ * Reading  DS28E15 EEPROM Data [seg_start, seg_end)
+ * in Specified Page.
+ * @segment: specify the location within the selected memory page at which the
+ * reading begins.
+ * @page: specifies the memory page at which the reading begins.Valid memory page
+ * numbers are 0 (page 0) and 1 (page 1).
+ * @receiver: read data buffer, user should make sure that it has 32 bytes space.
  */
 static unsigned char onewire_read_memory(unsigned char seg_start,
 					 unsigned char seg_end,
@@ -233,7 +229,7 @@ static unsigned char onewire_read_memory(unsigned char seg_start,
 	unsigned char bufcnt = 0;
 	unsigned char i;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -257,7 +253,7 @@ static unsigned char onewire_read_memory(unsigned char seg_start,
 		return MAXIN_ONEWIRE_CRC16_ERROR;
 	}
 	/* Receive EEPROM Data */
-	for (bufcnt = 0; bufcnt < MAXIM_SEGMENTS2BYTES(seg_end - seg_start);
+	for (bufcnt = 0; bufcnt < maxim_segments2bytes(seg_end - seg_start);
 	     bufcnt++) {
 		receiver[bufcnt] = phy_ops->read_byte();
 		buf[bufcnt] = receiver[bufcnt];
@@ -277,9 +273,9 @@ static unsigned char onewire_read_memory(unsigned char seg_start,
 }
 
 /*
- *write block status
- *@block: block number to set
- *@protect_mode: protect mode
+ * write block status
+ * @block: block number to set
+ * @protect_mode: protect mode
  */
 static unsigned char onewire_write_block_status(unsigned char block,
 						unsigned char protect_mode,
@@ -291,7 +287,7 @@ static unsigned char onewire_write_block_status(unsigned char block,
 	unsigned char i;
 	unsigned char cr;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -332,9 +328,9 @@ static unsigned char onewire_write_block_status(unsigned char block,
 }
 
 /*
- *Read personality
- *@personality: device's personality data.User should make sure
- *personality has 4 bytes space.
+ * Read personality
+ * @personality: device's personality data.User should make sure
+ * personality has 4 bytes space.
  */
 static unsigned char onewire_read_personality(unsigned char *personality,
 					      struct ow_phy_ops *phy_ops)
@@ -343,7 +339,7 @@ static unsigned char onewire_read_personality(unsigned char *personality,
 	unsigned char bufcnt = 0;
 	unsigned char i;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -384,9 +380,9 @@ static unsigned char onewire_read_personality(unsigned char *personality,
 }
 
 /*
- *Read block status
- *@block_status: device's block status.User should make sure
- *personality has 4 bytes space.
+ * Read block status
+ * @block_status: device's block status.User should make sure
+ * personality has 4 bytes space.
  */
 static unsigned char onewire_read_block_status(unsigned char *block_status,
 					       struct ow_phy_ops *phy_ops)
@@ -395,7 +391,7 @@ static unsigned char onewire_read_block_status(unsigned char *block_status,
 	unsigned char bufcnt = 0;
 	unsigned char i;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -436,10 +432,10 @@ static unsigned char onewire_read_block_status(unsigned char *block_status,
 }
 
 /*
- *To read or write 32 Bytes Scratchpad buffer.
- *@readmode : 0 means write, !0 means read
- *@buffer : Data buffer ; user should make sure buffer is 32 bytes.
- *inside the struct works fine.
+ * To read or write 32 Bytes Scratchpad buffer.
+ * @readmode : 0 means write, !0 means read
+ * @buffer : Data buffer ; user should make sure buffer is 32 bytes.
+ * inside the struct works fine.
  */
 static unsigned char onewire_read_write_sram(unsigned char readmode,
 					     unsigned char *buffer,
@@ -449,7 +445,7 @@ static unsigned char onewire_read_write_sram(unsigned char readmode,
 	unsigned char bufcnt = 0;
 	unsigned char i;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -510,12 +506,12 @@ static unsigned char onewire_write_sram(unsigned char *writebuffer,
 }
 
 /*
- *The Compute and Read Page MAC command is used to get MAC.
- *@anonymous: anonymous mode use 8 bytes 0xFF instead of ROM ID.
- *@page: bit0 of page is used to determine which page is used for computing MAC.
- *0 means page0, 1 means page1.
- *@mac: the mac result. User should make sure mac is 32 bytes.
- *inside the struct works fine.
+ * The Compute and Read Page MAC command is used to get MAC.
+ * @anonymous: anonymous mode use 8 bytes 0xFF instead of ROM ID.
+ * @page: bit0 of page is used to determine which page is used for computing MAC.
+ * 0 means page0, 1 means page1.
+ * @mac: the mac result. User should make sure mac is 32 bytes.
+ * inside the struct works fine.
  */
 static unsigned char onewire_get_page_mac(unsigned char anonymous,
 					  unsigned char page,
@@ -528,7 +524,7 @@ static unsigned char onewire_get_page_mac(unsigned char anonymous,
 	unsigned char i;
 	unsigned char cr;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -553,7 +549,7 @@ static unsigned char onewire_get_page_mac(unsigned char anonymous,
 	}
 
 	/* Wait for IC compute MAC finish */
-	phy_ops->wait_for_ic(DOUBLE(mtrq->compute_mac_ms));
+	phy_ops->wait_for_ic(double(mtrq->compute_mac_ms));
 
 	/* read command response */
 	cr = phy_ops->read_byte();
@@ -580,17 +576,17 @@ static unsigned char onewire_get_page_mac(unsigned char anonymous,
 
 #ifdef CONFIG_BATT_PROT_V2
 /*
- *The Authenticated Write Memory command is used to program one or more
- *contiguous 4 byte segments of a memory block that requires master
- *authentication.
- *@segment:specify the location within the selected memory page where the
- *writing begins.
- *@page: bit0 of page is used to determine which page is going to be written.
- *0 means page0, 1 means page1.
- *@buffer: Data buffer ready for writing specified EEPROM. User should make sure
- *it's 4 bytes length.
- *@mac: mac is authentication. User should make sure it's 32 bytes length;
- *inside the struct works fine.
+ * The Authenticated Write Memory command is used to program one or more
+ * contiguous 4 byte segments of a memory block that requires master
+ * authentication.
+ * @segment:specify the location within the selected memory page where the
+ * writing begins.
+ * @page: bit0 of page is used to determine which page is going to be written.
+ * 0 means page0, 1 means page1.
+ * @buffer: Data buffer ready for writing specified EEPROM. User should make sure
+ * it's 4 bytes length.
+ * @mac: mac is authentication. User should make sure it's 32 bytes length;
+ * inside the struct works fine.
  */
 static unsigned char onewire_aut_wrt_mem(unsigned char segment,
 					 unsigned char page,
@@ -604,7 +600,7 @@ static unsigned char onewire_aut_wrt_mem(unsigned char segment,
 	unsigned char i;
 	unsigned char cr;
 
-	if (NO_SLAVE_RESPONSE(phy_ops->reset())) {
+	if (no_slave_response(phy_ops->reset())) {
 		hwlog_err("no slave device response found in %s\n", __func__);
 		return MAXIM_ONEWIRE_NO_SLAVE;
 	}
@@ -638,7 +634,7 @@ static unsigned char onewire_aut_wrt_mem(unsigned char segment,
 	if (check_crc16(buf, bufcnt) != MAXIM_CRC16_RESULT) {
 		hwlog_err("CRC16 failed in %s\n", __func__);
 		return MAXIN_ONEWIRE_CRC16_ERROR;
-	}	/* Wait for MAC computation */
+	} /* Wait for MAC computation */
 	phy_ops->wait_for_ic(mtrq->compute_mac_ms);
 
 	/* Send MAC for authenticated writing */
@@ -878,7 +874,6 @@ static int maxim_set_status(struct maxim_ow_ic_des *ic_des, unsigned char block,
 	mutex_unlock(&mom->lock);
 
 	return ret;
-
 }
 
 static int maxim_get_status(struct maxim_ow_ic_des *ic_des)
@@ -897,7 +892,6 @@ static int maxim_get_status(struct maxim_ow_ic_des *ic_des)
 	mutex_unlock(&mom->lock);
 
 	return ret;
-
 }
 
 /* Battery information initialization */
@@ -1194,13 +1188,16 @@ static int maxim_onewire_time_rq_init(struct maxim_ow_ic_des *ic_des,
 	hwlog_info("read_residual_cycles = %ucycles(%uns)\n",
 		   owtrq->read_residual_cycles, owtrq->read_residual_ns);
 
+	owtrq->read_wait_slave_ns = 0;
+	owtrq->read_wait_slave_cycles = 0;
+	owtrq->transport_bit_order = 0;
 	return MAXIM_ONEWIRE_SUCCESS;
 }
 
 /*
- *this function make maxim onewire core struct fine.
- *1.struct ow_phy_ops--onewire physical signal and basic operations
- *2.struct maxim_ow_ic_des--maxim onewire ic memory and commution operations
+ * this function make maxim onewire core struct fine.
+ * 1.struct ow_phy_ops--onewire physical signal and basic operations
+ * 2.struct maxim_ow_ic_des--maxim onewire ic memory and commution operations
  */
 int maxim_onewire_register(struct maxim_ow_ic_des *ic_des,
 			   struct platform_device *pdev)

@@ -349,7 +349,7 @@ int mmc_of_parse(struct mmc_host *host)
 
 EXPORT_SYMBOL(mmc_of_parse);
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 
 void hisi_stub_mmc_to_adapt_ufs(struct device *dev)
 {
@@ -406,7 +406,7 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	host->iomt_host_info = NULL;
 #endif
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	hisi_stub_mmc_to_adapt_ufs(dev);
 #endif
 
@@ -426,12 +426,10 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	device_initialize(&host->class_dev);
 	device_enable_async_suspend(&host->class_dev);
 
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 	/* HISI do not use slot gpio */
 	if (mmc_gpio_alloc(host)) {
 		put_device(&host->class_dev);
-		ida_simple_remove(&mmc_host_ida, host->index);
-		kfree(host);
 		return NULL;
 	}
 #endif

@@ -56,14 +56,22 @@ enum pmic_seq_index {
 typedef enum pmic_seq_index pmic_seq_index_t;
 
 enum pmic_power_req_src_t {
-	TP_PMIC_REQ = 1 << 0,
-	FP_PMIC_REQ = 1 << 1,
-	VIB_PMIC_REQ = 1 << 2,
-	MAIN_CAM_PMIC_REQ = 1 << 3,
-	AUDIO_PMIC_REQ = 1 << 4,
-	DF_PMIC_REQ = 1 << 5,
-	DOT_PMIC_REQ = 1 << 6,
-	VCM_PMIC_REQ = 1 << 7,
+	TP_PMIC_REQ = 0,
+	FP_PMIC_REQ = 1,
+	VIB_PMIC_REQ,
+	MAIN_CAM_PMIC_REQ,
+	AUDIO_PMIC_REQ,
+	DF_PMIC_REQ,
+	DOT_PMIC_REQ,
+	VCM_PMIC_REQ,
+	WBG_PMIC_REQ,
+	MAX_RMIC_REQ,
+};
+
+struct pmic_ctrl_vote_t {
+	u32 power_state;
+	int power_cnt[MAX_RMIC_REQ];
+	u32 pmic_volt[MAX_RMIC_REQ];
 };
 
 struct hw_comm_pmic_cfg_t {
@@ -76,9 +84,22 @@ struct hw_comm_pmic_cfg_t {
 #ifdef CONFIG_HUAWEI_SENSORS_INPUT_INFO
 int hw_pmic_power_cfg(enum pmic_power_req_src_t pmic_power_src,
 	struct hw_comm_pmic_cfg_t *comm_pmic_cfg);
+int set_boost_load_enable_cfg(enum pmic_power_req_src_t pmic_power_src, u8 pmic_num, int power_status);
+int set_force_pwm_mode_cfg(enum pmic_power_req_src_t pmic_power_src, u8 pmic_num, int power_status);
+
 #else
 static inline int hw_pmic_power_cfg(enum pmic_power_req_src_t pmic_power_src,
 	struct hw_comm_pmic_cfg_t *comm_pmic_cfg)
+{
+	return 0;
+}
+static inline int set_boost_load_enable_cfg(enum pmic_power_req_src_t pmic_power_src,
+	u8 pmic_num, int power_status)
+{
+	return 0;
+}
+static inline int set_force_pwm_mode_cfg(enum pmic_power_req_src_t pmic_power_src,
+	u8 pmic_num, int power_status)
 {
 	return 0;
 }
@@ -133,6 +154,8 @@ struct hw_pmic_fn_t {
 /***************define pmic globle var******************/
 #define PMIC_POWER_OFF 0x00
 #define PMIC_POWER_ON  0x01
+#define PMIC_VOTE_ON   1
+#define PMIC_VOTE_OFF  0
 
 /***************pmic comm func declare******************/
 #define DEFINE_HW_PMIC_MUTEX(name) \

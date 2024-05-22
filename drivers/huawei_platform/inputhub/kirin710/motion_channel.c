@@ -1,38 +1,42 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2013-2020. All rights reserved.
+ * Description: Motion Hub Channel driver
+ * Author: ligang
+ * Create: 2013-11-23
+ */
 
-
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
+
 #include <huawei_platform/inputhub/motionhub.h>
-#include "protocol.h"
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
-#include "contexthub_ext_log.h"
-#include <linux/of.h>
 
-#define USER_WRITE_BUFFER_SIZE (1+2*sizeof(int))
-#define MAX_SUPPORTED_MOTIONS_TYPE_CNT (MOTION_TYPE_END + 1) // include MOTIONHUB_TYPE_POPUP_CAM
+#include "contexthub_boot.h"
+#include "contexthub_ext_log.h"
+#include "contexthub_route.h"
+#include "sensor_info.h"
+#include "protocol.h"
+
+#define USER_WRITE_BUFFER_SIZE (1 + 2 * sizeof(int))
+#define MAX_SUPPORTED_MOTIONS_TYPE_CNT (MOTION_TYPE_END + 1)
 #define SUPPORTED_MOTIONS_TYPE_NODE_PATH "/sensorhub/motion"
 #define SUPPORTED_MOTIONS_TYPE_PROP "supported_motions_type"
-#define MOTION_SUPPORTED_FLAG (1)
-#define MOTION_UNSUPPORTED_FLAG (0)
+#define MOTION_SUPPORTED_FLAG   1
+#define MOTION_UNSUPPORTED_FLAG 0
 
 static bool motion_status[MOTION_TYPE_END];
 static int motion_ref_cnt;
 static u32 g_supported_motions_type[MAX_SUPPORTED_MOTIONS_TYPE_CNT];
-
-extern int stop_auto_motion;
-extern int step_ref_cnt;
-extern int flag_for_sensor_test;
 
 extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
 extern int send_app_config_cmd(int tag, void *app_config, bool use_lock);
@@ -42,15 +46,20 @@ struct motions_cmd_map {
 	int mhb_ioctl_app_cmd;
 	int motion_type;
 	int tag;
-	obj_cmd_t cmd;
-	obj_sub_cmd_t subcmd;
+	enum obj_cmd cmd;
+	enum obj_sub_cmd subcmd;
 };
 static const struct motions_cmd_map motions_cmd_map_tab[] = {
-	{MHB_IOCTL_MOTION_START, -1, TAG_MOTION, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ},
-	{MHB_IOCTL_MOTION_STOP, -1, TAG_MOTION, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ},
-	{MHB_IOCTL_MOTION_ATTR_START, -1, TAG_MOTION, CMD_CMN_CONFIG_REQ, SUB_CMD_MOTION_ATTR_ENABLE_REQ},
-	{MHB_IOCTL_MOTION_ATTR_STOP, -1, TAG_MOTION, CMD_CMN_CONFIG_REQ, SUB_CMD_MOTION_ATTR_DISABLE_REQ},
-	{MHB_IOCTL_MOTION_INTERVAL_SET, -1, TAG_MOTION, CMD_CMN_INTERVAL_REQ, SUB_CMD_NULL_REQ},
+	{ MHB_IOCTL_MOTION_START, -1, TAG_MOTION, CMD_CMN_OPEN_REQ,
+		SUB_CMD_NULL_REQ },
+	{ MHB_IOCTL_MOTION_STOP, -1, TAG_MOTION, CMD_CMN_CLOSE_REQ,
+		SUB_CMD_NULL_REQ },
+	{ MHB_IOCTL_MOTION_ATTR_START, -1, TAG_MOTION, CMD_CMN_CONFIG_REQ,
+		SUB_CMD_MOTION_ATTR_ENABLE_REQ },
+	{ MHB_IOCTL_MOTION_ATTR_STOP, -1, TAG_MOTION, CMD_CMN_CONFIG_REQ,
+		SUB_CMD_MOTION_ATTR_DISABLE_REQ },
+	{ MHB_IOCTL_MOTION_INTERVAL_SET, -1, TAG_MOTION, CMD_CMN_INTERVAL_REQ,
+		SUB_CMD_NULL_REQ },
 };
 
 static char *motion_type_str[] = {
@@ -72,41 +81,44 @@ static char *motion_type_str[] = {
 	[MOTION_TYPE_REMOVE] = "remove",
 	[MOTION_TYPE_FALL] = "fall",
 	[MOTION_TYPE_SIDEGRIP] = "sidegrip",
-	[MOTION_TYPE_MOVE] = "move",
 	[MOTION_TYPE_END] = "end",
 };
 
-static int motion_ext_log_hanlder (const pkt_header_t *head)
+static int motion_ext_log_hanlder(const struct pkt_header *head)
 {
 	int offset, total_len;
 	size_t payload_len;
 	ext_logger_req_t *pkt_ext = (ext_logger_req_t *)head;
 	pedo_ext_logger_req_t *pkt_pedo = (pedo_ext_logger_req_t *)pkt_ext->data;
-    //split packet and write to route
-	hwlog_debug("%s in head tag %d cmd %d len %d handler tag %d\n", __func__, head->tag, head->cmd, head->length, pkt_ext->tag);
-	//extract every payload
+
+	/* split packet and write to route */
+	hwlog_debug("%s in head tag %d cmd %d len %d handler tag %d\n",
+		__func__, head->tag, head->cmd, head->length, pkt_ext->tag);
+	/* extract every payload */
 	offset = 0;
-	total_len = pkt_ext->hd.length - (offsetof(ext_logger_req_t, data) - sizeof(pkt_header_t));
-	for(;offset < total_len;)
-	{
-		payload_len = pkt_pedo->len + offsetof(pedo_ext_logger_req_t, data);
-		hwlog_debug("motion_ext_log_hanlder offset %d len %d, pointer %pK\n", offset, payload_len, pkt_pedo);
-		if(payload_len + offset > total_len)
-		{
+	total_len = pkt_ext->hd.length -
+		(offsetof(ext_logger_req_t, data) - sizeof(struct pkt_header));
+	while (offset < total_len) {
+		payload_len = pkt_pedo->len +
+			offsetof(pedo_ext_logger_req_t, data);
+		hwlog_debug("%s offset %d len %d, pointer %pK\n", __func__,
+			offset, payload_len, pkt_pedo);
+		if (payload_len + offset > total_len) {
 			hwlog_err("%s overstacked payload_len %d offset %d total_len %d\n",
 				__func__, payload_len, offset, total_len);
 			break;
 		}
-		inputhub_route_write(ROUTE_MOTION_PORT, (char *)pkt_pedo, payload_len);
+		inputhub_route_write(ROUTE_MOTION_PORT, (char *)pkt_pedo,
+			payload_len);
 		offset += payload_len;
 		pkt_pedo = (pedo_ext_logger_req_t *)(pkt_ext->data + offset);
 	}
-    return 0;
+	return 0;
 }
 
-static void update_motion_info(obj_cmd_t cmd, motion_type_t type)
+static void update_motion_info(enum obj_cmd cmd, motion_type_t type)
 {
-	if (!(MOTION_TYPE_START <= type && type < MOTION_TYPE_END))
+	if (!(type >= MOTION_TYPE_START && type < MOTION_TYPE_END))
 		return;
 
 	switch (cmd) {
@@ -126,9 +138,10 @@ static void update_motion_info(obj_cmd_t cmd, motion_type_t type)
 
 static int extend_step_counter_process(bool enable)
 {
-	uint8_t app_config[16] = { 0, };
+	uint8_t app_config[16] = {0};
+
 	interval_param_t extend_open_param = {
-		.period = 20,	/*default delay_ms*/
+		.period = 20, /* default delay_ms */
 		.batch_count = 1,
 		.mode = AUTO_MODE,
 		.reserved[0] = TYPE_EXTEND
@@ -147,38 +160,41 @@ static int extend_step_counter_process(bool enable)
 
 static int extend_step_counter_process_nolock(bool enable)
 {
-	uint8_t app_config[16] = { 0, };
+	uint8_t app_config[16] = {0};
 
 	app_config[0] = enable;
 	app_config[1] = TYPE_EXTEND;
-	/*close step counter*/
-	if (!enable) {
+	/* close step counter */
+	if (!enable)
 		send_app_config_cmd(TAG_STEP_COUNTER, app_config, false);
-	}
-	hwlog_info("%s extend_step_counter!\n", enable ? "open" : "close");
-	if (really_do_enable_disable(&step_ref_cnt, enable, TYPE_EXTEND)) {
+
+	hwlog_info("%s extend_step_counter\n", enable ? "open" : "close");
+	if (really_do_enable_disable(get_step_ref_cnt(), enable, TYPE_EXTEND))
 		inputhub_sensor_enable_nolock(TAG_STEP_COUNTER, enable);
-	}
+
 	if (enable) {
 		interval_param_t extend_open_param = {
-			.period = 20,	/*default delay_ms*/
+			.period = 20, /* default delay_ms */
 			.batch_count = 1,
 			.mode = AUTO_MODE,
 			.reserved[0] = TYPE_EXTEND
 		};
-		inputhub_sensor_setdelay_nolock(TAG_STEP_COUNTER, &extend_open_param);
+		inputhub_sensor_setdelay_nolock(TAG_STEP_COUNTER,
+			&extend_open_param);
 		return send_app_config_cmd(TAG_STEP_COUNTER, app_config, false);
 	}
 	return 0;
 }
 
-static int send_motion_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd, motion_type_t type, bool use_lock)
+static int send_motion_cmd_internal(int tag, enum obj_cmd cmd,
+	enum obj_sub_cmd subcmd, motion_type_t type, bool use_lock)
 {
-	uint8_t app_config[16] = { 0, };
+	uint8_t app_config[16] = {0};
 	interval_param_t interval_param;
 
-	if(stop_auto_motion == 1) {
-		hwlog_info("%s stop_auto_motion: %d !", __func__, stop_auto_motion);
+	if (get_stop_auto_motion() == 1) {
+		hwlog_info("%s stop_auto_motion: %d", __func__,
+			get_stop_auto_motion());
 		return 0;
 	}
 
@@ -186,45 +202,49 @@ static int send_motion_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd
 	app_config[1] = cmd;
 	memset(&interval_param, 0, sizeof(interval_param));
 
-	if ((MOTIONHUB_TYPE_HW_STEP_COUNTER == type) && (CMD_CMN_OPEN_REQ == cmd || CMD_CMN_CLOSE_REQ == cmd)) {
-		if (use_lock) {
-			return extend_step_counter_process(CMD_CMN_OPEN_REQ == cmd);
-		} else {
-			return extend_step_counter_process_nolock(CMD_CMN_OPEN_REQ == cmd);
-		}
+	if ((type == MOTIONHUB_TYPE_HW_STEP_COUNTER) &&
+		(cmd ==  CMD_CMN_OPEN_REQ || cmd == CMD_CMN_CLOSE_REQ)) {
+		if (use_lock)
+			return extend_step_counter_process(cmd == CMD_CMN_OPEN_REQ);
+		else
+			return extend_step_counter_process_nolock(cmd == CMD_CMN_OPEN_REQ);
 	}
 
-	if (CMD_CMN_OPEN_REQ == cmd) {
-		/*send open motion cmd when open first sub type*/
+	if (cmd == CMD_CMN_OPEN_REQ) {
+		/* send open motion cmd when open first sub type */
 		if (really_do_enable_disable(&motion_ref_cnt, true, type)) {
 			if (use_lock) {
-                		inputhub_sensor_enable(tag, true);
+				inputhub_sensor_enable(tag, true);
 				inputhub_sensor_setdelay(tag, &interval_param);
-        		} else {
-               			inputhub_sensor_enable_nolock(tag, true);
-				inputhub_sensor_setdelay_nolock(tag, &interval_param);
-        		}
-			hwlog_info("send_motion_cmd open cmd:%d motion: %s !", cmd, motion_type_str[type]);
+			} else {
+				inputhub_sensor_enable_nolock(tag, true);
+				inputhub_sensor_setdelay_nolock(tag,
+					&interval_param);
+			}
+			hwlog_info("send_motion_cmd open cmd:%d motion: %s",
+				cmd, motion_type_str[type]);
 		}
-		/*send config cmd to open motion type*/
+		/* send config cmd to open motion type */
 		send_app_config_cmd(TAG_MOTION, app_config, use_lock);
-		hwlog_info("send_motion_cmd config cmd:%d motion: %s !motion_ref_cnt= %x", cmd, motion_type_str[type], motion_ref_cnt);
-	} else if (CMD_CMN_CLOSE_REQ == cmd) {
-		/*send config cmd to close motion type*/
+		hwlog_info("send_motion_cmd cmd:%d motion:%s motion_refCnt:%x",
+			cmd, motion_type_str[type], motion_ref_cnt);
+	} else if (cmd == CMD_CMN_CLOSE_REQ) {
+		/* send config cmd to close motion type */
 		send_app_config_cmd(TAG_MOTION, app_config, use_lock);
-		hwlog_info("send_motion_cmd config cmd:%d motion: %s !motion_ref_cnt= %x", cmd, motion_type_str[type], motion_ref_cnt);
+		hwlog_info("send_motion_cmd cmd:%d motion:%s motion_refCnt=%x",
+			cmd, motion_type_str[type], motion_ref_cnt);
 
-		/*send close motion cmd when all sub type closed*/
+		/* send close motion cmd when all sub type closed */
 		if (really_do_enable_disable(&motion_ref_cnt, false, type)) {
-			if (use_lock) {
-                		inputhub_sensor_enable(tag, false);
-            		} else {
-               			inputhub_sensor_enable_nolock(tag, false);
-            		}
-			hwlog_info("send_motion_cmd close cmd:%d motion: %s !", cmd, motion_type_str[type]);
+			if (use_lock)
+				inputhub_sensor_enable(tag, false);
+			else
+				inputhub_sensor_enable_nolock(tag, false);
+			hwlog_info("send_motion_cmd close cmd:%d motion: %s",
+				cmd, motion_type_str[type]);
 		}
 	} else {
-		hwlog_err("send_motion_cmd unknown cmd!\n");
+		hwlog_err("send_motion_cmd unknown cmd\n");
 		return -EINVAL;
 	}
 
@@ -236,42 +256,48 @@ static int send_motion_cmd(unsigned int cmd, unsigned long arg)
 	void __user *argp = (void __user *)arg;
 	int argvalue = 0;
 	int i;
+	int loop_num;
 
-	if (flag_for_sensor_test)
+	if (get_flag_for_sensor_test())
 		return 0;
 
-	for (i = 0; i < sizeof(motions_cmd_map_tab) / sizeof(motions_cmd_map_tab[0]); ++i) {
-		if (motions_cmd_map_tab[i].mhb_ioctl_app_cmd == cmd) {
+	loop_num = sizeof(motions_cmd_map_tab) /
+		sizeof(motions_cmd_map_tab[0]);
+	for (i = 0; i < loop_num; ++i) {
+		if (motions_cmd_map_tab[i].mhb_ioctl_app_cmd == cmd)
 			break;
-		}
 	}
 
-	if (sizeof(motions_cmd_map_tab) / sizeof(motions_cmd_map_tab[0]) == i) {
-		hwlog_err("send_motion_cmd unknown cmd %d in parse_motion_cmd!\n", cmd);
+	if (i == loop_num) {
+		hwlog_err("%s unknown cmd %d in parse_motion_cmd\n", __func__,
+			cmd);
 		return -EFAULT;
 	}
 
 	if (copy_from_user(&argvalue, argp, sizeof(argvalue)))
 		return -EFAULT;
 
-	if (!(MOTION_TYPE_START <= argvalue && argvalue < MOTION_TYPE_END)) {
+	if (!(argvalue >= MOTION_TYPE_START && argvalue < MOTION_TYPE_END)) {
 		hwlog_err("error motion type %d in %s\n", argvalue, __func__);
 		return -EINVAL;
 	}
 	update_motion_info(motions_cmd_map_tab[i].cmd, argvalue);
 
-	return send_motion_cmd_internal(motions_cmd_map_tab[i].tag, motions_cmd_map_tab[i].cmd,
-		motions_cmd_map_tab[i].subcmd, argvalue, true);
+	return send_motion_cmd_internal(motions_cmd_map_tab[i].tag,
+		motions_cmd_map_tab[i].cmd, motions_cmd_map_tab[i].subcmd,
+		argvalue, true);
 }
 
 void enable_motions_when_recovery_iom3(void)
 {
 	motion_type_t type;
-	motion_ref_cnt = 0;	/*to send open motion cmd when open first type*/
+
+	motion_ref_cnt = 0; /* to send open motion cmd when open first type */
 	for (type = MOTION_TYPE_START; type < MOTION_TYPE_END; ++type) {
 		if (motion_status[type]) {
 			hwlog_info("motion state %d in %s\n", type, __func__);
-			send_motion_cmd_internal(TAG_MOTION, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ, type, false);
+			send_motion_cmd_internal(TAG_MOTION, CMD_CMN_OPEN_REQ,
+				SUB_CMD_NULL_REQ, type, false);
 		}
 	}
 }
@@ -279,140 +305,117 @@ void enable_motions_when_recovery_iom3(void)
 void disable_motions_when_sysreboot(void)
 {
 	motion_type_t type;
+
 	for (type = MOTION_TYPE_START; type < MOTION_TYPE_END; ++type) {
 		if (motion_status[type]) {
 			hwlog_info("motion state %d in %s\n", type, __func__);
-			send_motion_cmd_internal(TAG_MOTION, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ, type, false);
+			send_motion_cmd_internal(TAG_MOTION, CMD_CMN_CLOSE_REQ,
+				SUB_CMD_NULL_REQ, type, false);
 		}
 	}
 }
 
 static void read_supported_motions_type_from_dts(void)
 {
-    struct device_node *np;
-    int supported_motions_count;
-    int ret;
+	struct device_node *np = NULL;
+	int supported_motions_count;
+	int ret;
 
-    memset(g_supported_motions_type, 0, sizeof(g_supported_motions_type));
+	memset(g_supported_motions_type, 0, sizeof(g_supported_motions_type));
 
-    np = of_find_node_by_path(SUPPORTED_MOTIONS_TYPE_NODE_PATH);
-    if (np == NULL) {
-        hwlog_info("%s, motion node not exist!\n", __func__);
-        return;
-    }
+	np = of_find_node_by_path(SUPPORTED_MOTIONS_TYPE_NODE_PATH);
+	if (!np) {
+		hwlog_info("%s, motion node not exist\n", __func__);
+		return;
+	}
 
-    supported_motions_count = of_property_count_u32_elems(np, SUPPORTED_MOTIONS_TYPE_PROP);
-    if (supported_motions_count < 0) {
-        hwlog_info("%s, no valid value exist!\n", __func__);
-        return;
-    }
-    if (supported_motions_count > MAX_SUPPORTED_MOTIONS_TYPE_CNT) {
-        hwlog_info("%s, buffer is not large enough!\n", __func__);
-        return;
-    }
+	supported_motions_count = of_property_count_u32_elems(np,
+		SUPPORTED_MOTIONS_TYPE_PROP);
+	if (supported_motions_count < 0) {
+		hwlog_info("%s, no valid value exist\n", __func__);
+		return;
+	}
+	if (supported_motions_count > MAX_SUPPORTED_MOTIONS_TYPE_CNT) {
+		hwlog_info("%s, buffer is not large enough\n", __func__);
+		return;
+	}
 
-    ret = of_property_read_u32_array(np, SUPPORTED_MOTIONS_TYPE_PROP, g_supported_motions_type, supported_motions_count);
-    if (ret != 0 && ret != -ENODATA) {
-        hwlog_info("%s, read supported motions prop fail!\n", __func__);
-    }
+	ret = of_property_read_u32_array(np, SUPPORTED_MOTIONS_TYPE_PROP,
+		g_supported_motions_type, supported_motions_count);
+	if (ret != 0 && ret != -ENODATA)
+		hwlog_info("%s, read supported motions prop fail\n", __func__);
 }
 
 static bool is_motion_supported(u32 motion_type)
 {
-    int i;
-    for (i = 0; i < MAX_SUPPORTED_MOTIONS_TYPE_CNT; i++) {
-        if (motion_type == g_supported_motions_type[i])
-            return true;
-    }
-    return false;
+	int i;
+
+	for (i = 0; i < MAX_SUPPORTED_MOTIONS_TYPE_CNT; i++) {
+		if (motion_type == g_supported_motions_type[i])
+			return true;
+	}
+	return false;
 }
 
 static int motion_support_query(unsigned long arg)
 {
-    void __user *argp = (void __user *)arg;
-    int motion_type = MOTIONHUB_TYPE_POPUP_CAM;
-    int supported = MOTION_SUPPORTED_FLAG;
-    int unsupported = MOTION_UNSUPPORTED_FLAG;
+	void __user *argp = (void __user *)arg;
+	int motion_type = MOTIONHUB_TYPE_POPUP_CAM;
+	int supported = MOTION_SUPPORTED_FLAG;
+	int unsupported = MOTION_UNSUPPORTED_FLAG;
 
-    if (copy_from_user(&motion_type, argp, sizeof(motion_type))) {
-        hwlog_err("%s, copy motion type fail!\n", __func__);
-        return -EFAULT;
-    }
+	if (copy_from_user(&motion_type, argp, sizeof(motion_type))) {
+		hwlog_err("%s, copy motion type fail\n", __func__);
+		return -EFAULT;
+	}
 
-    if (is_motion_supported(motion_type)) {
-        if (copy_to_user((void __user *)arg, (void *)&supported, sizeof(supported)) != 0) {
-            hwlog_err("%s, supported copy_to_user error.\n", __func__);
-            return -EFAULT;
-        }
-    } else {
-        if (copy_to_user((void __user *)arg, (void *)&unsupported, sizeof(unsupported)) != 0) {
-            hwlog_err("%s, unsupported copy_to_user error.\n", __func__);
-            return -EFAULT;
-        }
-    }
-    return 0;
+	if (is_motion_supported(motion_type)) {
+		if (copy_to_user((void __user *)arg, (void *)&supported,
+			sizeof(supported)) != 0) {
+			hwlog_err("%s,support copy_to_user err\n", __func__);
+			return -EFAULT;
+		}
+	} else {
+		if (copy_to_user((void __user *)arg, (void *)&unsupported,
+			sizeof(unsupported)) != 0) {
+			hwlog_err("%s,unsupport copy_to_user err\n", __func__);
+			return -EFAULT;
+		}
+	}
+	return 0;
 }
 
-/*******************************************************************************************
-Function:       mhb_read
-Description:   read /dev/motionhub
-Data Accessed:  no
-Data Updated:   no
-Input:          struct file *file, char __user *buf, size_t count, loff_t *pos
-Output:         no
-Return:         length of read data
-*******************************************************************************************/
 static ssize_t mhb_read(struct file *file, char __user *buf, size_t count,
 			loff_t *pos)
 {
 	return inputhub_route_read(ROUTE_MOTION_PORT, buf, count);
 }
 
-/*******************************************************************************************
-Function:       mhb_write
-Description:   write to /dev/motionhub, do nothing now
-Data Accessed:  no
-Data Updated:   no
-Input:          struct file *file, const char __user *data, size_t len, loff_t *ppos
-Output:         no
-Return:         length of write data
-*******************************************************************************************/
 static ssize_t mhb_write(struct file *file, const char __user *data,
 			 size_t len, loff_t *ppos)
 {
-    char user_data[USER_WRITE_BUFFER_SIZE] = {0};
-    char motion_type;
+	char user_data[USER_WRITE_BUFFER_SIZE] = {0};
+	char motion_type;
 
-    if (len != USER_WRITE_BUFFER_SIZE) {
-        hwlog_err("%s length is invalid\n", __func__);
-        return len;
-    }
+	if (len != USER_WRITE_BUFFER_SIZE) {
+		hwlog_err("%s length is invalid\n", __func__);
+		return len;
+	}
 
-    if (copy_from_user(user_data, data, len)) {
-        hwlog_err("%s copy_from_user failed.\n", __func__);
-        return len;
-    }
+	if (copy_from_user(user_data, data, len)) {
+		hwlog_err("%s copy_from_user failed\n", __func__);
+		return len;
+	}
 
-    motion_type = user_data[0];
-    if (motion_type == MOTIONHUB_TYPE_POPUP_CAM) {
-        if (inputhub_route_write(ROUTE_MOTION_PORT, user_data, len) == 0) {
-            hwlog_err("%s route_write failed.\n", __func__);
-        }
-    }
+	motion_type = user_data[0];
+	if (motion_type == MOTIONHUB_TYPE_POPUP_CAM) {
+		if (inputhub_route_write(ROUTE_MOTION_PORT, user_data, len) == 0)
+			hwlog_err("%s route_write failed\n", __func__);
+	}
 
-    return len;
+	return len;
 }
 
-/*******************************************************************************************
-Function:       mhb_ioctl
-Description:   ioctrl function to /dev/motionhub, do open, close motion, or set interval and attribute to motion
-Data Accessed:  no
-Data Updated:   no
-Input:          struct file *file, unsigned int cmd, unsigned long arg
-			cmd indicates command, arg indicates parameter
-Output:         no
-Return:         result of ioctrl command, 0 successed, -ENOTTY failed
-*******************************************************************************************/
 static long mhb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	switch (cmd) {
@@ -430,40 +433,23 @@ static long mhb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return send_motion_cmd(cmd, arg);
 }
 
-/*******************************************************************************************
-Function:       mhb_open
-Description:   open to /dev/motionhub, do nothing now
-Data Accessed:  no
-Data Updated:   no
-Input:          struct inode *inode, struct file *file
-Output:         no
-Return:         result of open
-*******************************************************************************************/
 static int mhb_open(struct inode *inode, struct file *file)
 {
-	hwlog_info("%s ok!\n", __func__);
+	hwlog_info("%s ok\n", __func__);
 	return 0;
 }
 
-/*******************************************************************************************
-Function:       mhb_release
-Description:   releaseto /dev/motionhub, do nothing now
-Data Accessed:  no
-Data Updated:   no
-Input:          struct inode *inode, struct file *file
-Output:         no
-Return:         result of release
-*******************************************************************************************/
 static int mhb_release(struct inode *inode, struct file *file)
 {
-	hwlog_info("%s ok!\n", __func__);
+	hwlog_info("%s ok\n", __func__);
 	return 0;
 }
 
-static int motion_recovery_notifier(struct notifier_block *nb, unsigned long foo, void *bar)
+static int motion_recovery_notifier(struct notifier_block *nb,
+	unsigned long foo, void *bar)
 {
 	/* prevent access the emmc now: */
-	hwlog_info("%s (%lu) +\n", __func__, foo);
+	hwlog_info("%s %lu +\n", __func__, foo);
 	switch (foo) {
 	case IOM3_RECOVERY_IDLE:
 	case IOM3_RECOVERY_START:
@@ -488,9 +474,6 @@ static struct notifier_block motion_recovery_notify = {
 	.priority = -1,
 };
 
-/*******************************************************************************************
-Description:   file_operations to motion
-*******************************************************************************************/
 static const struct file_operations mhb_fops = {
 	.owner = THIS_MODULE,
 	.llseek = no_llseek,
@@ -504,24 +487,12 @@ static const struct file_operations mhb_fops = {
 	.release = mhb_release,
 };
 
-/*******************************************************************************************
-Description:   miscdevice to motion
-*******************************************************************************************/
 static struct miscdevice motionhub_miscdev = {
 	.minor = MISC_DYNAMIC_MINOR,
 	.name = "motionhub",
 	.fops = &mhb_fops,
 };
 
-/*******************************************************************************************
-Function:       motionhub_init
-Description:   apply kernel buffer, register motionhub_miscdev
-Data Accessed:  no
-Data Updated:   no
-Input:          void
-Output:        void
-Return:        result of function, 0 successed, else false
-*******************************************************************************************/
 static int __init motionhub_init(void)
 {
 	int ret;
@@ -529,13 +500,10 @@ static int __init motionhub_init(void)
 	if (is_sensorhub_disabled())
 		return -1;
 
-	if (!getSensorMcuMode())
-	{
-		hwlog_err("mcu boot fail,motionhub_init exit\n");
+	if (!get_sensor_mcu_mode()) {
+		hwlog_err("mcu boot fail,%s exit\n", __func__);
 		return -1;
 	}
-
-	//hwlog_info("%s start \n", __func__);
 
 	ret = inputhub_route_open(ROUTE_MOTION_PORT);
 	if (ret != 0) {
@@ -548,31 +516,22 @@ static int __init motionhub_init(void)
 		hwlog_err("cannot register miscdev err=%d\n", ret);
 		goto CLOSE;
 	}
-    ret = inputhub_ext_log_register_handler(TAG_MOTION, motion_ext_log_hanlder);
-    if (ret != 0) {
-        hwlog_err("cannot register ext_log err=%d\n", ret);
-        goto CLOSE;
-    }
+	ret = inputhub_ext_log_register_handler(TAG_MOTION,
+		motion_ext_log_hanlder);
+	if (ret != 0) {
+		hwlog_err("cannot register ext_log err=%d\n", ret);
+		goto CLOSE;
+	}
 
 	register_iom3_recovery_notifier(&motion_recovery_notify);
-	//hwlog_info("%s ok\n", __func__);
 	read_supported_motions_type_from_dts();
 	goto OUT;
 CLOSE:
-    inputhub_route_close(ROUTE_MOTION_PORT);
+	inputhub_route_close(ROUTE_MOTION_PORT);
 OUT:
 	return ret;
 }
 
-/*******************************************************************************************
-Function:       motionhub_exit
-Description:   release kernel buffer, deregister motionhub_miscdev
-Data Accessed:  no
-Data Updated:   no
-Input:          void
-Output:        void
-Return:        void
-*******************************************************************************************/
 static void __exit motionhub_exit(void)
 {
 	inputhub_route_close(ROUTE_MOTION_PORT);

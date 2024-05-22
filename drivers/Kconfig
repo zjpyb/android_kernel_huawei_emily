@@ -225,15 +225,21 @@ source "drivers/hisi/Kconfig"
 
 source "drivers/huawei_platform/Kconfig"
 
+-source "drivers/huawei_armpc_platform/Kconfig"
+
 source "drivers/dsm/Kconfig"
 
 source "drivers/log/Kconfig"
 
-source "drivers/hwbfm/Kconfig"
+source "drivers/hwbootfail/Kconfig"
 
 source "drivers/hwzerohung/Kconfig"
 
 source "drivers/hwusb/Kconfig"
+
+source "drivers/hwpower/Kconfig"
+
+source "drivers/hwsensors/Kconfig"
 
 source "drivers/contexthub/Kconfig"
 
@@ -264,4 +270,18 @@ source "drivers/storage_rofa/Kconfig"
 source "drivers/mmonitor/Kconfig"
 
 source "drivers/hwxcollie/Kconfig"
+
+source "drivers/hitrace/Kconfig"
+
+source "drivers/echub/Kconfig"
+
+source "drivers/reclaim_acct/Kconfig"
+
+source "drivers/task_mem_stat/Kconfig"
+
+source "drivers/swapfile/Kconfig"
+
+-source "drivers/ics_drivers/Kconfig"
+
+source "drivers/emcom/Kconfig"
 endmenu

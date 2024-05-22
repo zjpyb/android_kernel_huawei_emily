@@ -27,6 +27,7 @@
 #include <asm/bug.h>
 #include <asm/page-def.h>
 #include <asm/sizes.h>
+#include <linux/hisi/prmem_defs.h>
 
 /*
  * Allow for constants defined here to be used from assembly code
@@ -78,6 +79,17 @@
 
 #define KERNEL_START      _text
 #define KERNEL_END        _end
+
+#ifdef CONFIG_HKIP_PRMEM
+/*
+ * The address space reserved for PRMEM.
+ * PRMEM_START: PRMEM_SIZE below PRMEM_END
+ * PRMEM_END: extends to the available space below prmem, vmmemmap,
+ *            PCI I/O space and fixed mappings
+ */
+#define PRMEM_START		(PRMEM_END - PRMEM_SIZE)
+#define PRMEM_END		(PAGE_OFFSET - PUD_SIZE - VMEMMAP_SIZE - SZ_64K)
+#endif
 
 /*
  * KASAN requires 1/8th of the kernel virtual address space for the shadow
@@ -190,6 +202,11 @@ extern u64			kimage_vaddr;
 /* the offset between the kernel virtual and physical mappings */
 extern u64			kimage_voffset;
 
+#ifdef CONFIG_HISI_MEM_OFFLINE
+/* physical memory limit imposed by the booloader */
+extern phys_addr_t bootloader_memory_limit;
+#endif
+
 static inline unsigned long kaslr_offset(void)
 {
 	return kimage_vaddr - KIMAGE_VADDR;
@@ -210,6 +227,14 @@ static inline unsigned long kaslr_offset(void)
  * of RAM in the mem_map as well.
  */
 #define PHYS_PFN_OFFSET	(phystart_addr >> PAGE_SHIFT)
+
+/*
+ * When dealing with data aborts, watchpoints, or instruction traps we may end
+ * up with a tagged userland pointer. Clear the tag to get a sane pointer to
+ * pass on to access_ok(), for instance.
+ */
+#define untagged_addr(addr)	\
+	((__typeof__(addr))sign_extend64((u64)(addr), 55))
 
 /*
  * Physical vs virtual RAM address space conversion.  These are

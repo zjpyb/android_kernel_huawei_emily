@@ -118,10 +118,138 @@
 #define DSM_PMU_BUCK02_SCP_ERROR_NO                 920007071
 #define DSM_PMU_BUCK9_SCP_ERROR_NO                  920007072
 #define DSM_PMU_OCPACR_ERROR_NO                     920007073
+
 #define DSM_PMU_OCPBUCK10_ERROR_NO                  920007074
 #define DSM_PMU_BUCK10_SCP_ERROR_NO                 920007075
 #define DSM_LGA_CHECK_ERROR_NO                      920007076
 
+#define DSM_PMU_OCPBUCK40_ERROR_NO                  920007077
+#define DSM_PMU_OCPBUCK41_ERROR_NO                  920007078
+#define DSM_PMU_OCPBUCK42_ERROR_NO                  920007079
+#define DSM_PMU_OCPBUCK43_ERROR_NO                  920007080
+#define DSM_PMU_OCPBUCK44_ERROR_NO                  920007081
+#define DSM_PMU_SCPBUCK40_ERROR_NO                  920007082
+#define DSM_PMU_SCPBUCK41_ERROR_NO                  920007083
+#define DSM_PMU_SCPBUCK42_ERROR_NO                  920007084
+#define DSM_PMU_SCPBUCK43_ERROR_NO                  920007085
+#define DSM_PMU_SCPBUCK44_ERROR_NO                  920007086
+#define DSM_PMU_OVPBUCK40_ERROR_NO                  920007087
+#define DSM_PMU_OVPBUCK41_ERROR_NO                  920007088
+#define DSM_PMU_OVPBUCK42_ERROR_NO                  920007089
+#define DSM_PMU_OVPBUCK43_ERROR_NO                  920007090
+#define DSM_PMU_OVPBUCK44_ERROR_NO                  920007091
+#define DSM_PMU_CURBUCK40_ERROR_NO                  920007092
+#define DSM_PMU_CURBUCK41_ERROR_NO                  920007093
+#define DSM_PMU_CURBUCK42_ERROR_NO                  920007094
+#define DSM_PMU_OCPLDO42_ERROR_NO                   920007095
+#define DSM_PMU_OCPLDO43_ERROR_NO                   920007096
+#define DSM_PMU_OCPLDO44_ERROR_NO                   920007097
+#define DSM_PMU_OCPLDO45_ERROR_NO                   920007098
+#define DSM_PMU_OCPLDO46_ERROR_NO                   920007099
+#define DSM_PMU_OCPLDO47_ERROR_NO                   920007100
+#define DSM_PMU_OCPLDO48_ERROR_NO                   920007101
+#define DSM_PMU_OCPLDO49_ERROR_NO                   920007102
+#define DSM_PMU_OCPLDO50_ERROR_NO                   920007103
+#define DSM_PMU_OCPSW1_ERROR_NO                     920007104
+#define DSM_PMU_VSYSSURGE_ERROR_NO                  920007105
+#define DSM_PMU_OTMP125_ERROR_NO                    920007106
+#define DSM_PMU_OCPBUCK11_ERROR_NO                  920007107
+#define DSM_PMU_OCPBUCK20_ERROR_NO                  920007108
+#define DSM_PMU_OCPBUCK21_ERROR_NO                  920007109
+#define DSM_PMU_OCPBUCK30_ERROR_NO                  920007110
+#define DSM_PMU_OCPBUCK31_ERROR_NO                  920007111
+#define DSM_PMU_OCPBUCKBOOST_ERROR_NO               920007112
+#define DSM_PMU_OCPBUCK12_ERROR_NO                  920007113
+#define DSM_PMU_OCPBUCK13_ERROR_NO                  920007114
+#define DSM_PMU_SCPBUCK20_ERROR_NO                  920007115
+#define DSM_PMU_SCPBUCK30_ERROR_NO                  920007116
+#define DSM_PMU_SCPBUCKBOOST_ERROR_NO               920007117
+#define DSM_PMU_SCPBUCK12_ERROR_NO                  920007118
+#define DSM_PMU_SCPBUCK13_ERROR_NO                  920007119
+#define DSM_PMU_OVPBUCKBOOST_ERROR_NO               920007120
+#define DSM_PMU_OVPBUCK12_ERROR_NO                  920007121
+#define DSM_PMU_OVPBUCK20_ERROR_NO                  920007122
+#define DSM_PMU_OVPBUCK30_ERROR_NO                  920007123
+#define DSM_PMU_CURBUCK12_ERROR_NO                  920007124
+#define DSM_PMU_CURBUCK00_ERROR_NO                  920007125
+#define DSM_PMU_CURBUCK10_ERROR_NO                  920007126
+#define DSM_PMU_CURBUCK20_ERROR_NO                  920007127
+#define DSM_PMU_CURBUCK30_ERROR_NO                  920007128
+#define DSM_PMU_OCPSUBPMUH_ERROR_NO                 920007129
+#define DSM_PMU_OCPSW10_ERROR_NO                    920007130
+#define DSM_PMU_OCPLDO51_ERROR_NO                   920007131
+#define DSM_PMU_OCPLDO52_ERROR_NO                   920007132
+#define DSM_PMU_OCPLDO53_ERROR_NO                   920007133
+#define DSM_PMU_OCPLDO54_ERROR_NO                   920007134
+#define DSM_PMU_OTMP125SUBPMU_ERROR_NO              920007135
+#define DSM_PMU_OVPBUCK8_ERROR_NO                   920007136
+#define DSM_PMU_OVPBUCK00_ERROR_NO                  920007137
+#define DSM_PMU_OVPBUCK10_ERROR_NO                  920007138
+#define DSM_PMU_OTMP140SUBPMU_ERROR_NO              920007139
+
+#define DSM_PMU_OCPBUCK70_ERROR_NO                  920007140
+#define DSM_PMU_OCPBUCK71_ERROR_NO                  920007141
+#define DSM_PMU_OCPSINK_ERROR_NO                    920007142
+
+#define DSM_PMU_SCPBUCK70_ERROR_NO                  920007143
+#define DSM_PMU_SCPBUCK71_ERROR_NO                  920007144
+#define DSM_PMU_SCPSINK_ERROR_NO                    920007145
+
+#define DSM_PMU_OVPBUCK70_ERROR_NO                  920007146
+#define DSM_PMU_OVPBUCK71_ERROR_NO                  920007147
+
+#define DSM_PMU_VPROC1_OVER_LOAD                    920007148
+#define DSM_PMU_VPROC2_OVER_LOAD                    920007149
+#define DSM_PMU_VCORE_OVER_LOAD                     920007150
+#define DSM_PMU_VPU_OVER_LOAD                       920007151
+#define DSM_PMU_VPA_OVER_LOAD                       920007152
+#define DSM_PMU_VGPU11_OVER_LOAD                    920007153
+#define DSM_PMU_VGPU12_OVER_LOAD                    920007154
+#define DSM_PMU_VMODEM_OVER_LOAD                    920007155
+#define DSM_PMU_VS2_OVER_LOAD                       920007156
+#define DSM_PMU_VS1_OVER_LOAD                       920007157
+#define DSM_PMU_VFE28_OVER_LOAD                     920007158
+#define DSM_PMU_VAUX18_OVER_LOAD                    920007159
+#define DSM_PMU_VBIF28_OVER_LOAD                    920007160
+#define DSM_PMU_VUSB_OVER_LOAD                      920007161
+#define DSM_PMU_VIBR_OVER_LOAD                      920007162
+#define DSM_PMU_VCN33_1_OVER_LOAD                   920007163
+#define DSM_PMU_VCN33_2_OVER_LOAD                   920007164
+#define DSM_PMU_VEMC_OVER_LOAD                      920007165
+#define DSM_PMU_VSIM1_OVER_LOAD                     920007166
+#define DSM_PMU_VSIM2_OVER_LOAD                     920007167
+#define DSM_PMU_VIO28_OVER_LOAD                     920007168
+#define DSM_PMU_VUFS_OVER_LOAD                      920007169
+#define DSM_PMU_VCN18_OVER_LOAD                     920007170
+#define DSM_PMU_VRF18_OVER_LOAD                     920007171
+#define DSM_PMU_VIO18_OVER_LOAD                     920007172
+#define DSM_PMU_VEFUSE_OVER_LOAD                    920007173
+#define DSM_PMU_VM18_OVER_LOAD                      920007174
+#define DSM_PMU_VCAMIO_OVER_LOAD                    920007175
+#define DSM_PMU_VAUD18_OVER_LOAD                    920007176
+#define DSM_PMU_VA09_OVER_LOAD                      920007177
+#define DSM_PMU_VA12_OVER_LOAD                      920007178
+#define DSM_PMU_VCN13_OVER_LOAD                     920007179
+#define DSM_PMU_VSRAM_MD_OVER_LOAD                  920007180
+#define DSM_PMU_VSRAM_PROC1_OVER_LOAD               920007181
+#define DSM_PMU_VSRAM_PROC2_OVER_LOAD               920007182
+#define DSM_PMU_VSRAM_OTHERS_OVER_LOAD              920007183
+#define DSM_PMU_VRF12_OVER_LOAD                     920007184
+#define DSM_PMU_VBUCK1_OVER_LOAD                    920007185
+#define DSM_PMU_VBUCK2_OVER_LOAD                    920007186
+#define DSM_PMU_VBUCK3_OVER_LOAD                    920007187
+#define DSM_PMU_VBUCK4_OVER_LOAD                    920007188
+#define DSM_PMU_BUCK2_OVER_LOAD                     920007189
+#define DSM_PMU_BUCK1_OVER_LOAD                     920007190
+#define DSM_PMU_LDO1_OVER_LOAD                      920007191
+#define DSM_PMU_LDO2_OVER_LOAD                      920007192
+#define DSM_PMU_LDO3_OVER_LOAD                      920007193
+#define DSM_PMU_LDO5_OVER_LOAD                      920007194
+#define DSM_PMU_LDO6_OVER_LOAD                      920007195
+#define DSM_PMU_LDO7_OVER_LOAD                      920007196
+
+/* pmu independence */
+#define DSM_PMU_EXP                                 925206400
 /* charger */
 #define DSM_CHARGER_ERROR_NO                        920011000
 
@@ -236,13 +364,28 @@
 #define DSM_BATTERY_ASW_PROTECT_H1_SCENE            920001096
 #define DSM_BATTERY_ASW_PROTECT_H2_SCENE            920001097
 #define DSM_BATTERY_ASW_PROTECT_NORMAL_SCENE        920001098
+#define DSM_MULTI_CHARGE_CURRENT_RATIO_ERROR        920001108
+#define DSM_MULTI_CHARGE_CURRENT_RATIO_WARNING      920001109
+#define DSM_MULTI_CHARGE_CURRENT_RATIO_INFO         920001110
+#define DSM_BATTERY_HEATING                         920001111
+#define DSM_USB_PORT_TEMP_EXCEED_50                 920001112
+#define DSM_USB_PORT_TEMP_EXCEED_55                 920001113
+#define DSM_DIRECT_CHARGE_FULL_PATH_RESISTANCE_2ND  920001114
 
 #define ERROR_BATT_ACR_OVER_THRESHOLD               920001089
 #define ERROR_BATTERY_POLAR_ISHORT                  920001200
 #define DSM_POWER_DEVICES_INFO                      920001201
 
 /* otg mode: usb short circuit */
-#define DSM_OTG_VBUS_SHORT                          920001203
+#define DSM_OTG_VBUS_SHORT                          920001207
+
+/* wireless charge sw */
+#define DSM_WLPS_GPIO_TXSW                          920001209
+
+#define DSM_SOFT_RECHARGE_NO                        920001210
+
+/* wireless lightstrap */
+#define DSM_LIGHTSTRAP_STATUS                       920002010
 
 /* water check */
 #define ERROR_NO_WATER_CHECK_BASE                   920014000
@@ -252,6 +395,7 @@
 #define ERROR_NO_WATER_CHECK_IN_KEY                 920014003
 #define ERROR_NO_WATER_CHECK_IN_TWO_POSITIONS       920014004
 #define ERROR_NO_WATER_CHECK_IN_THREE_POSITIONS     920014005
+#define ERROR_NO_TYPEC_CC_OVP                       920014006
 
 /* direct charge sc */
 #define DSM_DIRECT_CHARGE_SC_BASE                   920015000
@@ -264,6 +408,9 @@
 #define DSM_DIRECT_CHARGE_SC_FAULT_TDIE_OTP         920015006
 #define DSM_DIRECT_CHARGE_SC_FAULT_AC_OVP           920015007
 #define DSM_DIRECT_CHARGE_SC_FAULT_CONV_OCP         920015008
+
+/* keyboard */
+#define DSM_KB_CONNECTED_STATUS_NO                  936005009
 
 /* superswitch */
 #define ERROR_SUPERSWITCH_BASE                      920013000
@@ -346,6 +493,11 @@
 /* tphostprocessing */
 #define DSM_TPHOSTPROCESSING_SPI_RW_ERROR_NO	926011021
 #define DSM_TPHOSTPROCESSING_DEV_STATUS_ERROR_NO 926011022
+#define DSM_TPHOSTPROCESSING_DEV_GESTURE_EXP1    926011044
+#define DSM_TPHOSTPROCESSING_DEV_GESTURE_EXP2    926011045
+#define DSM_TPHOSTPROCESSING_DEV_UDFP_EXP1       926011046
+#define DSM_TPHOSTPROCESSING_DEV_UDFP_EXP2       926011047
+#define DSM_TPHOSTPROCESSING_DEV_UDFP_EXP3       926011048
 
 /* DP */
 #define DSM_DP_BASIC_EXTERNAL_DISPLAY_NO	936000100
@@ -394,10 +546,15 @@
 #define DSM_LCD_BIAS_I2C_ERROR_NO		922001041
 #define DSM_LCD_BACKLIGHT_FLICKER_ERROR_NO	922001042
 #define DSM_LCD_SET_POWER_MODE_RECOVERY_ERROR_NO	922001044
-#define DSM_LCD_SENSORHUB_RECOVERY_ERROR_NO	922001045
 #define DSM_LCD_PANEL_CRACK_ERROR_NO		922001501
 #define DSM_LCD_CHECKSUM_ERROR_NO		922001502
 #define DSM_LCD_POWER_ABNOMAL_ERROR_NO		922001503
+#define DSM_LCD_DDIC_LV_DETECT_ERROR_NO		922001504
+#define DSM_AMOLED_POWER_IC_CHECK_ERROR_NO	922001505
+#define DSM_LCD_UNDERRUN_ERROR_NO	        922001506
+#define DSM_LCD_CHANGE_FPS_ERROR_NO	        922001507
+#define DSM_LCD_SN_CHECK_ERROR_NO		936004017
+#define DSM_DSI_DETECT_ERROR_NO	            925004311
 
 /* gpu */
 #define DSM_LCD_GPU_HANG_ERROR_NO		922002000
@@ -439,6 +596,11 @@
 #define DSM_CODEC_HIFI_SYNC_TIMEOUT		921001052
 #define DSM_SOC_HIFI_SYNC_TIMEOUT		921001053
 #define DSM_PCM_DRV_UPDATE_PCM_BUFF_DELAY	921001054
+#define DSM_CODEC_SSI_READ_ONCE			921001055
+#define DSM_CODEC_CHECK_ERR                     921001057
+#define DSM_B2_ADC_BATT_ERR		921001058
+#define DSM_SHB_B2_GPIO_ERR		921001059
+#define DSM_SHB_B2_ADC_BATT_ERR		921001060
 
 /* hifi usb */
 #define DSM_HIFIUSB_HC_DIED			921001044
@@ -753,12 +915,25 @@
 #define DSM_FS_EXT4_ERROR_READ_SUPER		928003003
 #define DSM_FS_EXT4_ERROR_READ_SUPER_SECOND	928003004
 #define DSM_FS_EXT4_ERROR_WRITE_SUPER		928003005
+/* hmfs */
+#ifndef DSM_HMFS_NEED_FSCK
+#define DSM_HMFS_NEED_FSCK			928005101
+#endif
+#ifndef DSM_HMFS_SET_SBI_NEED_FSCK
+#define DSM_HMFS_SET_SBI_NEED_FSCK		928005102
+#endif
 /* f2fs */
 #ifndef DSM_F2FS_UNLINK_SIGNIF_FILE
 #define DSM_F2FS_UNLINK_SIGNIF_FILE		928005000
 #endif
 #ifndef DSM_F2FS_NEED_FSCK
 #define DSM_F2FS_NEED_FSCK			928005001
+#endif
+#ifndef DSM_IOCACHE_ERROR
+#define DSM_IOCACHE_ERROR			928005002
+#endif
+#ifndef DSM_F2FS_SET_SBI_NEED_FSCK
+#define DSM_F2FS_SET_SBI_NEED_FSCK		928005004
 #endif
 #define DSM_UART_OPEN_HWINIT_ERROR		22100
 #define DSM_UART_OPEN_IRQ_REQUSET_FAILED	(DSM_UART_OPEN_HWINIT_ERROR + 1)
@@ -791,6 +966,8 @@
 #define DSM_NFC_HISEE_COS_IMAGE_UPGRADE_ERROR_NO	923002015
 #define DSM_NFC_HISEE_POWER_ON_OFF_ERROR_NO		923002016
 #define DSM_NFC_HISEE_APDU_COMMAND_OPERATION_ERROR_NO	923002017
+/* irda */
+#define DSM_IRDA_SEPARATED_ERROR_NO			923002018
 
 /* hisee */
 #define DSM_HISEE_BASE_ERROR_NO				925003000
@@ -810,11 +987,13 @@
 #define DSM_FINGERPRINT_DIFF_DEADPIXELS_ERROR_NO	912001009
 #define DSM_FINGERPRINT_MANY_DEADPIXELS_ERROR_NO	912001010
 #define DSM_FINGERPRINT_DB_FILE_LOST_ERROR_NO		912001011
+#define DSM_FINGERPRINT_BTB_DISCONNECT_ERROR_NO         926008000
 
 /* usb 920004100~920004199 */
-#define DSM_USB_XHCI_CMD_TIMEOUT		920004100
-#define DSM_USB_RECORD_ABNORMAL_DEVICE		920004101
-#define DSM_USB_AP_USE_HIFIUSB_ENUM_TIMEOUT	920004102
+#define DSM_USB_XHCI_CMD_TIMEOUT                920004100
+#define DSM_USB_RECORD_ABNORMAL_DEVICE          920004101
+#define DSM_USB_AP_USE_HIFIUSB_ENUM_TIMEOUT     920004102
+#define DSM_USB_TYPEC_BTB_CHECK                 920004103
 
 /* pd 920004200~920004299 */
 #define DSM_PD_TYPEC_VBUS_VALID			920004200
@@ -951,6 +1130,7 @@ enum DSM_KEYS_TYPE {
 #define DA_SENSOR_HUB_ERROR_NO			924005001
 #define DA_VIBRATOR_ERROR_NO			924005002
 #define DA_BATTERY_ACR_ERROR_NO			924005003
+#define DA_LCD_AVDD_ERROR_NO			924005004
 #endif
 
 /* DMD NUMBER FOR RTC BEGIN */
@@ -1004,6 +1184,9 @@ struct dsm_extern_client {
 #define MAX_TIME_LEN		20
 #define MAX_FIRMWARE_LEN	32
 #define MAX_DESCRIPTION_LEN	512
+#define MAX_FRONT_ITEM_LEN 32
+#define MAX_ITEM_COUNTER_LEN 16
+#define MAX_ENVIRONMENT_LEN 128
 #define MAX_MSG_EVENT_NUM	4
 #define DATA_FROM_KERNEL	1
 #define ITEM_ID_MIN		700000000
@@ -1026,6 +1209,9 @@ struct event {
 	char max_threshold[MAX_VAL_LEN];	/* max limit of measured value */
 	char firmware[MAX_FIRMWARE_LEN];	/* firmware information */
 	char description[MAX_DESCRIPTION_LEN];	/* brief description */
+	char front_item[MAX_FRONT_ITEM_LEN];
+	char item_counter[MAX_ITEM_COUNTER_LEN];
+	char environment[MAX_ENVIRONMENT_LEN];
 };
 
 struct message {
@@ -1046,7 +1232,7 @@ int dsm_client_record(struct dsm_client *client, const char *fmt, ...);
 int dsm_client_copy(struct dsm_client *client, void *src, int sz);
 
 #ifdef CONFIG_HUAWEI_DATA_ACQUISITION
-int dsm_client_copy_ext(struct dsm_client *client, void *src, int sz);
+int dsm_client_copy_ext(struct dsm_client *client, const void *src, int sz);
 #endif
 
 void dsm_client_notify(struct dsm_client *client, int error_no);

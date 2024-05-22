@@ -143,6 +143,9 @@ static inline void tick_nohz_idle_stop_tick_protected(void)
 	local_irq_enable();
 }
 
+#ifdef CONFIG_CPUSET_TASKS_CROWDED_WORKAROUND
+u64 get_cpu_nonidle_time_us(int cpu);
+#endif
 #else /* !CONFIG_NO_HZ_COMMON */
 #define tick_nohz_enabled (0)
 static inline int tick_nohz_tick_stopped(void) { return 0; }
@@ -162,6 +165,10 @@ static inline u64 get_cpu_idle_time_us(int cpu, u64 *unused) { return -1; }
 static inline u64 get_cpu_iowait_time_us(int cpu, u64 *unused) { return -1; }
 
 static inline void tick_nohz_idle_stop_tick_protected(void) { }
+
+#ifdef CONFIG_CPUSET_TASKS_CROWDED_WORKAROUND
+static inline u64 get_cpu_nonidle_time_us(int cpu) { return 0; }
+#endif
 #endif /* !CONFIG_NO_HZ_COMMON */
 
 #ifdef CONFIG_NO_HZ_FULL
@@ -267,7 +274,7 @@ extern void __tick_nohz_task_switch(void);
 #else
 static inline int housekeeping_any_cpu(void)
 {
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	cpumask_t available;
 	int cpu;
 
@@ -317,7 +324,7 @@ static inline bool is_housekeeping_cpu(int cpu)
 	if (tick_nohz_full_enabled())
 		return cpumask_test_cpu(cpu, housekeeping_mask);
 #endif
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	return !cpu_isolated(cpu);
 #else
 	return true;

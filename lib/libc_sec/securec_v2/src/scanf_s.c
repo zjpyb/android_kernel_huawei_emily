@@ -42,4 +42,3 @@ int scanf_s(const char *format, ...)
     return ret;
 }
 
-

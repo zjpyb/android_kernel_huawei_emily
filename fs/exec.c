@@ -62,6 +62,7 @@
 #include <linux/oom.h>
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
+#include <linux/xreclaimer.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -71,10 +72,6 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
-
-#ifdef CONFIG_HWAA
-#include <huawei_platform/hwaa/hwaa_proc_hooks.h>
-#endif
 
 int suid_dumpable = 0;
 
@@ -1015,7 +1012,7 @@ static int exec_mmap(struct mm_struct *mm)
 	/* Notify parent that we're no longer interested in the old VM */
 	tsk = current;
 	old_mm = current->mm;
-	mm_release(tsk, old_mm);
+	exec_mm_release(tsk, old_mm);
 
 	if (old_mm) {
 		sync_mm_rss(old_mm);
@@ -1044,6 +1041,7 @@ static int exec_mmap(struct mm_struct *mm)
 		BUG_ON(active_mm != old_mm);
 		setmax_mm_hiwater_rss(&tsk->signal->maxrss, old_mm);
 		mm_update_next_owner(old_mm);
+		xreclaimer_dec_mm_tasks(old_mm);
 		mmput(old_mm);
 		return 0;
 	}
@@ -1272,6 +1270,8 @@ int flush_old_exec(struct linux_binprm * bprm)
 	 */
 	set_mm_exe_file(bprm->mm, bprm->file);
 
+	would_dump(bprm, bprm->file);
+
 	/*
 	 * Release all of the old mmap stuff
 	 */
@@ -1381,7 +1381,7 @@ void setup_new_exec(struct linux_binprm * bprm)
 
 	/* An exec changes our domain. We are no longer part of the thread
 	   group */
-	current->self_exec_id++;
+	WRITE_ONCE(current->self_exec_id, current->self_exec_id + 1);
 	flush_signal_handlers(current, 0);
 }
 EXPORT_SYMBOL(setup_new_exec);
@@ -1805,8 +1805,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 	if (retval < 0)
 		goto out;
 
-	would_dump(bprm, bprm->file);
-
 	retval = exec_binprm(bprm);
 	if (retval < 0)
 		goto out;
@@ -1816,7 +1814,7 @@ static int do_execveat_common(int fd, struct filename *filename,
 	current->in_execve = 0;
 	membarrier_execve(current);
 	acct_update_integrals(current);
-	task_numa_free(current);
+	task_numa_free(current, false);
 	free_bprm(bprm);
 	kfree(pathbuf);
 	putname(filename);
@@ -1853,20 +1851,7 @@ int do_execve(struct filename *filename,
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
 
-#ifdef CONFIG_HWAA
-	int pre_execve_ret;
-	int execve_ret;
-	if (IS_ERR(filename))
-		return PTR_ERR(filename);
-	pre_execve_ret = hwaa_proc_pre_execve(filename->name);
-	execve_ret = do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-	if (!pre_execve_ret && !execve_ret) {
-		hwaa_proc_post_execve(current->tgid);
-	}
-	return execve_ret;
-#else
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
-#endif
 }
 
 int do_execveat(int fd, struct filename *filename,

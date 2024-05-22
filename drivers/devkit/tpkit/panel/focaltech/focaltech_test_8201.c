@@ -4,7 +4,7 @@
 #include "focaltech_test.h"
 #include "focaltech_core.h"
 #include "focaltech_flash.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 
 #define TX_8201_NUM_MAX         60
@@ -65,7 +65,8 @@
 #define REG_I2C_ADDR                    0X81
 #define LCD_TEST_FRAMENUM_8201 50
 #define I_IS_OPEN 1
-static char tp_test_failed_reason[TP_TEST_FAILED_REASON_LEN] = { "-software_reason" };
+static char tp_test_failed_reason[TP_TEST_FAILED_REASON_LEN + 1] =
+	"-software_reason";
 struct focal_test_params *param = NULL;
 static int  tp_cap_test_status = TEST_SUCCESS;
 
@@ -111,6 +112,7 @@ struct cs_chip_addr_mgr {
 	u8 slave_addr;
 };
 
+static struct focal_test_result *g_focal_test_result;
 static int focal_start_adc_scan(void);
 static int focal_8201_get_adc_data(struct focal_test_8201 *ft8201, int *data, size_t size, unsigned int chl_x, unsigned int chl_y);
 static int focal_get_adc_result(int *data, size_t size);
@@ -643,6 +645,11 @@ static int focal_8201_write_reg(struct focal_test_8201 *ft8201, u8 addr, u8 valu
 		ret = focal_write_reg(addr, value);
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_write_reg(addr, value);
+		if (ret)
+			TS_LOG_ERR("%s: write reg fail, ret = %d\n",
+				__func__, ret);
 	}
 
 	return ret;
@@ -845,7 +852,7 @@ static int focal_get_cb_data(
 			pkg_size = BYTES_PER_TIME;
 
 		/* addr high 8 bits,CB adrr offset */
-		cmd[1] = (offset + readed_count) >> 8;
+		cmd[1] = (unsigned int)(offset + readed_count) >> 8;
 		ret = focal_write_reg(REG_CB_ADDR_H, cmd[1]);
 		if (ret) {
 			TS_LOG_ERR("%s:write cb addr h fail, ret=%d\n",
@@ -854,7 +861,7 @@ static int focal_get_cb_data(
 		}
 
 		/* addr low 8 bits,B adrr offset */
-		cmd[2] = (offset + readed_count) & 0xff;
+		cmd[2] = (unsigned int)(offset + readed_count) & 0xff;
 		ret = focal_write_reg(REG_CB_ADDR_L, cmd[2]);
 		if (ret) {
 			TS_LOG_ERR("%s:write cb addr l fail, ret=%d\n",
@@ -886,7 +893,7 @@ static int focal_get_raw_data_format(unsigned int chl_x , unsigned int chl_y, in
 	int low_inx = 0;
 	int cur_inx = 0;
 
-	short   raw_data_value = 0;
+	unsigned short raw_data_value;
 	u8 *original_raw_data = NULL;
 
 	if (!data || (0 == size) || (0 == chl_x) || (0 == chl_y)) {
@@ -918,7 +925,8 @@ static int focal_get_raw_data_format(unsigned int chl_x , unsigned int chl_y, in
 		CurRx = i / chl_y;
 		cur_inx = CurTx * chl_x + CurRx;
 		data[cur_inx] = raw_data_value;
-		TS_LOG_DEBUG("%s:CurTx= %d , Rx =%d ,i =%d,raw_data_value= %d \n", __func__, CurTx, CurRx, i, raw_data_value);
+		TS_LOG_DEBUG("%s:CurTx= %u, Rx= %u ,i= %u, data_value= %u\n",
+			__func__, CurTx, CurRx, i, raw_data_value);
 	}
 
 exit:
@@ -940,7 +948,7 @@ static void focal_print_test_data(
 				__func__, msg, row, col, value, min, max);
 }
 
-static int focal_get_int_average(int *p, size_t len)
+static int focal_get_int_average(const int *p, size_t len)
 {
 	long long sum = 0;
 	size_t i = 0;
@@ -957,7 +965,7 @@ static int focal_get_int_average(int *p, size_t len)
 		return 0;
 }
 
-static int focal_get_int_min(int *p, size_t len)
+static int focal_get_int_min(const int *p, size_t len)
 {
 	int min = 0;
 	size_t i = 0;
@@ -972,7 +980,7 @@ static int focal_get_int_min(int *p, size_t len)
 	return min;
 }
 
-static int focal_get_int_max(int *p, size_t len)
+static int focal_get_int_max(const int *p, size_t len)
 {
 	int max = 0;
 	size_t i = 0;
@@ -1144,6 +1152,8 @@ static int focal_alloc_test_container(
 		*result = NULL;
 		return -ENOMEM;
 	}
+	if (g_focal_pdata->capa_test_sequence)
+		g_focal_test_result = *result;
 
 	return 0;
 }
@@ -1384,6 +1394,11 @@ static int focal_8201_start_scan(struct focal_test_8201 *ft8201)
 		}
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_start_scan();
+		if (ret)
+			TS_LOG_ERR("%s: focal_start_scan fail !\n",
+				__func__);
 	}
 
 	return ret;
@@ -1435,6 +1450,131 @@ static int focal_8201_enter_work(struct focal_test_8201 *ft8201)
 		ret = focal_enter_work();
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_enter_work();
+		if (ret)
+			TS_LOG_ERR("%s: ic enter work mode failed!\n",
+				__func__);
+	}
+
+	return ret;
+}
+
+static int focal_8201_start_test_tp_new_order(
+	struct focal_test_params *params,
+	struct ts_rawdata_info *info)
+{
+	unsigned char cap_test_num = 0;
+	int i;
+	int ret;
+	struct focal_test_result *test_results[FTS_8201_MAX_CAP_TEST_NUM] = {0};
+	struct focal_test_8201 ft8201;
+
+	TS_LOG_INFO("test_tp_new_order: start test tp\n");
+	if ((!params) || (!info)) {
+		TS_LOG_ERR("test_tp_new_order: parameter error\n");
+		return -EINVAL;
+	}
+
+	ft8201.cs_info = kzalloc(sizeof(struct cs_info_packet), GFP_KERNEL);
+	if (!ft8201.cs_info) {
+		TS_LOG_ERR("test_tp_new_order:alloc mem fail\n");
+		return -ENOMEM;
+	}
+
+	init_info_packet(ft8201.cs_info);
+	/* default addr 0x70 */
+	init_current_address(&ft8201);
+	/* every test case must repeat confirm enter factory */
+	ret = focal_8201_enter_factory(&ft8201);
+	if (ret)
+		TS_LOG_ERR("test_tp_new_order:enter factory mode fail, ret=%d\n",
+			ret);
+	/* short test */
+	ret = focal_8201_short_circuit_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* open test */
+	ret = focal_8201_open_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* cb data test */
+	ret = focal_8201_cb_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* cb uniformity test,use cb_test_result to compute cb uniformity */
+	ret = focal_cb_uniformity_test(params, test_results[cap_test_num - 1],
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* raw data test */
+	ret = focal_8201_raw_data_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* lcd_noise test */
+	ret = focal_8201_noise_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+
+	/* cb increase test */
+	ret = focal_8201_cb_increase_test(&ft8201, params,
+		&test_results[cap_test_num], cap_test_num + 1);
+	if (ret) {
+		tp_cap_test_status = SOFTWARE_REASON;
+		strncpy(tp_test_failed_reason, "-software reason",
+			TP_TEST_FAILED_REASON_LEN);
+	}
+	cap_test_num++;
+	/* hand on test data and test result to kit info struct */
+	focal_put_test_result(params, info, test_results, cap_test_num);
+
+	for (i = 0; i < cap_test_num; i++) {
+		focal_free_test_container(test_results[i]);
+		test_results[i] = NULL;
+	}
+
+	ret = focal_8201_enter_work(&ft8201);
+	if (ret < 0)
+		TS_LOG_ERR("test_tp_new_order:enter work mode fail, ret=%d\n",
+			ret);
+
+	if (ft8201.cs_info != NULL) {
+		kfree(ft8201.cs_info);
+		ft8201.cs_info = NULL;
 	}
 
 	return ret;
@@ -1578,6 +1718,11 @@ static int focal_8201_chip_clb(struct focal_test_8201 *ft8201)
 		}
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_chip_clb();
+		if (ret)
+			TS_LOG_ERR("%s: focal_chip_clb fail, ret = %d\n",
+				__func__, ret);
 	}
 
 	return ret;
@@ -1639,7 +1784,7 @@ static int focal_get_noise_format(unsigned int chl_x , unsigned int chl_y, int *
 	unsigned int CurRx = 0;
 	int ret = 0;
 	int raw_data_size = 0;
-	short   raw_data_value = 0;
+	unsigned short raw_data_value;
 	u8 *original_raw_data = NULL;
 	int high_index = 0;
 	int low_index = 0;
@@ -1671,7 +1816,8 @@ static int focal_get_noise_format(unsigned int chl_x , unsigned int chl_y, int *
 		CurRx = i / chl_y;
 		cur_index = CurTx * chl_x + CurRx;
 		data[cur_index] = raw_data_value;
-		TS_LOG_DEBUG("%s:CurTx= %d , Rx =%d ,i =%d,raw_data_value= %d \n", __func__, CurTx, CurRx, i, raw_data_value);
+		TS_LOG_DEBUG("%s: CurTx= %u, Rx= %u, i= %u, data_value= %u\n",
+			__func__, CurTx, CurRx, i, raw_data_value);
 	}
 
 exit:
@@ -1707,6 +1853,11 @@ static int focal_8201_get_noise_format(
 		}
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_get_noise_format(chl_x, chl_y, data, size);
+		if (ret)
+			TS_LOG_ERR("%s: get_noise_format fail, ret = %d\n",
+				__func__, ret);
 	}
 
 	return ret;
@@ -1737,6 +1888,11 @@ static int focal_8201_get_raw_data_format(
 		}
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
+	} else {
+		ret = focal_get_raw_data_format(chl_x, chl_y, data, size);
+		if (ret)
+			TS_LOG_ERR("%s: get_raw_data_format fail, ret = %d\n",
+				__func__, ret);
 	}
 
 	return ret;
@@ -1899,15 +2055,21 @@ static int focal_8201_get_cb_data_format(struct focal_test_8201 *ft8201, int *da
 		cat_single_to_one_screen(ft8201, buffer_master, buffer_slave, data);
 		/*scan over,back to devault addr slave_addr*/
 		cs_chip_addr_mgr_exit(&mgr);
-
+	} else {
+		ret = focal_get_cb_data_format(data, master_tx * master_rx,
+			master_tx, master_rx);
+		if (ret) {
+			TS_LOG_ERR("%s: get cb data fail, ret = %d\n",
+				__func__, ret);
+			goto release_slave;
+		}
+	}
 release_slave:
 		if (buffer_slave)
 			kfree(buffer_slave);
 release_master:
 		if (buffer_master)
 			kfree(buffer_master);
-	}
-
 	return ret;
 }
 
@@ -2201,6 +2363,8 @@ static int focal_8201_get_open_test_data(struct focal_test_8201 *ft8201, int *da
 		goto free_open_data;
 	}
 
+	if (g_focal_pdata->capa_test_sequence)
+		msleep(FOCAL_DELAY_AFTER_RED_VREF);
 	/* auto clb */
 	ret = focal_8201_chip_clb(ft8201);
 	if (ret) {
@@ -2703,8 +2867,10 @@ static int focal_8201_short_circuit_test(
 	chl_x = params->channel_x_num;
 	chl_y = params->channel_y_num;
 
-
-	adc_data_size = (chl_x * chl_y + params->key_num);
+	if (g_focal_pdata->capa_test_sequence)
+		adc_data_size = (chl_x * chl_y);
+	else
+		adc_data_size = (chl_x * chl_y + params->key_num);
 
 	result_code[0] = test_num + '0';
 	result_code[1] = 'F'; //default result_code is failed
@@ -2794,6 +2960,8 @@ static int focal_get_adc_scan_result(void)
 		if (!ret) {
 			if (reg_val == 0) {
 				TS_LOG_INFO("%s:adc scan success\n", __func__);
+				if (g_focal_pdata->capa_test_sequence)
+					msleep(FOCAL_DELAY_AFTER_ADC_SCAN);
 				return 0;
 			} else {
 				TS_LOG_INFO("%s:adc scan status:0x%02X\n",
@@ -2825,6 +2993,17 @@ static int focal_get_adc_result(int *data, size_t size)
 	if (!data) {
 		TS_LOG_ERR("%s: parameter error\n",  __func__);
 		return -EINVAL;
+	}
+
+	if (g_focal_pdata->capa_test_sequence) {
+		if (!g_focal_test_result) {
+			TS_LOG_ERR("g_focal_test_result is null\n");
+			return -EINVAL;
+		}
+		if (g_focal_test_result->size < size) {
+			TS_LOG_ERR("size is invalid\n");
+			return -EINVAL;
+		}
 	}
 
 	adc_data_size = size * 2;
@@ -2964,6 +3143,32 @@ release_slave:
 release_master:
 		if (buffer_master)
 			kfree(buffer_master);
+	} else {
+		/* single chip */
+		ret = focal_start_adc_scan();
+		if (ret) {
+			TS_LOG_ERR("%s: start adc scan fail, ret = %d\n",
+				__func__, ret);
+			return ret;
+		}
+
+		if (g_focal_pdata->capa_test_sequence)
+			master_adc_num = (master_tx * master_rx);
+		else
+			master_adc_num = (master_tx * master_rx +
+				FOCAL_ADC_NUM_OFFSET);
+		ret = focal_get_adc_scan_result();
+		if (ret) {
+			TS_LOG_ERR("%s: get adc scan result fail, ret = %d\n",
+				__func__, ret);
+			return ret;
+		}
+		ret = focal_get_adc_result(data, master_adc_num);
+		if (ret) {
+			TS_LOG_ERR("%s: get adc result fail, ret = %d\n",
+				__func__, ret);
+			return ret;
+		}
 	}
 
 	return ret;
@@ -3144,7 +3349,10 @@ int focal_8201_get_raw_data(
 		}
 	}
 
-	ret = focal_8201_start_test_tp(param, info);
+	if (pdata->capa_test_sequence)
+		ret = focal_8201_start_test_tp_new_order(param, info);
+	else
+		ret = focal_8201_start_test_tp(param, info);
 	if (!ret) {
 		TS_LOG_INFO("%s:tp test pass\n", __func__);
 	}else{

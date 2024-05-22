@@ -20,18 +20,13 @@
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 
-/*
- * [PD2.0] Figure 8-38 Source Port Policy Engine state diagram
- */
-
+/* [PD2.0] Figure 8-38 Source Port Policy Engine state diagram */
 void pe_src_startup_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_port->state_machine = PE_STATE_MACHINE_SOURCE;
-
 	pd_port->cap_counter = 0;
 	pd_port->request_i = -1;
 	pd_port->request_v = TCPC_VBUS_SOURCE_5V;
-
 	pd_set_product_type(PD_DPM_INVALID_VAL);
 	pd_reset_protocol_layer(pd_port);
 	pd_set_rx_enable(pd_port, PD_RX_CAP_PE_STARTUP);
@@ -44,14 +39,12 @@ void pe_src_startup_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 #endif /* CONFIG_USB_PD_RESET_CABLE */
 
 	switch (pd_event->event_type) {
-	case PD_EVT_HW_MSG:	/* CC attached */
+	case PD_EVT_HW_MSG: /* CC attached */
 		pd_enable_vbus_valid_detection(pd_port, true);
 		break;
-
 	case PD_EVT_PE_MSG: /* From Hard-Reset */
 		pd_enable_timer(pd_port, PD_TIMER_SOURCE_START);
 		break;
-
 	case PD_EVT_CTRL_MSG: /* From PR-SWAP (Received PS_RDY) */
 		pd_enable_timer(pd_port, PD_TIMER_SOURCE_START);
 		break;
@@ -60,16 +53,14 @@ void pe_src_startup_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 
 void pe_src_discovery_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	/* MessageID Should be 0 for First SourceCap (Ellisys)... */
-
-	/* The SourceCapabilitiesTimer continues to run during the states
+	/*
+	 * MessageID Should be 0 for First SourceCap (Ellisys)
+	 * The SourceCapabilitiesTimer continues to run during the states
 	 * defined in Source Startup Structured VDM Discover Identity State
 	 * Diagram
 	 */
-
 	pd_port->msg_id_tx[TCPC_TX_SOP] = 0;
 	pd_port->pd_connected = false;
-
 	pd_enable_timer(pd_port, PD_TIMER_SOURCE_CAPABILITY);
 
 #ifdef CONFIG_USB_PD_SRC_STARTUP_DISCOVER_ID
@@ -77,17 +68,15 @@ void pe_src_discovery_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 		pd_port->msg_id_tx[TCPC_TX_SOP_PRIME] = 0;
 		pd_enable_timer(pd_port, PD_TIMER_DISCOVER_ID);
 	}
-#endif
+#endif /* CONFIG_USB_PD_SRC_STARTUP_DISCOVER_ID */
 }
 
 void pe_src_send_capabilities_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_set_rx_enable(pd_port, PD_RX_CAP_PE_SEND_WAIT_CAP);
-
 	pd_dpm_send_source_caps(pd_port);
 	pd_port->cap_counter++;
-
-	pd_free_pd_event(pd_port, pd_event);	/* soft-reset */
+	pd_free_pd_event(pd_port, pd_event); /* soft-reset */
 }
 
 void pe_src_send_capabilities_exit(pd_port_t *pd_port, pd_event_t *pd_event)
@@ -95,23 +84,24 @@ void pe_src_send_capabilities_exit(pd_port_t *pd_port, pd_event_t *pd_event)
 	pd_disable_timer(pd_port, PD_TIMER_SENDER_RESPONSE);
 }
 
-void pe_src_negotiate_capabilities_entry(
-				pd_port_t *pd_port, pd_event_t *pd_event)
+void pe_src_negotiate_capabilities_entry(pd_port_t *pd_port,
+	pd_event_t *pd_event)
 {
 	pd_port->pd_connected = true;
 	pd_port->pd_prev_connected = true;
-
 	pd_dpm_src_evaluate_request(pd_port, pd_event);
 	pd_free_pd_event(pd_port, pd_event);
 }
 
 void pe_src_transition_supply_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	if (pd_event->msg == PD_DPM_PD_REQUEST)	/* goto-min */ {
+	/* goto-min */
+	if (pd_event->msg == PD_DPM_PD_REQUEST) {
 		pd_port->request_i_new = pd_port->request_i_op;
 		pd_send_ctrl_msg(pd_port, TCPC_TX_SOP, PD_CTRL_GOTO_MIN);
-	} else
+	} else {
 		pd_send_ctrl_msg(pd_port, TCPC_TX_SOP, PD_CTRL_ACCEPT);
+	}
 
 	pd_enable_timer(pd_port, PD_TIMER_SOURCE_TRANSITION);
 }
@@ -147,7 +137,6 @@ void pe_src_capability_response_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 	case PD_DPM_NAK_REJECT:
 		pd_send_ctrl_msg(pd_port, TCPC_TX_SOP, PD_CTRL_REJECT);
 		break;
-
 	case PD_DPM_NAK_WAIT:
 		pd_send_ctrl_msg(pd_port, TCPC_TX_SOP, PD_CTRL_WAIT);
 		break;
@@ -157,7 +146,6 @@ void pe_src_capability_response_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 void pe_src_hard_reset_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_send_hard_reset(pd_port);
-
 	pd_free_pd_event(pd_port, pd_event);
 	pd_enable_timer(pd_port, PD_TIMER_PS_HARD_RESET);
 }
@@ -212,35 +200,29 @@ void pe_src_soft_reset_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 
 void pe_src_ping_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
-	/* TODO: Send Ping Message */
+	/* Send Ping Message */
+	PE_DBG("Send Ping Message");
 }
 
 /*
  * [PD2.0] Figure 8-81
- Source Startup Structured VDM Discover Identity State Diagram (TODO)
+ * Source Startup Structured VDM Discover Identity State Diagram
  */
-
 #ifdef CONFIG_USB_PD_SRC_STARTUP_DISCOVER_ID
-
 void pe_src_vdm_identity_request_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_set_rx_enable(pd_port, PD_RX_CAP_PE_DISCOVER_CABLE);
-
 	pd_send_vdm_discover_id(pd_port, TCPC_TX_SOP_PRIME);
-
 	pd_port->discover_id_counter++;
 	pd_enable_timer(pd_port, PD_TIMER_VDM_RESPONSE);
-
 	pd_free_pd_event(pd_port, pd_event);
 }
 
 void pe_src_vdm_identity_acked_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_port->dpm_flags &= ~DPM_FLAGS_CHECK_CABLE_ID;
-
 	pd_disable_timer(pd_port, PD_TIMER_VDM_RESPONSE);
 	pd_dpm_src_inform_cable_vdo(pd_port, pd_event);
-
 	pd_free_pd_event(pd_port, pd_event);
 }
 
@@ -248,7 +230,6 @@ void pe_src_vdm_identity_naked_entry(pd_port_t *pd_port, pd_event_t *pd_event)
 {
 	pd_disable_timer(pd_port, PD_TIMER_VDM_RESPONSE);
 	pd_dpm_src_inform_cable_vdo(pd_port, pd_event);
-
 	pd_free_pd_event(pd_port, pd_event);
 }
 

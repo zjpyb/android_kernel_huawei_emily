@@ -8,7 +8,7 @@
  * note: following implementation is only for
  * little-endian architectures supporting 64 bit unsigned integers
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -58,7 +58,8 @@ void present80_setkey(present80_t context, const uint8_t *key)
 		context[i] = key[9 - i];
 }
 
-void present80(const present80_t context, const uint8_t *ptext, uint8_t *ctext)
+void present80(const present80_t context, const uint8_t *ptext, uint32_t ptext_len,
+	uint8_t *ctext, uint32_t ctext_len)
 {
 	uint64_t a, b;
 	uint8_t *s = (uint8_t *)&a;
@@ -66,6 +67,8 @@ void present80(const present80_t context, const uint8_t *ptext, uint8_t *ctext)
 	uint64_t r[2] = {0};
 	uint64_t w;
 
+	(void)ptext_len;
+	(void)ctext_len;
 	if (!context || !ptext || !ctext)
 		return;
 	/* copy reversed key */
@@ -100,20 +103,20 @@ void present80(const present80_t context, const uint8_t *ptext, uint8_t *ctext)
 		ctext[j] = s[7 - j];
 }
 
-void present80_cbcmac(const present80_t context, const uint8_t *data,
-		const uint32_t datalen, const bool clrtag, uint8_t *tag)
+void present80_cbcmac(const present80_t context, const uint8_t *data, const uint32_t datalen,
+	const bool clrtag, uint8_t *tag, uint32_t tag_len)
 {
 	uint8_t *t = NULL;
 	const uint8_t *s = (tag + 8);
 	const uint8_t *p = data;
 	const uint8_t *q = (data + datalen);
 
-
+	(void)tag_len;
 	/* clear tag */
 	if (clrtag)
 		for (t = tag; t != s; t++)
 			*t = 0;
-	if (datalen <= 0)
+	if (datalen == 0)
 		return;
 	/* preform CBCMAC on data */
 	while (p != q) {
@@ -127,6 +130,6 @@ void present80_cbcmac(const present80_t context, const uint8_t *data,
 				p = q;
 		}
 		/* encrypt block */
-		present80(context, tag, tag);
+		present80(context, tag, tag_len, tag, tag_len);
 	}
 }

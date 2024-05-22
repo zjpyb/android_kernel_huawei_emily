@@ -1,4 +1,4 @@
-#ifndef __RAS_RPOBE__
+#ifndef __RAS_PROBE__
 #define __RAS_PROBE__
 
 #include <linux/kprobes.h>
@@ -54,6 +54,9 @@ static struct rasprobe rasprobe_name(fun) = rasprobe_init_entry_exit(fun)
 int rasprobe_entry(struct rasprobe_instance *ri, struct pt_regs *regs);
 void rasprobe_seturn(struct pt_regs *regs, long val);
 void rasprobe_setarg(struct pt_regs *regs, int index, long val);
+#ifdef CONFIG_ARCH_HISI
+void rasprobe_setargptr(struct pt_regs *regs, int index, void *val);
+#endif
 int register_rasprobes(struct rasprobe **rps, int num);
 void unregister_rasprobes(struct rasprobe **rps, int num);
 

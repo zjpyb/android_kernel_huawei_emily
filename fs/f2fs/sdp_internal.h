@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) Huawei Technologies Co., Ltd. 2017-2020. All rights reserved.
+ * Description: Internal functions for per-f2fs sdp(sensitive data protection).
+ * Create: 2017-11-10
+ * History: 2020-10-10 add hwdps
+ */
 
 #ifndef __SDP_INTERNAL_H__
 #define __SDP_INTERNAL_H__
@@ -6,6 +12,7 @@
 #include <linux/types.h>
 #include <crypto/kpp.h>
 #include <crypto/ecdh.h>
+#include "sdp.h"
 
 #if F2FS_FS_SDP_ENCRYPTION
 
@@ -43,14 +50,19 @@
 #define FSCRYPT_CE_CLASS			(1)
 #define FSCRYPT_SDP_ECE_CLASS		(2)
 #define FSCRYPT_SDP_SECE_CLASS		(3)
+#define FSCRYPT_DPS_CLASS	(4)
 
 #define FS_SDP_ECC_PUB_KEY_SIZE			(64)
 #define FS_SDP_ECC_PRIV_KEY_SIZE		(32)
+#ifndef FS_AES_256_GCM_KEY_SIZE
 #define FS_AES_256_GCM_KEY_SIZE			(32)
+#endif
 #define FS_AES_256_CBC_KEY_SIZE			(32)
 #define FS_AES_256_CTS_KEY_SIZE			(32)
 #define FS_AES_256_XTS_KEY_SIZE			(64)
+#ifndef FS_ENCRYPTION_CONTEXT_FORMAT_V2
 #define FS_ENCRYPTION_CONTEXT_FORMAT_V2	(2)
+#endif
 
 #define FS_KEY_INDEX_OFFSET				(63)
 
@@ -90,6 +102,7 @@ int f2fs_inode_check_sdp_keyring(u8 *descriptor, int enforce);
  * keyinfo.c internal functions
  */
 int f2fs_change_to_sdp_crypto(struct inode *inode, void *fs_data);
+int f2fs_do_get_keyindex(u8 *descriptor, int *keyindex);
 
 /*
  * ecdh.c internal functions

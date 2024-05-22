@@ -49,6 +49,7 @@
 #include <linux/of.h>
 #include <linux/hwspinlock.h>
 #include "../hwspinlock/hwspinlock_internal.h"
+extern void show_dma64_reg(struct dma_chan *chan);
 #endif
 
 /*
@@ -304,7 +305,7 @@
 #define SPI_POLLING_TIMEOUT 1000
 
 #if defined CONFIG_HISI_SPI
-u32 spi_smc_flag[5] = {0};
+u32 spi_smc_flag[6] = {0};
 #define HARDWARE_LOCK_DEFAULT 1
 #endif
 
@@ -327,6 +328,16 @@ enum ssp_writing {
 	WRITING_U16,
 	WRITING_U32
 };
+
+#if defined CONFIG_HISI_SPI
+enum ssp_transfer_state {
+	STATE_CHIP_SELECT,
+	STATE_CHIP_DESELECT,
+	STATE_CFG_DMA_DONE,
+	STATE_DMA_CALLBACK,
+	STATE_FIFO_OVERRUN
+};
+#endif
 
 /**
  * struct vendor_data - vendor-specific config parameters
@@ -429,7 +440,8 @@ struct pl022 {
 	struct dev_pin_info pins;
 	spinlock_t sync_spinlock;
 	int sync_locked;
-
+	enum ssp_transfer_state transfer_state;
+	u32 transfer_len;
 #endif
 	int cur_cs;
 	int *chipselects;
@@ -469,7 +481,7 @@ struct chip_data {
 };
 
 #if defined CONFIG_HISI_SPI
-#include "hisi-spi-pl022.c"
+#include "spi_v400.c"
 #endif
 
 #if defined(CONFIG_SPI_HISI_CS_USE_PCTRL)
@@ -522,6 +534,12 @@ static void pl022_cs_control(struct pl022 *pl022, u32 command)
 		gpio_set_value(pl022->cur_cs, command);
 	else
 		pl022->cur_chip->cs_control(command);
+#if defined CONFIG_HISI_SPI
+	if (command == SSP_CHIP_SELECT)
+		pl022->transfer_state = STATE_CHIP_SELECT;
+	else
+		pl022->transfer_state = STATE_CHIP_DESELECT;
+#endif
 }
 
 /**
@@ -533,8 +551,8 @@ static void pl022_cs_control(struct pl022 *pl022, u32 command)
 static void giveback(struct pl022 *pl022)
 {
 	struct spi_transfer *last_transfer;
-	pl022->next_msg_cs_active = false;
 
+	pl022->next_msg_cs_active = false;
 	last_transfer = list_last_entry(&pl022->cur_msg->transfers,
 					struct spi_transfer, transfer_list);
 
@@ -623,8 +641,8 @@ static void restore_state(struct pl022 *pl022)
 	writew(DISABLE_ALL_INTERRUPTS, SSP_IMSC(pl022->virtbase));
 	writew(CLEAR_ALL_INTERRUPTS, SSP_ICR(pl022->virtbase));
 #if defined CONFIG_HISI_SPI
-	writew(DEFAULT_SSP_REG_TXFIFOCR, SSP_TXFIFOCR(pl022->virtbase));
-	writew(DEFAULT_SSP_REG_RXFIFOCR, SSP_RXFIFOCR(pl022->virtbase));
+	writew(DEFAULT_SSP_REG_TXFIFOCR, ssp_txfifocr(pl022->virtbase));
+	writew(DEFAULT_SSP_REG_RXFIFOCR, ssp_rxfifocr(pl022->virtbase));
 #endif
 }
 
@@ -863,6 +881,22 @@ static void unmap_free_dma_scatter(struct pl022 *pl022)
 	sg_free_table(&pl022->sgt_tx);
 }
 
+#if defined CONFIG_HISI_SPI
+static void pl022_show_err_info(struct spi_master *master)
+{
+	struct pl022 *pl022 = spi_master_get_devdata(master);
+
+	dev_err(&pl022->adev->dev,
+		"%s state is %d \n", __func__, pl022->transfer_state);
+	dev_err(&pl022->adev->dev,
+		"%s len is %u \n", __func__, pl022->transfer_len);
+	if (pl022->transfer_state == STATE_CFG_DMA_DONE) {
+		show_dma64_reg(pl022->dma_rx_channel);
+		show_dma64_reg(pl022->dma_tx_channel);
+	}
+}
+#endif
+
 static void dma_callback(void *data)
 {
 	struct pl022 *pl022 = data;
@@ -909,17 +943,23 @@ static void dma_callback(void *data)
 	}
 #endif
 #if defined CONFIG_HISI_SPI
-	hisi_spi_dma_buffer_free(pl022);
+	spi_v400_dma_buffer_free(pl022);
+	pl022->transfer_state = STATE_DMA_CALLBACK;
 #endif
 	unmap_free_dma_scatter(pl022);
 
 	/* Update total bytes transferred */
 	msg->actual_length += pl022->cur_transfer->len;
+#ifndef CONFIG_HUAWEI_ARMPC_TPM
 	if (pl022->cur_transfer->cs_change)
 		pl022_cs_control(pl022, SSP_CHIP_DESELECT);
-
+#endif
 	/* Move to next transfer */
 	msg->state = next_transfer(pl022);
+#ifdef CONFIG_HUAWEI_ARMPC_TPM
+	if (msg->state != STATE_DONE && pl022->cur_transfer->cs_change)
+		pl022_cs_control(pl022, SSP_CHIP_DESELECT);
+#endif
 	tasklet_schedule(&pl022->pump_transfers);
 }
 
@@ -1100,14 +1140,18 @@ static int configure_dma(struct pl022 *pl022)
 	dev_dbg(&pl022->adev->dev, "using %d pages for transfer\n", pages);
 
 #if defined CONFIG_HISI_SPI
-	rxpages= pages;
-	txpages= pages;
-	if (pl022->cur_transfer->len > (pages* PAGE_SIZE- offset_in_page(pl022->rx))) {
+	rxpages = pages;
+	txpages = pages;
+	pl022->transfer_len = pl022->cur_transfer->len;
+	if (pl022->cur_transfer->len >
+		(pages * PAGE_SIZE -
+			offset_in_page((unsigned long)(uintptr_t)pl022->rx)))
 		rxpages++;
-	}
-	if (pl022->cur_transfer->len > (pages* PAGE_SIZE- offset_in_page(pl022->tx))) {
+
+	if (pl022->cur_transfer->len >
+		(pages * PAGE_SIZE -
+			offset_in_page((unsigned long)(uintptr_t)pl022->tx)))
 		txpages++;
-	}
 
 	ret = sg_alloc_table(&pl022->sgt_rx, rxpages, GFP_ATOMIC);
 	if (ret)
@@ -1169,6 +1213,9 @@ static int configure_dma(struct pl022 *pl022)
 	dma_async_issue_pending(rxchan);
 	dma_async_issue_pending(txchan);
 	pl022->dma_running = true;
+#if defined CONFIG_HISI_SPI
+	pl022->transfer_state = STATE_CFG_DMA_DONE;
+#endif
 
 	return 0;
 
@@ -1367,10 +1414,11 @@ static irqreturn_t pl022_interrupt_handler(int irq, void *dev_id)
 			dev_err(&pl022->adev->dev,
 				"RXFIFO is full\n");
 #if defined CONFIG_HISI_SPI
-		if (pl022->cur_chip->enable_dma){
+		if (pl022->cur_chip->enable_dma) {
 			dmaengine_terminate_all(pl022->dma_rx_channel);
 			dmaengine_terminate_all(pl022->dma_tx_channel);
 		}
+		pl022->transfer_state = STATE_FIFO_OVERRUN;
 #endif
 
 		/*
@@ -1450,7 +1498,7 @@ static int set_up_next_transfer(struct pl022 *pl022,
 	}
 
 	if (pl022->cur_chip->enable_dma && (pl022->dmacheck_addr)) {
-		hisi_spi_txrx_buffer_check(pl022, transfer);
+		spi_v400_txrx_buffer_check(pl022, transfer);
 	} else {
 		pl022->tx = (void *)transfer->tx_buf;
 		pl022->tx_end = pl022->tx + pl022->cur_transfer->len;
@@ -1698,11 +1746,11 @@ out:
 	if (message->state == STATE_DONE) {
 		message->status = 0;
 #if defined CONFIG_HISI_SPI
-        flush(pl022);
+		flush(pl022);
 #endif
-    }
-	else
+	} else {
 		message->status = -EIO;
+	}
 
 	giveback(pl022);
 #if defined CONFIG_HISI_SPI
@@ -1755,13 +1803,11 @@ void disable_spi(struct spi_controller *ctlr)
 static int pl022_unprepare_transfer_hardware(struct spi_master *master)
 {
 	struct pl022 *pl022 = spi_master_get_devdata(master);
-
 #if defined CONFIG_HISI_SPI
 	struct hwspinlock *hwlock = pl022->spi_hwspin_lock;
 
-	if (pl022->hardware_mutex) {
+	if (pl022->hardware_mutex)
 		hwlock->bank->ops->unlock(hwlock);
-	}
 #else
 	/* nothing more to do - disable spi/ssp and power off */
 	writew((readw(SSP_CR1(pl022->virtbase)) &
@@ -2092,7 +2138,7 @@ static int pl022_setup(struct spi_device *spi)
 	if (!chip_info->cs_control) {
 		chip->cs_control = null_cs_control;
 #if defined(CONFIG_SPI_HISI_CS_USE_PCTRL)
-		dev_dbg(&spi->dev, "using pctrl\n");;
+		dev_dbg(&spi->dev, "using pctrl\n");
 #else
 		if (!gpio_is_valid(pl022->chipselects[spi->chip_select]))
 			dev_warn(&spi->dev,
@@ -2262,9 +2308,8 @@ pl022_platform_data_dt_get(struct device *dev)
 		return NULL;
 
 #if defined CONFIG_HISI_SPI
-	if (of_property_read_u32(np, "bus-id", &tmp)) {
+	if (of_property_read_u32(np, "bus-id", &tmp))
 		dev_err(dev, "no bus-id defined\n");
-	}
 	pd->bus_id = tmp;
 #else
 	pd->bus_id = -1;
@@ -2329,8 +2374,8 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 	}
 
 #if defined CONFIG_HISI_SPI
-	status = hisi_spi_get_pins_data(pl022, dev);
-	if(status)
+	status = spi_v400_get_pins_data(pl022, dev);
+	if (status)
 		goto err_no_pinctrl;
 
 	status = of_property_read_u64(np, "clock-rate", &clk_rate);
@@ -2339,14 +2384,13 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 			__func__, np->name);
 	}
 
-	if (of_property_read_u32(np, "smc-flag", &spi_smc_flag[platform_info->bus_id])) {
+	if (of_property_read_u32(np, "smc-flag", &spi_smc_flag[platform_info->bus_id]))
 		spi_smc_flag[platform_info->bus_id] = 0;
-	}
 
 	if (of_property_read_u32(np, "hardware-mutex", &pl022->hardware_mutex))
 		pl022->hardware_mutex = 0;
 	if (pl022->hardware_mutex) {
-		if (HARDWARE_LOCK_DEFAULT == pl022->hardware_mutex) {
+		if (pl022->hardware_mutex == HARDWARE_LOCK_DEFAULT) {
 			/*if hardware-mutex config to 1 in dts, then hardware lock is default value 27*/
 			pl022->spi_hwspin_lock = hwspin_lock_request_specific(ENUM_SPI_HWSPIN_LOCK);
 		} else {
@@ -2359,7 +2403,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 			goto hwspin_lock_err0;
 		}
 	}
-	if (NULL != of_find_property(np,"dma-buffer-check",NULL)) {
+	if (of_find_property(np, "dma-buffer-check", NULL)) {
 		pl022->dmacheck_addr = 1;
 		pl022->tx_buffer = NULL;
 		pl022->rx_buffer = NULL;
@@ -2369,10 +2413,8 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 
 	if (of_property_read_u32(np, "sync-spinlock", &pl022->sync_locked))
 		pl022->sync_locked = 0;
-	if (pl022->sync_locked) {
+	if (pl022->sync_locked)
 		spin_lock_init(&pl022->sync_spinlock);
-	}
-
 #endif
 	/*
 	 * Bus Number Which has been Assigned to this SSP controller
@@ -2385,6 +2427,7 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 #if defined CONFIG_HISI_SPI
 	master->auto_runtime_pm = false;
 	master->prepare_transfer_hardware = pl022_prepare_transfer_hardware;
+	master->show_err_info = pl022_show_err_info;
 #else
 	master->auto_runtime_pm = true;
 #endif
@@ -2684,6 +2727,7 @@ static int pl022_resume(struct device *dev)
 int pl022_runtime_suspend(struct device *dev)
 {
 	struct pl022 *pl022 = dev_get_drvdata(dev);
+
 	clk_disable_unprepare(pl022->clk);
 	pinctrl_pm_select_idle_state(dev);
 
@@ -2693,6 +2737,7 @@ int pl022_runtime_suspend(struct device *dev)
 int pl022_runtime_resume(struct device *dev)
 {
 	struct pl022 *pl022 = dev_get_drvdata(dev);
+
 	pinctrl_pm_select_default_state(dev);
 	clk_prepare_enable(pl022->clk);
 

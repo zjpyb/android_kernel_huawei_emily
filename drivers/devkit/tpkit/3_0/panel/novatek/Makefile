@@ -3,3 +3,4 @@ novatek_ts-objs += nt36xxx_ops.o nt36xxx_ext_proc.o nt36xxx_fw_update.o nt36xxx_
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
 EXTRA_CFLAGS += -Idrivers/devkit/lcdkit/lcdkit3.0/kernel/common/include
+EXTRA_CFLAGS += -Idrivers/devkit/tpkit/3_0

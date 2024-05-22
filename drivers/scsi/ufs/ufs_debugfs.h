@@ -23,6 +23,10 @@
 #include "ufshcd.h"
 #include <linux/debugfs.h>
 
+#define TIME_TRANS     1000
+#define LINE_BUFF_LEN  38
+#define UFS_LANE_MAX   2
+
 #ifdef CONFIG_HISI_DEBUG_FS
 void ufsdbg_add_debugfs(struct ufs_hba *hba);
 void ufsdbg_remove_debugfs(struct ufs_hba *hba);

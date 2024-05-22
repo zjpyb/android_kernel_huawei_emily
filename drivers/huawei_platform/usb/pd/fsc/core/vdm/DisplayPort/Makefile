@@ -8,4 +8,4 @@ ccflags-$(CONFIG_USB_FUSB302) += -DFSC_INTERRUPT_TRIGGERED
 
 obj-$(CONFIG_USB_FUSB302) += displayport.o
 
-displayport-y := configure.o dp.o dp_system_stubs.o
+displayport-y := dp.o dp_system_stubs.o

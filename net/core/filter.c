@@ -53,7 +53,9 @@
 #include <net/dst_metadata.h>
 #include <net/dst.h>
 #include <net/sock_reuseport.h>
+#ifdef CONFIG_DOZE_FILTER
 #include <huawei_platform/power/wifi_filter/wifi_filter.h>
+#endif
 #include <net/busy_poll.h>
 #include <net/tcp.h>
 #include <linux/bpf_trace.h>
@@ -80,7 +82,7 @@ int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
 	struct sk_filter *filter;
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
 	int hook = HW_PFB_INET_BPF_INGRESS;
-	struct net_device *dev;
+	struct net_device *dev = NULL;
 #endif
 
 	/*
@@ -99,7 +101,8 @@ int sk_filter_trim_cap(struct sock *sk, struct sk_buff *skb, unsigned int cap)
 	rcu_read_lock();
 	dev = dev_get_by_index_rcu(sock_net(sk), skb->skb_iif);
 	rcu_read_unlock();
-	if (hw_bypass_skb(sk->sk_family, hook, sk, skb, dev, NULL, err ? DROP : PASS))
+	if (hw_bypass_skb(sk->sk_family, hook, sk, skb, dev,
+			  NULL, err ? DROP : PASS))
 		err = 0;
 #endif
 	if (err) {
@@ -3086,11 +3089,12 @@ static const struct bpf_func_proto bpf_get_socket_uid_proto = {
 BPF_CALL_1(bpf_get_socket_pid, struct sk_buff *, skb)
 {
 #if defined(CONFIG_HUAWEI_KSTATE)
+	struct socket *socket = NULL;
 	struct sock *sk = sk_to_full_sk(skb->sk);
 	if (!sk || !sk_fullsock(sk))
 		return 0;
 
-	struct socket *socket = sk->sk_socket;
+	socket = sk->sk_socket;
 	if (!socket)
 		return 0;
 
@@ -3152,10 +3156,12 @@ BPF_CALL_5(bpf_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 		/* Only some socketops are supported */
 		switch (optname) {
 		case SO_RCVBUF:
+			val = min_t(u32, val, sysctl_rmem_max);
 			sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
 			sk->sk_rcvbuf = max_t(int, val * 2, SOCK_MIN_RCVBUF);
 			break;
 		case SO_SNDBUF:
+			val = min_t(u32, val, sysctl_wmem_max);
 			sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
 			sk->sk_sndbuf = max_t(int, val * 2, SOCK_MIN_SNDBUF);
 			break;
@@ -3173,7 +3179,10 @@ BPF_CALL_5(bpf_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 			sk->sk_rcvlowat = val ? : 1;
 			break;
 		case SO_MARK:
-			sk->sk_mark = val;
+			if (sk->sk_mark != val) {
+				sk->sk_mark = val;
+				sk_dst_reset(sk);
+			}
 			break;
 		default:
 			ret = -EINVAL;
@@ -3199,7 +3208,7 @@ BPF_CALL_5(bpf_setsockopt, struct bpf_sock_ops_kern *, bpf_sock,
 			/* Only some options are supported */
 			switch (optname) {
 			case TCP_BPF_IW:
-				if (val <= 0 || tp->data_segs_out > 0)
+				if (val <= 0 || tp->data_segs_out > tp->syn_data)
 					ret = -EINVAL;
 				else
 					tp->snd_cwnd = val;
@@ -3329,6 +3338,8 @@ tc_cls_act_func_proto(enum bpf_func_id func_id)
 		return &bpf_skb_adjust_room_proto;
 	case BPF_FUNC_skb_change_tail:
 		return &bpf_skb_change_tail_proto;
+	case BPF_FUNC_skb_change_head:
+		return &bpf_skb_change_head_proto;
 	case BPF_FUNC_skb_get_tunnel_key:
 		return &bpf_skb_get_tunnel_key_proto;
 	case BPF_FUNC_skb_set_tunnel_key:

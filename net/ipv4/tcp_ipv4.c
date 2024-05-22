@@ -93,7 +93,13 @@
 #include <hwnet/ipv4/wifipro_tcp_monitor.h>
 #endif
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
+#endif
+#ifdef CONFIG_HW_NETWORK_SLICE
+#include <hwnet/booster/network_slice_route.h>
+#endif
+#ifdef CONFIG_APP_ACCELERATOR
+#include <hwnet/booster/app_accelerator.h>
 #endif
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
@@ -174,6 +180,10 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 
 #ifdef CONFIG_HUAWEI_XENGINE
 	emcom_xengine_mpflow_bind2device(sk, uaddr);
+#endif
+
+#ifdef CONFIG_HW_NETWORK_SLICE
+	slice_rules_lookup(sk, uaddr, IPPROTO_TCP);
 #endif
 
 	nexthop = daddr = usin->sin_addr.s_addr;
@@ -263,7 +273,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 						 inet->inet_daddr);
 	}
 
-	inet->inet_id = tp->write_seq ^ jiffies;
+	inet->inet_id = prandom_u32();
 
 	if (tcp_fastopen_defer_connect(sk, &err))
 		return err;
@@ -496,7 +506,8 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			if (!sock_owned_by_user(meta_sk)) {
 				tcp_v4_mtu_reduced(sk);
 			} else {
-				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
+				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
+					&sk->sk_tsq_flags))
 					sock_hold(sk);
 				if (mptcp(tp))
 					mptcp_tsq_flags(sk);
@@ -505,7 +516,8 @@ void tcp_v4_err(struct sk_buff *icmp_skb, u32 info)
 			if (!sock_owned_by_user(sk)) {
 				tcp_v4_mtu_reduced(sk);
 			} else {
-				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED, &sk->sk_tsq_flags))
+				if (!test_and_set_bit(TCP_MTU_REDUCED_DEFERRED,
+					&sk->sk_tsq_flags))
 					sock_hold(sk);
 			}
 #endif
@@ -873,9 +885,9 @@ static void tcp_v4_send_ack(const struct sock *sk,
 		int offset = (tsecr) ? 3 : 0;
 		/* Construction of 32-bit data_ack */
 		rep.opt[offset++] = htonl((TCPOPT_MPTCP << 24) |
-					  ((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
-					  (0x20 << 8) |
-					  (0x01));
+			((MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK) << 16) |
+			(0x20 << 8) |
+			(0x01));
 		rep.opt[offset] = htonl(data_ack);
 
 		arg.iov[0].iov_len += MPTCP_SUB_LEN_DSS + MPTCP_SUB_LEN_ACK;
@@ -1022,9 +1034,11 @@ int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 	if (skb) {
 		__tcp_v4_send_check(skb, ireq->ir_loc_addr, ireq->ir_rmt_addr);
 
+		rcu_read_lock();
 		err = ip_build_and_send_pkt(skb, sk, ireq->ir_loc_addr,
 					    ireq->ir_rmt_addr,
-					    ireq_opt_deref(ireq));
+					    rcu_dereference(ireq->ireq_opt));
+		rcu_read_unlock();
 		err = net_xmit_eval(err);
 	}
 
@@ -1528,7 +1542,7 @@ struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
 	inet_csk(newsk)->icsk_ext_hdr_len = 0;
 	if (inet_opt)
 		inet_csk(newsk)->icsk_ext_hdr_len = inet_opt->opt.optlen;
-	newinet->inet_id = newtp->write_seq ^ jiffies;
+	newinet->inet_id = prandom_u32();
 
 	if (!dst) {
 		dst = inet_csk_route_child_sock(sk, newsk, req);
@@ -1620,7 +1634,10 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 #endif
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
 		struct dst_entry *dst = sk->sk_rx_dst;
-
+	/* tcp dl accelerator */
+#ifdef CONFIG_APP_ACCELERATOR
+		app_sock_acc_start_check(sk, skb);
+#endif
 		sock_rps_save_rxhash(sk, skb);
 		sk_mark_napi_id(sk, skb);
 		if (dst) {
@@ -1875,11 +1892,12 @@ process:
 			if (sock_owned_by_user(sk)) {
 				mptcp_prepare_for_backlog(sk, skb);
 				if (unlikely(sk_add_backlog(sk, skb,
-							    sk->sk_rcvbuf + sk->sk_sndbuf))) {
+					sk->sk_rcvbuf + sk->sk_sndbuf))) {
 					reqsk_put(req);
 
 					bh_unlock_sock(sk);
-					__NET_INC_STATS(net, LINUX_MIB_TCPBACKLOGDROP);
+					__NET_INC_STATS(net,
+						LINUX_MIB_TCPBACKLOGDROP);
 					goto discard_and_relse;
 				}
 
@@ -2224,13 +2242,14 @@ static void *listening_get_next(struct seq_file *seq, void *cur)
 	struct tcp_iter_state *st = seq->private;
 	struct net *net = seq_file_net(seq);
 	struct inet_listen_hashbucket *ilb;
+	struct hlist_nulls_node *node;
 	struct sock *sk = cur;
 
 	if (!sk) {
 get_head:
 		ilb = &tcp_hashinfo.listening_hash[st->bucket];
 		spin_lock(&ilb->lock);
-		sk = sk_head(&ilb->head);
+		sk = sk_nulls_head(&ilb->nulls_head);
 		st->offset = 0;
 		goto get_sk;
 	}
@@ -2238,9 +2257,9 @@ get_head:
 	++st->num;
 	++st->offset;
 
-	sk = sk_next(sk);
+	sk = sk_nulls_next(sk);
 get_sk:
-	sk_for_each_from(sk) {
+	sk_nulls_for_each_from(sk, node) {
 		if (!net_eq(sock_net(sk), net))
 			continue;
 		if (sk->sk_family == st->family)
@@ -2795,6 +2814,8 @@ static int __net_init tcp_sk_init(struct net *net)
 	net->ipv4.sysctl_tcp_sack = 1;
 	net->ipv4.sysctl_tcp_window_scaling = 1;
 	net->ipv4.sysctl_tcp_timestamps = 2;
+	net->ipv4.sysctl_tcp_comp_sack_delay_ns = NSEC_PER_MSEC;
+	net->ipv4.sysctl_tcp_comp_sack_nr = 44;
 
 	return 0;
 fail:

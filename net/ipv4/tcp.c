@@ -306,7 +306,14 @@
 #endif
 
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
+#endif
+
+#ifdef CONFIG_APP_ACCELERATOR
+#include <hwnet/booster/app_accelerator.h>
+#endif
+#ifdef CONFIG_HW_NETWORK_QOE
+#include <hwnet/booster/ip_para_collec_ex.h>
 #endif
 
 int sysctl_tcp_min_tso_segs __read_mostly = 2;
@@ -355,7 +362,7 @@ void tcp_enter_memory_pressure(struct sock *sk)
 {
 	unsigned long val;
 
-	if (tcp_memory_pressure)
+	if (READ_ONCE(tcp_memory_pressure))
 		return;
 	val = jiffies;
 
@@ -370,7 +377,7 @@ void tcp_leave_memory_pressure(struct sock *sk)
 {
 	unsigned long val;
 
-	if (!tcp_memory_pressure)
+	if (!READ_ONCE(tcp_memory_pressure))
 		return;
 	val = xchg(&tcp_memory_pressure, 0);
 	if (val)
@@ -488,6 +495,7 @@ void tcp_init_sock(struct sock *sk)
 	tp->out_of_order_queue = RB_ROOT;
 	tcp_init_xmit_timers(sk);
 	INIT_LIST_HEAD(&tp->tsq_node);
+	INIT_LIST_HEAD(&tp->tcs_node);
 
 	icsk->icsk_rto = TCP_TIMEOUT_INIT;
 	tp->mdev_us = jiffies_to_usecs(TCP_TIMEOUT_INIT);
@@ -503,6 +511,10 @@ void tcp_init_sock(struct sock *sk)
 	 * efficiently to them.  -DaveM
 	 */
 	tp->snd_cwnd = TCP_INIT_CWND;
+
+#ifdef CONFIG_APP_ACCELERATOR
+	update_sock_send_win(sk);
+#endif
 
 	/* There's a bubble in the pipe until at least the first ACK. */
 	tp->app_limited = ~0U;
@@ -539,6 +551,8 @@ void tcp_init_sock(struct sock *sk)
 	tp->ops = &tcp_specific;
 #endif
 	sk_sockets_allocated_inc(sk);
+
+	tp->slow_start_after_idle = 1;
 }
 EXPORT_SYMBOL(tcp_init_sock);
 
@@ -660,7 +674,7 @@ unsigned int tcp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	}
 	/* This barrier is coupled with smp_wmb() in tcp_reset() */
 	smp_rmb();
-	if (sk->sk_err || !skb_queue_empty(&sk->sk_error_queue))
+	if (sk->sk_err || !skb_queue_empty_lockless(&sk->sk_error_queue))
 		mask |= POLLERR;
 
 	return mask;
@@ -1008,7 +1022,8 @@ static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 #ifdef CONFIG_MPTCP
 	if (mptcp(tcp_sk(sk))) {
 		mss_now = mptcp_current_mss(sk);
-		*size_goal = mptcp_xmit_size_goal(sk, mss_now, !(flags & MSG_OOB));
+		*size_goal = mptcp_xmit_size_goal(sk, mss_now,
+			!(flags & MSG_OOB));
 		return mss_now;
 	}
 #endif
@@ -1049,6 +1064,21 @@ static bool tcp_should_nodelay(struct sock *sk, size_t size, int mss)
 	return false;
 }
 #endif
+/* In some cases, both sendpage() and sendmsg() could have added
+ * an skb to the write queue, but failed adding payload on it.
+ * We need to remove it to consume less memory, but more
+ * importantly be able to generate EPOLLOUT for Edge Trigger epoll()
+ * users.
+ */
+static void tcp_remove_empty_skb(struct sock *sk, struct sk_buff *skb)
+{
+	if (skb && !skb->len &&
+	    TCP_SKB_CB(skb)->end_seq == TCP_SKB_CB(skb)->seq) {
+		tcp_unlink_write_queue(skb, sk);
+		tcp_check_send_head(sk, skb);
+		sk_wmem_free_skb(sk, skb);
+	}
+}
 
 ssize_t do_tcp_sendpages(struct sock *sk, struct page *page, int offset,
 			 size_t size, int flags)
@@ -1120,9 +1150,9 @@ new_segment:
 			if (!skb)
 				goto wait_for_memory;
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
-			if(DELAY_STATISTIC_SWITCH_ON) {
-				delay_record_first_combine(sk,skb,TP_SKB_DIRECT_SND,TP_SKB_TYPE_TCP);
-			}
+			if (DELAY_STATISTIC_SWITCH_ON)
+				delay_record_first_combine(sk, skb,
+					TP_SKB_DIRECT_SND, TP_SKB_TYPE_TCP);
 #endif
 			skb_entail(sk, skb);
 			copy = size_goal;
@@ -1199,6 +1229,7 @@ out:
 	return copied;
 
 do_error:
+	tcp_remove_empty_skb(sk, tcp_write_queue_tail(sk));
 	if (copied)
 		goto out;
 out_err:
@@ -1217,8 +1248,9 @@ int tcp_sendpage_locked(struct sock *sk, struct page *page, int offset,
 {
 #ifdef CONFIG_MPTCP
 	/* If MPTCP is enabled, we check it later after establishment */
-	if (!mptcp(tcp_sk(sk)) && (!(sk->sk_route_caps & NETIF_F_SG) ||
-	    !sk_check_csum_caps(sk)))
+	if (!mptcp(tcp_sk(sk)) &&
+		(!(sk->sk_route_caps & NETIF_F_SG) ||
+		 !sk_check_csum_caps(sk)))
 #else
 	if (!(sk->sk_route_caps & NETIF_F_SG) ||
 	    !sk_check_csum_caps(sk))
@@ -1355,14 +1387,14 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 	int nonagle = 0;
 #endif
 #ifdef CONFIG_HUAWEI_XENGINE
-	bool bAccelerate = false;
+	bool accelerate = false;
 #endif
 #ifdef CONFIG_HW_NETWORK_AWARE
 	tcp_network_aware(false);
 	stat_bg_network_flow(false, size);
 #endif
 #ifdef CONFIG_HW_NETQOS_SCHED
-	netqos_sendrcv(sk, size);
+	netqos_sendrcv(sk, size, false);
 #endif
 
 	flags = msg->msg_flags;
@@ -1444,21 +1476,21 @@ int tcp_sendmsg_locked(struct sock *sk, struct msghdr *msg, size_t size)
 
 #ifdef CONFIG_HUAWEI_XENGINE
 #ifdef CONFIG_HUAWEI_BASTET
-	bAccelerate = BST_FG_Hook_Ul_Stub(sk, msg);
+	accelerate = bst_fg_hook_ul_stub(sk, msg);
 #endif
 
-	if (!bAccelerate)
-		bAccelerate = emcom_xengine_hook_ul_stub(sk);
+	if (!accelerate)
+		accelerate = emcom_xengine_hook_ul_stub(sk);
 
-	if (!bAccelerate)
+	if (!accelerate)
 		EMCOM_XENGINE_SET_ACCSTATE(sk, EMCOM_XENGINE_ACC_NORMAL);
 #else
 #ifdef CONFIG_HUAWEI_BASTET
-	BST_FG_Hook_Ul_Stub(sk, msg);
+	bst_fg_hook_ul_stub(sk, msg);
 #endif
 #endif
 #ifdef CONFIG_HUAWEI_BASTET
-	BST_FG_Custom_Process(sk, msg, (uint8_t)BST_FG_TCP_BITMAP);
+	bst_fg_custom_process(sk, msg, (uint8_t)BST_FG_TCP_BITMAP);
 #endif
 	/* This should be in poll */
 	sk_clear_bit(SOCKWQ_ASYNC_NOSPACE, sk);
@@ -1477,7 +1509,7 @@ restart:
 		sg = mptcp_can_sg(sk);
 	else
 #endif
-	sg = !!(sk->sk_route_caps & NETIF_F_SG);
+		sg = !!(sk->sk_route_caps & NETIF_F_SG);
 
 	while (msg_data_left(msg)) {
 		int copy = 0;
@@ -1507,18 +1539,21 @@ new_segment:
 			first_skb = skb_queue_empty(&sk->sk_write_queue);
 			skb = sk_stream_alloc_skb(sk,
 #ifdef CONFIG_MPTCP
-						  tp->ops->select_size(sk, sg, first_skb),
+						  tp->ops->select_size(
+							sk, sg, first_skb),
 #else
-						  select_size(sk, sg, first_skb),
+						  select_size(
+							sk, sg, first_skb),
 #endif
 						  sk->sk_allocation,
 						  first_skb);
 			if (!skb)
 				goto wait_for_memory;
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
-			if(DELAY_STATISTIC_SWITCH_ON) {
-				delay_record_first_combine(sk,skb,TP_SKB_DIRECT_SND,TP_SKB_TYPE_TCP);
-			}
+			if (DELAY_STATISTIC_SWITCH_ON)
+				delay_record_first_combine(sk, skb,
+					TP_SKB_DIRECT_SND, TP_SKB_TYPE_TCP);
+
 #endif
 			process_backlog = true;
 #ifdef CONFIG_MPTCP
@@ -1531,8 +1566,9 @@ new_segment:
 			 * In case of mptcp, hw-csum's will be handled
 			 * later in mptcp_write_xmit.
 			 */
-			if (((mptcp(tp) && !tp->mpcb->dss_csum) || !mptcp(tp)) &&
-			    (mptcp(tp) || sk_check_csum_caps(sk)))
+			if (((mptcp(tp) && !tp->mpcb->dss_csum) ||
+				!mptcp(tp)) &&
+				(mptcp(tp) || sk_check_csum_caps(sk)))
 #else
 			if (sk_check_csum_caps(sk))
 #endif
@@ -1676,17 +1712,11 @@ out_nopush:
 	sock_zerocopy_put(uarg);
 	return copied + copied_syn;
 
-do_fault:
-	if (!skb->len) {
-		tcp_unlink_write_queue(skb, sk);
-		/* It is the one place in all of TCP, except connection
-		 * reset, where we can be unlinking the send_head.
-		 */
-		tcp_check_send_head(sk, skb);
-		sk_wmem_free_skb(sk, skb);
-	}
-
 do_error:
+	skb = tcp_write_queue_tail(sk);
+do_fault:
+	tcp_remove_empty_skb(sk, skb);
+
 	if (copied + copied_syn)
 		goto out;
 out_err:
@@ -1797,10 +1827,16 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
 
+#ifdef CONFIG_APP_ACCELERATOR
+	if (!app_acc_start_check(sk))
+		WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
+		     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
+		     tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
+#else
 	WARN(skb && !before(tp->copied_seq, TCP_SKB_CB(skb)->end_seq),
-	     "cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
-	     tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
-
+		"cleanup rbuf bug: copied %X seq %X rcvnxt %X\n",
+		tp->copied_seq, TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt);
+#endif
 	if (inet_csk_ack_scheduled(sk)) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 		   /* Delayed ACKs frequently hit locked sockets during bulk
@@ -2058,7 +2094,7 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 	tcp_network_aware(true);
 #endif
 
-	if (sk_can_busy_loop(sk) && skb_queue_empty(&sk->sk_receive_queue) &&
+	if (sk_can_busy_loop(sk) && skb_queue_empty_lockless(&sk->sk_receive_queue) &&
 	    (sk->sk_state == TCP_ESTABLISHED))
 		sk_busy_loop(sk, nonblock);
 
@@ -2127,11 +2163,26 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
 			 */
+			/* tcp dl accelerator */
+#ifdef CONFIG_APP_ACCELERATOR
+			if (before(*seq, TCP_SKB_CB(skb)->seq)) {
+				if (app_acc_start_check(sk)) {
+					*seq = TCP_SKB_CB(skb)->seq;
+				} else {
+					WARN(true, //lint !e1564
+					     "C %X, seq %X, nxt %X, fl %X\n",
+					     *seq, TCP_SKB_CB(skb)->seq,
+					     tp->rcv_nxt, flags);
+					break;
+				}
+			}
+#else
 			if (WARN(before(*seq, TCP_SKB_CB(skb)->seq),
-				 "TCP recvmsg seq # bug: copied %X, seq %X, rcvnxt %X, fl %X\n",
+				 "TCP recvmsg # bug: copied %X, seq %X, nxt %X, fl %X\n",
 				 *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
 				 flags))
 				break;
+#endif
 
 #ifdef CONFIG_CHR_NETLINK_MODULE
 			chr_update_buf_time(ktime_to_ns(skb->tstamp), SOL_TCP);
@@ -2142,14 +2193,19 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 				pr_err_once("%s: found a SYN, please report !\n", __func__);
 				offset--;
 			}
+#ifdef CONFIG_APP_ACCELERATOR
+			if (offset >= skb->len && app_acc_start_check(sk)) {
+				offset = 0;
+				*seq = TCP_SKB_CB(skb)->seq;
+			}
+#endif
 			if (offset < skb->len)
 				goto found_ok_skb;
 			if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 				goto found_fin_ok;
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
-			if(DELAY_STATISTIC_SWITCH_ON) {
-				delay_record_rcv_combine(skb,sk,TP_SKB_TYPE_TCP);
-			}
+			if (DELAY_STATISTIC_SWITCH_ON)
+				delay_record_rcv_combine(skb, sk, TP_SKB_TYPE_TCP);
 #endif
 			WARN(!(flags & MSG_PEEK),
 			     "TCP recvmsg seq # bug 2: copied %X, seq %X, rcvnxt %X, fl %X\n",
@@ -2307,8 +2363,7 @@ skip_copy:
 	stat_bg_network_flow(true, copied);
 #endif
 #ifdef CONFIG_HW_NETQOS_SCHED
-
-	netqos_sendrcv(sk, copied);
+	netqos_sendrcv(sk, copied, true);
 #endif
 	release_sock(sk);
 	return copied;
@@ -2334,16 +2389,21 @@ void tcp_set_state(struct sock *sk, int state)
 	struct inet_sock *inet_temp = inet_sk(sk);
 	unsigned int dest_addr = 0;
 	unsigned int dest_port = 0;
-	if (NULL != inet_temp) {
+
+	if (inet_temp != NULL) {
 		dest_addr = htonl(inet_temp->inet_daddr);
 		dest_port = htons(inet_temp->inet_dport);
 	}
 #endif
 
 #ifdef CONFIG_HUAWEI_XENGINE
-	emcom_xengine_mpflow_fallback(sk, EMCOM_MPFLOW_FALLBACK_NOPAYLOAD, state);
+	emcom_xengine_mpflow_fallback(sk,
+				      EMCOM_MPFLOW_FALLBACK_NOPAYLOAD,
+				      state);
 #endif
-
+#ifdef CONFIG_HW_NETWORK_QOE
+	dec_sk_num_for_qoe(sk, state);
+#endif
 	switch (state) {
 	case TCP_ESTABLISHED:
 		if (oldstate != TCP_ESTABLISHED)
@@ -2353,7 +2413,6 @@ void tcp_set_state(struct sock *sk, int state)
 	case TCP_CLOSE:
 		if (oldstate == TCP_CLOSE_WAIT || oldstate == TCP_ESTABLISHED)
 			TCP_INC_STATS(sock_net(sk), TCP_MIB_ESTABRESETS);
-
 		sk->sk_prot->unhash(sk);
 		if (inet_csk(sk)->icsk_bind_hash &&
 		    !(sk->sk_userlocks & SOCK_BINDPORT_LOCK))
@@ -2366,7 +2425,7 @@ void tcp_set_state(struct sock *sk, int state)
 
 #ifdef CONFIG_HUAWEI_BASTET
 	bastet_check_partner(sk, state);
-	BST_FG_CheckSockUid(sk, state);
+	bst_fg_check_sock_uid(sk, state);
 #endif
 	/* Change state AFTER socket is unhashed to avoid closed
 	 * socket sitting in hash tables.
@@ -2374,10 +2433,12 @@ void tcp_set_state(struct sock *sk, int state)
 	sk_state_store(sk, state);
 #ifdef CONFIG_HW_WIFIPRO
 	if (state == TCP_SYN_SENT) {
-		if (is_wifipro_on && is_mcc_china && wifipro_is_not_local_or_lan_sock(dest_addr)) {
+		if (is_wifipro_on && is_mcc_china &&
+		    wifipro_is_not_local_or_lan_sock(dest_addr)) {
 			if (wifipro_is_google_sock(current, dest_addr)) {
 				sk->wifipro_is_google_sock = 1;
-				WIFIPRO_DEBUG("add a google sock:%s", wifipro_ntoa(dest_addr));
+				WIFIPRO_DEBUG("add a google sock:%s",
+					wifipro_ntoa(dest_addr));
 			}
 		}
 	}
@@ -2482,7 +2543,13 @@ void tcp_close(struct sock *sk, long timeout)
 
 #ifdef CONFIG_MPTCP
 	if (is_meta_sk(sk)) {
-		mptcp_close(sk, timeout);
+		/* TODO: Currently forcing timeout to 0 because
+		 * sk_stream_wait_close will complain during lockdep because
+		 * of the mpcb_mutex (circular lock dependency through
+		 * inet_csk_listen_stop()).
+		 * We should find a way to get rid of the mpcb_mutex.
+		 */
+		mptcp_close(sk, 0);
 		return;
 	}
 #endif
@@ -2580,11 +2647,14 @@ adjudge_to_death:
 
 #if defined(CONFIG_MPTCP) && defined(CONFIG_HUAWEI_XENGINE)
 	if (sock && tcp_sk(sk)->mptcp_cap_flag == MPTCP_CAP_PID_FD) {
-		hw_ext_sock.type = (enum mptcp_hw_ext_sock_cap)tcp_sk(sk)->mptcp_cap_flag;
+		hw_ext_sock.type = (enum mptcp_hw_ext_sock_cap)
+			tcp_sk(sk)->mptcp_cap_flag;
 		hw_ext_sock.uid = sk->sk_uid.val;
 		hw_ext_sock.pid = sock->pid;
 		hw_ext_sock.fd = sock->fd;
-		emcom_xengine_mptcp_socket_closed(&hw_ext_sock, sizeof(hw_ext_sock));
+		emcom_xengine_mptcp_socket_closed(
+			&hw_ext_sock,
+			sizeof(hw_ext_sock));
 		mptcp_info("%s: report close for uid:%d, pid:%d, fd:%d\n",
 			    __func__, sk->sk_uid.val, sock->pid, sock->fd);
 	}
@@ -2687,17 +2757,6 @@ out:
 }
 EXPORT_SYMBOL(tcp_close);
 
-#ifndef CONFIG_MPTCP
-/* These states need RST on ABORT according to RFC793 */
-
-static inline bool tcp_need_reset(int state)
-{
-	return (1 << state) &
-	       (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT | TCPF_FIN_WAIT1 |
-		TCPF_FIN_WAIT2 | TCPF_SYN_RECV);
-}
-#endif
-
 int tcp_disconnect(struct sock *sk, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -2755,15 +2814,16 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->write_seq += tp->max_window + 2;
 	if (tp->write_seq == 0)
 		tp->write_seq = 1;
-	icsk->icsk_backoff = 0;
 	tp->snd_cwnd = 2;
 	icsk->icsk_probes_out = 0;
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd_cnt = 0;
 	tp->window_clamp = 0;
+	tp->delivered = 0;
 	tcp_set_ca_state(sk, TCP_CA_Open);
 	tp->is_sack_reneg = 0;
 	tcp_clear_retrans(tp);
+	tp->total_retrans = 0;
 	inet_csk_delack_init(sk);
 	/* Initialize rcv_mss to TCP_MIN_MSS to avoid division by 0
 	 * issue in __tcp_select_window()
@@ -2775,6 +2835,13 @@ int tcp_disconnect(struct sock *sk, int flags)
 	dst_release(sk->sk_rx_dst);
 	sk->sk_rx_dst = NULL;
 	tcp_saved_syn_free(tp);
+	tp->compressed_ack = 0;
+	tp->segs_in = 0;
+	tp->segs_out = 0;
+	tp->bytes_acked = 0;
+	tp->bytes_received = 0;
+	tp->data_segs_in = 0;
+	tp->data_segs_out = 0;
 
 	/* Clean up fastopen related fields */
 	tcp_free_fastopen_req(tp);
@@ -2795,8 +2862,13 @@ EXPORT_SYMBOL(tcp_disconnect);
 
 static inline bool tcp_can_repair_sock(const struct sock *sk)
 {
+#ifdef CONFIG_MPTCP
+	return ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN) &&
+		(sk->sk_state != TCP_LISTEN) && !sock_flag(sk, SOCK_MPTCP);
+#else
 	return ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN) &&
 		(sk->sk_state != TCP_LISTEN);
+#endif
 }
 
 static int tcp_repair_set_window(struct tcp_sock *tp, char __user *optbuf, int len)
@@ -3032,6 +3104,11 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		}
 		break;
 
+	case TCP_SLOW_START_AFTER_IDLE:
+		if (val == 0)
+			tp->slow_start_after_idle = 0;
+		break;
+
 	case TCP_THIN_LINEAR_TIMEOUTS:
 		if (val < 0 || val > 1)
 			err = -EINVAL;
@@ -3224,7 +3301,12 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 #ifdef CONFIG_TCP_MD5SIG
 	case TCP_MD5SIG:
 	case TCP_MD5SIG_EXT:
+#ifdef CONFIG_MPTCP
+		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN) &&
+		    !sock_flag(sk, SOCK_MPTCP))
+#else
 		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
+#endif
 			err = tp->af_specific->md5_parse(sk, optname, optval, optlen);
 		else
 			err = -EINVAL;
@@ -3280,10 +3362,20 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		bastet_reconn_config(sk, val);
 		break;
 #endif
+#ifdef CONFIG_HUAWEI_TCP_QUICK_START
+	case TCP_QUICK_START:
+		tp->quick_start = !!val;
+		break;
+#endif
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
+#ifdef CONFIG_TCP_MD5SIG
+		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
+		    sk->sk_state != TCP_CLOSE || tp->md5sig_info) {
+#else
 		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
 		    sk->sk_state != TCP_CLOSE) {
+#endif
 			err = -EPERM;
 			break;
 		}
@@ -3376,7 +3468,11 @@ static void tcp_get_info_chrono_stats(const struct tcp_sock *tp,
 }
 
 /* Return information about state of tcp endpoint in API format. */
-void tcp_get_info(struct sock *sk, struct tcp_info *info)
+void tcp_get_info(struct sock *sk, struct tcp_info *info
+#ifdef CONFIG_MPTCP
+	, bool no_lock
+#endif
+	)
 {
 	const struct tcp_sock *tp = tcp_sk(sk); /* iff sk_type == SOCK_STREAM */
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -3412,7 +3508,9 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 		info->tcpi_sacked = sk->sk_max_ack_backlog;
 		return;
 	}
-
+#ifdef CONFIG_MPTCP
+	if (!no_lock)
+#endif
 	slow = lock_sock_fast(sk);
 
 	info->tcpi_ca_state = icsk->icsk_ca_state;
@@ -3482,6 +3580,10 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	rate64 = tcp_compute_delivery_rate(tp);
 	if (rate64)
 		info->tcpi_delivery_rate = rate64;
+
+#ifdef CONFIG_MPTCP
+	if (!no_lock)
+#endif
 	unlock_sock_fast(sk, slow);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
@@ -3555,6 +3657,9 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 	case TCP_NODELAY:
 		val = !!(tp->nonagle&TCP_NAGLE_OFF);
 		break;
+	case TCP_SLOW_START_AFTER_IDLE:
+		val = tp->slow_start_after_idle;
+		break;
 	case TCP_CORK:
 		val = !!(tp->nonagle&TCP_NAGLE_CORK);
 		break;
@@ -3588,8 +3693,11 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (get_user(len, optlen))
 			return -EFAULT;
 
+#ifdef CONFIG_MPTCP
+		tcp_get_info(sk, &info, false);
+#else
 		tcp_get_info(sk, &info);
-
+#endif
 		len = min_t(unsigned int, len, sizeof(info));
 		if (put_user(len, optlen))
 			return -EFAULT;
@@ -3758,16 +3866,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->sched_ops->name, len))
+			if (copy_to_user(optval, mpcb->sched_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_sched_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_PATH_MANAGER:
@@ -3777,16 +3891,22 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		if (put_user(len, optlen))
 			return -EFAULT;
 
+		lock_sock(sk);
 		if (mptcp(tcp_sk(sk))) {
 			struct mptcp_cb *mpcb = tcp_sk(mptcp_meta_sk(sk))->mpcb;
 
-			if (copy_to_user(optval, mpcb->pm_ops->name, len))
+			if (copy_to_user(optval, mpcb->pm_ops->name, len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		} else {
 			if (copy_to_user(optval, tcp_sk(sk)->mptcp_pm_name,
-					 len))
+					 len)) {
+				release_sock(sk);
 				return -EFAULT;
+			}
 		}
+		release_sock(sk);
 		return 0;
 
 	case MPTCP_ENABLED:
@@ -4040,7 +4160,7 @@ EXPORT_SYMBOL_GPL(tcp_done);
 int tcp_abort(struct sock *sk, int err)
 {
 #ifdef CONFIG_MPTCP
-	struct sock *meta_sk = mptcp(tcp_sk(sk)) ? mptcp_meta_sk(sk) : sk;
+	struct sock *meta_sk = NULL;
 #endif
 	if (!sk_fullsock(sk)) {
 		if (sk->sk_state == TCP_NEW_SYN_RECV) {
@@ -4054,6 +4174,7 @@ int tcp_abort(struct sock *sk, int err)
 		return -EOPNOTSUPP;
 	}
 #ifdef CONFIG_MPTCP
+	meta_sk = mptcp(tcp_sk(sk)) ? mptcp_meta_sk(sk) : sk;
 	/* Don't race with userspace socket closes such as tcp_close. */
 	lock_sock(meta_sk);
 #else
@@ -4210,4 +4331,5 @@ void __init tcp_init(void)
 	tcp_metrics_init();
 	BUG_ON(tcp_register_congestion_control(&tcp_reno) != 0);
 	tcp_tasklet_init();
+	tcp_tcs_tasklet_init();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
  * Description: Access Control Module source code. This module maintains
  *     a white list consists of app package names. Apps in the whitelist
  *     can delete media files freely, while apps not included by the whitelist
@@ -9,6 +9,9 @@
  *     maintained in fs/f2fs/namei.c.
  *
  *     This file is released under the GPL v2.
+ *
+ * Author: zhangdaiyue1@huawei.com
+ * Create: 2018-03-08
  */
 #include "acm.h"
 #include <linux/completion.h>
@@ -97,7 +100,7 @@ static struct acm_lnode *get_first_entry(struct list_head *head)
 /* elf_hash function */
 static unsigned int elf_hash(const char *str)
 {
-	unsigned int x = 0;
+	unsigned int x;
 	unsigned int hash = 0;
 	unsigned int ret;
 
@@ -113,14 +116,18 @@ static unsigned int elf_hash(const char *str)
 	return ret;
 }
 
-static struct acm_hnode *acm_hsearch(const struct hlist_head *hash, const char *keystring)
+/*
+ * Search for a key in hash table. Note that caller is responsible for
+ * holding acm_hash.spinlock.
+ */
+static struct acm_hnode *acm_hsearch(const struct hlist_head *hash,
+				     const char *keystring)
 {
 	const struct hlist_head *phead = NULL;
 	struct acm_hnode *pnode = NULL;
 	unsigned int idx;
 
 	idx = elf_hash(keystring);
-	spin_lock(&acm_hash.spinlock);
 	phead = &hash[idx];
 	hlist_for_each_entry(pnode, phead, hnode) {
 		if (pnode) {
@@ -128,45 +135,58 @@ static struct acm_hnode *acm_hsearch(const struct hlist_head *hash, const char *
 				break;
 		}
 	}
-	spin_unlock(&acm_hash.spinlock);
 	return pnode;
 }
 
-static void acm_hash_add(struct acm_htbl *hash_table,
+/*
+ * Add a key into @hash_table. Note that caller is responsible for
+ * holding locks of @hash_table.
+ */
+static inline int acm_hash_add(struct acm_htbl *hash_table,
 			 struct acm_hnode *hash_node)
 {
 	struct hlist_head *phead = NULL;
 	struct hlist_head *hash = hash_table->head;
 
-	spin_lock(&hash_table->spinlock);
-	WARN_ON(hash_table->nr_nodes > HASHTBL_MAX_SZ - 1);
+	if (unlikely(hash_table->nr_nodes > HASHTBL_MAX_SZ - 1)) {
+		pr_err("Failed to add node, acm hash table is full!\n");
+		return -ENOSPC;
+	}
 	phead = &hash[elf_hash(hash_node->pkgname)];
 	hlist_add_head(&hash_node->hnode, phead);
 	hash_table->nr_nodes++;
-	spin_unlock(&hash_table->spinlock);
+	return ACM_SUCCESS;
 }
 
-static void acm_hash_del(struct acm_htbl *hash_table,
+/*
+ * Delete a key from @hash_table. Note that caller is responsible for
+ * holding locks of @hash_table.
+ */
+static inline void acm_hash_del(struct acm_htbl *hash_table,
 			 struct acm_hnode *hash_node)
 {
-	spin_lock(&hash_table->spinlock);
 	WARN_ON(hash_table->nr_nodes < 1);
 	hlist_del(&(hash_node->hnode));
 	hash_table->nr_nodes--;
-	spin_unlock(&hash_table->spinlock);
 	kfree(hash_node);
 }
 
-static void acm_dir_list_add(struct list_head *head, struct acm_dnode *node)
+/*
+ * Add a node to @head. Note that caller is responsible for
+ * holding locks of @head.
+ */
+static inline int acm_dir_list_add(struct list_head *head, struct acm_dnode *node)
 {
-	spin_lock(&acm_dir_list.spinlock);
-	WARN_ON(acm_dir_list.nr_nodes > ACM_DIR_LIST_MAX - 1);
+	if (unlikely(acm_dir_list.nr_nodes > ACM_DIR_LIST_MAX - 1)) {
+		pr_err("Failed to add node, acm dir list is full!\n");
+		return -ENOSPC;
+	}
 	list_add_tail(&node->lnode, head);
 	acm_dir_list.nr_nodes++;
-	spin_unlock(&acm_dir_list.spinlock);
+	return ACM_SUCCESS;
 }
 
-static void acm_fwk_add(struct list_head *head, struct acm_lnode *node)
+static inline void acm_fwk_add(struct list_head *head, struct acm_lnode *node)
 {
 	spin_lock(&acm_fwk_list.spinlock);
 	list_add_tail(&node->lnode, head);
@@ -196,16 +216,20 @@ static int do_cmd_add(unsigned long args)
 	}
 	hnode->pkgname[ACM_PKGNAME_MAX - 1] = '\0';
 
+	spin_lock(&acm_hash.spinlock);
 	result = acm_hsearch(acm_hash.head, hnode->pkgname);
 	if (result) {
+		spin_unlock(&acm_hash.spinlock);
 		pr_err("ACM: Package is already in the white list!\n");
 		err = ACM_SUCCESS;
 		goto do_cmd_add_ret;
-
 	}
 
-	acm_hash_add(&acm_hash, hnode);
-	pr_info("ACM: nr_nodes:%d\n", acm_hash.nr_nodes);
+	err = acm_hash_add(&acm_hash, hnode);
+	spin_unlock(&acm_hash.spinlock);
+	if (err < 0) {
+		goto do_cmd_add_ret;
+	}
 
 	return err;
 
@@ -234,14 +258,17 @@ static int do_cmd_delete(unsigned long args)
 	}
 	fwk_pkg->pkgname[ACM_PKGNAME_MAX - 1] = '\0';
 
+	spin_lock(&acm_hash.spinlock);
 	hnode = acm_hsearch(acm_hash.head, fwk_pkg->pkgname);
 	if (!hnode) {
+		spin_unlock(&acm_hash.spinlock);
 		pr_err("Package not found!\n");
 		err = -ENODATA;
 		goto do_cmd_delete_ret;
 	}
 
 	acm_hash_del(&acm_hash, hnode);
+	spin_unlock(&acm_hash.spinlock);
 	hnode = NULL;
 
 do_cmd_delete_ret:
@@ -264,7 +291,7 @@ static int do_cmd_search(unsigned long args)
 	if (!mp_node)
 		return -ENOMEM;
 	if (copy_from_user(mp_node, (struct acm_mp_node *)args,
-			   sizeof(struct acm_mp_node))) {
+			   sizeof(*mp_node))) {
 		err = -EFAULT;
 		goto do_cmd_search_ret;
 	}
@@ -279,11 +306,13 @@ static int do_cmd_search(unsigned long args)
 	mp_node->pkgname[ACM_PKGNAME_MAX - 1] = '\0';
 	mp_node->path[ACM_PATH_MAX - 1] = '\0';
 
+	spin_lock(&acm_hash.spinlock);
 	hsearch_ret = acm_hsearch(acm_hash.head, mp_node->pkgname);
+	spin_unlock(&acm_hash.spinlock);
 	mp_node->flag = hsearch_ret ? 0 : -1;
 
 	if (copy_to_user((struct acm_mp_node *)args, mp_node,
-			 sizeof(struct acm_mp_node))) {
+			 sizeof(*mp_node))) {
 		err = -EFAULT;
 		goto do_cmd_search_ret;
 	}
@@ -306,6 +335,7 @@ static int do_cmd_add_dir(unsigned long args)
 {
 	int err = 0;
 	struct acm_dnode *dir_node = NULL;
+	struct acm_dnode *pos = NULL;
 	struct acm_fwk_dir *fwk_dir = NULL;
 
 	fwk_dir = kzalloc(sizeof(*fwk_dir), GFP_KERNEL);
@@ -313,7 +343,7 @@ static int do_cmd_add_dir(unsigned long args)
 		return -ENOMEM;
 
 	if (copy_from_user(fwk_dir->dir, (struct acm_fwk_dir *)args,
-			   sizeof(struct acm_fwk_dir))) {
+			   sizeof(*fwk_dir))) {
 		pr_err("Failed to copy dir from user space!\n");
 		err = -EFAULT;
 		goto add_dir_ret;
@@ -325,15 +355,6 @@ static int do_cmd_add_dir(unsigned long args)
 	}
 	fwk_dir->dir[ACM_DIR_MAX - 1] = '\0';
 
-	/* Check whether dir is already in the acm_dir_list */
-	list_for_each_entry(dir_node, &acm_dir_list.head, lnode) {
-		if (strncasecmp(fwk_dir->dir, dir_node->dir,
-				ACM_DIR_MAX - 1) == 0) {
-			pr_err("Dir is already in the dir list!\n");
-			goto add_dir_ret;
-		}
-	}
-
 	dir_node = kzalloc(sizeof(*dir_node), GFP_KERNEL);
 	if (!dir_node) {
 		err = -ENOMEM;
@@ -343,7 +364,25 @@ static int do_cmd_add_dir(unsigned long args)
 	memcpy(dir_node->dir, fwk_dir->dir, ACM_DIR_MAX - 1);
 	dir_node->dir[ACM_DIR_MAX - 1] = '\0';
 
-	acm_dir_list_add(&acm_dir_list.head, dir_node);
+	/* Check whether dir is already in the acm_dir_list */
+	spin_lock(&acm_dir_list.spinlock);
+	list_for_each_entry(pos, &acm_dir_list.head, lnode) {
+		if (strncasecmp(fwk_dir->dir, pos->dir,
+				ACM_DIR_MAX - 1) == 0) {
+			spin_unlock(&acm_dir_list.spinlock);
+			pr_err("Dir is already in the dir list!\n");
+			kfree(dir_node);
+			goto add_dir_ret;
+		}
+	}
+
+	err = acm_dir_list_add(&acm_dir_list.head, dir_node);
+	spin_unlock(&acm_dir_list.spinlock);
+	if (err < 0) {
+		kfree(dir_node);
+		goto add_dir_ret;
+	}
+
 	pr_info("Add a dir: %s\n", dir_node->dir);
 
 add_dir_ret:
@@ -363,7 +402,7 @@ static int do_cmd_del_dir(unsigned long args)
 		return -ENOMEM;
 
 	if (copy_from_user(fwk_dir, (struct acm_fwk_dir *)args,
-			   sizeof(struct acm_fwk_dir))) {
+			   sizeof(*fwk_dir))) {
 		pr_err("Failed to copy dir from user space!\n");
 		err = -EFAULT;
 		goto del_dir_ret;
@@ -375,10 +414,10 @@ static int do_cmd_del_dir(unsigned long args)
 	}
 	fwk_dir->dir[ACM_DIR_MAX - 1] = '\0';
 
+	spin_lock(&acm_dir_list.spinlock);
 	list_for_each_entry_safe(dir_node, n, &acm_dir_list.head, lnode) {
 		if (strncasecmp(dir_node->dir, fwk_dir->dir,
 				ACM_DIR_MAX - 1) == 0) {
-			spin_lock(&acm_dir_list.spinlock);
 			WARN_ON(acm_dir_list.nr_nodes < 1);
 			list_del(&dir_node->lnode);
 			acm_dir_list.nr_nodes--;
@@ -388,6 +427,7 @@ static int do_cmd_del_dir(unsigned long args)
 			goto del_dir_ret;
 		}
 	}
+	spin_unlock(&acm_dir_list.spinlock);
 
 	pr_info("Dir not found!\n");
 
@@ -397,17 +437,18 @@ del_dir_ret:
 }
 
 #ifdef CONFIG_ACM_DSM
-static void acm_dmd_add(struct list_head *head, struct acm_lnode *node)
+static int acm_dmd_add(struct list_head *head, struct acm_lnode *node)
 {
 	spin_lock(&acm_dmd_list.spinlock);
 	if (acm_dmd_list.nr_nodes > ACM_DMD_LIST_MAX_NODES - 1) {
-		pr_err("List was too long! Dropped a pkgname!\n");
 		spin_unlock(&acm_dmd_list.spinlock);
-		return;
+		pr_err("List was too long! Dropped a pkgname!\n");
+		return -ENOSPC;
 	}
 	list_add_tail(&node->lnode, head);
 	acm_dmd_list.nr_nodes++;
 	spin_unlock(&acm_dmd_list.spinlock);
+	return ACM_SUCCESS;
 }
 
 static int do_cmd_add_dsm(unsigned long args)
@@ -420,7 +461,7 @@ static int do_cmd_add_dsm(unsigned long args)
 	if (!mp_node)
 		return -ENOMEM;
 	if (copy_from_user(mp_node, (struct acm_mp_node *)args,
-			   sizeof(struct acm_mp_node))) {
+			   sizeof(*mp_node))) {
 		err = -EFAULT;
 		goto do_cmd_add_dsm_ret;
 	}
@@ -441,7 +482,11 @@ static int do_cmd_add_dsm(unsigned long args)
 	new_dmd_node->depth = DEPTH_INIT;
 	new_dmd_node->file_type = mp_node->file_type;
 
-	acm_dmd_add(&acm_dmd_list.head, new_dmd_node);
+	err = acm_dmd_add(&acm_dmd_list.head, new_dmd_node);
+	if (err < 0) {
+		kfree(new_dmd_node);
+		goto do_cmd_add_dsm_ret;
+	}
 	if (likely(acm_dmd_task))
 		complete(&acm_dmd_comp);
 
@@ -602,8 +647,15 @@ static int delete_log_upload_dmd(const char *pkgname, struct dentry *dentry,
 	/*
 	 * Data in new_dmd_list will be uploaded to unrmd by acm_dmd_task, and
 	 * then uploaded to dmd server.
+	 *
+	 * Note that error returned by acm_dmd_add is not fatal, and should not
+	 * be regarded as an error that would block the deletion. So don't
+	 * return it here.
 	 */
-	acm_dmd_add(&acm_dmd_list.head, new_dmd_node);
+	if (acm_dmd_add(&acm_dmd_list.head, new_dmd_node) < 0) {
+		kfree(new_dmd_node);
+		return err;
+	}
 	complete(&acm_dmd_comp);
 
 	return err;
@@ -644,14 +696,25 @@ static int inquiry_delete_policy(char *pkgname, uid_t uid)
 {
 	struct acm_hnode *hsearch_ret = NULL;
 
-	if (uid < UID_BOUNDARY)
+	if (uid < UID_BOUNDARY) {
+		/*
+		 * Deletion by a pkgname like "kworker/u16" should NOT to be
+		 * ALLOWED. Return -ENODATA here, letting framework put the
+		 * file to Recycle Bin.
+		 */
+		if (strncmp(pkgname, PKGNAME_KWORKER_PREFIX,
+		    strlen(PKGNAME_KWORKER_PREFIX)) == 0)
+			return -ENODATA;
 		return DEL_ALLOWED;
+	}
 
 	/*
 	 * Search the whitelist for @pkgname. Return -ENODATA if @pkgname
 	 * is not in the white list.
 	 */
+	spin_lock(&acm_hash.spinlock);
 	hsearch_ret = acm_hsearch(acm_hash.head, pkgname);
+	spin_unlock(&acm_hash.spinlock);
 	if (!hsearch_ret)
 		return -ENODATA;
 
@@ -704,12 +767,12 @@ int acm_search(char *pkgname, struct dentry *dentry, uid_t uid, int file_type,
 		if (ret != DEL_ALLOWED) {
 			err = delete_log_upload_fwk(pkgname, dentry);
 			/* We just do nothing but print an error message here,
-			 * becasuse the return value is delete-not-allowed, so the
-			 * file system won't delete the file, and data
+			 * becasuse the return value is delete-not-allowed, so
+			 * the file system won't delete the file, and data
 			 * will be upload to dmd anyway.
 			 */
 			if (err)
-				pr_err("Failed to upload to fwk! err = %d ret = %d\n", err, ret);
+				pr_err("Fwk fail err %d ret %d\n", err, ret);
 		}
 	}
 
@@ -782,14 +845,16 @@ void remove_user_dir(struct acm_lnode *node)
 	char *path = node->path;
 	struct acm_dnode *dir_node = NULL;
 
+	spin_lock(&acm_dir_list.spinlock);
 	list_for_each_entry(dir_node, &acm_dir_list.head, lnode) {
 		if (strncasecmp(path, dir_node->dir,
 				strlen(dir_node->dir)) == 0) {
+			spin_unlock(&acm_dir_list.spinlock);
 			remain_first_dname(path);
 			return;
 		}
-
 	}
+	spin_unlock(&acm_dir_list.spinlock);
 
 	remain_first_dname(path);
 
@@ -800,7 +865,7 @@ static void set_dmd_uevent_env(struct acm_lnode *node)
 {
 	int idx;
 
-	memset(&dsm_env, 0, sizeof(struct acm_env));
+	memset(&dsm_env, 0, sizeof(dsm_env));
 	snprintf(dsm_env.pkgname, sizeof(dsm_env.pkgname),
 		 "DSM_PKGNAME=%s", node->pkgname);
 	snprintf(dsm_env.path, sizeof(dsm_env.path),
@@ -827,7 +892,7 @@ static void set_dmd_uevent_env(struct acm_lnode *node)
 static void upload_delete_log(void)
 {
 	int i;
-	int err = 0;
+	int err;
 
 	for (i = 0; i < dmd_cache.count; i++) {
 		set_dmd_uevent_env(&dmd_cache.cache[i]);
@@ -837,7 +902,7 @@ static void upload_delete_log(void)
 			pr_err("Failed to send uevent!\n");
 	}
 
-	memset(&dmd_cache, 0, sizeof(struct acm_cache));
+	memset(&dmd_cache, 0, sizeof(dmd_cache));
 
 	/*
 	 * Compiler optimization may remove the call to memset(),
@@ -862,12 +927,11 @@ static bool is_a_cache(struct acm_lnode *node, struct acm_lnode *cache_node)
 
 static void add_cache(struct acm_lnode *node)
 {
-
 	if (dmd_cache.count > MAX_CACHED_DELETE_LOG - 1)
 		return;
 
 	memcpy(&dmd_cache.cache[dmd_cache.count], node,
-	       sizeof(struct acm_lnode));
+	       sizeof(*node));
 	dmd_cache.cache[dmd_cache.count].nr++;
 	dmd_cache.count++;
 	pr_info("count = %d, nr = %d\n",
@@ -954,7 +1018,7 @@ static void do_remove_prefix(struct acm_lnode *node, int nr_slashes)
  */
 static void remove_path_prefix(struct acm_lnode *node)
 {
-	int nr_slashes_in_prefix = 0;
+	int nr_slashes_in_prefix;
 
 	if (!strncmp(node->path, PATH_PREFIX_MEDIA,
 		     strlen(PATH_PREFIX_MEDIA))) {
@@ -976,7 +1040,6 @@ static void remove_path_prefix(struct acm_lnode *node)
 	}
 
 	do_remove_prefix(node, nr_slashes_in_prefix + 1);
-
 }
 
 static void set_depth(struct acm_lnode *node)
@@ -1058,7 +1121,7 @@ static void set_fwk_uevent_env(struct acm_lnode *node)
 {
 	int idx;
 
-	memset(&fwk_env, 0, sizeof(struct acm_env));
+	memset(&fwk_env, 0, sizeof(fwk_env));
 	snprintf(fwk_env.pkgname, sizeof(fwk_env.pkgname),
 		 "PKGNAME=%s", node->pkgname);
 	snprintf(fwk_env.path, sizeof(fwk_env.path),
@@ -1072,13 +1135,12 @@ static void set_fwk_uevent_env(struct acm_lnode *node)
 
 static void upload_data_to_fwk(void)
 {
-	int err = 0;
+	int err;
 	struct acm_lnode *node = NULL;
 	struct timespec __maybe_unused start;
 	struct timespec __maybe_unused end;
 
 	while (1) {
-
 		spin_lock(&acm_fwk_list.spinlock);
 		if (list_empty(&acm_fwk_list.head)) {
 			spin_unlock(&acm_fwk_list.spinlock);
@@ -1111,9 +1173,7 @@ static void upload_data_to_fwk(void)
 static int acm_fwk_loop(void *data)
 {
 	while (!kthread_should_stop()) {
-
 		upload_data_to_fwk();
-
 		sleep_if_list_empty(&acm_fwk_list);
 	}
 	return ACM_SUCCESS;
@@ -1148,7 +1208,7 @@ static int acm_task_init(void)
 	long err = 0;
 
 	/*
-	 *Create the acm_fwk_loop task to asynchronously
+	 * Create the acm_fwk_loop task to asynchronously
 	 * upload data to framework.
 	 */
 	acm_fwk_task = kthread_run(acm_fwk_loop, NULL, "acm_fwk_loop");
@@ -1160,7 +1220,7 @@ static int acm_task_init(void)
 
 #ifdef CONFIG_ACM_DSM
 	/*
-	 *Create the acm_dmd_loop task to asynchronously
+	 * Create the acm_dmd_loop task to asynchronously
 	 * upload data to dmd.
 	 */
 	acm_dmd_task = kthread_run(acm_dmd_loop, NULL, "acm_dmd_loop");
@@ -1181,7 +1241,6 @@ static const struct file_operations acm_fops = {
 
 static int acm_chr_dev_init(void)
 {
-
 	long err;
 
 	/* Dynamiclly allocate a device number */
@@ -1356,13 +1415,9 @@ static void __exit acm_exit(void)
 	acm_hash_cleanup(acm_hash.head);
 	acm_list_cleanup(&acm_dir_list);
 
-	pr_info("Exited from ACM module.\n");
+	pr_info("Exited from ACM module\n");
 }
 
 MODULE_LICENSE("GPL");
 module_init(acm_init);
 module_exit(acm_exit);
-
-#ifdef CONFIG_ACM_DEBUG
-#include "acm_test.c"
-#endif

@@ -13,6 +13,10 @@
 #ifdef CONFIG_HW_QOS_THREAD
 #include <chipset_common/hwqos/hwqos_common.h>
 #endif
+#ifdef CONFIG_FRAME_RTG
+#include <linux/sched/frame.h>
+#include <linux/sched/frame_info.h>
+#endif
 
 /*
  * Tracepoint for calling kthread_stop, performed to end a kthread:
@@ -111,6 +115,8 @@ DECLARE_EVENT_CLASS(sched_qos_template,
 		__field(int,    success)
 		__field(int,    target_cpu)
 		__field(int,    dynamic_qos)
+		__field(int,    vip_prio)
+		__field(int,    min_util)
 		__field(int,    trans_qos)
 		__field(pid_t,  trans_from)
 		__field(int,    trans_type)
@@ -125,18 +131,29 @@ DECLARE_EVENT_CLASS(sched_qos_template,
 		__entry->success     = 1; /* rudiment, kill when possible */
 		__entry->target_cpu  = task_cpu(p);
 		__entry->dynamic_qos = get_task_set_qos(p);
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+		__entry->vip_prio = p->vip_prio;
+#else
+		__entry->vip_prio = -1;
+#endif
+#ifdef CONFIG_SCHED_HISI_UTIL_CLAMP
+		__entry->min_util = p->uclamp.min_util;
+#else
+		__entry->min_util = -1;
+#endif
 		__entry->trans_qos   = get_task_trans_qos(tq);
 		__entry->trans_from  = (tq == NULL) ? 0 : tq->trans_pid;
 		__entry->trans_type  = (tq == NULL) ? 0 : tq->trans_type;
 		__entry->trans_flags = atomic_read(&p->trans_flags);
 		__entry->type        = type;
 	),
-	TP_printk("comm=%s pid=%d prio=%d target_cpu=%03d dynamic_qos=%d trans_qos=%d trans_from=%d trans_type=%d trans_flags=%d type=%d",
+	TP_printk("comm=%s pid=%d prio=%d target_cpu=%03d dynamic_qos=%d trans_qos=%d vip_prio=%d min_util=%d trans_from=%d trans_type=%d trans_flags=%d type=%d",
 		__entry->comm, __entry->pid, __entry->prio,
 		__entry->target_cpu, __entry->dynamic_qos,
-		__entry->trans_qos, __entry->trans_from,
-		__entry->trans_type, __entry->trans_flags,
-		__entry->type)
+		__entry->trans_qos, __entry->vip_prio,
+		__entry->min_util,
+		__entry->trans_from, __entry->trans_type,
+		__entry->trans_flags, __entry->type)
 );
 
 DEFINE_EVENT(sched_qos_template, sched_qos,
@@ -269,9 +286,14 @@ TRACE_EVENT(sched_switch,
 
 		(__entry->prev_state & (TASK_REPORT_MAX - 1)) ?
 		  __print_flags(__entry->prev_state & (TASK_REPORT_MAX - 1), "|",
-				{ 0x01, "S" }, { 0x02, "D" }, { 0x04, "T" },
-				{ 0x08, "t" }, { 0x10, "X" }, { 0x20, "Z" },
-				{ 0x40, "P" }, { 0x80, "I" }) :
+				{ TASK_INTERRUPTIBLE, "S" },
+				{ TASK_UNINTERRUPTIBLE, "D" },
+				{ __TASK_STOPPED, "T" },
+				{ __TASK_TRACED, "t" },
+				{ EXIT_DEAD, "X" },
+				{ EXIT_ZOMBIE, "Z" },
+				{ TASK_PARKED, "P" },
+				{ TASK_DEAD, "I" }) :
 		  "R",
 
 		__entry->prev_state & TASK_REPORT_MAX ? "+" : "",
@@ -629,6 +651,64 @@ TRACE_EVENT(sched_pi_setprio,
 			__entry->oldprio, __entry->newprio)
 );
 
+#ifdef CONFIG_HW_FUTEX_PI
+#ifdef CONFIG_HW_QOS_THREAD
+TRACE_EVENT(sched_pi_setqos,
+
+	TP_PROTO(struct task_struct *tsk, int oldqos, int newqos),
+
+	TP_ARGS(tsk, oldqos, newqos),
+
+	TP_STRUCT__entry(
+		__array(char, comm, TASK_COMM_LEN)
+		__field(pid_t, pid)
+		__field(int, oldqos)
+		__field(int, newqos)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
+		__entry->pid = tsk->pid;
+		__entry->oldqos = oldqos;
+		__entry->newqos	= newqos;
+		/* XXX SCHED_DEADLINE bits missing */
+	),
+
+	TP_printk("comm=%s pid=%d oldqos=%d newqos=%d",
+			__entry->comm, __entry->pid,
+			__entry->oldqos, __entry->newqos)
+);
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+TRACE_EVENT(sched_pi_setvipprio,
+
+	TP_PROTO(struct task_struct *tsk, int oldvipprio, int newvipprio),
+
+	TP_ARGS(tsk, oldvipprio, newvipprio),
+
+	TP_STRUCT__entry(
+		__array(char, comm, TASK_COMM_LEN)
+		__field(pid_t, pid)
+		__field(int, oldvipprio)
+		__field(int, newvipprio)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
+		__entry->pid = tsk->pid;
+		__entry->oldvipprio = oldvipprio;
+		__entry->newvipprio = newvipprio;
+		/* XXX SCHED_DEADLINE bits missing */
+	),
+
+	TP_printk("comm=%s pid=%d oldvipprio=%d newvipprio=%d",
+			__entry->comm, __entry->pid,
+			__entry->oldvipprio, __entry->newvipprio)
+);
+#endif
+#endif
+
 #ifdef CONFIG_DETECT_HUNG_TASK
 TRACE_EVENT(sched_process_hang,
 	TP_PROTO(struct task_struct *tsk),
@@ -756,7 +836,7 @@ TRACE_EVENT(sched_wake_idle_without_ipi,
 	TP_printk("cpu=%d", __entry->cpu)
 );
 
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 TRACE_EVENT(core_ctl_get_nr_running_avg,/* [false alarm]:fortify */
 
 	TP_PROTO(const struct cpumask *cpus, unsigned int avg,
@@ -857,7 +937,7 @@ TRACE_EVENT(core_ctl_set_boost,/* [false alarm]:fortify */
 	),
 	TP_printk("boost=%u", __entry->refcount)
 );/* [false alarm]:fortify */
-#endif /* CONFIG_HISI_CORE_CTRL */
+#endif /* CONFIG_CORE_CTRL */
 
 #ifdef CONFIG_SMP
 #ifdef CREATE_TRACE_POINTS
@@ -901,7 +981,7 @@ struct cfs_rq *__trace_sched_group_cfs_rq(struct sched_entity *se)
 }
 #endif /* CREATE_TRACE_POINTS */
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 /*
  * sched_isolate - called when cores are isolated/unisolated
  *
@@ -934,12 +1014,12 @@ TRACE_EVENT(sched_isolate,/* [false alarm]:fortify */
 		  __entry->requested_cpu, __entry->isolated_cpus,
 		  __entry->time, __entry->isolate)
 );/* [false alarm]:fortify */
-#endif /* CONFIG_HISI_CPU_ISOLATION */
+#endif /* CONFIG_CPU_ISOLATION_OPT */
 
 #ifdef CONFIG_SCHED_WALT
 extern unsigned int sysctl_sched_use_walt_cpu_util;
 extern unsigned int sysctl_sched_use_walt_task_util;
-#ifdef CONFIG_SCHED_HISI_WALT_WINDOW_SIZE_TUNABLE
+#ifdef CONFIG_SCHED_WALT_WINDOW_SIZE_TUNABLE
 extern unsigned int walt_ravg_window;
 extern bool walt_disabled;
 #else
@@ -1050,7 +1130,8 @@ TRACE_EVENT(sched_load_se,
 		__entry->cpu = __trace_sched_cpu(gcfs_rq, se);
 		__trace_sched_path(gcfs_rq, __get_dynamic_array(path),
 				   __get_dynamic_array_len(path));
-		memcpy(__entry->comm, p ? p->comm : "(null)", TASK_COMM_LEN);
+		memcpy(__entry->comm, p ? p->comm : "(null)",
+				      p ? TASK_COMM_LEN : sizeof("(null)"));
 		__entry->pid = p ? p->pid : -1;
 		__entry->load = se->avg.load_avg;
 		__entry->util = se->avg.util_avg;
@@ -1193,7 +1274,7 @@ TRACE_EVENT(sched_tune_boostgroup_update,
 		__entry->cpu, __entry->variation, __entry->max_boost)
 );
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 /*
  * Tracepoint for schedtune_freqboost
  */
@@ -1256,20 +1337,28 @@ TRACE_EVENT(sched_boost_task,
 		__field( pid_t,		pid			)
 		__field( unsigned long,	util			)
 		__field( long,		margin			)
+		__field( unsigned int,	min_util		)
+		__field( unsigned int,	max_util		)
 
 	),
 
 	TP_fast_assign(
 		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
-		__entry->pid	= tsk->pid;
-		__entry->util	= util;
-		__entry->margin	= margin;
+		__entry->pid      = tsk->pid;
+		__entry->util     = util;
+		__entry->margin   = margin;
+#ifdef CONFIG_SCHED_HISI_UTIL_CLAMP
+		__entry->min_util = tsk->uclamp.min_util;
+		__entry->max_util = tsk->uclamp.max_util;
+#else
+		__entry->min_util = 0;
+		__entry->max_util = 1024;
+#endif
 	),
 
-	TP_printk("comm=%s pid=%d util=%lu margin=%ld",
-		  __entry->comm, __entry->pid,
-		  __entry->util,
-		  __entry->margin)
+	TP_printk("comm=%s pid=%d util=%lu margin=%ld min_util=%u max_util=%u",
+		  __entry->comm, __entry->pid, __entry->util,
+		  __entry->margin, __entry->min_util, __entry->max_util)
 );
 
 /*
@@ -1332,15 +1421,15 @@ TRACE_EVENT(sched_find_best_target,
 		__entry->target		= target;
 	),
 
-	TP_printk("pid=%d comm=%s prefer_idle=%d start_cpu=%d "
+	TP_printk("pid=%d comm=%s min_util=%lu prefer_idle=%d start_cpu=%d "
 		  "best_idle=%d best_active=%d target=%d",
-		__entry->pid, __entry->comm,
+		__entry->pid, __entry->comm, __entry->min_util,
 		__entry->prefer_idle, __entry->start_cpu,
 		__entry->best_idle, __entry->best_active,
 		__entry->target)
 );
 
-#ifdef CONFIG_SCHED_HISI_DEBUG_TRACE
+#ifdef CONFIG_SCHED_DEBUG_TRACE
 TRACE_EVENT(sched_cpu_util,
 
 	TP_PROTO(int cpu, long new_util, u64 irqload, int high_irqload,
@@ -1496,7 +1585,7 @@ TRACE_EVENT(sched_load_balance,
 
 	TP_PROTO(int cpu, int idle, int balance,
 		unsigned long group_mask, int busiest_nr_running,
-		unsigned long imbalance, unsigned int env_flags, int ld_moved,
+		long imbalance, unsigned int env_flags, int ld_moved,
 		unsigned int balance_interval, int active_balance),
 
 	TP_ARGS(cpu, idle, balance, group_mask, busiest_nr_running,
@@ -1509,7 +1598,7 @@ TRACE_EVENT(sched_load_balance,
 		__field(int,		balance)
 		__field(unsigned long,	group_mask)
 		__field(int,		busiest_nr_running)
-		__field(unsigned long,	imbalance)
+		__field(long,		imbalance)
 		__field(unsigned int,	env_flags)
 		__field(int,		ld_moved)
 		__field(unsigned int,	balance_interval)
@@ -1839,6 +1928,105 @@ TRACE_EVENT(sched_set_affinity,
 );
 #endif
 
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+TRACE_EVENT(sched_find_vip_cpu_each,
+
+	TP_PROTO(struct task_struct *task, int cpu, int has_vip,
+		unsigned int cpu_vip_prio, bool reserve, int high_irq,
+		unsigned long cap_orig, unsigned long wake_util,
+		int prefer),
+
+	TP_ARGS(task, cpu, has_vip, cpu_vip_prio, reserve, high_irq,
+		cap_orig, wake_util, prefer),
+
+	TP_STRUCT__entry(
+		__field( pid_t,		pid		)
+		__field( unsigned int,	task_vip_prio	)
+		__field( int,		cpu		)
+		__field( int,		has_vip		)
+		__field( unsigned int,	cpu_vip_prio	)
+		__field( bool,		reserve		)
+		__field( int,		high_irq	)
+		__field( unsigned long,	cap_orig	)
+		__field( unsigned long,	wake_util	)
+		__field( int,		prefer		)
+	),
+
+	TP_fast_assign(
+		__entry->pid		= task->pid;
+		__entry->task_vip_prio	= task->vip_prio;
+		__entry->cpu		= cpu;
+		__entry->has_vip	= has_vip;
+		__entry->cpu_vip_prio	= cpu_vip_prio;
+		__entry->reserve 	= reserve;
+		__entry->high_irq	= high_irq;
+		__entry->cap_orig	= cap_orig;
+		__entry->wake_util	= wake_util;
+		__entry->prefer		= prefer;
+	),
+
+	TP_printk("task=%d(%u) cpu=%d vip=%d(%u) reserve=%d "
+		  "irq=%d cap=%lu util=%lu prefer=%d",
+		__entry->pid, __entry->task_vip_prio, __entry->cpu,
+		__entry->has_vip, __entry->cpu_vip_prio, __entry->reserve,
+		__entry->high_irq, __entry->cap_orig, __entry->wake_util,
+		__entry->prefer)
+);
+
+TRACE_EVENT(sched_find_vip_cpu,
+
+	TP_PROTO(struct task_struct *task, int preferred_cpu,
+		bool favor_larger_capacity, int target_cpu),
+
+	TP_ARGS(task, preferred_cpu, favor_larger_capacity, target_cpu),
+
+	TP_STRUCT__entry(
+		__array( char,	comm,	TASK_COMM_LEN	)
+		__field( pid_t,		pid		)
+		__field( unsigned int,	vip_prio	)
+		__field( int,		preferred_cpu	)
+		__field( int,		target_cpu	)
+		__field( bool,		favor_larger_capacity	)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, task->comm, TASK_COMM_LEN);
+		__entry->pid		= task->pid;
+		__entry->vip_prio	= task->vip_prio;
+		__entry->preferred_cpu	= preferred_cpu;
+		__entry->target_cpu	= target_cpu;
+		__entry->favor_larger_capacity	= favor_larger_capacity;
+	),
+
+	TP_printk("pid=%d comm=%s prio=%u preferred=%d favor_larger=%d target=%d",
+		__entry->pid, __entry->comm, __entry->vip_prio,
+		__entry->preferred_cpu, __entry->favor_larger_capacity,
+		__entry->target_cpu)
+);
+
+TRACE_EVENT(sched_pick_next_hisi_vip,
+
+	TP_PROTO(struct task_struct *task),
+
+	TP_ARGS(task),
+
+	TP_STRUCT__entry(
+		__array( char,	comm,	TASK_COMM_LEN	)
+		__field( pid_t,		pid		)
+		__field( unsigned int,	vip_prio	)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, task->comm, TASK_COMM_LEN);
+		__entry->pid		= task->pid;
+		__entry->vip_prio	= task->vip_prio;
+	),
+
+	TP_printk("pid=%d comm=%s prio=%u",
+		__entry->pid, __entry->comm, __entry->vip_prio)
+);
+#endif
+
 #ifdef CONFIG_SCHED_WALT
 struct rq;
 
@@ -2013,7 +2201,7 @@ TRACE_EVENT(walt_window_rollover,
 	TP_printk("cpu=%d", __entry->cpu)
 );
 
-#ifdef CONFIG_SCHED_HISI_TOP_TASK
+#ifdef CONFIG_SCHED_TOP_TASK
 TRACE_EVENT(walt_update_top_task,
 
 	TP_PROTO(struct rq *rq, struct task_struct *p),
@@ -2047,10 +2235,10 @@ TRACE_EVENT(walt_update_top_task,
 		__entry->curr_top,
 		__entry->prev_top)
 );
-#endif /* CONFIG_SCHED_HISI_TOP_TASK */
+#endif /* CONFIG_SCHED_TOP_TASK */
 
-#ifdef CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION
-TRACE_EVENT(walt_rotation_checkpoint,
+#ifdef CONFIG_SCHED_RUNNING_TASK_ROTATION
+TRACE_EVENT(rotation_checkpoint,
 
 	TP_PROTO(unsigned int nr_big, unsigned int enabled),
 
@@ -2069,9 +2257,9 @@ TRACE_EVENT(walt_rotation_checkpoint,
 	TP_printk("nr_big=%u enabled=%u",
 		__entry->nr_big, __entry->enabled)
 );
-#endif /* CONFIG_SCHED_HISI_RUNNING_TASK_ROTATION */
+#endif /* CONFIG_SCHED_RUNNING_TASK_ROTATION */
 
-#ifdef CONFIG_HISI_RTG
+#ifdef CONFIG_SCHED_RTG
 /* note msg size is less than TASK_COMM_LEN */
 TRACE_EVENT(find_rtg_cpu,
 
@@ -2098,9 +2286,37 @@ TRACE_EVENT(find_rtg_cpu,
 	TP_printk("comm=%s pid=%d perferred_cpus=%s reason=%s target_cpu=%d",
 		__entry->comm, __entry->pid, __get_bitmask(cpus), __entry->msg, __entry->cpu)
 );
-#endif /* CONFIG_HISI_RTG */
 
-#ifdef CONFIG_SCHED_HISI_PRED_LOAD
+#ifdef CONFIG_FRAME_RTG
+/*
+ * Tracepoiny for rtg frame sched
+ */
+TRACE_EVENT(rtg_frame_sched,
+
+	TP_PROTO(int rtgid, const char *s, s64 value),
+
+	TP_ARGS(rtgid, s, value),
+	TP_STRUCT__entry(
+		__field(int, rtgid)
+		__field(struct frame_info *, frame)
+		__field(pid_t, pid)
+		__string(str, s)
+		__field(s64, value)
+	),
+
+	TP_fast_assign(
+		__assign_str(str, s);
+		__entry->rtgid = rtgid != -1 ? rtgid : (current->grp ? current->grp->id : 0);
+		__entry->frame = rtg_frame_info(rtgid);
+		__entry->pid = __entry->frame ? ((__entry->frame->pid_task) ? ((__entry->frame->pid_task)->pid) : current->tgid) : current->tgid;
+		__entry->value = value;
+	),
+	TP_printk("C|%d|%s_%d|%lld", __entry->pid, __get_str(str), __entry->rtgid, __entry->value)
+);
+#endif /* CONFIG_FRAME_RTG */
+#endif /* CONFIG_SCHED_RTG */
+
+#ifdef CONFIG_SCHED_PRED_LOAD
 TRACE_EVENT(predl_adjust_runtime,
 
 	TP_PROTO(struct task_struct *p, u64 task_util, u64 capacity_curr),
@@ -2201,7 +2417,7 @@ TRACE_EVENT(predl_get_busy,
 		__entry->bucket[6], __entry->bucket[7], __entry->bucket[8],
 		__entry->bucket[9], __entry->predl)
 );
-#endif /* CONFIG_SCHED_HISI_PRED_LOAD */
+#endif /* CONFIG_SCHED_PRED_LOAD */
 
 #endif /* CONFIG_SCHED_WALT */
 #endif /* CONFIG_SMP */

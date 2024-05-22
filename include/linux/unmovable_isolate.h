@@ -19,26 +19,24 @@
 /* the allocable page order in unmovable-isolate area */
 #define UNMOVABLE_ISOLATE1_MIN_ORDER 0
 #define UNMOVABLE_ISOLATE1_MAX_ORDER 0
+
+#ifdef CONFIG_ARM
+#define UNMOVABLE_ISOLATE2_MIN_ORDER 1
+#define UNMOVABLE_ISOLATE2_MAX_ORDER 2
+#else
 #define UNMOVABLE_ISOLATE2_MIN_ORDER 2
 #define UNMOVABLE_ISOLATE2_MAX_ORDER 3
-
-
-#ifdef CONFIG_HUAWEI_ENHANCED_RESERVE
-/* the size and order for MIGRATE_RESERVE type */
-#define ENHANCED_RESERVE_SIZE_BLOCKS \
-	(CONFIG_HUAWEI_ENHANCED_RESERVE_SIZE_MBYTES*SZ_1M/PAGE_SIZE/pageblock_nr_pages)
-#define RESERVE_MIN_ORDER 2
-#define RESERVE_MAX_ORDER 3
 #endif
 
 extern int unmovable_isolate_disabled;
 
 int unmovable_isolate_enabled(struct zone* zone);
 int valid_order_for_ui(int order, int migratetype);
-int is_DMA_zone(struct zone* zone);
+int valid_zone_for_ui(struct zone* zone);
 int get_enhanced_reserve_size(void);
 void setup_zone_migrate_unmovable_isolate(struct zone *zone, int unmovable_isolate_type, int disable);
 int unmovable_isolate_pageblock(struct zone* zone, struct page* page);
 
 #endif /* CONFIG_HUAWEI_UNMOVABLE_ISOLATE */
 #endif /* _UNMOVABLE_ISOLATE_H_ */
+

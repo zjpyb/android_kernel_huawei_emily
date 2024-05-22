@@ -1,3 +1,21 @@
+/*
+ * platform.c
+ *
+ * platform driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/printk.h>                                                       // pr_err, printk, etc
 #include <linux/kthread.h>
 #include "fusb30x_global.h"                                                     // Chip structure
@@ -308,7 +326,7 @@ void platform_notify_cc_orientation(CC_ORIENTATION orientation)
 	// Optional: Notify platform of CC orientation
     FSC_U8 cc1State = 0, cc2State = 0;
     struct pd_dpm_typec_state tc_state;
-    struct fusb30x_chip* chip;
+	struct fusb30x_chip *chip = NULL;
 
     memset(&tc_state, 0, sizeof(tc_state));
     chip = fusb30x_GetChip();
@@ -382,7 +400,7 @@ void platform_notify_cc_orientation(CC_ORIENTATION orientation)
 void platform_notify_debug_accessory_snk(CC_ORIENTATION orientation)
 {
     struct pd_dpm_typec_state tc_state;
-    struct fusb30x_chip* chip;
+	struct fusb30x_chip *chip = NULL;
 
     memset(&tc_state, 0, sizeof(tc_state));
     chip = fusb30x_GetChip();
@@ -412,7 +430,7 @@ void platform_notify_audio_accessory(CC_ORIENTATION orientation)
 {
 	// Optional: Notify platform of CC orientation
     struct pd_dpm_typec_state tc_state;
-    struct fusb30x_chip* chip;
+	struct fusb30x_chip *chip = NULL;
 
     memset(&tc_state, 0, sizeof(tc_state));
     chip = fusb30x_GetChip();
@@ -446,6 +464,7 @@ void platform_notify_audio_accessory(CC_ORIENTATION orientation)
 int notify_thread_sink_vbus(void* vbus_state)
 {
     struct pd_dpm_vbus_state *p_vbus_state = (struct pd_dpm_vbus_state *)vbus_state;
+
     switch (Registers.Status.BC_LVL)            // Determine which level
     {
         case DPM_CC_VOLT_LEVEL_0:                              // If BC_LVL is lowest it's open
@@ -496,6 +515,7 @@ void platform_notify_pd_contract(FSC_BOOL contract, FSC_U32 PDvoltage, FSC_U32 P
 void platform_notify_attached_vbus_only(void)
 {
 	struct pd_dpm_typec_state tc_state;
+
 	memset(&tc_state, 0, sizeof(tc_state));
 	tc_state.new_state = PD_DPM_TYPEC_ATTACHED_VBUS_ONLY;
 
@@ -509,6 +529,7 @@ void platform_notify_attached_vbus_only(void)
 void platform_notify_unattached_vbus_only(void)
 {
 	struct pd_dpm_typec_state tc_state;
+
 	memset(&tc_state, 0, sizeof(tc_state));
 	tc_state.new_state = PD_DPM_TYPEC_UNATTACHED_VBUS_ONLY;
 
@@ -530,6 +551,7 @@ void platform_notify_pd_state(SourceOrSink state)
 {
     // Optional: Notify platform of PD SRC or SNK state
     struct pd_dpm_pd_state pd_state;
+
 	pd_state.connected = (state == SOURCE) ? PD_CONNECT_PE_READY_SRC : PD_CONNECT_PE_READY_SNK;
 	pd_dpm_handle_pe_event(PD_DPM_PE_EVT_PD_STATE, (void *)&pd_state);
 	FSC_PRINT("FUSB %s, %s\n", __func__, (state == SOURCE)?"SourceReady":"Sink Ready");
@@ -559,6 +581,7 @@ void platform_notify_data_role(FSC_BOOL PolicyIsDFP)
 {
 	// Optional: Notify platform of data role change
     struct pd_dpm_swap_state swap_state;
+
     swap_state.new_role = (PolicyIsDFP == (FSC_BOOL)SOURCE) ?
         PD_ROLE_DFP : PD_ROLE_UFP;
     pd_dpm_handle_pe_event(PD_DPM_PE_EVT_DR_SWAP, (void *)&swap_state);
@@ -849,9 +872,22 @@ FSC_U32 platform_sink_pdo_number(void)
     return chip->sink_pdo_number;
 }
 
+u32 platform_get_wait_goodcrc_timeout_en(void)
+{
+	struct fusb30x_chip *chip = fusb30x_GetChip();
+
+	if (!chip) {
+		pr_err("%s - error: chip structure is null\n", __func__);
+		return 0;
+	}
+
+	return chip->wait_goodcrc_timeout_en;
+}
+
 void platform_double_56k_cable(void)
 {
     struct pd_dpm_typec_state typec_state;
+
     memset(&typec_state, 0, sizeof(typec_state));
     typec_state.new_state = PD_DPM_TYPEC_ATTACHED_CUSTOM_SRC;
     FSC_PRINT("FUSB %s Enter\n", __func__);

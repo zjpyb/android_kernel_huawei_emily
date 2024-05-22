@@ -5,6 +5,7 @@
  * Author: lishunda
  * Create: 2014-02-25
  */
+
 #define SECUREC_FORMAT_OUTPUT_INPUT 1
 #ifdef SECUREC_FOR_WCHAR
 #undef SECUREC_FOR_WCHAR
@@ -16,15 +17,15 @@
 
 SECUREC_INLINE int SecIsDigit(SecInt ch)
 {
-    /* SecInt to unsigned char clear  571 */
-    return isdigit((unsigned char)(ch) & 0x00ff);
+    /* SecInt to unsigned char clear  571, use bit mask to clear negative return of ch */
+    return isdigit((int)((unsigned int)(unsigned char)(ch) & 0xffU));
 }
 SECUREC_INLINE int SecIsXdigit(SecInt ch)
 {
-    return isxdigit((unsigned char)(ch) & 0x00ff);
+    return isxdigit((int)((unsigned int)(unsigned char)(ch) & 0xffU));
 }
 SECUREC_INLINE int SecIsSpace(SecInt ch)
 {
-    return isspace((unsigned char)(ch) & 0x00ff);
+    return isspace((int)((unsigned int)(unsigned char)(ch) & 0xffU));
 }
 

@@ -195,7 +195,7 @@ enum
 	VM_PANIC_ON_OOM=33,	/* panic at out-of-memory */
 	VM_VDSO_ENABLED=34,	/* map VDSO into new processes? */
 	VM_MIN_SLAB=35,		 /* Percent pages ignored by zone reclaim */
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 	VM_UFS_DUMP=36,		 /* dump ufs scsi request */
 	VM_PAGECACHE_DUMP=37,	 /* dump pagecache debug information */
 #endif

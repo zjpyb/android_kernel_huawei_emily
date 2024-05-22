@@ -32,3 +32,13 @@ config HUAWEI_STORAGE_ROW
        ---help---
          This device-mapper target is virtually a ROW target. This
          target is setup by reading a string table.
+
+config STORAGE_ROW_SKIP_PART
+       bool "Skip DFX partition for storage ROW"
+       default n
+       depends on HUAWEI_STORAGE_ROFA
+       ---help---
+         HUAWEI_STORAGE_ROW operates on the whole disk. This function would disable
+	 ROW on some specific partitions.
+
+         If unsure, say N.

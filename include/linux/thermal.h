@@ -31,6 +31,9 @@
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
 #include <uapi/linux/thermal.h>
+#ifdef CONFIG_FREQ_LIMIT_COUNTER
+#include <linux/hisi/perfhub.h>
+#endif
 
 #define THERMAL_TRIPS_NONE	-1
 #define THERMAL_MAX_TRIPS	12
@@ -78,14 +81,14 @@ enum thermal_device_mode {
 	THERMAL_DEVICE_ENABLED,
 };
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 enum thermal_boost_mode {
 	THERMAL_BOOST_DISABLED = 0,
 	THERMAL_BOOST_ENABLED,
 };
 #endif
 
-#if defined(CONFIG_HISI_THERMAL_TSENSOR) || defined(CONFIG_HISI_THERMAL_PERIPHERAL)
+#if defined(CONFIG_THERMAL_TSENSOR) || defined(CONFIG_THERMAL_PERIPHERAL)
 enum thermal_trip_activation_mode {
 	THERMAL_TRIP_ACTIVATION_DISABLED = 0,
 	THERMAL_TRIP_ACTIVATION_ENABLED,
@@ -97,12 +100,12 @@ enum thermal_trip_type {
 	THERMAL_TRIP_PASSIVE,
 	THERMAL_TRIP_HOT,
 	THERMAL_TRIP_CRITICAL,
-#if defined(CONFIG_HISI_THERMAL_TSENSOR) || defined(CONFIG_HISI_THERMAL_PERIPHERAL)
+#if defined(CONFIG_THERMAL_TSENSOR) || defined(CONFIG_THERMAL_PERIPHERAL)
 	THERMAL_TRIP_CONFIGURABLE_HI,
 	THERMAL_TRIP_CONFIGURABLE_LOW,
 	THERMAL_TRIP_CRITICAL_LOW,
 #endif
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 	THERMAL_TRIP_THROTTLING,
 	THERMAL_TRIP_SHUTDOWN,
 	THERMAL_TRIP_BELOW_VR_MIN,
@@ -145,7 +148,7 @@ struct thermal_zone_device_ops {
 		enum thermal_trip_type *);
 	int (*get_trip_temp) (struct thermal_zone_device *, int, int *);
 	int (*set_trip_temp) (struct thermal_zone_device *, int, int);
-#if defined(CONFIG_HISI_THERMAL_TSENSOR) || defined(CONFIG_HISI_THERMAL_PERIPHERAL)
+#if defined(CONFIG_THERMAL_TSENSOR) || defined(CONFIG_THERMAL_PERIPHERAL)
 	int (*activate_trip_type) (struct thermal_zone_device *, int,
 		enum thermal_trip_activation_mode);
 #endif
@@ -180,7 +183,7 @@ struct thermal_cooling_device {
 	const struct thermal_cooling_device_ops *ops;
 	bool updated; /* true if the cooling device does not need update */
 	struct mutex lock; /* protect thermal_instances list */
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	bool bound_event;  /* record bound event for bounded detection */
 	bool ipa_enabled;
 	int current_load;  /* record load information for bounded detection */
@@ -269,7 +272,7 @@ struct thermal_zone_device {
 	struct list_head node;
 	struct delayed_work poll_queue;
 	enum thermal_notify_event notify_event;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	bool is_board_thermal;
 	bool is_soc_thermal;
 #endif
@@ -382,7 +385,7 @@ struct thermal_zone_params {
 	 */
 	int offset;
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	s32 boost;
 
 	u32 boost_timeout;
@@ -606,7 +609,7 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 }
 #endif
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 #define IPA_PERIPH_NUM 8
 
 #define IPA_FREQ_MAX	(~0U)
@@ -619,8 +622,8 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 #define CDEV_CPU_CLUSTER1_NAME "thermal-cpufreq-1"
 #define CDEV_CPU_CLUSTER2_NAME "thermal-cpufreq-2"
 
-#ifdef CONFIG_HISI_THERMAL_SHELL
-#define IPA_SENSOR_SHELL "hisi_shell"
+#ifdef CONFIG_THERMAL_SHELL
+#define IPA_SENSOR_SHELL "shell_frame"
 #define IPA_SENSOR_SHELLID    254
 #endif
 
@@ -650,7 +653,6 @@ void ipa_freq_limit_init(void);
 void ipa_freq_limit_reset(struct thermal_zone_device *tz);
 unsigned int ipa_freq_limit(int actor, unsigned int target_freq);
 int get_soc_temp(void);
-void dynipa_get_weights_cfg(unsigned int *weight0, unsigned int *weight1);
 #else
 static inline int get_soc_temp(void)
 {

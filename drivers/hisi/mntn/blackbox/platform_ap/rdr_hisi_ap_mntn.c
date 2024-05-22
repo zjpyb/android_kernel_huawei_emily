@@ -1,3 +1,19 @@
+/*
+ *
+ * kernel AP maintenance test interface
+ *
+ * Copyright (c) 2001-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #include <linux/fs.h>
 #include <linux/io.h>
 #include <linux/threads.h>
@@ -12,22 +28,25 @@
 #include <linux/hisi/util.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
-#include <linux/hisi/hisi_powerkey_event.h>
+#include <linux/hisi/powerkey_event.h>
 #include "../rdr_print.h"
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BLACKBOX_TAG
-#define DTS_POWERKEY_ONLY_STATUS_NAME  "hisi,powerhold"
+#include <pr_log.h>
+#ifdef CONFIG_BOOT_DETECTOR
+#include <hwbootfail/chipsets/bootfail_hisi.h>
+#endif
+
+#define PR_LOG_TAG BLACKBOX_TAG
 #define POWERKEY_ONLY_PRODUCT 0x55aa
+const char *g_dts_powerkey_only_status_name = "hisilicon,powerhold";
+
 #ifdef CONFIG_HISI_BB
 static u32 reboot_reason_flag;
 #endif
 
-#ifdef CONFIG_HUAWEI_BFM
-#include <chipset_common/bfmr/bfm/chipsets/bfm_chipsets.h>
-#endif
 
 
 #ifdef CONFIG_HISI_REENTRANT_EXCEPTION
+#define REENTRANT_EXCEPTION_MAX 5
 
 static int reentrant_exception_num;
 
@@ -35,7 +54,7 @@ void reentrant_exception(void)
 {
 	reentrant_exception_num++;
 
-	if (reentrant_exception_num > 5)
+	if (reentrant_exception_num > REENTRANT_EXCEPTION_MAX)
 		machine_restart("AP_S_PANIC");
 }
 #endif
@@ -47,14 +66,13 @@ static int hisi_pmic_powerkey_only_flag(void)
 	return g_powerkey_only_status;
 }
 
-
 void hisi_pmic_powerkey_only_status_get(void)
 {
 	const char *press_to_fastboot_status = NULL;
 	struct device_node *np = NULL;
-	int ret = 0;
+	int ret;
 
-	np = of_find_compatible_node(NULL, NULL, DTS_POWERKEY_ONLY_STATUS_NAME);
+	np = of_find_compatible_node(NULL, NULL, g_dts_powerkey_only_status_name);
 	if (!np) {
 		BB_PRINT_ERR("%s: dts node(powerhold) not found\n", __func__);
 		return;
@@ -63,7 +81,7 @@ void hisi_pmic_powerkey_only_status_get(void)
 	if (ret) {
 		BB_PRINT_ERR("[%s], cannot find powerkey_only_product in dts!\n", __func__);
 		g_powerkey_only_status = 0;
-		goto err;
+		goto exit;
 	}
 	if (strncmp("ok", press_to_fastboot_status, sizeof("ok")) == 0) {
 		g_powerkey_only_status = POWERKEY_ONLY_PRODUCT;
@@ -71,22 +89,21 @@ void hisi_pmic_powerkey_only_status_get(void)
 		g_powerkey_only_status = 0;
 		BB_PRINT_ERR("[%s], press_6s_to_fastboot status is not ok!\n", __func__);
 	}
-err:
+exit:
 	of_node_put(np);
 }
 
-int rdr_press_key_to_fastboot(struct notifier_block *nb,
-		unsigned long event, void *buf)
+int rdr_press_key_to_fastboot(struct notifier_block *nb, unsigned long event, void *buf)
 {
 	if (hisi_pmic_powerkey_only_flag() == POWERKEY_ONLY_PRODUCT) {
-		if (event != HISI_PRESS_KEY_6S)
+		if (event != PRESS_KEY_6S)
 			return -1;
 	} else {
-		if (event != HISI_PRESS_KEY_UP)
+		if (event != PRESS_KEY_UP)
 			return -1;
 	}
 	if (check_himntn(HIMNTN_PRESS_KEY_TO_FASTBOOT)) {
-#ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 		if ((VOL_UPDOWN_PRESS & (unsigned int)gpio_key_vol_updown_press_get())
 				== VOL_UPDOWN_PRESS) {
 			gpio_key_vol_updown_press_set_zero();
@@ -98,6 +115,14 @@ int rdr_press_key_to_fastboot(struct notifier_block *nb,
 			}
 		}
 #endif
+
+		if (event == PRESS_KEY_6S) {
+			BB_PRINT_PN("[%s]pmic Powerkey 6s\n", __func__);
+#ifdef CONFIG_HISI_BB
+			rdr_syserr_process_for_ap(MODID_AP_S_COMBINATIONKEY, 0, 0);
+			return 0;
+#endif
+		}
 
 	}
 #ifdef CONFIG_HISI_BB
@@ -114,11 +139,11 @@ void rdr_long_press_powerkey(void)
 	set_reboot_reason(AP_S_PRESS6S);
 	if (get_boot_keypoint() != STAGE_BOOTUP_END) {
 		BB_PRINT_PN("press6s in boot\n");
-#ifdef CONFIG_HUAWEI_BFM
-		bfm_set_valid_long_press_flag();
+#ifdef CONFIG_BOOT_DETECTOR
+		set_valid_long_press_flag();
 #endif
 		save_log_to_dfx_tempbuffer(AP_S_PRESS6S);
-		sys_sync();
+		SYS_SYNC();
 	} else {
 		reboot_reason_flag = reboot_reason;
 		BB_PRINT_PN("press6s:reboot_reason_flag=%u\n", reboot_reason_flag);

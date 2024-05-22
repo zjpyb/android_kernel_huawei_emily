@@ -26,7 +26,6 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/pm.h>
-#include <linux/pm_runtime.h>
 #include <linux/device.h>
 #include <linux/wait.h>
 #include <linux/err.h>
@@ -44,8 +43,13 @@
 
 #include "../hid-ids.h"
 
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+#include "i2c-hid-huawei.h"
+#endif
+
 /* quirks to control the device */
 #define I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV	BIT(0)
+#define I2C_HID_QUIRK_RESET_ON_RESUME		BIT(5)
 
 /* flags */
 #define I2C_HID_STARTED		0
@@ -54,6 +58,11 @@
 
 #define I2C_HID_PWR_ON		0x00
 #define I2C_HID_PWR_SLEEP	0x01
+
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+/* s3 flag */
+bool is_suspend = false;
+#endif
 
 /* debug option */
 static bool debug;
@@ -168,6 +177,8 @@ static const struct i2c_hid_quirks {
 		I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV },
 	{ USB_VENDOR_ID_WEIDA, USB_DEVICE_ID_WEIDA_8755,
 		I2C_HID_QUIRK_SET_PWR_WAKEUP_DEV },
+	{ USB_VENDOR_ID_ALPS_JP, HID_ANY_ID,
+		I2C_HID_QUIRK_RESET_ON_RESUME },
 	{ 0, 0 }
 };
 
@@ -498,6 +509,12 @@ static irqreturn_t i2c_hid_irq(int irq, void *dev_id)
 	if (test_bit(I2C_HID_READ_PENDING, &ihid->flags))
 		return IRQ_HANDLED;
 
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	/* Don't fetch key value when in s3. */
+	if (is_suspend && strcmp(ihid->client->name, "huawei-keyboard") == 0)
+		return IRQ_HANDLED;
+#endif
+
 	i2c_hid_get_input(ihid);
 
 	return IRQ_HANDLED;
@@ -743,11 +760,6 @@ static int i2c_hid_open(struct hid_device *hid)
 {
 	struct i2c_client *client = hid->driver_data;
 	struct i2c_hid *ihid = i2c_get_clientdata(client);
-	int ret = 0;
-
-	ret = pm_runtime_get_sync(&client->dev);
-	if (ret < 0)
-		return ret;
 
 	set_bit(I2C_HID_STARTED, &ihid->flags);
 	return 0;
@@ -759,27 +771,6 @@ static void i2c_hid_close(struct hid_device *hid)
 	struct i2c_hid *ihid = i2c_get_clientdata(client);
 
 	clear_bit(I2C_HID_STARTED, &ihid->flags);
-
-	/* Save some power */
-	pm_runtime_put(&client->dev);
-}
-
-static int i2c_hid_power(struct hid_device *hid, int lvl)
-{
-	struct i2c_client *client = hid->driver_data;
-	struct i2c_hid *ihid = i2c_get_clientdata(client);
-
-	i2c_hid_dbg(ihid, "%s lvl:%d\n", __func__, lvl);
-
-	switch (lvl) {
-	case PM_HINT_FULLON:
-		pm_runtime_get_sync(&client->dev);
-		break;
-	case PM_HINT_NORMAL:
-		pm_runtime_put(&client->dev);
-		break;
-	}
-	return 0;
 }
 
 struct hid_ll_driver i2c_hid_ll_driver = {
@@ -788,7 +779,6 @@ struct hid_ll_driver i2c_hid_ll_driver = {
 	.stop = i2c_hid_stop,
 	.open = i2c_hid_open,
 	.close = i2c_hid_close,
-	.power = i2c_hid_power,
 	.output_report = i2c_hid_output_report,
 	.raw_request = i2c_hid_raw_request,
 };
@@ -802,9 +792,16 @@ static int i2c_hid_init_irq(struct i2c_client *client)
 
 	dev_dbg(&client->dev, "Requesting IRQ: %d\n", client->irq);
 
-	if (!irq_get_trigger_type(client->irq))
+	if (!irq_get_trigger_type(client->irq)) {
 		irqflags = IRQF_TRIGGER_LOW;
-
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+		if (strcmp(client->name, "huawei-keyboard") == 0)
+			irqflags = IRQF_TRIGGER_FALLING | IRQF_NO_SUSPEND;
+		else
+			dev_info(&client->dev,
+				"HUAWEI armpc device trigger type is IRQF_TRIGGER_LOW.\n");
+#endif
+	}
 	ret = request_threaded_irq(client->irq, NULL, i2c_hid_irq,
 				   irqflags | IRQF_ONESHOT, client->name, ihid);
 	if (ret < 0) {
@@ -827,7 +824,7 @@ static int i2c_hid_fetch_hid_descriptor(struct i2c_hid *ihid)
 	int ret;
 
 	/* i2c hid fetch using a fixed descriptor size (30 bytes) */
-	i2c_hid_dbg(ihid, "Fetching the HID descriptor\n");
+	i2c_hid_dbg(ihid, "Fetching the HID descriptor(0x%x)\n", client->addr);
 	ret = i2c_hid_command(client, &hid_descr_cmd, ihid->hdesc_buffer,
 				sizeof(struct i2c_hid_desc));
 	if (ret) {
@@ -940,6 +937,9 @@ static int i2c_hid_of_probe(struct i2c_client *client,
 
 static const struct of_device_id i2c_hid_of_match[] = {
 	{ .compatible = "hid-over-i2c" },
+	{ .compatible = "huawei-keyboard" },
+	{ .compatible = "elan-clickpad" },
+	{ .compatible = "goodix-clickpad" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, i2c_hid_of_match);
@@ -962,6 +962,14 @@ static int i2c_hid_probe(struct i2c_client *client,
 
 	dbg_hid("HID probe called for i2c 0x%02x\n", client->addr);
 
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	/* Parse the device tree, and initialize
+	 * an Int IRQ for the hid device. */
+	ret = i2c_hid_parse_dts(client);
+	if (ret)
+		dev_warn(&client->dev,
+			"HUAWEI armpc device has not been provided an Int IRQ\n");
+#endif
 	if (!client->irq) {
 		dev_err(&client->dev,
 			"HID over i2c has not been provided an Int IRQ\n");
@@ -1031,9 +1039,6 @@ static int i2c_hid_probe(struct i2c_client *client,
 
 	i2c_hid_acpi_fix_up_power(&client->dev);
 
-	pm_runtime_get_noresume(&client->dev);
-	pm_runtime_set_active(&client->dev);
-	pm_runtime_enable(&client->dev);
 	device_enable_async_suspend(&client->dev);
 
 	/* Make sure there is something at this address */
@@ -1041,16 +1046,31 @@ static int i2c_hid_probe(struct i2c_client *client,
 	if (ret < 0) {
 		dev_dbg(&client->dev, "nothing at this address: %d\n", ret);
 		ret = -ENXIO;
-		goto err_pm;
+		goto err_regulator;
 	}
 
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	msleep(1);
+#endif
 	ret = i2c_hid_fetch_hid_descriptor(ihid);
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	if (ret < 0) {
+		if (client->addr == 0x3a) {
+			ret = i2c_hid_fetch_hid_descriptor(ihid);
+		} else {
+			/* Try to get XINSI clickpad descriptor at 0x0020. */
+			hidRegister = 0x0020;
+			ihid->wHIDDescRegister = cpu_to_le16(hidRegister);
+			ret = i2c_hid_fetch_hid_descriptor(ihid);
+		}
+	}
+#endif
 	if (ret < 0)
-		goto err_pm;
+		goto err_regulator;
 
 	ret = i2c_hid_init_irq(client);
 	if (ret < 0)
-		goto err_pm;
+		goto err_regulator;
 
 	hid = hid_allocate_device();
 	if (IS_ERR(hid)) {
@@ -1081,7 +1101,6 @@ static int i2c_hid_probe(struct i2c_client *client,
 		goto err_mem_free;
 	}
 
-	pm_runtime_put(&client->dev);
 	return 0;
 
 err_mem_free:
@@ -1089,10 +1108,6 @@ err_mem_free:
 
 err_irq:
 	free_irq(client->irq, ihid);
-
-err_pm:
-	pm_runtime_put_noidle(&client->dev);
-	pm_runtime_disable(&client->dev);
 
 err_regulator:
 	regulator_disable(ihid->pdata.supply);
@@ -1107,11 +1122,6 @@ static int i2c_hid_remove(struct i2c_client *client)
 {
 	struct i2c_hid *ihid = i2c_get_clientdata(client);
 	struct hid_device *hid;
-
-	pm_runtime_get_sync(&client->dev);
-	pm_runtime_disable(&client->dev);
-	pm_runtime_set_suspended(&client->dev);
-	pm_runtime_put_noidle(&client->dev);
 
 	hid = ihid->hid;
 	hid_destroy_device(hid);
@@ -1146,25 +1156,21 @@ static int i2c_hid_suspend(struct device *dev)
 	int wake_status;
 
 	if (hid->driver && hid->driver->suspend) {
-		/*
-		 * Wake up the device so that IO issues in
-		 * HID driver's suspend code can succeed.
-		 */
-		ret = pm_runtime_resume(dev);
-		if (ret < 0)
-			return ret;
-
 		ret = hid->driver->suspend(hid, PMSG_SUSPEND);
 		if (ret < 0)
 			return ret;
 	}
 
-	if (!pm_runtime_suspended(dev)) {
-		/* Save some power */
-		i2c_hid_set_power(client, I2C_HID_PWR_SLEEP);
+	/* Save some power */
+	i2c_hid_set_power(client, I2C_HID_PWR_SLEEP);
 
-		disable_irq(client->irq);
-	}
+	disable_irq(client->irq);
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+		/* The keyboard needs to wake up system,
+		 * so cannot disable its irq in S3. */
+		if (strcmp(client->name, "huawei-keyboard") == 0)
+			enable_irq(client->irq);
+#endif
 
 	if (device_may_wakeup(&client->dev)) {
 		wake_status = enable_irq_wake(client->irq);
@@ -1178,6 +1184,10 @@ static int i2c_hid_suspend(struct device *dev)
 		if (ret < 0)
 			hid_warn(hid, "Failed to disable supply: %d\n", ret);
 	}
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	if (strcmp(client->name, "huawei-keyboard") == 0)
+		is_suspend = true;
+#endif
 
 	return 0;
 }
@@ -1189,6 +1199,11 @@ static int i2c_hid_resume(struct device *dev)
 	struct i2c_hid *ihid = i2c_get_clientdata(client);
 	struct hid_device *hid = ihid->hid;
 	int wake_status;
+
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	if (strcmp(client->name, "huawei-keyboard") == 0)
+		is_suspend = false;
+#endif
 
 	if (!device_may_wakeup(&client->dev)) {
 		ret = regulator_enable(ihid->pdata.supply);
@@ -1205,13 +1220,28 @@ static int i2c_hid_resume(struct device *dev)
 				wake_status);
 	}
 
-	/* We'll resume to full power */
-	pm_runtime_disable(dev);
-	pm_runtime_set_active(dev);
-	pm_runtime_enable(dev);
 
+#ifdef CONFIG_HUAWEI_ARMPC_I2C_HID
+	/* The irq of keyboard is not disabled in S3, so you
+	 * must call disable_irq before calling enable_irq. */
+	if (strcmp(client->name, "huawei-keyboard") == 0)
+		disable_irq(client->irq);
+#endif
 	enable_irq(client->irq);
-	ret = i2c_hid_hwreset(client);
+
+	/* Instead of resetting device, simply powers the device on. This
+	 * solves "incomplete reports" on Raydium devices 2386:3118 and
+	 * 2386:4B33 and fixes various SIS touchscreens no longer sending
+	 * data after a suspend/resume.
+	 *
+	 * However some ALPS touchpads generate IRQ storm without reset, so
+	 * let's still reset them here.
+	 */
+	if (ihid->quirks & I2C_HID_QUIRK_RESET_ON_RESUME)
+		ret = i2c_hid_hwreset(client);
+	else
+		ret = i2c_hid_set_power(client, I2C_HID_PWR_ON);
+
 	if (ret)
 		return ret;
 
@@ -1224,35 +1254,16 @@ static int i2c_hid_resume(struct device *dev)
 }
 #endif
 
-#ifdef CONFIG_PM
-static int i2c_hid_runtime_suspend(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-
-	i2c_hid_set_power(client, I2C_HID_PWR_SLEEP);
-	disable_irq(client->irq);
-	return 0;
-}
-
-static int i2c_hid_runtime_resume(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-
-	enable_irq(client->irq);
-	i2c_hid_set_power(client, I2C_HID_PWR_ON);
-	return 0;
-}
-#endif
-
 static const struct dev_pm_ops i2c_hid_pm = {
 	SET_SYSTEM_SLEEP_PM_OPS(i2c_hid_suspend, i2c_hid_resume)
-	SET_RUNTIME_PM_OPS(i2c_hid_runtime_suspend, i2c_hid_runtime_resume,
-			   NULL)
 };
 
 static const struct i2c_device_id i2c_hid_id_table[] = {
 	{ "hid", 0 },
 	{ "hid-over-i2c", 0 },
+	{ "hw_keyboard", 0 },
+	{ "elan_clickpad", 0 },
+	{ "goodix_clickpad", 0 },
 	{ },
 };
 MODULE_DEVICE_TABLE(i2c, i2c_hid_id_table);

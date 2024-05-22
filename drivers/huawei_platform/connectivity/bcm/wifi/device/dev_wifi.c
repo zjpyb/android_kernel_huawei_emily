@@ -296,88 +296,129 @@ err_sec_alloc:
 #endif /* !defined(CONFIG_BCMDHD_PCIE) */
 err_mem_alloc:
 
-    if (wlan_static_prot)
-        kfree(wlan_static_prot);
+	if (wlan_static_prot != NULL) {
+		kfree(wlan_static_prot);
+		wlan_static_prot = NULL;
+	}
 
-    if (wlan_static_dhd_info_buf)
-        kfree(wlan_static_dhd_info_buf);
+	if (wlan_static_dhd_info_buf != NULL) {
+		kfree(wlan_static_dhd_info_buf);
+		wlan_static_dhd_info_buf = NULL;
+	}
 
-    if (wlan_static_scan_buf1)
-        kfree(wlan_static_scan_buf1);
+	if (wlan_static_scan_buf1 != NULL) {
+		kfree(wlan_static_scan_buf1);
+		wlan_static_scan_buf1 = NULL;
+	}
 
-    if (wlan_static_scan_buf0)
-        kfree(wlan_static_scan_buf0);
+	if (wlan_static_scan_buf0 != NULL) {
+		kfree(wlan_static_scan_buf0);
+		wlan_static_scan_buf0 = NULL;
+	}
 
-    if (wlan_static_osl_buf)
-        kfree(wlan_static_osl_buf);
+	if (wlan_static_osl_buf != NULL) {
+		kfree(wlan_static_osl_buf);
+		wlan_static_osl_buf = NULL;
+	}
 
 #ifdef CONFIG_BCMDHD_PCIE
-    if (wlan_static_if_flow_lkup)
-        kfree(wlan_static_if_flow_lkup);
-    if (wlan_static_dhd_prealloc_pktid_map)
-        kfree(wlan_static_dhd_prealloc_pktid_map);
+	if (wlan_static_if_flow_lkup != NULL) {
+		kfree(wlan_static_if_flow_lkup);
+		wlan_static_if_flow_lkup = NULL;
+	}
+	if (wlan_static_dhd_prealloc_pktid_map != NULL) {
+		kfree(wlan_static_dhd_prealloc_pktid_map);
+		wlan_static_dhd_prealloc_pktid_map = NULL;
+	}
 #ifdef BCM_ALLOC_STATIC_10K
-	if (wlan_static_if_flow_tbl)
+	if (wlan_static_if_flow_tbl != NULL) {
 		kfree(wlan_static_if_flow_tbl);
+		wlan_static_if_flow_tbl = NULL;
+	}
 #endif
 #endif
-    hwlog_err("Failed to mem_alloc for WLAN\n");
+	hwlog_err("Failed to mem_alloc for WLAN\n");
 
-    i = WLAN_SKB_BUF_NUM;
+	i = WLAN_SKB_BUF_NUM;
 
 err_skb_alloc:
-    hwlog_err("Failed to skb_alloc for WLAN\n");
-    for (j = 0; j < i; j++) {
-        dev_kfree_skb(wlan_static_skb[j]);
-    }
+	hwlog_err("Failed to skb_alloc for WLAN\n");
+	for (j = 0; j < i; j++) {
+		if (wlan_static_skb[j] != NULL) {
+			dev_kfree_skb(wlan_static_skb[j]);
+			wlan_static_skb[j] = NULL;
+		}
+	}
 
-    return -ENOMEM;
+	return -ENOMEM;
 }
 
 /*deinit wifi buf*/
 int deinit_wifi_mem(void) {
 #ifdef CONFIG_DHD_USE_STATIC_BUF
-    int i;
+	int i;
 
-    hwlog_info("deinit_wifi_mem.\n");
-    for (i = 0; i < DHD_SKB_1PAGE_BUF_NUM; i++) {
-        if (wlan_static_skb[i])
-            dev_kfree_skb(wlan_static_skb[i]);
-    }
+	hwlog_info("deinit_wifi_mem.\n");
+	for (i = 0; i < DHD_SKB_1PAGE_BUF_NUM; i++) {
+		if (wlan_static_skb[i] != NULL) {
+			dev_kfree_skb(wlan_static_skb[i]);
+			wlan_static_skb[i] = NULL;
+		}
+	}
 
-    for (i = DHD_SKB_1PAGE_BUF_NUM; i < WLAN_SKB_1_2PAGE_BUF_NUM; i++) {
-        if (wlan_static_skb[i])
-            dev_kfree_skb(wlan_static_skb[i]);
-    }
+	for (i = DHD_SKB_1PAGE_BUF_NUM; i < WLAN_SKB_1_2PAGE_BUF_NUM; i++) {
+		if (wlan_static_skb[i] != NULL) {
+			dev_kfree_skb(wlan_static_skb[i]);
+			wlan_static_skb[i] = NULL;
+		}
+	}
 
 #if !defined(CONFIG_BCMDHD_PCIE)
-    if (wlan_static_skb[i])
-        dev_kfree_skb(wlan_static_skb[i]);
+	if (wlan_static_skb[i] != NULL) {
+		dev_kfree_skb(wlan_static_skb[i]);
+		wlan_static_skb[i] = NULL;
+	}
 #endif /* !CONFIG_BCMDHD_PCIE */
 
-    if (wlan_static_prot)
-        kfree(wlan_static_prot);
+	if (wlan_static_prot != NULL) {
+		kfree(wlan_static_prot);
+		wlan_static_prot = NULL;
+	}
 
-    if (wlan_static_osl_buf)
-        kfree(wlan_static_osl_buf);
+	if (wlan_static_osl_buf != NULL) {
+		kfree(wlan_static_osl_buf);
+		wlan_static_osl_buf = NULL;
+	}
 
-    if (wlan_static_scan_buf0)
-        kfree(wlan_static_scan_buf0);
+	if (wlan_static_scan_buf0 != NULL) {
+		kfree(wlan_static_scan_buf0);
+		wlan_static_scan_buf0 = NULL;
+	}
 
-    if (wlan_static_dhd_info_buf)
-        kfree(wlan_static_dhd_info_buf);
+	if (wlan_static_dhd_info_buf != NULL) {
+		kfree(wlan_static_dhd_info_buf);
+		wlan_static_dhd_info_buf = NULL;
+	}
 
-    if (wlan_static_scan_buf1)
-        kfree(wlan_static_scan_buf1);
+	if (wlan_static_scan_buf1 != NULL) {
+		kfree(wlan_static_scan_buf1);
+		wlan_static_scan_buf1 = NULL;
+	}
 
 #ifdef CONFIG_BCMDHD_PCIE
-    if (wlan_static_if_flow_lkup)
-        kfree(wlan_static_if_flow_lkup);
-    if (wlan_static_dhd_prealloc_pktid_map)
-        kfree(wlan_static_dhd_prealloc_pktid_map);
+	if (wlan_static_if_flow_lkup != NULL) {
+		kfree(wlan_static_if_flow_lkup);
+		wlan_static_if_flow_lkup = NULL;
+	}
+	if (wlan_static_dhd_prealloc_pktid_map != NULL) {
+		kfree(wlan_static_dhd_prealloc_pktid_map);
+		wlan_static_dhd_prealloc_pktid_map = NULL;
+	}
 #ifdef BCM_ALLOC_STATIC_10K
-    if (wlan_static_if_flow_tbl)
+	if (wlan_static_if_flow_tbl != NULL) {
 		kfree(wlan_static_if_flow_tbl);
+		wlan_static_if_flow_tbl = NULL;
+	}
 #endif
 #endif
 
@@ -400,7 +441,7 @@ static void read_from_global_buf(unsigned char * buf)
 	return;
 }
 #ifdef CONFIG_LLT_TEST
-static int char2_byte( char* strori, char* outbuf )
+static int char2_byte(char* strori, unsigned char* outbuf)
 {
 	int i = 0;
 	int temp = 0;
@@ -451,7 +492,7 @@ static int read_from_mac_file(unsigned char * buf)
 	int result = 0;
 	int sum = 0;
 	char buf1[20] = {0};
-	char buf2[6] = {0};
+	unsigned char buf2[6] = {0};
 
 	if (NULL == buf) {
 		hwlog_err("%s: buf is NULL\n", __func__);
@@ -1430,8 +1471,6 @@ static struct platform_driver wifi_power_driver = {
 	       	.of_match_table	= wifi_power_match_table,
 	},
 	.probe          = wifi_power_probe,
-	
-	
 };
 
 static int __init wifi_power_init(void)

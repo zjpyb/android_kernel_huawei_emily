@@ -3,5 +3,5 @@ config HISILICON_PLATFORM_MAILBOX
 	default n
 
 if HISILICON_PLATFORM_MAILBOX
-source "drivers/hisi/mailbox/hisi_mailbox/Kconfig"
+source "drivers/hisi/mailbox/ipc_mailbox/Kconfig"
 endif

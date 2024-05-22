@@ -49,7 +49,7 @@ struct pinctrl_sec_num pin_num_name_table [] = {
 	{"-",0},
 };
 
-struct pinctrl_sec_num *find_io_id(char *name)
+struct pinctrl_sec_num *find_io_id(const char *name)
 {
 	struct pinctrl_sec_num  *io_info_entry = NULL;
         int index = 0;
@@ -67,7 +67,7 @@ struct pinctrl_sec_num *find_io_id(char *name)
             return NULL;
 }
 
-static int get_sec_pin_id(char *name)
+static int get_sec_pin_id(const char *name)
 {
 	struct pinctrl_sec_num *io_info_entry = NULL;
 

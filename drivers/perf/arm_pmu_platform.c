@@ -148,7 +148,11 @@ static int pmu_parse_irqs(struct arm_pmu *pmu)
 
 		cpu = pmu_parse_irq_affinity(pdev->dev.of_node, i);
 		if (cpu < 0)
+#ifdef CONFIG_ARCH_HISI
+			continue;
+#else
 			return cpu;
+#endif
 		if (cpu >= nr_cpu_ids)
 			continue;
 

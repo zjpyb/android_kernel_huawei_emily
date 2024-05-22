@@ -340,9 +340,12 @@ static struct bio *__bio_alloc(struct f2fs_sb_info *sbi, block_t blk_addr,
 		wbc_init_bio(wbc, bio);
 
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
-	bio->hisi_bio.ci_key = NULL;
-	bio->hisi_bio.ci_key_len = 0;
-	bio->hisi_bio.ci_key_index = -1;
+	bio->ci_key = NULL;
+	bio->ci_key_len = 0;
+	bio->ci_key_index = -1;
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	bio->ci_metadata = NULL;
+#endif
 #endif
 	return bio;
 }
@@ -566,10 +569,13 @@ int f2fs_submit_page_bio(struct f2fs_io_info *fio)
 
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
 	if (fio->ci_key) {
-		bio->hisi_bio.ci_key = fio->ci_key;
-		bio->hisi_bio.ci_key_len = fio->ci_key_len;
-		bio->hisi_bio.ci_key_index = fio->ci_key_index;
-		bio->hisi_bio.index = page->index;
+		bio->ci_key = fio->ci_key;
+		bio->ci_key_len = fio->ci_key_len;
+		bio->ci_key_index = fio->ci_key_index;
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+		bio->ci_metadata = fio->metadata;
+#endif
+		bio->index = page->index;
 	}
 #endif
 
@@ -637,10 +643,19 @@ next:
 			!__same_bdev(sbi, fio->new_blkaddr, io->bio)))
 		__submit_merged_bio(io);
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
-	else if ((io->bio) && ((io->bio->hisi_bio.ci_key != fio->ci_key) ||
-				(io->bio->hisi_bio.ci_key_len != fio->ci_key_len) ||
-				(fio->ci_key && io->last_index_in_bio !=
-						bio_page->index - 1)))
+	else if ((io->bio) &&
+		 ((io->bio->ci_key != fio->ci_key) ||
+		  (io->bio->ci_key_len != fio->ci_key_len) ||
+		  (fio->ci_key &&
+		   io->last_index_in_bio != bio_page->index - 1)))
+		__submit_merged_bio(io);
+#endif
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	else if ((io->bio) && (io->bio->ci_metadata != fio->metadata))
+		__submit_merged_bio(io);
+#endif
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+	else if ((io->bio) && (io->bio->flags != fio->flags))
 		__submit_merged_bio(io);
 #endif
 
@@ -673,16 +688,25 @@ alloc_new:
 
 		io->fio = *fio;
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
-		io->bio->hisi_bio.ci_key = fio->ci_key;
-		io->bio->hisi_bio.ci_key_len = fio->ci_key_len;
-		io->bio->hisi_bio.ci_key_index = fio->ci_key_index;
+		io->bio->ci_key = fio->ci_key;
+		io->bio->ci_key_len = fio->ci_key_len;
+		io->bio->ci_key_index = fio->ci_key_index;
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+		io->bio->ci_metadata = fio->metadata;
+#endif
 		if (fio->ci_key)
-			io->bio->hisi_bio.index = bio_page->index;
+			io->bio->index = bio_page->index;
+#endif
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+		io->bio->flags = fio->flags;
 #endif
 	}
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
-	f2fs_bug_on(sbi, (io->bio->hisi_bio.ci_key != fio->ci_key) ||
-			(io->bio->hisi_bio.ci_key_len != fio->ci_key_len));
+	f2fs_bug_on(sbi, (io->bio->ci_key != fio->ci_key) ||
+			(io->bio->ci_key_len != fio->ci_key_len));
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	f2fs_bug_on(sbi, io->bio->ci_metadata != fio->metadata);
+#endif
 #endif
 
 	if (bio_add_page(io->bio, bio_page, PAGE_SIZE, 0) < PAGE_SIZE) {
@@ -749,17 +773,22 @@ static struct bio *f2fs_grab_read_bio(struct inode *inode, block_t blkaddr,
 			ctx->enabled_steps = post_read_steps;
 			bio->bi_private = ctx;
 		} else {
-			if (!fscrypt_has_encryption_key(inode))
+			if (!fscrypt_has_encryption_key(inode)) {
+				bio_put(bio);
 				return ERR_PTR(-ENOKEY);
+			}
 			need_key = true;
 		}
 	}
 #ifdef CONFIG_F2FS_FS_ENCRYPTION
 	if (need_key) {
-		bio->hisi_bio.ci_key = fscrypt_ci_key(inode);
-		bio->hisi_bio.ci_key_len = fscrypt_ci_key_len(inode);
-		bio->hisi_bio.ci_key_index = fscrypt_ci_key_index(inode);
-		bio->hisi_bio.index = page->index;
+		bio->ci_key = fscrypt_ci_key(inode);
+		bio->ci_key_len = fscrypt_ci_key_len(inode);
+		bio->ci_key_index = fscrypt_ci_key_index(inode);
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+		bio->ci_metadata = fscrypt_ci_metadata(inode);
+#endif
+		bio->index = page->index;
 	}
 #endif
 	return bio;
@@ -1498,8 +1527,9 @@ static int __get_data_block(struct inode *inode, sector_t iblock,
 				bh->b_bdev = FDEV(devi).bdev;
 				bh->b_blocknr -= FDEV(devi).start_blk;
 			}
-			f2fs_update_device_state(sbi, (nid_t)inode->i_ino,
-								map.m_pblk);
+			if (FDEV(devi).bdev != NULL)
+				f2fs_update_device_state(sbi, (nid_t)inode->i_ino,
+									map.m_pblk);
 		}
 
 		bh->b_state = (bh->b_state & ~F2FS_MAP_FLAGS) | map.m_flags;
@@ -1979,6 +2009,9 @@ retry_encrypt:
 		fio->ci_key = fscrypt_ci_key(inode);
 		fio->ci_key_len = fscrypt_ci_key_len(inode);
 		fio->ci_key_index = fscrypt_ci_key_index(inode);
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+		fio->metadata = fscrypt_ci_metadata(inode);
+#endif
 #endif
 	}
 	return 0;
@@ -2158,12 +2191,11 @@ got_it:
 			f2fs_unlock_op(fio->sbi);
 		err = f2fs_inplace_write_data(fio);
 		if (err) {
-			/*
-			 * If write data page meets error,
-			 * clear the writeback flag here
-			 */
-			end_page_writeback(page);
-			goto out_writepage;
+			if (f2fs_encrypted_file(inode))
+				fscrypt_pullback_bio_page(&fio->encrypted_page,
+									true);
+			if (PageWriteback(page))
+				end_page_writeback(page);
 		}
 		trace_f2fs_do_write_data_page(fio->page, IPU);
 		set_inode_flag(inode, FI_UPDATE_WRITE);
@@ -2192,7 +2224,16 @@ got_it:
 	ClearPageError(page);
 
 	/* LFS mode write path */
-	f2fs_outplace_write_data(&dn, fio);
+	err = f2fs_outplace_write_data(&dn, fio);
+	if (err) {
+		/*
+		 * If write data page meets error,
+		 * clear the writeback flag here
+		 */
+		end_page_writeback(page);
+		goto out_writepage;
+	}
+
 	trace_f2fs_do_write_data_page(page, OPU);
 	set_inode_flag(inode, FI_APPEND_WRITE);
 	if (page->index == 0)
@@ -2232,6 +2273,9 @@ static int __write_data_page(struct page *page, bool *submitted,
 		.io_type = io_type,
 		.io_wbc = wbc,
 		.mem_control = wbc->for_free_mem,
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+		.flags = f2fs_is_tz_key_io(sbi, inode) ? F2FS_IO_KEY_FLAG : 0,
+#endif
 	};
 
 	trace_f2fs_writepage(page, DATA);
@@ -3290,8 +3334,7 @@ void f2fs_invalidate_page(struct page *page, unsigned int offset,
 	if (IS_ATOMIC_WRITTEN_PAGE(page))
 		return f2fs_drop_inmem_page(inode, page);
 
-	set_page_private(page, 0);
-	ClearPagePrivate(page);
+	f2fs_clear_page_private(page);
 	clear_cold_data(page);
 }
 
@@ -3306,8 +3349,7 @@ int f2fs_release_page(struct page *page, gfp_t wait)
 		return 0;
 
 	clear_cold_data(page);
-	set_page_private(page, 0);
-	ClearPagePrivate(page);
+	f2fs_clear_page_private(page);
 	return 1;
 }
 
@@ -3375,12 +3417,8 @@ int f2fs_migrate_page(struct address_space *mapping,
 			return -EAGAIN;
 	}
 
-	/*
-	 * A reference is expected if PagePrivate set when move mapping,
-	 * however F2FS breaks this for maintaining dirty page counts when
-	 * truncating pages. So here adjusting the 'extra_count' make it work.
-	 */
-	extra_count = (atomic_written ? 1 : 0) - page_has_private(page);
+	/* one extra reference was held for atomic_write page */
+	extra_count = atomic_written ? 1 : 0;
 	rc = migrate_page_move_mapping(mapping, newpage,
 				page, NULL, mode, extra_count);
 	if (rc != MIGRATEPAGE_SUCCESS) {
@@ -3401,9 +3439,10 @@ int f2fs_migrate_page(struct address_space *mapping,
 		get_page(newpage);
 	}
 
-	if (PagePrivate(page))
-		SetPagePrivate(newpage);
-	set_page_private(newpage, page_private(page));
+	if (PagePrivate(page)) {
+		f2fs_set_page_private(newpage, page_private(page));
+		f2fs_clear_page_private(page);
+	}
 
 	if (mode != MIGRATE_SYNC_NO_COPY)
 		migrate_page_copy(newpage, page);

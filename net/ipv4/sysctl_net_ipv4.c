@@ -53,6 +53,8 @@ static int tcp_syn_retries_min = 1;
 static int tcp_syn_retries_max = MAX_TCP_SYNCNT;
 static int ip_ping_group_range_min[] = { 0, 0 };
 static int ip_ping_group_range_max[] = { GID_T_MAX, GID_T_MAX };
+static int one_day_secs = 24 * 3600;
+static int comp_sack_nr_max = 255;
 
 /* obsolete */
 static int sysctl_tcp_low_latency __read_mostly;
@@ -575,7 +577,9 @@ static struct ctl_table ipv4_table[] = {
 		.data		= &sysctl_tcp_min_rtt_wlen,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one_day_secs
 	},
 	{
 		.procname	= "tcp_low_latency",
@@ -613,34 +617,10 @@ static struct ctl_table ipv4_table[] = {
 	},
 #ifdef CONFIG_HW_SNIFFER
 	{
-		.procname	= "wifisniffer_01",
+		.procname	= "net_sniffer",
 		.mode		= 0644,
 		.maxlen		= PCAP_FILE_LEN,
 		.proc_handler	= proc_sniffer_read_01,
-	},
-	{
-		.procname	= "wifisniffer_02",
-		.mode		= 0644,
-		.maxlen		= PCAP_FILE_LEN,
-		.proc_handler	= proc_sniffer_read_02,
-	},
-	{
-		.procname	= "wifisniffer_03",
-		.mode		= 0644,
-		.maxlen		= PCAP_FILE_LEN,
-		.proc_handler	= proc_sniffer_read_03,
-	},
-	{
-		.procname	= "wifisniffer_04",
-		.mode		= 0644,
-		.maxlen		= PCAP_FILE_LEN,
-		.proc_handler	= proc_sniffer_read_04,
-	},
-	{
-		.procname	= "wifisniffer_05",
-		.mode		= 0644,
-		.maxlen		= PCAP_FILE_LEN,
-		.proc_handler	= proc_sniffer_read_05,
 	},
 #endif
 	{
@@ -1313,6 +1293,22 @@ static struct ctl_table ipv4_net_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname	= "tcp_comp_sack_delay_ns",
+		.data		= &init_net.ipv4.sysctl_tcp_comp_sack_delay_ns,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_minmax,
+	},
+	{
+		.procname	= "tcp_comp_sack_nr",
+		.data		= &init_net.ipv4.sysctl_tcp_comp_sack_nr,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &comp_sack_nr_max,
 	},
 	{ }
 };

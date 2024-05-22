@@ -3,7 +3,7 @@
  *
  * maxim universal function
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -115,9 +115,9 @@ unsigned short check_crc16(unsigned char *check_data, int length)
  * @array: source
  */
 int snprintf_array(unsigned char *buf, int buf_len,
-		   unsigned char *array, int array_len)
+	unsigned char *array, int array_len)
 {
-	int i = 0;
+	int i;
 	int ret = 0;
 
 	for (i = 0; i < array_len; i++) {
@@ -138,13 +138,12 @@ void set_sched_affinity_to_current(void)
 	current_cpu = smp_processor_id();
 	preempt_enable();
 	retval = sched_setaffinity(CURRENT_MAXIM_TASK, cpumask_of(current_cpu));
-	if (retval) {
-		hwlog_info("Setting current cpu affinity failed(%ld) in %s\n",
-			   retval, __func__);
-	} else {
-		hwlog_info("Setting current cpu(%d) affinity in %s\n",
-			   current_cpu, __func__);
-	}
+	if (retval)
+		hwlog_info("Setting current cpu affinity failed %ld in %s\n",
+			retval, __func__);
+	else
+		hwlog_info("Setting current cpu %d affinity in %s\n",
+			current_cpu, __func__);
 }
 
 void set_sched_affinity_to_all(void)
@@ -166,8 +165,8 @@ int maxim_check_rom_id_format(struct maxim_onewire_drv_data *drv_data)
 {
 	int i;
 	struct battery_constraint bcons = drv_data->batt_cons;
-	unsigned char *rom_id = GET_ROM_ID(drv_data);
-	int id_length = GET_ROM_ID_LEN(drv_data);
+	unsigned char *rom_id = get_rom_id(drv_data);
+	int id_length = get_rom_id_len(drv_data);
 
 	for (i = 0; i < id_length; i++)
 		bcons.id_chk[i] = bcons.id_example[i] ^ rom_id[i];
@@ -192,15 +191,13 @@ int maxim_check_rom_id_format(struct maxim_onewire_drv_data *drv_data)
  * @attrs:Pointer to NULL terminated list of attributes.
  */
 int maxim_dev_sys_node_init(struct maxim_onewire_drv_data *drv_data,
-			    struct platform_device *pdev,
-			    const struct attribute **attrs)
+	struct platform_device *pdev, const struct attribute **attrs)
 {
 	drv_data->attr_group = devm_kzalloc(&pdev->dev,
-					    sizeof(struct attribute_group),
-					    GFP_KERNEL);
+		sizeof(struct attribute_group), GFP_KERNEL);
 	drv_data->attr_groups =
-	    devm_kzalloc(&pdev->dev, 2 * sizeof(struct attribute_group *),
-			 GFP_KERNEL);
+		devm_kzalloc(&pdev->dev, 2 * sizeof(struct attribute_group *),
+			GFP_KERNEL);
 	if (!drv_data->attr_group || !drv_data->attr_groups)
 		goto create_groups_fail;
 
@@ -228,7 +225,7 @@ create_groups_fail:
 }
 
 static void maxim_dev_sys_node_remove(struct maxim_onewire_drv_data *drv_data,
-				      struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	if (drv_data->attr_group && drv_data->attr_groups)
 		sysfs_remove_groups(&pdev->dev.kobj, drv_data->attr_groups);
@@ -245,7 +242,7 @@ static void maxim_dev_sys_node_remove(struct maxim_onewire_drv_data *drv_data,
 }
 
 static int maxim_sn_info_init(struct maxim_onewire_mem *mem,
-			      struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 	struct device_node *batt_ic_np = pdev->dev.of_node;
@@ -253,20 +250,20 @@ static int maxim_sn_info_init(struct maxim_onewire_mem *mem,
 
 	mem->sn_length_bits = SN_LENGTH_BITS;
 	ret = of_property_read_u32(batt_ic_np, "sn-offset-bits",
-				   &(mem->sn_offset_bits));
+		&(mem->sn_offset_bits));
 	if (ret) {
 		hwlog_err("Read battery SN offset in bits failed\n");
 		return MAXIM_FAIL;
-	} else if (NOT_MUTI8(mem->sn_offset_bits)) {
+	} else if (not_muti8(mem->sn_offset_bits)) {
 		hwlog_err("Illegal SN offset(%u) found in %s\n",
 			  mem->sn_offset_bits, __func__);
 		return MAXIM_FAIL;
 	}
 
 	sn_page_bits = mem->sn_length_bits + mem->sn_offset_bits;
-	if ((mem->sn_length_bits > BYTES2BITS(mem->page_size)) ||
-	    (mem->sn_offset_bits > BYTES2BITS(mem->page_size)) ||
-	    (sn_page_bits > BYTES2BITS(mem->page_size)))
+	if ((mem->sn_length_bits > bytes2bits(mem->page_size)) ||
+	    (mem->sn_offset_bits > bytes2bits(mem->page_size)) ||
+	    (sn_page_bits > bytes2bits(mem->page_size)))
 		hwlog_err("Battery SN length(%u) or offset(%u) is illegal\n",
 			  mem->sn_length_bits, mem->sn_offset_bits);
 	ret = of_property_read_u32(batt_ic_np, "sn-page", &(mem->sn_page));
@@ -278,7 +275,7 @@ static int maxim_sn_info_init(struct maxim_onewire_mem *mem,
 }
 
 static int maxim_memory_init(struct maxim_onewire_mem *mem,
-			     struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 	struct device_node *batt_ic_np = pdev->dev.of_node;
@@ -289,13 +286,13 @@ static int maxim_memory_init(struct maxim_onewire_mem *mem,
 
 	/* Get battery ic's memory description */
 	ret = of_property_read_u32(batt_ic_np, "rom-id-length",
-				   &(mem->rom_id_length));
+		&(mem->rom_id_length));
 	if (ret) {
 		hwlog_err("DTS:rom-id-length needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "page-number", &(mem->page_number));
+		"page-number", &(mem->page_number));
 	if (ret) {
 		hwlog_err("DTS:page-number needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
@@ -306,19 +303,19 @@ static int maxim_memory_init(struct maxim_onewire_mem *mem,
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np, "mac-length",
-				   &(mem->mac_length));
+		&(mem->mac_length));
 	if (ret) {
 		hwlog_err("DTS:mac-length needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "block-number", &(mem->block_number));
+		"block-number", &(mem->block_number));
 	if (ret) {
 		hwlog_err("DTS:block-number needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "block-size", &(mem->block_size));
+		"block-size", &(mem->block_size));
 	if (ret) {
 		hwlog_err("DTS:block-size needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
@@ -326,16 +323,15 @@ static int maxim_memory_init(struct maxim_onewire_mem *mem,
 
 	/* Allocate memory for battery memory */
 	mem->rom_id = devm_kzalloc(&pdev->dev,
-				   mem->rom_id_length + 1, GFP_KERNEL);
+		mem->rom_id_length + 1, GFP_KERNEL);
 	if (!mem->rom_id)
 		return MAXIM_FAIL;
 	mem->block_status = devm_kzalloc(&pdev->dev,
-					 mem->block_number + 1, GFP_KERNEL);
+		mem->block_number + 1, GFP_KERNEL);
 	if (!mem->block_status)
 		return MAXIM_FAIL;
 	mem->pages = devm_kzalloc(&pdev->dev,
-				  mem->page_number * (mem->page_size + 1),
-				  GFP_KERNEL);
+		mem->page_number * (mem->page_size + 1), GFP_KERNEL);
 	if (!mem->pages)
 		return MAXIM_FAIL;
 
@@ -346,7 +342,7 @@ static int maxim_memory_init(struct maxim_onewire_mem *mem,
 	if (!mem->sn)
 		return MAXIM_FAIL;
 	mem->mac_datum = devm_kzalloc(&pdev->dev,
-				      MAX_MAC_SOURCE_SIZE, GFP_KERNEL);
+		MAX_MAC_SOURCE_SIZE, GFP_KERNEL);
 	if (!mem->mac_datum)
 		return MAXIM_FAIL;
 
@@ -354,7 +350,7 @@ static int maxim_memory_init(struct maxim_onewire_mem *mem,
 }
 
 static void maxim_destroy_maxim_mem(struct maxim_onewire_mem *mem,
-				    struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	if (mem->block_status) {
 		devm_kfree(&pdev->dev, mem->block_status);
@@ -384,7 +380,7 @@ static void maxim_destroy_maxim_mem(struct maxim_onewire_mem *mem,
 }
 
 static int maxim_phy_time_rq_init(struct maxim_onewire_des *ic_des,
-				  struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 	struct device_node *batt_ic_np = pdev->dev.of_node;
@@ -392,57 +388,50 @@ static int maxim_phy_time_rq_init(struct maxim_onewire_des *ic_des,
 
 	/* get 1-wire ic time requests */
 	ret = of_property_read_u32_index(batt_ic_np, "reset-time-request",
-					 FIRST_TIME_PROPERTY,
-					 &(owtrq->reset_init_low_ns));
+		FIRST_TIME_PROPERTY, &(owtrq->reset_init_low_ns));
 	if (ret) {
 		hwlog_err("DTS:reset_init_low_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "reset-time-request",
-	      SECOND_TIME_PROPERTY, &(owtrq->reset_slave_response_delay_ns));
+		SECOND_TIME_PROPERTY, &(owtrq->reset_slave_response_delay_ns));
 	if (ret) {
 		hwlog_err("DTS:reset_slave_response_delay_ns needed in %s\n",
 			  __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "reset-time-request",
-					 THIRD_TIME_PROPERTY,
-					 &(owtrq->reset_hold_high_ns));
+		THIRD_TIME_PROPERTY, &(owtrq->reset_hold_high_ns));
 	if (ret) {
 		hwlog_err("DTS:reset_hold_high_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "write-time-request",
-					 FIRST_TIME_PROPERTY,
-					 &(owtrq->write_init_low_ns));
+		FIRST_TIME_PROPERTY, &(owtrq->write_init_low_ns));
 	if (ret) {
 		hwlog_err("DTS:write_init_low_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "write-time-request",
-					 SECOND_TIME_PROPERTY,
-					 &(owtrq->write_hold_ns));
+		SECOND_TIME_PROPERTY, &(owtrq->write_hold_ns));
 	if (ret) {
 		hwlog_err("DTS:write_hold_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "write-time-request",
-					 THIRD_TIME_PROPERTY,
-					 &(owtrq->write_residual_ns));
+		THIRD_TIME_PROPERTY, &(owtrq->write_residual_ns));
 	if (ret) {
 		hwlog_err("DTS:write_residual_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "read-time-request",
-					 FIRST_TIME_PROPERTY,
-					 &(owtrq->read_init_low_ns));
+		FIRST_TIME_PROPERTY, &(owtrq->read_init_low_ns));
 	if (ret) {
 		hwlog_err("DTS:read_init_low_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32_index(batt_ic_np, "read-time-request",
-					 SECOND_TIME_PROPERTY,
-					 &(owtrq->read_residual_ns));
+		SECOND_TIME_PROPERTY, &(owtrq->read_residual_ns));
 	if (ret) {
 		hwlog_err("DTS:read_residual_ns needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
@@ -471,77 +460,78 @@ static int maxim_phy_time_rq_init(struct maxim_onewire_des *ic_des,
 	hwlog_info("%ucycles(%uns), %ucycles(%uns)\n",
 		   owtrq->read_init_low_cycles, owtrq->read_init_low_ns,
 		   owtrq->read_residual_cycles, owtrq->read_residual_ns);
+
+	owtrq->read_wait_slave_ns = 0;
+	owtrq->read_wait_slave_cycles = 0;
+	owtrq->transport_bit_order = 0;
 	return MAXIM_SUCCESS;
 }
 
 static int maxim_protocol_time_rq_init(struct maxim_onewire_des *ic_des,
-				       struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 	struct device_node *batt_ic_np = pdev->dev.of_node;
 
 	ret = of_property_read_u32(batt_ic_np,
-				   "read-page-time", &(ic_des->trq.t_read));
+		"read-page-time", &(ic_des->trq.t_read));
 	if (ret) {
 		hwlog_err("DTS:read-page-time needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "programe-time",
-				   &(ic_des->trq.t_write_memory));
+		"programe-time", &(ic_des->trq.t_write_memory));
 	if (ret) {
 		hwlog_err("DTS:programe-time needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "write-status-time",
-				   &(ic_des->trq.t_write_status));
+		"write-status-time", &(ic_des->trq.t_write_status));
 	if (ret) {
 		hwlog_err("DTS:write-status-time needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u32(batt_ic_np,
-				   "compute-mac-time",
-				   &(ic_des->trq.t_compute));
+		"compute-mac-time", &(ic_des->trq.t_compute));
 	if (ret) {
 		hwlog_err("DTS:compute-mac-time needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 
 	hwlog_info("t_read = %ums, t_write_memory = %ums\n",
-		   ic_des->trq.t_read, ic_des->trq.t_write_memory);
+		ic_des->trq.t_read, ic_des->trq.t_write_memory);
 	hwlog_info("t_write_status = %ums, t_compute = %ums\n",
-		   ic_des->trq.t_write_status, ic_des->trq.t_compute);
+		ic_des->trq.t_write_status, ic_des->trq.t_compute);
 
 	return MAXIM_SUCCESS;
 }
 
 static int maxim_des_init(struct maxim_onewire_des *ic_des,
-			  struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 
 	/* init memory */
 	ret = maxim_memory_init(&ic_des->memory, pdev);
 	if (ret) {
-		hwlog_err("Maxim memory init failed(%d) in %s\n",
-			  ret, __func__);
+		hwlog_err("Maxim memory init failed %d in %s\n",
+			ret, __func__);
 		return ret;
 	}
 
 	/* init physical time request */
 	ret = maxim_phy_time_rq_init(ic_des, pdev);
 	if (ret) {
-		hwlog_err("Maxim phy time request init failed(%d) in %s\n",
-			  ret, __func__);
+		hwlog_err("Maxim phy time request init failed %d in %s\n",
+			ret, __func__);
 		return ret;
 	}
 
 	/* init protocol time request */
 	ret = maxim_protocol_time_rq_init(ic_des, pdev);
 	if (ret) {
-		hwlog_err("Maxim protocol time request init failed(%d) in %s\n",
-			  ret, __func__);
+		hwlog_err("Maxim protocol time request init failed %d in %s\n",
+			ret, __func__);
 		return ret;
 	}
 
@@ -550,38 +540,33 @@ static int maxim_des_init(struct maxim_onewire_des *ic_des,
 
 /* Battery constraints initialization */
 static int maxim_batt_cons_init(struct maxim_onewire_drv_data *drv_data,
-				struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	int ret;
 
 	/* Allocate memory for battery constraint information */
 	drv_data->batt_cons.id_mask = devm_kzalloc(&pdev->dev,
-						   GET_ROM_ID_LEN(drv_data),
-						   GFP_KERNEL);
+		get_rom_id_len(drv_data), GFP_KERNEL);
 	if (!drv_data->batt_cons.id_mask)
 		return MAXIM_FAIL;
 	drv_data->batt_cons.id_example = devm_kzalloc(&pdev->dev,
-						      GET_ROM_ID_LEN(drv_data),
-						      GFP_KERNEL);
+		get_rom_id_len(drv_data), GFP_KERNEL);
 	if (!drv_data->batt_cons.id_example)
 		return MAXIM_FAIL;
 	drv_data->batt_cons.id_chk = devm_kzalloc(&pdev->dev,
-						  GET_ROM_ID_LEN(drv_data),
-						  GFP_KERNEL);
+		get_rom_id_len(drv_data), GFP_KERNEL);
 	if (!drv_data->batt_cons.id_chk)
 		return MAXIM_FAIL;
 
 	/* Get battery id mask & id example */
 	ret = of_property_read_u8_array(pdev->dev.of_node, "id-mask",
-					drv_data->batt_cons.id_mask,
-					GET_ROM_ID_LEN(drv_data));
+		drv_data->batt_cons.id_mask, get_rom_id_len(drv_data));
 	if (ret) {
 		hwlog_err("DTS:id-mask needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
 	}
 	ret = of_property_read_u8_array(pdev->dev.of_node, "id-example",
-					drv_data->batt_cons.id_example,
-					GET_ROM_ID_LEN(drv_data));
+		drv_data->batt_cons.id_example, get_rom_id_len(drv_data));
 	if (ret) {
 		hwlog_err("DTS:id-example needed in %s\n", __func__);
 		return MAXIM_ONEWIRE_DTS_ERROR;
@@ -591,7 +576,7 @@ static int maxim_batt_cons_init(struct maxim_onewire_drv_data *drv_data,
 }
 
 static void maxim_destroy_batt_cons_mem(struct battery_constraint *bcons,
-					struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	if (bcons->id_mask) {
 		devm_kfree(&pdev->dev, bcons->id_mask);
@@ -610,8 +595,7 @@ static void maxim_destroy_batt_cons_mem(struct battery_constraint *bcons,
 }
 
 static int maxim_com_stat_init(struct maxim_onewire_com_stat *coms,
-			       struct platform_device *pdev, int cmds,
-			       const char * const *cmd_str)
+	struct platform_device *pdev, int cmds, const char * const *cmd_str)
 {
 	coms->totals = devm_kzalloc(&pdev->dev, cmds * sizeof(int), GFP_KERNEL);
 	if (!coms->totals)
@@ -627,7 +611,7 @@ static int maxim_com_stat_init(struct maxim_onewire_com_stat *coms,
 }
 
 static void maxim_destroy_com_stat_mem(struct maxim_onewire_com_stat *coms,
-				       struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	if (coms->totals) {
 		devm_kfree(&pdev->dev, coms->totals);
@@ -650,8 +634,7 @@ static void maxim_destroy_com_stat_mem(struct maxim_onewire_com_stat *coms,
  * @cmd_str:maxim protocol commands description
  */
 int maxim_drv_data_init(struct maxim_onewire_drv_data *drv_data,
-			struct platform_device *pdev, int cmds,
-			const char * const cmd_str[])
+	struct platform_device *pdev, int cmds, const char * const cmd_str[])
 {
 	wakeup_source_init(&drv_data->write_lock, pdev->name);
 	mutex_init(&drv_data->batt_safe_info_lock);
@@ -691,7 +674,7 @@ des_mem_init_fail:
  * @pdev:carrier of driver data
  */
 void maxim_destroy_drv_data(struct maxim_onewire_drv_data *drv_data,
-			    struct platform_device *pdev)
+	struct platform_device *pdev)
 {
 	if (!drv_data)
 		return;
@@ -713,7 +696,7 @@ void maxim_destroy_drv_data(struct maxim_onewire_drv_data *drv_data,
  * @sn:output
  */
 void maxim_parise_printable_sn(unsigned char *page, unsigned int sn_offset_bits,
-			       unsigned char *sn)
+	unsigned char *sn)
 {
 	int i;
 	char hex_print;
@@ -724,7 +707,7 @@ void maxim_parise_printable_sn(unsigned char *page, unsigned int sn_offset_bits,
 
 	sn_to_print += SN_CHAR_PRINT_SIZE;
 	for (i = 0; i < SN_HEX_PRINT_SIZE; i++) {
-		if (IS_ODD(i)) /* get low 4 bits */
+		if (is_odd(i)) /* get low 4 bits */
 			hex_print = (sn_to_print[i / 2] & 0x0f);
 		else /* get high 4 bits */
 			hex_print = ((sn_to_print[i / 2] & 0xf0) >> 4) & 0x0f;

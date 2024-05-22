@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2021. All rights reserved.
  * Description: the hw_kernel_stp_module.c for kernel stp module init and deinit
  * Author: sunhongqing <sunhongqing@huawei.com>
  * Create: 2018-03-31
@@ -26,27 +26,28 @@ static void kernel_stp_work_init(struct work_struct *data)
 {
 	int result;
 
-	KSTPLogTrace(TAG, "kernel stp work init.");
+	(void)data;
+	KSTPLogTrace(TAG, "kernel stp work init");
 
 	do {
 		/* init kernel stp proc */
 		result = kernel_stp_proc_init();
 		if (result != 0) {
-			KSTPLogError(TAG, "kernel_stp_proc init failed.");
+			KSTPLogError(TAG, "kernel_stp_proc init failed");
 			break;
 		}
 
 		/* init kernel stp scanner */
 		result = kernel_stp_scanner_init();
 		if (result != 0) {
-			KSTPLogError(TAG, "kernel_stp_scanner init failed.");
+			KSTPLogError(TAG, "kernel_stp_scanner init failed");
 			break;
 		}
 
 		/* init kernel stp uploader */
 		result = kernel_stp_uploader_init();
 		if (result != 0) {
-			KSTPLogError(TAG, "kernel_stp_uploader init failed.");
+			KSTPLogError(TAG, "kernel_stp_uploader init failed");
 			break;
 		}
 	} while (0);
@@ -61,11 +62,11 @@ static void kernel_stp_work_init(struct work_struct *data)
 		kernel_stp_scanner_exit();
 		kernel_stp_uploader_exit();
 
-		KSTPLogError(TAG, "kernel stp module init failed.");
+		KSTPLogError(TAG, "kernel stp module init failed");
 		return;
 	}
 
-	KSTPLogTrace(TAG, "kernel stp module init success.");
+	KSTPLogTrace(TAG, "kernel stp module init success");
 }
 
 static int __init kernel_stp_module_init(void)

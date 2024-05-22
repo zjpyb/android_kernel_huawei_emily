@@ -36,7 +36,7 @@
 #define HW_XCOLLIE_CALLBACK_HISTORY_MAX 5
 #define HW_XCOLLIE_CALLBACK_TIMEWIN_MAX 60
 #define MAX_STACK_TRACE_DEPTH 64
-
+#define HW_XCOLLIE_CHECK_PERIOD         5
 
 #undef HW_XCOLLIE_FAULT_INJECT
 
@@ -49,19 +49,19 @@
 #define hw_atomic_inc(x)         __sync_fetch_and_add(&(x), 1)
 #define HW_ALIGN_TO(len, align) (((((len) - 1) / (align)) + 1) * (align))
 #define HW_COOKIE_SHIFT         (HW_MAX_XCOLLIE_SHIFT + 2)
-#define HW_NODE_MAGIC(node)     ((node)->flag ^ (node)->timeout ^ \
-				(node)->tid ^ \
+#define HW_NODE_MAGIC(node)     ((unsigned int)(node)->flag ^ (unsigned int)(node)->timeout ^ \
+				(unsigned int)(node)->tid ^ \
 				hw_atomic_read(hwtimectrl.count_start))
 #define HW_WRAP_ID(pos, node)   ((HW_NODE_MAGIC(node) << HW_COOKIE_SHIFT) | \
-				(pos))
-#define HW_UNWRAP_ID(id)        ((id) & ((1 << HW_COOKIE_SHIFT) - 1))
+				(unsigned int)(pos))
+#define HW_UNWRAP_ID(id)        ((unsigned int)(id) & ((1 << HW_COOKIE_SHIFT) - 1))
 
 #define HW_FILLUP_NODE(node, name, timeout, func, arg, flag, task) do { \
 	(node)->id = HW_WRAP_ID((node)->seq, node); \
 	(node)->name = name; \
 	(node)->start_time = get_seconds(); \
 	(node)->timeout = timeout; \
-	(node)->tid = (task)->pid;\
+	(node)->tid = (task)->pid; \
 	(node)->arg = arg; \
 	(node)->flag = flag; \
 	(node)->callback = func; \

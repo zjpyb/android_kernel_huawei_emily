@@ -1,9 +1,14 @@
+/*
+ * Copyright (c) Hisilicon Technologies Co., Ltd. 2012-2019. All rights reserved.
+ * Description: eMMC RPMB Driver
+ * Create: 2012-05-01
+ * History: 2019-03-18 structure optimization
+ */
 
-
+#include <asm/uaccess.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/syscalls.h>
-
 #include <linux/bootdevice.h>
 #include <linux/mmc/core.h>
 #include <linux/mmc/ioctl.h>
@@ -12,9 +17,7 @@
 #include <linux/mmc/mmc.h>
 #include <linux/hisi/rpmb.h>
 
-#include <asm/uaccess.h>
-
-#include "hisi_rpmb.h"
+#include "vendor_rpmb.h"
 
 
 static inline void mmc_rpmb_combine_cmd(struct mmc_blk_ioc_data *data,
@@ -140,9 +143,8 @@ void emmc_rpmb_unlock_counterlock(struct rpmb_request *req,
 	    (req->info.state == RPMB_STATE_WR_DATA &&
 	     (0 ==
 	      req->info.blks - (req->info.current_rqst.offset +
-				req->info.current_rqst.blks)))) {
+				req->info.current_rqst.blks))))
 		mutex_unlock(&rpmb_counter_lock); /*lint !e455*/
-	}
 }
 
 /*
@@ -187,14 +189,17 @@ static int32_t mmc_rpmb_work(struct rpmb_request *request)
 		mmc_rpmb_get_counter(request, rpmb_data);
 		break;
 	case RPMB_STATE_WR_CNT:
-		/* TODO add a lock here for counter before write data */
+		/* add a lock here for counter before write data */
 		mutex_lock(&rpmb_counter_lock);
 		mmc_rpmb_get_counter(request, rpmb_data);
 		break;
 	case RPMB_STATE_WR_DATA:
 		mmc_rpmb_write_data(request, rpmb_data);
-		/* TODO add a unlock for counter after write data */
+		/* add a unlock for counter after write data */
 		break;
+	default:
+		pr_err("[%s]:request state non-compliant case branch\n", __func__);
+		return RPMB_INVALID_PARA;
 	}
 
 	result = mmc_blk_ioctl_rpmb_cmd((enum func_id)request->info.func_id,
@@ -237,7 +242,7 @@ static ssize_t mmc_rpmb_key_store(struct device *dev,
 	}
 
 	/* get key from bl31 */
-	ret = atfd_hisi_rpmb_smc((u64)RPMB_SVC_SET_KEY, (u64)0x0, (u64)0x0,
+	ret = atfd_rpmb_smc((u64)RPMB_SVC_SET_KEY, (u64)0x0, (u64)0x0,
 				 (u64)0x0);
 	if (ret) {
 		dev_err(dev, "get rpmb key frame failed, ret %d\n", ret);
@@ -398,6 +403,9 @@ int hisi_mmc_rpmb_ioctl_cmd(enum func_id id, enum rpmb_op_type operation,
 			(unsigned short)storage_data->data[2].blocks,
 			RPMB_BLK_SZ, false);
 		break;
+	default:
+		pr_err("[%s]:operation non-compliant case branch\n", __func__);
+		return RPMB_INVALID_PARA;
 	}
 
 	ret = mmc_blk_ioctl_rpmb_cmd(id, bdev, rpmb_data);

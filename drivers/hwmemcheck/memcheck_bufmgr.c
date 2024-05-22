@@ -3,7 +3,7 @@
  *
  * save and read information from native or java process, send signal to them
  *
- * Copyright (c) 2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,6 +17,7 @@
  */
 
 #include "memcheck_common.h"
+#include "memcheck_interface.h"
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
@@ -29,7 +30,6 @@
 #else
 #include <linux/sched.h>
 #endif
-#include <linux/hisi/mem_trace.h>
 #include <chipset_common/hwmemcheck/memcheck.h>
 
 /* for detail information */
@@ -66,8 +66,8 @@ static u64 rec_num;
 
 static int slub_cmp(const void *a, const void *b)
 {
-	const struct hisi_slub_detail_info *info1 = a;
-	const struct hisi_slub_detail_info *info2 = b;
+	const struct mm_slub_detail_info *info1 = a;
+	const struct mm_slub_detail_info *info2 = b;
 
 	if (info1->size < info2->size)
 		return 1;
@@ -79,7 +79,7 @@ static int slub_cmp(const void *a, const void *b)
 
 static int memcheck_slub_detail_read(size_t num, char *buf, size_t total)
 {
-	struct hisi_slub_detail_info *list = NULL;
+	struct mm_slub_detail_info *list = NULL;
 	size_t ret_num;
 	size_t used = 0;
 	int tmp;
@@ -88,7 +88,7 @@ static int memcheck_slub_detail_read(size_t num, char *buf, size_t total)
 	list = vzalloc(num * sizeof(*list));
 	if (!list)
 		return 0;
-	ret_num = hisi_get_mem_detail(SLUB_TRACK, list, num);
+	ret_num = get_mem_detail(SLUB_TRACK, list, num);
 	if (ret_num == 0)
 		goto err_list;
 
@@ -125,8 +125,8 @@ err_list:
 
 static int ion_cmp(const void *a, const void *b)
 {
-	const struct hisi_ion_detail_info *info1 = a;
-	const struct hisi_ion_detail_info *info2 = b;
+	const struct mm_ion_detail_info *info1 = a;
+	const struct mm_ion_detail_info *info2 = b;
 
 	if (info1->size < info2->size)
 		return 1;
@@ -138,7 +138,7 @@ static int ion_cmp(const void *a, const void *b)
 
 static int memcheck_ion_detail_read(size_t num, char *buf, size_t total)
 {
-	struct hisi_ion_detail_info *list = NULL;
+	struct mm_ion_detail_info *list = NULL;
 	size_t ret_num;
 	size_t used = 0;
 	int tmp;
@@ -147,7 +147,7 @@ static int memcheck_ion_detail_read(size_t num, char *buf, size_t total)
 	list = vzalloc(num * sizeof(*list));
 	if (!list)
 		return 0;
-	ret_num = hisi_get_mem_detail(ION_TRACK, list, num);
+	ret_num = get_mem_detail(ION_TRACK, list, num);
 	if (ret_num == 0)
 		goto err_list;
 
@@ -177,8 +177,8 @@ err_list:
 
 static int vmalloc_cmp(const void *a, const void *b)
 {
-	const struct hisi_vmalloc_detail_info *info1 = a;
-	const struct hisi_vmalloc_detail_info *info2 = b;
+	const struct mm_vmalloc_detail_info *info1 = a;
+	const struct mm_vmalloc_detail_info *info2 = b;
 
 	if (info1->size < info2->size)
 		return 1;
@@ -201,7 +201,7 @@ static const char *type_to_str(int type)
 
 static int memcheck_vmalloc_detail_read(size_t num, char *buf, size_t total)
 {
-	struct hisi_vmalloc_detail_info *list = NULL;
+	struct mm_vmalloc_detail_info *list = NULL;
 	size_t ret_num;
 	size_t used = 0;
 	int tmp;
@@ -210,7 +210,7 @@ static int memcheck_vmalloc_detail_read(size_t num, char *buf, size_t total)
 	list = vzalloc(num * sizeof(*list));
 	if (!list)
 		return 0;
-	ret_num = hisi_get_mem_detail(VMALLOC_TRACK, list, num);
+	ret_num = get_mem_detail(VMALLOC_TRACK, list, num);
 	if (ret_num == 0)
 		goto err_list;
 
@@ -246,12 +246,12 @@ int memcheck_detail_read(void *buf, struct detail_info *info)
 	int ret = -EFAULT;
 
 	if (info->type == MTYPE_KERN_SLUB)
-		num = info->size / sizeof(struct hisi_slub_detail_info);
+		num = info->size / sizeof(struct mm_slub_detail_info);
 	else if ((info->type == MTYPE_KERN_ION) ||
 		 (info->type == MTYPE_USER_ION))
-		num = info->size / sizeof(struct hisi_ion_detail_info);
+		num = info->size / sizeof(struct mm_ion_detail_info);
 	else if (info->type == MTYPE_KERN_VMALLOC)
-		num = info->size / sizeof(struct hisi_vmalloc_detail_info);
+		num = info->size / sizeof(struct mm_vmalloc_detail_info);
 	else
 		return -EINVAL;
 	if (!num) {
@@ -294,8 +294,8 @@ err_buf:
 
 static int stack_cmp(const void *a, const void *b)
 {
-	const struct hisi_stack_info *info1 = a;
-	const struct hisi_stack_info *info2 = b;
+	const struct mm_stack_info *info1 = a;
+	const struct mm_stack_info *info2 = b;
 
 	if (atomic_read(&info1->ref) < atomic_read(&info2->ref))
 		return 1;
@@ -305,7 +305,7 @@ static int stack_cmp(const void *a, const void *b)
 		return 0;
 }
 
-static size_t memcheck_stack_to_str(struct hisi_stack_info *list, size_t num,
+static size_t memcheck_stack_to_str(struct mm_stack_info *list, size_t num,
 				    char *buf, size_t total, size_t used)
 {
 	int i;
@@ -342,7 +342,7 @@ static size_t memcheck_append_str(const char *str, char *buf, size_t total,
 	return used;
 }
 
-static size_t memcheck_get_slub_stack(struct hisi_stack_info *list, size_t num,
+static size_t memcheck_get_slub_stack(struct mm_stack_info *list, size_t num,
 				      char *buf, size_t total)
 {
 	int i;
@@ -351,19 +351,19 @@ static size_t memcheck_get_slub_stack(struct hisi_stack_info *list, size_t num,
 	size_t ret_num;
 
 	for (i = 0; i < ARRAY_SIZE(slub_type); i++) {
-		ret = hisi_page_trace_open(SLUB_TRACK, slub_type[i]);
+		ret = page_trace_open(SLUB_TRACK, slub_type[i]);
 		if (ret) {
 			memcheck_info("open SLUB trace failed");
 			return used;
 		}
-		ret_num = hisi_page_trace_read(SLUB_TRACK, list, num,
+		ret_num = page_trace_read(SLUB_TRACK, list, num,
 					       slub_type[i]);
 		if (ret_num == 0) {
 			memcheck_info("empty %s stack record", slub_text[i]);
-			hisi_page_trace_close(SLUB_TRACK, slub_type[i]);
+			page_trace_close(SLUB_TRACK, slub_type[i]);
 			continue;
 		}
-		ret = hisi_page_trace_close(SLUB_TRACK, slub_type[i]);
+		ret = page_trace_close(SLUB_TRACK, slub_type[i]);
 		if (ret) {
 			memcheck_info("close SLUB trace failed");
 			return used;
@@ -379,7 +379,7 @@ static size_t memcheck_get_slub_stack(struct hisi_stack_info *list, size_t num,
 	return used;
 }
 
-static size_t memcheck_get_vmalloc_stack(struct hisi_stack_info *list,
+static size_t memcheck_get_vmalloc_stack(struct mm_stack_info *list,
 					 size_t num, char *buf, size_t total)
 {
 	int i;
@@ -388,19 +388,19 @@ static size_t memcheck_get_vmalloc_stack(struct hisi_stack_info *list,
 	size_t ret_num;
 
 	for (i = 0; i < ARRAY_SIZE(vm_type); i++) {
-		ret = hisi_page_trace_open(VMALLOC_TRACK, vm_type[i]);
+		ret = page_trace_open(VMALLOC_TRACK, vm_type[i]);
 		if (ret) {
 			memcheck_info("open VMALLOC trace failed");
 			return used;
 		}
-		ret_num = hisi_page_trace_read(VMALLOC_TRACK, list, num,
+		ret_num = page_trace_read(VMALLOC_TRACK, list, num,
 					       vm_type[i]);
 		if (ret_num == 0) {
 			memcheck_info("empty %s stack record", vm_text[i]);
-			hisi_page_trace_close(VMALLOC_TRACK, vm_type[i]);
+			page_trace_close(VMALLOC_TRACK, vm_type[i]);
 			continue;
 		}
-		ret = hisi_page_trace_close(VMALLOC_TRACK, vm_type[i]);
+		ret = page_trace_close(VMALLOC_TRACK, vm_type[i]);
 		if (ret) {
 			memcheck_info("close VMALLOC trace failed");
 			return used;
@@ -416,25 +416,25 @@ static size_t memcheck_get_vmalloc_stack(struct hisi_stack_info *list,
 	return used;
 }
 
-static size_t memcheck_get_buddy_stack(struct hisi_stack_info *list, size_t num,
+static size_t memcheck_get_buddy_stack(struct mm_stack_info *list, size_t num,
 				       char *buf, size_t total)
 {
 	int ret;
 	size_t used = 0;
 	size_t ret_num;
 
-	ret = hisi_page_trace_open(BUDDY_TRACK, BUDDY_TRACK);
+	ret = page_trace_open(BUDDY_TRACK, BUDDY_TRACK);
 	if (ret) {
 		memcheck_info("open BUDDY trace failed");
 		return used;
 	}
-	ret_num = hisi_page_trace_read(BUDDY_TRACK, list, num, BUDDY_TRACK);
+	ret_num = page_trace_read(BUDDY_TRACK, list, num, BUDDY_TRACK);
 	if (ret_num == 0) {
 		memcheck_info("empty buddy stack record");
-		hisi_page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
+		page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
 		return used;
 	}
-	ret = hisi_page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
+	ret = page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
 	if (ret) {
 		memcheck_info("close BUDDY trace failed");
 		return used;
@@ -443,25 +443,25 @@ static size_t memcheck_get_buddy_stack(struct hisi_stack_info *list, size_t num,
 	return used;
 }
 
-static size_t memcheck_get_lslub_stack(struct hisi_stack_info *list, size_t num,
+static size_t memcheck_get_lslub_stack(struct mm_stack_info *list, size_t num,
 				       char *buf, size_t total)
 {
 	int ret;
 	size_t used = 0;
 	size_t ret_num;
 
-	ret = hisi_page_trace_open(LSLUB_TRACK, LSLUB_TRACK);
+	ret = page_trace_open(LSLUB_TRACK, LSLUB_TRACK);
 	if (ret) {
 		memcheck_info("open LSLUB trace failed");
 		return used;
 	}
-	ret_num = hisi_page_trace_read(LSLUB_TRACK, list, num, LSLUB_TRACK);
+	ret_num = page_trace_read(LSLUB_TRACK, list, num, LSLUB_TRACK);
 	if (ret_num == 0) {
 		memcheck_info("empty buddy stack record");
-		hisi_page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
+		page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
 		return used;
 	}
-	ret = hisi_page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
+	ret = page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
 	if (ret) {
 		memcheck_info("close LSLUB trace failed");
 		return used;
@@ -473,7 +473,7 @@ static size_t memcheck_get_lslub_stack(struct hisi_stack_info *list, size_t num,
 static int memcheck_get_stack_items(size_t num, char *buf, size_t total,
 				    struct stack_info *info)
 {
-	struct hisi_stack_info *list = NULL;
+	struct mm_stack_info *list = NULL;
 	size_t used = 0;
 
 	list = vzalloc(num * sizeof(*list));
@@ -499,7 +499,7 @@ static int memcheck_kernel_stack_read(void *buf, struct stack_info *info)
 	size_t len;
 	int ret;
 
-	num = info->size / sizeof(struct hisi_stack_info);
+	num = info->size / sizeof(struct mm_stack_info);
 	if (!num) {
 		info->size = 0;
 		if (copy_to_user(buf, info, sizeof(*info))) {
@@ -582,7 +582,7 @@ int memcheck_stack_clear(void)
 	int idx;
 
 	mutex_lock(&stack_mutex);
-	for (idx = 0; idx <= STACK_NUM; idx++) {
+	for (idx = 0; idx < STACK_NUM; idx++) {
 		if (stack_buf[idx]) {
 			vfree(stack_buf[idx]);
 			stack_buf[idx] = NULL;
@@ -791,7 +791,7 @@ err_buf:
 	return ret;
 }
 
-int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, char *name,
+int memcheck_report_lmk_oom(pid_t pid, pid_t tgid, const char *name,
 			    enum kill_type ktype, short adj, size_t pss)
 {
 	struct lmk_oom_write wr;

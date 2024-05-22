@@ -34,8 +34,8 @@
 #include <linux/version.h>
 #include <linux/miscdevice.h>
 #include <linux/stringify.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 
 #define ELAN_KTF_NAME 	"elan"
 #define ELAN_IC_NAME 	"ekth5512c_"

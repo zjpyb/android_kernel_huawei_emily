@@ -367,12 +367,17 @@ static int erofs_raw_access_readpages(struct file *filp,
 	struct bio *bio = NULL;
 	gfp_t gfp = readahead_gfp_mask(mapping);
 	struct page *page = list_last_entry(pages, struct page, lru);
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	struct block_device *const bdev = mapping->host->i_sb->s_bdev;
+#endif
 	unsigned int io_submitted = 0;
 
 	trace_erofs_readpages(mapping->host, page, nr_pages, true);
 
 #ifdef CONFIG_EROFS_FS_HUAWEI_EXTENSION
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	if (pages) {
 		/*
 		 * Get one quota before read pages, when this ends,
@@ -382,6 +387,7 @@ static int erofs_raw_access_readpages(struct file *filp,
 		blk_throtl_get_quota(bdev, PAGE_SIZE,
 				     msecs_to_jiffies(100), true);
 	}
+#endif
 #endif
 
 	for (; nr_pages; --nr_pages) {
@@ -415,10 +421,13 @@ static int erofs_raw_access_readpages(struct file *filp,
 		__submit_bio(bio, REQ_OP_READ, 0);
 
 #ifdef CONFIG_EROFS_FS_HUAWEI_EXTENSION
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	if (io_submitted)
 		while (--io_submitted)
 			blk_throtl_get_quota(bdev, PAGE_SIZE,
 					     msecs_to_jiffies(100), true);
+#endif
 #endif
 	return 0;
 }

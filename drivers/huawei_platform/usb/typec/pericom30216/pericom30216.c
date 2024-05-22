@@ -3,7 +3,7 @@
  *
  * driver file for Pericom pericom30216 typec chip
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,39 +16,39 @@
  *
  */
 
-#include <linux/i2c.h>
+#include "pericom30216.h"
 #include <linux/delay.h>
-#include <linux/gpio.h>
-#include <linux/timer.h>
-#include <linux/param.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/workqueue.h>
-#include <linux/slab.h>
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/fs.h>
+#include <linux/gpio.h>
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/i2c.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/platform_device.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-#include <asm/irq.h>
+#include <linux/param.h>
+#include <linux/platform_device.h>
+#include <linux/slab.h>
+#include <linux/timer.h>
 #include <linux/uaccess.h>
-#include <linux/fs.h>
-#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/workqueue.h>
+#include <asm/irq.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
 #include <huawei_platform/log/hw_log.h>
-#include <huawei_platform/power/power_devices_info.h>
+#include <huawei_platform/usb/hw_typec_dev.h>
+#include <huawei_platform/usb/hw_typec_platform.h>
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <huawei_platform/devdetect/hw_dev_dec.h>
 #endif
-#include <huawei_platform/usb/switch/switch_ap/switch_usb_class.h>
-#include <huawei_platform/usb/hw_typec_dev.h>
-#include <huawei_platform/usb/hw_typec_platform.h>
-#include "pericom30216.h"
+#include "huawei_platform/usb/switch/usbswitch_common.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -57,7 +57,7 @@
 #define HWLOG_TAG typec_pericom30216
 HWLOG_REGIST();
 
-struct typec_device_info *g_pericom30216_dev;
+static struct typec_device_info *g_pericom30216_dev;
 static int input_current = -1;
 
 static int pericom30216_detect_current_mode(void);
@@ -138,6 +138,7 @@ static int pericom30216_read_all_reg(void)
 static int pericom30216_write_reg(u8 reg, u8 value)
 {
 	int i;
+	int ret;
 	u8 buf[PERICOM30216_REGISTER_NUM];
 	struct typec_device_info *di = g_pericom30216_dev;
 	struct i2c_msg msgs[1] = {
@@ -148,8 +149,9 @@ static int pericom30216_write_reg(u8 reg, u8 value)
 		},
 	};
 
-	pericom30216_read_control_reg();
-
+	ret = pericom30216_read_control_reg();
+	if (ret)
+		hwlog_err("read transfer error\n");
 	for (i = 0; i < PERICOM30216_REGISTER_NUM; i++)
 		buf[i] = di->reg[i];
 
@@ -368,6 +370,7 @@ static int pericom30216_detect_attachment_status(void)
 	u8 reg_ctrl;
 	int reg_status;
 	u8 port_mode;
+	int ret;
 
 	if (!di) {
 		hwlog_err("di is null\n");
@@ -375,7 +378,9 @@ static int pericom30216_detect_attachment_status(void)
 	}
 
 	/* read control reg and mask interrupt */
-	pericom30216_read_control_reg();
+	ret = pericom30216_read_control_reg();
+	if (ret)
+		hwlog_err("read transfer error\n");
 	pericom30216_write_reg(PERICOM30216_REG_CONTROL,
 		PERICOM30216_REG_CONTROL_INT_MASK |
 		(di->reg[PERICOM30216_REG_CONTROL - 1]));
@@ -391,12 +396,13 @@ static int pericom30216_detect_attachment_status(void)
 	reg_val = di->reg[PERICOM30216_REG_INTERRUPT - 1];
 	reg_cc_status = di->reg[PERICOM30216_REG_CC_STATUS - 1];
 	reg_ctrl = di->reg[PERICOM30216_REG_CONTROL - 1];
+	/* 2,3: the array subscript */
 	hwlog_info("reg reg1=0x%x, reg2=0x%x, reg3=0x%x, reg4=0x%x\n",
 		di->reg[0], di->reg[1], di->reg[2], di->reg[3]);
 
 	/* pericom30216 chip bug workaround */
 	if (reg_cc_status == 0x97) {
-		mdelay(300);
+		mdelay(300); /* 300: delay 300ms */
 		pericom30216_write_reg(PERICOM30216_REG_CONTROL, 0x01);
 		pericom30216_write_reg(PERICOM30216_REG_CONTROL, 0x05);
 		pericom30216_read_reg(PERICOM30216_REG_CC_STATUS);
@@ -543,7 +549,7 @@ static int pericom30216_detect_port_mode(void)
 	return di->dev_st.port_mode;
 }
 
-struct typec_device_ops pericom30216_ops = {
+static struct typec_device_ops pericom30216_ops = {
 	.clean_int_mask = pericom30216_clean_int_mask,
 	.detect_attachment_status = pericom30216_detect_attachment_status,
 	.detect_cc_orientation = pericom30216_detect_cc_orientation,
@@ -552,42 +558,6 @@ struct typec_device_ops pericom30216_ops = {
 	.ctrl_output_current = pericom30216_ctrl_output_current,
 	.ctrl_port_mode = pericom30216_ctrl_port_mode,
 };
-
-static struct attribute *pericom30216_attributes[] = {
-	NULL,
-};
-
-static const struct attribute_group pericom30216_attr_group = {
-	.attrs = pericom30216_attributes,
-};
-
-static int pericom30216_create_sysfs(void)
-{
-	int ret = 0;
-	struct class *typec_class = NULL;
-	struct device *new_dev = NULL;
-
-	typec_class = hw_typec_get_class();
-	if (typec_class) {
-		new_dev = device_create(typec_class, NULL, 0, NULL,
-			"pericom30216");
-		if (IS_ERR(new_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			return PTR_ERR(new_dev);
-		}
-
-		ret = sysfs_create_group(&new_dev->kobj,
-			&pericom30216_attr_group);
-		if (ret)
-			hwlog_err("sysfs group create failed\n");
-	}
-
-	return ret;
-}
-
-static void pericom30216_remove_sysfs(struct typec_device_info *di)
-{
-}
 
 static irqreturn_t pericom30216_irq_handler(int irq, void *dev_id)
 {
@@ -616,7 +586,7 @@ static void pericom30216_initialization(void)
 	pericom30216_write_reg(PERICOM30216_REG_CONTROL,
 		PERICOM30216_REG_CONTROL_INT_MASK);
 
-	/* delay 30ms */
+	/* 30: delay 30ms */
 	msleep(30);
 
 	pericom30216_write_reg(PERICOM30216_REG_CONTROL,
@@ -626,7 +596,7 @@ static void pericom30216_initialization(void)
 static int pericom30216_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	int ret;
+	int ret = -1;
 	u32 gpio_enb_val = 1;
 	struct typec_device_info *di = NULL;
 	struct typec_device_info *pdi = NULL;
@@ -634,8 +604,6 @@ static int pericom30216_probe(struct i2c_client *client,
 	struct power_devices_info_data *power_dev_info = NULL;
 	u32 typec_trigger_otg = 0;
 	u32 mdelay = 0;
-
-	hwlog_info("probe begin\n");
 
 	if (!client || !client->dev.of_node || !id)
 		return -ENODEV;
@@ -650,32 +618,18 @@ static int pericom30216_probe(struct i2c_client *client,
 	node = di->dev->of_node;
 	i2c_set_clientdata(client, di);
 
-	di->gpio_enb = of_get_named_gpio(node,
-		"pericom30216_typec,gpio_enb", 0);
-	hwlog_info("gpio_enb=%d\n", di->gpio_enb);
-
-	if (!gpio_is_valid(di->gpio_enb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"pericom30216_gpio_enb", &gpio_enb_val, 0))
 		goto fail_check_i2c;
-	}
 
-	ret = gpio_request(di->gpio_enb, "pericom30216_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
+	ret = power_gpio_config_output(node,
+		"pericom30216_typec,gpio_enb", "pericom30216_en",
+		&di->gpio_enb, gpio_enb_val);
+	if (ret)
 		goto fail_check_i2c;
-	}
 
-	if (power_dts_read_u32(node, "pericom30216_gpio_enb", &gpio_enb_val, 0))
-		goto fail_free_gpio_enb;
-
-	ret = gpio_direction_output(di->gpio_enb, gpio_enb_val);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		goto fail_free_gpio_enb;
-	}
-
-	(void)power_dts_read_u32(node, "pericom30216_mdelay", &mdelay, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"pericom30216_mdelay", &mdelay, 0);
 	if (mdelay) {
 		hwlog_info("wait for %d ms before i2c access\n", mdelay);
 		msleep(mdelay);
@@ -687,58 +641,31 @@ static int pericom30216_probe(struct i2c_client *client,
 		goto fail_free_gpio_enb;
 	}
 
-	(void)power_dts_read_u32(node, "typec_trigger_otg",
-		&typec_trigger_otg, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), node,
+		"typec_trigger_otg", &typec_trigger_otg, 0);
 	di->typec_trigger_otg = !!typec_trigger_otg;
 
-	di->gpio_intb = of_get_named_gpio(node,
-		"pericom30216_typec,gpio_intb", 0);
-	hwlog_info("gpio_intb=%d\n", di->gpio_intb);
-
-	if (!gpio_is_valid(di->gpio_intb)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
+	ret = power_gpio_config_interrupt(node,
+		"pericom30216_typec,gpio_intb", "pericom30216_int",
+		&di->gpio_intb, &di->irq_intb);
+	if (ret)
 		goto fail_free_gpio_enb;
-	}
 
 	pdi = typec_chip_register(di, &pericom30216_ops, THIS_MODULE);
 	if (!pdi) {
 		hwlog_err("typec register chip error\n");
 		ret = -EINVAL;
-		goto fail_free_gpio_enb;
-	}
-
-	ret = gpio_request(di->gpio_intb, "pericom30216_int");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		goto fail_free_gpio_enb;
-	}
-
-	di->irq_intb = gpio_to_irq(di->gpio_intb);
-	if (di->irq_intb < 0) {
-		hwlog_err("gpio map to irq fail\n");
-		ret = -EINVAL;
-		goto fail_free_gpio_intb;
-	}
-
-	ret = gpio_direction_input(di->gpio_intb);
-	if (ret) {
-		hwlog_err("gpio set input fail\n");
 		goto fail_free_gpio_intb;
 	}
 
 	ret = request_irq(di->irq_intb, pericom30216_irq_handler,
-			IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
-			"pericom30216_int", pdi);
+		IRQF_NO_SUSPEND | IRQF_TRIGGER_FALLING,
+		"pericom30216_int", pdi);
 	if (ret) {
 		hwlog_err("gpio irq request fail\n");
 		di->irq_intb = -1;
 		goto fail_free_gpio_intb;
 	}
-
-	ret = pericom30216_create_sysfs();
-	if (ret)
-		goto fail_create_sysfs;
 
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
@@ -759,12 +686,8 @@ static int pericom30216_probe(struct i2c_client *client,
 	pericom30216_ctrl_output_current(TYPEC_HOST_CURRENT_HIGH);
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
-	hwlog_info("probe end\n");
 	return 0;
 
-fail_create_sysfs:
-	pericom30216_remove_sysfs(di);
-	free_irq(di->gpio_intb, di);
 fail_free_gpio_intb:
 	gpio_free(di->gpio_intb);
 fail_free_gpio_enb:
@@ -780,12 +703,9 @@ static int pericom30216_remove(struct i2c_client *client)
 {
 	struct typec_device_info *di = i2c_get_clientdata(client);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	pericom30216_remove_sysfs(di);
 	free_irq(di->irq_intb, di);
 	gpio_set_value(di->gpio_enb, 1);
 	gpio_free(di->gpio_enb);
@@ -793,7 +713,6 @@ static int pericom30216_remove(struct i2c_client *client)
 	g_pericom30216_dev = NULL;
 	devm_kfree(&client->dev, di);
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

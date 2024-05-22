@@ -2,27 +2,23 @@
 subdir-ccflags-y += -Wall -Werror
 ccflags-y += -Idrivers/devkit/audiokit/
 
-EXTRA_CFLAGS += -Idrivers/hisi/slimbus/vendor/candance/include
-EXTRA_CFLAGS +=	-Idrivers/hisi/slimbus/vendor/candance
-EXTRA_CFLAGS +=	-Isound/soc/hisilicon
-EXTRA_CFLAGS += -Idrivers/hisi/mntn/blackbox/platform_hifi/
+ccflags-y += -Idrivers/hisi/slimbus/vendor/candance/include
+ccflags-y += -Idrivers/hisi/slimbus/vendor/candance
+ccflags-y += -Idrivers/hisi/slimbus/
+ccflags-y += -Isound/soc/hisilicon
+ccflags-y += -Idrivers/hisi/mntn/blackbox/platform_audio/
 
-hisilicon-slimbus-platform-objs		:= vendor/candance/cps_bm.o vendor/candance/src/csmi.o vendor/candance/slimbus_drv.o
-hisilicon-slimbus-platform-objs		+= slimbus.o slimbus_utils.o slimbus_64xx.o slimbus_6403.o 
+slimbus-platform-objs := vendor/candance/cps_bm.o vendor/candance/src/csmi.o vendor/candance/slimbus_drv.o
+slimbus-platform-objs += slimbus.o slimbus_utils.o slimbus_pm.o slimbus_da_combine.o slimbus_da_combine_v3.o
 
-ifeq ($(CONFIG_SND_SOC_HI6402),y)
-EXTRA_CFLAGS += -DHI6402_SUPPORT
-hisilicon-slimbus-platform-objs += slimbus_6402.o
+ifeq ($(CONFIG_SND_SOC_DA_COMBINE_V5),y)
+slimbus-platform-objs += slimbus_da_combine_v5.o
 endif
 
-ifeq ($(CONFIG_SND_SOC_HI6405),y)
-hisilicon-slimbus-platform-objs += slimbus_6405.o
-endif
-
-
-ifeq ($(CONFIG_HISI_AUDIO_DEBUG),y)
+ifeq ($(CONFIG_AUDIO_DEBUG),y)
 ifneq ($(kcov),true)
-hisilicon-slimbus-platform-objs += slimbus_debug.o
+slimbus-platform-objs += slimbus_debug.o
 endif
 endif
-obj-$(CONFIG_HISILICON_PLATFORM_SLIMBUS)		+= hisilicon-slimbus-platform.o
+
+obj-$(CONFIG_PLATFORM_SLIMBUS) += slimbus-platform.o

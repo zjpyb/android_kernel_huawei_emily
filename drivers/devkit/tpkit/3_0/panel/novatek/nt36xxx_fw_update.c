@@ -181,7 +181,7 @@ int32_t Nova_Resume_PD(void)
 	buf[1] = 0xAB;
 	ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
-		TS_LOG_ERR("%s: Write Enable error!!(%d)\n", __func__, ret);
+		TS_LOG_ERR("Resume_PD: Write Enable error, ret:%d\n", ret);
 		return ret;
 	}
 	msleep(10);
@@ -191,11 +191,11 @@ int32_t Nova_Resume_PD(void)
 	buf[1] = 0x00;
 	ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
-		TS_LOG_ERR("%s: Check 0xAA (Resume Command) error!!(%d)\n", __func__, ret);
+		TS_LOG_ERR("Resume_PD: Check 0xAA (Resume Command) error, ret:%d\n", ret);
 		return ret;
 	}
 	if (buf[1] != 0xAA) {
-		TS_LOG_ERR("%s: Check 0xAA (Resume Command) error!! status=0x%02X\n", __func__, buf[1]);
+		TS_LOG_ERR("Resume_PD: Check 0xAA (Resume Command) error, status=0x%02X\n", buf[1]);
 		return -1;
 	}
 	msleep(10);
@@ -330,7 +330,7 @@ int32_t Nova_Init_BootLoader(void)
 	buf[2] = I2C_FW_Address;
 	ret = novatek_ts_kit_write(I2C_HW_Address, buf, 3);
 	if (ret < 0) {
-		TS_LOG_ERR("%s: Inittial Flash Block error!!(%d)\n", __func__, ret);
+		TS_LOG_ERR("Init_BootLoader: Inittial Flash Block error,ret:%d\n", ret);
 		return ret;
 	}
 	msleep(5);
@@ -340,11 +340,11 @@ int32_t Nova_Init_BootLoader(void)
 	buf[1] = 0x00;
 	ret = novatek_ts_kit_read(I2C_HW_Address, buf, 2);
 	if (ret < 0) {
-		TS_LOG_ERR("%s: Check 0xAA (Inittial Flash Block) error!!(%d)\n", __func__, ret);
+		TS_LOG_ERR("Init_BootLoader: Check 0xAA (Inittial Flash Block) error,ret:%d\n", ret);
 		return ret;
 	}
 	if (buf[1] != 0xAA) {
-		TS_LOG_ERR("%s: Check 0xAA (Inittial Flash Block) error!! status=0x%02X\n", __func__, buf[1]);
+		TS_LOG_ERR("Init_BootLoader: Check 0xAA (Inittial Flash Block) error, status=0x%02X\n", buf[1]);
 		return -1;
 	}
 
@@ -826,7 +826,7 @@ static int32_t Update_Firmware(void)
 	// Step 2 : Resume PD
 	ret = Nova_Resume_PD();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Nova_Resume_PD_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Nova_Resume_PD_fail;
 		TS_LOG_ERR("%s:Nova_Resume_PD fail\n",__func__);
 		return ret;
 	}
@@ -834,7 +834,7 @@ static int32_t Update_Firmware(void)
 	// Step 3 : Erase
 	ret = Erase_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Erase_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Erase_Flash_fail;
 		TS_LOG_ERR("%s:Erase_Flash fail\n",__func__);
 		return ret;
 	}
@@ -842,7 +842,7 @@ static int32_t Update_Firmware(void)
 	// Step 4 : Program
 	ret = Write_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Write_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Write_Flash_fail;
 		TS_LOG_ERR("%s:Write_Flash fail\n",__func__);
 		return ret;
 	}
@@ -850,7 +850,7 @@ static int32_t Update_Firmware(void)
 	// Step 5 : Verify
 	ret = Verify_Flash();
 	if (ret) {
-		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = Verify_Flash_fail;
+		nvt_ts->chip_data->ts_platform_data->dsm_info.constraints_update_status = Verify_Flash_fail;
 		TS_LOG_ERR("%s:Verify_Flash fail\n",__func__);
 		return ret;
 	}
@@ -866,13 +866,14 @@ int32_t nvt_kit_fw_update_boot(char *file_name)
 {
 	int32_t ret = 0;
 
-	TS_LOG_INFO("%s: file_name=%s\n", __func__, file_name);
+	TS_LOG_INFO("%s: file_name=%s\n", NVT_TAG, file_name);
 
-	TS_LOG_INFO("%s: current fw version=%02x\n", __func__, nvt_fw_ver);
+	TS_LOG_INFO("%s: current fw version=%02x\n", NVT_TAG, nvt_fw_ver);
 
 	ret = update_firmware_request(file_name);
 	if (ret) {
-		TS_LOG_ERR("%s: update_firmware_request failed. (%d)\n", __func__, ret);
+		TS_LOG_ERR("%s: update_firmware_request failed, ret:%d\n",
+			NVT_TAG, ret);
 		return 0;
 	}
 
@@ -882,13 +883,13 @@ int32_t nvt_kit_fw_update_boot(char *file_name)
 		ret = Check_CheckSum();
 		//--------------------------------------------------------------------------------
 		 if (((ret == 0) && (Check_FW_Ver() == 0))||(ret < 0)) {	// (ic fw ver check failed) && (bin fw version > ic fw version)
-			TS_LOG_INFO("%s: firmware version not match or checksum failed.updata fw\n", __func__);
+			TS_LOG_INFO("%s: firmware version not match or checksum failed.updata fw\n", NVT_TAG);
 			ret = Update_Firmware();
 			if(ret) {
-				TS_LOG_INFO("%s: updata firmware failed dmd report.\n", __func__);
+				TS_LOG_INFO("%s: updata firmware failed dmd report\n", NVT_TAG);
 			}
 		} else {
-			TS_LOG_INFO("%s: read firmware checksum match or IC FW version bigger, no need update.\n",__func__);
+			TS_LOG_INFO("%s: read firmware checksum match or IC FW version bigger, no need update\n", NVT_TAG);
 			// Bootloader Reset
 			ret = 0;
 			nvt_kit_bootloader_reset();
@@ -897,7 +898,7 @@ int32_t nvt_kit_fw_update_boot(char *file_name)
 	}else{
 		g_nava_sd_force_update = 0;
 
-		TS_LOG_INFO("%s: fw force update\n", __func__);
+		TS_LOG_INFO("%s: fw force update\n", NVT_TAG);
 		ret = Update_Firmware();
 	}
 
@@ -906,7 +907,7 @@ int32_t nvt_kit_fw_update_boot(char *file_name)
 	//get project id and fw version
 	novatek_kit_read_projectid();
 	nvt_kit_get_fw_info();
-	TS_LOG_INFO("%s: new fw version=%02x\n", __func__, nvt_fw_ver);
+	TS_LOG_INFO("%s: new fw version=%02x\n", NVT_TAG, nvt_fw_ver);
 
 	return ret;
 }

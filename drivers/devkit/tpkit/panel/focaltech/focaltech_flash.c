@@ -2,7 +2,7 @@
 
 #include <linux/ctype.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #include "focaltech_flash.h"
 #include "focaltech_core.h"
 
@@ -13,7 +13,18 @@ extern struct ts_kit_device_data *g_focal_dev_data;
 extern u8 cypress_ts_kit_color[TP_COLOR_SIZE];
 #define FTS_READ_PROJECTID_RETRY_TIMES		3
 #define FTS_PROJECTID_LETTERS_LEN			3
+#define REAL_PROJECT_ID_LEN 10
 
+#define GET_FIRMWARE_NAME "get_firmware_name"
+#define ENTER_UPDATE_NO_RESET "enter_update_by_no_reset"
+#define FIEMWARE_UPDATE_SPI "firmware_update_spi"
+#define GET_ECC_FROM_TP "get_ecc_from_tp"
+#define GET_IC_FIRMWARE "get_ic_firmware"
+#define FIRMWARE_AUTO_UPDATA "firmware_auto_update"
+#define READ_PROJECT_ID "read_project_id"
+#define FLASH_PRAM "flash_pram"
+
+static int focal_ecc_check_8756(const u8 *buf, u32 len, u32 ecc_saddr);
 static int focal_enter_work_model_from_pram(struct focal_platform_data *focal_pdata);
 static int focal_enter_pram_model(struct focal_platform_data *focal_pdata);
 static int focal_flash_get_fw_file_size(char *fw_name);
@@ -104,10 +115,13 @@ static int focal_enter_update_by_no_reset(void)
 		mdelay(FOCAL_AFTER_WRITE_55_DELAY_TIME);
 		ret = focal_read_chip_id_(&g_focal_pdata->chip_id);
 		if (ret|| (g_focal_pdata->chip_id == 0) ){
-			TS_LOG_INFO("%s:chip id read fail, g_focal_pdata->chip_id=%x, retry=%d, ret = %d\n", __func__,g_focal_pdata->chip_id, i, ret);
+			TS_LOG_INFO("%s:chip id read fail, g_focal_pdata->chip_id=%x, retry=%d, ret = %d\n",
+				ENTER_UPDATE_NO_RESET,
+				g_focal_pdata->chip_id, i, ret);
 			continue;
 		} else {
-			TS_LOG_INFO("%s: g_focal_pdata->chip_id=%x\n",__func__,g_focal_pdata->chip_id);
+			TS_LOG_INFO("%s: g_focal_pdata->chip_id=%x\n",
+				__func__, g_focal_pdata->chip_id);
 			return 0;
 		}
 	}
@@ -171,6 +185,10 @@ static int focal_wait_firmware_write_finish(
 	if (FTS_CMD_WRITE_PRAM == command)
 		return 0;
 
+	if (!data_size) {
+		TS_LOG_ERR("%s: divisor 'data_size' is zero\n", __func__);
+		return -EINVAL;
+	}
 	driver_status = start_addr + start_write_addr / data_size;
 	for (i = 0; i < focal_pdata->delay_time->write_flash_query_times; i++) {
 
@@ -224,7 +242,7 @@ static int focal_write_firmware_data(
 	u32 start_write_addr = 0;
 	u8 *package_buf = NULL;
 	u32 package_size = 0;
-	struct ts_kit_platform_data* ts_platform_data;
+	struct ts_kit_platform_data *ts_platform_data = NULL;
 
 	TS_LOG_DEBUG("%s:Write firmware to ic\n", __func__);
 	TS_LOG_DEBUG("%s:fw write:data_length=%u, package_count=%u\n",
@@ -320,6 +338,118 @@ write_pram_err:
 	return ret;
 }
 
+static int focal_write_firmware_data_8756(const u8 *fw_data, u32 len, u32 saddr,
+	bool wpram)
+{
+	int ret = 0;
+	int i;
+	int j;
+	u8 *cmd = NULL;
+	u32 addr = 0;
+	u32 offset = 0;
+	u32 remainder;
+	u32 packet_number;
+	u32 packet_len;
+	u32 packet_size = FTS_FLASH_PACKET_LENGTH_SPI;
+	u32 baseaddr = wpram ? FTS_PRAM_SADDR : FTS_DRAM_SADDR;
+
+	cmd = vmalloc(packet_size + 6 + 1);
+	if (cmd == NULL) {
+		TS_LOG_ERR("malloc memory for pram write buffer fail\n");
+		return -ENOMEM;
+	}
+	memset(cmd, 0, packet_size + 6 + 1);
+
+	packet_number = len / packet_size;
+	remainder = len % packet_size;
+	if (remainder > 0)
+		packet_number++;
+	packet_len = packet_size;
+	TS_LOG_ERR("write data, num:%d remainder:%d\n",
+		packet_number, remainder);
+
+	for (i = 0; i < packet_number; i++) {
+		offset = i * packet_size;
+		addr = saddr + offset + baseaddr;
+		/* last packet */
+		if ((i == (packet_number - 1)) && remainder)
+			packet_len = remainder;
+
+		/* set pram address */
+		cmd[0] = FTS_ROMBOOT_CMD_SET_PRAM_ADDR;
+		cmd[1] = (u8)(addr >> 16);
+		cmd[2] = (u8)(addr >> 8);
+		cmd[3] = (u8)(addr);
+		ret = focal_write(&cmd[0], FTS_ROMBOOT_CMD_SET_PRAM_ADDR_LEN);
+		if (ret < 0) {
+			TS_LOG_ERR("set pram: %d addr: %d fail\n", i, addr);
+			goto write_pram_err;
+		}
+
+		/* write pram data */
+		cmd[0] = FTS_ROMBOOT_CMD_WRITE;
+		for (j = 0; j < packet_len; j++)
+			cmd[1 + j] = fw_data[offset + j];
+		ret = focal_write(&cmd[0], 1 + packet_len);
+		if (ret < 0) {
+			TS_LOG_ERR("write fw to pram: %d fail\n", i);
+			goto write_pram_err;
+		}
+	}
+
+write_pram_err:
+	vfree(cmd);
+	cmd = NULL;
+	return ret;
+}
+
+static int focal_dram_write_ecc(const u8 *buf, u32 len)
+{
+	int ret = 0;
+	u32 dram_size = 0;
+	u32 pram_app_size = 0;
+	u32 dram_start_addr = 0;
+	u16 const_len = 0;
+	u16 const_len_n = 0;
+	const u8 *dram_buf = NULL;
+
+	if (buf == NULL) {
+		TS_LOG_ERR("%s:buf is NULL\n", __func__);
+		return -ENOMEM;
+	}
+	/* get dram data length */
+	const_len = ((u16)buf[0x100 + 0x8] << 8) + buf[0x100 + 0x9];
+	const_len_n = ((u16)buf[0x100 + 0x0A] << 8) + buf[0x100 + 0x0B];
+	if (((const_len + const_len_n) != 0xFFFF) || (const_len == 0)) {
+		TS_LOG_INFO("no support dram,const len(%x %x)\n",
+			const_len, const_len_n);
+		return 0;
+	}
+	dram_size = ((u32)const_len) * 2;
+	pram_app_size = ((u32)(((u16)buf[0x100 + 0] << 8) +
+		buf[0x100 + 1])) * 2;
+	dram_buf = buf + pram_app_size;
+	TS_LOG_INFO("dram buf length in fact:%d,offset:%d\n",
+		dram_size, pram_app_size);
+	/* write pram */
+	ret = focal_write_firmware_data_8756(dram_buf,
+		dram_size, dram_start_addr, false);
+	if (ret < 0) {
+		TS_LOG_ERR("write dram fail\n");
+		return ret;
+	}
+
+	/* check ecc */
+	ret = focal_ecc_check_8756(dram_buf, dram_size, dram_start_addr);
+	if (ret < 0) {
+		TS_LOG_ERR("dram ecc check fail\n");
+		return ret;
+	}
+
+	TS_LOG_INFO("dram data write successfully\n");
+	return 0;
+}
+
 /*
  * description : write pram data to ic
  *
@@ -334,8 +464,19 @@ static int focal_write_pram_data(
 	const u8 *fw_data,
 	u32 fw_length)
 {
-	return focal_write_firmware_data(focal_pdata, fw_data, fw_length,
-		FTS_CMD_WRITE_PRAM, 0);
+	int ret;
+
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		fw_length = (((u16)fw_data[FTS_FT8756_PRAM_OFFSET + 0] << 8)
+			+ fw_data[FTS_FT8756_PRAM_OFFSET + 1]) * 2;
+		ret = focal_write_firmware_data_8756(fw_data,
+			fw_length, 0, true);
+	} else {
+		ret = focal_write_firmware_data(focal_pdata,
+			fw_data, fw_length,
+			FTS_CMD_WRITE_PRAM, 0);
+	}
+	return ret;
 }
 /*
  * description : 8201 pram data init
@@ -850,7 +991,7 @@ static int focal_firmware_update_outcell(
 	if (ret) {
 		TS_LOG_ERR("%s:enter bootloader model fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_enter_pram_model_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_enter_pram_model_fail;
 #endif
 		goto enter_work_model_from_update_model;
 	} else {
@@ -863,7 +1004,7 @@ static int focal_firmware_update_outcell(
 		if (ret) {
 			TS_LOG_ERR("%s:erasure app fail, ret=%d\n", __func__, ret);
 	#if defined (CONFIG_HUAWEI_DSM)
-			g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_erasure_app_area_fail;
+			g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_erasure_app_area_fail;
 	#endif
 			goto enter_work_model_from_update_model;
 		} else {
@@ -890,7 +1031,7 @@ static int focal_firmware_update_outcell(
 		if (ret) {
 			TS_LOG_ERR("%s:erasure app fail, ret=%d\n", __func__, ret);
 	#if defined (CONFIG_HUAWEI_DSM)
-			g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_erasure_app_area_fail;
+			g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_erasure_app_area_fail;
 	#endif
 			goto enter_work_model_from_update_model;
 		} else {
@@ -904,7 +1045,7 @@ static int focal_firmware_update_outcell(
 	if (ret) {
 		TS_LOG_ERR("%s:write app data fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_write_app_data_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_write_app_data_fail;
 #endif
 		goto enter_work_model_from_update_model;
 	} else {
@@ -918,7 +1059,7 @@ static int focal_firmware_update_outcell(
 		TS_LOG_ERR("%s:read check sum in ic fail, ret=%d\n",
 			__func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_read_check_sum_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_read_check_sum_fail;
 #endif
 		goto enter_work_model_from_update_model;
 	}
@@ -968,7 +1109,7 @@ static int focal_firmware_update(
 	if (ret) {
 		TS_LOG_ERR("%s:enter pram model fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_enter_pram_model_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_enter_pram_model_fail;
 #endif
 		goto enter_work_model_from_pram;
 	} else {
@@ -980,7 +1121,7 @@ static int focal_firmware_update(
 		TS_LOG_ERR("%s:check firmware size fail, ret-%d\n",
 			__func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_check_firmware_size_in_pram_model_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_check_firmware_size_in_pram_model_fail;
 #endif
 		goto enter_work_model_from_pram;
 	}
@@ -991,7 +1132,7 @@ static int focal_firmware_update(
 	if (ret) {
 		TS_LOG_ERR("%s:config clock fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_auto_config_clock_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_auto_config_clock_fail;
 #endif
 		goto enter_work_model_from_pram;
 	} else {
@@ -1003,7 +1144,7 @@ static int focal_firmware_update(
 		TS_LOG_ERR("%s:enter update model fail, ret=%d\n",
 			__func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_enter_pram_update_model_from_pram_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_enter_pram_update_model_from_pram_fail;
 #endif
 		goto enter_work_model_from_pram;
 	} else {
@@ -1014,7 +1155,7 @@ static int focal_firmware_update(
 	if (ret) {
 		TS_LOG_ERR("%s:erasure app fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_erasure_app_area_fail;
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_erasure_app_area_fail;
 #endif
 		goto enter_work_model_from_update_model;
 	} else {
@@ -1025,8 +1166,8 @@ static int focal_firmware_update(
 	if (ret) {
 		TS_LOG_ERR("%s:write app data fail, ret=%d\n", __func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_write_app_data_fail;
-#endif		
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_write_app_data_fail;
+#endif
 		goto enter_work_model_from_update_model;
 	} else {
 		TS_LOG_INFO("%s:write app data success\n", __func__);
@@ -1046,8 +1187,8 @@ static int focal_firmware_update(
 		TS_LOG_ERR("%s:read check sum in ic fail, ret=%d\n",
 			__func__, ret);
 #if defined (CONFIG_HUAWEI_DSM)
-		g_focal_dev_data->ts_platform_data->dsm_info.constraints_UPDATE_status =  focal_read_check_sum_fail;
-#endif	
+		g_focal_dev_data->ts_platform_data->dsm_info.constraints_update_status = focal_read_check_sum_fail;
+#endif
 		goto enter_work_model_from_update_model;
 	}
 
@@ -1103,11 +1244,14 @@ static int focal_firmware_update_spi(
 		g_focal_dev_data->ts_platform_data->spidev0_chip_info.com_mode = DMA_MODE;
 	}
 	for (retry_time = 0; retry_time < 3; retry_time++) {
-		TS_LOG_INFO("%s:write pram, retry=%d\n", __func__, retry_time);
+		TS_LOG_INFO("%s:write pram, retry=%d\n",
+			FIEMWARE_UPDATE_SPI, retry_time);
 		/* 1. enter romboot */
-		TS_LOG_DEBUG("%s:enter rom update model\n", __func__);
-
-		if(false == focal_pdata->fw_is_running) {
+		TS_LOG_DEBUG("%s:enter rom update model\n",
+			FIEMWARE_UPDATE_SPI);
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+			ret = focal_enter_rom_update_model_by_hardware(focal_pdata);
+		} else if (focal_pdata->fw_is_running == false) {
 			ret = focal_enter_update_by_no_reset();
 		} else {
 			focal_pdata->fw_is_running = false;
@@ -1122,21 +1266,31 @@ static int focal_firmware_update_spi(
 		/* 2. write flash pram */
 		ret = focal_flash_pram(focal_pdata, fw_data, fw_len);
 		if (ret) {
-			TS_LOG_INFO("%s:flash pram fail, ret=%d\n", __func__, ret);
+			TS_LOG_INFO("%s:flash pram fail, ret=%d\n",
+				FIEMWARE_UPDATE_SPI, ret);
 			continue;
+		}
+
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+			ret = focal_dram_write_ecc(fw_data, fw_len);
+			if (ret < 0) {
+				TS_LOG_ERR("write dram fail\n");
+				continue;
+			}
 		}
 
 		/* 3. start pram */
 		ret = focal_start_app_from_rom_update_model();
 		if (ret) {
-			TS_LOG_INFO("%s:start pram fail, ret=%d\n", __func__, ret);
+			TS_LOG_INFO("%s:start pram fail, ret=%d\n",
+				FIEMWARE_UPDATE_SPI, ret);
 			continue;
 		}
 		break;
 	}
 
 	if (retry_time >= 3) {
-		TS_LOG_ERR("%s:download fw fail\n", __func__);
+		TS_LOG_ERR("%s:download fw fail\n", FIEMWARE_UPDATE_SPI);
 		return ret;
 	}
 	if(focal_pdata->use_dma_download_firmware) {
@@ -1382,8 +1536,6 @@ static int focal_enter_pram_model(
 		goto err_out;
 	}
 
-	return 0;
-
 err_out:
 	/* 6. release pram */
 	release_firmware(pram_fw);
@@ -1402,9 +1554,9 @@ static int focal_get_ecc_from_tp(
 	u8 cmd[FTS_ROMBOOT_CMD_ECC_LEN] = { 0 };
 	u8 value[2] = { 0 };
 
-	TS_LOG_INFO("%s:ecc calc in tp\n", __func__);
+	TS_LOG_INFO("%s:ecc calc in tp\n", GET_ECC_FROM_TP);
 	if (NULL == ecc) {
-		TS_LOG_ERR("%s:ecc is NULL\n", __func__);
+		TS_LOG_ERR("%s:ecc is NULL\n", GET_ECC_FROM_TP);
 		return -EINVAL;
 	}
 	cmd[0] = FTS_ROMBOOT_CMD_ECC;
@@ -1417,7 +1569,7 @@ static int focal_get_ecc_from_tp(
 
 	ret = focal_write(cmd, FTS_ROMBOOT_CMD_ECC_LEN);
 	if (ret < 0) {
-		TS_LOG_ERR("%s:ecc calc cmd fail\n", __func__);
+		TS_LOG_ERR("%s:ecc calc cmd fail\n", GET_ECC_FROM_TP);
 		return ret;
 	}
 
@@ -1427,28 +1579,29 @@ static int focal_get_ecc_from_tp(
 	for (i = 0; i < 100; i++) {
 		ret = focal_read(cmd, FTS_COMMON_COMMAND_LENGTH, value, FTS_COMMON_COMMAND_VALUE);
 		if (ret < 0) {
-			TS_LOG_ERR("%s:ecc read cmd fail\n", __func__);
+			TS_LOG_ERR("%s:ecc read cmd fail\n", GET_ECC_FROM_TP);
 			return ret;
 		}
-		if (0 == value[0]) {
+		if ((value[0] == 0) || ((g_focal_dev_data->ic_type ==
+			FOCAL_FT8756) && (value[0] == FTS_FT8756_ECC_VALUE))) {
 			break;
 		}else{
 			mdelay(1);
 		}
 	}
 	if (i >= 100) {
-		TS_LOG_ERR("%s:wait ecc finish fail\n", __func__);
+		TS_LOG_ERR("%s:wait ecc finish fail\n", GET_ECC_FROM_TP);
 		return -EIO;
 	}
 
 	cmd[0] = FTS_ROMBOOT_CMD_ECC_READ;
 	ret = focal_read(cmd, FTS_COMMON_COMMAND_LENGTH, value, 2*FTS_COMMON_COMMAND_VALUE);
 	if (ret < 0) {
-		TS_LOG_ERR("%s:ecc read cmd fail\n", __func__);
+		TS_LOG_ERR("%s:ecc read cmd fail\n", GET_ECC_FROM_TP);
 		return ret;
 	}
 
-	TS_LOG_INFO("%s:%x %x\n", __func__, value[0], value[1]);
+	TS_LOG_INFO("%s:%x %x\n", GET_ECC_FROM_TP, value[0], value[1]);
 	*ecc = (u16)(value[0] << 8) + value[1];
 	return 0;
 }
@@ -1481,6 +1634,61 @@ static int focal_get_data_ecc(
 	return 0;
 }
 
+static int focal_ecc_check_8756(const u8 *buf, u32 len, u32 ecc_saddr)
+{
+	int ret = 0;
+	int i;
+	u16 ecc_in_host = 0;
+	u16 ecc_in_tp = 0;
+	int packet_length;
+	int packet_number;
+	int packet_remainder;
+	int offset = 0;
+	u32 packet_size = ECCMAX_LEN;
+
+	if (buf == NULL) {
+		TS_LOG_ERR("%s :buf is null\n", __func__);
+		return -EINVAL;
+	}
+
+	packet_number = len / packet_size;
+	packet_remainder = len % packet_size;
+	if (packet_remainder)
+		packet_number++;
+	packet_length = packet_size;
+
+	for (i = 0; i < packet_number; i++) {
+		/* last packet */
+		if ((i == (packet_number - 1)) && packet_remainder)
+			packet_length = packet_remainder;
+
+		ret = focal_get_data_ecc(buf + offset,
+			packet_length, &ecc_in_host);
+		if (ret < 0) {
+			TS_LOG_ERR("ecc in host calc fail\n");
+			return ret;
+		}
+
+		ret = focal_get_ecc_from_tp(ecc_saddr + offset,
+			packet_length, &ecc_in_tp);
+		if (ret < 0) {
+			TS_LOG_ERR("ecc in tp calc fail\n");
+			return ret;
+		}
+
+		TS_LOG_DEBUG("ecc in tp:%04x,host:%04x,i:%d\n",
+			ecc_in_tp, ecc_in_host, i);
+		if (ecc_in_tp != ecc_in_host) {
+			TS_LOG_ERR("tp(%x) != host(%x),check fail\n",
+				ecc_in_tp, ecc_in_host);
+			return -EIO;
+		}
+
+		offset += packet_length;
+	}
+	return 0;
+}
+
 /*
  * param - focal_pdata : focal_platform_data *focal_pdata
  *
@@ -1501,29 +1709,37 @@ static int focal_flash_pram(
 	u16 ecc_from_host = 0;
 	u8 *pcheck_buffer = NULL;
 	u8 *tmp_buffer = NULL;
-	TS_LOG_DEBUG("%s:pram file size is %lu\n", __func__, pram_size);
-	if (pram_size > FTS_MAX_PRAM_SIZE || pram_size == 0) {
-		TS_LOG_ERR("pram file size overflow %lu\n", pram_size);
-		return -EINVAL;
+	TS_LOG_DEBUG("%s:pram file size is %lu\n", FLASH_PRAM, pram_size);
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		pram_size = (((u16)pram_data[FTS_FT8756_PRAM_OFFSET + 0] << 8)
+			+ pram_data[FTS_FT8756_PRAM_OFFSET + 1]) * 2;
+	} else {
+		if ((pram_size > FTS_MAX_PRAM_SIZE) || (pram_size == 0)) {
+			TS_LOG_ERR("pram file size overflow %lu\n", pram_size);
+			return -EINVAL;
+		}
 	}
 
-	TS_LOG_DEBUG("%s:write pram data\n", __func__);
+	TS_LOG_DEBUG("%s:write pram data\n", FLASH_PRAM);
 	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
 		tmp_buffer = kmalloc(pram_size, GFP_ATOMIC);
 		if (NULL == tmp_buffer) {
-			TS_LOG_ERR("%s: malloc mem for tmp_buffer fail\n", __func__);
+			TS_LOG_ERR("%s: malloc mem for tmp_buffer fail\n",
+				FLASH_PRAM);
 			return -ENOMEM;
 		}
 		focal_8201_pram_data_reverse_init(pram_data, tmp_buffer, pram_size);
 		ret = focal_write_pram_data(focal_pdata, tmp_buffer, pram_size);
 		if (ret) {
-			TS_LOG_ERR("%s: write pram data fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: write pram data fail, ret=%d\n",
+				FLASH_PRAM, ret);
 			goto release_tmp_buffer;
 		}
 	} else {
 		ret = focal_write_pram_data(focal_pdata, pram_data, pram_size);
 		if (ret) {
-			TS_LOG_ERR("%s: write pram data fail, ret=%d\n", __func__, ret);
+			TS_LOG_ERR("%s: write pram data fail, ret=%d\n",
+				FLASH_PRAM, ret);
 			return ret;
 		}
 	}
@@ -1532,44 +1748,51 @@ static int focal_flash_pram(
 
 		pcheck_buffer = kmalloc(pram_size, GFP_ATOMIC);
 		if (NULL == pcheck_buffer) {
-			TS_LOG_ERR("%s: malloc mem for pcheck_buffer fail\n", __func__);
+			TS_LOG_ERR("%s: malloc mem for pcheck_buffer fail\n",
+				FLASH_PRAM);
 			ret = -ENOMEM;
 			goto release_tmp_buffer;
 		}
 
-		TS_LOG_DEBUG("%s:read pram data from ic\n", __func__);
+		TS_LOG_DEBUG("%s:read pram data from ic\n", FLASH_PRAM);
 		ret = focal_read_pram_from_ic(pcheck_buffer, pram_size, pram_size);
 		if (ret) {
 			TS_LOG_ERR("%s: read pram data from ic fail, ret=%d\n",
-				__func__, ret);
+				FLASH_PRAM, ret);
 			goto release_pcheck_buffer;
 		}
 
 		for (i = 0; i < pram_size; i++) {
 			if (pcheck_buffer[i] != pram_data[i]) {
 				TS_LOG_ERR("%s:%s,index=%d, src=0x%02x, cut=0x%02x\n",
-					__func__, "pram write check fail,",
+					FLASH_PRAM, "pram write check fail,",
 					i, pram_data[i], pcheck_buffer[i]);
 				ret = -EINVAL;
 				goto release_pcheck_buffer;
 			}
 		}
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		ret = focal_ecc_check_8756(pram_data, pram_size, 0);
+		if (ret < 0) {
+			TS_LOG_ERR("pram ecc check fail\n");
+			return ret;
+		}
 	} else {
 		ret = focal_get_data_ecc(pram_data, pram_size, &ecc_from_host);
 		if (ret) {
 			TS_LOG_ERR("%s:read check sum in host fail, ret=%d\n",
-				__func__, ret);
+				FLASH_PRAM, ret);
 			goto release_pcheck_buffer;
 		}
 		ret = focal_get_ecc_from_tp(0, pram_size, &ecc_from_tp);
 		if (ret) {
 			TS_LOG_ERR("%s:read check sum in ic fail, ret=%d\n",
-				__func__, ret);
+				FLASH_PRAM, ret);
 			goto release_pcheck_buffer;
 		}
 
 		TS_LOG_INFO("%s:crc_in_ic=0x%02X, crc_of_fw=0x%02X\n",
-			__func__, ecc_from_tp, ecc_from_host);
+			FLASH_PRAM, ecc_from_tp, ecc_from_host);
 
 		if (ecc_from_tp != ecc_from_host) {
 			TS_LOG_ERR("%s:check sum check fail\n", __func__);
@@ -1716,25 +1939,25 @@ int focal_get_ic_firmware_version(u8 *version)
 	u8 fw_ver = 0;
 
 	if (NULL == version) {
-		TS_LOG_ERR("%s:version is null\n", __func__);
+		TS_LOG_ERR("%s:version is null\n", GET_IC_FIRMWARE);
 		return -ENOMEM;
 	}
 
 	ret = focal_read_reg(FTS_REG_FW_VER, &fw_ver);
 	if (ret < 0) {
 		TS_LOG_ERR("%s:read firmware version in ic fail, ret=%d\n",
-			__func__, ret);
+			GET_IC_FIRMWARE, ret);
 		return ret;
 	}
 
-	TS_LOG_INFO("%s:fw version in ic is:0x%x\n", __func__, fw_ver);
+	TS_LOG_INFO("%s:fw version in ic is:0x%x\n", GET_IC_FIRMWARE, fw_ver);
 
 	*version = fw_ver;
 
 	return 0;
 }
 
-static int focal_get_lcd_hide_module_name(char *module_name)
+static int focal_get_lcd_hide_module_name(const char *module_name)
 {
 	struct device_node *dev_node = NULL;
 	char *lcd_hide_module_name = NULL;
@@ -1814,19 +2037,26 @@ static int focal_get_firmware_name(
 	strncpy(project_id, focal_pdata->project_id, FTS_PROJECT_ID_LEN - 1);
 
 	focal_strtolow(project_id, FTS_PROJECT_ID_LEN);
-	if (focal_pdata->need_distinguish_lcd) {
+
+	if (focal_pdata->focal_device_data->hide_fw_name) {
+		ret = snprintf(fw_name, size, "ts/%s.img", focal_pdata->project_id);
+		if (ret >= size) {
+			TS_LOG_ERR("fw name buffer out of range, ret=%d\n", ret);
+			return -ENOMEM;
+		}
+	} else if (focal_pdata->need_distinguish_lcd) {
 		if(focal_pdata->fw_only_depend_on_lcd) { //TP fw only depend on LCD module
 			ret = snprintf(fw_name, size, "ts/%s", product_name);
 			if (ret >= size) {
 				TS_LOG_ERR("%s:fw name buffer out of range, ret=%d\n",
-					__func__, ret);
+					GET_FIRMWARE_NAME, ret);
 				return -ENOMEM;
 			}
 		} else {
 			ret = snprintf(fw_name, size, "ts/%s%s_", product_name, project_id);
 			if (ret >= size) {
 				TS_LOG_ERR("%s:fw name buffer out of range, ret=%d\n",
-					__func__, ret);
+					GET_FIRMWARE_NAME, ret);
 				return -ENOMEM;
 			}
 		}
@@ -1850,12 +2080,12 @@ static int focal_get_firmware_name(
 			product_name, project_id, vendor_name);
 		if (ret >= size) {
 			TS_LOG_ERR("%s:fw name buffer out of range, ret=%d\n",
-				__func__, ret);
+				GET_FIRMWARE_NAME, ret);
 			return -ENOMEM;
 		}
 	}
 
-	TS_LOG_ERR("%s:fw name:%s\n", __func__, fw_name);
+	TS_LOG_ERR("%s:fw name:%s\n", GET_FIRMWARE_NAME, fw_name);
 
 	return 0;
 }
@@ -1954,10 +2184,11 @@ int focal_firmware_auto_update(
 	struct device *dev = NULL;
 	const struct firmware *fw = NULL;
 
-        if (NULL == focal_pdata->focal_platform_dev) {
-            TS_LOG_ERR("%s: get focal_pdata->focal_platform_dev is NULL\n",__func__);
-            goto fw_release_flag;
-        }
+	if (NULL == focal_pdata->focal_platform_dev) {
+		TS_LOG_ERR("%s: get focal_pdata->focal_platform_dev is NULL\n",
+			FIRMWARE_AUTO_UPDATA);
+		goto fw_release_flag;
+	}
 	dev = &focal_pdata->focal_platform_dev->dev;
 
 	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
@@ -1969,7 +2200,7 @@ int focal_firmware_auto_update(
 		product_name, fw_name, FTS_FW_NAME_LEN);
 	if (ret) {
 		TS_LOG_ERR("%s:get firmware name fail, ret=%d\n",
-			__func__, ret);
+			FIRMWARE_AUTO_UPDATA, ret);
 		goto fw_release_flag;
 	}
 
@@ -1977,22 +2208,24 @@ int focal_firmware_auto_update(
 	ret = request_firmware(&fw, fw_name, dev);
 	if (ret != 0) {
 		TS_LOG_ERR("%s:firmware request fail, ret=%d, fw_name=%s\n",
-			__func__, ret, fw_name);
+			FIRMWARE_AUTO_UPDATA, ret, fw_name);
 		ret = 0;
 		goto fw_release_flag;
 	}
 
-	if(true == g_focal_dev_data->need_wd_check_status){
+	if (true == g_focal_dev_data->need_wd_check_status)
 		focal_esdcheck_set_upgrade_flag(true);
-	}		
+
 
 	/* 3. compare firmware version */
 	ret = focal_check_firmware_version(focal_pdata, fw);
 	if (!ret) {
-		TS_LOG_INFO("%s:no need to update firmware\n", __func__);
+		TS_LOG_INFO("%s:no need to update firmware\n",
+			FIRMWARE_AUTO_UPDATA);
 		goto release_fw;
 	} else {
-		TS_LOG_INFO("%s:going to update firmware\n", __func__);
+		TS_LOG_INFO("%s:going to update firmware\n",
+			FIRMWARE_AUTO_UPDATA);
 	}
 
 	/* 4. firmware update */
@@ -2006,7 +2239,8 @@ int focal_firmware_auto_update(
 		ret = focal_firmware_update_spi(focal_pdata, fw->data, fw->size);
 }
 	if (ret) {
-		TS_LOG_ERR("%s:firmware update fail, ret=%d\n",	__func__, ret);
+		TS_LOG_ERR("%s:firmware update fail, ret=%d\n",
+			FIRMWARE_AUTO_UPDATA, ret);
 
 		goto release_fw;
 	}
@@ -2014,7 +2248,7 @@ int focal_firmware_auto_update(
 	ret = focal_get_ic_firmware_version(&fw_ver);
 	if (ret) {
 		TS_LOG_ERR("%s:get firmware version fail, ret=%d\n",
-			__func__, ret);
+			FIRMWARE_AUTO_UPDATA, ret);
 		goto release_fw;
 	} else {
 		focal_pdata->fw_ver = fw_ver;
@@ -2274,6 +2508,7 @@ int focal_read_chip_id_(u32 *chip_id)
 	int ret = 0;
 	u8 cmd[4] = {0};
 	u8 reg_val[2] = {0, 0};
+	int cmd_len = 4;
 
 	if (NULL == chip_id)
 		return -ENOMEM;
@@ -2283,7 +2518,10 @@ int focal_read_chip_id_(u32 *chip_id)
 	cmd[2] = 0x00;
 	cmd[3] = 0x00;
 
-	ret = focal_read(cmd, 4, reg_val, 2);
+	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+		cmd_len = 1;
+
+	ret = focal_read(cmd, cmd_len, reg_val, 2);
 	if (ret) {
 		TS_LOG_ERR("%s:read chip id fail, ret=%d\n", __func__, ret);
 		return ret;
@@ -2554,6 +2792,46 @@ int focal_read_project_id_from_app(u8 *project_id_out, size_t size)
 	return 0;
 }
 
+int fts_enter_test_environment(bool test_flag)
+{
+	int ret;
+	const u8 *fw_data = NULL;
+	char fw_name[FTS_FW_NAME_LEN] = {0};
+	struct device *dev = NULL;
+	const struct firmware *fw = NULL;
+	u32 fw_len;
+
+	dev = &g_focal_pdata->focal_platform_dev->dev;
+	ret = focal_get_firmware_name(g_focal_pdata,
+		g_focal_pdata->fw_name, fw_name, FTS_FW_NAME_LEN);
+	if (ret) {
+		TS_LOG_ERR("get firmware name fail, ret=%d\n", ret);
+		return ret;
+	}
+	ret = request_firmware(&fw, fw_name, dev);
+	if (ret != 0) {
+		TS_LOG_ERR("firmware request fail, ret=%d, fw_name=%s\n",
+			ret, fw_name);
+		return ret;
+	}
+	if (test_flag) {
+		fw_data = fw->data + (88 * 1024);
+		fw_len = fw->size - (88 * 1024);
+	} else {
+		fw_data = fw->data;
+		fw_len = fw->size;
+	}
+	ret = focal_firmware_update_spi(g_focal_pdata, fw_data, fw_len);
+	if (ret) {
+		TS_LOG_ERR("firmware_update_spi fail, ret = %d\n", ret);
+		goto release_fw;
+	}
+release_fw:
+	release_firmware(fw);
+	fw = NULL;
+	return ret;
+}
+
 static void str_low(char *str)
 {
 	unsigned int i=0;
@@ -2662,6 +2940,35 @@ int focal_read_tp_color(
 	return is_read_tp_color_success;
 }
 
+int touch_driver_get_tpcolor_from_reg(void)
+{
+	int ret;
+	u8 color_id;
+
+	ret = focal_write_reg(FTS_WORK_MODE_ADDR, FTS_FACTORY_MODE_VALUE);
+	if (ret) {
+		TS_LOG_ERR("%s:enter factory mode fail\n", __func__);
+		goto exit;
+	}
+	mdelay(1); /* delay one msec */
+	ret = focal_read_reg(FTS_COLOR_ID_ADDR, &color_id);
+	if (ret) {
+		TS_LOG_ERR("%s:read color id fail, color_id = %d\n",
+			__func__, color_id);
+		goto exit;
+	}
+	cypress_ts_kit_color[DATA_0] = color_id;
+	TS_LOG_INFO("%s: color_id = 0X%x\n", __func__, color_id);
+exit:
+	focal_enter_work_model();
+	ret = focal_enter_work_model_by_hardware();
+	if (ret)
+		TS_LOG_INFO("%s: enter work mode by hardward fail\n",
+			__func__);
+
+	return ret;
+}
+
 /*
  * name: focal_read_project_id_from_pram
  *
@@ -2684,6 +2991,7 @@ int focal_read_project_id_from_pram(
 	u32 i = 0;
 	u8 cmd[4] = {0};
 	u8 reg_val[FTS_PROJECT_ID_LEN] = {0};
+
 
 	if (true == focal_pdata->focal_device_data->is_in_cell)
        {
@@ -2836,6 +3144,16 @@ int focal_read_project_id_from_rom(
 
 #define READ_PROJECT_FROM_APP
 #define TP_PROJECTID_OFFSET 9
+
+static int read_projectid_from_lcd(char *project_id, size_t size)
+{
+	int retval = NO_ERR;
+
+	retval = hostprocessing_get_project_id(project_id);
+	TS_LOG_INFO("%s:project_id = %s\n", __func__, project_id);
+	return retval;
+}
+
 int focal_read_project_id(
 	struct focal_platform_data *focal_pdata,
 	char *project_id,
@@ -2844,25 +3162,29 @@ int focal_read_project_id(
 	int ret = NO_ERR;
 	if (project_id == NULL) {
 		TS_LOG_ERR("%s:read project id fail null, \n",
-			__func__);
+			READ_PROJECT_ID);
 		return -EINVAL;
 	}
 	memset(project_id, 0, size + 1);
 	if (TS_BUS_I2C == focal_pdata->focal_device_data->ts_platform_data->bops->btype) {
 		ret = focal_read_project_id_from_pram(focal_pdata, project_id, size);
 	} else {
-		ret = focal_read_project_id_from_rom(focal_pdata, project_id, size);
+		if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+			ret = read_projectid_from_lcd(project_id, size);
+		else
+			ret = focal_read_project_id_from_rom(focal_pdata,
+				project_id, size);
 	}
 	if (ret) {
 		TS_LOG_ERR("%s:read project id from pram fail, ret=%d\n",
-			__func__, ret);
+			READ_PROJECT_ID, ret);
 		return -EINVAL;
 	} else {
-		TS_LOG_INFO("%s:read project id from pram success\n", __func__);
+		TS_LOG_INFO("%s:read project id from pram success\n", READ_PROJECT_ID);
 	}
 	if(g_focal_pdata->projectid_length_control_flag){
 		project_id[TP_PROJECTID_OFFSET] = '\0';
-		TS_LOG_INFO("%s:change proeject_id[%s] sucess\n",__func__, project_id);
+		TS_LOG_INFO("%s:change proeject_id[%s] sucess\n", READ_PROJECT_ID, project_id);
 	}
 	return NO_ERR;
 }

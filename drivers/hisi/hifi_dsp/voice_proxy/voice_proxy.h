@@ -40,9 +40,6 @@
 #endif
 #include <linux/of.h>
 
-#include <asm/memory.h>
-#include <asm/types.h>
-
 #include "drv_mailbox_cfg.h"
 #include "audio_hifi.h"
 #include "audio_log.h"

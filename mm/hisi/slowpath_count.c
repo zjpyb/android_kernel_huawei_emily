@@ -1,4 +1,4 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
+/* Copyright (c) Hisilicon Technologies Co., Ltd.2016-2019. All rights reserved.
  * FileName: slowpath_count.c
  * Description: count front and visible app into slow path page_alloc times.
  * This program is free software; you can redistribute it
@@ -45,7 +45,6 @@ static int is_background(void)
 	adj = current->signal->oom_score_adj;
 	mm = current->mm;
 	uid = current_uid();
-
 	if (!mm || uid_lt(uid, FIRST_APP_UID) || uid_gt(uid, LAST_APP_UID))
 		return 1;
 	if (adj != VISIBLE_APP_ADJ && adj != FOREGROUND_APP_ADJ)
@@ -76,7 +75,7 @@ void pgalloc_count_inc(bool is_slowpath, unsigned int order)
 			pr_err("enter slow path page alloc,order=%u\n", order);
 		}
 
-		/*sum up all the order larger than 4-order as one*/
+		/* sum up all the order larger than 4-order as one */
 		if (order > ORDER_LIMIT - 1)
 			order = ORDER_LIMIT - 1;
 		atomic_long_inc(&slowpath_pgalloc_count[order]);

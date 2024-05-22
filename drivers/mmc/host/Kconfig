@@ -140,6 +140,28 @@ config MMC_SDHCI_OF_ARASAN
 
 	  If unsure, say N.
 
+config MMC_SDHCI_HISI_SCORPIO
+	tristate "SDHCI OF support for the hisi SDHCI controllers"
+	depends on MMC_SDHCI_PLTFM
+	depends on OF
+	depends on COMMON_CLK
+	help
+	  This selects the Arasan Secure Digital Host Controller Interface
+	  (SDHCI). This hardware is found e.g. in Xilinx' Zynq SoC.
+
+	  If you have a controller with this interface, say Y or M here.
+
+	  If unsure, say N.
+
+config MMC_SDHCI_MUX_SDSIM
+	tristate "SDHCI MUX SDSIM supoort"
+	depends on MMC_SDHCI_PLTFM
+	default n
+	help
+	  this select supoort for sdhci controller for sd/sim
+
+	  If unsure, say N.
+
 config MMC_SDHCI_OF_AT91
 	tristate "SDHCI OF support for the Atmel SDMMC controller"
 	depends on MMC_SDHCI_PLTFM
@@ -925,7 +947,7 @@ config MMC_BCM2835
 
 config MMC_CQ_HCI
 	tristate "Command Queue Support"
-	depends on HAS_DMA && HISI_MMC
+	depends on HAS_DMA && ZODIAC_MMC
 	help
 	  This selects the Command Queue Host Controller Interface (CQHCI)
 	  support present in host controllers of Qualcomm Technologies, Inc
@@ -936,13 +958,19 @@ config MMC_CQ_HCI
 
 	  If unsure, say N.
 
-config MMC_HISI_TRACE
-	tristate "hisi mmc trace"
-	depends on HISI_MMC
+config MMC_MQ_CQ_HCI
+        tristate "Command Queue Support mq"
+        depends on MAS_BLK
 	default n
-	help
-	  This selects support the hisi mmc trace.
+        help
+          This selects the Command Queue Host Controller Interface (CQHCI)
+          support present in host controllers of Qualcomm Technologies, Inc
+          amongst others.
+          This controller supports eMMC devices with command queue support.
 
+          If you have a controller with this interface, say Y or M here.
+
+          If unsure, say N.
 
 config MMC_MTK
 	tristate "MediaTek SD/MMC Card Interface support"
@@ -956,7 +984,7 @@ config MMC_MTK
 config MMC_SDHCI_DWC_MSHC
 	tristate "SDHCI OF support for the Synopsys controllers"
 	depends on MMC_SDHCI_PLTFM
-	depends on HISI_MMC
+	depends on ZODIAC_MMC
 	help
 	  This selects Synopsys DesignWare Cores Mobile Storage Host
 	  Controller(SDHCI protocol compliance). This hardware is found
@@ -1011,7 +1039,7 @@ config MMC_SDHCI_XENON
 
 config EMMC_FAULT_INJECT
 	tristate "eMMC Fault Inject"
-	depends on FAULT_INJECTION && FAULT_INJECTION_DEBUG_FS
+	depends on FAULT_INJECTION_DEBUG_FS
 	help
 	  The infrastructure can be used for debugging the driver from user space
 	  by injecting fault to the driver.

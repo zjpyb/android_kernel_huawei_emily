@@ -3,7 +3,7 @@
  *
  * gpio based for otgid driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,6 +18,10 @@
 
 #ifndef _HW_OTG_ID_
 #define _HW_OTG_ID_
+
+#include <chipset_common/hwpower/common_module/power_dts.h>
+#include <huawei_platform/log/hw_log.h>
+#include <pmic_interface.h>
 
 #ifdef CONFIG_DEC_USB
 #include "dwc_otg_dec.h"

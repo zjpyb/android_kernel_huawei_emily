@@ -57,7 +57,7 @@ static void mmonitor_clear_events(void)
 	get_online_cpus();
 	for_each_online_cpu(cpu) {
 #ifdef CONFIG_VM_EVENT_COUNTERS
-		struct vm_event_state *this;
+		struct vm_event_state *this = NULL;
 #endif
 		struct mmonitor_event_state *s =
 			&per_cpu(mmonitor_event_states, cpu);
@@ -78,8 +78,8 @@ static void mmonitor_clear_events(void)
 
 static int mmonitor_show(struct seq_file *s, void *data)
 {
-	unsigned long *mmonitor_buf;
-	unsigned long *vm_buf;
+	unsigned long *mmonitor_buf = NULL;
+	unsigned long *vm_buf = NULL;
 
 	if ((!enable) || (BETA_USER != get_logusertype_flag())) {
 		seq_printf(s, "MMONITOR NOT SUPPORT\n");

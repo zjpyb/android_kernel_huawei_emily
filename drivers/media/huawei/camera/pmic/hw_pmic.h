@@ -31,6 +31,9 @@
 #include <linux/kthread.h>
 #include <linux/interrupt.h>
 #include <linux/of_gpio.h>
+#include <linux/pm_wakeup.h>
+#include <linux/time.h>
+#include <linux/workqueue.h>
 #include <huawei_platform/sensor/hw_comm_pmic.h>
 
 #define DEFINE_HISI_PMIC_MUTEX(name) \
@@ -55,7 +58,8 @@ struct pmic_cfg_data;
 #define CFG_PMIC_POWER_OFF		2
 #define BUCK_REG_MAX			90
 #define LDO_REG_MAX			66
-
+#define PMIC_ENABLE_CNT                 1
+#define PMIC_DISABLE_CNT                0
 /********************** pmic controler struct define **********************/
 struct hisi_pmic_info {
 	const char *name;
@@ -66,6 +70,7 @@ struct hisi_pmic_info {
 	unsigned int flag;
 	int mutex_flag;
 	unsigned int boost_en_pin;
+	unsigned int fault_check;
 };
 
 struct hisi_pmic_ctrl_t;
@@ -82,6 +87,12 @@ struct hisi_pmic_fn_t {
 	int (*pmic_seq_config)(struct hisi_pmic_ctrl_t *, pmic_seq_index_t, u32, int);
 	int (*pmic_register_attribute)(struct hisi_pmic_ctrl_t *, struct device *);
 	int (*pmic_check_exception)(struct hisi_pmic_ctrl_t *);
+	int (*pmic_ldo_vote_cfg)(struct hisi_pmic_ctrl_t *,
+		pmic_seq_index_t, u32, int);
+	int (*pmic_buck_vote_cfg)(struct hisi_pmic_ctrl_t *,
+		pmic_seq_index_t, u32, int);
+	int (*pmic_set_boost_load_enable)(struct hisi_pmic_ctrl_t *, int);
+	int (*pmic_force_pwm_mode)(struct hisi_pmic_ctrl_t *, int);
 };
 
 struct hisi_pmic_i2c_client {
@@ -105,6 +116,13 @@ struct hisi_pmic_ctrl_t {
 	struct hisi_pmic_i2c_client *pmic_i2c_client;
 	struct hisi_pmic_info pmic_info;
 	void *pdata;
+	struct delayed_work pmic_err_work;
+};
+
+struct irq_err_monitor {
+	struct timeval now;
+	struct timeval last_time;
+	long irq_time;
 };
 
 /********************* cfg data define ************************************/
@@ -133,6 +151,13 @@ struct hisi_pmic_ctrl_t * hisi_get_pmic_ctrl(void);
 int pmic_enable_boost(int value);
 int pmic_ctl_otg_onoff(bool on_off);
 void hisi_pmic_release_intr(struct hisi_pmic_ctrl_t *pmic_ctrl);
+void irq_err_time_reset(struct irq_err_monitor *irq_err);
+void pmic_fault_reset_check(struct hisi_pmic_ctrl_t *pmic_ctrl,
+	struct irq_err_monitor *irq_err, unsigned int latch_time,
+	const unsigned int sche_work_time);
 int hisi_pmic_setup_intr(struct hisi_pmic_ctrl_t *pmic_ctrl);
 int hisi_pmic_gpio_boost_enable(struct hisi_pmic_ctrl_t *pmic_ctrl, int state);
+int hisi_pmic_ldo_vote(struct hisi_pmic_ctrl_t *, pmic_seq_index_t, u32, int);
+int hisi_pmic_buck_vote(struct hisi_pmic_ctrl_t *, pmic_seq_index_t, u32, int);
+int hisi_pmic_vote_cfg(struct hisi_pmic_ctrl_t *, pmic_seq_index_t, u32, int);
 #endif

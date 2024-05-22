@@ -40,6 +40,8 @@
 #include "himax_platform.h"
 #include <linux/regulator/consumer.h>
 #include <dsm/dsm_pub.h>
+#include <linux/debugfs.h>
+#include <linux/stat.h>
 #include "huawei_ts_kit.h"
 
 #if defined(CONFIG_FB)
@@ -64,6 +66,12 @@
 #define SMWP_ON 1
 #define SMWP_OFF 0
 #define GLOVE_EN 1
+#define FUNC_EN 1
+#define FUNC_DIS 0
+#define HX_DDREG_FORMAT 0x30000000
+#define HX_DDREG_REG_IDX 12
+#define HX_DDREG_BANK_IDX 8
+#define RAWDATA_NUM_OF_TRX_MAX 100
 //use for write/read register
 #define CRC_LEN 							0x0099
 #define RESERVED_VALUE					0x00
@@ -147,7 +155,30 @@
 #define ADDR_HAND_SHAKING_HX83112 			0x10007F18
 #define ADDR_STP_HNDSHKG 0x10000000
 #define ADDR_HW_STST_CHK 0x900000E4
+#define ADDR_DIAG_REG_SET_HX83102E 0x100072EC
+#define ADDR_RESET_ADC 0x80020094
+#define DATA_RESET_ADC 0x00000001
+#define ADDR_HAND_SHAKING_HX83102E 0x10007F18
+#define ADDR_DD_OSC_HX83102 0x9000009C
+#define DATA_DD_OSC_HX83102_EN 0x000000DD
+#define ADDR_DD_PW_HX83102 0x90000280
+#define DATA_DD_PW_HX83102_EN 0x000000A5
+#define ADDR_DD_ICID_HX83102 0xB9
+#define ADDR_DD_ICID_DETAIL_HX83102 0xC3
+#define ADDR_DD_PEN_EN_HX83102 0xD1
+#define DATA_IC_INFO_COMMON_HX83102_0 0x2E
+#define DATA_IC_INFO_COMMON_HX83102_1 0x00
+#define DATA_IC_INFO_COMMON_HX83102_2 0x50
+#define DATA_IC_INFO_SP_HX83102_0 0x27
+#define DATA_IC_INFO_SP_HX83102_1 0x77
+#define DATA_IC_INFO_SP_HX83102_2 0x7F
+#define DATA_IC_INFO_SP_HX83102_2A 0x40
 /* change for hx83112 end*/
+#define ADDR_VEN_CFG_VER_HX83102E 0x10007086
+#define ADDR_VEN_CID_VER_HX83102E 0x10007002
+#define ADDR_VEN_FW_VER_HX83102E 0x10007005
+#define ADDR_VEN_TP_INFO_HX83102E 0x100070f6
+#define ADDR_TCON_RST_HX83102E 0x80020004
 #define DATA_HAND_SHAKING 			0x00006AA6
 #define ADDR_SET_CRITERIA 			0x10007F1C
 #define DATA_SET_IIR_FRM 			0x00000190
@@ -173,7 +204,7 @@
 #define IDX_PKG_NUM	2
 
 #define ENTER_SAVE_MODE 	0x0C
-#define NOR_READ_LENTH 	128
+#define NOR_READ_LENGTH 128
 #define MAX_READ_LENTH 	256
 #define NODE_DD_DEBUG_MAX_LEN 20
 #define FW_VENDOR_MAX_STR_LEN 128
@@ -186,6 +217,9 @@
 //#define STR_IC_NAME "hx83102b"
 //#define MODULE_NAME "hlt"
 //#define PRODUCE_ID "lodn67260"
+#define HIMAX_TPCOLOR_LEN 2
+#define HIMAX_ACTUAL_PROJECTID_LEN 9
+#define TP_COLOR_SIZE 15
 #define TS_WAKE_LOCK_TIMEOUT 5*HZ
 #define FLASH_DUMP_FILE "/data/user/Flash_Dump.bin"
 #define HX_FW_NAME "ts/touch_screen_firmware.bin"
@@ -230,6 +264,51 @@
 #define GEST_PTLG_HDR_ID2   			 0x44
 #define GEST_PT_MAX_NUM     			 128
 #define IS_APP_ENABLE_GESTURE(x)  ((u32)(1<<x))
+#define CRC_ADDR 0x80050020
+#define LEFT_MOV_8BIT 8
+#define LEFT_MOV_16BIT 16
+#define LEFT_MOV_24BIT 24
+#define RIGHT_MOV_8BIT 8
+#define RIGHT_MOV_16BIT 16
+#define RIGHT_MOV_24BIT 24
+#define HEX_ONE_HUNDRED 0x100
+#define HEX_ONE_MILLION 0x1000000
+#define SHIFT_NUM 256
+#define HEX_NUM0 0x00
+#define HEX_NUM1 0x01
+#define HEX_NUM2 0x02
+#define HEX_NUM3 0x03
+#define HEX_NUM4 0x04
+#define TMP_DATA0 0x00
+#define TMP_DATA1 0x99
+#define TMP_ADDR_DEF0 0xE4
+#define TP_INF_DATA_0 0xA3
+#define TP_INF_DATA_1 0x3A
+#define TP_INF_DATA_4 0xC0
+#define TP_INF_DATA_5 0x72
+#define CNT 100
+#define SENSE_ON_0 0x00
+#define SENSE_ON_1 0x01
+#define SET_ON 1
+#define SET_OFF 0
+#define DATA_SIZE 64
+#define RETRY_TIMES 200
+#define ADDR_AC_SWITCH_HX83102 0x10007F38
+#define DATA_SET_AC_ON 0xA55AA55A
+#define DATA_SET_AC_OFF 0x00000000
+#define ADDR_ESD_STATUS_HX83102E 0x10007fe4
+
+enum data_num {
+	DATA_0 = 0,
+	DATA_1,
+	DATA_2,
+	DATA_3,
+	DATA_4,
+	DATA_5,
+	DATA_6,
+	DATA_7,
+	DATA_8,
+};
 
 enum himax_hand_shaking_result{
 	HX_HAND_SHAKING_RUNNING=0,
@@ -279,6 +358,14 @@ R44:
 #define	HX83102_XY_REVERSE			false
 #define	HX83102_INT_IS_EDGE			false
 
+#define HX83102E_RX_NUM 22
+#define HX83102E_TX_NUM 36
+#define HX83102E_BT_NUM 0
+#define HX83102E_X_RES 800
+#define HX83102E_Y_RES 1200
+#define HX83102E_MAX_PT 10
+#define HX83102E_XY_REVERSE false
+#define HX83102E_INT_IS_EDGE false
 #define	HX83112_RX_NUM				36
 #define	HX83112_TX_NUM	 			18
 #define	HX83112_BT_NUM				0
@@ -290,6 +377,8 @@ R44:
 
 #define MUTUL_NUM_HX83102 (HX83102_RX_NUM * HX83102_TX_NUM)
 #define SELF_NUM_HX83102 (HX83102_RX_NUM + HX83102_TX_NUM)
+#define MUTUL_NUM_HX83102E (HX83102E_RX_NUM * HX83102E_TX_NUM)
+#define SELF_NUM_HX83102E (HX83102E_RX_NUM + HX83102E_TX_NUM)
 #define MUTUL_NUM_HX83112 (HX83112_RX_NUM * HX83112_TX_NUM)
 #define SELF_NUM_HX83112 (HX83112_RX_NUM + HX83112_TX_NUM)
 
@@ -320,10 +409,15 @@ R44:
 #define HX_83110B_SERIES_PWON		12
 #define HX_83111B_SERIES_PWON		13
 #define HX_83112A_SERIES_PWON		14
+#define HX_83102E_SERIES_PWON 15
 /* change for hx83112 start*/
 #define HX_83102_ID_PART_1		0x83
 #define HX_83102_ID_PART_2		0x10
 #define HX_83102_ID_PART_3		0x2B
+
+#define HX_83102E_ID_PART_1 0x83
+#define HX_83102E_ID_PART_2 0x10
+#define HX_83102E_ID_PART_3 0x2E
 
 #define HX_83112_ID_PART_1		0x83
 #define HX_83112_ID_PART_2		0x11
@@ -435,7 +529,7 @@ struct himax_ts_data {
 	int vendor_cid_min_ver;
 	int vendor_panel_ver;
 	int vendor_sensor_id;
-
+	u32 esd_palm_iron_support;
 	uint8_t power_support;
 	uint8_t rst_support;
 	uint8_t re_send_cmd_support;
@@ -495,7 +589,10 @@ struct himax_ts_data {
 	struct work_struct work;
 //========
 	char project_id[MAX_STR_LEN];
+	char color_id[HIMAX_TPCOLOR_LEN];
 	char module_vendor[MAX_STR_LEN];
+	uint8_t support_get_tp_color; /* for tp color */
+	uint8_t support_read_projectid;
 	bool firmware_updating;
 	unsigned char roi_data[ROI_DATA_READ_LENGTH];
 
@@ -566,6 +663,9 @@ enum himax_event_id {
 	HIMAX_EV_LIFTOFF,
 };
 
+static int touch_driver_get_projectid_color(struct himax_ts_data *ts);
+void himax_nc_sense_on(uint8_t FlashMode);
+void touch_driver_sense_on(uint8_t flashmode);
 #if defined(CONFIG_TOUCHSCREEN_HIMAX_DEBUG)
 
 	extern uint8_t hx_nc_diag_coor[HX_RECEIVE_BUF_MAX_SIZE];
@@ -622,9 +722,10 @@ extern unsigned long CID_VER_MIN_FLASH_LENG;
 
 extern unsigned char IC_NC_CHECKSUM;
 extern unsigned char IC_NC_TYPE;
-
+extern u8 cypress_ts_kit_color[TP_COLOR_SIZE];
 extern int self_test_nc_flag;
 extern atomic_t hmx_nc_mmi_test_status;
+extern struct ts_kit_platform_data g_ts_kit_platform_data;
 
 //for update test
 extern unsigned int   HX_NC_UPDATE_FLAG;
@@ -656,4 +757,5 @@ extern void himax_nc_ts_diag_work_func(struct work_struct *work);
 void himax_nc_interface_on(void);
 extern int himax_rw_reg_reformat(int reg_data,  uint8_t *data_buf );
 extern int himax_rw_reg_reformat_com(int reg_addr, int reg_data, uint8_t *addr_buf, uint8_t *data_buf );
+static int himax_charger_switch(struct ts_charger_info *info);
 #endif

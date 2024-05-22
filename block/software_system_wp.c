@@ -37,7 +37,11 @@
 
 #include <linux/proc_fs.h>
 
-/*  system write protect flag, 0: disable(default) 1:enable */
+#define COUNT_BOUNDARY  2
+#define BASE_NUM        10
+#define MODE_NUM        0640
+
+/* system write protect flag, 0:disable(default) 1:enable */
 static int *ro_secure_debuggable;
 
 static char *protected_partitions[] = {
@@ -63,22 +67,22 @@ int blk_set_ro_secure_debuggable(int state)
 }
 EXPORT_SYMBOL(blk_set_ro_secure_debuggable);
 
-static inline char *fastboot_lock_str(void)
+static char *fastboot_lock_str(void)
 {
 	if (strstr(saved_command_line, "fblock=locked") ||
-			strstr(saved_command_line, "userlock=locked"))
+		strstr(saved_command_line, "userlock=locked"))
 		return "locked";
 	else
 		return "unlock";
 }
 
-static inline int is_protected_partition(const char *name)
+static int is_protected_partition(const char *name)
 {
 	int i;
 
 	for (i = 0; protected_partitions[i]; i++) {
 		if (!strncmp(name, protected_partitions[i],
-					strlen(protected_partitions[i]) + 1)) {
+			strlen(protected_partitions[i]) + 1)) {
 			return 1;
 		}
 	}
@@ -88,9 +92,11 @@ static inline int is_protected_partition(const char *name)
 
 static void bio_endio_compat(struct bio *bio, int error)
 {
+	/* kernel version number: 4-major, 14-minor, 0-release */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	bio->bi_status = errno_to_blk_status(error);
 	bio_endio(bio);
+	/* kernel version number: 4-major, 3-minor, 0-release */
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 3, 0)
 	bio->bi_error = error;
 	bio_endio(bio);
@@ -117,24 +123,25 @@ int should_trap_this_bio(int rw, struct bio *bio, unsigned int count)
 	if (likely(!is_protected_partition(name)))
 		return 0;
 
-	if ((NULL == ro_secure_debuggable) || (0 == *ro_secure_debuggable))
+	if ((ro_secure_debuggable == NULL) || (*ro_secure_debuggable == 0))
 		return 0;
 
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 	DSM_EMMC_LOG(NULL, DSM_SYSTEM_W_ERR,
 #else
-			printk(KERN_DEBUG
+	pr_debug(
 #endif
-				"[HW]:EXT4_ERR_CAPS:%s(%d)[Parent: %s(%d)]: %s block %llu on %s (%u sectors) %d %s.\n",
-				current->comm, task_pid_nr(current),
-				current->parent->comm,
-				task_pid_nr(current->parent),
-				(rw & WRITE) ? "WRITE" : "READ",
-				(u64)bio->bi_iter.bi_sector,
-				name,
-				count,
-				*ro_secure_debuggable,
-				fastboot_lock_str());
+		"[HW]:EXT4_ERR_CAPS:%s %d[Parent: %s %d]: %s block %llu on %s (%u sectors) %d %s\n",
+		current->comm,
+		task_pid_nr(current),
+		current->parent->comm,
+		task_pid_nr(current->parent),
+		(rw & WRITE) ? "WRITE" : "READ",
+		(u64)bio->bi_iter.bi_sector,
+		name,
+		count,
+		*ro_secure_debuggable,
+		fastboot_lock_str());
 
 	bio_endio_compat(bio, -EIO);
 	return 1;
@@ -143,6 +150,7 @@ EXPORT_SYMBOL(should_trap_this_bio);
 
 static int syswp_proc_show(struct seq_file *m, void *v)
 {
+	/* kernel version number: 4-major, 3-minor, 0-release */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0))
 	return seq_printf(m, "%d\n", *ro_secure_debuggable);
 #else
@@ -157,14 +165,14 @@ static int syswp_proc_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t syswp_proc_write(struct file *file, const char *buf,
-		size_t count, loff_t *pos)
+	size_t count, loff_t *pos)
 {
 	int ret, value;
 
-	if ((count <= 0) || (count > 2))
+	if ((count <= 0) || (count > COUNT_BOUNDARY))
 		return -EINVAL;
 
-	ret = kstrtoint_from_user(buf, count, 10, &value);
+	ret = kstrtoint_from_user(buf, count, BASE_NUM, &value);
 	if (ret)
 		return ret;
 
@@ -191,9 +199,8 @@ int __init ro_secure_debuggable_init(void)
 	if (!ro_secure_debuggable)
 		ro_secure_debuggable = &ro_secure_debuggable_static;
 
-
-	ent = proc_create_data("sys_wp_soft", 0640,
-			NULL, &syswp_proc_fops, NULL);
+	ent = proc_create_data("sys_wp_soft", MODE_NUM,
+		NULL, &syswp_proc_fops, NULL);
 	if (!ent)
 		return -1;
 

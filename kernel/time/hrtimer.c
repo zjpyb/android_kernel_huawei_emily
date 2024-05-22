@@ -866,7 +866,7 @@ static int enqueue_hrtimer(struct hrtimer *timer,
 
 	base->cpu_base->active_bases |= 1 << base->index;
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	timer->state |= HRTIMER_STATE_ENQUEUED;
 #else
 	timer->state = HRTIMER_STATE_ENQUEUED;
@@ -892,7 +892,7 @@ static void __remove_hrtimer(struct hrtimer *timer,
 	struct hrtimer_cpu_base *cpu_base = base->cpu_base;
 	u8 state = timer->state;
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	/*
 	* We need to preserve PINNED state here, otherwise we may end up
 	* migrating pinned hrtimers as well.
@@ -946,7 +946,7 @@ remove_hrtimer(struct hrtimer *timer, struct hrtimer_clock_base *base, bool rest
 			state = HRTIMER_STATE_INACTIVE;
 
 		__remove_hrtimer(timer, base, state, reprogram);
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 		timer->state &= ~HRTIMER_STATE_PINNED;
 #endif
 		return 1;
@@ -1004,7 +1004,7 @@ void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	memcpy(timer->comm, current->comm, TASK_COMM_LEN);
 	timer->pid = current->pid;
 #endif
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	/* Update pinned state */
 	timer->state &= ~HRTIMER_STATE_PINNED;
 	if (mode & HRTIMER_MODE_PINNED)
@@ -1219,7 +1219,7 @@ bool hrtimer_active(const struct hrtimer *timer)
 		cpu_base = READ_ONCE(timer->base->cpu_base);
 		seq = raw_read_seqcount_begin(&cpu_base->seq);
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 		if ((timer->state & HRTIMER_STATE_ENQUEUED) ||
 #else
 		if (timer->state != HRTIMER_STATE_INACTIVE ||
@@ -1678,7 +1678,7 @@ int hrtimers_prepare_cpu(unsigned int cpu)
 	return 0;
 }
 
-#if defined(CONFIG_HISI_CPU_ISOLATION)
+#if defined(CONFIG_CPU_ISOLATION_OPT)
 static void migrate_hrtimer_list(struct hrtimer_clock_base *old_base,
 				 struct hrtimer_clock_base *new_base,
 				 bool remove_pinned)

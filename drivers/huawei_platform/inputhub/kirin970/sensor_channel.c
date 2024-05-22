@@ -140,8 +140,8 @@ static bool ap_sensor_flush(int tag)
 		event.type = tag_to_hal_sensor_type[TAG_FLUSH_META];
 		event.length = 4;
 		event.value[0] = tag_to_hal_sensor_type[tag];
-		return inputhub_route_write_batch(ROUTE_SHB_PORT,
-						  (char *)&event, event.length + OFFSET_OF_END_MEM(struct sensor_data, length), 0);
+		return inputhub_route_write_batch(ROUTE_SHB_PORT, (char *)&event,
+			event.length + OFFSET_OF_END_MEM(struct sensor_data, length), 0);
 	}
 
 	return work_on_ap;
@@ -149,7 +149,7 @@ static bool ap_sensor_flush(int tag)
 
 static int send_sensor_batch_flush_cmd(unsigned int cmd, struct ioctl_para *para, int tag)
 {
-	write_info_t winfo;
+	struct write_info winfo;
 	uint32_t subcmd = 0;
 
 	memset(&winfo, 0, sizeof(winfo));
@@ -217,7 +217,7 @@ static int send_sensor_cmd(unsigned int cmd, unsigned long arg)
 		if (tag == TAG_STEP_COUNTER)
 			return inputhub_sensor_enable_stepcounter(false, TYPE_STANDARD);
 		else
-	        	return inputhub_sensor_enable(tag, false);
+			return inputhub_sensor_enable(tag, false);
 	case SHB_IOCTL_APP_DELAY_SENSOR:
 		if(switch_sensor(tag, true)) {
 			if (tag == TAG_STEP_COUNTER)
@@ -277,150 +277,137 @@ Output:         无
 Return:         实际读取数据的长度
 *******************************************************************************************/
 static ssize_t shb_read(struct file *file, char __user *buf, size_t count,
-              loff_t *pos)
+	loff_t *pos)
 {
-    return inputhub_route_read(ROUTE_SHB_PORT,buf, count);
+	return inputhub_route_read(ROUTE_SHB_PORT,buf, count);
 }
 
 static ssize_t shb_write(struct file *file, const char __user *data,
-                        size_t len, loff_t *ppos)
+	size_t len, loff_t *ppos)
 {
-    hwlog_info("%s need to do...\n", __func__);
-    return len;
+	hwlog_info("%s need to do...\n", __func__);
+	return len;
 }
 static void get_acc_calibrate_data(void)
 {
-    int ret = 0;
-    if (0 == first_start_flag)
-    {
-        ret=send_gsensor_calibrate_data_to_mcu();
-        if(ret) hwlog_err( "get_acc_calibrate_data read from nv fail, ret=%d", ret);
-        else
-        {
-            hwlog_info("read nv success\n");
-        }
-    }
+	int ret = 0;
+	if (first_start_flag == 0) {
+		ret = send_gsensor_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err("get_acc_calibrate_data read from nv fail, ret=%d", ret);
+		else
+			hwlog_info("read nv success\n");
+	}
 }
 
 extern int send_vibrator_calibrate_data_to_mcu(void);
 static void get_vibrator_calibrate_data(void)
 {
-    int ret = 0;
-    static int vib_first_flag = 0;
-    if(0 == strlen(sensor_chip_info[VIBRATOR])){
-        return;
-    }
+	int ret = 0;
+	static int vib_first_flag = 0;
+	if (strlen(sensor_chip_info[VIBRATOR]) == 0)
+		return;
 
-    if (0 == vib_first_flag)
-    {
-        ret = send_vibrator_calibrate_data_to_mcu();
-        if(ret) {
-		hwlog_err( "%s read from nv fail, ret=%d", __func__, ret);
+
+	if (vib_first_flag == 0) {
+		ret = send_vibrator_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err( "%s read from nv fail, ret=%d", __func__, ret);
+		else
+			hwlog_info("%s read nv success\n", __func__);
+		vib_first_flag = 1;
 	}
-        else
-        {
-		hwlog_info("%s read nv success\n", __func__);
-        }
-	vib_first_flag = 1;
-    }
 }
 
 extern int send_mag_calibrate_data_to_mcu(void);
 static void get_mag_calibrate_data(void)
 {
-    int ret = 0;
-    static int mag_first_start_flag = 0;
-    if (0 == mag_first_start_flag)
-    {
-        mag_current_notify();
-        ret = send_mag_calibrate_data_to_mcu();
-        if (ret) {
-            hwlog_err("%s read mag data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
-        } else {
-            hwlog_info("%s read mag data from nv and send to iom3 success\n", __func__);
-        }
-        mag_first_start_flag = 1;
-    }
+	int ret = 0;
+	static int mag_first_start_flag = 0;
+	if (mag_first_start_flag == 0) {
+		mag_current_notify();
+		ret = send_mag_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err("%s read mag data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
+		else
+			hwlog_info("%s read mag data from nv and send to iom3 success\n", __func__);
+		mag_first_start_flag = 1;
+	}
 }
 
 extern int send_cap_prox_calibrate_data_to_mcu(void);
 static void get_cap_prox_calibrate_data(void)
 {
-    int ret = 0;
-    static int cap_prox_first_start_flag = 0;
-    if (0 == cap_prox_first_start_flag)
-    {
-        ret = send_cap_prox_calibrate_data_to_mcu();
-        if (ret) {
-            hwlog_err("%s read cap_prox data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
-        } else {
-            hwlog_info("%s read cap_prox data from nv and send to iom3 success\n", __func__);
-        }
-        cap_prox_first_start_flag = 1;
-    }
+	int ret = 0;
+	static int cap_prox_first_start_flag = 0;
+	if (cap_prox_first_start_flag == 0) {
+		ret = send_cap_prox_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err("%s read cap_prox data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
+		else
+			hwlog_info("%s read cap_prox data from nv and send to iom3 success\n", __func__);
+		cap_prox_first_start_flag = 1;
+	}
 }
 
 static void get_airpress_calibrate_data(void)
 {
-     int ret = 0;
-    static int airpress_first_start_flag = 0;
-    if(0 == strlen(sensor_chip_info[AIRPRESS])){
-        return;
-    }
-    if (0 == airpress_first_start_flag)
-    {
-        ret = send_airpress_calibrate_data_to_mcu();
-        if (ret) {
-            hwlog_err("%s read airpress data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
-        } else {
-            hwlog_info("%s read airpress data from nv and send to iom3 success\n", __func__);
-            airpress_first_start_flag = 1;
-        }
-    }
+	int ret = 0;
+	static int airpress_first_start_flag = 0;
+	if (strlen(sensor_chip_info[AIRPRESS]) == 0)
+		return;
+
+	if (airpress_first_start_flag == 0) {
+		ret = send_airpress_calibrate_data_to_mcu();
+		if (ret) {
+			hwlog_err("%s read airpress data from nv or send to iom3 failed, ret=%d\n", __func__, ret);
+		} else {
+			hwlog_info("%s read airpress data from nv and send to iom3 success\n", __func__);
+			airpress_first_start_flag = 1;
+		}
+	}
 }
 
 extern int send_ps_calibrate_data_to_mcu(void);
 extern int send_tof_calibrate_data_to_mcu(void);
 static void get_psensor_calibrate_data(void)
 {
-    int ret = 0;
-    if (0 == ps_first_start_flag &&  (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 || avago_apds9110_ps_flag == 1 
-		|| ams_tmd3725_ps_flag == 1 || liteon_ltr582_ps_flag == 1 || apds9999_ps_flag == 1 || ams_tmd3702_ps_flag == 1 || vishay_vcnl36658_ps_flag ==1))
-    {
-        ret=send_ps_calibrate_data_to_mcu();
-        if(ret) hwlog_err( "get_ps_calibrate_data read from nv fail, ret=%d", ret);
-        else
-        {
-            hwlog_info("read nv success\n");
-        }
-    }
-    if(0 == ps_first_start_flag && (ams_tof_flag == 1 || sharp_tof_flag == 1)){
-        ret=send_tof_calibrate_data_to_mcu();
-        if(ret){
-            hwlog_err( "get_tof_calibrate_data read from nv fail, ret=%d", ret);
-        }
-        else
-        {
-            hwlog_info("tof read nv success\n");
-        }
-    }
+	int ret = 0;
+	if (ps_first_start_flag == 0 && (txc_ps_flag == 1 || ams_tmd2620_ps_flag == 1 ||
+		avago_apds9110_ps_flag == 1 || ams_tmd3725_ps_flag == 1 ||
+		liteon_ltr582_ps_flag == 1 || apds9999_ps_flag == 1 ||
+		ams_tmd3702_ps_flag == 1 || vishay_vcnl36658_ps_flag == 1)) {
+		ret = send_ps_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err( "get_ps_calibrate_data read from nv fail, ret=%d", ret);
+		else
+			hwlog_info("read nv success\n");
+	}
+
+	if (ps_first_start_flag == 0 && (ams_tof_flag == 1 || sharp_tof_flag == 1)) {
+		ret = send_tof_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err( "get_tof_calibrate_data read from nv fail, ret=%d", ret);
+		else
+			hwlog_info("tof read nv success\n");
+	}
 }
 
 extern int send_als_calibrate_data_to_mcu(void);
 static void get_als_calibrate_data(void)
 {
-    int ret = 0;
-    if ((0 == als_first_start_flag) && ((rohm_rgb_flag == 1) || (avago_rgb_flag == 1) || (ams_tmd3725_rgb_flag == 1)
-		|| (liteon_ltr582_rgb_flag == 1) || ( 1==is_cali_supported) || (apds9999_rgb_flag == 1) || (ams_tmd3702_rgb_flag == 1)
-		|| (apds9253_rgb_flag == 1) || (vishay_vcnl36658_als_flag ==1) ))
-    {
-        ret=send_als_calibrate_data_to_mcu();
-        if(ret) hwlog_err( "get_als_calibrate_data read from nv fail, ret=%d", ret);
-        else
-        {
-            hwlog_info("read nv success\n");
-        }
-    }
+	int ret = 0;
+	if ((als_first_start_flag == 0) && ((rohm_rgb_flag == 1) || (avago_rgb_flag == 1) ||
+		(ams_tmd3725_rgb_flag == 1) || (liteon_ltr582_rgb_flag == 1) ||
+		(is_cali_supported == 1) || (apds9999_rgb_flag == 1) ||
+		(ams_tmd3702_rgb_flag == 1)|| (apds9253_rgb_flag == 1) ||
+		(vishay_vcnl36658_als_flag == 1))) {
+		ret = send_als_calibrate_data_to_mcu();
+		if (ret)
+			hwlog_err( "get_als_calibrate_data read from nv fail, ret=%d", ret);
+		else
+			hwlog_info("read nv success\n");
+	}
 }
 
 extern int read_gyro_offset_from_nv(void);
@@ -460,18 +447,18 @@ static void get_handpress_calibrate_data(void)
 			hwlog_err( "handpress read from nv fail, ret=%d", ret);
 		else
 			hwlog_info("handpress read nv success\n");
-    }
+	}
 }
 
 static void send_sensor_calib_data(void)
 {
-        get_acc_calibrate_data();
-        get_mag_calibrate_data();
-        get_cap_prox_calibrate_data();
-        get_airpress_calibrate_data();
-        get_psensor_calibrate_data();
-        get_als_calibrate_data();
-        get_gyro_calibrate_data();
+	get_acc_calibrate_data();
+	get_mag_calibrate_data();
+	get_cap_prox_calibrate_data();
+	get_airpress_calibrate_data();
+	get_psensor_calibrate_data();
+	get_als_calibrate_data();
+	get_gyro_calibrate_data();
 	get_handpress_calibrate_data();
 	get_vibrator_calibrate_data();
 }
@@ -509,25 +496,25 @@ static long shb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	/* add sensors of android4.4(MAGNETIC_FIELD_UNCALIBRATED~GEOMAGNETIC_ROTATION_VECTOR) */
 	switch (cmd) {
-		case SHB_IOCTL_APP_ENABLE_SENSOR:
-		case SHB_IOCTL_APP_DISABLE_SENSOR:
-		case SHB_IOCTL_APP_DELAY_SENSOR:
-			break;
-		case SHB_IOCTL_APP_GET_SENSOR_MCU_MODE:
-			sensorMcuMode = getSensorMcuMode();
-			hwlog_info( "isSensorMcuMode [%d]\n", sensorMcuMode );
-			if (copy_to_user(argp, &sensorMcuMode, sizeof(sensorMcuMode)))
-	    			return -EFAULT;
-			return 0;
-		case SHB_IOCTL_APP_SENSOR_BATCH:
-			hwlog_info("shb_ioctl  cmd : batch flush SHB_IOCTL_APP_SENSOR_BATCH\n");
-			break;
-		case SHB_IOCTL_APP_SENSOR_FLUSH:
-			hwlog_info("shb_ioctl  cmd : batch flush SHB_IOCTL_APP_SENSOR_FLUSH\n");
-			break;
-		default:
-			hwlog_err("shb_ioctl unknown cmd : %d\n", cmd);
-			return -ENOTTY;
+	case SHB_IOCTL_APP_ENABLE_SENSOR:
+	case SHB_IOCTL_APP_DISABLE_SENSOR:
+	case SHB_IOCTL_APP_DELAY_SENSOR:
+		break;
+	case SHB_IOCTL_APP_GET_SENSOR_MCU_MODE:
+		sensorMcuMode = getSensorMcuMode();
+		hwlog_info( "isSensorMcuMode [%d]\n", sensorMcuMode);
+		if (copy_to_user(argp, &sensorMcuMode, sizeof(sensorMcuMode)))
+			return -EFAULT;
+		return 0;
+	case SHB_IOCTL_APP_SENSOR_BATCH:
+		hwlog_info("shb_ioctl  cmd : batch flush SHB_IOCTL_APP_SENSOR_BATCH\n");
+		break;
+	case SHB_IOCTL_APP_SENSOR_FLUSH:
+		hwlog_info("shb_ioctl  cmd : batch flush SHB_IOCTL_APP_SENSOR_FLUSH\n");
+		break;
+	default:
+		hwlog_err("shb_ioctl unknown cmd : %d\n", cmd);
+		return -ENOTTY;
 	}
 	send_sensor_calib_data();
 	send_sensor_add_data();//addinitial data
@@ -611,22 +598,22 @@ static struct notifier_block sensor_recovery_notify = {
 
 //--------------------------------------
 static const struct file_operations shb_fops = {
-    .owner      =   THIS_MODULE,
-    .llseek     =   no_llseek,
-    .read = shb_read,
-    .write      =   shb_write,
-    .unlocked_ioctl =   shb_ioctl,
+	.owner      =   THIS_MODULE,
+	.llseek     =   no_llseek,
+	.read = shb_read,
+	.write      =   shb_write,
+	.unlocked_ioctl =   shb_ioctl,
 #ifdef CONFIG_COMPAT
-    .compat_ioctl =   shb_ioctl,
+	.compat_ioctl =   shb_ioctl,
 #endif
-    .open       =   shb_open,
-    .release    =   shb_release,
+	.open       =   shb_open,
+	.release    =   shb_release,
 };
 
 static struct miscdevice senorhub_miscdev = {
-    .minor =    MISC_DYNAMIC_MINOR,
-    .name =     "sensorhub",
-    .fops =     &shb_fops,
+	.minor =    MISC_DYNAMIC_MINOR,
+	.name =     "sensorhub",
+	.fops =     &shb_fops,
 };
 
 /*******************************************************************************************
@@ -648,15 +635,15 @@ static int __init sensorhub_init(void)
 	init_hash_tables();
 	ret = inputhub_route_open(ROUTE_SHB_PORT);
 	if (ret != 0) {
-	    hwlog_err( "cannot open inputhub route err=%d\n", ret);
-	    return ret;
+		hwlog_err( "cannot open inputhub route err=%d\n", ret);
+		return ret;
 	}
 
 	ret = misc_register(&senorhub_miscdev);
 	if (ret != 0) {
-	    inputhub_route_close(ROUTE_SHB_PORT);
-	    hwlog_err( "cannot register miscdev err=%d\n", ret);
-	    return ret;
+		inputhub_route_close(ROUTE_SHB_PORT);
+		hwlog_err( "cannot register miscdev err=%d\n", ret);
+		return ret;
 	}
 	register_iom3_recovery_notifier(&sensor_recovery_notify);
 	hwlog_info("%s ok\n", __func__);
@@ -674,9 +661,9 @@ Return:         成功或者失败信息
 *******************************************************************************************/
 static void __exit sensorhub_exit(void)
 {
-    inputhub_route_close(ROUTE_SHB_PORT);
-    misc_deregister(&senorhub_miscdev);
-    hwlog_info("exit %s\n", __func__);
+	inputhub_route_close(ROUTE_SHB_PORT);
+	misc_deregister(&senorhub_miscdev);
+	hwlog_info("exit %s\n", __func__);
 }
 
 late_initcall_sync(sensorhub_init);

@@ -214,7 +214,7 @@ dsu_pmu_event_attr_is_visible(struct kobject *kobj, struct attribute *attr,
 					struct dev_ext_attribute, attr.attr);
 	unsigned long evt = (uintptr_t)eattr->var;
 
-	return test_bit(evt, dsu_pmu->cpmceid_bitmap) ? attr->mode : 0; /* [false alarm]: mode is also umode_t */
+	return test_bit(evt, dsu_pmu->cpmceid_bitmap) ? attr->mode : 0;
 }
 /*lint -restore*/
 
@@ -416,7 +416,7 @@ static irqreturn_t dsu_pmu_handle_irq(int irq_num, void *dev)
 		handled = true;
 	}
 
-	return IRQ_RETVAL(handled); /* [false alarm]: return is either IRQ_HANDLED or IRQ_NONE */
+	return IRQ_RETVAL(handled);
 }
 
 static void dsu_pmu_start(struct perf_event *event, int pmu_flags)
@@ -606,6 +606,8 @@ static int dsu_pmu_event_init(struct perf_event *event)
 		return -EINVAL;
 
 	event->hw.config_base = event->attr.config;
+	event->readable_on_cpus = CPU_MASK_ALL;
+
 	return 0;
 }
 
@@ -642,7 +644,11 @@ static int dsu_pmu_dt_get_cpus(struct device_node *dev, cpumask_t *mask)
 	for (; i < n; i++) {
 		cpu_node = of_parse_phandle(dev, "cpus", i);
 		if (!cpu_node)
+#ifdef CONFIG_ARCH_HISI
+			continue;
+#else
 			break;
+#endif
 		cpu = of_cpu_node_to_id(cpu_node);
 		of_node_put(cpu_node);
 		/*
@@ -712,10 +718,10 @@ struct cpu_pm_dsu_pmu_args {
 	int		ret;
 };
 
-#ifdef CONFIG_HISI_MULTIDRV_CPUIDLE
-extern bool hisi_fcm_cluster_pwrdn(void);
+#ifdef CONFIG_LPCPU_MULTIDRV_CPUIDLE
+extern bool lpcpu_fcm_cluster_pwrdn(void);
 #else
-static inline bool hisi_fcm_cluster_pwrdn(void) {return 0; }
+static inline bool lpcpu_fcm_cluster_pwrdn(void) {return 0; }
 #endif
 
 #ifdef CONFIG_CPU_PM
@@ -800,7 +806,7 @@ static void cpu_pm_dsu_pmu_common(void *info)
 	switch (cmd) {
 	case CPU_PM_ENTER:
 		spin_lock(&dsu_pmu->fcm_idle_lock);
-		fcm_pwrdn = hisi_fcm_cluster_pwrdn();
+		fcm_pwrdn = lpcpu_fcm_cluster_pwrdn();
 		if (fcm_pwrdn && dsu_pmu->fcm_idle == false) {
 			dsu_pmu->fcm_idle = true;
 			dsu_pmu_disable(&dsu_pmu->pmu);

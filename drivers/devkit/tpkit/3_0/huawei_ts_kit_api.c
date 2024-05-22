@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2021 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -37,16 +37,21 @@
 #include <linux/kthread.h>
 #include <linux/uaccess.h>
 #include <linux/sched/rt.h>
+#ifndef CONFIG_HUAWEI_DEVKIT_QCOM_3_0
 #include <linux/fb.h>
+#endif
 #include <linux/workqueue.h>
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
+#endif
+#ifdef CONFIG_HUAWEI_DEVKIT_QCOM_3_0
+#include <chipset_common/hwpower/common_module/power_cmdline.h>
 #endif
 
 atomic_t g_ts_kit_data_report_over = ATOMIC_INIT(1);
 
 void ts_proc_bottom_half(struct ts_cmd_node *in_cmd,
-		 struct ts_cmd_node *out_cmd)
+	struct ts_cmd_node *out_cmd)
 {
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
 
@@ -74,9 +79,13 @@ void ts_work_after_input(void)
 			"read_diff");
 }
 
-void dump_fingers_info_debug(struct ts_finger *fingers)
+void dump_fingers_info_debug(struct ts_finger *fingers,
+	unsigned int len)
 {
 	int i = 0;
+
+	if ((len <= 0) || (len > TS_FOLD_MAX_FINGER))
+		return;
 
 	if (!g_ts_kit_log_cfg)
 		return;
@@ -101,7 +110,8 @@ static void ts_finger_events_reformat(struct ts_fingers *finger)
 {
 	int index;
 
-	dump_fingers_info_debug(finger->fingers);
+	dump_fingers_info_debug(finger->fingers,
+		g_ts_kit_platform_data.max_fingers);
 	for (index = 0; index < g_ts_kit_platform_data.max_fingers; index++) {
 		if ((finger->cur_finger_number == 0) ||
 			(finger->fingers[index].status == TP_NONE_FINGER))
@@ -172,6 +182,90 @@ out:
 		out_cmd->command = TS_INVAILD_CMD;
 }
 
+void ts_finger_pen_algo_calibrate(struct ts_cmd_node *in_cmd,
+	struct ts_cmd_node *out_cmd)
+{
+	unsigned int id;
+	unsigned int algo_size = g_ts_kit_platform_data.chip_data->algo_size;
+	u32 algo_order =
+		in_cmd->cmd_param.pub_params.report_touch_info.algo_order;
+	struct ts_fingers *in_finger =
+		&in_cmd->cmd_param.pub_params.report_touch_info.report_finger_info;
+	struct ts_fingers *out_finger =
+		&out_cmd->cmd_param.pub_params.report_touch_info.report_finger_info;
+	struct ts_finger_pen_info *in_finger_pen =
+		&in_cmd->cmd_param.pub_params.report_touch_info;
+	struct ts_finger_pen_info *out_finger_pen =
+		&out_cmd->cmd_param.pub_params.report_touch_info;
+	struct ts_algo_func *algo = NULL;
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+	u32 finger_pen_flag =
+		in_cmd->cmd_param.pub_params.report_touch_info.finger_pen_flag;
+
+	if (!algo_size) {
+		TS_LOG_INFO("no algo handler, direct report\n");
+		goto out;
+	}
+	TS_LOG_DEBUG("%s: inalgo_order = %u\n", __func__, algo_order);
+	/*
+	 * If 1.aft enabled, hal algo works or 2.dont need algo t1 to filter
+	 * glove events which algo_order configed 0, should skip driver algo
+	 * and reformat events to add PRESS/RELEASE to finger->status
+	 */
+
+	if (finger_pen_flag == TS_ONLY_FINGER ||
+		(finger_pen_flag == TS_FINGER_PEN)) {
+		if ((g_ts_kit_platform_data.pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+			((g_ts_kit_platform_data.aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE) ||
+			(!algo_order))) {
+			ts_finger_events_reformat(in_finger);
+			goto out;
+		}
+	}
+
+	TS_LOG_DEBUG("algo algo_order: %u, algo_size :%d\n",
+		algo_order, algo_size);
+
+	for (id = 0; id < algo_size; id++) {
+		if (algo_order & BIT_MASK(id)) {
+			TS_LOG_DEBUG("algo :%d is setted\n", id);
+			/* found the right algo func */
+			list_for_each_entry(algo, &dev->algo_head, node) {
+				if (algo->algo_index == id) {
+					TS_LOG_DEBUG("algo :%s called\n",
+						algo->algo_name);
+					algo->chip_algo_func(dev,
+						in_finger, out_finger);
+					memcpy(in_finger, out_finger,
+						sizeof(*in_finger));
+					break;
+				}
+			}
+		}
+	}
+out:
+	memcpy(out_finger_pen, in_finger_pen,
+		sizeof(*out_finger_pen));
+	if (finger_pen_flag == TS_ONLY_FINGER)
+		out_cmd->command = TS_REPORT_INPUT;
+	else if (finger_pen_flag == TS_ONLY_PEN)
+		out_cmd->command = TS_REPORT_PEN;
+	else if (finger_pen_flag == TS_FINGER_PEN)
+		out_cmd->command = TS_REPORT_FINGER_PEN_DIRECTLY;
+	else
+		out_cmd->command = TS_INVAILD_CMD;
+	TS_LOG_DEBUG("%s:skip aft\n", __func__);
+
+	/*
+	 * copy finger info to aft daemon
+	 * if error hanppened, stil goto driver touch report process
+	 * else do not report direct and set out_cmd as INVAILD
+	 */
+	if (!copy_finger_pen_to_aft_daemon(&g_ts_kit_platform_data,
+		out_finger_pen))
+		out_cmd->command = TS_INVAILD_CMD;
+}
+
 void ts_check_touch_window(struct ts_fingers *finger)
 {
 	int id;
@@ -205,14 +299,14 @@ void ts_check_touch_window(struct ts_fingers *finger)
 }
 
 void ts_film_touchplus(struct ts_fingers *finger, int finger_num,
-		struct input_dev *input_dev)
+	struct input_dev *input_dev)
 {
 	static int pre_special_button_key = TS_TOUCHPLUS_INVALID;
 	int key_max = TS_TOUCHPLUS_KEY2;
 	int key_min = TS_TOUCHPLUS_KEY3;
 	unsigned char ts_state;
 
-	TS_LOG_DEBUG("ts_film_touchplus called\n");
+	TS_LOG_DEBUG("%s called\n", __func__);
 
 	/* discard touchplus report in gesture wakeup mode */
 	ts_state = atomic_read(&g_ts_kit_platform_data.state);
@@ -261,8 +355,8 @@ void ts_film_touchplus(struct ts_fingers *finger, int finger_num,
 }
 
 static void ts_report_pen_event(struct input_dev *input,
-		struct ts_tool tool, int pressure,
-		int tool_type, int tool_value)
+	struct ts_tool tool, int pressure,
+	int tool_type, int tool_value)
 {
 	input_report_abs(input, ABS_X, tool.x);
 	input_report_abs(input, ABS_Y, tool.y);
@@ -288,9 +382,11 @@ void ts_report_pen(struct ts_cmd_node *in_cmd)
 	struct input_dev *input = g_ts_kit_platform_data.pen_dev;
 	int i;
 	int key_value = 0;
-	int ret = 0;
+#if defined(CONFIG_HUAWEI_DSM)
+	int ret;
 	struct ts_kit_platform_data *p_data =
 		g_ts_kit_platform_data.chip_data->ts_platform_data;
+#endif
 
 	if (!in_cmd) {
 		TS_LOG_ERR("%s parameters is null!\n", __func__);
@@ -298,6 +394,9 @@ void ts_report_pen(struct ts_cmd_node *in_cmd)
 	}
 	trace_touch(TOUCH_TRACE_PEN_REPORT, TOUCH_TRACE_FUNC_IN, "report pen");
 	pens = &in_cmd->cmd_param.pub_params.report_pen_info;
+	if ((g_ts_kit_platform_data.pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+		(g_ts_kit_platform_data.aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE))
+		pens = &in_cmd->cmd_param.pub_params.report_touch_info.report_pen_info;
 	if (!pens) {
 		TS_LOG_ERR("%s pens is null!\n", __func__);
 		return;
@@ -368,7 +467,8 @@ int ts_count_fingers(struct ts_fingers *fingers)
 	int id = 0;
 
 	TS_LOG_DEBUG("%s:dump finger:\n", __func__);
-	dump_fingers_info_debug(fingers->fingers);
+	dump_fingers_info_debug(fingers->fingers,
+		g_ts_kit_platform_data.max_fingers);
 	for (; id < g_ts_kit_platform_data.max_fingers; id++) {
 		if (fingers->fingers[id].status & TS_FINGER_PRESS)
 			count = id + 1;
@@ -441,8 +541,11 @@ void ts_report_input(struct ts_cmd_node *in_cmd)
 	feature_info = &g_ts_kit_platform_data.feature_info;
 
 	fingers = &in_cmd->cmd_param.pub_params.algo_param.info;
+	if ((g_ts_kit_platform_data.pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+		(g_ts_kit_platform_data.aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE))
+		fingers = &in_cmd->cmd_param.pub_params.report_touch_info.report_finger_info;
 	finger_count = ts_count_fingers(fingers);
-	TS_LOG_DEBUG("ts_report_input\n");
+	TS_LOG_DEBUG("%s\n", __func__);
 	ts_check_touch_window(fingers);
 
 	for (i = 0; i < finger_count; i++) {
@@ -484,8 +587,8 @@ void ts_report_input(struct ts_cmd_node *in_cmd)
 			fingers->gesture_wakeup_value, 0);
 		input_sync(input_dev);
 	}
-	TS_LOG_DEBUG("ts_report_input done, finger_count = %d\n",
-			finger_count);
+	TS_LOG_DEBUG("%s done, finger_count = %d\n",
+		__func__, finger_count);
 
 	ts_work_after_input(); /* do some delayed works */
 
@@ -530,14 +633,25 @@ void ts_report_fingers_pen(struct ts_cmd_node *in_cmd,
 	out_cmd->command = TS_INVAILD_CMD;
 }
 
+void ts_report_finger_pen_directly(struct ts_cmd_node *in_cmd)
+{
+	ts_report_input(in_cmd);
+	ts_report_pen(in_cmd);
+}
 static void send_up_msg_in_resume(void)
 {
 	struct input_dev *input_dev = g_ts_kit_platform_data.input_dev;
 
+#ifdef CONFIG_HUAWEI_DEVKIT_QCOM_3_0
+	if (power_cmdline_is_powerdown_charging_mode()) {
+		TS_LOG_DEBUG("%s not send for qcom powerdown charging mode\n", __func__);
+		return;
+	}
+#endif
 	input_report_key(input_dev, BTN_TOUCH, 0);
 	input_mt_sync(input_dev);
 	input_sync(input_dev);
-	TS_LOG_DEBUG("send_up_msg_in_resume\n");
+	TS_LOG_DEBUG("%s\n", __func__);
 }
 
 int ts_power_off_control_mode(int irq_id, struct ts_cmd_node *in_cmd)
@@ -568,6 +682,9 @@ int ts_power_off_control_mode(int irq_id, struct ts_cmd_node *in_cmd)
 			atomic_set(&pdata->aft_in_slow_status, 0);
 			atomic_set(&pdata->last_input_fingers_status, 0);
 			atomic_set(&pdata->last_aft_filtered_fingers, 0);
+			if ((g_ts_kit_platform_data.pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+				(pdata->aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE))
+				atomic_set(&pdata->last_aft_filtered_pen_pressure, 0);
 			kobject_uevent(&pdata->input_dev->dev.kobj,
 				KOBJ_OFFLINE);
 		}
@@ -593,12 +710,11 @@ int ts_power_off_control_mode(int irq_id, struct ts_cmd_node *in_cmd)
 			TS_GOTO_WORK);
 		if (dev->ops->chip_resume) {
 			error = dev->ops->chip_resume();
-			if (error) {
 #if defined(CONFIG_HUAWEI_DSM)
+			if (error)
 				ts_dmd_report(DSM_TP_WAKEUP_ERROR_NO,
 					"try to client record 926004020 for resume error\n");
 #endif
-			}
 		}
 		TS_LOG_DEBUG("[performance]%s:resume done\n", __func__);
 		break;
@@ -606,16 +722,14 @@ int ts_power_off_control_mode(int irq_id, struct ts_cmd_node *in_cmd)
 		TS_LOG_DEBUG("[performance]%s:after resume in\n", __func__);
 		if (dev->ops->chip_after_resume) {
 			error = dev->ops->chip_after_resume((void *)&pdata->feature_info);
-			if (error) {
 #if defined(CONFIG_HUAWEI_DSM)
+			if (error)
 				ts_dmd_report(DSM_TP_WAKEUP_ERROR_NO,
 					"try to client record 926004020 for after resume error\n");
 #endif
-			}
 		}
-		TS_LOG_INFO("%s: chip_name:%s,module_name:%s,fw version: %s\n",
-			__func__, dev->chip_name,
-			dev->module_name, dev->version_name);
+		TS_LOG_INFO("%s:after resume, project id: %s, fw version: %s\n",
+			__func__, dev->project_id, dev->version_name);
 		send_up_msg_in_resume();
 		if (pdata->aft_param.aft_enable_flag) {
 			TS_LOG_INFO("ts_kit aft resume\n");
@@ -640,7 +754,7 @@ int ts_power_off_control_mode(int irq_id, struct ts_cmd_node *in_cmd)
 }
 
 int ts_power_off_no_config(int irq_id,
-		struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
+	struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -683,7 +797,7 @@ int ts_power_off_no_config(int irq_id,
 }
 
 int ts_power_off_easy_wakeup_mode(int irq_id,
-		struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
+	struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 {
 	int error = NO_ERR;
 	enum lcd_kit_ts_pm_type pm_type = in_cmd->cmd_param.pub_params.pm_type;
@@ -704,20 +818,22 @@ int ts_power_off_easy_wakeup_mode(int irq_id,
 		if (g_ts_kit_platform_data.aft_param.aft_enable_flag &&
 			dev->support_notice_aft_gesture_mode) {
 			TS_LOG_INFO("%s ts_kit aft suspend\n", __func__);
-			atomic_set(&g_ts_kit_platform_data.aft_in_slow_status,
-				0);
-			atomic_set(&g_ts_kit_platform_data.
-				last_input_fingers_status, 0);
-			atomic_set(&g_ts_kit_platform_data.
-				last_aft_filtered_fingers, 0);
-			kobject_uevent(&g_ts_kit_platform_data.
-				input_dev->dev.kobj, KOBJ_OFFLINE);
+			if ((g_ts_kit_platform_data.pen_aft_enable_flag == SUPPORT_PEN_AFT) &&
+				(g_ts_kit_platform_data.aft_param.aft_enable_flag == TS_PEN_AFT_ENABLE))
+				atomic_set(&g_ts_kit_platform_data.last_aft_filtered_pen_pressure, 0);
+			atomic_set(&g_ts_kit_platform_data.aft_in_slow_status, 0);
+			atomic_set(&g_ts_kit_platform_data.last_input_fingers_status, 0);
+			atomic_set(&g_ts_kit_platform_data.last_aft_filtered_fingers, 0);
+			kobject_uevent(&g_ts_kit_platform_data.input_dev->dev.kobj,
+				KOBJ_OFFLINE);
 		}
 		if (dev->ops->chip_suspend)
 			error = dev->ops->chip_suspend();
-		if (!(dev->is_parade_solution == true))
+		if (!(dev->is_parade_solution == true) &&
+			!(g_ts_kit_platform_data.setting_multi_gesture_mode))
 			enable_irq(irq_id);
-		if (!dev->send_stylus_gesture_switch) {
+		if (!dev->send_stylus_gesture_switch &&
+			!(g_ts_kit_platform_data.setting_multi_gesture_mode)) {
 			out_cmd->command = TS_WAKEUP_GESTURE_ENABLE;
 			out_cmd->cmd_param.prv_params =
 				(void *)&g_ts_kit_platform_data.feature_info.wakeup_gesture_enable_info;
@@ -730,7 +846,8 @@ int ts_power_off_easy_wakeup_mode(int irq_id,
 			dev->ops->chip_shutdown();
 		break;
 	case TS_RESUME_DEVICE: /* exit easy-wakeup mode and restore sth */
-		if (!(dev->is_parade_solution == true))
+		if (!(dev->is_parade_solution == true) &&
+			!(g_ts_kit_platform_data.setting_multi_gesture_mode))
 			disable_irq(irq_id);
 		if (dev->ops->chip_resume)
 			error = dev->ops->chip_resume();
@@ -738,15 +855,14 @@ int ts_power_off_easy_wakeup_mode(int irq_id,
 	case TS_AFTER_RESUME: /* do nothing */
 		if (dev->ops->chip_after_resume)
 			error = dev->ops->chip_after_resume((void *)&g_ts_kit_platform_data.feature_info);
-		TS_LOG_INFO("%s: chip_name:%s,module_name:%s,fw version: %s\n",
-				__func__, dev->chip_name,
-				dev->module_name, dev->version_name);
+		TS_LOG_INFO("%s:after resume, project id: %s, fw version: %s\n",
+			__func__, dev->project_id, dev->version_name);
 		send_up_msg_in_resume();
 		if (g_ts_kit_platform_data.aft_param.aft_enable_flag &&
 			dev->support_notice_aft_gesture_mode) {
 			TS_LOG_INFO("%s ts_kit aft resume\n", __func__);
-			kobject_uevent(&g_ts_kit_platform_data.input_dev->
-				dev.kobj, KOBJ_ONLINE);
+			kobject_uevent(&g_ts_kit_platform_data.input_dev->dev.kobj,
+				KOBJ_ONLINE);
 		}
 		atomic_set(&g_ts_kit_platform_data.state, TS_WORK);
 		if (!(dev->is_parade_solution == true)) {
@@ -763,16 +879,28 @@ int ts_power_off_easy_wakeup_mode(int irq_id,
 }
 
 int ts_power_control(int irq_id, struct ts_cmd_node *in_cmd,
-		struct ts_cmd_node *out_cmd)
+	struct ts_cmd_node *out_cmd)
 {
 	int error;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	atomic_t *face_dct_en = &g_ts_kit_platform_data.face_dct_en;
+	enum lcd_kit_ts_pm_type pm_type;
 
-	if (dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
+	if (!in_cmd || !out_cmd || !dev) {
+		TS_LOG_ERR("%s: have null ptr\n", __func__);
+		return -EINVAL;
+	}
+	pm_type = in_cmd->cmd_param.pub_params.pm_type;
+	TS_LOG_INFO("%s: in, PM_TYPE is %d\n", __func__, pm_type);
+
+	if ((dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) ||
+		(dev->easy_wakeup_info.aod_mode == TS_TOUCH_AOD_OPEN)) {
 		error = ts_power_off_easy_wakeup_mode(irq_id, in_cmd, out_cmd);
+		TS_LOG_INFO("%s: out, PM_TYPE is %d\n",
+			__func__, pm_type);
 		return error;
-	} else if (dev->easy_wakeup_info.sleep_mode != TS_POWER_OFF_MODE) {
+	} else if ((dev->easy_wakeup_info.sleep_mode != TS_POWER_OFF_MODE) ||
+		(dev->easy_wakeup_info.aod_mode != TS_TOUCH_AOD_CLOSE)) {
 		TS_LOG_ERR("no such mode!\n");
 		error = -EINVAL;
 		return error;
@@ -788,6 +916,7 @@ int ts_power_control(int irq_id, struct ts_cmd_node *in_cmd,
 	} else {
 		error = ts_power_off_control_mode(irq_id, in_cmd);
 	}
+	TS_LOG_INFO("%s:out, PM_TYPE is %d\n", __func__, pm_type);
 	return error;
 }
 
@@ -822,8 +951,11 @@ int ts_fw_update_boot(struct ts_cmd_node *in_cmd)
 	char *fw_name = NULL;
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
+#if defined(CONFIG_HUAWEI_DSM)
 	struct ts_kit_platform_data *pdata =
 		g_ts_kit_platform_data.chip_data->ts_platform_data;
+#endif
+
 	if (!in_cmd) {
 		TS_LOG_ERR("%s : find a null pointer\n", __func__);
 		return -EINVAL;
@@ -831,13 +963,12 @@ int ts_fw_update_boot(struct ts_cmd_node *in_cmd)
 	fw_name = in_cmd->cmd_param.pub_params.firmware_info.fw_name;
 	if (ops->chip_fw_update_boot) {
 		error = ops->chip_fw_update_boot(fw_name);
-		if (error) {
 #if defined(CONFIG_HUAWEI_DSM)
+		if (error)
 			ts_dmd_report(DSM_TP_FWUPDATE_ERROR_NO,
 				"fw update result: failed status is: %d\n",
-				pdata->dsm_info.constraints_UPDATE_status);
+				pdata->dsm_info.constraints_update_status);
 #endif
-		}
 	}
 
 	TS_LOG_INFO("process firmware update boot, return value:%d\n", error);
@@ -894,7 +1025,6 @@ EXPORT_SYMBOL(ts_start_wd_timer);
 
 void ts_stop_wd_timer(struct ts_kit_platform_data *cd)
 {
-
 	if ((!cd) || (!cd->chip_data)) {
 		TS_LOG_ERR("%s :the pointer is null\n", __func__);
 		return;
@@ -926,8 +1056,12 @@ static bool need_process_in_sleep(struct ts_cmd_node *cmd)
 	switch (cmd->command) {
 	case TS_POWER_CONTROL:
 		if ((pm_type != TS_RESUME_DEVICE) &&
-			(pm_type != TS_AFTER_RESUME))
-			is_need_process = false;
+			(pm_type != TS_AFTER_RESUME)) {
+			if (dev->tddi_tp_reset_sync)
+				is_need_process = true;
+			else
+				is_need_process = false;
+		}
 		break;
 	case TS_TOUCH_WINDOW:
 		is_need_process = true;
@@ -1015,7 +1149,7 @@ bool ts_cmd_need_process(struct ts_cmd_node *cmd)
 }
 
 int ts_kit_power_notify_callback(struct notifier_block *self,
-		unsigned long notify_pm_type, void *data)
+	unsigned long notify_pm_type, void *data)
 {
 	int *data_in = data;
 	unsigned int timeout;
@@ -1036,22 +1170,67 @@ int ts_kit_power_notify_callback(struct notifier_block *self,
 	return ret;
 }
 
+unsigned int ts_is_factory(void)
+{
+	unsigned int is_factory;
+
+#if (defined(CONFIG_HUAWEI_DEVKIT_MTK_3_0) || defined(CONFIG_HUAWEI_DEVKIT_QCOM_3_0))
+	is_factory = get_runmode_type();
+#else
+	is_factory = runmode_is_factory();
+#endif
+	return (!!is_factory);
+}
+
+static void ts_easy_wake_mode_change(struct ts_kit_device_data *dev)
+{
+	if (dev->easy_wakeup_info.easy_wakeup_gesture != TS_POWER_OFF_MODE) {
+		dev->easy_wakeup_info.sleep_mode_temp =
+			dev->easy_wakeup_info.easy_wakeup_gesture;
+		dev->easy_wakeup_info.easy_wakeup_gesture =
+			TS_POWER_OFF_MODE;
+	}
+	if (dev->easy_wakeup_info.aod_touch_switch_ctrl != TS_TOUCH_AOD_CLOSE) {
+		dev->easy_wakeup_info.aod_mode_temp =
+			dev->easy_wakeup_info.aod_touch_switch_ctrl;
+		dev->easy_wakeup_info.aod_touch_switch_ctrl =
+			TS_TOUCH_AOD_CLOSE;
+	}
+	TS_LOG_INFO("SUB_TOUCH_PANEL enter TS_SCREEN_SWITCH mode\n");
+}
+
 int ts_kit_power_control_notify(enum lcd_kit_ts_pm_type pm_type,
-		int timeout)
+	int timeout)
 {
 	int error;
 	struct ts_cmd_node cmd;
 	struct ts_kit_device_data *dev = NULL;
 	struct ts_feature_info *feature_info = NULL;
+	struct ts_factory_extra_cmd *factory_extra_cmd =
+		&g_ts_kit_platform_data.factory_extra_cmd;
 
-	TS_LOG_INFO("%s called, pm_type is %d", __func__, pm_type);
+	TS_LOG_INFO("%s +, pm_type is %d, timeout is %d\n",
+		__func__, pm_type, timeout);
 	if (atomic_read(&g_ts_kit_platform_data.state) == TS_UNINIT) {
 		TS_LOG_INFO("ts is not init");
 		return -EINVAL;
 	}
 
+	if (ts_is_factory() &&
+		factory_extra_cmd->always_poweron_in_screenoff) {
+		TS_LOG_INFO("%s screenoff cap testing, NO poweroff\n",
+			__func__);
+		return 0;
+	}
+
 	dev = g_ts_kit_platform_data.chip_data;
 	feature_info = &dev->ts_platform_data->feature_info;
+	if (g_ts_kit_platform_data.setting_multi_gesture_mode &&
+		pm_type == TS_SCREEN_SWITCH) {
+		dev->screen_switch_flag = true;
+		TS_LOG_INFO("%s -, pm_type is %d\n", __func__, pm_type);
+		return 0;
+	}
 
 #if defined(CONFIG_TEE_TUI)
 	if (dev->report_tui_enable && (pm_type == TS_BEFORE_SUSPEND)) {
@@ -1066,8 +1245,20 @@ int ts_kit_power_control_notify(enum lcd_kit_ts_pm_type pm_type,
 		return NO_ERR;
 	}
 #endif
-
-	if ((dev->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE) &&
+	if (g_ts_kit_platform_data.setting_multi_gesture_mode &&
+		pm_type == TS_EARLY_SUSPEND) {
+		if (dev->screen_switch_flag || dev->multi_screen_unfold) {
+			ts_easy_wake_mode_change(dev);
+			dev->screen_switch_flag = false;
+		}
+		dev->easy_wakeup_info.sleep_mode =
+			dev->easy_wakeup_info.easy_wakeup_gesture;
+		if (g_ts_kit_platform_data.aod_display_support)
+			dev->easy_wakeup_info.aod_mode =
+				dev->easy_wakeup_info.aod_touch_switch_ctrl;
+	}
+	if ((g_ts_kit_platform_data.setting_multi_gesture_mode == 0) &&
+		(dev->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE) &&
 			(pm_type == TS_BEFORE_SUSPEND)) {
 		if (!((dev->is_parade_solution == 1) &&
 				(dev->sleep_in_mode == 0))) {
@@ -1083,6 +1274,25 @@ int ts_kit_power_control_notify(enum lcd_kit_ts_pm_type pm_type,
 		TS_LOG_ERR("%s: put cmd error :%d\n", __func__, error);
 		error = -EBUSY;
 	}
+	if (g_ts_kit_platform_data.setting_multi_gesture_mode &&
+		pm_type == TS_SUSPEND_DEVICE) {
+		if (dev->easy_wakeup_info.sleep_mode_temp !=
+			TS_POWER_OFF_MODE) {
+			dev->easy_wakeup_info.easy_wakeup_gesture =
+				dev->easy_wakeup_info.sleep_mode_temp;
+			dev->easy_wakeup_info.sleep_mode_temp =
+				TS_POWER_OFF_MODE;
+			TS_LOG_INFO("SUB_TOUCH_PANEL sleep_mode revert\n");
+		}
+		if (dev->easy_wakeup_info.aod_mode_temp !=
+			TS_TOUCH_AOD_CLOSE) {
+			dev->easy_wakeup_info.aod_touch_switch_ctrl =
+				dev->easy_wakeup_info.aod_mode_temp;
+			dev->easy_wakeup_info.aod_mode_temp =
+				TS_TOUCH_AOD_CLOSE;
+			TS_LOG_INFO("SUB_TOUCH_PANEL aod_mode revert\n");
+		}
+	}
 	if (pm_type == TS_AFTER_RESUME) {
 		if (feature_info->pen_info.supported_pen_alg)
 			ts_pen_open_confirm_init();
@@ -1094,11 +1304,43 @@ int ts_kit_power_control_notify(enum lcd_kit_ts_pm_type pm_type,
 		if (error)
 			TS_LOG_ERR("ts_resume_send_roi_cmd failed\n");
 	}
+	TS_LOG_INFO("%s -, pm_type is %d\n", __func__, pm_type);
 	return error;
 }
 
+int ts_kit_multi_power_control_notify(enum lcd_kit_ts_pm_type pm_type,
+	int timeout, int panel_index)
+{
+	if (panel_index != MAIN_TOUCH_PANEL &&
+		panel_index != SUB_TOUCH_PANEL) {
+		TS_LOG_ERR("%s: invalid panel index: %d\n", __func__,
+			panel_index);
+		return -EINVAL;
+	}
+	return ts_kit_power_control_notify(pm_type, timeout);
+}
+EXPORT_SYMBOL(ts_kit_multi_power_control_notify);
+
+void ts_kit_screen_status_notify(int status)
+{
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+
+	if (!dev) {
+		TS_LOG_ERR("%s:ts kit not init\n", __func__);
+		return;
+	}
+
+	TS_LOG_INFO("%s: status %d\n", __func__, status);
+	if (status == SCREEN_UNFOLD)
+		dev->multi_screen_unfold = true;
+	else if (status == SCREEN_FOLDED || status == SCREEN_OFF_FOLD)
+		dev->multi_screen_unfold = false;
+	else
+		TS_LOG_ERR("%s: status err:%d\n", __func__, status);
+}
+
 int ts_read_debug_data(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
+	struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1177,17 +1419,17 @@ out:
 }
 
 int ts_read_rawdata(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd,
-		struct ts_cmd_sync *sync)
+	struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
-	int ret = 0;
+	int ret;
 	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 	struct ts_rawdata_info *info = NULL;
 
-	/**********************************************/
-	/* Rawdata rectification, if dts configured   */
-	/* with a new mark, take a new process        */
-	/**********************************************/
+	/*
+	 * Rawdata rectification, if dts configured
+	 * with a new mark, take a new process
+	 */
 	if (dev->rawdata_newformatflag == TS_RAWDATA_NEWFORMAT) {
 		ret = ts_read_rawdata_for_newformat(in_cmd, out_cmd, sync);
 		if (ret < 0)
@@ -1215,7 +1457,7 @@ int ts_read_rawdata(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd,
 
 	if ((sync != NULL) &&
 		(atomic_read(&sync->timeout_flag) == TS_TIMEOUT)) {
-		TS_LOG_ERR("ts_read_rawdata timeout!\n");
+		TS_LOG_ERR("%s timeout!\n", __func__);
 		if (dev->trx_delta_test_support) {
 			kfree(info->rx_delta_buf);
 			info->rx_delta_buf = NULL;
@@ -1249,7 +1491,7 @@ out:
 }
 
 int ts_read_calibration_data(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
+	struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1288,8 +1530,7 @@ out:
 }
 
 int ts_get_calibration_info(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_node *out_cmd,
-		struct ts_cmd_sync *sync)
+	struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1321,7 +1562,7 @@ int ts_get_calibration_info(struct ts_cmd_node *in_cmd,
 }
 
 int ts_oem_info_switch(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_sync *sync)
+	struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1352,7 +1593,7 @@ int ts_oem_info_switch(struct ts_cmd_node *in_cmd,
 }
 
 int ts_gamma_info_switch(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_sync *sync)
+	struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1416,7 +1657,7 @@ int ts_set_info_flag(struct ts_cmd_node *in_cmd)
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
 	struct ts_kit_platform_data *info = NULL;
 
-	TS_LOG_INFO("ts_set_info_flag called\n");
+	TS_LOG_INFO("%s called\n", __func__);
 	if (!in_cmd) {
 		TS_LOG_ERR("%s : find a null pointer\n", __func__);
 		return -EINVAL;
@@ -1549,7 +1790,7 @@ int ts_glove_switch(struct ts_cmd_node *in_cmd)
 }
 
 int ts_get_capacitance_test_type(struct ts_cmd_node *in_cmd,
-				 struct ts_cmd_sync *sync)
+	struct ts_cmd_sync *sync)
 {
 	int error = NO_ERR;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1589,7 +1830,7 @@ int ts_chip_detect(struct ts_cmd_node *in_cmd)
 	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
 	struct ts_device_ops *ops = NULL;
 
-	TS_LOG_INFO("ts_chip_detect called\n");
+	TS_LOG_INFO("%s called\n", __func__);
 	if (!in_cmd) {
 		TS_LOG_ERR("%s : find a null pointer\n", __func__);
 		return -EINVAL;
@@ -1855,7 +2096,7 @@ int ts_roi_switch(struct ts_cmd_node *in_cmd)
 }
 
 int ts_chip_regs_operate(struct ts_cmd_node *in_cmd,
-		struct ts_cmd_sync *sync)
+	struct ts_cmd_sync *sync)
 {
 	int error = -EIO;
 	struct ts_device_ops *ops = g_ts_kit_platform_data.chip_data->ops;
@@ -1907,7 +2148,7 @@ out:
 
 int ts_send_holster_cmd(void)
 {
-	int error = NO_ERR;
+	int error;
 	struct ts_cmd_node cmd;
 
 	TS_LOG_DEBUG("set holster\n");
@@ -2001,4 +2242,3 @@ int ts_oemdata_type_check_legal(u8 type, u8 len)
 	return ret;
 }
 EXPORT_SYMBOL(ts_oemdata_type_check_legal);
-/* lint -restore */

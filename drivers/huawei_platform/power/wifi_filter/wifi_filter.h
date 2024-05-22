@@ -41,6 +41,6 @@ void get_filter_info(
     const struct ipt_entry *e);
 
 void get_filter_infoEx(struct sk_buff *skb);
-
+void get_pg_app_info(int port, int protocol);
 #endif
 

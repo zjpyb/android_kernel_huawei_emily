@@ -1,11 +1,9 @@
- /*
- *  Hisilicon K3 SOC camera driver source file
+/*
+ * hwois.c
  *
- *  Copyright (C) Huawei Technology Co., Ltd.
+ * driver for hwois
  *
- * Author:
- * Email:
- * Date:	  2014-11-15
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,9 +17,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
-
 
 #include <linux/compiler.h>
 #include <linux/gpio.h>
@@ -35,17 +32,15 @@
 #include <media/huawei/camera.h>
 #include <media/v4l2-subdev.h>
 #include "hwois.h"
+#include "securec.h"
 
-//lint -save -e429 -e563
-#define SD2Ois(sd) container_of(sd, hw_ois_t, subdev)
-extern int strncpy_s(char *strDest, size_t destMax, const char *strSrc, size_t count);
-extern int snprintf_s(char* strDest, size_t destMax, size_t count, const char* format, ...);
+#define sd_to_ois(sd) container_of(sd, struct hw_ois_t, subdev)
 
-int hw_ois_get_dt_data(struct platform_device *pdev, ois_t *ois)
+int hw_ois_get_dt_data(struct platform_device *pdev, struct ois_t *ois)
 {
 	struct device_node *dev_node = pdev->dev.of_node;
 	struct hw_ois_info *ois_info = NULL;
-	int rc = 0;
+	int rc;
 
 	ois_info = kzalloc(sizeof(struct hw_ois_info), GFP_KERNEL);
 	if (!ois_info) {
@@ -54,22 +49,28 @@ int hw_ois_get_dt_data(struct platform_device *pdev, ois_t *ois)
 	}
 	ois->ois_info = ois_info;
 
-	rc = of_property_read_string(dev_node, "hisi,ois-name", &ois_info->ois_name);
-	cam_info("%s hisi,ois-name %s, rc %d\n", __func__, ois_info->ois_name, rc);
+	rc = of_property_read_string(dev_node, "hisi,ois-name",
+		&ois_info->ois_name);
+	cam_info("%s hisi, ois-name %s, rc %d\n", __func__,
+		ois_info->ois_name, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 
-	rc = of_property_read_u32(dev_node, "hisi,ois-support", (u32 *)&ois_info->ois_support);
-	cam_info("%s hisi,ois-support %d, rc %d\n", __func__, ois_info->ois_support, rc);
+	rc = of_property_read_u32(dev_node, "hisi,ois-support",
+		(u32 *)&ois_info->ois_support);
+	cam_info("%s hisi, ois-support %d, rc %d\n", __func__,
+		ois_info->ois_support, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
 	}
 
-	rc = of_property_read_u32(dev_node, "hisi,slave-addr", &ois_info->slave_address);
-	cam_info("%s hisi,slave-addr 0x%x, rc %d\n", __func__, ois_info->slave_address, rc);
+	rc = of_property_read_u32(dev_node, "hisi,slave-addr",
+		&ois_info->slave_address);
+	cam_info("%s hisi, slave-addr 0x%x, rc %d\n", __func__,
+		ois_info->slave_address, rc);
 	if (rc < 0) {
 		cam_err("%s failed %d\n", __func__, __LINE__);
 		goto fail;
@@ -77,39 +78,43 @@ int hw_ois_get_dt_data(struct platform_device *pdev, ois_t *ois)
 
 	return rc;
 fail:
-	cam_err("%s can not read ois info exit.\n", __func__);
+	cam_err("%s can not read ois info exit\n", __func__);
 	kfree(ois_info);
 	ois_info = NULL;
 	return rc;
 }
 
-int hw_ois_config(hw_ois_t *hw_ois, void *arg)
+int hw_ois_config(struct hw_ois_t *hw_ois, void *arg)
 {
 	int rc = 0;
 	struct hw_ois_cfg_data *cdata = (struct hw_ois_cfg_data *)arg;
 
-	if (NULL == cdata) {
-		cam_debug("%s, arg is NULL.\n", __func__);
+	if (!cdata) {
+		cam_debug("%s, arg is NULL\n", __func__);
 		return -EINVAL;
 	}
 
-	cam_debug("%s enter cfgtype=%d.\n", __func__, cdata->cfgtype);
+	cam_debug("%s enter cfgtype=%d\n", __func__, cdata->cfgtype);
 
 	mutex_lock(&hw_ois->lock);
 
 	switch (cdata->cfgtype) {
 	case CFG_OIS_I2C_READ:
-		rc = hw_ois->intf->vtbl->ois_i2c_read(hw_ois->intf, arg);
+		rc = hw_ois->intf->vtbl->ois_i2c_read(hw_ois->intf,
+			arg);
 		break;
 	case CFG_OIS_I2C_WRITE:
-		rc = hw_ois->intf->vtbl->ois_i2c_write(hw_ois->intf, arg);
+		rc = hw_ois->intf->vtbl->ois_i2c_write(hw_ois->intf,
+			arg);
 		break;
 	case CFG_OIS_GET_OIS_NAME:
-		rc = strncpy_s(cdata->cfg.name, sizeof(cdata->cfg.name) - 1, hw_ois->ois_info->ois_name,
+		rc = strncpy_s(cdata->cfg.name,
+			sizeof(cdata->cfg.name) - 1,
+			hw_ois->ois_info->ois_name,
 			sizeof(cdata->cfg.name) - 1);
-		if (rc != 0) {
+		if (rc != 0)
 			cam_err("%s ois name copy fail\n", __func__);
-		}
+
 		break;
 	case CFG_OIS_GET_SUPPORT_FLAG:
 		cdata->cfg.ois_sup = hw_ois->ois_info->ois_support;
@@ -124,87 +129,74 @@ int hw_ois_config(hw_ois_t *hw_ois, void *arg)
 	return rc;
 }
 
-static long
-hw_ois_subdev_ioctl(
-		struct v4l2_subdev *sd,
-		unsigned int cmd,
-		void *arg)
+static long hw_ois_subdev_ioctl(struct v4l2_subdev *sd, unsigned int cmd,
+	void *arg)
 {
 	long rc = -EINVAL;
-	hw_ois_t* s = NULL;
+	struct hw_ois_t *s = NULL;
 
-	if (arg == NULL) {
-		cam_err("%s, the parameters is a null pointer!", __func__);
-	}
+	if (!arg)
+		cam_err("%s, the parameters is a null pointer", __func__);
 
-	s = SD2Ois(sd);
-	cam_err("hw ois cmd = %x",cmd);
+	s = sd_to_ois(sd);
+	cam_err("hw ois cmd = %x", cmd);
 
-	switch (cmd)
-	{
+	switch (cmd) {
 	case VIDIOC_HISI_OIS_CFG:
 		rc = s->intf->vtbl->ois_config(s, arg);
 		break;
 	default:
-		cam_err("%s, invalid IOCTL CMD(%d)! \n", __func__, cmd);
+		cam_err("%s, invalid IOCTL CMD %d\n", __func__, cmd);
 		break;
 	}
 	return rc;
 }
 
-static int hw_ois_subdev_open(
-		struct v4l2_subdev *sd,
-		struct v4l2_subdev_fh *fh)
+static int hw_ois_subdev_open(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
 {
-	cam_notice("hw_ois_sbudev open! \n");
+	cam_notice("hw_ois_sbudev open\n");
 	return 0;
 }
 
-static int
-hw_ois_subdev_close(
-		struct v4l2_subdev *sd,
-		struct v4l2_subdev_fh *fh)
+static int hw_ois_subdev_close(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
 {
-	cam_notice("hw_ois_sbudev close! \n");
+	cam_notice("hw_ois_sbudev close\n");
 	return 0;
 }
 
-static struct v4l2_subdev_internal_ops
-s_subdev_internal_ops_hw_ois =
-{
+static struct v4l2_subdev_internal_ops s_subdev_internal_ops_hw_ois = {
 	.open = hw_ois_subdev_open,
 	.close = hw_ois_subdev_close,
 };
 
-static struct v4l2_subdev_core_ops
-s_subdev_core_ops_hw_ois =
-{
+static struct v4l2_subdev_core_ops s_subdev_core_ops_hw_ois = {
 	.ioctl = hw_ois_subdev_ioctl,
 };
 
-static struct v4l2_subdev_ops
-s_subdev_ops_hw_ois =
-{
+static struct v4l2_subdev_ops s_subdev_ops_hw_ois = {
 	.core = &s_subdev_core_ops_hw_ois,
 };
 
-int hw_ois_register(struct platform_device *pdev,
-		hw_ois_intf_t* intf, struct hw_ois_info *hw_ois_info)
+int hw_ois_register(struct platform_device *pdev, struct hw_ois_intf_t *intf,
+	struct hw_ois_info *hw_ois_info)
 {
 	int rc = 0;
-	hw_ois_t *hw_ois = NULL;
+	struct hw_ois_t *hw_ois = NULL;
 	struct v4l2_subdev *subdev = NULL;
-	cam_info("%s,ois register!!",__func__);
-	if (intf == NULL || pdev == NULL || hw_ois_info == NULL) {
+
+	cam_info("%s, ois register", __func__);
+	if (!intf || !pdev || !hw_ois_info) {
 		rc = -ENOMEM;
-		cam_err("%s, the parameters is a null pointer!", __func__);
+		cam_err("%s, the parameters is a null pointer", __func__);
 		goto register_fail;
 	}
 
-	hw_ois = (hw_ois_t*)kzalloc(sizeof(hw_ois_t), GFP_KERNEL);
-	if (hw_ois == NULL) {
+	hw_ois = (struct hw_ois_t *)kzalloc(sizeof(struct hw_ois_t), GFP_KERNEL);
+	if (!hw_ois) {
 		rc = -ENOMEM;
-		cam_err("%s, ois is null!!", __func__);
+		cam_err("%s, ois is null", __func__);
 		goto register_fail;
 	}
 
@@ -213,14 +205,16 @@ int hw_ois_register(struct platform_device *pdev,
 
 	v4l2_subdev_init(subdev, &s_subdev_ops_hw_ois);
 	subdev->internal_ops = &s_subdev_internal_ops_hw_ois;
-	snprintf_s(subdev->name, sizeof(subdev->name),sizeof(subdev->name)-1,
-			"%s", hw_ois_info->ois_name);
+	snprintf_s(subdev->name, sizeof(subdev->name),
+		sizeof(subdev->name) - 1,
+		"%s", hw_ois_info->ois_name);
 	subdev->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
 	v4l2_set_subdevdata(subdev, pdev);
 
-	init_subdev_media_entity(subdev,HWCAM_SUBDEV_OIS);
-	hwcam_cfgdev_register_subdev(subdev,HWCAM_SUBDEV_OIS);
-    intf->subdev = subdev;
+	init_subdev_media_entity(subdev, CAM_SUBDEV_OIS);
+	cam_cfgdev_register_subdev(subdev, CAM_SUBDEV_OIS);
+
+	intf->subdev = subdev;
 	hw_ois->intf = intf;
 	hw_ois->ois_info = hw_ois_info;
 	hw_ois->pdev = pdev;
@@ -229,15 +223,13 @@ register_fail:
 	return rc;
 }
 
-void hw_ois_unregister(struct v4l2_subdev* subdev)
+void hw_ois_unregister(struct v4l2_subdev *subdev)
 {
-    hw_ois_t* hw_ois = SD2Ois(subdev);
+	struct hw_ois_t *hw_ois = sd_to_ois(subdev);
 
-    media_entity_cleanup(&subdev->entity);
-    hwcam_cfgdev_unregister_subdev(subdev);
+	media_entity_cleanup(&subdev->entity);
+	cam_cfgdev_unregister_subdev(subdev);
 
-    kzfree(hw_ois->ois_info);
-    kzfree(hw_ois);
+	kzfree(hw_ois->ois_info);
+	kzfree(hw_ois);
 }
-
-//lint -restore

@@ -131,7 +131,6 @@ static void __exit gps_bcm_common_exit(void)
 	return;
 }
 
-
 int set_gps_ref_clk_enable_bcm(bool enable, gps_modem_id_enum modem_id,
 			       gps_rat_mode_enum rat_mode)
 {
@@ -166,7 +165,6 @@ int set_gps_ref_clk_enable_bcm(bool enable, gps_modem_id_enum modem_id,
 
 	return ret;
 }
-
 
 fs_initcall(gps_bcm_common_init);
 module_exit(gps_bcm_common_exit);

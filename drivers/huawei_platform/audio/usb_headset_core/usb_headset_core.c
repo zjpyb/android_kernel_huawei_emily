@@ -116,7 +116,6 @@ static int xhci_notifier_fn(struct notifier_block *nb,
 	if (uh_pdata->hs_hw_issus_enable == 0)
 		return 0;
 
-
 	if ((action == USB_DEVICE_REMOVE) &&
 		(uh_pdata->hs_state == USB_HEADSET_PLUG_IN)) {
 		if (uh_pdata->scharge_ctl_flag == USB_SCHARGE_BOOTST_OFF) {
@@ -148,7 +147,6 @@ static int usb_headset_core_probe(struct platform_device *pdev)
 
 	uh_pdata->hs_state = USB_HEADSET_PLUG_OUT;
 	uh_pdata->scharge_ctl_flag = USB_SCHARGE_BOOTST_OFF;
-
 
 	if (!of_property_read_u32(node, "hs_hw_issus_enable", &temp))
 		uh_pdata->hs_hw_issus_enable = temp;

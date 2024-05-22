@@ -1,9 +1,8 @@
 /*
- * arch/arm/mach-k3v2/include/mach/util.h
+ * util.h
  *
- * balong platform misc utilities function
  *
- * Copyright (C) 2012 Hisilicon, Inc.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -11,11 +10,10 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  */
-
 #ifndef __MACH_UTIL_H__
 #define __MACH_UTIL_H__
 
@@ -24,31 +22,31 @@
 #include <linux/sysctl.h>
 #include "hisi_himntn_enum.h"
 
-#define HIMNTN_VALID_SIZE   (64)
+#define HIMNTN_VALID_SIZE 64
 
 extern int  check_himntn(int feature);
 extern int get_himntn_value(int feature);
 extern u32 atoi(char *s);
-struct proc_dir_entry *balong_create_stats_proc_entry(const char *name, mode_t mode,
-	const struct file_operations *proc_fops, void *data);
-void balong_remove_stats_proc_entry(const char *name);
+struct proc_dir_entry *dfx_create_stats_proc_entry(const char *name, mode_t mode,
+				const struct file_operations *proc_fops, void *data);
+void dfx_remove_stats_proc_entry(const char *name);
 
-struct proc_dir_entry *balong_create_memory_proc_entry(const char *name, mode_t mode,
-	const struct file_operations *proc_fops, void *data);
-void balong_remove_memory_proc_entry(const char *name);
+struct proc_dir_entry *dfx_create_memory_proc_entry(const char *name, mode_t mode,
+				const struct file_operations *proc_fops, void *data);
+void dfx_remove_memory_proc_entry(const char *name);
 
-struct proc_dir_entry *balong_create_log_proc_entry(const char *name, mode_t mode,
-	const struct file_operations *proc_fops, void *data);
-void balong_remove_log_proc_entry(const char *name);
+struct proc_dir_entry *dfx_create_log_proc_entry(const char *name, mode_t mode,
+				const struct file_operations *proc_fops, void *data);
+void dfx_remove_log_proc_entry(const char *name);
 
-struct proc_dir_entry *balong_create_pstore_proc_entry(const char *name, mode_t mode,
-	const struct file_operations *proc_fops, void *data);
-void balong_remove_pstore_proc_entry(const char *name);
+struct proc_dir_entry *dfx_create_pstore_proc_entry(const char *name, mode_t mode,
+				const struct file_operations *proc_fops, void *data);
+void dfx_remove_pstore_proc_entry(const char *name);
 
 #ifdef CONFIG_FACTORY_MODE
-struct proc_dir_entry *balong_create_ddrtest_proc_entry(const char *name, mode_t mode,
-	const struct file_operations *proc_fops, void *data);
-void balong_remove_ddrtest_proc_entry(const char *name);
+struct proc_dir_entry *dfx_create_ddrtest_proc_entry(const char *name, mode_t mode,
+				const struct file_operations *proc_fops, void *data);
+void dfx_remove_ddrtest_proc_entry(const char *name);
 #endif
 
 void create_dump_virt_mem_proc_file(char *name, void *virt_addr, size_t size);

@@ -14,8 +14,8 @@
 #include "xattr.h"
 #include <trace/events/f2fs.h>
 
-#ifdef CONFIG_HWAA
-#include <huawei_platform/hwaa/hwaa_fs_hooks.h>
+#ifdef CONFIG_HWDPS
+#include <huawei_platform/hwdps/hwdps_fs_hooks.h>
 #endif
 
 static unsigned long dir_blocks(struct inode *inode)
@@ -391,14 +391,14 @@ struct page *f2fs_init_inode_metadata(struct inode *inode, struct dentry *dentry
 			goto put_error;
 
 		if ((f2fs_encrypted_inode(dir) || dummy_encrypt) &&
-					f2fs_may_encrypt(inode)) {
+		    f2fs_may_encrypt(inode)) {
 			err = fscrypt_inherit_context(dir, inode, page, false);
 			if (err)
 				goto put_error;
-#ifdef CONFIG_HWAA
-			err = hwaa_inherit_context(dir, inode, dentry,
-						page, false);
-			if (err) {
+#ifdef CONFIG_HWDPS
+			err = hwdps_inherit_context(dir, inode, dentry, page,
+				dpage);
+			if (err != 0) {
 				err = -EINVAL;
 				goto put_error;
 			}
@@ -754,7 +754,7 @@ void f2fs_delete_entry(struct f2fs_dir_entry *dentry, struct page *page,
 		!f2fs_truncate_hole(dir, page->index, page->index + 1)) {
 		f2fs_clear_radix_tree_dirty_tag(page);
 		clear_page_dirty_for_io(page);
-		ClearPagePrivate(page);
+		f2fs_clear_page_private(page);
 		ClearPageUptodate(page);
 		clear_cold_data(page);
 		inode_dec_dirty_pages(dir);
@@ -842,7 +842,9 @@ int f2fs_fill_dentries(struct dir_context *ctx, struct f2fs_dentry_ptr *d,
 				"%s: corrupted namelen=%d, run fsck to fix.",
 				__func__, le16_to_cpu(de->name_len));
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
-			return -EINVAL;
+			f2fs_set_need_fsck_report();
+			err = -EINVAL;
+			goto out;
 		}
 
 		if (f2fs_encrypted_inode(d->inode)) {
@@ -959,10 +961,21 @@ out:
 
 static int f2fs_dir_open(struct inode *inode, struct file *filp)
 {
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+	filp->f_fsync_flag = 0;
+#endif
 	if (f2fs_encrypted_inode(inode))
 		return fscrypt_get_encryption_info(inode) ? -EACCES : 0;
 	return 0;
 }
+
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+static int f2fs_dir_flush(struct file *file, fl_owner_t id)
+{
+	f2fs_flush_wait_fsync(file);
+	return 0;
+}
+#endif
 
 const struct file_operations f2fs_dir_operations = {
 	.llseek		= generic_file_llseek,
@@ -970,6 +983,9 @@ const struct file_operations f2fs_dir_operations = {
 	.iterate_shared	= f2fs_readdir,
 	.fsync		= f2fs_sync_file,
 	.open		= f2fs_dir_open,
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+	.flush		= f2fs_dir_flush,
+#endif
 	.unlocked_ioctl	= f2fs_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl	= f2fs_compat_ioctl,

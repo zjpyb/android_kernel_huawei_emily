@@ -1,6 +1,6 @@
 config HKIP_ATKINFO
 	bool "Upload HKIP attack information"
-	depends on HISI_HHEE
+	depends on HHEE || HUAWEI_HKIP
 	default n
 	help
 	  Say yes to enable HKIP attack information to Huawei server.

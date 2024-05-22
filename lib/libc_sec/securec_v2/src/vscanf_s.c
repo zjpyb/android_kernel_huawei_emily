@@ -5,7 +5,6 @@
  * Create: 2014-02-25
  */
 
-#define SECUREC_INLINE_INIT_FILE_STREAM_STDIN 1
 #include "secinput.h"
 
 /*
@@ -34,7 +33,7 @@ int vscanf_s(const char *format, va_list argList)
 {
     int retVal;                 /* If initialization causes  e838 */
     SecFileStream fStr;
-    SecInitFileStreamFromStdin(&fStr);
+    SECUREC_FILE_STREAM_FROM_STDIN(&fStr);
     /*
      * The "va_list" has different definition on different platform, so we can't use argList == NULL
      * To determine it's invalid. If you has fixed platform, you can check some fields to validate it,
@@ -46,9 +45,7 @@ int vscanf_s(const char *format, va_list argList)
     }
 
     SECUREC_LOCK_STDIN(0, fStr.pf);
-
     retVal = SecInputS(&fStr, format, argList);
-
     SECUREC_UNLOCK_STDIN(0, fStr.pf);
     if (retVal < 0) {
         SECUREC_ERROR_INVALID_PARAMTER("vscanf_s");
@@ -56,5 +53,4 @@ int vscanf_s(const char *format, va_list argList)
     }
     return retVal;
 }
-
 

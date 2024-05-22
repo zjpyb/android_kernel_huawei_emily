@@ -7,47 +7,32 @@ EXTRA_CFLAGS += -I$(srctree)/drivers/hisi/hifi_mailbox/ipcm
 EXTRA_CFLAGS += -I$(srctree)/drivers/hisi/hifi_dsp
 endif
 
-ifneq ($(filter hi3660 kirin970, $(TARGET_BOARD_PLATFORM)),)
-EXTRA_CFLAGS += -DAUDIO_LOW_LATENCY_LEGACY
-endif
+
 
 EXTRA_CFLAGS +=	-Idrivers/hisi/slimbus/
-EXTRA_CFLAGS +=	-Iinclude/linux/hisi/hi64xx/
-# HI3630 Platform Support
-snd-soc-hi3630-objs := hisi_pcm_hifi.o
-snd-soc-hi3650-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o
-snd-soc-hi3660-objs := hisi_pcm_hifi.o slimbus_dai.o hi3xxx_asp_dma.o asp_cfg.o
-#ifeq ($(CONFIG_HISI_DEBUG_FS),y)
-#snd-soc-hi3660-objs += pcm_debug.o
-#endif
+EXTRA_CFLAGS +=	-Iinclude/linux/hisi/da_combine/
+EXTRA_CFLAGS +=	-I$(srctree)/drivers/hisi/hifi_dsp
 
-ifeq ($(CONFIG_HDMI_K3), y)
-endif
-obj-$(CONFIG_SND_SOC_PCM_HI3630) += snd-soc-hi3630.o
-obj-$(CONFIG_SND_SOC_PCM_HI3650) += snd-soc-hi3650.o
-obj-$(CONFIG_SND_SOC_PCM_HI3660) += snd-soc-hi3660.o
+obj-$(CONFIG_SND_SOC_SLIMBUS_DAI) += slimbus_dai.o
+snd-soc-pcm-dsp-objs := audio_pcm_hifi.o
+snd-soc-asp-cfg-objs := asp_cfg.o
+obj-$(CONFIG_HIFI_DSP_ONE_TRACK) += snd-soc-pcm-dsp.o
 
 # DP Support
-snd-soc-dp-objs := hisi_dp_machine.o hisi_pcm_dp.o hisi_dp_i2s.o asp_hdmi_dma.o
+ifeq ($(CONFIG_HISI_FB_V600),y)
+EXTRA_CFLAGS += -DDP_AUDIO_ASP_HDMI_I2S
+endif
+snd-soc-dp-objs := audio_dp_machine.o audio_pcm_dp.o audio_dp_i2s.o asp_hdmi_dma.o
 
-# HI6210 Platform Support
-snd-soc-hi6210-objs := hisi_pcm_hifi.o
-# HI6210-HISSC Machine Support
-obj-$(CONFIG_SND_SOC_PCM_HI6210) += snd-soc-hi6210.o
-# HI6250-HI6402 Machine Support
-snd-soc-hi6250-hi6402-objs += hi6250_hi6402.o
-# HI6250-HI6555c Machine Support
-snd-soc-hi6250-hi6555c-objs += hi6250_hi6555c.o
-# HI3660-HI6403 Machine Support
-snd-soc-hi3660-hi6403-objs := hi3660_hi6403.o
-# HI3XXX-HI6405 Machine Support
-snd-soc-hi3xxx-hi6405-objs := hi3xxx_hi6405.o
-snd-soc-hi3xxx-asp-codec-objs := hi3xxx_asp_codec.o
+snd-soc-da-separate-machine-objs += da_separate_machine.o
+snd-soc-da-combine-machine-objs := da_combine_machine.o
+snd-soc-analog-less-machine-objs := analog_less_machine.o
 
-obj-$(CONFIG_SND_HI6250_HI6555C) +=snd-soc-hi6250-hi6555c.o
-obj-$(CONFIG_SND_HI6250_HI6402) += snd-soc-hi6250-hi6402.o
-obj-$(CONFIG_SND_HI3660_HI6403) += snd-soc-hi3660-hi6403.o
-obj-$(CONFIG_SND_HI3XXX_HI6405) += snd-soc-hi3xxx-hi6405.o
-obj-$(CONFIG_SND_HI3XXX_ASP_CODEC) += snd-soc-hi3xxx-asp-codec.o
+obj-$(CONFIG_SND_DA_SEPARATE_MACHINE) +=snd-soc-da-separate-machine.o
+obj-$(CONFIG_SND_DA_COMBINE_MACHINE) += snd-soc-da-combine-machine.o
+obj-$(CONFIG_SND_ANALOG_LESS_MACHINE) += snd-soc-analog-less-machine.o
+
 obj-$(CONFIG_SND_SOC_DP_AUDIO) += snd-soc-dp.o
 obj-$(CONFIG_SND_AUTO_TEST) += auto_test/
+obj-$(CONFIG_SND_SOC_PCM_CODECS) += pcm_codec/
+obj-y += snd-soc-asp-cfg.o

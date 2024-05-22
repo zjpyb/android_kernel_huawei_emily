@@ -364,7 +364,8 @@ struct bus_type i3c_bus_type = {
 static enum i3c_addr_slot_status
 i3c_bus_get_addr_slot_status(struct i3c_bus *bus, u16 addr)
 {
-	int status, bitpos = addr * 2;
+	int bitpos = addr * 2;
+	unsigned long status;
 
 	if (addr > I2C_MAX_ADDR)
 		return I3C_ADDR_SLOT_RSVD;
@@ -372,7 +373,7 @@ i3c_bus_get_addr_slot_status(struct i3c_bus *bus, u16 addr)
 	status = bus->addrslots[bitpos / BITS_PER_LONG];
 	status >>= bitpos % BITS_PER_LONG;
 
-	return status & I3C_ADDR_SLOT_STATUS_MASK;    /* [false alarm]:原生代码无风险屏幕处理 */
+	return (int)(status & I3C_ADDR_SLOT_STATUS_MASK);
 }
 
 static void i3c_bus_set_addr_slot_status(struct i3c_bus *bus, u16 addr,

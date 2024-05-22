@@ -8,4 +8,5 @@ endif
 
 EXTRA_CFLAGS += -Idrivers/hisi/hifi_mailbox/mailbox \
 		-Idrivers/hisi/hifi_mailbox/ipcm \
-		-Idrivers/hisi/hifi_dsp
+		-Idrivers/hisi/hifi_dsp \
+		-Idrivers/hisi/hifi_dsp/om

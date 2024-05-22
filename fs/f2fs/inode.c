@@ -202,6 +202,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	iblocks = le64_to_cpu(F2FS_INODE(node_page)->i_blocks);
 	if (!iblocks) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: corrupted inode i_blocks i_ino=%lx iblocks=%llu, "
 			"run fsck to fix.",
@@ -211,6 +212,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 
 	if (ino_of_node(node_page) != nid_of_node(node_page)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: corrupted inode footer i_ino=%lx, ino,nid: "
 			"[%u, %u] run fsck to fix.",
@@ -222,6 +224,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	if (f2fs_sb_has_flexible_inline_xattr(sbi->sb)
 			&& !f2fs_has_extra_attr(inode)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: corrupted inode ino=%lx, run fsck to fix.",
 			__func__, inode->i_ino);
@@ -231,6 +234,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	if (f2fs_has_extra_attr(inode) &&
 			!f2fs_sb_has_extra_attr(sbi->sb)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: inode (ino=%lx) is with extra_attr, "
 			"but extra_attr feature is off",
@@ -241,6 +245,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	if (fi->i_extra_isize > F2FS_TOTAL_EXTRA_ATTR_SIZE ||
 			fi->i_extra_isize % sizeof(__le32)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: inode (ino=%lx) has corrupted i_extra_isize: %d, "
 			"max: %zu",
@@ -257,6 +262,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 			!f2fs_is_valid_blkaddr(sbi, ei->blk + ei->len - 1,
 							DATA_GENERIC))) {
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			f2fs_set_need_fsck_report();
 			f2fs_msg(sbi->sb, KERN_WARNING,
 				"%s: inode (ino=%lx) extent info [%u, %u, %u] "
 				"is incorrect, run fsck to fix",
@@ -269,6 +275,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	if (f2fs_has_inline_data(inode) &&
 			(!S_ISREG(inode->i_mode) && !S_ISLNK(inode->i_mode))) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: inode (ino=%lx, mode=%u) should not have "
 			"inline_data, run fsck to fix",
@@ -278,6 +285,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 
 	if (f2fs_has_inline_dentry(inode) && !S_ISDIR(inode->i_mode)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: inode (ino=%lx, mode=%u) should not have "
 			"inline_dentry, run fsck to fix",
@@ -288,6 +296,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 	if (fi->i_extra_isize > F2FS_TOTAL_EXTRA_ATTR_SIZE ||
 			(unsigned int)fi->i_extra_isize % sizeof(__le32)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"%s: inode (ino=%lx) has corrupted i_extra_isize: %d, "
 			"max: %lu",
@@ -304,6 +313,7 @@ static bool sanity_check_inode(struct inode *inode, struct page *node_page)
 			!f2fs_is_valid_blkaddr(sbi, ei->blk + ei->len - 1,
 							DATA_GENERIC))) {
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			f2fs_set_need_fsck_report();
 			f2fs_msg(sbi->sb, KERN_WARNING,
 				"%s: inode (ino=%lx) extent info [%u, %u, %u] "
 				"is incorrect, run fsck to fix",
@@ -500,6 +510,7 @@ make_now:
 		ret = -EIO;
 		/* i_mode is wrong, only fsck can remove the corrupted file */
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		goto bad_inode;
 	}
 	f2fs_set_inode_flags(inode);
@@ -696,7 +707,7 @@ void f2fs_evict_inode(struct inode *inode)
 		type = META;
 	else
 		type = DATA;
-	f2fs_submit_merged_write_cond(sbi, inode, 0, ULONG_MAX, type);
+	f2fs_submit_merged_write_cond(sbi, inode, 0, UINT_MAX, type);
 #endif
 	truncate_inode_pages_final(&inode->i_data);
 	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
@@ -843,6 +854,7 @@ void f2fs_handle_failed_inode(struct inode *inode)
 	err = f2fs_get_node_info(sbi, inode->i_ino, &ni);
 	if (err) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 			"May loss orphan inode, run fsck to fix.");
 		goto out;
@@ -852,6 +864,7 @@ void f2fs_handle_failed_inode(struct inode *inode)
 		err = f2fs_acquire_orphan_inode(sbi);
 		if (err) {
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			f2fs_set_need_fsck_report();
 			f2fs_msg(sbi->sb, KERN_WARNING,
 				"Too many orphan inodes, run fsck to fix.");
 		} else {

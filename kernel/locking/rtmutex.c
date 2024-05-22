@@ -18,6 +18,9 @@
 #include <linux/sched/wake_q.h>
 #include <linux/sched/debug.h>
 #include <linux/timer.h>
+#ifdef CONFIG_HW_FUTEX_PI
+#include <chipset_common/linux/hw_pi.h>
+#endif
 
 #include "rtmutex_common.h"
 
@@ -227,13 +230,21 @@ static inline bool unlock_rt_mutex_safe(struct rt_mutex *lock,
 /*
  * Only use with rt_mutex_waiter_{less,equal}()
  */
+#ifndef CONFIG_HW_FUTEX_PI
 #define task_to_waiter(p)	\
 	&(struct rt_mutex_waiter){ .prio = (p)->prio, .deadline = (p)->dl.deadline }
+#endif
 
 static inline int
 rt_mutex_waiter_less(struct rt_mutex_waiter *left,
 		     struct rt_mutex_waiter *right)
 {
+#ifdef CONFIG_HW_FUTEX_PI
+	int ret = hw_rt_mutex_waiter_less(left, right);
+	if (ret >= 0)
+		return ret;
+#endif
+
 	if (left->prio < right->prio)
 		return 1;
 
@@ -253,6 +264,12 @@ static inline int
 rt_mutex_waiter_equal(struct rt_mutex_waiter *left,
 		      struct rt_mutex_waiter *right)
 {
+#ifdef CONFIG_HW_FUTEX_PI
+	int ret = hw_rt_mutex_waiter_equal(left, right);
+	if (ret >= 0)
+		return ret;
+#endif
+
 	if (left->prio != right->prio)
 		return 0;
 
@@ -681,6 +698,9 @@ static int rt_mutex_adjust_prio_chain(struct task_struct *task,
 	 */
 	waiter->prio = task->prio;
 	waiter->deadline = task->dl.deadline;
+#ifdef CONFIG_HW_FUTEX_PI
+	rt_mutex_waiter_fill_additional_infos(waiter, task, false);
+#endif
 
 	rt_mutex_enqueue(lock, waiter);
 
@@ -955,6 +975,9 @@ static int task_blocks_on_rt_mutex(struct rt_mutex *lock,
 	waiter->lock = lock;
 	waiter->prio = task->prio;
 	waiter->deadline = task->dl.deadline;
+#ifdef CONFIG_HW_FUTEX_PI
+	rt_mutex_waiter_fill_additional_infos(waiter, task, true);
+#endif
 
 	/* Get the top priority waiter on the lock */
 	if (rt_mutex_has_waiters(lock))
@@ -1719,25 +1742,51 @@ void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
  * possible because it belongs to the pi_state which is about to be freed
  * and it is not longer visible to other tasks.
  */
-void rt_mutex_proxy_unlock(struct rt_mutex *lock,
-			   struct task_struct *proxy_owner)
+void rt_mutex_proxy_unlock(struct rt_mutex *lock)
 {
 	debug_rt_mutex_proxy_unlock(lock);
 	rt_mutex_set_owner(lock, NULL);
 }
 
+/**
+ * __rt_mutex_start_proxy_lock() - Start lock acquisition for another task
+ * @lock:		the rt_mutex to take
+ * @waiter:		the pre-initialized rt_mutex_waiter
+ * @task:		the task to prepare
+ *
+ * Starts the rt_mutex acquire; it enqueues the @waiter and does deadlock
+ * detection. It does not wait, see rt_mutex_wait_proxy_lock() for that.
+ *
+ * NOTE: does _NOT_ remove the @waiter on failure; must either call
+ * rt_mutex_wait_proxy_lock() or rt_mutex_cleanup_proxy_lock() after this.
+ *
+ * Returns:
+ *  0 - task blocked on lock
+ *  1 - acquired the lock for task, caller should wake it up
+ * <0 - error
+ *
+ * Special API call for PI-futex support.
+ */
 int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 			      struct rt_mutex_waiter *waiter,
 			      struct task_struct *task)
 {
 	int ret;
 
+	lockdep_assert_held(&lock->wait_lock);
+
 	if (try_to_take_rt_mutex(lock, task, NULL))
 		return 1;
 
+#ifdef CONFIG_HW_FUTEX_PI
+	ret = task_blocks_on_rt_mutex(lock, waiter, task,
+	    likely(is_hw_futex_pi_enabled()) ? RT_MUTEX_MIN_CHAINWALK :
+	    RT_MUTEX_FULL_CHAINWALK);
+#else
 	/* We enforce deadlock detection for futexes */
 	ret = task_blocks_on_rt_mutex(lock, waiter, task,
 				      RT_MUTEX_FULL_CHAINWALK);
+#endif
 
 	if (ret && !rt_mutex_owner(lock)) {
 		/*
@@ -1748,9 +1797,6 @@ int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 		 */
 		ret = 0;
 	}
-
-	if (unlikely(ret))
-		remove_waiter(lock, waiter);
 
 	debug_rt_mutex_print_deadlock(waiter);
 
@@ -1763,12 +1809,18 @@ int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
  * @waiter:		the pre-initialized rt_mutex_waiter
  * @task:		the task to prepare
  *
+ * Starts the rt_mutex acquire; it enqueues the @waiter and does deadlock
+ * detection. It does not wait, see rt_mutex_wait_proxy_lock() for that.
+ *
+ * NOTE: unlike __rt_mutex_start_proxy_lock this _DOES_ remove the @waiter
+ * on failure.
+ *
  * Returns:
  *  0 - task blocked on lock
  *  1 - acquired the lock for task, caller should wake it up
  * <0 - error
  *
- * Special API call for FUTEX_REQUEUE_PI support.
+ * Special API call for PI-futex support.
  */
 int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 			      struct rt_mutex_waiter *waiter,
@@ -1778,6 +1830,8 @@ int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 
 	raw_spin_lock_irq(&lock->wait_lock);
 	ret = __rt_mutex_start_proxy_lock(lock, waiter, task);
+	if (unlikely(ret))
+		remove_waiter(lock, waiter);
 	raw_spin_unlock_irq(&lock->wait_lock);
 
 	return ret;
@@ -1845,7 +1899,8 @@ int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
  * @lock:		the rt_mutex we were woken on
  * @waiter:		the pre-initialized rt_mutex_waiter
  *
- * Attempt to clean up after a failed rt_mutex_wait_proxy_lock().
+ * Attempt to clean up after a failed __rt_mutex_start_proxy_lock() or
+ * rt_mutex_wait_proxy_lock().
  *
  * Unless we acquired the lock; we're still enqueued on the wait-list and can
  * in fact still be granted ownership until we're removed. Therefore we can

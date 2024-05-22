@@ -1,45 +1,36 @@
 /*
- * kbhub_channel.c
- *
- * Single wire UART Keyboard Channel driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: kbhub channel source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
+#include "kbhub_channel.h"
+
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
+#include <linux/miscdevice.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_gpio.h>
-#include <linux/miscdevice.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
-#include <huawei_platform/inputhub/kbhub.h>
-#include <huawei_platform/inputhub/sensorhub.h>
-#include <huawei_platform/log/log_exception.h>
-#include <huawei_platform/log/hw_log.h>
-#include "protocol.h"
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
-#include "kbhub_channel.h"
 
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif /* CONFIG_HUAWEI_DSM */
+#include <huawei_platform/inputhub/kbhub.h>
+#include <huawei_platform/log/hw_log.h>
+#include <huawei_platform/log/log_exception.h>
+
+#include "contexthub_boot.h"
+#include "contexthub_recovery.h"
+#include "contexthub_route.h"
+#include "protocol.h"
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -47,18 +38,25 @@
 
 #define KB_APP_CONFIG_LEN 16
 #define KBHUB_READY       1
+#define CMD_BYTE          0
+#define NFC_STATE_BYTE    6
+#define NFC_NEAR          1
+#define NFC_FAR           0
+#define NFC_WRITE_SUCCESS 0x55
 
 #define HWLOG_TAG kbhub_channel
 HWLOG_REGIST();
 
 static bool g_kbchannel_status;
-static int g_kb_ref_cnt;
+static int64_t g_kb_ref_cnt;
 
 static const struct kb_cmd_map_t kb_cmd_map_tab[] = {
 	{ KBHB_IOCTL_START, -1, TAG_KB, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ },
 	{ KBHB_IOCTL_STOP, -1, TAG_KB, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ },
 	{ KBHB_IOCTL_CMD, -1, TAG_KB, CMD_CMN_CONFIG_REQ,
 		SUB_CMD_KB_EVENT_REQ },
+	{ KBHB_IOCTL_SEND_DATA, -1, TAG_KB, CMD_CMN_CONFIG_REQ,
+		SUB_CMD_KB_SEND_DATA },
 };
 
 static struct kbdev_proxy kbdev_proxy = {
@@ -88,8 +86,8 @@ int kbdev_proxy_register(struct kb_dev_ops *ops)
 }
 EXPORT_SYMBOL(kbdev_proxy_register);
 
-static int send_kb_cmd_internal(int tag, obj_cmd_t cmd,
-	obj_sub_cmd_t subcmd, enum kb_type_t type, bool use_lock)
+static int send_kb_cmd_internal(int tag, enum obj_cmd cmd,
+	enum obj_sub_cmd subcmd, enum kb_type_t type, bool use_lock)
 {
 	uint8_t app_config[KB_APP_CONFIG_LEN] = {0};
 	interval_param_t interval_param;
@@ -177,8 +175,8 @@ int kernel_send_kb_report_event(unsigned int cmd, void *buffer, int size)
 {
 	int ret;
 	int i;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	struct kb_outreport_t outreport;
 
 	hwlog_info("%s enter\n", __func__);
@@ -230,8 +228,8 @@ static void kbhb_send_mcu_ready_event(void)
 {
 	int ret;
 	uint8_t kbhub_ready_event = KBHUB_READY;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	struct kb_outreport_t outreport;
 
 	hwlog_info("%s enter\n", __func__);
@@ -378,7 +376,49 @@ static struct miscdevice kbhub_miscdev = {
  * if receive KBHB_MCUREADY event , notify sw module for detect devices
  * and report kb data to sw module
  */
-static int kb_report_callback(const pkt_header_t *head)
+void kbhub_notify_event(int event)
+{
+	if (kbdev_proxy.ops && kbdev_proxy.ops->notify_event) {
+		hwlog_info("%s notify_event %d\n", __func__, event);
+		kbdev_proxy.ops->notify_event(event);
+	} else {
+		hwlog_info("%s kbdev_proxy.ops is null, not notify\n",
+			__func__);
+		kbdev_proxy.notify_event = event;
+	}
+}
+
+void kb_extented_dmd_report(int con_status, int nfcresult)
+{
+	int ret;
+	struct hiview_hievent *hi_event =
+		hiview_hievent_create(DSM_KB_CONNECTED_STATUS_NO);
+
+	if (!hi_event) {
+		hwlog_err("create hievent fail\n");
+		return;
+	}
+
+	ret = hiview_hievent_put_integral(hi_event, "connected", con_status);
+	if (ret < 0)
+		hwlog_err("hievent put para connected failed\n");
+
+	if (con_status) {
+		ret = hiview_hievent_put_integral(hi_event, "nfcresult",
+			nfcresult);
+		if (ret < 0)
+			hwlog_err("hievent put para nfcresult failed\n");
+	}
+
+	ret = hiview_hievent_report(hi_event);
+	if (ret < 0)
+		hwlog_err("report hievent failed\n");
+
+	hiview_hievent_destroy(hi_event);
+}
+EXPORT_SYMBOL(kb_extented_dmd_report);
+
+static int kb_report_callback(const struct pkt_header *head)
 {
 	int ret = -1;
 	int count;
@@ -387,13 +427,32 @@ static int kb_report_callback(const pkt_header_t *head)
 	if (!head)
 		return -1;
 
-	kb_data = (char *)head + sizeof(pkt_header_t);
+	kb_data = (char *)head + sizeof(struct pkt_header);
 
 	count = kb_data[1];
 
-	if (kb_data[0] == KBHB_MCUREADY) {
+	if (kb_data[CMD_BYTE] == KBHB_MCUREADY) {
 		hwlog_info("%s mcu ready\n", __func__);
 		kbhb_notify_mcu_state(ST_MCUREADY);
+	} else if (kb_data[CMD_BYTE] == KBHB_NFCINFO_REQ) {
+		kbhub_notify_event(NOTIFY_EVENT_RECV_NFC_REQ);
+		hwlog_info("%s recv nfc req\n", __func__);
+	} else if (kb_data[CMD_BYTE] == KBHB_RECV_WRITE_NFC_RESULT) {
+		if (kb_data[NFC_STATE_BYTE] == NFC_WRITE_SUCCESS)
+			kb_extented_dmd_report(KB_CONNECTED,
+				KB_NFC_WRITE_SUCCESS);
+		else
+			kb_extented_dmd_report(KB_CONNECTED, KB_NFC_WRITE_FAIL);
+		hwlog_info("%s recv nfc write result is %d\n", __func__,
+			kb_data[NFC_STATE_BYTE]);
+	} else if (kb_data[CMD_BYTE] == KBHB_NFC_NEAR_OR_FAR) {
+		if (kb_data[NFC_STATE_BYTE] == NFC_NEAR)
+			kbhub_notify_event(NOTIFY_EVENT_NEAR);
+		else if (kb_data[NFC_STATE_BYTE] == NFC_FAR)
+			kbhub_notify_event(NOTIFY_EVENT_FAR);
+		else
+			hwlog_err("%s error nfc event %d\n", __func__,
+				kb_data[NFC_STATE_BYTE]);
 	} else {
 		if (kbdev_proxy.ops && kbdev_proxy.ops->process_kbdata)
 			ret = kbdev_proxy.ops->process_kbdata(kb_data, count);

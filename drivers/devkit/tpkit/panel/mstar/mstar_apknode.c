@@ -25,6 +25,10 @@
 #include "mstar_apknode.h"
 #include "mstar_mp.h"
 
+#define SND_CMD_DATA_MAX_LEN 1024
+#define RTN_CMD_DATA_MAX_LEN 1024
+#define DEBUG_BUF_MAX_LEN 1024
+
 struct apk_data_info *apk_info;
 
 void mstar_apknode_open_leather_sheath(void)
@@ -373,7 +377,7 @@ static void mstar_jni_clear_msgtool_mem(void)
 {
     memset(apk_info->msg_tool_cmd_in, 0, sizeof(MsgToolDrvCmd_t));
     memset(apk_info->snd_cmd_data, 0, 1024);
-    memset(apk_info->snd_cmd_data, 0, 1024);
+    memset(apk_info->rtn_cmd_data, 0, 1024);
 }
 
 static MsgToolDrvCmd_t *mstar_jni_trans_cmd_from_user(unsigned long nArg)
@@ -390,7 +394,7 @@ static MsgToolDrvCmd_t *mstar_jni_trans_cmd_from_user(unsigned long nArg)
 	}
     pTransCmd->nCmdId = tCmdIn.nCmdId;
 
-    if (tCmdIn.nSndCmdLen > 0) {
+    if ((tCmdIn.nSndCmdLen > 0) && (tCmdIn.nSndCmdLen <= SND_CMD_DATA_MAX_LEN)) {
         pTransCmd->nSndCmdLen = tCmdIn.nSndCmdLen;
         nRet = copy_from_user(apk_info->snd_cmd_data, U64ToPtr(tCmdIn.nSndCmdDataPtr), pTransCmd->nSndCmdLen);
 		if(nRet) {
@@ -398,7 +402,7 @@ static MsgToolDrvCmd_t *mstar_jni_trans_cmd_from_user(unsigned long nArg)
 		}
     }
 
-    if (tCmdIn.nRtnCmdLen > 0) {
+    if ((tCmdIn.nRtnCmdLen > 0) && (tCmdIn.nRtnCmdLen <= RTN_CMD_DATA_MAX_LEN)) {
         pTransCmd->nRtnCmdLen = tCmdIn.nRtnCmdLen;
         nRet = copy_from_user(apk_info->rtn_cmd_data, U64ToPtr(tCmdIn.nRtnCmdDataPtr), pTransCmd->nRtnCmdLen);
 		if(nRet) {
@@ -418,7 +422,8 @@ static void mstar_jni_trans_cmd_to_user(MsgToolDrvCmd_t * pTransCmd, unsigned lo
 	if(nRet) {
 		TS_LOG_ERR("%s:copy_from_user() failed\n",__func__);
 	}
-
+	if ((tCmdOut.nRtnCmdLen <= 0) || (tCmdOut.nRtnCmdLen > RTN_CMD_DATA_MAX_LEN))
+		return;
     nRet = copy_to_user(U64ToPtr(tCmdOut.nRtnCmdDataPtr), apk_info->rtn_cmd_data, tCmdOut.nRtnCmdLen);
 	if(nRet) {
 		TS_LOG_ERR("%s:copy_to_user() failed\n",__func__);
@@ -1082,7 +1087,7 @@ static ssize_t mstar_apknode_fw_debug_write(struct file *pFile, const char __use
     char *pCh = NULL;
     char *pStr = NULL;
 
-    if(nCount > 1024){
+    if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }
@@ -1187,7 +1192,7 @@ static ssize_t mstar_apknode_fw_set_debug_value_write(struct file *pFile, const 
     char *pCh = NULL;
     char *pStr = NULL;
 	s32 rc = NO_ERR;
-      if(nCount > 1024){
+    if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }
@@ -1331,7 +1336,7 @@ static ssize_t mstar_apknode_fw_smbus_debug_write(struct file *pFile, const char
     char *pStr = NULL;
 	s32 rc = NO_ERR;
 
-     if(nCount > 1024){
+     if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }
@@ -1449,7 +1454,7 @@ static ssize_t mstar_apknode_fw_set_dq_mem_value_write(struct file *pFile, const
     u16 nRealDQMemAddr = 0;
     u32 nRealDQMemValue = 0;
 
-      if(nCount > 1024){
+      if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }
@@ -1894,7 +1899,7 @@ static ssize_t mstar_apknode_change_feature_support_status_write(struct file *pF
 
     memset(apk_info->debug_buf, 0, 1024);
 
-    if(nCount > 1024){
+    if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }
@@ -2452,7 +2457,7 @@ static ssize_t mstar_apknode_set_film_mode_write(struct file *pFile, const char 
 {
     u8 nFilmType = 0;
 
-   if(nCount > 1024){
+    if (nCount >= DEBUG_BUF_MAX_LEN) {
         TS_LOG_ERR("%s:The size of count(%d) is larger than its define\n",__func__,nCount);
         goto out;
     }

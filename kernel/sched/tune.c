@@ -33,7 +33,7 @@ struct schedtune {
 	/* Boost value for tasks on that SchedTune CGroup */
 	int boost;
 
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 	/*
 	 * Controls whether tasks of this cgroup should be colocated with each
 	 * other and tasks of other cgroups that have the same flag turned on.
@@ -48,7 +48,7 @@ struct schedtune {
 	 * towards idle CPUs */
 	int prefer_idle;
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	/* Freqboost value for tasks on that SchedTune CGroup */
 	int freq_boost;
 
@@ -89,12 +89,12 @@ static inline struct schedtune *parent_st(struct schedtune *st)
 static struct schedtune
 root_schedtune = {
 	.boost	= 0,
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 	.colocate = false,
 	.colocate_update_disabled = false,
 #endif
 	.prefer_idle = 0,
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	.freq_boost = 0,
 	.top_task = 0,
 #endif
@@ -131,14 +131,14 @@ struct boost_groups {
 	/* Maximum boost value for all RUNNABLE tasks on a CPU */
 	bool idle;
 	int boost_max;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	int freq_boost_max;
 #endif
 	u64 boost_ts;
 	struct {
 		/* The boost for tasks on that boost group */
 		int boost;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 		int freq_boost;
 #endif
 		/* Count of RUNNABLE tasks on that boost group */
@@ -152,7 +152,7 @@ struct boost_groups {
 
 /* Boost groups affecting each CPU in the system */
 DEFINE_PER_CPU(struct boost_groups, cpu_boost_groups);
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 static inline void init_sched_boost(struct schedtune *st)
 {
 	st->colocate = false;
@@ -205,14 +205,14 @@ schedtune_cpu_update(int cpu, u64 now)
 	int boost_max;
 	u64 boost_ts;
 	int idx;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	int freq_boost_max;
 #endif
 
 	/* The root boost group is always active */
 	boost_max = bg->group[0].boost;
 	boost_ts = now;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	freq_boost_max = bg->group[0].freq_boost;
 #endif
 	for (idx = 1; idx < BOOSTGROUPS_COUNT; ++idx) {
@@ -230,7 +230,7 @@ schedtune_cpu_update(int cpu, u64 now)
 
 		boost_max = bg->group[idx].boost;
 		boost_ts =  bg->group[idx].ts;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 		freq_boost_max = max(freq_boost_max, bg->group[idx].freq_boost);
 #endif
 	}
@@ -240,7 +240,7 @@ schedtune_cpu_update(int cpu, u64 now)
 	boost_max = max(boost_max, 0);
 	bg->boost_max = boost_max;
 	bg->boost_ts = boost_ts;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	/* freq_boost allow all cgroup boost values negative*/
 	bg->freq_boost_max = freq_boost_max;
 #endif
@@ -294,7 +294,7 @@ schedtune_boostgroup_update(int idx, int boost)
 	return 0;
 }
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 static int
 schedtune_freq_boostgroup_update(int idx, int freq_boost)
 {
@@ -538,7 +538,7 @@ int schedtune_cpu_boost(int cpu)
 	return bg->boost_max;
 }
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 int schedtune_freq_boost(int cpu)
 {
 	struct boost_groups *bg;
@@ -650,7 +650,7 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	return 0;
 }
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 static u64
 top_task_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
@@ -698,7 +698,7 @@ freq_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 }
 #endif
 
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 static void schedtune_attach(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
@@ -728,7 +728,7 @@ static struct cftype files[] = {
 		.write_u64 = prefer_idle_write,
 	},
 
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 	{
 		.name = "top_task",
 		.read_u64 = top_task_read,
@@ -740,7 +740,7 @@ static struct cftype files[] = {
 		.write_s64 = freq_boost_write,
 	},
 #endif
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 	{
 		.name = "colocate",
 		.read_u64 = sched_colocate_read,
@@ -765,7 +765,7 @@ schedtune_boostgroup_init(struct schedtune *st)
 		bg->group[st->idx].boost = 0;
 		bg->group[st->idx].tasks = 0;
 		bg->group[st->idx].ts = 0;
-#ifdef CONFIG_HISI_CPU_FREQ_GOV_SCHEDUTIL
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL_OPT
 		bg->group[st->idx].freq_boost = 0;
 #endif
 	}
@@ -804,7 +804,7 @@ schedtune_css_alloc(struct cgroup_subsys_state *parent_css)
 
 	/* Initialize per CPUs boost group support */
 	st->idx = idx;
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 	init_sched_boost(st);
 #endif
 	if (schedtune_boostgroup_init(st))
@@ -844,7 +844,7 @@ struct cgroup_subsys schedtune_cgrp_subsys = {
 	.cancel_attach  = schedtune_cancel_attach,
 	.legacy_cftypes	= files,
 	.early_init	= 1,
-#ifdef CONFIG_HISI_CGROUP_RTG
+#ifdef CONFIG_SCHED_CGROUP_RTG
 	.attach		= schedtune_attach,
 #endif
 };

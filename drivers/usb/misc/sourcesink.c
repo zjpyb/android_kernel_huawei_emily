@@ -1,16 +1,32 @@
+/*
+ * sourcesink.c
+ *
+ * Support for sourcesink device
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * either version 2 of that License or (at your option) any later version.
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
+#include <securec.h>
+#include <linux/debugfs.h>
+#include <linux/device.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-#include <linux/device.h>
-#include <linux/module.h>
-#include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/usb.h>
-#include <securec.h>
 
-#ifndef D
-#define D(format, arg...) pr_info("[sourcesink][%s]" format, __func__, ##arg)
-#endif
+#define info(format, arg...) pr_info("[sourcesink][%s]" format, __func__, ##arg)
 
 struct sourcesink {
 	struct usb_interface *intf;
@@ -27,19 +43,18 @@ struct sourcesink {
 	struct urb *isoc_out_urb;
 };
 
-/* return 1 sucess, 0 failed */
-static int parse_test_arg(const char *buf, int buf_len, const char *arg_name, int *arg_value)
+#define MAX_PARAM_NAME_LEN 16
+static int parse_test_arg(const char *buf, int buf_len,
+	const char *arg_name, int *arg_value)
 {
-	char *p;
+	char *p = NULL;
 	int val;
 
 	p = strnstr(buf, arg_name, buf_len);
 	if (!p)
 		return 0;
 
-#define MAX_PARAM_NAME_LEN 16
 	p += strnlen(arg_name, MAX_PARAM_NAME_LEN);
-
 	if (*p == '\0')
 		return 0;
 
@@ -66,19 +81,22 @@ static int sourcesink_bulk_tx_open(struct inode *inode, struct file *file)
 }
 
 static void reinit_write_data(int pattern, char *buf, int len,
-		int max_packet_size)
+	int max_packet_size)
 {
 	int i;
 
 	switch (pattern) {
+	/* pattern 0 clear buf context */
 	case 0:
 		if (memset_s(buf, len, 0, len) != EOK)
 			pr_err(" fail to memset_s buf\n");
 		break;
+	/* pattern 1 set buf context */
 	case 1:
 		if (max_packet_size != 0) {
+			/* "mod63" stays in sync with short-terminated transfers */
 			for (i = 0; i < len; i++)
-				*buf++ = (u8) ((i % max_packet_size) % 63);
+				*buf++ = (u8) ((i % max_packet_size) % 63); /* 63 depend max_packet_size */
 		}
 		break;
 	default:
@@ -87,23 +105,23 @@ static void reinit_write_data(int pattern, char *buf, int len,
 }
 
 static int check_read_data(int pattern, char *buf, int actual_len,
-		int max_packet_size)
+	int max_packet_size)
 {
-	int		i;
+	int i;
 
+	/* pattern[2] not check read_data */
 	if (pattern == 2)
 		return 0;
 
 	for (i = 0; i < actual_len; i++, buf++) {
 		switch (pattern) {
-
-		/* all-zeroes has no synchronization issues */
+		/* 0: all-zeroes has no synchronization issues */
 		case 0:
 			if (*buf == 0)
 				continue;
 			break;
-
-		/* "mod63" stays in sync with short-terminated transfers,
+		/*
+		 * 1: "mod63" stays in sync with short-terminated transfers,
 		 * OR otherwise when host and gadget agree on how large
 		 * each usb transfer request should be.  Resync is done
 		 * with set_interface or set_config.  (We *WANT* it to
@@ -111,31 +129,34 @@ static int check_read_data(int pattern, char *buf, int actual_len,
 		 * stutter for any reason, including buffer duplication...)
 		 */
 		case 1:
+			if (max_packet_size == 0)
+				return -EINVAL;
+			/* 63 depend max_packet_size */
 			if (*buf == (u8)((i % max_packet_size) % 63))
 				continue;
 			break;
 		default:
 			break;
 		}
-		D("bad OUT byte, buf[%d] = %d\n", i, *buf);
+		info("bad OUT byte, buf[%d] = %d\n", i, *buf);
 		return -EINVAL;
 	}
 	return 0;
 }
 
 static int set_bulk_alt(struct sourcesink *ss,
-		struct usb_host_endpoint **out_ep,
-		struct usb_host_endpoint **in_ep)
+	struct usb_host_endpoint **out_ep, struct usb_host_endpoint **in_ep)
 {
-	struct usb_interface	*intf = ss->intf;
+	struct usb_interface *intf = ss->intf;
 	struct usb_host_interface *altsetting = NULL;
-	struct usb_host_endpoint	*bulk_out_ep = NULL;
-	struct usb_host_endpoint	*bulk_in_ep = NULL;
-	unsigned i;
+	struct usb_host_endpoint *bulk_out_ep = NULL;
+	struct usb_host_endpoint *bulk_in_ep = NULL;
+	unsigned int i;
 	int ret;
 
-	/* find the interface which contain bulk ep. */
+	/* find the interface which contain bulk ep, find ep 2 */
 	for (i = 0; i < intf->num_altsetting; i++) {
+	    	/* 2: endpoint number */
 		if (intf->altsetting[i].desc.bNumEndpoints == 2) {
 			altsetting = &intf->altsetting[i];
 			break;
@@ -143,18 +164,19 @@ static int set_bulk_alt(struct sourcesink *ss,
 	}
 
 	if (!altsetting) {
-		D("can't find bulk altsetting\n");
+		info("can't find bulk altsetting\n");
 		return -ENODEV;
 	}
 
 	if (ss->intf->cur_altsetting != altsetting) {
-		D("usb_set_interface: interface %d, altsetting %d\n",
-				altsetting->desc.bInterfaceNumber,
-				altsetting->desc.bAlternateSetting);
-		ret = usb_set_interface(ss->udev, altsetting->desc.bInterfaceNumber,
-				altsetting->desc.bAlternateSetting);
+		info("usb_set_interface: interface %u, altsetting %u\n",
+			altsetting->desc.bInterfaceNumber,
+			altsetting->desc.bAlternateSetting);
+		ret = usb_set_interface(ss->udev,
+			altsetting->desc.bInterfaceNumber,
+			altsetting->desc.bAlternateSetting);
 		if (ret < 0) {
-			D("set interface failed\n");
+			info("set interface failed\n");
 			return ret;
 		}
 	}
@@ -165,11 +187,9 @@ static int set_bulk_alt(struct sourcesink *ss,
 			bulk_out_ep = &altsetting->endpoint[i];
 		if (usb_endpoint_is_bulk_in(&altsetting->endpoint[i].desc))
 			bulk_in_ep = &altsetting->endpoint[i];
-
 	}
-
 	if (!bulk_out_ep || !bulk_in_ep) {
-		D("can't find bulk ep\n");
+		info("can't find bulk ep\n");
 		return -ENODEV;
 	}
 
@@ -180,10 +200,10 @@ static int set_bulk_alt(struct sourcesink *ss,
 }
 
 static int submit_bulk_test(struct usb_device *udev,
-		struct usb_host_endpoint *ep, int xfer_len, int pattern)
+	struct usb_host_endpoint *ep, int xfer_len, int pattern)
 {
 	int ret, pipe, actual_len;
-	char *buf;
+	char *buf = NULL;
 	int is_out = usb_endpoint_dir_out(&ep->desc);
 	int max_packet_size = le16_to_cpu(ep->desc.wMaxPacketSize);
 
@@ -196,36 +216,37 @@ static int submit_bulk_test(struct usb_device *udev,
 		reinit_write_data(pattern, buf, xfer_len, max_packet_size);
 
 	if (is_out)
-		pipe = usb_sndbulkpipe(udev, ep->desc.bEndpointAddress); /*lint !e648 */
+		pipe = usb_sndbulkpipe(udev, ep->desc.bEndpointAddress);
 	else
-		pipe = usb_rcvbulkpipe(udev, ep->desc.bEndpointAddress); /*lint !e648 */
+		pipe = usb_rcvbulkpipe(udev, ep->desc.bEndpointAddress);
 
+	/* timeout is 5000, protocol define */
 	ret = usb_bulk_msg(udev, pipe, buf, xfer_len, &actual_len, 5000);
 	if (ret < 0) {
-		D("usb_bulk_msg tx ret %d\n", ret);
+		info("usb_bulk_msg tx ret %d\n", ret);
 		kfree(buf);
 		return ret;
 	}
 
-	D("Sourcesink bulk test %s xfer %d\n",
+	info("Sourcesink bulk test %s xfer %d\n",
 			is_out ? "OUT" : "IN", actual_len);
 	actual_len = actual_len > xfer_len ? xfer_len : actual_len;
 
 	/* check in data */
 	if (!is_out) {
-		ret = check_read_data(pattern, buf, actual_len, max_packet_size);
-		if (ret < 0) {
-			D("usb_bulk_msg rx data error!\n");
-		}
+		ret = check_read_data(pattern, buf, actual_len,
+			max_packet_size);
+		if (ret < 0)
+			info("usb_bulk_msg rx data error!\n");
 	}
 
 	kfree(buf);
 	return 0;
 }
 
-#define MAX_BULK_TX_LEN (4096)
-#define MAX_BULK_RX_LEN (4096)
-#define MAX_BULT_TEST_PATTERN (2)
+#define MAX_BULK_TX_LEN 4096
+#define MAX_BULK_RX_LEN 4096
+#define MAX_BULK_TEST_PATTERN 2
 
 static int parse_bulk_tx_len(const char *cmd, int cmd_len)
 {
@@ -242,10 +263,10 @@ static int parse_bulk_tx_len(const char *cmd, int cmd_len)
 static int parse_bulk_tx_pattern(const char *cmd, int cmd_len)
 {
 	int ret, value;
-	int tx_pattern = 0;
+	int tx_pattern;
 
 	ret = parse_test_arg(cmd, cmd_len, "tx_pattern=", &value);
-	if ((ret) && (value >= 0) && (value <= MAX_BULT_TEST_PATTERN))
+	if ((ret) && (value >= 0) && (value <= MAX_BULK_TEST_PATTERN))
 		tx_pattern = value;
 	else
 		tx_pattern = 0;
@@ -267,10 +288,10 @@ static int parse_bulk_rx_len(const char *cmd, int cmd_len)
 static int parse_bulk_rx_pattern(const char *cmd, int cmd_len)
 {
 	int ret, value;
-	int rx_pattern = 0;
+	int rx_pattern;
 
 	ret = parse_test_arg(cmd, cmd_len, "rx_pattern=", &value);
-	if ((ret) && (value >= 0) && (value <= MAX_BULT_TEST_PATTERN))
+	if ((ret) && (value >= 0) && (value <= MAX_BULK_TEST_PATTERN))
 		rx_pattern = value;
 	else
 		rx_pattern = 0;
@@ -278,20 +299,21 @@ static int parse_bulk_rx_pattern(const char *cmd, int cmd_len)
 	return rx_pattern;
 }
 
+#define MAX_SOURESINK_BULK_TX_CMD	32
 static ssize_t sourcesink_bulk_tx_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+	const char __user *ubuf, size_t count, loff_t *ppos)
 {
-	struct seq_file		*s = file->private_data;
-	struct sourcesink	*ss = s->private;
-	struct usb_host_endpoint	*bulk_out_ep = NULL;
-	struct usb_host_endpoint	*bulk_in_ep = NULL;
-	char cmd[32];
+	struct seq_file *s = file->private_data;
+	struct sourcesink *ss = s->private;
+	struct usb_host_endpoint *bulk_out_ep = NULL;
+	struct usb_host_endpoint *bulk_in_ep = NULL;
+	char cmd[MAX_SOURESINK_BULK_TX_CMD] = {0};
 	int cmd_len;
 	int ret, tx_len, rx_len;
 	int tx_pattern = 0;
 	int rx_pattern = 0;
 
-	D("+\n");
+	info("+\n");
 
 	if (!ubuf)
 		return -EINVAL;
@@ -302,40 +324,41 @@ static ssize_t sourcesink_bulk_tx_write(struct file *file,
 
 	cmd[cmd_len] = 0;
 
-	D("cmd %s\n", cmd);
+	info("cmd %s\n", cmd);
 
 	tx_len = parse_bulk_tx_len(cmd, cmd_len);
 	if (tx_len)
 		tx_pattern = parse_bulk_tx_pattern(cmd, cmd_len);
 
 	rx_len = parse_bulk_rx_len(cmd, cmd_len);
-
 	if (rx_len)
 		rx_pattern = parse_bulk_rx_pattern(cmd, cmd_len);
 
 	if (!tx_len && !rx_len) {
-		D("not invalid argument!\n");
+		info("not invalid argument!\n");
 		return -EINVAL;
 	}
 
 	ret = set_bulk_alt(ss, &bulk_out_ep, &bulk_in_ep);
 	if (ret < 0) {
-		D("get bulk ep failed %d\n", ret);
+		info("get bulk ep failed %d\n", ret);
 		return ret;
 	}
 
 	if (tx_len) {
-		ret = submit_bulk_test(ss->udev, bulk_out_ep, tx_len, tx_pattern);
+		ret = submit_bulk_test(ss->udev, bulk_out_ep,
+			tx_len, tx_pattern);
 		if (ret)
-			D("bulk out test failed %d\n", ret);
+			info("bulk out test failed %d\n", ret);
 	}
 
 	if (rx_len) {
-		ret = submit_bulk_test(ss->udev, bulk_in_ep, rx_len, rx_pattern);
+		ret = submit_bulk_test(ss->udev, bulk_in_ep,
+			rx_len, rx_pattern);
 		if (ret)
-			D("bulk in test failed %d\n", ret);
+			info("bulk in test failed %d\n", ret);
 	}
-	D("-\n");
+	info("-\n");
 
 	return count;
 }
@@ -358,7 +381,8 @@ struct isoc_test_case {
 
 static int sourcesink_isoc_show(struct seq_file *s, void *_unused)
 {
-	struct sourcesink	*ss = s->private;
+	struct sourcesink *ss = s->private;
+
 	mutex_lock(&ss->isoc_test_lock);
 	seq_printf(s, "%d\n", ss->isoc_test_result);
 	mutex_unlock(&ss->isoc_test_lock);
@@ -373,8 +397,9 @@ static int sourcesink_isoc_open(struct inode *inode, struct file *file)
 static void sourcesink_isoc_irq(struct urb *urb)
 {
 	struct sourcesink *ss = urb->context;
-	D("[%s] sourcesink_isoc_irq called, actual_length %d\n",
-		dev_name(&ss->intf->dev), urb->actual_length);
+
+	info("[%s] %s called, actual_length %u\n",
+		dev_name(&ss->intf->dev), __func__, urb->actual_length);
 	usb_put_urb(urb);
 }
 
@@ -384,16 +409,18 @@ static int set_isoc_alt(struct sourcesink *ss)
 	struct usb_host_interface *altsetting = NULL;
 	struct usb_host_endpoint *isoc_in_ep = NULL;
 	struct usb_host_endpoint *isoc_out_ep = NULL;
-	unsigned i, j;
+	unsigned int i, j;
 	int ret;
 
 	/* find the altsetting which contain isoc ep. */
 	for (i = 0; i < intf->num_altsetting; i++) {
 		altsetting = &intf->altsetting[i];
 		for (j = 0; j < altsetting->desc.bNumEndpoints; j++) {
-			if (usb_endpoint_is_isoc_in(&altsetting->endpoint[j].desc))
+			if (usb_endpoint_is_isoc_in(
+				&altsetting->endpoint[j].desc))
 				isoc_in_ep = &altsetting->endpoint[j];
-			if (usb_endpoint_is_isoc_out(&altsetting->endpoint[j].desc))
+			if (usb_endpoint_is_isoc_out(
+				&altsetting->endpoint[j].desc))
 				isoc_out_ep = &altsetting->endpoint[j];
 		}
 		if (isoc_in_ep || isoc_out_ep)
@@ -401,35 +428,35 @@ static int set_isoc_alt(struct sourcesink *ss)
 	}
 
 	if ((!isoc_in_ep) && (!isoc_out_ep)) {
-		D("can't find isoc altsetting\n");
+		info("can't find isoc altsetting\n");
 		return -1;
 	}
 
-	D("usb_set_interface: interface %d, altsetting %d\n", /*[false alarm]:it is a false alarm*/
-			altsetting->desc.bInterfaceNumber,
-			altsetting->desc.bAlternateSetting);
+	info("usb_set_interface: interface %u, altsetting %u\n",
+		altsetting->desc.bInterfaceNumber, altsetting->desc.bAlternateSetting);
 	ret = usb_set_interface(ss->udev, altsetting->desc.bInterfaceNumber,
-			altsetting->desc.bAlternateSetting);
+		altsetting->desc.bAlternateSetting);
 	if (ret) {
-		D("set interface failed\n");
+		info("set interface failed\n");
 		return ret;
 	}
 
 	return 0;
 }
 
-static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, bool is_in)
+static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test,
+	bool is_in)
 {
 	struct usb_interface *intf = ss->intf;
 	struct usb_host_interface *altsetting = intf->cur_altsetting;
 	struct usb_host_endpoint *isoc_in_ep = NULL;
 	struct usb_host_endpoint *isoc_out_ep = NULL;
 	struct urb *isoc_urb = NULL;
-	int i;
-	int ret;
+	int i, ret;
 
-	D("pkt_num %d, pkt_len %d, urb_num %d\n", test->pkt_num, test->pkt_len, test->urb_num);
-	D("cur_altsetting %d\n", intf->cur_altsetting->desc.bAlternateSetting);
+	info("pkt_num %u, pkt_len %u, urb_num %u\n", test->pkt_num,
+		test->pkt_len, test->urb_num);
+	info("cur_altsetting %u\n", intf->cur_altsetting->desc.bAlternateSetting);
 
 	/* find isoc endpoint */
 	for (i = 0; i < altsetting->desc.bNumEndpoints; i++) {
@@ -437,60 +464,55 @@ static int submit_isoc_test(struct sourcesink *ss, struct isoc_test_case *test, 
 			isoc_in_ep = &altsetting->endpoint[i];
 		if (usb_endpoint_is_isoc_out(&altsetting->endpoint[i].desc))
 			isoc_out_ep = &altsetting->endpoint[i];
-
 	}
-
 	if ((!isoc_in_ep && is_in) || (!isoc_out_ep && !is_in)) {
-		D("no isoc ep\n");
+		info("no isoc ep\n");
 		return -ENOENT;
 	}
 
 	if (is_in) {
-		D("isoc_in_ep 0x%02x\n", /*[false alarm]:it is a false alarm*/
-				isoc_in_ep->desc.bEndpointAddress);/*lint !e613*/
+		info("isoc_in_ep 0x%02x\n",
+			isoc_in_ep->desc.bEndpointAddress);
 		test->pipe = usb_rcvisocpipe(ss->udev,
-				isoc_in_ep->desc.bEndpointAddress);/*lint !e613*/
+			isoc_in_ep->desc.bEndpointAddress);
 	} else {
-		D("isoc_out_ep 0x%02x\n", /*[false alarm]:it is a false alarm*/
-				isoc_out_ep->desc.bEndpointAddress);/*lint !e613*/
+		info("isoc_out_ep 0x%02x\n",
+			isoc_out_ep->desc.bEndpointAddress);
 		test->pipe = usb_sndisocpipe(ss->udev,
-				isoc_out_ep->desc.bEndpointAddress);/*lint !e613*/
+			isoc_out_ep->desc.bEndpointAddress);
 	}
 
 	isoc_urb = usb_alloc_urb(1, GFP_KERNEL);
 	if (!isoc_urb) {
-		D("alloc urb failed\n");
+		info("alloc urb failed\n");
 		return -ENOMEM;
 	}
 
 	/* borrow the usb_fill_int_urb */
 	usb_fill_int_urb(isoc_urb, ss->udev, test->pipe, test, sizeof(*test),
-			sourcesink_isoc_irq, ss,
-			is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);/*lint !e613*//*[false alarm]:it is a false alarm*/
+		sourcesink_isoc_irq, ss,
+		is_in ? isoc_in_ep->desc.bInterval : isoc_out_ep->desc.bInterval);
+
 	isoc_urb->number_of_packets = 1;
 	isoc_urb->iso_frame_desc[0].length = sizeof(*test);
 
 	ret = usb_submit_urb(isoc_urb, GFP_KERNEL);
-	D("submit urb ret %d\n", ret);
+	info("submit urb ret %d\n", ret);
 	if (ret)
 		usb_put_urb(isoc_urb);
-	else {
-		/* should wait for urb complete!!! */
-		/* TODO: wait for urb complete. */
-	}
 
 	return 0;
 }
 
 #define MAX_TX_PKT_NUM 200
-#define MAX_TX_PKT_LEN (1024 *3)
+#define MAX_TX_PKT_LEN (1024 * 3)
 #define MAX_TX_URB_NUM 65535
 #define MAX_RX_PKT_NUM 200
-#define MAX_RX_PKT_LEN (1024 *3)
+#define MAX_RX_PKT_LEN (1024 * 3)
 #define MAX_RX_URB_NUM 65535
 
 static void parse_isoc_rx_test_args(struct isoc_test_case *rx_test,
-					const char *buf, int buf_len)
+	const char *buf, int buf_len)
 {
 	int value;
 	int ret;
@@ -509,7 +531,7 @@ static void parse_isoc_rx_test_args(struct isoc_test_case *rx_test,
 }
 
 static void parse_isoc_tx_test_args(struct isoc_test_case *tx_test,
-					const char *buf, int buf_len)
+	const char *buf, int buf_len)
 {
 	int value;
 	int ret;
@@ -528,36 +550,38 @@ static void parse_isoc_tx_test_args(struct isoc_test_case *tx_test,
 }
 
 static void parse_isoc_test_args(struct isoc_test_case *tx_test,
-		struct isoc_test_case *rx_test, char *buf, int buf_len)
+	struct isoc_test_case *rx_test, char *buf, int buf_len)
 {
-
+	/* tx_test value set */
 	tx_test->pkt_len = 0;
 	tx_test->pkt_num = 0;
 	tx_test->urb_num = MAX_TX_URB_NUM;
-
+	/* rx_test value set */
 	rx_test->pkt_len = 0;
 	rx_test->pkt_num = 0;
 	rx_test->urb_num = MAX_TX_URB_NUM;
 
-	D("buf %s\n", buf);
+	info("buf %s\n", buf);
 	parse_isoc_rx_test_args(rx_test, buf, buf_len);
 	parse_isoc_tx_test_args(tx_test, buf, buf_len);
 }
 
 
-static inline struct usb_host_endpoint *find_isoc_ep(struct usb_interface *intf, bool is_in)
+static struct usb_host_endpoint *find_isoc_ep(struct usb_interface *intf,
+	bool is_in)
 {
 	struct usb_host_endpoint *isoc_in_ep = NULL;
 	struct usb_host_endpoint *isoc_out_ep = NULL;
-	unsigned i;
+	unsigned int i;
 
 	/* find isoc endpoint */
 	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
-		if (usb_endpoint_is_isoc_in(&intf->cur_altsetting->endpoint[i].desc))
+		if (usb_endpoint_is_isoc_in(
+			&intf->cur_altsetting->endpoint[i].desc))
 			isoc_in_ep = &intf->cur_altsetting->endpoint[i];
-		if (usb_endpoint_is_isoc_out(&intf->cur_altsetting->endpoint[i].desc))
+		if (usb_endpoint_is_isoc_out(
+			&intf->cur_altsetting->endpoint[i].desc))
 			isoc_out_ep = &intf->cur_altsetting->endpoint[i];
-
 	}
 
 	if (is_in)
@@ -575,16 +599,20 @@ static unsigned long calc_interval(struct sourcesink *ss, bool is_in)
 	/* find isoc endpoint */
 	isoc_ep = find_isoc_ep(intf, is_in);
 	if (!isoc_ep) {
-		D("can't find %s isoc ep\n", is_in ? "in" : "out");
+		info("can't find %s isoc ep\n", is_in ? "in" : "out");
 		return 0;
 	}
 
-	interval = 1UL << (isoc_ep->desc.bInterval - 1);/*lint !e613*/
+	interval = 1UL << (isoc_ep->desc.bInterval - 1);
 
+	/*
+	 * FS: 2(Interval -1) * 125us
+	 * HS: 2(Interval -1) * 1ms
+	 */
 	if (ss->udev->speed == USB_SPEED_FULL)
-		interval *= 1000;
+		interval *= 1000; /* 1000 = 1ms */
 	else if (ss->udev->speed == USB_SPEED_HIGH)
-		interval *= 125;
+		interval *= 125; /* 125us */
 
 	return interval;
 }
@@ -597,52 +625,54 @@ static unsigned int calc_mps(struct sourcesink *ss, bool is_in)
 	/* find isoc endpoint */
 	isoc_ep = find_isoc_ep(intf, is_in);
 	if (!isoc_ep) {
-		D("can't find %s isoc ep\n", is_in ? "in" : "out");
+		info("can't find %s isoc ep\n", is_in ? "in" : "out");
 		return 0;
 	}
 
-
-	return le16_to_cpu(isoc_ep->desc.wMaxPacketSize);/*lint !e613*/
+	return le16_to_cpu(isoc_ep->desc.wMaxPacketSize);
 }
 
 static void excute_isoc_test(struct sourcesink *ss,
-		struct isoc_test_case *tx_test,	struct isoc_test_case *rx_test)
+	struct isoc_test_case *tx_test, struct isoc_test_case *rx_test)
 {
 	int ret;
 	unsigned long interval;
-	unsigned delay_ms;
-	unsigned tx_delay_ms = 0;
-	unsigned rx_delay_ms = 0;
+	unsigned int delay_ms;
+	unsigned int tx_delay_ms = 0;
+	unsigned int rx_delay_ms = 0;
 
 	if (rx_test->pkt_num != 0) {
 		ret = submit_isoc_test(ss, rx_test, true);
-		if (ret < 0) {
+		if (ret < 0)
 			ss->isoc_test_result = ret;
-		}
 
 		interval = calc_interval(ss, true);
 		if (!interval) {
 			ss->isoc_test_result = -EINVAL;
 			return;
 		}
-		rx_delay_ms = (interval * rx_test->pkt_num * rx_test->urb_num)/1000;
+		/* us to ms */
+		rx_delay_ms = (interval * rx_test->pkt_num *
+			rx_test->urb_num) / 1000; /* 1000: ms/us */
 	}
 
 	if (tx_test->pkt_num != 0) {
 		ret = submit_isoc_test(ss, tx_test, false);
-		if (ret < 0) {
+		if (ret < 0)
 			ss->isoc_test_result = ret;
-		}
+
 		interval = calc_interval(ss, false);
 		if (!interval) {
 			ss->isoc_test_result = -EINVAL;
 			return;
 		}
-		tx_delay_ms = (interval * tx_test->pkt_num * tx_test->urb_num)/1000;
+		/* us to ms */
+		tx_delay_ms = (interval * tx_test->pkt_num *
+			tx_test->urb_num) / 1000; /* 1000: ms/us */
 	}
 
 	delay_ms = (tx_delay_ms > rx_delay_ms) ? tx_delay_ms : rx_delay_ms;
-	D("Wait %d ms for transfer complete.\n", delay_ms);
+	info("Wait %u ms for transfer complete.\n", delay_ms);
 	msleep(delay_ms + 1000); /* wait more 1000ms */
 }
 
@@ -674,7 +704,7 @@ static void __auto_isoc_test(struct sourcesink *ss, bool is_in)
 	int ret;
 	unsigned long interval;
 	unsigned int mps;
-	unsigned delay_ms;
+	unsigned int delay_ms;
 	int i;
 
 	ret = set_isoc_alt(ss);
@@ -698,13 +728,15 @@ static void __auto_isoc_test(struct sourcesink *ss, bool is_in)
 	/* do transfer */
 	for (i = 0; isoc_tcs[i].pkt_len != 0; i++) {
 		struct isoc_test_case *isoc_tc = &isoc_tcs[i];
-
+		/* max Byte:1024 */
 		if ((ss->udev->speed == USB_SPEED_FULL)
-				&& (isoc_tc->pkt_len >= 1024))
+				&& (isoc_tc->pkt_len >= 1024)) /* max Byte:1024 */
 			continue;
 
-		/* receive buffer must no less than mps,
-		 * transmit buffer must no more than mps. */
+		/*
+		 * receive buffer must no less than mps,
+		 * transmit buffer must no more than mps.
+		 */
 		if (is_in) {
 			if (isoc_tc->pkt_len < mps)
 				continue;
@@ -719,9 +751,11 @@ static void __auto_isoc_test(struct sourcesink *ss, bool is_in)
 			return;
 		}
 
-		D("interval %ld ms, mps %d\n", interval/1000, mps);
-		delay_ms = (interval * isoc_tc->pkt_num * isoc_tc->urb_num)/1000;
-		D("Wait %d ms for transfer complete.\n", delay_ms);
+		/* us to ms, /1000 */
+		info("interval %lu ms, mps %u\n", interval / 1000, mps);
+		delay_ms = (interval * isoc_tc->pkt_num *
+			isoc_tc->urb_num) / 1000; /* us to ms, /1000 */
+		info("Wait %u ms for transfer complete.\n", delay_ms);
 		msleep(delay_ms + 1000); /* wait more 1000ms */
 	}
 }
@@ -735,17 +769,17 @@ static int auto_isoc_test(struct sourcesink *ss, const char *buf, int buf_len)
 
 	ret = parse_test_arg(buf, buf_len, "auto_rx=", &value);
 	if ((ret) && (value > 0)) {
-		for (i = 0; i < value; i++) {
+		for (i = 0; i < value; i++)
 			__auto_isoc_test(ss, true);
-		}
+
 		is_auto = true;
 	}
 
 	ret = parse_test_arg(buf, buf_len, "auto_tx=", &value);
 	if ((ret) && (value > 0)) {
-		for (i = 0; i < value; i++) {
+		for (i = 0; i < value; i++)
 			__auto_isoc_test(ss, false);
-		}
+
 		is_auto = true;
 	}
 
@@ -755,17 +789,18 @@ static int auto_isoc_test(struct sourcesink *ss, const char *buf, int buf_len)
 	return -ENOTSUPP;
 }
 
+#define MAX_SOURCESINK_ISOC_BUF_LEN 64
 static ssize_t sourcesink_isoc_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+	const char __user *ubuf, size_t count, loff_t *ppos)
 {
 	struct seq_file *s = file->private_data;
 	struct sourcesink *ss = s->private;
 	struct isoc_test_case tx_test, rx_test;
-	char buf[64] = {0};
+	char buf[MAX_SOURCESINK_ISOC_BUF_LEN] = {0};
 	int buf_len;
 	int ret;
 
-	D("+\n");
+	info("+\n");
 
 	if (!ubuf)
 		return -EINVAL;
@@ -799,7 +834,7 @@ static ssize_t sourcesink_isoc_write(struct file *file,
 
 done:
 	mutex_unlock(&ss->isoc_test_lock);
-	D("-\n");
+	info("-\n");
 
 	return count;
 }
@@ -823,6 +858,7 @@ static int control_rw(struct sourcesink *ss, void *data, int size, bool r)
 	__u8 requesttype, request;
 	int result;
 
+	/* max Byte:1024 */
 	if ((size <= 0) || (size > 1024))
 		return -EINVAL;
 
@@ -834,15 +870,13 @@ static int control_rw(struct sourcesink *ss, void *data, int size, bool r)
 		requesttype = USB_DIR_OUT | USB_TYPE_VENDOR;
 	}
 
-	result = usb_control_msg(usb_dev, usb_rcvctrlpipe(usb_dev, 0), /*lint !e648 */
-			request,
-			requesttype,
-			0,
-			ss->intf->cur_altsetting->desc.bInterfaceNumber,
-			data, size, SOURCESINK_CONTROL_TIMEOUT);
+	result = usb_control_msg(usb_dev, usb_rcvctrlpipe(usb_dev, 0),
+		request, requesttype, 0,
+		ss->intf->cur_altsetting->desc.bInterfaceNumber,
+		data, size, SOURCESINK_CONTROL_TIMEOUT);
 	if (result < 0) {
 		dev_err(&ss->intf->dev, "%s: USB ctrl %s error: %d\n",
-				__func__, (r ? "r" : "w"), result);
+			__func__, (r ? "r" : "w"), result);
 		return result;
 	}
 
@@ -852,17 +886,17 @@ static int control_rw(struct sourcesink *ss, void *data, int size, bool r)
 static int control_rw_test(struct sourcesink *ss, int size, bool r)
 {
 	char *buf = NULL;
-	unsigned repeat = SOURCESINK_CONTROL_RW_REPEAT;
-	unsigned i;
+	unsigned int repeat = SOURCESINK_CONTROL_RW_REPEAT;
+	unsigned int i;
 	int actual;
 	int ret = 0;
 
-	D("+\n");
-	D("control %s %d test.\n", r ? "read" : "write", size);
+	info("+\n");
+	info("control %s %d test.\n", r ? "read" : "write", size);
 
 	buf = kzalloc(size + 1, GFP_KERNEL); /* avoid coverity warnning */
 	if (!buf) {
-		D("no mem\n");
+		info("no mem\n");
 		return -ENOMEM;
 	}
 
@@ -872,20 +906,21 @@ static int control_rw_test(struct sourcesink *ss, int size, bool r)
 	for (i = 0; i < repeat; i++) {
 		actual = control_rw(ss, buf, size, r);
 		if (actual != size) {
-			D("test %d: size %d, actual %d\n", i, size, actual);
+			info("test %u: size %d, actual %d\n", i, size, actual);
 			ret = -EPIPE;
 			break;
 		}
 	}
 
 	kfree(buf);
-	D("-\n");
+	info("-\n");
 	return ret;
 }
 
 static int sourcesink_control_rw_show(struct seq_file *s, void *_unused)
 {
-	struct sourcesink	*ss = s->private;
+	struct sourcesink *ss = s->private;
+
 	mutex_lock(&ss->control_rw_lock);
 	seq_printf(s, "%d\n", ss->control_rw_result);
 	mutex_unlock(&ss->control_rw_lock);
@@ -897,16 +932,17 @@ static int sourcesink_control_rw_open(struct inode *inode, struct file *file)
 	return single_open(file, sourcesink_control_rw_show, inode->i_private);
 }
 
+#define MAX_SOURCESINK_CTRL_BUF_LEN	32
 static ssize_t sourcesink_control_rw_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos, bool is_r)
+	const char __user *ubuf, size_t count, loff_t *ppos, bool is_r)
 {
-	struct seq_file		*s = file->private_data;
-	struct sourcesink	*ss = s->private;
-	int 			mps = ss->udev->ep0.desc.wMaxPacketSize;
-	char			buf[32] = {0};
-	int 			len;
+	struct seq_file *s = file->private_data;
+	struct sourcesink *ss = s->private;
+	int mps = ss->udev->ep0.desc.wMaxPacketSize;
+	char buf[MAX_SOURCESINK_CTRL_BUF_LEN] = {0};
+	int len;
 
-	D("+\n");
+	info("+\n");
 
 	if (!ubuf)
 		return -EINVAL;
@@ -919,26 +955,27 @@ static ssize_t sourcesink_control_rw_write(struct file *file,
 	ss->control_rw_result = 0;
 
 	if (sscanf(buf, "%d", &len) != 1) {
-		D("parse len error!\n");
+		info("parse len error!\n");
 		ss->control_rw_result = -EINVAL;
 		goto err;
 	}
-	D("len %d\n", len);
+	info("len %d\n", len);
+	/* max Byte:1024 */
 	if ((len < 0) || (len > 1024)) {
-		D("ilegal len %d!\n", len);
+		info("ilegal len %d!\n", len);
 		ss->control_rw_result = -EINVAL;
 		goto err;
 	}
-
+	/* max mps:64 */
 	if ((mps <= 0) || (mps > 64)) {
-		D("ilegal mps %d!\n", mps);
+		info("ilegal mps %d!\n", mps);
 		ss->control_rw_result = -EINVAL;
 		goto err;
 	}
 
-	if (len != 0)
+	if (len != 0) {
 		ss->control_rw_result = control_rw_test(ss, len, is_r);
-	else {
+	} else {
 		ss->control_rw_result = control_rw_test(ss, 1, is_r);
 		if (ss->control_rw_result != 0)
 			goto err;
@@ -950,11 +987,11 @@ static ssize_t sourcesink_control_rw_write(struct file *file,
 		ss->control_rw_result = control_rw_test(ss, mps + 1, is_r);
 		if (ss->control_rw_result != 0)
 			goto err;
-
+		/* max size test */
 		ss->control_rw_result = control_rw_test(ss, 1024, is_r);
 	}
 
-	D("-\n");
+	info("-\n");
 
 err:
 	mutex_unlock(&ss->control_rw_lock);
@@ -962,16 +999,16 @@ err:
 }
 
 static ssize_t sourcesink_control_r_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+	const char __user *ubuf, size_t count, loff_t *ppos)
 {
-	D(":\n");
+	info(":\n");
 	return sourcesink_control_rw_write(file, ubuf, count, ppos, true);
 }
 
 static ssize_t sourcesink_control_w_write(struct file *file,
-		const char __user *ubuf, size_t count, loff_t *ppos)
+	const char __user *ubuf, size_t count, loff_t *ppos)
 {
-	D(":\n");
+	info(":\n");
 	return sourcesink_control_rw_write(file, ubuf, count, ppos, false);
 }
 
@@ -993,26 +1030,25 @@ static const struct file_operations sourcesink_control_write_fops = {
 
 static int sourcesink_debugfs_init(struct sourcesink *ss)
 {
-	struct dentry		*root = NULL;
-	struct dentry		*file = NULL;
-	int			ret;
-	char			name[32] = {0};
+	struct dentry *root = NULL;
+	struct dentry *file = NULL;
+	/* max name size 32 */
+	char name[32] = {0};
 
-	D("+\n");
+	info("+\n");
 
 	/* Create dir for INTERFACE */
-	snprintf(name, sizeof(name) - 1, "sourcesink-%d",
-			ss->intf->cur_altsetting->desc.bInterfaceNumber);
-	D("name %s\n", name);
+	snprintf(name, sizeof(name) - 1, "sourcesink-%u",
+		ss->intf->cur_altsetting->desc.bInterfaceNumber);
+	info("name %s\n", name);
 
 	root = debugfs_create_dir(name, NULL);
 	if (!root) {
-		D("debugfs_create_dir failed\n");
-		ret = -ENOMEM;
-		goto err0;
+		info("debugfs_create_dir failed\n");
+		goto root_dbg_fs_err;
 	}
 
-	D("create debugfs dir %s sucess.\n", name);
+	info("create debugfs dir %s sucess.\n", name);
 	ss->debugfs_root = root;
 
 	/*
@@ -1022,20 +1058,18 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 
 	/* Control read */
 	file = debugfs_create_file("control_read", S_IRUGO | S_IWUSR, root,
-			ss, &sourcesink_control_read_fops);
+		ss, &sourcesink_control_read_fops);
 	if (!file) {
-		D("create control_read failed\n");
-		ret = -ENOMEM;
-		goto err1;
+		info("create control_read failed\n");
+		goto son_dbg_fs_err;
 	}
 
 	/* Control write */
 	file = debugfs_create_file("control_write", S_IRUGO | S_IWUSR, root,
-			ss, &sourcesink_control_write_fops);
+		ss, &sourcesink_control_write_fops);
 	if (!file) {
-		D("create control_write failed\n");
-		ret = -ENOMEM;
-		goto err1;
+		info("create control_write failed\n");
+		goto son_dbg_fs_err;
 	}
 
 	/*
@@ -1044,61 +1078,60 @@ static int sourcesink_debugfs_init(struct sourcesink *ss)
 	mutex_init(&ss->isoc_test_lock);
 
 	file = debugfs_create_file("isoc_xfer", S_IRUGO | S_IWUSR, root,
-			ss, &sourcesink_isoc_fops);
+		ss, &sourcesink_isoc_fops);
 	if (!file) {
-		D("create isoc_xfer failed\n");
-		ret = -ENOMEM;
-		goto err1;
+		info("create isoc_xfer failed\n");
+		goto son_dbg_fs_err;
 	}
 
 	/*
 	 * For bulk transfer
 	 */
 	file = debugfs_create_file("bulk_xfer", S_IRUGO | S_IWUSR, root,
-			ss, &sourcesink_bulk_tx_fops);
+		ss, &sourcesink_bulk_tx_fops);
 	if (!file) {
-		D("create bulk_xfer failed\n");
-		ret = -ENOMEM;
-		goto err1;
+		info("create bulk_xfer failed\n");
+		goto son_dbg_fs_err;
 	}
 
-	D("-\n");
+	info("-\n");
 	return 0;
 
-err1:
+son_dbg_fs_err:
 	debugfs_remove_recursive(root);
+	ss->debugfs_root = NULL;
 
-err0:
-	return ret;
+root_dbg_fs_err:
+	return -ENOMEM;
 }
 
 void sourcesink_debugfs_exit(struct sourcesink *ss)
 {
-	D("+\n");
+	info("+\n");
 	debugfs_remove_recursive(ss->debugfs_root);
 	ss->debugfs_root = NULL;
-	D("-\n");
+	info("-\n");
 }
 
 static int usb_sourcesink_probe(struct usb_interface *intf,
-			   const struct usb_device_id *usb_id)
+	const struct usb_device_id *usb_id)
 {
 	struct sourcesink *ss = NULL;
 	struct usb_device *udev = interface_to_usbdev(intf);
 	struct usb_host_interface *cur_alt = NULL;
 	int ret;
 
-	D("+\n");
+	info("+\n");
 
 	cur_alt = intf->cur_altsetting;
 
-	D("bInterfaceNumber: %d\n", cur_alt->desc.bInterfaceNumber);
-	D("bNumEndpoints: %d\n", cur_alt->desc.bNumEndpoints);
-	D("num_altsetting: %d\n", intf->num_altsetting);
+	info("bInterfaceNumber: %u\n", cur_alt->desc.bInterfaceNumber);
+	info("bNumEndpoints: %u\n", cur_alt->desc.bNumEndpoints);
+	info("num_altsetting: %u\n", intf->num_altsetting);
 
 	ss = kzalloc(sizeof(*ss), GFP_KERNEL);
 	if (!ss) {
-		D("alloc ss failed!\n");
+		info("alloc ss failed!\n");
 		return -ENOMEM;
 	}
 
@@ -1108,13 +1141,13 @@ static int usb_sourcesink_probe(struct usb_interface *intf,
 
 	ret = sourcesink_debugfs_init(ss);
 	if (ret) {
-		D("sourcesink_debugfs_init failed\n");
+		info("sourcesink_debugfs_init failed\n");
 		usb_set_intfdata(intf, NULL);
 		kfree(ss);
 		return ret;
 	}
 
-	D("-\n");
+	info("-\n");
 
 	return 0;
 }
@@ -1123,7 +1156,7 @@ static void usb_sourcesink_disconnect(struct usb_interface *intf)
 {
 	struct sourcesink *ss = NULL;
 
-	D("+\n");
+	info("+\n");
 
 	ss = usb_get_intfdata(intf);
 	if (!ss)
@@ -1134,51 +1167,49 @@ static void usb_sourcesink_disconnect(struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	kfree(ss);
 
-	D("-\n");
+	info("-\n");
 }
 
 #ifdef CONFIG_PM
-static int usb_sourcesink_suspend(struct usb_interface *intf, pm_message_t message)
+static int usb_sourcesink_suspend(struct usb_interface *intf,
+	pm_message_t message)
 {
-	D("+\n");
-	D("-\n");
+	info("+\n");
+	info("-\n");
 	return 0;
 }
 
 static int usb_sourcesink_resume(struct usb_interface *intf)
 {
-	D("+\n");
-	D("-\n");
+	info("+\n");
+	info("-\n");
 	return 0;
 }
 
 static int usb_sourcesink_reset_resume(struct usb_interface *intf)
 {
-	D("+\n");
-	D("-\n");
+	info("+\n");
+	info("-\n");
 	return 0;
 }
-#else
-#define usb_sourcesink_suspend	NULL
-#define usb_sourcesink_resume	NULL
-#define usb_sourcesink_reset_resume	NULL
 #endif /* CONFIG_PM */
 
 
-static struct usb_device_id usb_sourcesink_ids [] = {
-	{ .match_flags = (USB_DEVICE_ID_MATCH_VENDOR | USB_DEVICE_ID_MATCH_PRODUCT
-		| USB_DEVICE_ID_MATCH_INT_CLASS | USB_DEVICE_ID_MATCH_INT_SUBCLASS),
-	.idVendor = 0x12d1,
-	.idProduct = 0xfffe, /* To avoid mismatch other functions, using a strange pid */
-	.bInterfaceClass = USB_CLASS_VENDOR_SPEC,
-	.bInterfaceSubClass = 0 },
-	{ }	/* Terminating entry */
+static struct usb_device_id usb_sourcesink_ids[] = {
+	{
+		.match_flags = (USB_DEVICE_ID_MATCH_VENDOR |
+			USB_DEVICE_ID_MATCH_PRODUCT |
+			USB_DEVICE_ID_MATCH_INT_CLASS |
+			USB_DEVICE_ID_MATCH_INT_SUBCLASS),
+		.idVendor = 0x12d1,
+		/* To avoid mismatch other functions, using a strange pid */
+		.idProduct = 0xfffe,
+		.bInterfaceClass = USB_CLASS_VENDOR_SPEC,
+		.bInterfaceSubClass = 0
+	}, {
+	} /* Terminating entry */
 };
 MODULE_DEVICE_TABLE(usb, usb_sourcesink_ids);
-
-/*
- * entry point for linux usb interface
- */
 
 static struct usb_driver usb_sourcesink_driver = {
 	.name =		"sourcesink",
@@ -1191,6 +1222,5 @@ static struct usb_driver usb_sourcesink_driver = {
 	.supports_autosuspend = 1,
 };
 
-/*lint -save -e64 */
 module_usb_driver(usb_sourcesink_driver);
-/*lint -restore */
+

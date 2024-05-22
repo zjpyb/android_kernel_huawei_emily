@@ -35,9 +35,8 @@ int log_to_exception(char *tag, char *msg)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	struct iov_iter iter;
-#else
-	mm_segment_t oldfs;
 #endif
+	mm_segment_t oldfs;
 	struct file *filp = NULL;
 	unsigned char prio_err = 6;	/* ANDROID_ERROR */
 	int ret;
@@ -51,7 +50,7 @@ int log_to_exception(char *tag, char *msg)
 
 	hwlog_info("%s: exception tag '%s' msg '%s'", __func__, tag, msg);
 
-	filp = filp_open(LOG_EXCEPTION_FS, O_RDWR, 0);
+	filp = filp_open(LOG_EXCEPTION_FS, O_WRONLY, 0);
 	if ((!filp) || IS_ERR(filp)) {
 		hwlog_err("%s: access '%s' failed\n", __func__, LOG_EXCEPTION_FS);
 		return -ENODEV;
@@ -65,19 +64,19 @@ int log_to_exception(char *tag, char *msg)
 	vec[vcount++].iov_len = strlen(tag) + 1;
 	vec[vcount].iov_base  = msg;
 	vec[vcount++].iov_len = strlen(msg) + 1;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	iov_iter_init(&iter, WRITE, vec, vcount, iov_length(vec, vcount));
 	ret = vfs_iter_write(filp, &iter, &filp->f_pos, 0);
-#else
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos, 0);
 #else
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos);
 #endif
 	set_fs(oldfs);
-#endif
+
 	if (ret < 0) {
 		hwlog_err("%s: write '%s' failed: %d\n",
 				__func__, LOG_EXCEPTION_FS, ret);
@@ -94,9 +93,8 @@ int logbuf_to_exception(char category, int level, char log_type,
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	struct iov_iter iter;
-#else
-	mm_segment_t oldfs;
 #endif
+	mm_segment_t oldfs;
 	struct file *filp = NULL;
 	int ret;
 	struct idapheader idaphdr;
@@ -108,9 +106,7 @@ int logbuf_to_exception(char category, int level, char log_type,
 		return -EINVAL;
 	}
 
-	hwlog_info("%s: exception msg '%s'", __func__, (char *)msg);
-
-	filp = filp_open(LOG_EXCEPTION_FS, O_RDWR, 0);
+	filp = filp_open(LOG_EXCEPTION_FS, O_WRONLY, 0);
 
 	if ((!filp) || IS_ERR(filp)) {
 		hwlog_err("%s: access '%s' failed\n", __func__, LOG_EXCEPTION_FS);
@@ -128,19 +124,19 @@ int logbuf_to_exception(char category, int level, char log_type,
 	vec[vcount++].iov_len = sizeof(idaphdr);
 	vec[vcount].iov_base  = msg;
 	vec[vcount++].iov_len = msglen;
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 	iov_iter_init(&iter, WRITE, vec, vcount, iov_length(vec, vcount));
 	ret = vfs_iter_write(filp, &iter, &filp->f_pos, 0);
-#else
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos, 0);
 #else
 	ret = vfs_writev(filp, vec, vcount, &filp->f_pos);
 #endif
 	set_fs(oldfs);
-#endif
+
 	if (ret < 0) {
 		hwlog_err("%s: write '%s' failed: %d\n",
 				__func__, LOG_EXCEPTION_FS, ret);

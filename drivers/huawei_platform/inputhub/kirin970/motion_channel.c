@@ -33,8 +33,8 @@ struct motions_cmd_map {
 	int mhb_ioctl_app_cmd;
 	int motion_type;
 	int tag;
-	obj_cmd_t cmd;
-	obj_sub_cmd_t subcmd;
+	enum obj_cmd cmd;
+	enum obj_sub_cmd subcmd;
 };
 static const struct motions_cmd_map motions_cmd_map_tab[] = {
 	{MHB_IOCTL_MOTION_START, -1, TAG_MOTION, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ},
@@ -64,19 +64,16 @@ static char *motion_type_str[] = {
 	[MOTION_TYPE_END] = "end",
 };
 
-static int motion_ext_log_hanlder (const pkt_header_t *head)
+static int motion_ext_log_hanlder (const struct pkt_header *head)
 {
 	int offset, total_len;
 	size_t payload_len;
 	ext_logger_req_t *pkt_ext = (ext_logger_req_t *)head;
 	pedo_ext_logger_req_t *pkt_pedo = (pedo_ext_logger_req_t *)pkt_ext->data;
-    //split packet and write to route
 	hwlog_debug("%s in head tag %d cmd %d len %d handler tag %d\n", __func__, head->tag, head->cmd, head->length, pkt_ext->tag);
-	//extract every payload
 	offset = 0;
-	total_len = pkt_ext->hd.length - (offsetof(ext_logger_req_t, data) - sizeof(pkt_header_t));
-	for(;offset < total_len;)
-	{
+	total_len = pkt_ext->hd.length - (offsetof(ext_logger_req_t, data) - sizeof(struct pkt_header));
+	for (;offset < total_len;) {
 		payload_len = pkt_pedo->len + offsetof(pedo_ext_logger_req_t, data);
 		hwlog_debug("motion_ext_log_hanlder offset %d len %d, pointer %pK\n", offset, payload_len, pkt_pedo);
 		if(payload_len + offset > total_len)
@@ -91,7 +88,7 @@ static int motion_ext_log_hanlder (const pkt_header_t *head)
     return 0;
 }
 
-static void update_motion_info(obj_cmd_t cmd, motion_type_t type)
+static void update_motion_info(enum obj_cmd cmd, motion_type_t type)
 {
 	if (!(MOTION_TYPE_START <= type && type < MOTION_TYPE_END))
 		return;
@@ -159,7 +156,7 @@ static int extend_step_counter_process_nolock(bool enable)
 	return 0;
 }
 
-static int send_motion_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd, motion_type_t type, bool use_lock)
+static int send_motion_cmd_internal(int tag, enum obj_cmd cmd, enum obj_sub_cmd subcmd, motion_type_t type, bool use_lock)
 {
 	uint8_t app_config[16] = { 0, };
 	interval_param_t interval_param;
@@ -185,12 +182,12 @@ static int send_motion_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd
 		/*send open motion cmd when open first sub type*/
 		if (really_do_enable_disable(&motion_ref_cnt, true, type)) {
 			if (use_lock) {
-                		inputhub_sensor_enable(tag, true);
+				inputhub_sensor_enable(tag, true);
 				inputhub_sensor_setdelay(tag, &interval_param);
-        		} else {
-               			inputhub_sensor_enable_nolock(tag, true);
+			} else {
+				inputhub_sensor_enable_nolock(tag, true);
 				inputhub_sensor_setdelay_nolock(tag, &interval_param);
-        		}
+			}
 			hwlog_info("send_motion_cmd open cmd:%d motion: %s !", cmd, motion_type_str[type]);
 		}
 		/*send config cmd to open motion type*/
@@ -203,11 +200,11 @@ static int send_motion_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd
 
 		/*send close motion cmd when all sub type closed*/
 		if (really_do_enable_disable(&motion_ref_cnt, false, type)) {
-			if (use_lock) {
-                		inputhub_sensor_enable(tag, false);
-            		} else {
-               			inputhub_sensor_enable_nolock(tag, false);
-            		}
+			if (use_lock)
+				inputhub_sensor_enable(tag, false);
+			else
+				inputhub_sensor_enable_nolock(tag, false);
+
 			hwlog_info("send_motion_cmd close cmd:%d motion: %s !", cmd, motion_type_str[type]);
 		}
 	} else {
@@ -449,17 +446,17 @@ static int __init motionhub_init(void)
 		hwlog_err("cannot register miscdev err=%d\n", ret);
 		goto CLOSE;
 	}
-    ret = inputhub_ext_log_register_handler(TAG_MOTION, motion_ext_log_hanlder);
-    if (ret != 0) {
-        hwlog_err("cannot register ext_log err=%d\n", ret);
-        goto CLOSE;
-    }
+	ret = inputhub_ext_log_register_handler(TAG_MOTION, motion_ext_log_hanlder);
+	if (ret != 0) {
+		hwlog_err("cannot register ext_log err=%d\n", ret);
+		goto CLOSE;
+	}
 
 	register_iom3_recovery_notifier(&motion_recovery_notify);
 	hwlog_info("%s ok\n", __func__);
 	goto OUT;
 CLOSE:
-    inputhub_route_close(ROUTE_MOTION_PORT);
+	inputhub_route_close(ROUTE_MOTION_PORT);
 OUT:
 	return ret;
 }

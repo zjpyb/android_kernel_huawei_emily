@@ -27,19 +27,19 @@ static int ca_ref_cnt;
 extern int flag_for_sensor_test;
 
 struct cas_cmd_map {
-    int         chb_ioctl_app_cmd;
-    int         ca_type;
-    int         tag;
-    obj_cmd_t cmd;
-    obj_sub_cmd_t subcmd;
+	int chb_ioctl_app_cmd;
+	int ca_type;
+	int tag;
+	enum obj_cmd cmd;
+	enum obj_sub_cmd subcmd;
 };
 
 static const struct cas_cmd_map cas_cmd_map_tab[] = {
-    {CHB_IOCTL_CA_START, -1,  TAG_CA, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ},
-    {CHB_IOCTL_CA_STOP,   -1,  TAG_CA, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ},
-    {CHB_IOCTL_CA_ATTR_START,-1, TAG_CA, CMD_CMN_CONFIG_REQ, SUB_CMD_CA_ATTR_ENABLE_REQ},
-    {CHB_IOCTL_CA_ATTR_STOP,  -1, TAG_CA, CMD_CMN_CONFIG_REQ, SUB_CMD_CA_ATTR_DISABLE_REQ},
-    {CHB_IOCTL_CA_INTERVAL_SET, -1, TAG_CA, CMD_CMN_INTERVAL_REQ, SUB_CMD_NULL_REQ},
+	{ CHB_IOCTL_CA_START, -1, TAG_CA, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ },
+	{ CHB_IOCTL_CA_STOP, -1, TAG_CA, CMD_CMN_CLOSE_REQ, SUB_CMD_NULL_REQ },
+	{ CHB_IOCTL_CA_ATTR_START, -1, TAG_CA, CMD_CMN_CONFIG_REQ, SUB_CMD_CA_ATTR_ENABLE_REQ },
+	{ CHB_IOCTL_CA_ATTR_STOP, -1, TAG_CA, CMD_CMN_CONFIG_REQ, SUB_CMD_CA_ATTR_DISABLE_REQ },
+	{ CHB_IOCTL_CA_INTERVAL_SET, -1, TAG_CA, CMD_CMN_INTERVAL_REQ, SUB_CMD_NULL_REQ },
 };
 
 static char * ca_type_str[] = {
@@ -53,30 +53,30 @@ static char * ca_type_str[] = {
 	[CA_TYPE_END] = "end",
 };
 
-static void update_ca_info(obj_cmd_t cmd, ca_type_t type)
+static void update_ca_info(enum obj_cmd cmd, ca_type_t type)
 {
 	switch (cmd) {
-	    case CMD_CMN_OPEN_REQ:
-	        ca_status[type] = true;
-	        break;
+	case CMD_CMN_OPEN_REQ:
+		ca_status[type] = true;
+		break;
 
-	    case CMD_CMN_CLOSE_REQ:
-	        ca_status[type] = false;
-	        break;
+	case CMD_CMN_CLOSE_REQ:
+		ca_status[type] = false;
+		break;
 
-	    default:
-	        hwlog_err("unknown cmd type in %s\n", __func__);
-	        break;
+	default:
+		hwlog_err("unknown cmd type in %s\n", __func__);
+		break;
 	}
 }
 
-static int send_ca_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd, ca_type_t type, bool use_lock)
+static int send_ca_cmd_internal(int tag, enum obj_cmd cmd, enum obj_sub_cmd subcmd, ca_type_t type, bool use_lock)
 {
 	uint8_t app_config[16] = {0,};
 	interval_param_t interval_param;
 
-	if (!(CA_TYPE_START <= type && type < CA_TYPE_END))
-	    return -EINVAL;
+	if (!(type >= CA_TYPE_START && type < CA_TYPE_END))
+		return -EINVAL;
 
 	app_config[0] = type;
 	app_config[1] = cmd;
@@ -89,10 +89,10 @@ static int send_ca_cmd_internal(int tag, obj_cmd_t cmd, obj_sub_cmd_t subcmd, ca
 			if (use_lock) {
 				inputhub_sensor_enable(tag, true);
 				inputhub_sensor_setdelay(tag, &interval_param);
-	    		} else {
+			} else {
 				inputhub_sensor_enable_nolock(tag, true);
 				inputhub_sensor_setdelay_nolock(tag, &interval_param);
-	    		}
+			}
 		}
 		send_app_config_cmd(TAG_CA, app_config, use_lock);
 	} else if ( CMD_CMN_CLOSE_REQ == cmd) {
@@ -123,19 +123,18 @@ static int send_ca_cmd(unsigned int cmd, unsigned long arg)
 
 	hwlog_info("send_ca_cmd enter!\n");
 	for (i = 0; i < sizeof(cas_cmd_map_tab) / sizeof(cas_cmd_map_tab[0]); ++i) {
-	    if (cas_cmd_map_tab[i].chb_ioctl_app_cmd == cmd) {
-	        break;
-	    }
+		if (cas_cmd_map_tab[i].chb_ioctl_app_cmd == cmd)
+			break;
 	}
 
 	if (sizeof(cas_cmd_map_tab) / sizeof(cas_cmd_map_tab[0]) == i) {
-	    hwlog_err("send_ca_cmd unknown cmd %d in parse_ca_cmd!\n", cmd);
-	    return -EFAULT;
+		hwlog_err("send_ca_cmd unknown cmd %d in parse_ca_cmd\n", cmd);
+		return -EFAULT;
 	}
 
 	if (copy_from_user(&argvalue, argp, sizeof(argvalue))) {
-	    hwlog_err("send_ca_cmd copy_from_user failed!\n");
-	    return -EFAULT;
+		hwlog_err("send_ca_cmd copy_from_user failed\n");
+		return -EFAULT;
 	}
 
 	hwlog_info("send_ca_cmd leave before send_ca_cmd_internal!\n");
@@ -147,10 +146,10 @@ static void enable_cas_when_recovery_iom3(void)
 	ca_type_t type;
 	ca_ref_cnt = 0;//to send open motion cmd when open first type
 	for (type = CA_TYPE_START; type < CA_TYPE_END; ++type) {
-	    if (ca_status[type]) {
-	        hwlog_info("ca state %d in %s\n", type, __func__);
-	        send_ca_cmd_internal(TAG_CA, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ, type, false);
-	    }
+		if (ca_status[type]) {
+			hwlog_info("ca state %d in %s\n", type, __func__);
+			send_ca_cmd_internal(TAG_CA, CMD_CMN_OPEN_REQ, SUB_CMD_NULL_REQ, type, false);
+		}
 	}
 }
 
@@ -208,17 +207,16 @@ static long chb_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	hwlog_info("%s cmd: [%d]\n", __func__, cmd);
 
-	switch(cmd)
-	{
-	    case CHB_IOCTL_CA_START:
-	    case CHB_IOCTL_CA_STOP:
-	    case CHB_IOCTL_CA_ATTR_START:
-	    case CHB_IOCTL_CA_ATTR_STOP:
-	    case CHB_IOCTL_CA_INTERVAL_SET:
-	        break;
-	    default:
-	        hwlog_err("%s unknown cmd : %d\n", __func__, cmd);
-	        return -ENOTTY;
+	switch (cmd) {
+	case CHB_IOCTL_CA_START:
+	case CHB_IOCTL_CA_STOP:
+	case CHB_IOCTL_CA_ATTR_START:
+	case CHB_IOCTL_CA_ATTR_STOP:
+	case CHB_IOCTL_CA_INTERVAL_SET:
+		break;
+	default:
+		hwlog_err("%s unknown cmd : %d\n", __func__, cmd);
+		return -ENOTTY;
 	}
 
 	return send_ca_cmd(cmd, arg);
@@ -286,16 +284,16 @@ Description:   file_operations to ca
 *******************************************************************************************/
 static const struct file_operations chb_fops =
 {
-    .owner             = THIS_MODULE,
-    .llseek            = no_llseek,
-    .read              = chb_read,
-    .write             = chb_write,
-    .unlocked_ioctl    = chb_ioctl,
+	.owner             = THIS_MODULE,
+	.llseek            = no_llseek,
+	.read              = chb_read,
+	.write             = chb_write,
+	.unlocked_ioctl    = chb_ioctl,
 #ifdef CONFIG_COMPAT
-    .compat_ioctl      = chb_ioctl,
+	.compat_ioctl      = chb_ioctl,
 #endif
-    .open              = chb_open,
-    .release           = chb_release,
+	.open              = chb_open,
+	.release           = chb_release,
 };
 
 /*******************************************************************************************
@@ -303,9 +301,9 @@ Description:   miscdevice to ca
 *******************************************************************************************/
 static struct miscdevice cahub_miscdev =
 {
-    .minor =    MISC_DYNAMIC_MINOR,
-    .name =     "cahub",
-    .fops =     &chb_fops,
+	.minor =    MISC_DYNAMIC_MINOR,
+	.name =     "cahub",
+	.fops =     &chb_fops,
 };
 
 /*******************************************************************************************
@@ -326,18 +324,16 @@ static int __init cahub_init(void)
 
 	hwlog_info("enter %s \n", __func__);
 	ret = inputhub_route_open(ROUTE_CA_PORT);
-	if(ret != 0)
-	{
-	    hwlog_err("%s cannot open inputhub route err=%d\n", __func__, ret);
-	    return ret;
+	if (ret != 0) {
+		hwlog_err("%s cannot open inputhub route err=%d\n", __func__, ret);
+		return ret;
 	}
 
 	ret = misc_register(&cahub_miscdev);
-	if(ret != 0)
-	{
-	    hwlog_err("%s cannot register miscdev err=%d\n", __func__, ret);
-	    inputhub_route_close(ROUTE_CA_PORT);
-	    return ret;
+	if (ret != 0) {
+		hwlog_err("%s cannot register miscdev err=%d\n", __func__, ret);
+		inputhub_route_close(ROUTE_CA_PORT);
+		return ret;
 	}
 	register_iom3_recovery_notifier(&ca_recovery_notify);
 	hwlog_info( "%s ok \n", __func__);

@@ -3,7 +3,7 @@
  *
  * this is for nxp onewire ic
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -43,8 +43,8 @@ static void onewire_reset(struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq)
 }
 
 /* onewire stop operation */
-static inline void onewire_stop(struct ow_gpio_des *gpio,
-				struct ow_treq_v2 *ow_trq)
+static void onewire_stop(struct ow_gpio_des *gpio,
+	struct ow_treq_v2 *ow_trq)
 {
 	gpio_direction_output_unsafe(LOW_VOLTAGE, gpio);
 	__hw_delay_v2(ow_trq->stop_low_cycs);
@@ -54,8 +54,7 @@ static inline void onewire_stop(struct ow_gpio_des *gpio,
 
 /* onewire bit operation */
 static unsigned char onewire_read_bit(unsigned char *value,
-				      struct ow_gpio_des *gpio,
-				      struct ow_treq_v2 *ow_trq)
+	struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq)
 {
 	gpio_direction_output_unsafe(LOW_VOLTAGE, gpio);
 	__hw_delay_v2(ow_trq->read_sample_cycs);
@@ -67,27 +66,25 @@ static unsigned char onewire_read_bit(unsigned char *value,
 }
 
 static void onewire_write_bit(const unsigned char val,
-			      struct ow_gpio_des *gpio,
-			      struct ow_treq_v2 *ow_trq)
+	struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq)
 {
 	gpio_direction_output_unsafe(LOW_VOLTAGE, gpio);
 	__hw_delay_v2(val ? ow_trq->write_high_cycs : ow_trq->write_low_cycs);
 	gpio_set_value_unsafe(HIGH_VOLTAGE, gpio);
 	__hw_delay(ow_trq->write_bit_cycs -
-		   (val ? ow_trq->write_high_cycs : ow_trq->write_low_cycs));
+		(val ? ow_trq->write_high_cycs : ow_trq->write_low_cycs));
 }
 
 static inline void onewire_start_bit(struct ow_gpio_des *gpio,
-				     struct ow_treq_v2 *ow_trq)
+	struct ow_treq_v2 *ow_trq)
 {
 	onewire_write_bit(0, gpio, ow_trq);
 }
 
 /* onewire byte operation */
 static unsigned char onewire_read_byte(const unsigned char end,
-				       struct ow_gpio_des *gpio,
-				       struct ow_treq_v2 *ow_trq,
-				       unsigned char *data)
+	struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq,
+	unsigned char *data)
 {
 	unsigned char temp = 0;
 	unsigned long flags;
@@ -112,9 +109,8 @@ static unsigned char onewire_read_byte(const unsigned char end,
 	return 0;
 }
 
-static inline void __onewire_writeb(const unsigned char val,
-				    struct ow_gpio_des *gpio,
-				    struct ow_treq_v2 *ow_trq)
+static void __onewire_writeb(const unsigned char val,
+	struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq)
 {
 	/* date to IC bit7 bit6 bit5...bit0 */
 	onewire_write_bit(val & BIT_7, gpio, ow_trq);
@@ -128,8 +124,7 @@ static inline void __onewire_writeb(const unsigned char val,
 }
 
 static unsigned char onewire_start_byte(const unsigned char val,
-					struct ow_gpio_des *gpio,
-					struct ow_treq_v2 *ow_trq)
+	struct ow_gpio_des *gpio, struct ow_treq_v2 *ow_trq)
 {
 	unsigned long flags;
 	unsigned char nack = 0;
@@ -152,9 +147,8 @@ static unsigned char onewire_start_byte(const unsigned char val,
 }
 
 static unsigned char onewire_write_byte(const unsigned char end,
-					const unsigned char val,
-					struct ow_gpio_des *gpio,
-					struct ow_treq_v2 *ow_trq)
+	const unsigned char val, struct ow_gpio_des *gpio,
+	struct ow_treq_v2 *ow_trq)
 {
 	unsigned long flags;
 	unsigned char nack = 0;
@@ -182,7 +176,7 @@ static void onewire_wait_for_ic(unsigned int ms)
 
 /* wait for onewire IC to idle  */
 static void onewire_soft_reset(struct ow_gpio_des *gpio,
-			       struct ow_treq_v2 *ow_trq)
+	struct ow_treq_v2 *ow_trq)
 {
 	unsigned long flags;
 
@@ -244,7 +238,7 @@ static int ow_driver_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(pdev->dev.of_node, "phandle", &myid);
 	if (ret) {
 		hwlog_err("Can't find device dts node phandle in %s\n",
-			  __func__);
+			__func__);
 		return ONEWIRE_GPIO_FAIL;
 	}
 	reg_node->onewire_phy_register_v2 = pl061_gpio_register_v2;

@@ -1,23 +1,14 @@
 /*
- * big_data_channel.h
- *
- * big_data_channel header
- *
- * Copyright (c) 2018-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: big data channel header file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
 #ifndef _BIG_DATA_CHANNEL_H_
 #define _BIG_DATA_CHANNEL_H_
+
+#include <linux/types.h>
 
 typedef enum {
 	INT_PARAM,

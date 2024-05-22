@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2003 Russell King, All Rights Reserved.
- *  Copyright 2006-2007 Pierre Ossman
+ *  Copyright 2006-2021 Pierre Ossman
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -135,6 +135,42 @@ struct scatterlist *mmc_alloc_sg(int sg_len, gfp_t gfp)
 
 	return sg;
 }
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+/**
+ * __mmc_init_request() - initialize the MMC-specific per-request data
+ * @mq: the mmc queue
+ * @req: the request
+ * @gfp: memory allocation policy
+ */
+static int __mmc_init_request(struct mmc_queue *mq, struct request *req,
+			      gfp_t gfp)
+{
+	struct mmc_queue_req *mq_rq = req_to_mmc_queue_req(req);
+	struct mmc_card *card = mq->card;
+	struct mmc_host *host = card->host;
+
+	mq_rq->sg = mmc_alloc_sg(host->max_segs, gfp);
+	if (!mq_rq->sg)
+		return -ENOMEM;
+
+	return 0;
+}
+
+int mmc_mq_init_request(struct blk_mq_tag_set *set, struct request *req,
+			       unsigned int hctx_idx, unsigned int numa_node)
+{
+	return __mmc_init_request(set->driver_data, req, GFP_KERNEL);
+}
+
+void mmc_mq_exit_request(struct blk_mq_tag_set *set, struct request *req,
+				unsigned int hctx_idx)
+{
+	struct mmc_queue *mq = set->driver_data;
+
+	mmc_exit_request(mq->queue, req);
+}
+
+#endif
 
 void mmc_queue_setup_discard(struct request_queue *q,
 				    struct mmc_card *card)
@@ -204,7 +240,13 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 		limit = (u64)dma_max_pfn(mmc_dev(host)) << PAGE_SHIFT;
 
 	mq->card = card;
-#ifdef CONFIG_MMC_CQ_HCI
+#if defined(CONFIG_MMC_MQ_CQ_HCI) /* MQ+CMDQ */
+	if (card->ext_csd.cmdq_mode_en
+		&& (area_type == MMC_BLK_DATA_AREA_MAIN)) {
+		ret = mmc_cmdq_mq_init_queue(mq, card, lock);
+		return ret;
+	}
+#elif defined(CONFIG_MMC_CQ_HCI) /* SQ+CMDQ */
 	if (card->ext_csd.cmdq_mode_en
 		&& (area_type == MMC_BLK_DATA_AREA_MAIN)) {
 		ret = mmc_cmdq_init_queue(mq, card, lock, subname);
@@ -270,7 +312,12 @@ void mmc_cleanup_queue(struct mmc_queue *mq)
 	/* Empty the queue */
 	spin_lock_irqsave(q->queue_lock, flags);
 	q->queuedata = NULL;
-	blk_start_queue(q);
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+	if (q->mq_ops)
+		blk_mq_run_hw_queues(q, false);
+	else
+#endif
+		blk_start_queue(q);
 	spin_unlock_irqrestore(q->queue_lock, flags);
 
 	blk_cleanup_queue(q);
@@ -278,12 +325,57 @@ void mmc_cleanup_queue(struct mmc_queue *mq)
 }
 EXPORT_SYMBOL(mmc_cleanup_queue);
 
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+int mmc_mq_init_queue(struct mmc_queue *mq, int q_depth,
+			     const struct blk_mq_ops *mq_ops, spinlock_t *lock)
+{
+	int ret;
+
+	memset(&mq->tag_set, 0, sizeof(mq->tag_set));
+	mq->tag_set.ops = mq_ops;
+	mq->tag_set.queue_depth = q_depth;
+	mq->tag_set.reserved_tags = mq->card->ext_csd.cmdq_depth - 1;
+	mq->tag_set.high_prio_tags = mq->card->ext_csd.cmdq_depth - 1;
+	mq->tag_set.numa_node = NUMA_NO_NODE;
+	mq->tag_set.flags = BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_SG_MERGE |
+			    BLK_MQ_F_BLOCKING;
+	mq->tag_set.nr_hw_queues = 1;
+	mq->tag_set.cmd_size = sizeof(struct mmc_queue_req);
+	mq->tag_set.driver_data = mq;
+
+	/* enable EMMC MAS */
+	mq->tag_set.flags |= BLK_MQ_F_NO_SCHED;
+	blk_mq_tagset_mmc_mq_iosched_enable(&mq->tag_set, 1);
+
+	ret = blk_mq_alloc_tag_set(&mq->tag_set);
+	if (ret)
+		return ret;
+
+	mq->queue = blk_mq_init_queue(&mq->tag_set);
+	if (IS_ERR(mq->queue)) {
+		ret = PTR_ERR(mq->queue);
+		goto free_tag_set;
+	}
+
+	mq->queue->queue_lock = lock;
+	mq->queue->queuedata = mq;
+
+	return 0;
+
+free_tag_set:
+	blk_mq_free_tag_set(&mq->tag_set);
+
+	return ret;
+}
+
+#endif
+
 int mmc_cmdq_queue_suspend(struct mmc_queue *mq,int wait)
 {
 	int rc = 0;
 	int ret = 0;
 	unsigned long flags;
-	struct request *req;
+	struct request *req = NULL;
 	struct request_queue *q = mq->queue;
 	struct mmc_host *host = mq->card->host;
 
@@ -339,6 +431,66 @@ out:
 	return rc;
 }
 
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+
+int mmc_cmdq_mq_queue_suspend(struct mmc_queue *mq,int wait)
+{
+	int rc = 0;
+	int ret = 0;
+	unsigned long flags;
+	struct request_queue *q = mq->queue;
+	struct mmc_host *host = mq->card->host;
+
+	if (mq->suspended) {
+		pr_err("%s: already in suspend status\n", __func__);
+		return rc;
+	}
+
+	mq->suspended |= true;
+
+	if (wait) {
+		blk_mq_quiesce_queue(mq->queue);
+
+		/*
+		 * The host remains claimed while there are outstanding requests, so
+		 * simply claiming and releasing here ensures there are none.
+		 */
+		mmc_claim_host(mq->card->host);
+		mmc_release_host(mq->card->host);
+
+		if (host->cmdq_ctx.active_reqs) {
+			ret = wait_for_completion_timeout(
+					&mq->cmdq_shutdown_complete,
+					msecs_to_jiffies(20000));
+			if (ret)
+				pr_err("%s: wait for cmdq shutdowan complete timeout\n",
+						__func__);
+		}
+		mq->cmdq_shutdown(mq);
+	} else {
+		blk_mq_quiesce_queue_nowait(q);
+
+		/*
+		 * The host remains claimed while there are outstanding requests, so
+		 * simply claiming and releasing here ensures there are none.
+		 */
+		mmc_claim_host(mq->card->host);
+		mmc_release_host(mq->card->host);
+
+		if (host->cmdq_ctx.active_reqs) {
+			pr_err("%s: queue suspend fail active_reqs:0x%lx\n",
+				__func__, host->cmdq_ctx.active_reqs);
+			mq->suspended = false;
+			blk_mq_unquiesce_queue(q);
+			rc = -EBUSY;
+			return rc;
+		}
+
+	}
+	return rc;
+}
+#endif
+
 /**
  * mmc_queue_suspend - suspend a MMC request queue
  * @mq: MMC queue to suspend
@@ -354,7 +506,12 @@ int mmc_queue_suspend(struct mmc_queue *mq,int wait)
 	int rc = 0;
 
 	/* cmdq process */
-#ifdef CONFIG_MMC_CQ_HCI
+#if defined(CONFIG_MMC_MQ_CQ_HCI) /* MQ+CMDQ */
+	if (mq->card->cmdq_init) {
+		rc = mmc_cmdq_mq_queue_suspend(mq, wait);
+		return rc;
+	}
+#elif defined(CONFIG_MMC_CQ_HCI) /* SQ+CMDQ */
 	if (mq->card->cmdq_init && blk_queue_tagged(q)) {
 		rc = mmc_cmdq_queue_suspend(mq, wait);
 		return rc;
@@ -401,7 +558,12 @@ void mmc_queue_resume(struct mmc_queue *mq)
 
 	if (mq->suspended) {
 		mq->suspended = false;
-
+#ifdef CONFIG_MMC_MQ_CQ_HCI
+		if (mq->card->cmdq_init) {
+			blk_mq_unquiesce_queue(q);
+			return;
+		}
+#endif
 		if (!(mq->card->cmdq_init && blk_queue_tagged(q)))
 			up(&mq->thread_sem);
 

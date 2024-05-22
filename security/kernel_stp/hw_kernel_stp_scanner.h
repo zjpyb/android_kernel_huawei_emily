@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2021. All rights reserved.
  * Description: the hw_kernel_stp_scanner.h for kernel stp trigger scan
  * Author: sunhongqing <sunhongqing@huawei.com>
  * Create: 2018-03-31

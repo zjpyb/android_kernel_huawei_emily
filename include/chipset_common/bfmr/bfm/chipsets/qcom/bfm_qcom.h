@@ -54,9 +54,9 @@ struct bootlog_inject_struct {
 
 
 /* export interface to bfm_core */
-void qcom_set_boot_stage(bfmr_detail_boot_stage_e stage);
+void qcom_set_boot_stage(enum bfmr_detail_stage stage);
 u32 qcom_get_boot_stage(void);
-int qcom_set_boot_fail_flag(bfmr_bootfail_errno_e bootfail_errno);
+int qcom_set_boot_fail_flag(enum bfm_errno_code bootfail_errno);
 int qcom_hwboot_fail_init(void);
 int kmsg_print_to_ddr(char *buf, int size);
 unsigned long long bfm_hctosys(unsigned long long current_secs);

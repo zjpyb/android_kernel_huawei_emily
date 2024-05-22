@@ -1,7 +1,7 @@
 /*
  * Huawei Touchscreen Driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,10 +19,8 @@
 #define SENCOND_TO_MILLISECOND 1000
 #define SENCOND_TO_NANOSECOND 1000000
 
-/* lint -save -e* */
-extern struct ts_kit_platform_data g_ts_kit_platform_data;
+struct ts_kit_platform_data __attribute__((weak)) g_ts_kit_platform_data;
 static struct timespec curr_time[FILTER_GLOVE_NUMBER] = { { 0, 0 } };
-
 static struct timespec pre_finger_time[FILTER_GLOVE_NUMBER] = { { 0, 0 } };
 
 static int touch_pos_x[FILTER_GLOVE_NUMBER] = { -1, -1, -1, -1 };
@@ -101,9 +99,8 @@ static int filter_illegal_glove(u8 n_finger, struct ts_fingers *in_info)
 					(touch_pos_x[n_finger] - x) +
 					(touch_pos_y[n_finger] - y) *
 					(touch_pos_y[n_finger] - y)) >=
-					(PEN_MOV_LENGTH * PEN_MOV_LENGTH)) {
+					(PEN_MOV_LENGTH * PEN_MOV_LENGTH))
 					touch_state = GLOVE_STATE;
-				}
 			}
 			break;
 
@@ -124,8 +121,8 @@ static int filter_illegal_glove(u8 n_finger, struct ts_fingers *in_info)
 }
 
 int ts_kit_algo_t1(struct ts_kit_device_data *dev_data,
-			struct ts_fingers *in_info,
-			struct ts_fingers *out_info)
+	struct ts_fingers *in_info,
+	struct ts_fingers *out_info)
 {
 	int index;
 	int id;
@@ -181,7 +178,6 @@ int ts_kit_algo_t1(struct ts_kit_device_data *dev_data,
 						out_info->fingers[id].yer = in_info->fingers[index].yer;
 						out_info->fingers[id].orientation = in_info->fingers[index].orientation;
 						out_info->fingers[id].status = TS_FINGER_PRESS;
-
 					}
 				} else {
 					finger_cnt++;
@@ -199,7 +195,7 @@ int ts_kit_algo_t1(struct ts_kit_device_data *dev_data,
 					out_info->fingers[id].orientation = in_info->fingers[index].orientation;
 					out_info->fingers[id].status = TS_FINGER_PRESS;
 				}
-			} else{
+			} else {
 				out_info->fingers[id].status = 0;
 			}
 		}
@@ -220,16 +216,19 @@ struct ts_algo_func ts_kit_algo_f1 = {
 
 
 int register_ts_algo_func(struct ts_kit_device_data *chip_data,
-				struct ts_algo_func *fn)
+	struct ts_algo_func *fn)
 {
-	int error = -EIO;
+	int error;
 
-	if (!chip_data || !fn)
+	if (!chip_data || !fn) {
+		error = -EIO;
 		goto out;
+	}
 
 	fn->algo_index = chip_data->algo_size;
 	list_add_tail(&fn->node, &chip_data->algo_head);
 	chip_data->algo_size++;
+	/* We use barrier to make sure data consistently */
 	smp_mb();
 	error = NO_ERR;
 
@@ -241,6 +240,7 @@ EXPORT_SYMBOL(register_ts_algo_func);
 int ts_kit_register_algo_func(struct ts_kit_device_data *chip_data)
 {
 	int retval;
+
 	/* put algo_f1 into list contained in chip_data, named algo_t1 */
 	retval = register_ts_algo_func(chip_data, &ts_kit_algo_f1);
 	if (retval < 0) {
@@ -250,7 +250,6 @@ int ts_kit_register_algo_func(struct ts_kit_device_data *chip_data)
 
 	return retval;
 }
-/*lint -restore*/
 
 int ts_pen_open_confirm(struct ts_pens *pens)
 {
@@ -312,28 +311,34 @@ int ts_pen_open_confirm(struct ts_pens *pens)
 					pen_pos_x = x;
 					pen_pos_y = y;
 				} else {
-					leng_thr = g_ts_kit_platform_data.chip_data->x_max * PEN_MOV_INTERVAL / FHD_X_MAX; /* about 3mm length */
+					/* about 3mm length */
+					leng_thr = g_ts_kit_platform_data.chip_data->x_max * PEN_MOV_INTERVAL / FHD_X_MAX;
 					leng_thr *= leng_thr;
 					mov_len = (pre_x - x) * (pre_x - x) + (pre_y - y) * (pre_y - y);
 					if (mov_len > leng_thr) {
 						start_check_flag = 0;
-						TS_LOG_INFO("ts_pen_open_confirm_called, move_too_fast, THR=%d, length=%d\n", leng_thr, mov_len);
+						TS_LOG_INFO("ts_pen_open_confirm_called, move_too_fast, THR=%d, length=%d\n",
+							leng_thr, mov_len);
 					} else {
-						leng_thr = g_ts_kit_platform_data.chip_data->x_max * PEN_MOV_PIXEL / FHD_X_MAX; /* about 7mm length */
+						/* about 7mm length */
+						leng_thr = g_ts_kit_platform_data.chip_data->x_max * PEN_MOV_PIXEL / FHD_X_MAX;
 						leng_thr *= leng_thr;
 						mov_len = (pen_pos_x - x) * (pen_pos_x - x) + (pen_pos_y - y) * (pen_pos_y - y);
 						if (mov_len >= leng_thr) {
-							TS_LOG_INFO("ts_pen_open_confirm_called, THR=%d, length=%d\n", leng_thr, mov_len);
+							TS_LOG_INFO("ts_pen_open_confirm_called, THR=%d, length=%d\n",
+								leng_thr, mov_len);
 
 							interval_time = (cur_time.tv_sec - pre_pen_down_time.tv_sec) * SENCOND_TO_MILLISECOND +
 								(cur_time.tv_nsec - pre_pen_down_time.tv_nsec) / SENCOND_TO_NANOSECOND;
 							if ((interval_time > 0) && (interval_time <= MOVE_TIME_MIN)) {
 								start_check_flag = 0;
-								TS_LOG_INFO("ts_pen_open_confirm_called, movetime_too_short, THR=%d, interval=%ld\n", MOVE_TIME_MIN, interval_time);
+								TS_LOG_INFO("ts_pen_open_confirm_called, movetime_too_short, THR=%d, interval=%ld\n",
+									MOVE_TIME_MIN, interval_time);
 							} else {
 								start_check_flag = 0;
 								open_pen_flag = 1; /* need open pen switch */
-								TS_LOG_ERR("ts_pen_open_confirm_called, ret_flag=%d\n", open_pen_flag);
+								TS_LOG_ERR("ts_pen_open_confirm_called, ret_flag=%d\n",
+									open_pen_flag);
 							}
 						}
 					}

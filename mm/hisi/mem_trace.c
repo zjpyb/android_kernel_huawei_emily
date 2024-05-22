@@ -1,3 +1,19 @@
+/*
+ * mm/hisi/mem_trace.c
+ *
+ * Copyright(C) 2019-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include <linux/err.h>
 #include <linux/mmzone.h>
 #include <linux/printk.h>
@@ -5,6 +21,7 @@
 #include <linux/mm.h>
 #include <linux/swap.h>
 #include <linux/slab.h>
+#include <linux/sizes.h>
 #include "slab.h"
 #include "mem_stack.h"
 #ifdef CONFIG_CMA
@@ -14,7 +31,7 @@
 #include <linux/hisi/hisi_ion.h>
 #endif
 
-#define PAGES_TO_BYTE(pages) ((pages) << PAGE_SHIFT)
+#define pages_to_byte(pages) ((pages) << PAGE_SHIFT)
 
 static size_t get_stats_cma(void);
 static size_t get_stats_ion(void);
@@ -32,7 +49,7 @@ struct page_stack_trace {
 	int (*page_stack_off)(char *);
 	int (*page_stack_open)(int);
 	int (*page_stack_close)(void);
-	size_t (*page_stack_read)(struct hisi_stack_info *, size_t, int);
+	size_t (*page_stack_read)(struct mm_stack_info *, size_t, int);
 };
 
 struct mem_trace {
@@ -67,29 +84,29 @@ struct page_stack_trace buddy_page_stack = {
 };
 
 struct mem_trace memtrace[] = {
-	{VMALLOC_TRACK,           get_stats_vmalloc,
-	 hisi_get_vmalloc_detail, &vmalloc_page_stack},
+	{ VMALLOC_TRACK,           get_stats_vmalloc,
+	 hisi_get_vmalloc_detail, &vmalloc_page_stack },
 
-	{BUDDY_TRACK,             get_stats_buddy,
-	 NULL,                    &buddy_page_stack},
+	{ BUDDY_TRACK,             get_stats_buddy,
+	 NULL,                    &buddy_page_stack },
 
-	{SLUB_TRACK,              get_stats_slub,
-	 hisi_get_slub_detail,    &slub_page_stack},
+	{ SLUB_TRACK,              get_stats_slub,
+	 hisi_get_slub_detail,    &slub_page_stack },
 
-	{LSLUB_TRACK,             get_stats_lslub,
-	 NULL,                    &buddy_page_stack},/*the same with buddy*/
+	{ LSLUB_TRACK,             get_stats_lslub,
+	 NULL,                    &buddy_page_stack }, /* the same with buddy */
 
-	{SKB_TRACK,               get_stats_skb,
-	 NULL,                    NULL},
+	{ SKB_TRACK,               get_stats_skb,
+	 NULL,                    NULL },
 
-	{ZSPAGE_TRACK,            get_stats_zspage,
-	 NULL,                    NULL},
+	{ ZSPAGE_TRACK,            get_stats_zspage,
+	 NULL,                    NULL },
 
-	{ION_TRACK,               get_stats_ion,
-	 hisi_get_ion_detail,     NULL},
+	{ ION_TRACK,               get_stats_ion,
+	 mm_get_ion_detail,     NULL },
 
-	{CMA_TRACK,               get_stats_cma,
-	 NULL,                    NULL},
+	{ CMA_TRACK,               get_stats_cma,
+	 NULL,                    NULL },
 };
 
 static const char * const track_text[] = {
@@ -103,7 +120,7 @@ static const char * const track_text[] = {
 	"SKB_TRACK",
 };
 
-static int vmalloc_type[] = {VM_IOREMAP, VM_ALLOC, VM_MAP, VM_USERMAP};
+static int vmalloc_type[] = { VM_IOREMAP, VM_ALLOC, VM_MAP, VM_USERMAP };
 static const char * const vmalloc_text[] = {
 	"VM_IOREMAP",
 	"VM_ALLOC",
@@ -113,22 +130,22 @@ static const char * const vmalloc_text[] = {
 
 static size_t get_stats_cma(void)
 {
-	return PAGES_TO_BYTE(totalcma_pages);
+	return pages_to_byte(totalcma_pages);
 }
 
 static size_t get_stats_ion(void)
 {
-	return hisi_ion_total();
+	return mm_ion_total();
 }
 
 static size_t get_stats_slub(void)
 {
-	return PAGES_TO_BYTE(global_node_page_state(NR_SLAB_UNRECLAIMABLE));
+	return pages_to_byte(global_node_page_state(NR_SLAB_UNRECLAIMABLE));
 }
 
 static size_t get_stats_lslub(void)
 {
-	return PAGES_TO_BYTE(global_zone_page_state(NR_LSLAB_PAGES));
+	return pages_to_byte(global_zone_page_state(NR_LSLAB_PAGES));
 }
 
 static size_t get_stats_vmalloc(void)
@@ -144,12 +161,12 @@ static size_t get_stats_vmalloc(void)
 
 static size_t get_stats_zspage(void)
 {
-	return PAGES_TO_BYTE(global_zone_page_state(NR_ZSPAGES));
+	return pages_to_byte(global_zone_page_state(NR_ZSPAGES));
 }
 
 static size_t get_stats_skb(void)
 {
-	return PAGES_TO_BYTE(global_zone_page_state(NR_SKB_PAGES));
+	return pages_to_byte(global_zone_page_state(NR_SKB_PAGES));
 }
 
 static size_t get_stats_buddy(void)
@@ -157,7 +174,7 @@ static size_t get_stats_buddy(void)
 	struct sysinfo i;
 
 	si_meminfo(&i);
-	return PAGES_TO_BYTE(i.totalram - i.freeram);
+	return pages_to_byte(i.totalram - i.freeram);
 }
 
 static size_t hisi_get_slub_detail(void *buf, size_t len)
@@ -166,8 +183,8 @@ static size_t hisi_get_slub_detail(void *buf, size_t len)
 	unsigned long size;
 	struct kmem_cache *s = NULL;
 	struct slabinfo sinfo;
-	struct hisi_slub_detail_info *info =
-		(struct hisi_slub_detail_info *)buf;
+	struct mm_slub_detail_info *info =
+		(struct mm_slub_detail_info *)buf;
 
 	mutex_lock(&slab_mutex);
 	list_for_each_entry(s, &slab_caches, list) {/*lint !e666*/
@@ -182,7 +199,7 @@ static size_t hisi_get_slub_detail(void *buf, size_t len)
 		(info + cnt)->num_objs = sinfo.num_objs;
 		(info + cnt)->objsize = (unsigned int)s->size;
 		(info + cnt)->size = sinfo.num_objs * size;
-		strncpy((info + cnt)->name, s->name, SLUB_NAME_LEN);
+		strncpy((info + cnt)->name, s->name, SLUB_NAME_LEN - 1);
 		cnt++;
 	}
 	mutex_unlock(&slab_mutex);
@@ -192,7 +209,7 @@ static size_t hisi_get_slub_detail(void *buf, size_t len)
 
 size_t hisi_get_ion_by_pid(pid_t pid)
 {
-	return hisi_get_ion_size_by_pid(pid);
+	return mm_get_ion_size_by_pid(pid);
 }
 
 size_t hisi_get_mem_total(int type)
@@ -253,7 +270,8 @@ int hisi_page_trace_open(int type, int subtype)
 	for (i = 0; i < ARRAY_SIZE(memtrace); i++)/*lint !e514*/
 		if (type == memtrace[i].type &&
 			memtrace[i].stack_trace)
-			return memtrace[i].stack_trace->page_stack_open(subtype);
+			return memtrace[i].stack_trace->page_stack_open(
+								subtype);
 
 	return -EINVAL;
 }
@@ -271,7 +289,8 @@ int hisi_page_trace_close(int type, int subtype)
 }
 
 size_t hisi_page_trace_read(int type,
-	struct hisi_stack_info *info, size_t len, int subtype)
+				struct mm_stack_info *info,
+				size_t len, int subtype)
 {
 	unsigned int i;
 
@@ -294,7 +313,7 @@ void hisi_mem_stats_show(void)
 	pr_err("========mem stat start==========\n");
 	for (i = START_TRACK; i < NR_TRACK; i++) {
 		size = hisi_get_mem_total(i);
-		pr_err("%s used: %ld kB\n", track_text[i], size/1024UL);
+		pr_err("%s used: %ld kB\n", track_text[i], size / SZ_1K);
 	}
 	pr_err("=========mem stat end==========\n");
 }
@@ -309,7 +328,7 @@ void hisi_vmalloc_detail_show(void)
 	for (i = 0; i < ARRAY_SIZE(vmalloc_type); i++) {/*lint !e514*/
 		size = vm_type_detail_get(vmalloc_type[i]);
 		pr_err("vmalloc type:%s, size:%zu kB\n",
-			vmalloc_text[i], size/1024UL);
+			vmalloc_text[i], size / SZ_1K);
 	}
 
 	pr_err("========get vmalloc info end==========\n");

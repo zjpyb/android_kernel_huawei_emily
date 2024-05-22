@@ -12,3 +12,10 @@ config HW_CGROUP_INFO
 	default n
 	---help---
 	  This feature support to catch freezer cgroup hung
+
+config HW_FREEZEDETECTOR
+	depends on HW_LOGGER
+	bool "Huawei zero hung send with hievent"
+	default n
+	---help---
+	  This feature support to send hung log with hievent

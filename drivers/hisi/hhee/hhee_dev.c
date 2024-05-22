@@ -1,12 +1,7 @@
 /*
- * Hisilicon HHEE exception driver .
- *
- * Copyright (c) 2012-2013 Linaro Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
+ * Description: hhee exception driver source file
+ * Create: 2016/12/6
  */
 
 #include <linux/kernel.h>
@@ -47,16 +42,17 @@ struct rdr_exception_info_s hhee_excetption_info[] = {
 
 int hhee_panic_handle(unsigned int len, void *buf)
 {
-	pr_err("hhee panic trigger system_error.\n");
+	pr_err("hhee panic trigger system_error\n");
 	(void)len;
 	if (buf != NULL) {
-		pr_err("El2 trigger panic, buf should be null.\n");
-	};
+		pr_err("El2 trigger panic, buf should be null\n");
+	}
+
 	rdr_syserr_process_for_ap((u32)MODID_AP_S_HHEE_PANIC, 0ULL, 0ULL);
 	return 0;
 }
 
-/*check hhee enable*/
+/* check hhee enable */
 static int g_hhee_enable = HHEE_ENABLE;
 int hhee_check_enable(void)
 {
@@ -77,35 +73,49 @@ void hkip_clean_counters(void)
 	reset_hkip_irq_counters();
 	reset_hhee_irq_counters();
 }
-static int hisi_hhee_probe(struct platform_device *pdev)
+
+static int hhee_irq_get(struct platform_device *pdev)
 {
-	int ret, irq;
+	int ret;
+	int irq;
 	struct device *dev = &pdev->dev;
 
-	pr_info("hisi hhee probe\n");
-
-	if (HHEE_DISABLE == hhee_check_enable())
-		return 0;
-
-	/*irq num get and register*/
+	/* irq num get and register */
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(dev, "get irq failed\n");
 		return -ENXIO;
 	}
 	ret = devm_request_irq(dev, (unsigned int)irq,
-						hhee_irq_handle, 0ul, "hisi-hhee", pdev);
+			       hhee_irq_handle, 0ul, "hkip-hhee", pdev);
 	if (ret < 0) {
 		dev_err(dev, "devm request irq failed\n");
 		return -EINVAL;
 	}
-	if(cpu_online(CPU_MASK) && (irq_set_affinity(irq, cpumask_of(CPU_MASK)) < 0)){
+	if(cpu_online(CPU_MASK) && (irq_set_affinity(irq, cpumask_of(CPU_MASK)) < 0))
 		dev_err(dev, "set affinity failed\n");
-	}
-	/*rdr struct register*/
+
+	return 0;
+}
+
+static int hkip_hhee_probe(struct platform_device *pdev)
+{
+	int ret;
+	unsigned int read_cnt = 0;
+	struct device *dev = &pdev->dev;
+
+	if (HHEE_DISABLE == hhee_check_enable())
+		return 0;
+
+	ret = hhee_irq_get(pdev);
+	if (ret < 0)
+		goto err_free_hhee;
+	/* rdr struct register */
 	ret = (s32)rdr_register_exception(&hhee_excetption_info[0]);
 	if (!ret)
-		dev_err(dev, "register hhee exception fail.\n");
+		dev_err(dev, "register hhee exception fail\n");
+
+	hhee_module_init();
 
 	ret = hhee_logger_init();
 	if (ret < 0) {
@@ -122,6 +132,19 @@ static int hisi_hhee_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_free_hhee;
 
+	/*
+	 * Ignore the return value
+	 * HHEE using 0 as default instead of
+	 */
+	ret = of_property_read_u32_index(pdev->dev.of_node, "hhee_read_cnt",
+					 0, &read_cnt);
+	if (ret) {
+		dev_err(dev, "cannot get hhee_read_cnt\n");
+		return -EINVAL;
+	}
+
+	(void)hhee_fn_hvc((unsigned long)HHEE_HVC_PAGERD_COUNT, read_cnt, 0ul, 0ul);
+
 	pr_info("hhee probe done\n");
 	return 0;
 
@@ -129,29 +152,27 @@ err_free_hhee:
 	return ret;
 }
 
-static int hisi_hhee_remove(struct platform_device *pdev)
+static int hkip_hhee_remove(struct platform_device *pdev)
 {
 	return 0;
-}/*lint !e715*/
+}
 
-/*lint -e785 -esym(785,*)*/
-static const struct of_device_id hisi_hhee_of_match[] = {
-	{.compatible = "hisi,hisi-hhee"},
+static const struct of_device_id hkip_hhee_of_match[] = {
+	{.compatible = "hkip,hkip-hhee"},
 	{},
 };
 
-static struct platform_driver hisi_hhee_driver = {
+static struct platform_driver hkip_hhee_driver = {
 	.driver = {
-		.owner = THIS_MODULE, /*lint !e64*/
-		.name = "hisi-hhee",
-		.of_match_table = of_match_ptr(hisi_hhee_of_match),
+		.owner = THIS_MODULE,
+		.name = "hkip-hhee",
+		.of_match_table = of_match_ptr(hkip_hhee_of_match),
 	},
-	.probe = hisi_hhee_probe,
-	.remove = hisi_hhee_remove,
+	.probe = hkip_hhee_probe,
+	.remove = hkip_hhee_remove,
 };
-/*lint -e785 +esym(785,*)*/
 
-static int __init hisi_hhee_cmd_get(char *arg)
+static int __init hkip_hhee_cmd_get(char *arg)
 {
 	if (!arg)
 		return -EINVAL;
@@ -163,32 +184,28 @@ static int __init hisi_hhee_cmd_get(char *arg)
 	pr_err("hhee enable = %d.\n", g_hhee_enable);
 	return 0;
 }
-early_param("hhee_enable", hisi_hhee_cmd_get); /*lint -e528 */
+early_param("hhee_enable", hkip_hhee_cmd_get);
 
-static int __init hisi_hhee_panic_init(void)
+static int __init hkip_hhee_device_init(void)
 {
 	int ret;
 
 	pr_info("hhee probe init\n");
-	ret = platform_driver_register(&hisi_hhee_driver);/*lint !e64*/
+	ret = platform_driver_register(&hkip_hhee_driver);
 	if (ret)
 		pr_err("register hhee driver fail\n");
 
 	return ret;
 }
 
-static void __exit hisi_hhee_panic_exit(void)
+static void __exit hkip_hhee_device_exit(void)
 {
-	platform_driver_unregister(&hisi_hhee_driver);
+	platform_driver_unregister(&hkip_hhee_driver);
 }
 
-/*lint -e528 -esym(528,*)*/
-/*lint -e753 -esym(753,*)*/
-module_init(hisi_hhee_panic_init);
-module_exit(hisi_hhee_panic_exit);
+module_init(hkip_hhee_device_init);
+module_exit(hkip_hhee_device_exit);
 
-MODULE_DESCRIPTION("hisi hhee exception driver");
-MODULE_ALIAS("hisi hhee exception module");
+MODULE_DESCRIPTION("hhee driver");
+MODULE_ALIAS("hhee module");
 MODULE_LICENSE("GPL");
-/*lint -e528 +esym(528,*)*/
-/*lint -e753 +esym(753,*)*/

@@ -69,7 +69,7 @@ static uint8_t step_count_docm =0;
 static int rpc_commu(unsigned int cmd, unsigned int pare, uint16_t motion)
 {
 	int ret = -1;
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	rpc_ioctl_t pkg_ioctl;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 
@@ -135,8 +135,8 @@ static ssize_t store_enable(struct device *dev, struct device_attribute *attr, c
 {
 	unsigned long val = 0;
 	int ret = -1;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	const char *operation = NULL;
 
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
@@ -172,7 +172,7 @@ static ssize_t store_enable(struct device *dev, struct device_attribute *attr, c
 static int rpc_status_change(void)
 {
 	int ret= 0;
-        sar_service_info = (sar_service_info&~BIT(9)) | ((bool)rpc_motion_request<<9);
+	sar_service_info = (sar_service_info & ~BIT(9)) | ((unsigned long)rpc_motion_request << 9);
 	hwlog_info("sar_service_info is %lu\n", sar_service_info);
 	ret = rpc_motion(sar_service_info);
 	if (ret) {
@@ -203,9 +203,8 @@ static ssize_t store_rpc_sar_service_req(struct device *dev, struct device_attri
 	unsigned long sar_service = 0;
 
 	if (strict_strtoul(buf, 10, &sar_service))
-	{
-	    hwlog_err("rpc_sar_service_req strout error.\n");
-	}
+		hwlog_err("rpc_sar_service_req strout error.\n");
+
 	if (sar_service > 65535) {
 		hwlog_err("%s: set enable fail, invalid val\n", __FUNCTION__);
 		return size;
@@ -230,13 +229,12 @@ static ssize_t store_set_delay(struct device *dev, struct device_attribute *attr
 {
 	unsigned long val = 0;
 	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_cmn_interval_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 
-	struct sensor_cookie *data =
-	    (struct sensor_cookie *)dev_get_drvdata(dev);
+	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
 	CHECK_SENSOR_COOKIE(data);
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -292,7 +290,7 @@ extern uint8_t tag_to_hal_sensor_type[TAG_SENSOR_END];
 static ssize_t show_get_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct sensor_cookie *data = (struct sensor_cookie *)dev_get_drvdata(dev);
-        unsigned int hal_sensor_tag = tag_to_hal_sensor_type[data->tag];
+	unsigned int hal_sensor_tag = tag_to_hal_sensor_type[data->tag];
 	CHECK_SENSOR_COOKIE(data);
 
 	{
@@ -380,14 +378,14 @@ static ssize_t store_selftest(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 
 	if (1 == val) {
-		pkt_header_resp_t resp_pkt;
+		struct pkt_header_resp resp_pkt;
 		cpkt.hd.tag = data->tag;
 		cpkt.hd.cmd = CMD_CMN_CONFIG_REQ;
 		cpkt.subcmd = SUB_CMD_SELFTEST_REQ;
 		cpkt.hd.resp = RESP;
 		cpkt.hd.length = SUBCMD_LEN;
-		if (0 == WAIT_FOR_MCU_RESP_DATA_AFTER_SEND(&cpkt,
-							   inputhub_mcu_write_cmd(&cpkt, sizeof(cpkt)), 4000, &resp_pkt, sizeof(resp_pkt))) {
+		if (WAIT_FOR_MCU_RESP_DATA_AFTER_SEND(&cpkt, inputhub_mcu_write_cmd(&cpkt, sizeof(cpkt)),
+			4000, &resp_pkt, sizeof(resp_pkt)) == 0) {
 			hwlog_err("wait for %s selftest timeout\n", data->name);
 			memcpy(sensor_status.selftest_result[data->tag], "1", 2);/*flyhorse k : SUC-->"0", OTHERS-->"1"*/
 			return size;
@@ -517,7 +515,7 @@ static ssize_t show_als_debug_data(struct device *dev, struct device_attribute *
 	}
 
 	return snprintf(buf, BUF_SIZE, "%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd\n", als_debug_para[0],als_debug_para[1],als_debug_para[2],
-			   als_debug_para[3],als_debug_para[4],als_debug_para[5],als_debug_para[6],als_debug_para[7]);
+		als_debug_para[3],als_debug_para[4],als_debug_para[5],als_debug_para[6],als_debug_para[7]);
 
 }
 
@@ -528,12 +526,11 @@ static ssize_t store_als_debug_data(struct device *dev, struct device_attribute 
 	if (buf == NULL)
 		return 0;
 
-	if (sscanf(buf,"%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd",&als_debug_para[0],&als_debug_para[1],&als_debug_para[2],\
-		           &als_debug_para[3],&als_debug_para[4],&als_debug_para[5],&als_debug_para[6],&als_debug_para[7])){
+	if (sscanf(buf,"%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd", &als_debug_para[0], &als_debug_para[1], &als_debug_para[2],
+		&als_debug_para[3], &als_debug_para[4], &als_debug_para[5], &als_debug_para[6], &als_debug_para[7]))
 		hwlog_info("%s: get parameter success.\n", __FUNCTION__);
-	} else {
+	else
 		hwlog_info("%s: get parameter fail.\n", __FUNCTION__);
-	}
 
 	if (rohm_rgb_flag == 1) { //bh745_para
 		als_para_diff_tp_color_table[als_para_table].bh745_para[0]=als_debug_para[0];//cofficient_judge
@@ -699,7 +696,7 @@ static int sar_sensor_i2c_detect(struct sar_sensor_detect sar_detect)
 	return detect_result;
 }
 static ssize_t show_sar_sensor_detect(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+	char *buf)
 {
 	int final_detect_result = 0;
 	int semtech_detect_result = 0;
@@ -814,8 +811,8 @@ static ssize_t store_ois_ctrl(struct device *dev, struct device_attribute *attr,
 	int source = 0, ret = 0;
 	unsigned int cmd = 0;
 	unsigned int delay = 200;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	source = simple_strtol(buf, NULL, 10);
@@ -924,7 +921,7 @@ static ssize_t show_gyro_sensorlist_info(struct device *dev, struct device_attri
 }
 
 static ssize_t show_gyro_position_info(struct device *dev,
-					  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	hwlog_info("%s: gyro_position is (%d)\n", __FUNCTION__, gyro_position);
 	return snprintf(buf, MAX_STR_SIZE, "%d\n", gyro_position);
@@ -954,7 +951,7 @@ static ssize_t store_ungyro_time_offset(struct device *dev, struct device_attrib
 	return size;
 }
 static ssize_t show_ungyro_time_offset(struct device *dev,
-					  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	hwlog_info("%s: unigyro_time_offset is (%d)\n", __FUNCTION__, ungyro_timestamp_offset);
 	memcpy(buf, &ungyro_timestamp_offset, sizeof(ungyro_timestamp_offset));
@@ -982,7 +979,7 @@ static ssize_t store_unacc_time_offset(struct device *dev, struct device_attribu
 	return size;
 }
 static ssize_t show_unacc_time_offset(struct device *dev,
-					  struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	hwlog_info("%s: acc_time_offset is (%d)\n", __FUNCTION__, unacc_timestamp_offset);
 	memcpy(buf, &unacc_timestamp_offset, sizeof(unacc_timestamp_offset));
@@ -1021,39 +1018,39 @@ static DEVICE_ATTR(airpress_sensorlist_info, 0664, show_airpress_sensorlist_info
 static ssize_t show_als_offset_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, MAX_STR_SIZE, "als OFFSET:%u  %u  %u  %u  %u  %u\n",
-			als_offset[0], als_offset[1], als_offset[2], als_offset[3], als_offset[4], als_offset[5]);
+		als_offset[0], als_offset[1], als_offset[2], als_offset[3], als_offset[4], als_offset[5]);
 }
 static DEVICE_ATTR(als_offset_data, 0444, show_als_offset_data, NULL);
 
 static ssize_t show_ps_offset_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, MAX_STR_SIZE, "ps OFFSET:%d  %d  %d\n",
-			ps_sensor_offset[0], ps_sensor_offset[1], ps_sensor_offset[2]);
+		ps_sensor_offset[0], ps_sensor_offset[1], ps_sensor_offset[2]);
 }
 static DEVICE_ATTR(ps_offset_data, 0444, show_ps_offset_data, NULL);
 
 static ssize_t show_acc_offset_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, MAX_STR_SIZE, "acc offset:%d  %d  %d\nsensitivity:%d  %d  %d\nxis_angle:%d  %d  %d  %d  %d  %d  %d  %d  %d\n",
-			gsensor_offset[0], gsensor_offset[1], gsensor_offset[2], gsensor_offset[3], gsensor_offset[4], gsensor_offset[5],
-			gsensor_offset[6], gsensor_offset[7], gsensor_offset[8], gsensor_offset[9], gsensor_offset[10], gsensor_offset[11],
-			gsensor_offset[12], gsensor_offset[13], gsensor_offset[14]);
+		gsensor_offset[0], gsensor_offset[1], gsensor_offset[2], gsensor_offset[3], gsensor_offset[4], gsensor_offset[5],
+		gsensor_offset[6], gsensor_offset[7], gsensor_offset[8], gsensor_offset[9], gsensor_offset[10], gsensor_offset[11],
+		gsensor_offset[12], gsensor_offset[13], gsensor_offset[14]);
 }
 static DEVICE_ATTR(acc_offset_data, 0444, show_acc_offset_data, NULL);
 
 static ssize_t show_gyro_offset_data(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	return snprintf(buf, MAX_STR_SIZE, "gyro offset:%d  %d  %d\nsensitivity:%d  %d  %d\nxis_angle:%d  %d  %d  %d  %d  %d  %d  %d  %d\nuser calibrated offset:%d  %d  %d\n",
-			gyro_sensor_offset[0], gyro_sensor_offset[1], gyro_sensor_offset[2], gyro_sensor_offset[3], gyro_sensor_offset[4], gyro_sensor_offset[5],
-			gyro_sensor_offset[6], gyro_sensor_offset[7], gyro_sensor_offset[8], gyro_sensor_offset[9], gyro_sensor_offset[10], gyro_sensor_offset[11],
-			gyro_sensor_offset[12], gyro_sensor_offset[13], gyro_sensor_offset[14], gyro_sensor_offset[15], gyro_sensor_offset[16], gyro_sensor_offset[17]);
+		gyro_sensor_offset[0], gyro_sensor_offset[1], gyro_sensor_offset[2], gyro_sensor_offset[3], gyro_sensor_offset[4], gyro_sensor_offset[5],
+		gyro_sensor_offset[6], gyro_sensor_offset[7], gyro_sensor_offset[8], gyro_sensor_offset[9], gyro_sensor_offset[10], gyro_sensor_offset[11],
+		gyro_sensor_offset[12], gyro_sensor_offset[13], gyro_sensor_offset[14], gyro_sensor_offset[15], gyro_sensor_offset[16], gyro_sensor_offset[17]);
 }
 static DEVICE_ATTR(gyro_offset_data, 0444, show_gyro_offset_data, NULL);
 
 static ssize_t attr_airpress_calibrate_write(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
-	read_info_t read_pkg;
+	struct read_info read_pkg;
 
 	if (strict_strtoul(buf, 10, &val))
 		return -EINVAL;
@@ -1080,10 +1077,10 @@ static DEVICE_ATTR(airpress_calibrate, 0660, attr_airpress_calibrate_show, attr_
 static ssize_t attr_cap_prox_data_mode_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	unsigned long val = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 	int ret = 0;
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -1108,19 +1105,17 @@ static ssize_t attr_cap_prox_data_mode_store(struct device *dev, struct device_a
 	memcpy(spkt.para, &val, sizeof(val));
 
 	ret = write_customize_cmd(&pkg_ap, &pkg_mcu, true);
-	if (ret)
-	{
-	    hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n", pkg_ap.tag, ret);
+	if (ret) {
+		hwlog_err("send tag %d sar mode to mcu fail,ret=%d\n", pkg_ap.tag, ret);
 		ret = -1;
-	}else{
-	    if (pkg_mcu.errno != 0)
-	    {
-	        hwlog_err("send sar mode to mcu fail\n");
-	        ret = -1;
-	    }else{
-	        hwlog_info("send sar mode to mcu succes\n");
-	        ret = count;
-	    }
+	} else {
+		if (pkg_mcu.errno != 0) {
+			hwlog_err("send sar mode to mcu fail\n");
+			ret = -1;
+		} else {
+			hwlog_info("send sar mode to mcu succes\n");
+			ret = count;
+		}
 	}
 
 	return ret;
@@ -1147,8 +1142,8 @@ static const struct attribute_group acc_sensor_attrs_grp = {
 static int sleeve_test_ps_prepare(int ps_config)
 {
 	int ret = -1;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -1213,6 +1208,11 @@ static ssize_t show_sleeve_test_threshhold(struct device *dev, struct device_att
 }
 
 void save_light_to_sensorhub(uint32_t mipi_level, uint32_t bl_level)
+{
+	return;
+}
+
+inline void send_lcd_freq_to_sensorhub(uint32_t lcd_freq)
 {
 	return;
 }

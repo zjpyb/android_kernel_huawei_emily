@@ -1,6 +1,11 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description: drmdriver for kirin platform
+ * Author: security-ap
+ * Create: 2014/5/16
+ */
 
-/*lint -e715 -esym(715,*) */
-/*lint -e818 -esym(818,*) */
+#include <linux/hisi/hisi_drmdriver.h>
 #include <asm/compiler.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
@@ -14,11 +19,10 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <global_ddr_map.h>
-#include <linux/hisi/hisi_drmdriver.h>
 
 #define ATFD_MEM_START_ADDRESS  "hisi,share-memory-drm"
-
-/**
+#define HISI_DRM_SEC_NUMB       0xabcde0
+/*
  * the interface is used as access some secure registers
  * from unsecure-Kernel layer.
  *
@@ -29,6 +33,13 @@
  * sub_fun_id - the sub function id, started by 0x55bbcce0,
  *              the index increase one by one
  */
+struct dss_reg {
+	u32 addr;
+	u32 val;
+	u8 bw;
+	u8 bs;
+};
+
 noinline s32 atfd_hisi_service_access_register_smc(u64 _main_fun_id,
 						   u64 _buff_addr_phy,
 						   u64 _data_len,
@@ -49,39 +60,38 @@ noinline s32 atfd_hisi_service_access_register_smc(u64 _main_fun_id,
 	return (s32)main_fun_id;
 }
 
-static ATFD_DATA g_atfd_config;
+static struct tag_atfd_data g_atfd_config;
+
 void configure_master_security(u32 is_security, s32 master_id)
 {
 	if (master_id >= MASTER_ID_MAX ||
 	    master_id == MASTER_DSS_ID ||
 	    master_id < 0) {
-		pr_err("%s, invalid master_id=%d.\n", __func__,(s32)master_id);
+		pr_err("%s, invalid master_id=%d.\n", __func__, master_id);
 		return;
 	}
-	if (0 != is_security  && 1 != is_security) {
-		pr_err("%s, invalid is_security=%d.\n", __func__, is_security);
+	if (is_security != 0 && is_security != 1) {
+		pr_err("%s, invalid is_security=%u.\n", __func__, is_security);
 		return;
 	}
 
-	is_security |= 0xabcde0;
-	(void)atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
-			(u64)is_security, (u64)master_id,/*lint !e571*/
-			(u64)ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
+	is_security |= HISI_DRM_SEC_NUMB;
+	(void)atfd_hisi_service_access_register_smc(
+		ACCESS_REGISTER_FN_MAIN_ID, (u64)is_security,
+		(u64)(u32)master_id,
+		(u64)ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
 }
 EXPORT_SYMBOL_GPL(configure_master_security);
 
 void configure_dss_register_security(u32 addr, u32 val, u8 bw, u8 bs)
 {
-	struct dss_reg {
-		u32 addr;
-		u32 val;
-		u8 bw;
-		u8 bs;
-	} dss_data;
+	struct dss_reg dss_data;
+
 	dss_data.addr = addr;
 	dss_data.val = val;
 	dss_data.bw = bw;
 	dss_data.bs = bs;
+
 	if (!g_atfd_config.buf_virt_addr ||
 	    g_atfd_config.buf_size < sizeof(dss_data)) {
 		pr_err("%s, no available mem\n", __func__);
@@ -92,14 +102,14 @@ void configure_dss_register_security(u32 addr, u32 val, u8 bw, u8 bs)
 		pr_err("%s, module is not ready now\n", __func__);
 		return;
 	}
-	BUG_ON(in_interrupt());
 	mutex_lock(&g_atfd_config.atfd_mutex);
 	memcpy((struct dss_reg *)g_atfd_config.buf_virt_addr,
 	       &dss_data, sizeof(dss_data));
-	(void)atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
-			g_atfd_config.buf_phy_addr,
-			(u64)MASTER_DSS_ID,
-			ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
+	(void)atfd_hisi_service_access_register_smc(
+		ACCESS_REGISTER_FN_MAIN_ID,
+		g_atfd_config.buf_phy_addr,
+		(u64)MASTER_DSS_ID,
+		ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
 
 	mutex_unlock(&g_atfd_config.atfd_mutex);
 }
@@ -110,27 +120,34 @@ s32 configure_dss_service_security(u32 master_op_type,
 {
 	u64 value;
 
-	if ((mode >= MAX_COMPOSE_MODE) || (channel >= MAX_DSS_CHN_IDX)) {
-		pr_err("%s:invalid mode=%d, channel=%d",
+	if (mode >= MAX_COMPOSE_MODE || channel >= MAX_DSS_CHN_IDX) {
+		pr_err("%s:invalid mode=%d, channel=%u",
 		       __func__, mode, channel);
 		return -1;
 	}
 	if (master_op_type >= (u32)MASTER_OP_SECURITY_MAX) {
-		pr_err("%s:invalid master_op_type=%d",
+		pr_err("%s:invalid master_op_type=%u",
 		       __func__, master_op_type);
 		return -1;
 	}
+	/*
+	 * |mode|channel|mater_op_type|HISI_DRM_SEC_NUMB|
+	 * the value 48 and 32 are used for combine
+	 * the mode and channel value to one single 64bit data
+	 */
 	value = (((u64)mode << 48) | ((u64)channel << 32) |
-		 master_op_type | 0xabcde0);
-	return atfd_hisi_service_access_register_smc(ACCESS_REGISTER_FN_MAIN_ID,
-			value, (u64)MASTER_DSS_ID,
-			(u64)ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
+		 master_op_type | HISI_DRM_SEC_NUMB);
+	return atfd_hisi_service_access_register_smc(
+		ACCESS_REGISTER_FN_MAIN_ID,
+		value,
+		(u64)MASTER_DSS_ID,
+		(u64)ACCESS_REGISTER_FN_SUB_ID_MASTER_SECURITY_CONFIG);
 }
 EXPORT_SYMBOL_GPL(configure_dss_service_security);
 
 static s32 __init hisi_drm_driver_init(void)
 {
-	s32 ret = 0;
+	s32 ret;
 	struct device_node *np = NULL;
 	u32 data[2] = {0};
 	phys_addr_t shm_base = HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
@@ -143,8 +160,8 @@ static s32 __init hisi_drm_driver_init(void)
 	}
 
 	ret = of_property_read_u32_array(np, "reg", &data[0], 2);
-	if (0 != ret) {
-		if (-EINVAL == ret)
+	if (ret != 0) {
+		if (ret == -EINVAL)
 			pr_err("%s in reg node does not exist\n", "reg");
 		else
 			pr_err("%s in reg node has invalid value\n", "reg");
@@ -154,21 +171,18 @@ static s32 __init hisi_drm_driver_init(void)
 	g_atfd_config.buf_size = data[1];
 
 	g_atfd_config.buf_virt_addr = (u8 *)ioremap(shm_base +
-				      data[0], data[1]);
-	if (NULL == g_atfd_config.buf_virt_addr) {
-		ret = -EFAULT;
+						    data[0], data[1]);
+	if (!g_atfd_config.buf_virt_addr) {
 		pr_err("%s:allocate failed.\n", __func__);
-		return ret;
+		return -EFAULT;
 	}
-	mutex_init(&(g_atfd_config.atfd_mutex));
-	g_atfd_config.module_init_success_flg = DRMDRIVER_MODULE_INIT_SUCCESS_FLG;
+	mutex_init(&g_atfd_config.atfd_mutex);
+	g_atfd_config.module_init_success_flg =
+		DRMDRIVER_MODULE_INIT_SUCCESS_FLG;
 	return ret;
 }
 
 arch_initcall(hisi_drm_driver_init);
 MODULE_DESCRIPTION("Hisilicon drm driver module");
-MODULE_AUTHOR("lvtaolong@huawei.com.sh");
+MODULE_AUTHOR("security-ap");
 MODULE_LICENSE("GPL");
-
-/*lint +e715 +esym(715,*) */
-/*lint +e818 +esym(818,*) */

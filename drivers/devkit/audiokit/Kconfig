@@ -10,4 +10,6 @@ if AUDIOKIT
 source "drivers/devkit/audiokit/dsm_audio/Kconfig"
 source "drivers/devkit/audiokit/boxid/Kconfig"
 source "drivers/devkit/audiokit/smartpakit/Kconfig"
+source "drivers/devkit/audiokit/ana_hs_kit/Kconfig"
+source "drivers/devkit/audiokit/adsp_misc/Kconfig"
 endif

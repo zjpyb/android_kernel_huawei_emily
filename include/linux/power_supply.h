@@ -162,10 +162,6 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CHARGE_ENABLED,
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
-	POWER_SUPPLY_PROP_FCP_STATUS,
-	POWER_SUPPLY_PROP_SCP_STATUS,
-	POWER_SUPPLY_PROP_BAT_OVP,
-	POWER_SUPPLY_PROP_CAPACITY_DEC,
 	POWER_SUPPLY_PROP_BAT_QMAX,
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_PROP_MODEL_NAME,
@@ -292,7 +288,7 @@ struct power_supply {
 	char *charging_blink_full_solid_trig_name;
 #endif
 
-#ifdef CONFIG_HISI_THERMAL_TRIP
+#ifdef CONFIG_THERMAL_TRIP
 	int	trip_num;
 	int	trip_mask;
 	s32	temp_throttling;

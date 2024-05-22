@@ -1,74 +1,87 @@
 /*
- *  drivers/misc/inputhub/inputhub_bridge.c
- *  Sensor Hub Channel Bridge
- *
- *  Copyright (C) 2013 Huawei, Inc.
- *  Author: huangjisong
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2013-2020. All rights reserved.
+ * Description: contexthub boot source file
+ * Author: huangjisong
+ * Create: 2013-3-10
  */
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/notifier.h>
-#include <linux/kernel.h>
-#include <linux/err.h>
-#include <linux/hisi/hisi_mailbox.h>
-#include <linux/hisi/hisi_rproc.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/workqueue.h>
-#include <linux/delay.h>
-#include <soc_pmctrl_interface.h>
-#include <linux/regulator/consumer.h>
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
-#include <linux/hisi/usb/hisi_usb.h>
-#include <linux/hisi/hisi_syscounter.h>
-#include "contexthub_route.h"
+
 #include "contexthub_boot.h"
-#include "contexthub_recovery.h"
-#include "sensor_detect.h"
-#include "sensor_config.h"
-#include "contexthub_pm.h"
+
+#include <linux/delay.h>
+#include <linux/err.h>
 #ifdef CONFIG_CONTEXTHUB_IDLE_32K
 #include <linux/hisi/hisi_idle_sleep.h>
 #endif
+#include <linux/hisi/hisi_rproc.h>
+#include <linux/hisi/hisi_syscounter.h>
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/notifier.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>
+#endif
+#include <linux/regulator/consumer.h>
+#include <linux/workqueue.h>
 
-/* CONFIG_USE_CAMERA3_ARCH : the camera module build config
-* du to the sensor_1V8 by camera power chip */
+#ifdef CONFIG_HUAWEI_DSM
+#include <dsm/dsm_pub.h>
+#endif
+/*
+ * CONFIG_USE_CAMERA3_ARCH : the camera module build config
+ * du to the sensor_1V8 by camera power chip
+ */
 #ifdef CONFIG_USE_CAMERA3_ARCH
 #include <media/huawei/hw_extern_pmic.h>
+#endif
+#include <securec.h>
+#include <soc_pmctrl_interface.h>
+
+#include "contexthub_pm.h"
+#include "contexthub_recovery.h"
+#include "contexthub_route.h"
+#include "mag_channel.h"
+#include "motion_detect.h"
+#include "sensor_config.h"
+#include "sensor_feima.h"
+
+#ifdef CONFIG_USE_CAMERA3_ARCH
 #define SENSOR_1V8_POWER
 #endif
-
+#ifndef CONFIG_INPUTHUB_30
 int (*api_inputhub_mcu_recv) (const char *buf, unsigned int length) = 0;
-
+#endif
 #define POLL_TIMES 10
 #define BUFFER_SIZE 1024
 #define SLEEP_TIME 200
 
 static int is_sensor_mcu_mode; /* mcu power mode: 0 power off;  1 power on */
-static struct notifier_block nb;
+#ifndef CONFIG_INPUTHUB_30
+static struct notifier_block g_contexthub_boot_nb;
 static int g_boot_iom3 = STARTUP_IOM3_CMD;
-
+#endif
 struct completion iom3_reboot;
-struct CONFIG_ON_DDR *pConfigOnDDr;
+struct config_on_ddr *g_config_on_ddr;
 struct regulator *sensorhub_vddio;
 int sensor_power_pmic_flag = 0;
 int sensor_power_init_finish = 0;
-u8 tplcd_manufacture;
-unsigned long sensor_jiffies;
-rproc_id_t ipc_ap_to_iom_mbx = HISI_RPROC_IOM3_MBX10;
-rproc_id_t ipc_ap_to_lpm_mbx = HISI_RPROC_LPM3_MBX17;
-rproc_id_t ipc_iom_to_ap_mbx = HISI_RPROC_IOM3_MBX4;
-int sensorhub_reboot_reason_flag = SENSOR_POWER_DO_RESET;
+static u8 tplcd_manufacture;
+
+rproc_id_t ipc_ap_to_iom_mbx = HISI_AO_ACPU_IOM3_MBX1;
+rproc_id_t ipc_ap_to_lpm_mbx = HISI_ACPU_LPM3_MBX_5;
+rproc_id_t ipc_iom_to_ap_mbx = HISI_AO_IOM3_ACPU_MBX1;
+
+static int sensorhub_reboot_reason_flag;
 
 #ifdef CONFIG_CONTEXTHUB_IDLE_32K
 #define PERI_USED_TIMEOUT (jiffies + HZ / 100)
 #define LOWER_LIMIT 0
 #define UPPER_LIMIT 255
-#define BORDERLINE_UPPER_PROTECT(a, b) ((a) == (b)) ? (a) : ((a) + 1)
-#define BORDERLINE_LOWER_PROTECT(a, b) ((a) == (b)) ? (a) : ((a) - 1)
+#define borderline_upper_protect(a, b) (((a) == (b)) ? (a) : ((a) + 1))
+#define borderline_lower_protect(a, b) (((a) == (b)) ? (a) : ((a) - 1))
 struct timer_list peri_timer;
 static unsigned int peri_used_t;
 static unsigned int peri_used;
@@ -90,12 +103,24 @@ static void peri_used_timeout(unsigned long data)
 }
 #endif
 
-static void peri_used_init(void)
+u8 get_tplcd_manufacture(void)
 {
-#ifdef CONFIG_CONTEXTHUB_IDLE_32K
-	spin_lock_init(&peri_lock);
-	setup_timer(&peri_timer, peri_used_timeout, 0);
-#endif
+	return tplcd_manufacture;
+}
+
+rproc_id_t get_ipc_ap_to_iom_mbx(void)
+{
+	return ipc_ap_to_iom_mbx;
+}
+
+rproc_id_t get_ipc_ap_to_lpm_mbx(void)
+{
+	return ipc_ap_to_lpm_mbx;
+}
+
+int get_sensorhub_reboot_reason_flag(void)
+{
+	return sensorhub_reboot_reason_flag;
 }
 
 void peri_used_request(void)
@@ -107,7 +132,7 @@ void peri_used_request(void)
 	spin_lock_irqsave(&peri_lock, flags);
 	pr_debug("[%s]used[%d], t[%d]\n", __func__, peri_used, peri_used_t);
 	if (peri_used != 0) {
-		peri_used = BORDERLINE_UPPER_PROTECT(peri_used, UPPER_LIMIT);
+		peri_used = borderline_upper_protect(peri_used, UPPER_LIMIT);
 		spin_unlock_irqrestore(&peri_lock, flags);
 		return;
 	}
@@ -131,7 +156,7 @@ void peri_used_release(void)
 
 	spin_lock_irqsave(&peri_lock, flags);
 	pr_debug("[%s]used[%d]\n", __func__, peri_used);
-	peri_used = BORDERLINE_LOWER_PROTECT(peri_used, LOWER_LIMIT);
+	peri_used = borderline_lower_protect(peri_used, LOWER_LIMIT);
 	mod_timer(&peri_timer, PERI_USED_TIMEOUT);
 	spin_unlock_irqrestore(&peri_lock, flags);
 #endif
@@ -145,21 +170,47 @@ struct dsm_client *inputhub_get_shb_dclient(void)
 }
 #endif
 
+#ifndef SENSOR_1V8_POWER
 static int hw_extern_pmic_query_state(int index, int *state)
 {
-	hwlog_err("the camera power cfg donot define\n");
+	(void *)state;
+	hwlog_err("the camera power cfg donot define, %d\n", index);
 	return 1;
 }
+#endif
 
-int getSensorMcuMode(void)
+int get_sensor_mcu_mode(void)
 {
-    return is_sensor_mcu_mode;
+	return is_sensor_mcu_mode;
 }
-EXPORT_SYMBOL(getSensorMcuMode);
+EXPORT_SYMBOL(get_sensor_mcu_mode);
 
 static void set_sensor_mcu_mode(int mode)
 {
-    is_sensor_mcu_mode = mode;
+	is_sensor_mcu_mode = mode;
+}
+
+static bool recovery_mode_skip_load(void)
+{
+	int len = 0;
+	struct device_node *recovery_node = NULL;
+	const char *recovery_attr = NULL;
+
+	if (!strstr(saved_command_line, "recovery_update=1"))
+		return false;
+
+	recovery_node = of_find_compatible_node(NULL, NULL, "hisilicon,recovery_iomcu_image_skip");
+	if (!recovery_node)
+		return false;
+
+	recovery_attr = of_get_property(recovery_node, "status", &len);
+	if (!recovery_attr)
+		return false;
+
+	if (strcmp(recovery_attr, "ok") != 0)
+		return false;
+
+	return true;
 }
 
 int is_sensorhub_disabled(void)
@@ -173,34 +224,41 @@ int is_sensorhub_disabled(void)
 	if (once)
 		return ret;
 
+	if (recovery_mode_skip_load()) {
+		hwlog_err("%s: recovery update mode, do not start sensorhub\n", __func__);
+		once = 1;
+		ret = -1;
+		return ret;
+	}
+
 	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub_status");
 	if (!sh_node) {
-	    hwlog_err("%s, can not find node  sensorhub_status n", __func__);
-	    return -1;
+		hwlog_err("%s, can not find node  sensorhub_status n",
+			__func__);
+		return -1;
 	}
 
 	sh_status = of_get_property(sh_node, "status", &len);
 	if (!sh_status) {
-	    hwlog_err("%s, can't find property status\n", __func__);
-	    return -1;
+		hwlog_err("%s, can't find property status\n", __func__);
+		return -1;
 	}
 
 	if (strstr(sh_status, "ok")) {
-	    hwlog_info("%s, sensorhub enabled!\n", __func__);
-	    ret = 0;
+		hwlog_info("%s, sensorhub enabled!\n", __func__);
+		ret = 0;
 	} else {
-	    hwlog_info("%s, sensorhub disabled!\n", __func__);
-	    ret = -1;
+		hwlog_info("%s, sensorhub disabled!\n", __func__);
+		ret = -1;
 	}
 	once = 1;
 	return ret;
 }
 
 #ifdef SENSOR_1V8_POWER
-static int check_sensor_1V8_from_pmic(void)
+static int check_sensor_1v8_from_pmic(void)
 {
-	int len = 0;
-	int ret = 0;
+	int tmp = 0;
 	int i;
 	int sensor_1v8_flag = 0;
 	int state = 0;
@@ -213,7 +271,7 @@ static int check_sensor_1V8_from_pmic(void)
 		hwlog_err("%s, can't find node sensorhub\n", __func__);
 		return 0;
 	}
-	sensor_1v8_from_pmic = of_get_property(sensorhub_node, "sensor_1v8_from_pmic", &len);
+	sensor_1v8_from_pmic = of_get_property(sensorhub_node, "sensor_1v8_from_pmic", &tmp);
 	if (!sensor_1v8_from_pmic) {
 		hwlog_info("%s, can't find property sensor_1v8_from_pmic\n", __func__);
 		return 1;
@@ -223,11 +281,10 @@ static int check_sensor_1V8_from_pmic(void)
 		hwlog_info("%s, sensor_1v8 from pmic\n", __func__);
 		if (of_property_read_u32(sensorhub_node,
 			"sensor_1v8_ldo", &sensor_1v8_ldo)) {
-
 			hwlog_err("%s, read sensor_1v8_ldo fail\n", __func__);
 			return 0;
 		} else {
-			hwlog_info("%s, read sensor_1v8_ldo(%d) succ\n",
+			hwlog_info("%s, read sensor_1v8_ldo:%d succ\n",
 				__func__, sensor_1v8_ldo);
 			sensor_1v8_flag = 1;
 		}
@@ -238,7 +295,7 @@ static int check_sensor_1V8_from_pmic(void)
 
 	if (sensor_1v8_flag) {
 		for (i = 0; i < POLL_TIMES; i++) {
-			ret = hw_extern_pmic_query_state(sensor_1v8_ldo, &state);
+			tmp = hw_extern_pmic_query_state(sensor_1v8_ldo, &state);
 			if (state) {
 				hwlog_info("sensor_1V8 set high succ!\n");
 				break;
@@ -246,7 +303,7 @@ static int check_sensor_1V8_from_pmic(void)
 			msleep(SLEEP_TIME);
 		}
 		if (i == POLL_TIMES && state == 0) {
-			hwlog_err("sensor_1V8 set high fail, ret:%d!\n", ret);
+			hwlog_err("sensor_1V8 set high fail, ret:%d!\n", tmp);
 			return 0;
 		}
 	}
@@ -313,6 +370,7 @@ static lcd_module lcd_info[] = {
 	{ DTS_COMP_SAMSUNG_EA8076, SAMSUNG_TPLCD },
 	{ DTS_COMP_SAMSUNG_EA8076_V2, SAMSUNG_TPLCD },
 	{ DTS_COMP_BOE_NT37700F_TAH, BOE_TPLCD },
+	{ DTS_COMP_BOE_NT37800ECO_TAH, BOE_TPLCD },
 	{ DTS_COMP_HLK_AUO_OTM1901A, AUO_TPLCD },
 	{ DTS_COMP_BOE_NT36682A, BOE_TPLCD },
 	{ DTS_COMP_BOE_TD4320, BOE_TPLCD },
@@ -327,6 +385,29 @@ static lcd_module lcd_info[] = {
 	{ DTS_COMP_CTC_FT8719_6P26, CTC_TPLCD },
 	{ DTS_COMP_CTC_NT36672A_6P26, CTC_TPLCD },
 	{ DTS_COMP_BOE_TD4321_6P26, BOE_TPLCD },
+	{ DTS_COMP_AUO_NT36682A_6P72, AUO_TPLCD },
+	{ DTS_COMP_AUO_OTM1901A_5P2_1080P_VIDEO_DEFAULT, AUO_TPLCD },
+	{ DTS_COMP_BOE_NT36682A_6P57, BOE_TPLCD },
+	{ DTS_COMP_BOE_TD4320_6P57, BOE_TPLCD },
+	{ DTS_COMP_TCL_NT36682A_6P57, TCL_TPLCD },
+	{ DTS_COMP_TCL_TD4320_6P57, TCL_TPLCD },
+	{ DTS_COMP_TM_NT36682A_6P57, TM_TPLCD },
+	{ DTS_COMP_TM_TD4320_6P57, TM_TPLCD },
+	{ DTS_COMP_CSOT_NT36682A_6P5, CSOT_TPLCD },
+	{ DTS_COMP_BOE_FT8719_6P5, BOE_TPLCD },
+	{ DTS_COMP_TM_NT36682A_6P5, TM_TPLCD },
+	{ DTS_COMP_BOE_TD4320_6P5, BOE_TPLCD },
+	{ DTS_COMP_BOE_EW813P_6P57, BOE_TPLCD },
+	{ DTS_COMP_BOE_NT37700P_6P57, BOE_TPLCD },
+	{ DTS_COMP_VISI_NT37700C_6P57_ONCELL, VISI_TPLCD },
+	{ DTS_COMP_VISI_NT37700C_6P57,  VISI_TPLCD },
+	{ DTS_COMP_TCL_NT36682C_6P63, TCL_TPLCD },
+	{ DTS_COMP_TM_NT36682C_6P63, TM_TPLCD },
+	{ DTS_COMP_BOE_NT36682C_6P63, BOE_TPLCD },
+	{ DTS_COMP_INX_NT36682C_6P63, INX_TPLCD },
+	{ DTS_COMP_BOE_FT8720_6P63, BOE_TPLCD2 },
+	{ DTS_COMP_SAMSUNG_EA8076_6P53, SAMSUNG_TPLCD },
+	{ DTS_COMP_EDO_RM692D9, EDO_TPLCD },
 };
 
 static lcd_model lcd_model_info[] = {
@@ -335,6 +416,45 @@ static lcd_model lcd_model_info[] = {
 	{ DTS_COMP_TM_FT8716_5P2, TM_TPLCD },
 	{ DTS_COMP_EBBG_NT35596S_5P2, EBBG_TPLCD },
 	{ DTS_COMP_JDI_ILI7807E_5P2, JDI_TPLCD },
+	{ DTS_COMP_AUO_NT36682A_6P72, AUO_TPLCD },
+	{ DTS_COMP_AUO_OTM1901A_5P2_1080P_VIDEO_DEFAULT, AUO_TPLCD },
+	{ DTS_COMP_BOE_NT36682A_6P57, BOE_TPLCD },
+	{ DTS_COMP_BOE_TD4320_6P57, BOE_TPLCD },
+	{ DTS_COMP_TCL_NT36682A_6P57, TCL_TPLCD },
+	{ DTS_COMP_TCL_TD4320_6P57, TCL_TPLCD },
+	{ DTS_COMP_TM_NT36682A_6P57, TM_TPLCD },
+	{ DTS_COMP_TM_TD4320_6P57, TM_TPLCD },
+	{ DTS_COMP_CSOT_NT36682A_6P5, CSOT_TPLCD },
+	{ DTS_COMP_BOE_FT8719_6P5, BOE_TPLCD },
+	{ DTS_COMP_TM_NT36682A_6P5, TM_TPLCD },
+	{ DTS_COMP_BOE_TD4320_6P5, BOE_TPLCD },
+	{ DTS_COMP_BOE_EW813P_6P57, BOE_TPLCD },
+	{ DTS_COMP_BOE_NT37700P_6P57, BOE_TPLCD },
+	{ DTS_COMP_VISI_NT37700C_6P57_ONCELL, VISI_TPLCD },
+	{ DTS_COMP_VISI_NT37700C_6P57,  VISI_TPLCD },
+	{ DTS_COMP_TM_TD4321_6P59, TM_TPLCD },
+	{ DTS_COMP_TCL_NT36682A_6P59, TCL_TPLCD },
+	{ DTS_COMP_BOE_NT36682A_6P59, BOE_TPLCD },
+	{ DTS_COMP_BOE_NT36672_6P26, BOE_TPLCD },
+	{ DTS_COMP_LG_TD4320_6P26, LG_TPLCD },
+	{ DTS_COMP_TM_TD4320_6P26, TM_TPLCD },
+	{ DTS_COMP_TM_TD4330_6P26, TM_TPLCD },
+	{ DTS_COMP_TM_NT36672A_6P26, TM_TPLCD },
+	{ DTS_COMP_CTC_FT8719_6P26, CTC_TPLCD },
+	{ DTS_COMP_CTC_NT36672A_6P26, CTC_TPLCD },
+	{ DTS_COMP_BOE, BOE_TPLCD },
+	{ DTS_COMP_BOE_B11, BOE_TPLCD },
+	{ DTS_COMP_VISI, VISI_TPLCD },
+	{ DTS_COMP_SAMSUNG_NAME, SAMSUNG_TPLCD },
+	{ DTS_COMP_BOE_NAME, BOE_TPLCD },
+	{ DTS_COMP_BOE, BOE_TPLCD },
+	{ DTS_COMP_TM, TM_TPLCD },
+	{ DTS_COMP_CSOT, CSOT_TPLCD },
+	{ DTS_COMP_BOE_B11, BOE_TPLCD },
+	{ DTS_COMP_SAMSUNG_NAME1, SAMSUNG_TPLCD },
+	{ DTS_COMP_SAMSUNG, SAMSUNG_TPLCD },
+	{ DTS_COMP_EDO_NAME, EDO_TPLCD },
+	{ DTS_COMP_EDO, EDO_TPLCD },
 };
 
 static int8_t get_lcd_info(uint8_t index)
@@ -361,7 +481,7 @@ static int8_t get_lcd_model(const char *lcd_model, uint8_t index)
 
 static int get_lcd_module(void)
 {
-	uint8_t index = 0;
+	uint8_t index;
 	int8_t tplcd;
 	struct device_node *np = NULL;
 	const char *lcd_model = NULL;
@@ -391,7 +511,7 @@ static int get_lcd_module(void)
 	hwlog_warn("sensor kernel failed to get lcd module\n");
 	return -1;
 }
-
+#ifndef CONFIG_INPUTHUB_30
 static int inputhub_mcu_recv(const char* buf, unsigned int length)
 {
 	if (atomic_read(&iom3_rec_state) == IOM3_RECOVERY_START) {
@@ -423,21 +543,21 @@ static int inputhub_mcu_connect(void)
 
 	hwlog_info("----%s--->\n", __func__);
 
-	nb.next = NULL;
-	nb.notifier_call = mbox_recv_notifier;
+	g_contexthub_boot_nb.next = NULL;
+	g_contexthub_boot_nb.notifier_call = mbox_recv_notifier;
 
 	/* register the rx notify callback */
-	ret = RPROC_MONITOR_REGISTER(ipc_iom_to_ap_mbx, &nb);
+	ret = RPROC_MONITOR_REGISTER(ipc_iom_to_ap_mbx, &g_contexthub_boot_nb);
 	if (ret)
 		hwlog_info("%s:RPROC_MONITOR_REGISTER failed", __func__);
 
 	return 0;
 }
+#endif
 
-/* extern void hisi_rdr_nmi_notify_iom3(void); */
 static int sensorhub_img_dump(int type, void* buff, int size)
 {
-    return 0;
+	return 0;
 }
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -454,8 +574,13 @@ struct dsm_dev dsm_sensorhub = {
 	.fops = &sensorhub_ops,
 	.buff_size = BUFFER_SIZE,
 };
-#endif
 
+struct dsm_dev *get_dsm_sensorhub(void)
+{
+	return &dsm_sensorhub;
+}
+#endif
+#ifndef CONFIG_INPUTHUB_30
 static int boot_iom3(void)
 {
 	int ret;
@@ -475,23 +600,26 @@ void write_timestamp_base_to_sharemem(void)
 	struct timespec64 ts;
 
 	get_monotonic_boottime64(&ts);
-#ifdef CONFIG_HISI_SYSCOUNTER
+#ifdef CONFIG_BSP_SYSCOUNTER
 	syscnt = hisi_get_syscount();
+#else
+	syscnt = 0;
 #endif
 	kernel_ns = (u64)(ts.tv_sec * NSEC_PER_SEC) + (u64)ts.tv_nsec;
 
-	pConfigOnDDr->timestamp_base.syscnt = syscnt;
-	pConfigOnDDr->timestamp_base.kernel_ns = kernel_ns;
+	g_config_on_ddr->timestamp_base.syscnt = syscnt;
+	g_config_on_ddr->timestamp_base.kernel_ns = kernel_ns;
 
 	return;
 }
+#endif
 static void sensor_ldo24_setup(void)
 {
 	int ret;
 	unsigned int time_reset;
 	unsigned long new_sensor_jiffies;
 
-	if (no_need_sensor_ldo24) {
+	if (get_no_need_sensor_ldo24()) {
 		hwlog_info("no_need set ldo24\n");
 		return;
 	}
@@ -499,7 +627,7 @@ static void sensor_ldo24_setup(void)
 	if (need_reset_io_power &&
 		(sensorhub_reboot_reason_flag ==
 		SENSOR_POWER_DO_RESET)) {
-		new_sensor_jiffies = jiffies - sensor_jiffies;
+		new_sensor_jiffies = jiffies - get_sensor_jiffies();
 		time_reset = jiffies_to_msecs(new_sensor_jiffies);
 		if (time_reset < SENSOR_MAX_RESET_TIME_MS)
 			msleep(SENSOR_MAX_RESET_TIME_MS - time_reset);
@@ -509,6 +637,13 @@ static void sensor_ldo24_setup(void)
 				SENSOR_VOLTAGE_3V, SENSOR_VOLTAGE_3V);
 			if (ret < 0)
 				hwlog_err("failed to set ldo24 to 3V\n");
+		}
+
+		if (need_set_3_1v_io_power) {
+			ret = regulator_set_voltage(sensorhub_vddio,
+				SENSOR_VOLTAGE_3_1V, SENSOR_VOLTAGE_3_1V);
+			if (ret < 0)
+				hwlog_err("failed to set ldo24 to 3_1V\n");
 		}
 
 		if (need_set_3_2v_io_power) {
@@ -527,22 +662,22 @@ static void sensor_ldo24_setup(void)
 	}
 }
 
-static int mcu_sys_ready_callback(const pkt_header_t *head)
+static int mcu_sys_ready_callback(const struct pkt_header *head)
 {
-	int ret = 0;
+	int ret;
 #ifdef SENSOR_1V8_POWER
-	int result = 0;
+	int result;
 #endif
 	if (((pkt_sys_statuschange_req_t *) head)->status == ST_MINSYSREADY) {
 		hwlog_info("sys ready mini!\n");
 		tplcd_manufacture = get_lcd_module();
 		hwlog_info("sensor kernel get_lcd_module tplcd_manufacture=%d\n",
 			tplcd_manufacture);
-	#ifdef SENSOR_1V8_POWER
-		result = check_sensor_1V8_from_pmic();
+#ifdef SENSOR_1V8_POWER
+		result = check_sensor_1v8_from_pmic();
 		if (!result)
 			hwlog_err("check sensor_1V8 from pmic fail\n");
-	#endif
+#endif
 		hwlog_info("need_reset_io_power:%d reboot_reason_flag:%d\n",
 				need_reset_io_power, sensorhub_reboot_reason_flag);
 		sensor_ldo24_setup();
@@ -565,6 +700,10 @@ static int mcu_sys_ready_callback(const pkt_header_t *head)
 		unregister_mcu_event_notifier(TAG_SYS,
 			CMD_SYS_STATUSCHANGE_REQ,
 			mcu_sys_ready_callback);
+		if (is_power_off_charging_posture() == 1) {
+			posture_sensor_enable();
+			hwlog_info("open pos sensor when shut_charge mode\n");
+		}
 		atomic_set(&iom3_rec_state, IOM3_RECOVERY_IDLE);
 	} else {
 		hwlog_info("other status\n");
@@ -621,85 +760,122 @@ static void read_reboot_reason_cmdline(void)
 		sensorhub_reboot_reason_flag);
 }
 
-static int write_defualt_config_info_to_sharemem(void)
+static u32 judge_system_cache(void)
 {
-	if (!pConfigOnDDr) {
-		pConfigOnDDr = (struct CONFIG_ON_DDR *)ioremap_wc(IOMCU_CONFIG_START,
-		IOMCU_CONFIG_SIZE);
+	int len = 0;
+	struct device_node *sh_swing_node = NULL;
+	const char *sh_sc_status = NULL;
+	struct device_node *soc_spec_node = NULL;
+	const char *soc_spec_set = NULL;
+
+	sh_swing_node = of_find_compatible_node(NULL, NULL, "hisilicon,igs-dev");
+	if (!sh_swing_node) {
+		hwlog_err("%s, no swing dev in DTS\n", __func__);
+		return SC_INEXISTENCE;
 	}
 
-	if (!pConfigOnDDr) {
-		hwlog_err("ioremap (%x) failed in %s!\n",
-			IOMCU_CONFIG_START,
-			__func__);
+	sh_sc_status = of_get_property(sh_swing_node, "syscache_status", NULL);
+	if (!sh_sc_status) {
+		hwlog_err("%s, can't find property syscache_status\n", __func__);
+		return SC_INEXISTENCE;
+	} else if (strcmp(sh_sc_status, "ok")) {
+		hwlog_err("%s, syscache is not enabled in DTS\n", __func__);
+		return SC_INEXISTENCE;
+	}
+
+	soc_spec_node = of_find_compatible_node(NULL, NULL, "hisilicon, soc_spec");
+	if (!soc_spec_node) {
+		hwlog_err("%s, can not find node: soc_spec\n", __func__);
+		/* no DTS node -> normal spec */
+		return SC_EXISTENCE;
+	}
+
+	soc_spec_set = of_get_property(soc_spec_node, "soc_spec_set", &len);
+	if (!soc_spec_set) {
+		hwlog_err("%s, can't find property soc_spec_set\n", __func__);
+		return SC_EXISTENCE;
+	}
+
+	if (!strcmp(soc_spec_set, "normal")) {
+		hwlog_info("%s, normal chip\n", __func__);
+		return SC_EXISTENCE;
+	}
+
+	hwlog_info("%s, chip without sc\n", __func__);
+	return SC_INEXISTENCE;
+}
+
+static bool inputhub_is_swing_bypass(void)
+{
+#ifdef CONFIG_CONTEXTHUB_IGS
+	struct device_node *node = NULL;
+	unsigned int value;
+	int ret;
+
+	node = of_find_compatible_node(NULL, NULL, "hisilicon,igs-dev");
+	if (node == NULL) {
+		pr_warn("%s: no swing dev node.\n", __func__);
+		return false;
+	}
+
+	ret = of_property_read_u32(node, "hardware_bypass", &value);
+	if (ret != 0) {
+		pr_warn("%s: read prop hardware_bypass fail, ret[%d]\n", __func__, ret);
+		return false;
+	}
+
+	if (value == 1) {
+		pr_warn("%s: swing hardware bypass\n", __func__);
+		return true;
+	}
+	pr_warn("%s: swing hardware work well\n", __func__);
+#endif
+
+	return false;
+}
+
+static int write_defualt_config_info_to_sharemem(void)
+{
+	if (!g_config_on_ddr)
+		g_config_on_ddr = (struct config_on_ddr *)ioremap_wc(IOMCU_CONFIG_START,
+			IOMCU_CONFIG_SIZE);
+
+	if (!g_config_on_ddr) {
+		hwlog_err("ioremap (%x) failed in %s!\n", IOMCU_CONFIG_START, __func__);
 		return -1;
 	}
 
-	memset(pConfigOnDDr, 0, sizeof(struct CONFIG_ON_DDR));
-	pConfigOnDDr->LogBuffCBBackup.mutex = 0;
-	pConfigOnDDr->log_level = INFO_LEVEL;
-#ifdef CONFIG_HISI_COUL
-	pConfigOnDDr->coul_info.c_offset_a = c_offset_a;
-	pConfigOnDDr->coul_info.c_offset_b = c_offset_b;
-	of_property_read_u32(of_find_compatible_node(NULL, NULL,
-		"hisi,coul_core"),
-		"r_coul_mohm",
-		&pConfigOnDDr->coul_info.r_coul_mohm);
-#endif
+	if (memset_s(g_config_on_ddr, sizeof(struct config_on_ddr), 0,
+		sizeof(struct config_on_ddr)) != EOK)
+		hwlog_err("%s, memset_s fail\n", __func__);
+
+	g_config_on_ddr->log_buff_cb_backup.mutex = 0;
+	g_config_on_ddr->log_level = INFO_LEVEL;
+#ifdef CONFIG_COUL_DRV
+	coul_drv_coulobmeter_cur_calibration(&g_config_on_ddr->coul_info.c_offset_a,
+		&g_config_on_ddr->coul_info.c_offset_b);
+	of_property_read_u32(of_find_compatible_node(NULL, NULL, "hisilicon,coul_core"), "r_coul_mohm",
+		&g_config_on_ddr->coul_info.r_coul_mohm);
+#endif /* CONFIG_COUL_DRV */
+	if (inputhub_is_swing_bypass())
+		g_config_on_ddr->igs_hardware_bypass = 1;
+
+	g_config_on_ddr->sc_flag = judge_system_cache();
+	hwlog_info("igs_hardware_bypass = %u sc_flag = %u \n",
+		g_config_on_ddr->igs_hardware_bypass,
+		g_config_on_ddr->sc_flag);
+
 	return 0;
 }
 
-static void check_ipc_mbx_from_dts(void)
+void inputhub_init_before_boot(void)
 {
-	struct device_node *sh_node = NULL;
-	uint32_t u32_temp = 0;
-	int ret;
-
-	sh_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub_ipc_cfg");
-	if (!sh_node) {
-		hwlog_err("%s, can not find node huawei,sensorhub_ipc_cfg", __func__);
-		return;
-	}
-
-	ret = of_property_read_u32(sh_node, "AP_IOM_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property AP_IOM_MBX_NUM\n", __func__);
-	} else {
-		ipc_ap_to_iom_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_ap_to_iom_mbx is %d\n", ipc_ap_to_iom_mbx);
-	}
-
-	ret = of_property_read_u32(sh_node, "IOM_AP_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property IOM_AP_MBX_NUM\n", __func__);
-	} else {
-		ipc_iom_to_ap_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_iom_to_ap_mbx is %d\n", ipc_iom_to_ap_mbx);
-	}
-
-	ret = of_property_read_u32(sh_node, "AP_LPM_MBX_NUM", &u32_temp);
-	if (ret) {
-		hwlog_warn("%s, can't find property AP_LPM_MBX_NUM\n", __func__);
-	} else {
-		ipc_ap_to_lpm_mbx = (rproc_id_t)u32_temp;
-		hwlog_info("ipc_ap_to_lpm_mbx is %d\n", ipc_ap_to_lpm_mbx);
-	}
-}
-
-static int inputhub_mcu_init(void)
-{
-	int ret;
-
-	if (is_sensorhub_disabled())
-		return -1;
-	peri_used_init();
-	check_ipc_mbx_from_dts();
-	if (write_defualt_config_info_to_sharemem())
-		return -1;
-	write_timestamp_base_to_sharemem();
 	read_tp_color_cmdline();
 	read_reboot_reason_cmdline();
 	sensorhub_io_driver_init();
+
+	if (is_sensorhub_disabled())
+		return;
 
 #ifdef CONFIG_HUAWEI_DSM
 	shb_dclient = dsm_register_client(&dsm_sensorhub);
@@ -709,24 +885,100 @@ static int inputhub_mcu_init(void)
 	sensor_redetect_init();
 	inputhub_route_init();
 	set_notifier();
+}
+
+
+void inputhub_init_after_boot(void)
+{
+	set_sensor_mcu_mode(1);
+	mag_current_notify();
+}
+
+#ifndef CONFIG_INPUTHUB_30
+static void peri_used_init(void)
+{
+#ifdef CONFIG_CONTEXTHUB_IDLE_32K
+	spin_lock_init(&peri_lock);
+	setup_timer(&peri_timer, peri_used_timeout, 0);
+#endif
+}
+
+static void get_swing_dev_dts_status(void)
+{
+	struct device_node *node = NULL;
+	int temp = 0;
+
+	node = of_find_compatible_node(NULL, NULL, "hisilicon,igs-dev");
+	if (!node) {
+		pr_warn("[%s] : no swing dev..\n", __func__);
+		return;
+	}
+
+	if (!of_device_is_available(node)) {
+		pr_warn("[%s] swing disabled..\n", __func__);
+		return;
+	}
+
+	if (of_property_read_u32(node, "is_pll_on", &temp))
+		g_config_on_ddr->is_pll_on = 0;
+	else
+		g_config_on_ddr->is_pll_on = (u32)temp;
+
+	pr_info("[%s] pid 0x%x..\n", __func__, temp);
+
+	return;
+}
+
+static int inputhub_mcu_init(void)
+{
+	int ret;
+
+	pr_info("----hisi_inputhub_init--->\n");
+
+	peri_used_init();
+	if (write_defualt_config_info_to_sharemem())
+		return -1;
+	write_timestamp_base_to_sharemem();
+
+	get_swing_dev_dts_status();
+
+	inputhub_init_before_boot();
+
+	if (is_sensorhub_disabled())
+		return -1;
+
 	inputhub_mcu_connect();
 	ret = boot_iom3();
 	if (ret)
 		hwlog_err("%s boot sensorhub fail!ret %d.\n", __func__, ret);
 
-	set_sensor_mcu_mode(1);
-	mag_current_notify();
+	inputhub_init_after_boot();
 	hwlog_info("----%s--->\n", __func__);
 	return ret;
 }
 
 static void __exit inputhub_mcu_exit(void)
 {
-    inputhub_route_exit();
-    RPROC_PUT(ipc_ap_to_iom_mbx);
-    RPROC_PUT(ipc_iom_to_ap_mbx);
+	inputhub_route_exit();
+	RPROC_PUT(ipc_ap_to_iom_mbx);
+	RPROC_PUT(ipc_iom_to_ap_mbx);
+}
+#else
+
+static int inputhub_mcu_init(void)
+{
+	if (write_defualt_config_info_to_sharemem())
+		return -1;
+
+	return 0;
 }
 
+static void __exit inputhub_mcu_exit(void)
+{
+	inputhub_route_exit();
+}
+
+#endif
 late_initcall(inputhub_mcu_init);
 module_exit(inputhub_mcu_exit);
 

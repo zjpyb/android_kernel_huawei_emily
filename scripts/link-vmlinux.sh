@@ -117,6 +117,22 @@ modpost_link()
 	fi
 
 	if [ -n "${CONFIG_LTO_CLANG}" ]; then
+		if [ -n "${CONFIG_ARM64_HKRR}" ]; then
+			# HKRR and CLANG use thin archives only
+			info LTO "Setting object sections"
+			rm -f vmlinux.objs
+			for a in built-in.o ${KBUILD_VMLINUX_LIBS}; do
+				${AR} t $a >> vmlinux.objs
+			done
+			export LD_LIBRARY_PATH=${CLANG_PREBUILTS_PATH}/lib64
+			while read -r file; do
+				#echo $file
+				${LLVM_OBJCOPY} --rename-section .text=.text.$file $file 2>/dev/null || { \
+					scripts/llvm-ircopy/llvm-ircopy -q --section-prefix=.$file $file -o ${file}.out && \
+					mv ${file}.out ${file}; }
+			done < vmlinux.objs
+			# HKRR llvm-ranlib built-in.o
+		fi
 		# This might take a while, so indicate that we're doing
 		# an LTO link
 		info LTO vmlinux.o
@@ -174,6 +190,11 @@ vmlinux_link()
 				${1}"
 		fi
 
+		if [ -n "${CONFIG_ARM64_HKRR}" ]; then
+			if [ $2 = 'vmlinux' ]; then
+				ldflags="${ldflags} -Map=$2.map --emit-relocs"
+			fi
+		fi
 		${ld} ${ldflags} -o ${2} -T ${lds} ${objects}
 	else
 		if [ -n "${CONFIG_THIN_ARCHIVES}" ]; then
@@ -248,7 +269,7 @@ kallsyms()
 		if [ -s "${tmp_blacklist}" ]; then
 			# Generate debug log
 			if [ -n "${CONFIG_HUAWEI_HIDESYMS_DEBUGFS}" ]; then
-				${NM} -n ${1} | grep -w -f ${tmp_blacklist} > ${debug_blacklist}
+				${NM} -n ${1} | grep -w -f ${tmp_blacklist} > ${debug_blacklist} | cat
 			fi
 
 			${NM} -n ${1} | \

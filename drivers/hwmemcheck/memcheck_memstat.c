@@ -3,7 +3,7 @@
  *
  * provide memstat information to user space to determine if leak happens
  *
- * Copyright (c) 2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,6 +17,7 @@
  */
 
 #include "memcheck_common.h"
+#include "memcheck_interface.h"
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
@@ -28,7 +29,6 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/task.h>
 #endif
-#include <linux/hisi/mem_trace.h>
 #include <chipset_common/hwmemcheck/memcheck.h>
 
 #define PSS_SHIFT	12
@@ -93,7 +93,6 @@ static bool is_java_heap(const char *tag)
 
 	for (i = 0; i < ARRAY_SIZE(java_tag); i++) {
 		tmp = strstr(tag, java_tag[i]);
-
 		if (tmp == tag)
 			return true;
 	}
@@ -108,7 +107,7 @@ static bool is_native_heap(const char *tag)
 	return false;
 }
 
-static enum heap_type memcheck_get_heap_type(char *name)
+static enum heap_type memcheck_get_heap_type(const char *name)
 {
 	enum heap_type type = HEAP_OTHER;
 
@@ -178,7 +177,6 @@ static size_t do_strncpy_from_remote_string(char *dst, long page_offset,
 		put_page(page[i]);
 
 	return copy_sum;
-
 }
 
 static long strncpy_from_remote_user(char *dst, struct mm_struct *remote_mm,
@@ -189,7 +187,7 @@ static long strncpy_from_remote_user(char *dst, struct mm_struct *remote_mm,
 	struct page **page = NULL;
 
 	uintptr_t src_page_start = (uintptr_t)src & PAGE_MASK;
-	long src_page_offset = (long)(src - src_page_start);
+	uintptr_t src_page_offset = (uintptr_t)(src - src_page_start);
 	size_t num_pages = DIV_ROUND_UP(src_page_offset + count,
 					(long)PAGE_SIZE);
 
@@ -216,7 +214,6 @@ static long strncpy_from_remote_user(char *dst, struct mm_struct *remote_mm,
 	kfree(page);
 
 	return copy_sum;
-
 }
 
 enum heap_type memcheck_anon_vma_name(struct vm_area_struct *vma)
@@ -296,7 +293,6 @@ static void memcheck_pte_entry(pte_t *pte, unsigned long addr,
 		page = vm_normal_page(vma, addr, *pte);
 	} else if (is_swap_pte(*pte)) {
 		swp_entry_t swpent = pte_to_swp_entry(*pte);
-
 		if (!non_swap_entry(swpent))
 			mss->swap += PAGE_SIZE;
 		else if (is_migration_entry(swpent))
@@ -380,7 +376,7 @@ static int memcheck_get_mss(pid_t pid, struct memsize_stats *mss_total)
 unsigned short memcheck_get_memstat(struct memstat_all *p)
 {
 	int ret;
-	int i;
+	unsigned int i;
 	struct memsize_stats mss_total;
 	unsigned short result = 0;
 
@@ -408,7 +404,7 @@ unsigned short memcheck_get_memstat(struct memstat_all *p)
 		}
 	}
 	if (p->type & MTYPE_USER_ION) {
-		p->ion_pid = hisi_get_ion_by_pid(p->id);
+		p->ion_pid = get_ion_by_pid(p->id);
 		if (p->ion_pid)
 			result = result | MTYPE_USER_ION;
 	}
@@ -419,7 +415,7 @@ unsigned short memcheck_get_memstat(struct memstat_all *p)
 	/* get kernel memstat */
 	for (i = 0; i < NUM_KERN_MAX; i++) {
 		if (TEST_BIT(p->type, i + IDX_KERN_START)) {
-			p->memory = hisi_get_mem_total(i);
+			p->memory = get_mem_total(i);
 			if (p->memory) {
 				result |= (1 << (i + IDX_KERN_START));
 				break;
@@ -440,7 +436,7 @@ static bool process_disappear(u64 t, const struct track_cmd *cmd)
 	return false;
 }
 
-void memcheck_save_top_slub(char *name)
+void memcheck_save_top_slub(const char *name)
 {
 	memcpy(top_slub_name, name, sizeof(top_slub_name));
 }
@@ -453,11 +449,11 @@ int memcheck_do_kernel_command(const struct track_cmd *cmd)
 	case MEMCMD_ENABLE:
 		if (cmd->type == MTYPE_KERN_SLUB) {
 			memcheck_info("top1 slub is %s\n", top_slub_name);
-			ret = hisi_page_trace_on(SLUB_TRACK, top_slub_name);
+			ret = page_trace_on(SLUB_TRACK, top_slub_name);
 		} else if (cmd->type == MTYPE_KERN_BUDDY) {
-			ret = hisi_page_trace_on(BUDDY_TRACK, "buddy");
+			ret = page_trace_on(BUDDY_TRACK, "buddy");
 		} else if (cmd->type == MTYPE_KERN_LSLUB) {
-			ret = hisi_page_trace_on(LSLUB_TRACK, "lsub");
+			ret = page_trace_on(LSLUB_TRACK, "lsub");
 		}
 		if (ret)
 			memcheck_err("trace on failed, memtype=%d\n",
@@ -468,11 +464,11 @@ int memcheck_do_kernel_command(const struct track_cmd *cmd)
 		break;
 	case MEMCMD_DISABLE:
 		if (cmd->type == MTYPE_KERN_SLUB)
-			ret = hisi_page_trace_off(SLUB_TRACK, top_slub_name);
+			ret = page_trace_off(SLUB_TRACK, top_slub_name);
 		else if (cmd->type == MTYPE_KERN_BUDDY)
-			ret = hisi_page_trace_off(BUDDY_TRACK, "buddy");
+			ret = page_trace_off(BUDDY_TRACK, "buddy");
 		else if (cmd->type == MTYPE_KERN_LSLUB)
-			ret = hisi_page_trace_off(LSLUB_TRACK, "lsub");
+			ret = page_trace_off(LSLUB_TRACK, "lsub");
 		if (ret)
 			memcheck_err("trace off failed, memtype=%d\n",
 				     cmd->type);

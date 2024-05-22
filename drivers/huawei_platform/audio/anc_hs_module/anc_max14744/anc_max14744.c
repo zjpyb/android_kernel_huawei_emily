@@ -272,7 +272,6 @@ static int anc_max14744_regmap_read(int reg, int *value)
 	int ret;
 
 	ret = regmap_read(anc_priv->regmap_l, reg, value);
-
 	if (ret < 0) {
 		anc_dsm_i2c_reg_fail_report();
 		hwlog_err("%s error,ret = %d, i2c_reg_fail_times = %d\n",
@@ -301,7 +300,6 @@ static int anc_max14744_regmap_update_bits(int reg, int mask, int value)
 	int ret;
 
 	ret = regmap_update_bits(anc_priv->regmap_l, reg, mask, value);
-
 	if (ret < 0) {
 		anc_dsm_i2c_reg_fail_report();
 		hwlog_err("%s error,ret = %d, i2c_reg_fail_times = %d\n",
@@ -491,7 +489,7 @@ static void anc_hs_invert_ctl_work(struct work_struct *work)
 	__pm_stay_awake(&anc_priv->wake_lock);
 	mutex_lock(&anc_priv->invert_hs_lock);
 
-	if (anc_priv->headset_type == ANC_HS_REVERT_4POLE) {
+	if (anc_priv->headset_type == ANA_HS_REVERT_4POLE) {
 		anc_max14744_regmap_update_bits(ANC_MAX14744_R008_PINS_CONTROL1,
 			ANC_MAX14744_MANUL_CNTL_MASK,
 			ANC_MAX14744_MANUL_CNTL_MASK);
@@ -931,13 +929,13 @@ bool anc_max14744_charge_detect(int saradc_value, int headset_type)
 	anc_priv->headset_type = headset_type;
 
 	/* revert 4-pole headset need 5v on to support second recognition */
-	if (headset_type == ANC_HS_NORMAL_4POLE) {
+	if (headset_type == ANA_HS_NORMAL_4POLE) {
 		/* 4-pole headset maybe an anc headset */
 		hwlog_debug("%s : start anc hs charge judge\n", __func__);
 		return anc_max14744_charge_judge();
 	}
 
-	if (headset_type == ANC_HS_NORMAL_3POLE) {
+	if (headset_type == ANA_HS_NORMAL_3POLE) {
 		hwlog_info("%s:no disable 5vboost for 3-pole hs\n", __func__);
 		/* 3-pole also support second-detect */
 		return false;
@@ -957,7 +955,7 @@ void anc_max14744_stop_charge(void)
 	normal_mode();
 	anc_max14744_gpio_set_value(anc_priv->anc_pwr_en_gpio, 0);
 	anc_priv->anc_hs_mode = ANC_HS_CHARGE_OFF;
-	anc_priv->headset_type = ANC_HS_NONE;
+	anc_priv->headset_type = ANA_HS_NONE;
 	anc_priv->button_pressed = 0;
 
 	if (anc_hs_send_hifi_msg(ANC_HS_CHARGE_OFF) == ERROR_RET)
@@ -1196,7 +1194,7 @@ static long anc_max14744_ioctl(struct file *file, unsigned int cmd,
 		return -EBUSY;
 
 	switch (cmd) {
-	case IOCTL_ANC_HS_CHARGE_ENABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_ENABLE_CMD:
 		if (anc_priv->force_charge_ctl == ANC_HS_ENABLE_CHARGE)
 			break;
 		/* resume anc headset charge */
@@ -1205,7 +1203,7 @@ static long anc_max14744_ioctl(struct file *file, unsigned int cmd,
 			anc_priv->force_charge_ctl);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_CHARGE_DISABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_DISABLE_CMD:
 		if (anc_priv->force_charge_ctl == ANC_HS_DISABLE_CHARGE)
 			break;
 		/* force stop anc headset charge */
@@ -1214,7 +1212,7 @@ static long anc_max14744_ioctl(struct file *file, unsigned int cmd,
 			anc_priv->force_charge_ctl);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_CMD:
 		charge_mode = anc_priv->anc_hs_mode;
 		if (charge_mode == ANC_HS_CHARGE_ON) {
 			if (!anc_max14744_need_charge()) {
@@ -1226,27 +1224,27 @@ static long anc_max14744_ioctl(struct file *file, unsigned int cmd,
 			}
 		}
 		if (charge_mode == ANC_HS_CHARGE_ON)
-			anc_priv->headset_type = ANC_HS_HEADSET;
+			anc_priv->headset_type = ANA_HS_HEADSET;
 
 		ret = put_user((__u32)(anc_priv->headset_type), p_user);
 		break;
-	case IOCTL_ANC_HS_GET_CHARGE_STATUS_CMD:
+	case IOCTL_ANA_HS_GET_CHARGE_STATUS_CMD:
 		ret = put_user((__u32)(anc_priv->anc_hs_mode), p_user);
 		break;
-	case IOCTL_ANC_HS_GET_VBST_5VOLTAGE_CMD:
+	case IOCTL_ANA_HS_GET_VBST_5VOLTAGE_CMD:
 		mic_bias_mode(LDO1_CALL_MODE);
 		anc_max14744_gpio_set_value(anc_priv->anc_pwr_en_gpio, 1);
 		voltage = compute_final_voltage();
 		anc_max14744_gpio_set_value(anc_priv->anc_pwr_en_gpio, 0);
 		ret = put_user((__u32)voltage, p_user);
 		break;
-	case IOCTL_ANC_HS_GET_VDD_BUCK_VOLTAGE_CMD:
+	case IOCTL_ANA_HS_GET_VDD_BUCK_VOLTAGE_CMD:
 		mic_bias_mode(LDO1_CALL_MODE);
 		anc_max14744_gpio_set_value(anc_priv->anc_pwr_en_gpio, 0);
 		voltage = compute_final_voltage();
 		ret = put_user((__u32)voltage, p_user);
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_RESISTANCE_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_RESISTANCE_CMD:
 		adc_value = judge_headset_type_further();
 		ret = put_user((__u32)(adc_value), p_user);
 		break;
@@ -1317,8 +1315,7 @@ static ssize_t anc_max14744_reg_write_store(struct device *dev,
 	}
 
 	p_reg = strsep(&p_val, " ");
-
-	if ((!p_reg) || (!p_val) || (*p_reg == '\0') || ('\0' == *p_val)) {
+	if ((!p_reg) || (!p_val) || (*p_reg == '\0') || (*p_val == '\0')) {
 		hwlog_err("%s: input register address or value is \\0\n",
 			__func__);
 		return -EINVAL;
@@ -1390,7 +1387,7 @@ static const struct file_operations anc_max14744_fops = {
 
 static struct miscdevice anc_max14744_device = {
 	.minor  = MISC_DYNAMIC_MINOR,
-	.name   = "anc_hs",
+	.name   = "ana_hs",
 	.fops   = &anc_max14744_fops,
 };
 
@@ -1531,7 +1528,7 @@ static void value_initial(void)
 	anc_priv->force_charge_ctl = ANC_HS_ENABLE_CHARGE;
 	anc_priv->boost_flag = false;
 	anc_priv->registered = false;
-	anc_priv->headset_type = ANC_HS_NONE;
+	anc_priv->headset_type = ANA_HS_NONE;
 }
 
 static int create_irq_workqueue(void)
@@ -1834,7 +1831,6 @@ static int anc_max14744_probe(struct i2c_client *client,
 	flag |= IRQF_TRIGGER_FALLING;
 	ret = request_threaded_irq(di->anc_max14744_irq, NULL,
 		anc_max14744_irq_handler, flag, "anc_max14744_irq", NULL);
-
 	if (ret < 0) {
 		hwlog_err("anc_max14744_irq request fail: ret = %d\n", ret);
 		goto err_out_gpio;
@@ -1856,7 +1852,6 @@ static int anc_max14744_probe(struct i2c_client *client,
 		hwlog_err("%s:anc_max14744 misc dev register failed", __func__);
 		goto err_out_irq;
 	}
-
 
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 	/* detect current device successful, set the flag as present */

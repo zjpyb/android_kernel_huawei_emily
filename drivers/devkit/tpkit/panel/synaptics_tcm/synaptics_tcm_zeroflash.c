@@ -424,8 +424,6 @@ static int zeroflash_parse_fw_image(void)
 			image_info->boot_config.flash_addr = flash_addr;
 			TS_LOG_INFO("Boot config size = %d\n",
 					length);
-			TS_LOG_INFO("Boot config flash address = 0x%08x\n",
-					flash_addr);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				F35_APP_CODE_ID,
 				strlen(F35_APP_CODE_ID))) {
@@ -438,8 +436,6 @@ static int zeroflash_parse_fw_image(void)
 			image_info->app_firmware.flash_addr = flash_addr;
 			TS_LOG_INFO("Application firmware size = %d\n",
 					length);
-			TS_LOG_INFO("Application firmware flash address = 0x%08x\n",
-					flash_addr);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				APP_CONFIG_ID,
 				strlen(APP_CONFIG_ID))) {
@@ -453,8 +449,6 @@ static int zeroflash_parse_fw_image(void)
 			image_info->packrat_number = le4_to_uint(&content[14]);
 			TS_LOG_INFO("Application config size = %d  image_info->packrat_number = %d\n",
 					length,image_info->packrat_number);
-			TS_LOG_INFO("Application config flash address = 0x%08x\n",
-					flash_addr);
 		} else if (0 == strncmp((char *)descriptor->id_string,
 				DISP_CONFIG_ID,
 				strlen(DISP_CONFIG_ID))) {
@@ -467,8 +461,6 @@ static int zeroflash_parse_fw_image(void)
 			image_info->disp_config.flash_addr = flash_addr;
 			TS_LOG_INFO("Display config size = %d\n",
 					length);
-			TS_LOG_INFO("Display config flash address = 0x%08x\n",
-					flash_addr);
 		}
 	}
 

@@ -41,6 +41,7 @@ int sprintf_s(char *strDest, size_t destMax, const char *format, ...)
     va_start(argList, format);
     ret = vsprintf_s(strDest, destMax, format, argList);
     va_end(argList);
+    // cppcheck-suppress *
     (void)argList;              /* To clear e438 last value assigned not used , the compiler will optimize this code */
 
     return ret;
@@ -48,5 +49,4 @@ int sprintf_s(char *strDest, size_t destMax, const char *format, ...)
 #if SECUREC_IN_KERNEL
 EXPORT_SYMBOL(sprintf_s);
 #endif
-
 

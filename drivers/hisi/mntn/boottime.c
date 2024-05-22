@@ -1,9 +1,9 @@
 /*
- * arch/arm/mach-hi6620/util.c
+ * boottime.c
  *
- * balong platform misc utilities function
+ * boottime module
  *
- * Copyright (C) 2012 Hisilicon, Inc.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,37 +27,37 @@
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
 #include <linux/sysctl.h>
-#include <linux/hisi/util.h>
 #include <linux/uaccess.h>
 #include <linux/hisi/hisi_bootup_keypoint.h>
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BOOTTIME_TAG
+#include <pr_log.h>
+#include <linux/hisi/util.h>
+#include <rdr_inner.h>
+#define PR_LOG_TAG BOOTTIME_TAG
 
 /* record kernle boot is completed */
 #define COMPLETED_MASK 0xABCDEF00
-static unsigned int bootanim_complete;
-extern void hisi_dump_bootkmsg(void);
+static unsigned int g_bootanim_complete;
 
 /*
- *check kernel boot is completed
- *Return: 1,  kernel boot is completed
- *	        0,  no completed
+ * check kernel boot is completed
+ * Return: 1,  kernel boot is completed
+ *         0,  no completed
  */
 int is_bootanim_completed(void)
 {
-	return (bootanim_complete == COMPLETED_MASK);
+	return (g_bootanim_complete == COMPLETED_MASK);
 }
 
 static ssize_t boot_time_proc_write(struct file *file, const char __user *buf,
-				    size_t nr, loff_t *off)
+				size_t nr, loff_t *off)
 {
 	if (is_bootanim_completed())
 		return nr;
 
-	/*only need the print time */
+	/* only need the print time */
 	pr_err("bootanim has been complete, turn to Lancher!\n");
 
-	bootanim_complete = COMPLETED_MASK;
+	g_bootanim_complete = COMPLETED_MASK;
 
 	hisi_dump_bootkmsg();
 	return nr;
@@ -69,8 +69,7 @@ static const struct file_operations boot_time_proc_fops = {
 
 static int __init boot_time_proc_init(void)
 {
-	balong_create_stats_proc_entry("boot_time", (S_IWUSR),
-				       &boot_time_proc_fops, NULL);
+	dfx_create_stats_proc_entry("boot_time", (S_IWUSR), &boot_time_proc_fops, NULL);
 
 	return 0;
 }

@@ -65,6 +65,7 @@
 #include <linux/dynamic_debug.h>
 #include <linux/audit.h>
 #include <uapi/linux/module.h>
+#include <linux/hisi/cfi_harden.h>
 #include "module-internal.h"
 #ifdef CONFIG_MODULE_SIG
 #include <chipset_common/security/saudit.h>
@@ -77,8 +78,8 @@
 #define ARCH_SHF_SMALL 0
 #endif
 
-#ifdef CONFIG_HISI_HHEE
-#include <linux/hisi/hisi_hhee.h>
+#ifdef CONFIG_HHEE
+#include <linux/hisi/hkip_hhee.h>
 static unsigned long clarify_token;
 #endif
 
@@ -614,6 +615,27 @@ static struct module *find_module_all(const char *name, size_t len,
 	list_for_each_entry_rcu(mod, &modules, list) {
 		if (!even_unformed && mod->state == MODULE_STATE_UNFORMED)
 			continue;
+		if (strlen(mod->name) == len && !memcmp(mod->name, name, len))
+			return mod;
+	}
+	return NULL;
+}
+
+/*
+ * Search for module by name:,only get module info
+ * Notice:this interface use in safety, and this module not in unsmod processing
+ */
+struct module *find_hisi_module(const char *name, size_t len)
+{
+	struct module *mod = NULL;
+
+	if (!name) {
+		pr_warn("[%s]:module name is null\n", __func__);
+		return NULL;
+	}
+
+	list_for_each_entry_rcu(mod, &modules, list) {
+		pr_warn("%s: mod->name = %s\n", __func__, mod->name);
 		if (strlen(mod->name) == len && !memcmp(mod->name, name, len))
 			return mod;
 	}
@@ -1705,6 +1727,8 @@ static int add_usage_links(struct module *mod)
 	return ret;
 }
 
+static void module_remove_modinfo_attrs(struct module *mod, int end);
+
 static int module_add_modinfo_attrs(struct module *mod)
 {
 	struct module_attribute *attr;
@@ -1719,24 +1743,34 @@ static int module_add_modinfo_attrs(struct module *mod)
 		return -ENOMEM;
 
 	temp_attr = mod->modinfo_attrs;
-	for (i = 0; (attr = modinfo_attrs[i]) && !error; i++) {
+	for (i = 0; (attr = modinfo_attrs[i]); i++) {
 		if (!attr->test || attr->test(mod)) {
 			memcpy(temp_attr, attr, sizeof(*temp_attr));
 			sysfs_attr_init(&temp_attr->attr);
 			error = sysfs_create_file(&mod->mkobj.kobj,
 					&temp_attr->attr);
+			if (error)
+				goto error_out;
 			++temp_attr;
 		}
 	}
+
+	return 0;
+
+error_out:
+	if (i > 0)
+		module_remove_modinfo_attrs(mod, --i);
 	return error;
 }
 
-static void module_remove_modinfo_attrs(struct module *mod)
+static void module_remove_modinfo_attrs(struct module *mod, int end)
 {
 	struct module_attribute *attr;
 	int i;
 
 	for (i = 0; (attr = &mod->modinfo_attrs[i]); i++) {
+		if (end >= 0 && i > end)
+			break;
 		/* pick a field to test for end of list */
 		if (!attr->attr.name)
 			break;
@@ -1824,7 +1858,7 @@ static int mod_sysfs_setup(struct module *mod,
 	return 0;
 
 out_unreg_modinfo_attrs:
-	module_remove_modinfo_attrs(mod);
+	module_remove_modinfo_attrs(mod, -1);
 out_unreg_param:
 	module_param_sysfs_remove(mod);
 out_unreg_holders:
@@ -1860,7 +1894,7 @@ static void mod_sysfs_fini(struct module *mod)
 {
 }
 
-static void module_remove_modinfo_attrs(struct module *mod)
+static void module_remove_modinfo_attrs(struct module *mod, int end)
 {
 }
 
@@ -1876,7 +1910,7 @@ static void init_param_lock(struct module *mod)
 static void mod_sysfs_teardown(struct module *mod)
 {
 	del_usage_links(mod);
-	module_remove_modinfo_attrs(mod);
+	module_remove_modinfo_attrs(mod, -1);
 	module_param_sysfs_remove(mod);
 	kobject_put(mod->mkobj.drivers_dir);
 	kobject_put(mod->holders_dir);
@@ -1951,7 +1985,7 @@ void module_disable_ro(const struct module *mod)
 
 static inline void hhee_lkm_update(const struct module_layout *layout)
 {
-#ifdef CONFIG_HISI_HHEE
+#ifdef CONFIG_HHEE
 	struct arm_smccc_res res;
 
 	if (hhee_check_enable() != HHEE_ENABLE)
@@ -3441,8 +3475,7 @@ static bool finished_loading(const char *name)
 	sched_annotate_sleep();
 	mutex_lock(&module_mutex);
 	mod = find_module_all(name, strlen(name), true);
-	ret = !mod || mod->state == MODULE_STATE_LIVE
-		|| mod->state == MODULE_STATE_GOING;
+	ret = !mod || mod->state == MODULE_STATE_LIVE;
 	mutex_unlock(&module_mutex);
 
 	return ret;
@@ -3609,8 +3642,7 @@ again:
 	mutex_lock(&module_mutex);
 	old = find_module_all(mod->name, strlen(mod->name), true);
 	if (old != NULL) {
-		if (old->state == MODULE_STATE_COMING
-		    || old->state == MODULE_STATE_UNFORMED) {
+		if (old->state != MODULE_STATE_LIVE) {
 			/* Wait in case it fails to load. */
 			mutex_unlock(&module_mutex);
 			err = wait_event_interruptible(module_wq,
@@ -4164,8 +4196,7 @@ int module_kallsyms_on_each_symbol(int (*fn)(void *, const char *,
 static void cfi_init(struct module *mod)
 {
 #ifdef CONFIG_CFI_CLANG
-	mod->cfi_check =
-		(cfi_check_fn)mod_find_symname(mod, CFI_CHECK_FN_NAME);
+	cfi_harden_module_init(mod, mod_find_symname(mod, CFI_CHECK_FN_NAME));
 	cfi_module_add(mod, module_addr_min, module_addr_max);
 #endif
 }
@@ -4173,6 +4204,7 @@ static void cfi_init(struct module *mod)
 static void cfi_cleanup(struct module *mod)
 {
 #ifdef CONFIG_CFI_CLANG
+	cfi_harden_module_cleanup(mod);
 	cfi_module_remove(mod, module_addr_min, module_addr_max);
 #endif
 }
@@ -4283,7 +4315,7 @@ static int __init proc_modules_init(void)
 module_init(proc_modules_init);
 #endif
 
-#ifdef CONFIG_HISI_HHEE
+#ifdef CONFIG_HHEE
 static int __init module_token_init(void)
 {
 	struct arm_smccc_res res;

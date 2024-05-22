@@ -67,7 +67,7 @@ static bool inited = false;
 int32_t gmark = 0xF0;
 
 typedef struct {
-	pkt_header_t hd;
+	struct pkt_header hd;
 	uint32_t index;
 } log_buff_req_t;
 
@@ -84,26 +84,28 @@ static inline void print_stat(int i) {
 static inline int sensorhub_log_buff_left(void)
 {
 	hwlog_debug("%s %d\n", __func__,
-		    (sensorhub_log_buf_rear >= sensorhub_log_r) ? (sensorhub_log_buf_rear -
-					 sensorhub_log_r) : (DDR_LOG_BUFF_SIZE -(sensorhub_log_r -sensorhub_log_buf_rear)));
-	if (sensorhub_log_full_flag && (sensorhub_log_buf_rear == sensorhub_log_r)) {
+		(sensorhub_log_buf_rear >= sensorhub_log_r) ?
+		(sensorhub_log_buf_rear - sensorhub_log_r) :
+		(DDR_LOG_BUFF_SIZE - (sensorhub_log_r - sensorhub_log_buf_rear)));
+	if (sensorhub_log_full_flag && (sensorhub_log_buf_rear == sensorhub_log_r))
 		return 0;
-	}
-	return (sensorhub_log_buf_rear >= sensorhub_log_r) ? (sensorhub_log_buf_rear -
-				    sensorhub_log_r) : (DDR_LOG_BUFF_SIZE -(sensorhub_log_r - sensorhub_log_buf_rear));
+
+	return (sensorhub_log_buf_rear >= sensorhub_log_r) ?
+		(sensorhub_log_buf_rear - sensorhub_log_r) :
+		(DDR_LOG_BUFF_SIZE - (sensorhub_log_r - sensorhub_log_buf_rear));
 }
 
 static inline void update_local_buff_index(uint32_t new_rear)
 {
-/*update sensorhub_log_r*/
+	/* update sensorhub_log_r */
 	if (flush_cnt && sensorhub_log_buff_left() >= (DDR_LOG_BUFF_SIZE - DDR_LOG_BUFF_COPY_SIZE)) {
 		sensorhub_log_r = new_rear;
 	}
-/*update sensorhub_log_buf_head*/
+	/* update sensorhub_log_buf_head */
 	if (flush_cnt) {
 		sensorhub_log_buf_head = new_rear;
 	}
-/*update sensorhub_log_buf_rear*/
+	/* update sensorhub_log_buf_rear */
 	sensorhub_log_buf_rear = new_rear;
 	sensorhub_log_full_flag = 0;
 	hwlog_debug("[%s] %d %d %d\n", __func__, sensorhub_log_r, sensorhub_log_buf_head, sensorhub_log_buf_rear);
@@ -111,7 +113,6 @@ static inline void update_local_buff_index(uint32_t new_rear)
 
 static int sensorhub_logbuff_open(struct inode *inode, struct file *file)
 {
-	/* ÿ��cat /proc/sensorhub_logbuff����open ����sensorhub_log_r = sensorhub_log_r_head ��ʾÿ�ζ���r����Ϊ��ͷָ�롱����ͷ��ʼ�����?*/
 	hwlog_info("[%s]\n", __func__);
 	if (isOpened) {
 		hwlog_err("%s sensorhub logbuff already opened !\n", __func__);
@@ -192,7 +193,7 @@ static const struct file_operations sensorhub_logbuff_operations = {
 	.release = sensorhub_logbuff_release,
 };
 
-static int logbuff_full_callback(const pkt_header_t *head)
+static int logbuff_full_callback(const struct pkt_header *head)
 {
 	int cnt = DDR_LOG_BUFF_COPY_SIZE;
 	int remain = 0;
@@ -233,13 +234,14 @@ static int logbuff_full_callback(const pkt_header_t *head)
 	return 0;
 }
 
-static int logbuff_flush_callback(const pkt_header_t *head)
+static int logbuff_flush_callback(const struct pkt_header *head)
 {
 	/*sensorhub has flush tcm log buff we need update logbuff global vars and flush it to file system*/
 	log_buff_req_t *pkt = (log_buff_req_t *) head;
 	uint32_t flush_head = (pkt->index * LOG_BUFF_SIZE);
-	uint32_t flush_size = (flush_head > sensorhub_log_buf_rear) ? (flush_head - sensorhub_log_buf_rear)
-	    : (DDR_LOG_BUFF_SIZE - (sensorhub_log_buf_rear - flush_head));
+	uint32_t flush_size = (flush_head > sensorhub_log_buf_rear) ?
+		(flush_head - sensorhub_log_buf_rear) :
+		(DDR_LOG_BUFF_SIZE - (sensorhub_log_buf_rear - flush_head));
 	int remain = 0;
 	int timeout_cnt = 100;
 	hwlog_debug("[%s] index: %d\n", __func__, pkt->index);
@@ -274,9 +276,9 @@ static int logbuff_flush_callback(const pkt_header_t *head)
 	return 0;
 }
 
-static void __manual_flush(pkt_header_t *pkt, int size)
+static void __manual_flush(struct pkt_header *pkt, int size)
 {
-	write_info_t winfo;
+	struct write_info winfo;
 	hwlog_debug("flush sensorhub log buff\n");
 	/*do log flush*/
 	mutex_lock(&logbuff_flush_mutex);
@@ -295,8 +297,8 @@ static void __manual_flush(pkt_header_t *pkt, int size)
 
 static ssize_t logbuff_config_set(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	write_info_t winfo;
-	pkt_header_t pkt = {
+	struct write_info winfo;
+	struct pkt_header pkt = {
 		.tag = TAG_LOG_BUFF,
 		.resp = NO_RESP,
 		.length = 0
@@ -331,7 +333,7 @@ static ssize_t logbuff_config_show(struct device *dev, struct device_attribute *
 
 static ssize_t logbuff_flush_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	pkt_header_t pkt = {
+	struct pkt_header pkt = {
 		.tag = TAG_LOG_BUFF,
 		.resp = NO_RESP,
 		.length = 0
@@ -371,13 +373,12 @@ void emg_flush_logbuff(void)
 	log_buff_req_t pkt;
 	pkt.index = sensorhub_log_buf_rear / LOG_BUFF_SIZE;
 	hwlog_info("[%s] update head %x\n", __func__, pkt.index);
-        if(!inited)
-        {
-            hwlog_err("logbuff not inited!\n");
-            return;
-        }
+	if (!inited) {
+		hwlog_err("logbuff not inited\n");
+		return;
+	}
 	/*notify userspace*/
-	logbuff_full_callback((const pkt_header_t *)&pkt);
+	logbuff_full_callback((const struct pkt_header *)&pkt);
 	msleep(100);
 }
 
@@ -385,16 +386,13 @@ static struct delayed_work sensorhub_logbuff_off_check_work;
 
 static void  sensorhub_logbuff_off_check(struct work_struct *work)
 {
-    int level = NO_LOG_DEFAULT_LEVEL;
-    hwlog_info("%s\n", __func__);
+	int level = NO_LOG_DEFAULT_LEVEL;
+	hwlog_info("%s\n", __func__);
 
-    if (!isOpened)
-    {
-        //set log level to emg
-        set_log_level(TAG_LOG_BUFF, &level, 1);
-    }
+	if (!isOpened)
+		set_log_level(TAG_LOG_BUFF, &level, 1);
 
-    return;
+	return;
 }
 
 static int sensorhub_logbuff_init(void)
@@ -459,7 +457,7 @@ static int sensorhub_logbuff_init(void)
 	memset(pLocalLogBuff, 0, DDR_LOG_BUFF_SIZE);
 	mutex_init(&logbuff_mutex);
 	mutex_init(&logbuff_flush_mutex);
-        inited = true;
+	inited = true;
 	INIT_DELAYED_WORK(&sensorhub_logbuff_off_check_work, sensorhub_logbuff_off_check);
 	queue_delayed_work(system_freezable_wq, &sensorhub_logbuff_off_check_work, 5 * 60 * HZ);
 	hwlog_info("[%s] done\n", __func__);

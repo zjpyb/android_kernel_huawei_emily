@@ -151,6 +151,14 @@
 #include <hwnet/booster/hw_packet_filter_bypass.h>
 #endif
 
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include <hwnet/booster/hw_pt.h>
+#endif
+
+#ifdef CONFIG_HISI_BB
+#include <linux/hisi/rdr_hisi_ap_hook.h>
+#endif
+
 /* Instead of increasing this, you should create a hash table. */
 #define MAX_GRO_SKBS 8
 
@@ -171,6 +179,13 @@ static struct napi_struct *napi_by_id(unsigned int napi_id);
 
 #ifdef CONFIG_HW_DC_MODULE
 static struct hw_dc_ops g_dev_dc_ops;
+#endif
+
+#ifdef CONFIG_HW_WAUDIO_MODULE
+static struct hw_wifi_audio_ops wifi_audio_ops = {
+	.wifi_audio_skb_send_handle = NULL,
+	.wifi_audio_skb_receive_handle = NULL,
+};
 #endif
 
 /*
@@ -2770,9 +2785,13 @@ EXPORT_SYMBOL(skb_mac_gso_segment);
  */
 static inline bool skb_needs_check(struct sk_buff *skb, bool tx_path)
 {
-	if (tx_path)
+	if (tx_path) {
+		if (skb_shinfo(skb)->gso_type == SKB_GSO_UDP_L4 &&
+		    skb_shinfo(skb)->gso_size)
+			return false;
 		return skb->ip_summed != CHECKSUM_PARTIAL &&
 		       skb->ip_summed != CHECKSUM_UNNECESSARY;
+	}
 
 	return skb->ip_summed == CHECKSUM_NONE;
 }
@@ -3017,6 +3036,11 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	if (g_dev_dc_ops.dc_send_copy)
 		g_dev_dc_ops.dc_send_copy(skb, dev);
 #endif
+#ifdef CONFIG_HW_WAUDIO_MODULE
+	if (wifi_audio_ops.wifi_audio_skb_send_handle)
+		wifi_audio_ops.wifi_audio_skb_send_handle(skb, dev);
+#endif
+
 	rc = netdev_start_xmit(skb, dev, txq, more);
 	trace_net_dev_xmit(skb, rc, dev, len);
 
@@ -3033,6 +3057,11 @@ struct sk_buff *dev_hard_start_xmit(struct sk_buff *first, struct net_device *de
 		struct sk_buff *next = skb->next;
 
 		skb->next = NULL;
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+		hw_pt_dev_uplink(skb, dev);
+#endif
+
 		rc = xmit_one(skb, dev, txq, next != NULL);
 		if (unlikely(!dev_xmit_complete(rc))) {
 			skb->next = next;
@@ -3530,7 +3559,6 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 				goto out;
 
 			HARD_TX_LOCK(dev, txq, cpu);
-
 			if (!netif_xmit_stopped(txq)) {
 				__this_cpu_inc(xmit_recursion);
 				skb = dev_hard_start_xmit(skb, dev, txq, &rc);
@@ -3737,7 +3765,8 @@ static int get_rps_cpu(struct net_device *dev, struct sk_buff *skb,
 		 */
 		if (unlikely(tcpu != next_cpu) &&
 #ifdef CONFIG_HISI_RFS_RPS_MATCH
-		    unlikely(!map || cpumask_test_cpu(next_cpu, &map->cpus_mask)) &&
+		    unlikely(!map ||
+		             cpumask_test_cpu(next_cpu, &map->cpus_mask)) &&
 #endif
 		    (tcpu >= nr_cpu_ids || !cpu_online(tcpu) ||
 		     ((int)(per_cpu(softnet_data, tcpu).input_queue_head -
@@ -4139,6 +4168,9 @@ EXPORT_SYMBOL(netif_rx_ni);
 static __latent_entropy void net_tx_action(struct softirq_action *h)
 {
 	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
+#ifdef CONFIG_HISI_BB
+	softirq_hook(NET_TX_SOFTIRQ, (u64)net_tx_action, 0);
+#endif
 
 	if (sd->completion_queue) {
 		struct sk_buff *clist;
@@ -4194,6 +4226,10 @@ static __latent_entropy void net_tx_action(struct softirq_action *h)
 			spin_unlock(root_lock);
 		}
 	}
+#ifdef CONFIG_HISI_BB
+	softirq_hook(NET_TX_SOFTIRQ, (u64)(uintptr_t)net_tx_action, 1);
+#endif
+
 }
 
 #if IS_ENABLED(CONFIG_BRIDGE) && IS_ENABLED(CONFIG_ATM_LANE)
@@ -4389,9 +4425,19 @@ another_round:
 
 	__this_cpu_inc(softnet_data.processed);
 
+#ifdef CONFIG_HW_WAUDIO_MODULE
+	if (wifi_audio_ops.wifi_audio_skb_receive_handle &&
+	    (wifi_audio_ops.wifi_audio_skb_receive_handle(skb) == 0))
+		return NET_RX_DROP;
+#endif
+
 #ifdef CONFIG_HW_DC_MODULE
 	if (g_dev_dc_ops.dc_receive && g_dev_dc_ops.dc_receive(skb))
 		return NET_RX_DROP;
+#endif
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+	hw_pt_set_skb_stamp(skb);
 #endif
 
 	if (skb->protocol == cpu_to_be16(ETH_P_8021Q) ||
@@ -4653,7 +4699,7 @@ static void flush_backlog(struct work_struct *work)
 	skb_queue_walk_safe(&sd->input_pkt_queue, skb, tmp) {
 		if (skb->dev->reg_state == NETREG_UNREGISTERING) {
 			__skb_unlink(skb, &sd->input_pkt_queue);
-			kfree_skb(skb);
+			dev_kfree_skb_irq(skb);
 			input_queue_head_incr(sd);
 		}
 	}
@@ -4996,6 +5042,11 @@ static gro_result_t napi_skb_finish(gro_result_t ret, struct sk_buff *skb)
 
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
+#ifdef CONFIG_HW_WAUDIO_MODULE
+	if (wifi_audio_ops.wifi_audio_skb_receive_handle &&
+	    (wifi_audio_ops.wifi_audio_skb_receive_handle(skb) == 0))
+		return GRO_DROP;
+#endif
 	skb_mark_napi_id(skb, napi);
 	trace_napi_gro_receive_entry(skb);
 
@@ -5017,6 +5068,10 @@ static void napi_reuse_skb(struct napi_struct *napi, struct sk_buff *skb)
 	skb->vlan_tci = 0;
 	skb->dev = napi->dev;
 	skb->skb_iif = 0;
+
+	/* eth_type_trans() assumes pkt_type is PACKET_HOST */
+	skb->pkt_type = PACKET_HOST;
+
 	skb->encapsulation = 0;
 	skb_shinfo(skb)->gso_type = 0;
 	skb->truesize = SKB_TRUESIZE(skb_end_offset(skb));
@@ -5087,7 +5142,6 @@ static struct sk_buff *napi_frags_skb(struct napi_struct *napi)
 	skb_reset_mac_header(skb);
 	skb_gro_reset_offset(skb);
 
-	eth = skb_gro_header_fast(skb, 0);
 	if (unlikely(skb_gro_header_hard(skb, hlen))) {
 		eth = skb_gro_header_slow(skb, hlen, 0);
 		if (unlikely(!eth)) {
@@ -5097,6 +5151,7 @@ static struct sk_buff *napi_frags_skb(struct napi_struct *napi)
 			return NULL;
 		}
 	} else {
+		eth = (const struct ethhdr *)skb->data;
 		gro_pull_from_frag0(skb, hlen);
 		NAPI_GRO_CB(skb)->frag0 += hlen;
 		NAPI_GRO_CB(skb)->frag0_len -= hlen;
@@ -5328,11 +5383,14 @@ bool napi_complete_done(struct napi_struct *n, int work_done)
 		if (work_done)
 			timeout = n->dev->gro_flush_timeout;
 
+		/* When the NAPI instance uses a timeout and keeps postponing
+		 * it, we need to bound somehow the time packets are kept in
+		 * the GRO layer
+		 */
+		napi_gro_flush(n, !!timeout);
 		if (timeout)
 			hrtimer_start(&n->timer, ns_to_ktime(timeout),
 				      HRTIMER_MODE_REL_PINNED);
-		else
-			napi_gro_flush(n, false);
 	}
 	if (unlikely(!list_empty(&n->poll_list))) {
 		/* If n->poll_list is not empty, we need to mask irqs */
@@ -5668,6 +5726,10 @@ static __latent_entropy void net_rx_action(struct softirq_action *h)
 	list_splice_init(&sd->poll_list, &list);
 	local_irq_enable();
 
+#ifdef CONFIG_HISI_BB
+	softirq_hook(NET_RX_SOFTIRQ, (u64)net_rx_action, 0);
+#endif
+
 	for (;;) {
 		struct napi_struct *n;
 
@@ -5702,6 +5764,10 @@ static __latent_entropy void net_rx_action(struct softirq_action *h)
 	net_rps_action_and_irq_enable(sd);
 out:
 	__kfree_skb_flush();
+#ifdef CONFIG_HISI_BB
+	softirq_hook(NET_RX_SOFTIRQ, (u64)(uintptr_t)net_rx_action, 1);
+#endif
+
 }
 
 struct netdev_adjacent {
@@ -6919,18 +6985,9 @@ int dev_set_mtu(struct net_device *dev, int new_mtu)
 	if (new_mtu == dev->mtu)
 		return 0;
 
-	/* MTU must be positive, and in range */
-	if (new_mtu < 0 || new_mtu < dev->min_mtu) {
-		net_err_ratelimited("%s: Invalid MTU %d requested, hw min %d\n",
-				    dev->name, new_mtu, dev->min_mtu);
-		return -EINVAL;
-	}
-
-	if (dev->max_mtu > 0 && new_mtu > dev->max_mtu) {
-		net_err_ratelimited("%s: Invalid MTU %d requested, hw max %d\n",
-				    dev->name, new_mtu, dev->max_mtu);
-		return -EINVAL;
-	}
+	err = dev_validate_mtu(dev, new_mtu);
+	if (err)
+		return err;
 
 	if (!netif_device_present(dev))
 		return -ENODEV;
@@ -7287,7 +7344,7 @@ static netdev_features_t netdev_sync_upper_features(struct net_device *lower,
 	netdev_features_t feature;
 	int feature_bit;
 
-	for_each_netdev_feature(&upper_disables, feature_bit) {
+	for_each_netdev_feature(upper_disables, feature_bit) {
 		feature = __NETIF_F_BIT(feature_bit);
 		if (!(upper->wanted_features & feature)
 		    && (features & feature)) {
@@ -7307,7 +7364,7 @@ static void netdev_sync_lower_features(struct net_device *upper,
 	netdev_features_t feature;
 	int feature_bit;
 
-	for_each_netdev_feature(&upper_disables, feature_bit) {
+	for_each_netdev_feature(upper_disables, feature_bit) {
 		feature = __NETIF_F_BIT(feature_bit);
 		if (!(features & feature) && (lower->features & feature)) {
 			netdev_dbg(upper, "Disabling feature %pNF on lower dev %s.\n",
@@ -7690,8 +7747,10 @@ int register_netdevice(struct net_device *dev)
 		goto err_uninit;
 
 	ret = netdev_register_kobject(dev);
-	if (ret)
+	if (ret) {
+		dev->reg_state = NETREG_UNREGISTERED;
 		goto err_uninit;
+	}
 	dev->reg_state = NETREG_REGISTERED;
 
 	__netdev_update_features(dev);
@@ -7722,6 +7781,8 @@ int register_netdevice(struct net_device *dev)
 	ret = notifier_to_errno(ret);
 	if (ret) {
 		rollback_registered(dev);
+		rcu_barrier();
+
 		dev->reg_state = NETREG_UNREGISTERED;
 	}
 	/*
@@ -7787,6 +7848,23 @@ int init_dummy_netdev(struct net_device *dev)
 }
 EXPORT_SYMBOL_GPL(init_dummy_netdev);
 
+
+int dev_validate_mtu(struct net_device *dev, int new_mtu)
+{
+	/* MTU must be positive, and in range */
+	if (new_mtu < 0 || new_mtu < dev->min_mtu) {
+		net_err_ratelimited("%s: Invalid MTU %d requested, hw min %d\n",
+				    dev->name, new_mtu, dev->min_mtu);
+		return -EINVAL;
+	}
+
+	if (dev->max_mtu > 0 && new_mtu > dev->max_mtu) {
+		net_err_ratelimited("%s: Invalid MTU %d requested, hw max %d\n",
+				    dev->name, new_mtu, dev->max_mtu);
+		return -EINVAL;
+	}
+	return 0;
+}
 
 /**
  *	register_netdev	- register a network device
@@ -7876,7 +7954,7 @@ static void netdev_wait_allrefs(struct net_device *dev)
 
 		refcnt = netdev_refcnt_read(dev);
 
-		if (time_after(jiffies, warning_time + 10 * HZ)) {
+		if (refcnt && time_after(jiffies, warning_time + 10 * HZ)) {
 			pr_emerg("unregister_netdevice: waiting for %s to become free. Usage count = %d\n",
 				 dev->name, refcnt);
 			warning_time = jiffies;
@@ -8655,6 +8733,24 @@ int hw_unregister_dual_connection(void)
 EXPORT_SYMBOL(hw_unregister_dual_connection);
 #endif
 
+#ifdef CONFIG_HW_WAUDIO_MODULE
+int hw_register_wifi_audio(const struct hw_wifi_audio_ops *ops)
+{
+	if (ops == NULL)
+		return -1;
+	wifi_audio_ops.wifi_audio_skb_receive_handle = ops->wifi_audio_skb_receive_handle;
+	wifi_audio_ops.wifi_audio_skb_send_handle = ops->wifi_audio_skb_send_handle;
+	return 0;
+}
+
+int hw_unregister_wifi_audio(void)
+{
+	wifi_audio_ops.wifi_audio_skb_receive_handle = NULL;
+	wifi_audio_ops.wifi_audio_skb_send_handle = NULL;
+	return 0;
+}
+#endif
+
 define_netdev_printk_level(netdev_emerg, KERN_EMERG);
 define_netdev_printk_level(netdev_alert, KERN_ALERT);
 define_netdev_printk_level(netdev_crit, KERN_CRIT);
@@ -8696,6 +8792,8 @@ static void __net_exit default_device_exit(struct net *net)
 
 		/* Push remaining network devices to init_net */
 		snprintf(fb_name, IFNAMSIZ, "dev%d", dev->ifindex);
+		if (__dev_get_by_name(&init_net, fb_name))
+			snprintf(fb_name, IFNAMSIZ, "dev%%d");
 		err = dev_change_net_namespace(dev, &init_net, fb_name);
 		if (err) {
 			pr_emerg("%s: failed to move %s to init_net: %d\n",

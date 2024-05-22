@@ -1,21 +1,12 @@
 /*
- * Copyright (C) Huawei Technologies Co., Ltd. 2013-2015. All rights reserved.
- *
- * mobile@huawei.com
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: Himos stats common head file.
+ * Author: fanxiaoyu3@huawei.com
+ * Create: 2018-07-19
  */
 
-#ifndef HW_HIMOS_STATS_COMMON_H
-#define HW_HIMOS_STATS_COMMON_H
+#ifndef _HW_HIMOS_STATS_COMMON_H
+#define _HW_HIMOS_STATS_COMMON_H
 
 #include <linux/types.h>
 #include <linux/list.h>
@@ -25,16 +16,19 @@
 #include <net/ipv6.h>
 #include <linux/ktime.h>
 
+#define HIMOS_US_MS 1000
+#define HIMOS_BYTE_OFFSET 44
 
-struct himos_stats_common
-{
-	__u32 portid;   //user portid
-	possible_net_t net;  //for reply
+struct himos_aweme_id {
+	__s32 uid;
+	__u32 portid;
+};
 
+struct himos_stats_common {
+	__u32 portid; /* user portid */
+	possible_net_t net; /* for reply */
 	struct list_head node;
-
-	//the value of 'enum HIMOS_STATS_TYPE'
-	int type;
+	int type; /* the value of 'enum HIMOS_STATS_TYPE' */
 	__s32 uid;
 };
 

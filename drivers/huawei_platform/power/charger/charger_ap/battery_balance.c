@@ -3,7 +3,7 @@
  *
  * battery balance driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,12 +32,11 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_charger.h>
-#include <huawei_platform/power/direct_charger.h>
 #include <huawei_platform/power/battery_voltage.h>
 #include <huawei_platform/power/series_batt_charger.h>
 #include <huawei_platform/power/battery_balance.h>
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>
 #endif
 
 #define HWLOG_TAG battery_balance
@@ -54,7 +53,7 @@ HWLOG_REGIST();
 #define CHG_CURR_MIN                (-100)
 #define CHG_CURR_MAX                200
 #define DEFAULT_BAL_TIME            5
-#define DEFAULT_RALAX_TIME          1
+#define DEFAULT_RELAX_TIME          1
 #define DEFAULT_VOL_DIFF_BAL_START  10
 #define DEFAULT_VOL_DIFF_BAL_STOP   5
 #define DEFAULT_TERM_CURR_PULSE     50
@@ -199,7 +198,6 @@ void batt_bal_reset_info(void)
 	g_balance_di->sum_time = 0;
 	g_balance_di->signal_gauge = 0;
 	g_balance_di->signal_time = 0;
-	hwlog_info("batt_bal_reset_info\n");
 }
 
 static void batt_bal_reset_signal_gauge(void)
@@ -223,8 +221,7 @@ static int batt_bal_channel_ctrl(enum bal_batt_id bal_batt_id, int value)
 		return -1;
 	}
 
-	hwlog_info("batt_bal_channel_ctrl: bal_batt_id=[%d], value=[%d]\n",
-		bal_batt_id, value);
+	hwlog_info("bal_batt_id=[%d], value=[%d]\n", bal_batt_id, value);
 
 	if (bal_batt_id == BATT_ID_0) {
 		gpio_num = g_balance_di->gpio_bat0_bal;
@@ -330,9 +327,9 @@ static void factory_bal_work(struct work_struct *work)
 		return;
 	}
 
-	hwlog_info("factory_bal_work++\n");
+	hwlog_info("%s begin\n", __func__);
 
-	if (!is_hisi_battery_exist() ||
+	if (!coul_drv_is_battery_exist() ||
 		!di->sysfs_data.fac_bal_en) {
 		hwlog_info("fac_bal_en is 0 or battery not exit\n");
 		batt_bal_state_machine(BAL_STATE_IDLE);
@@ -358,7 +355,7 @@ static void factory_bal_work(struct work_struct *work)
 		}
 
 		if (!di->chg_en) {
-			hwlog_info("factory_bal_work: entry batt_bal_state_machine\n");
+			hwlog_info("entry batt_bal_state_machine\n");
 			batt_bal_wake_lock();
 			di->bal_mode = BAL_MODE_DISCHG;
 			batt_bal_reset_signal_gauge();
@@ -372,14 +369,14 @@ static void factory_bal_work(struct work_struct *work)
 fac_bal_work:
 	schedule_delayed_work(&di->factory_bal_work,
 		msecs_to_jiffies(BAL_DELAY_TIME));
-	hwlog_info("factory_bal_work--\n");
+	hwlog_info("%s end\n", __func__);
 }
 
 static bool is_charge_bal_en(void)
 {
 	struct batt_bal_info *di = g_balance_di;
-	int ichg = -hisi_battery_current();
-	int ichg_avg = hisi_battery_current_avg();
+	int ichg = -coul_drv_battery_current();
+	int ichg_avg = coul_drv_battery_current_avg();
 	int chg_state = DC_NOT_IN_CHARGING_STAGE;
 
 	if (!di) {
@@ -390,11 +387,9 @@ static bool is_charge_bal_en(void)
 #ifdef CONFIG_DIRECT_CHARGER
 	chg_state = direct_charge_in_charging_stage();
 #endif /* CONFIG_DIRECT_CHARGER */
-
-	if (chg_state == DC_NOT_IN_CHARGING_STAGE &&
-		di->vol_max > di->vol_threshold &&
-		ichg_avg > ICHG_30MA &&
-		ichg > ICHG_30MA)
+	if ((chg_state == DC_NOT_IN_CHARGING_STAGE) &&
+		(di->vol_max > di->vol_threshold) &&
+		(ichg_avg > ICHG_30MA) && (ichg > ICHG_30MA))
 		return TRUE;
 
 	hwlog_info("ichg:%d,ichg_avg:%d,is_in_scp_chg:%d\n",
@@ -418,15 +413,15 @@ static void charge_bal_work(struct work_struct *work)
 		return;
 	}
 
-	hwlog_info("charge_bal_work++\n");
+	hwlog_info("%s begin\n", __func__);
 
-	if (!is_hisi_battery_exist() ||
-		di->bal_mode == BAL_MODE_DISCHG) {
+	if (!coul_drv_is_battery_exist() ||
+		(di->bal_mode == BAL_MODE_DISCHG)) {
 		hwlog_err("factory bal or battery not exist\n");
 		return;
 	}
 
-	if (direct_charge_in_charging_stage() == DC_IN_CHARGING_STAGE ||
+	if ((direct_charge_in_charging_stage() == DC_IN_CHARGING_STAGE) ||
 		di->in_hiz_mode ||
 		di->sysfs_data.bat0_bal_en ||
 		di->sysfs_data.bat1_bal_en) {
@@ -449,7 +444,7 @@ static void charge_bal_work(struct work_struct *work)
 			if (is_charge_bal_en()) {
 				batt_bal_wake_lock();
 				di->bal_mode = BAL_MODE_CHG;
-				hwlog_info("charge_bal_work, entry BAL_MODE_CHG\n");
+				hwlog_info("entry BAL_MODE_CHG\n");
 				batt_bal_reset_signal_gauge();
 				di->event = BAL_START_CHG;
 				blocking_notifier_call_chain(&di->bal_state_nh,
@@ -474,7 +469,7 @@ chg_bal_work:
 	schedule_delayed_work(&di->charge_bal_work,
 		msecs_to_jiffies(BAL_DELAY_TIME));
 
-	hwlog_info("charge_bal_work--\n");
+	hwlog_info("%s end\n", __func__);
 }
 
 static void bal_fsm_work(struct work_struct *work)
@@ -537,9 +532,6 @@ static enum hrtimer_restart batt_bal_timer_func(struct hrtimer *timer)
 		return HRTIMER_NORESTART;
 	}
 
-	hwlog_info("batt_bal_timer_func,di->bal_state=%d\n",
-		di->bal_state);
-
 	batt_bal_update_gauge(di);
 	queue_work(di->batt_bal_wq, &di->bal_fsm_work);
 
@@ -549,10 +541,10 @@ static enum hrtimer_restart batt_bal_timer_func(struct hrtimer *timer)
 static void charge_type_handler(struct batt_bal_info *di,
 	enum hisi_charger_type type)
 {
-	hwlog_info("charge_type_handler,type = %d\n", type);
+	hwlog_info("%s,type = %d\n", __func__, type);
 
 	if (type == CHARGER_TYPE_NONE) {
-		hwlog_info("charge type is none, cancle time,work\n");
+		hwlog_info("charge type is none, cancel time,work\n");
 		hrtimer_cancel(&di->timer);
 		cancel_work_sync(&di->bal_fsm_work);
 		cancel_delayed_work_sync(&di->charge_bal_work);
@@ -612,7 +604,7 @@ static int charge_state_notifier_call(struct notifier_block *nb,
 		return 0;
 	}
 
-	hwlog_info("charge_state_notifier_call: event=%ld\n", event);
+	hwlog_info("%s: event=%lu\n", __func__, event);
 
 	switch (event) {
 	case SERIES_BATT_CHG_EN:
@@ -621,9 +613,11 @@ static int charge_state_notifier_call(struct notifier_block *nb,
 		break;
 	case SERIES_BATT_CHG_DISABLE:
 		di->chg_en = FALSE;
+		di->chg_done = FALSE;
 		break;
 	case SERIES_BATT_HIZ_EN:
 		di->in_hiz_mode = TRUE;
+		di->chg_done = FALSE;
 		break;
 	case SERIES_BATT_HIZ_DISABLE:
 		di->in_hiz_mode = FALSE;
@@ -651,8 +645,8 @@ static bool is_batt_bal_done(struct batt_bal_info *di)
 	int ichg_avg;
 	int ichg;
 
-	ichg = -hisi_battery_current();
-	ichg_avg = hisi_battery_current_avg();
+	ichg = -coul_drv_battery_current();
+	ichg_avg = coul_drv_battery_current_avg();
 	hwlog_info("ichg=%d, ichg_avg=%d\n", ichg, ichg_avg);
 
 	batt_vol_diff = di->batt0_vol_info.vol_avg -
@@ -687,12 +681,12 @@ static void batt_bal_done_handle(struct batt_bal_info *di)
 
 static void bal_state_handle(struct batt_bal_info *di)
 {
-	int ichg = -hisi_battery_current();
+	int ichg = -coul_drv_battery_current();
 
-	hwlog_info("bal_state_handle\n");
+	hwlog_info("bal state handle\n");
 
 	if (di->in_hiz_mode ||
-		!is_hisi_battery_exist() ||
+		!coul_drv_is_battery_exist() ||
 		di->sysfs_data.bat0_bal_en ||
 		di->sysfs_data.bat1_bal_en) {
 		hwlog_err("battery not exist or in hiz mode or vol cali\n");
@@ -709,7 +703,7 @@ static void bal_state_handle(struct batt_bal_info *di)
 	di->bal_state = BAL_STATE_BALANCE;
 
 	if (di->bal_mode == BAL_MODE_DISCHG) {
-		if (di->chg_en || abs(ichg) > ICHG_30MA ||
+		if (di->chg_en || (abs(ichg) > ICHG_30MA) ||
 			!di->sysfs_data.fac_bal_en) {
 			hwlog_err("dischg or ichg >30ma or fac_bal_en is 0\n");
 			goto BAL_STATE_IDLE_HANDLER;
@@ -722,7 +716,8 @@ static void bal_state_handle(struct batt_bal_info *di)
 	}
 
 	if (di->bal_mode == BAL_MODE_PULSE) {
-		if (!di->chg_en || ichg < CHG_CURR_MIN || ichg > CHG_CURR_MAX) {
+		if (di->in_hiz_mode || !di->chg_en ||
+			(ichg < CHG_CURR_MIN) || (ichg > CHG_CURR_MAX)) {
 			hwlog_err("not chg done or chg disable:%dma\n", ichg);
 			goto BAL_STATE_IDLE_HANDLER;
 		}
@@ -741,7 +736,7 @@ BAL_STATE_IDLE_HANDLER:
 
 static void relax_state_handle(struct batt_bal_info *di)
 {
-	hwlog_info("relax_state_handle\n");
+	hwlog_info("relax state handle\n");
 	di->bal_state = BAL_STATE_RELAX;
 
 	if (di->bal_mode == BAL_MODE_PULSE)
@@ -756,7 +751,7 @@ static void relax_state_handle(struct batt_bal_info *di)
 
 static void idle_state_handle(struct batt_bal_info *di)
 {
-	hwlog_info("idle_state_handle\n");
+	hwlog_info("idle state handle\n");
 	di->bal_state = BAL_STATE_IDLE;
 
 	if (gpio_get_value(di->gpio_bat0_bal))
@@ -768,9 +763,7 @@ static void idle_state_handle(struct batt_bal_info *di)
 	if (hrtimer_active(&di->timer))
 		hrtimer_cancel(&di->timer);
 
-	if (di->bal_mode == BAL_MODE_PULSE)
-		series_batt_set_charge_en(CHARGE_ENABLE);
-
+	series_batt_set_charge_en(CHARGE_ENABLE);
 	di->bal_mode = BAL_MODE_MAX;
 	batt_bal_wake_unlock();
 }
@@ -784,7 +777,7 @@ static int batt_bal_state_machine(enum bal_state bal_state)
 		return 0;
 	}
 
-	hwlog_info("batt_bal_state_machine:bal_mod=%d\n", di->bal_mode);
+	hwlog_info("%s:bal_mod=%d\n", __func__, di->bal_mode);
 
 	switch (bal_state) {
 	case BAL_STATE_BALANCE:
@@ -829,35 +822,18 @@ static void bal_channel1_work(struct work_struct *work)
 }
 
 #ifdef CONFIG_SYSFS
-#define BATTERY_BALANCE_SYSFS_FIELD(_name, n, m, store) \
-{ \
-	.attr = __ATTR(_name, m, balance_sysfs_show, store), \
-	.name = BATT_BAL_SYSFS_##n, \
-}
-
-#define BATTERY_BALANCE_SYSFS_FIELD_RW(_name, n) \
-	BATTERY_BALANCE_SYSFS_FIELD(_name, n, 0640, balance_sysfs_store)
-
-#define BATTERY_BALANCE_SYSFS_FIELD_RO(_name, n) \
-	BATTERY_BALANCE_SYSFS_FIELD(_name, n, 0440, NULL)
-
-struct balance_sysfs_info {
-	struct device_attribute attr;
-	u8 name;
-};
-
 static ssize_t balance_sysfs_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count);
 
 static ssize_t balance_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
 
-static struct balance_sysfs_info balance_sysfs_tbl[] = {
-	BATTERY_BALANCE_SYSFS_FIELD_RW(balance_channel_0,  BAL_CHANNEL_0),
-	BATTERY_BALANCE_SYSFS_FIELD_RW(balance_channel_1,  BAL_CHANNEL_1),
-	BATTERY_BALANCE_SYSFS_FIELD_RW(factory_balance_en, FACTORY_BALANCE_EN),
-	BATTERY_BALANCE_SYSFS_FIELD_RO(bal_mode,           BAL_MODE),
-	BATTERY_BALANCE_SYSFS_FIELD_RO(gpio_val_bal,       GPIO_VAL_BAL),
+static struct power_sysfs_attr_info balance_sysfs_tbl[] = {
+	power_sysfs_attr_rw(balance, 0640, BATT_BAL_SYSFS_BAL_CHANNEL_0, balance_channel_0),
+	power_sysfs_attr_rw(balance, 0640, BATT_BAL_SYSFS_BAL_CHANNEL_1, balance_channel_1),
+	power_sysfs_attr_rw(balance, 0640, BATT_BAL_SYSFS_FACTORY_BALANCE_EN, factory_balance_en),
+	power_sysfs_attr_ro(balance, 0440, BATT_BAL_SYSFS_BAL_MODE, bal_mode),
+	power_sysfs_attr_ro(balance, 0440, BATT_BAL_SYSFS_GPIO_VAL_BAL, gpio_val_bal),
 };
 
 static struct attribute *balance_sysfs_attrs[ARRAY_SIZE(balance_sysfs_tbl) + 1];
@@ -866,51 +842,25 @@ static const struct attribute_group balance_sysfs_attr_group = {
 	.attrs = balance_sysfs_attrs,
 };
 
-static void balance_sysfs_init_attrs(void)
+static void balance_sysfs_create_group(struct device *dev)
 {
-	int i;
-	int limit = ARRAY_SIZE(balance_sysfs_tbl);
-
-	for (i = 0; i < limit; i++)
-		balance_sysfs_attrs[i] = &balance_sysfs_tbl[i].attr.attr;
-
-	balance_sysfs_attrs[limit] = NULL;
+	power_sysfs_init_attrs(balance_sysfs_attrs,
+		balance_sysfs_tbl, ARRAY_SIZE(balance_sysfs_tbl));
+	power_sysfs_create_link_group("hw_power", "charger", "battery_balance",
+		dev, &balance_sysfs_attr_group);
 }
 
-static struct balance_sysfs_info *balance_sysfs_lookup(const char *name)
+static void balance_sysfs_remove_group(struct device *dev)
 {
-	int i;
-	int limit = ARRAY_SIZE(balance_sysfs_tbl);
-
-	for (i = 0; i < limit; i++) {
-		if (!strncmp(name, balance_sysfs_tbl[i].attr.attr.name,
-			strlen(name)))
-			break;
-	}
-
-	if (i >= limit)
-		return NULL;
-
-	return &balance_sysfs_tbl[i];
-}
-
-static int balance_sysfs_create_group(struct batt_bal_info *di)
-{
-	balance_sysfs_init_attrs();
-	return sysfs_create_group(&di->dev->kobj, &balance_sysfs_attr_group);
-}
-
-static void balance_sysfs_remove_group(struct batt_bal_info *di)
-{
-	sysfs_remove_group(&di->dev->kobj, &balance_sysfs_attr_group);
+	power_sysfs_remove_link_group("hw_power", "charger", "battery_balance",
+		dev, &balance_sysfs_attr_group);
 }
 #else
-static int balance_sysfs_create_group(struct batt_bal_info *di)
+static inline void balance_sysfs_create_group(struct device *dev)
 {
-	return 0;
 }
 
-static void balance_sysfs_remove_group(struct batt_bal_info *di)
+static inline void balance_sysfs_remove_group(struct device *dev)
 {
 }
 #endif /* CONFIG_SYSFS */
@@ -918,16 +868,15 @@ static void balance_sysfs_remove_group(struct batt_bal_info *di)
 static ssize_t balance_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct balance_sysfs_info *info = NULL;
+	struct power_sysfs_attr_info *info = NULL;
 	struct batt_bal_info *di = dev_get_drvdata(dev);
 	int len = -1;
 	int fac_bal_en;
 
-	info = balance_sysfs_lookup(attr->attr.name);
-	if (!info || !di) {
-		hwlog_err("get sysfs entries failed\n");
+	info = power_sysfs_lookup_attr(attr->attr.name,
+		balance_sysfs_tbl, ARRAY_SIZE(balance_sysfs_tbl));
+	if (!info || !di)
 		return -EINVAL;
-	}
 
 	switch (info->name) {
 	case BATT_BAL_SYSFS_BAL_CHANNEL_0:
@@ -956,7 +905,6 @@ static ssize_t balance_sysfs_show(struct device *dev,
 			gpio_get_value(di->gpio_bat1_bal));
 		break;
 	default:
-		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -966,19 +914,18 @@ static ssize_t balance_sysfs_show(struct device *dev,
 static ssize_t balance_sysfs_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct balance_sysfs_info *info = NULL;
+	struct power_sysfs_attr_info *info = NULL;
 	struct batt_bal_info *di = dev_get_drvdata(dev);
 	long val;
 
-	info = balance_sysfs_lookup(attr->attr.name);
-	if (!info || !di) {
-		hwlog_err("get sysfs entries failed\n");
+	info = power_sysfs_lookup_attr(attr->attr.name,
+		balance_sysfs_tbl, ARRAY_SIZE(balance_sysfs_tbl));
+	if (!info || !di)
 		return -EINVAL;
-	}
 
 	switch (info->name) {
 	case BATT_BAL_SYSFS_BAL_CHANNEL_0:
-		if ((kstrtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
+		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) || (val < 0) || (val > 1))
 			return -EINVAL;
 
 		di->sysfs_data.bat0_bal_en = val;
@@ -990,7 +937,7 @@ static ssize_t balance_sysfs_store(struct device *dev,
 		hwlog_info("di->bat0_bal_en = [%ld]\n", val);
 		break;
 	case BATT_BAL_SYSFS_BAL_CHANNEL_1:
-		if ((kstrtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
+		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) || (val < 0) || (val > 1))
 			return -EINVAL;
 
 		di->sysfs_data.bat1_bal_en = val;
@@ -1002,7 +949,7 @@ static ssize_t balance_sysfs_store(struct device *dev,
 		hwlog_info("di->bat1_bal_en = [%ld]\n", val);
 		break;
 	case BATT_BAL_SYSFS_FACTORY_BALANCE_EN:
-		if ((kstrtol(buf, 10, &val) < 0) || (val < 0) || (val > 1))
+		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) || (val < 0) || (val > 1))
 			return -EINVAL;
 
 		hwlog_info("fac_bal_en = [%ld]\n", val);
@@ -1023,7 +970,6 @@ static ssize_t balance_sysfs_store(struct device *dev,
 			msecs_to_jiffies(0));
 		break;
 	default:
-		hwlog_err("invalid sysfs_name\n");
 		break;
 	}
 
@@ -1033,124 +979,46 @@ static ssize_t balance_sysfs_store(struct device *dev,
 static int battery_balance_gpio_init(struct batt_bal_info *di,
 	struct device_node *np)
 {
-	int ret;
+	if (power_gpio_config_output(np,
+		"gpio_bat0_balance_en", "gpio_bat0_balance_en", &di->gpio_bat0_bal, 0))
+		return -EINVAL;
 
-	di->gpio_bat0_bal = of_get_named_gpio(np,
-		"gpio_bat0_balance_en", 0);
-	hwlog_info("gpio_bat0_balance_en=%d\n", di->gpio_bat0_bal);
-
-	if (!gpio_is_valid(di->gpio_bat0_bal)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
-		return ret;
-	}
-
-	ret = gpio_request(di->gpio_bat0_bal, "gpio_bat0_balance_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		return ret;
-	}
-
-	ret = gpio_direction_output(di->gpio_bat0_bal, 0);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		return ret;
-	}
-
-	di->gpio_bat1_bal = of_get_named_gpio(np,
-		"gpio_bat1_balance_en", 0);
-	hwlog_info("gpio_bat1_balance_en=%d\n", di->gpio_bat1_bal);
-
-	if (!gpio_is_valid(di->gpio_bat1_bal)) {
-		hwlog_err("gpio is not valid\n");
-		ret = -EINVAL;
-		goto gpio_init_err;
-	}
-
-	ret = gpio_request(di->gpio_bat1_bal, "gpio_bat1_balance_en");
-	if (ret) {
-		hwlog_err("gpio request fail\n");
-		goto gpio_init_err;
-	}
-
-	ret = gpio_direction_output(di->gpio_bat1_bal, 0);
-	if (ret) {
-		hwlog_err("gpio set output fail\n");
-		goto gpio_init_err;
+	if (power_gpio_config_output(np,
+		"gpio_bat1_balance_en", "gpio_bat1_balance_en", &di->gpio_bat1_bal, 0)) {
+		gpio_free(di->gpio_bat0_bal);
+		return -EINVAL;
 	}
 
 	return 0;
-
-gpio_init_err:
-	gpio_free(di->gpio_bat0_bal);
-	return ret;
 }
 
 static void battery_balance_parse_dts(struct device_node *np,
 	struct batt_bal_info *di)
 {
-	int ret;
-
-	ret = of_property_read_u32(np, "bal_time", &di->bal_time);
-	if (ret) {
-		hwlog_err("bal_time dts read failed\n");
-		di->bal_time = DEFAULT_BAL_TIME;
-	}
-	hwlog_info("bal_time=%d\n", di->relax_time);
-
-	ret = of_property_read_u32(np, "relax_time", &di->relax_time);
-	if (ret) {
-		hwlog_err("relax_time dts read failed\n");
-		di->relax_time = DEFAULT_RALAX_TIME;
-	}
-	hwlog_info("relax_time=%d\n", di->relax_time);
-
-	ret = of_property_read_u32(np, "vol_diff_bal_start",
-		&di->vol_diff_bal_start);
-	if (ret) {
-		hwlog_err("vol_diff_bal_start dts read failed\n");
-		di->vol_diff_bal_start = DEFAULT_VOL_DIFF_BAL_START;
-	}
-	hwlog_info("vol_diff_bal_start=%d\n", di->vol_diff_bal_start);
-
-	ret = of_property_read_u32(np, "vol_diff_bal_stop",
-		&di->vol_diff_bal_stop);
-	if (ret) {
-		hwlog_err("vol_diff_bal_stop dts read failed\n");
-		di->vol_diff_bal_stop = DEFAULT_VOL_DIFF_BAL_STOP;
-	}
-	hwlog_info("vol_diff_bal_stop=%d\n", di->vol_diff_bal_stop);
-
-	ret = of_property_read_u32(np, "term_curr_pulse", &di->term_curr_pulse);
-	if (ret) {
-		hwlog_err("term_curr_pulse dts read failed\n");
-		di->term_curr_pulse = DEFAULT_TERM_CURR_PULSE;
-	}
-	hwlog_info("term_curr_pulse=%d\n", di->term_curr_pulse);
-
-	ret = of_property_read_u32(np, "vol_threshold", &di->vol_threshold);
-	if (ret) {
-		hwlog_err("vol_threshold dts read failed\n");
-		di->vol_threshold = DEFAULT_VOL_THRESHOLD;
-	}
-	hwlog_info("vol_threshold=%d\n", di->vol_threshold);
-
-	ret = of_property_read_u32(np, "r_mos_mohm", &di->r_mos_mohm);
-	if (ret || !di->r_mos_mohm) {
-		hwlog_err("r_mos_mohm dts read failed\n");
-		di->r_mos_mohm = R_MOS_MOHM;
-	}
-	hwlog_info("r_mos_mohm=%d\n", di->r_mos_mohm);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"bal_time", &di->bal_time, DEFAULT_BAL_TIME);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"relax_time", &di->relax_time, DEFAULT_RELAX_TIME);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vol_diff_bal_start", &di->vol_diff_bal_start,
+		DEFAULT_VOL_DIFF_BAL_START);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vol_diff_bal_stop", &di->vol_diff_bal_stop,
+		DEFAULT_VOL_DIFF_BAL_STOP);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"term_curr_pulse", &di->term_curr_pulse,
+		DEFAULT_TERM_CURR_PULSE);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vol_threshold", &di->vol_threshold, DEFAULT_VOL_THRESHOLD);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"r_mos_mohm", &di->r_mos_mohm, R_MOS_MOHM);
 }
 
 static int battery_balance_probe(struct platform_device *pdev)
 {
 	struct batt_bal_info *di = NULL;
 	struct device_node *np = NULL;
-	struct class *power_class = NULL;
 	int ret;
-
-	hwlog_info("probe begin\n");
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -1170,26 +1038,7 @@ static int battery_balance_probe(struct platform_device *pdev)
 	if (ret)
 		goto battery_balance_fail_0;
 
-	ret = balance_sysfs_create_group(di);
-	if (ret) {
-		hwlog_err("sysfs group create failed\n");
-		goto battery_balance_fail_1;
-	}
-
-	power_class = hw_power_get_class();
-	if (power_class) {
-		if (!charge_dev)
-			charge_dev = device_create(power_class, NULL, 0, NULL,
-				"charge");
-
-		ret = sysfs_create_link(&charge_dev->kobj, &di->dev->kobj,
-			"battery_balance");
-		if (ret) {
-			hwlog_err("create link fail\n");
-			goto battery_balance_fail_2;
-		}
-	}
-
+	balance_sysfs_create_group(di->dev);
 	wakeup_source_init(&di->wakelock,
 		"batt_bal_wakelock");
 	di->batt_bal_wq = create_singlethread_workqueue("battery_balance_wq");
@@ -1206,14 +1055,14 @@ static int battery_balance_probe(struct platform_device *pdev)
 	ret = series_batt_chg_state_notifier_register(&di->chg_state_nb);
 	if (ret < 0) {
 		hwlog_err("series_batt_chg_state_notifier failed\n");
-		goto battery_balance_fail_3;
+		goto battery_balance_fail_1;
 	}
 
 	di->usb_nb.notifier_call = charge_usb_notifier_call;
-	ret = hisi_charger_type_notifier_register(&di->usb_nb);
+	ret = chip_charger_type_notifier_register(&di->usb_nb);
 	if (ret < 0) {
 		hwlog_err("charger_type_notifier register failed\n");
-		goto battery_balance_fail_4;
+		goto battery_balance_fail_2;
 	} else {
 		hwlog_info("charger_type_notifier register ok\n");
 	}
@@ -1229,16 +1078,13 @@ static int battery_balance_probe(struct platform_device *pdev)
 	di->sysfs_data.bat1_bal_en = 0;
 	di->chg_done = FALSE;
 
-	hwlog_info("probe end\n");
 	return 0;
 
-battery_balance_fail_4:
-	series_batt_chg_state_notifier_unregister(&di->chg_state_nb);
-battery_balance_fail_3:
-	wakeup_source_trash(&di->wakelock);
 battery_balance_fail_2:
-	balance_sysfs_remove_group(di);
+	series_batt_chg_state_notifier_unregister(&di->chg_state_nb);
 battery_balance_fail_1:
+	wakeup_source_trash(&di->wakelock);
+	balance_sysfs_remove_group(di->dev);
 	gpio_free(di->gpio_bat0_bal);
 	gpio_free(di->gpio_bat1_bal);
 battery_balance_fail_0:
@@ -1252,10 +1098,8 @@ battery_balance_fail_0:
 #ifdef CONFIG_PM
 static int battery_balance_resume(struct platform_device *pdev)
 {
-	enum hisi_charger_type type = hisi_get_charger_type();
+	enum hisi_charger_type type = chip_get_charger_type();
 	struct batt_bal_info *di = platform_get_drvdata(pdev);
-
-	hwlog_info("resume begin\n");
 
 	if (!di)
 		return 0;
@@ -1272,7 +1116,6 @@ static int battery_balance_resume(struct platform_device *pdev)
 		schedule_delayed_work(&di->charge_bal_work,
 			msecs_to_jiffies(0));
 
-	hwlog_info("resume end\n");
 	return 0;
 }
 
@@ -1280,8 +1123,6 @@ static int battery_balance_suspend(struct platform_device *pdev,
 	pm_message_t state)
 {
 	struct batt_bal_info *di = platform_get_drvdata(pdev);
-
-	hwlog_info("suspend begin\n");
 
 	if (!di)
 		return 0;
@@ -1292,8 +1133,6 @@ static int battery_balance_suspend(struct platform_device *pdev,
 	cancel_delayed_work(&di->charge_bal_work);
 	cancel_work(&di->bal_fsm_work);
 	hrtimer_cancel(&di->timer);
-
-	hwlog_info("suspend end\n");
 	return 0;
 }
 #endif /* CONFIG_PM */
@@ -1302,12 +1141,11 @@ static int battery_balance_remove(struct platform_device *pdev)
 {
 	struct batt_bal_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
-	hisi_charger_type_notifier_unregister(&di->usb_nb);
+	balance_sysfs_remove_group(di->dev);
+	chip_charger_type_notifier_unregister(&di->usb_nb);
 	wakeup_source_trash(&di->wakelock);
 	platform_set_drvdata(pdev, NULL);
 
@@ -1320,7 +1158,6 @@ static int battery_balance_remove(struct platform_device *pdev)
 	kfree(di);
 	g_balance_di = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

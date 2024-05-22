@@ -602,6 +602,11 @@ static inline bool __wbt_should_throttle(struct rq_wb *rwb, unsigned int opf)
 
 static inline bool wbt_should_throttle(struct rq_wb *rwb, struct bio *bio)
 {
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	if (bio->bi_disk && bio->bi_disk->queue &&
+		blk_queue_query_unistore_enable(bio->bi_disk->queue))
+		return __wbt_should_throttle(rwb, bio->mas_bio.bi_opf);
+#endif
 	return __wbt_should_throttle(rwb, bio->bi_opf);
 }
 
@@ -850,12 +855,22 @@ static int wbt_data_dir(const struct request *rq)
 
 	if (op == REQ_OP_READ) {
 #ifdef CONFIG_BLK_DEV_THROTTLING
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		if (blk_queue_query_unistore_enable(rq->q) &&
+			(rq->issue_stat.bi_opf & REQ_FG))
+			return READ_FG;
+#endif
 		if (rq->cmd_flags & REQ_FG)
 			return READ_FG;
 #endif
 		return READ;
 	} else if (op == REQ_OP_WRITE || op == REQ_OP_FLUSH) {
 #ifdef CONFIG_BLK_DEV_THROTTLING
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		if (blk_queue_query_unistore_enable(rq->q) &&
+			(rq->issue_stat.bi_opf & REQ_FG))
+			return WRITE_FG;
+#endif
 		if (rq->cmd_flags & REQ_FG)
 			return WRITE_FG;
 #endif

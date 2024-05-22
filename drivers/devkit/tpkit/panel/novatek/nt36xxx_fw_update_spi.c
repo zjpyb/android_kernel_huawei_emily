@@ -36,7 +36,8 @@ extern struct ts_kit_platform_data g_ts_kit_platform_data;
 
 #include "nt36xxx.h"
 
-
+#define FLASH_SECTOR_SIZE 4096
+#define NVT_FLASH_END_FLAG_LEN 3
 #define FW_BIN_SIZE_116KB		(118784)
 #define FW_BIN_SIZE FW_BIN_SIZE_116KB
 #define FW_BIN_VER_OFFSET		(0x1A000)
@@ -63,8 +64,10 @@ enum SPI_COM_MODE {
 #define NVT_DUMP_PARTITION_LEN  (1024)
 #define NVT_DUMP_PARTITION_PATH "/data/local/tmp"
 
-struct timeval start, end;
-const struct firmware *fw_entry = NULL;
+static struct timeval start;
+static struct timeval g_end;
+static const struct firmware *fw_entry;
+static size_t fw_need_write_size;
 static uint8_t *fwbuf = NULL;
 
 struct nvt_ts_bin_map {
@@ -78,6 +81,39 @@ struct nvt_ts_bin_map {
 static struct nvt_ts_bin_map *bin_map;
 
 extern struct nvt_ts_data *nvt_ts;
+
+static int32_t nvt_get_fw_need_write_size(const struct firmware *fw_entry)
+{
+	size_t i;
+	size_t total_sectors_to_check;
+
+	total_sectors_to_check = fw_entry->size / FLASH_SECTOR_SIZE;
+
+	for (i = total_sectors_to_check; i > 0; i--) {
+		/* check if there is end flag "NVT" at the end of this sector */
+		if (strncmp(&fw_entry->data[i * FLASH_SECTOR_SIZE -
+			NVT_FLASH_END_FLAG_LEN],
+			"NVT", NVT_FLASH_END_FLAG_LEN) == 0) {
+			fw_need_write_size = i * FLASH_SECTOR_SIZE;
+			TS_LOG_INFO("fw_need_write_size = %zu 0x%zx, end\n",
+				fw_need_write_size, fw_need_write_size);
+			return 0;
+		}
+
+		/* check if there is end flag "MOD" at the end of this sector */
+		if (strncmp(&fw_entry->data[i * FLASH_SECTOR_SIZE -
+			NVT_FLASH_END_FLAG_LEN],
+			"MOD", NVT_FLASH_END_FLAG_LEN) == 0) {
+			fw_need_write_size = i * FLASH_SECTOR_SIZE;
+			TS_LOG_INFO("fw_need_write_size = %zu 0x%zx, MOD end\n",
+				fw_need_write_size, fw_need_write_size);
+			return 0;
+		}
+	}
+
+	TS_LOG_ERR("end flag \"NVT\" \"MOD\" not found\n");
+	return -EINVAL;
+}
 
 /*******************************************************
 Description:
@@ -93,7 +129,7 @@ static int32_t nvt_download_init(void)
 	//TS_LOG_INFO("NVT_TANSFER_LEN = %ld\n", NVT_TANSFER_LEN);
 
 	if (fwbuf == NULL) {
-		fwbuf = (uint8_t *)kzalloc((NVT_TANSFER_LEN+1), GFP_KERNEL);
+		fwbuf = (uint8_t *)kzalloc((nvt_ts->bus_transfer_len + 1), GFP_KERNEL);
 		if(fwbuf == NULL) {
 			TS_LOG_ERR("kzalloc for fwbuf failed!\n");
 			return -ENOMEM;
@@ -257,7 +293,7 @@ static int32_t update_firmware_request(char *filename)
 	}
 
 	while (1) {
-		TS_LOG_INFO("filename is %s\n", filename);
+		TS_LOG_INFO("update_firmware_request enter\n");
 
 		ret = request_firmware(&fw_entry, filename, &nvt_ts->ts_dev->dev);
 		if (ret) {
@@ -265,19 +301,38 @@ static int32_t update_firmware_request(char *filename)
 			goto request_fail;
 		}
 
-		// check bin file size (116kb)
-		if (fw_entry->size != FW_BIN_SIZE) {
-			TS_LOG_ERR("bin file size not match. (%zu)\n", fw_entry->size);
-			ret = -ENOEXEC;
-			goto invalid;
-		}
+		if (nvt_ts->chip_data->ic_type == NT36675) {
+			if (nvt_get_fw_need_write_size(fw_entry)) {
+				TS_LOG_ERR("get fw need to write size fail!\n");
+				ret = -EINVAL;
+				goto invalid;
+			}
+			if ((*(fw_entry->data + fw_need_write_size -
+				FLASH_SECTOR_SIZE) + *(fw_entry->data +
+				fw_need_write_size - FLASH_SECTOR_SIZE + 1))
+				!= 0xFF) {
+				TS_LOG_ERR("FW_VER + FW_VER_BAR should be 0xFF\n");
+				ret = -ENOEXEC;
+				goto invalid;
+			}
+		} else {
+			/* check bin file size (116kb) */
+			if (fw_entry->size != FW_BIN_SIZE) {
+				TS_LOG_ERR("bin file size not match, %zu\n",
+					fw_entry->size);
+				ret = -ENOEXEC;
+				goto invalid;
+			}
 
-		// check if FW version add FW version bar equals 0xFF
-		if (*(fw_entry->data + FW_BIN_VER_OFFSET) + *(fw_entry->data + FW_BIN_VER_BAR_OFFSET) != 0xFF) {
-			TS_LOG_ERR("bin file FW_VER + FW_VER_BAR should be 0xFF!\n");
-			TS_LOG_ERR("FW_VER=0x%02X, FW_VER_BAR=0x%02X\n", *(fw_entry->data+FW_BIN_VER_OFFSET), *(fw_entry->data+FW_BIN_VER_BAR_OFFSET));
-			ret = -ENOEXEC;
-			goto invalid;
+			/* check if FW version add FW version bar equals 0xFF */
+			if ((*(fw_entry->data + FW_BIN_VER_OFFSET) +
+				*(fw_entry->data + FW_BIN_VER_BAR_OFFSET)) != 0xFF) {
+				TS_LOG_ERR("FW_VER=0x%02X, FW_VER_BAR=0x%02X\n",
+					*(fw_entry->data+FW_BIN_VER_OFFSET),
+					*(fw_entry->data+FW_BIN_VER_BAR_OFFSET));
+				ret = -ENOEXEC;
+				goto invalid;
+			}
 		}
 
 		/* BIN Header Parser */
@@ -397,7 +452,7 @@ static int32_t nvt_dump_partition(void)
 		TS_LOG_ERR("dump len %d is larger than buffer size %ld\n",
 				NVT_DUMP_PARTITION_LEN, sizeof(nvt_ts->rbuf));
 		return -EINVAL;
-	} else if (NVT_DUMP_PARTITION_LEN >= NVT_TANSFER_LEN) {
+	} else if (NVT_DUMP_PARTITION_LEN >= nvt_ts->bus_transfer_len) {
 		TS_LOG_ERR("dump len %d is larger than NVT_TANSFER_LEN\n", NVT_DUMP_PARTITION_LEN);
 		return -EINVAL;
 	}
@@ -460,7 +515,7 @@ return:
 static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 {
 	uint32_t list = 0;
-	char *name;
+	char *name = NULL;
 	uint32_t BIN_addr, SRAM_addr, size;
 	uint32_t i = 0;
 	uint16_t len = 0;
@@ -468,7 +523,7 @@ static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 	int32_t ret = 0;
 	int32_t i2c_ret;
 
-	memset(fwbuf, 0, (NVT_TANSFER_LEN+1));
+	memset(fwbuf, 0, (nvt_ts->bus_transfer_len + 1));
 
 	for (list = 0; list < partition; list++) {
 		/* initialize variable */
@@ -495,13 +550,13 @@ static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 			size = size +1;
 
 		/* write data to SRAM */
-		if (size % NVT_TANSFER_LEN)
-			count = (size / NVT_TANSFER_LEN) + 1;
+		if (size % nvt_ts->bus_transfer_len)
+			count = (size / nvt_ts->bus_transfer_len) + 1;
 		else
-			count = (size / NVT_TANSFER_LEN);
+			count = (size / nvt_ts->bus_transfer_len);
 
 		for (i = 0 ; i < count ; i++) {
-			len = (size < NVT_TANSFER_LEN) ? size : NVT_TANSFER_LEN;
+			len = (size < nvt_ts->bus_transfer_len) ? size : nvt_ts->bus_transfer_len;
 
 			//---set xdata index to start address of SRAM---
 			nvt_set_page(SRAM_addr);
@@ -514,9 +569,9 @@ static int32_t nvt_write_firmware(const u8 *fwdata, size_t fwsize)
 			if (i2c_ret)
 				TS_LOG_ERR("%s: i2c write error\n", __func__);
 
-			SRAM_addr += NVT_TANSFER_LEN;
-			BIN_addr += NVT_TANSFER_LEN;
-			size -= NVT_TANSFER_LEN;
+			SRAM_addr += nvt_ts->bus_transfer_len;
+			BIN_addr += nvt_ts->bus_transfer_len;
+			size -= nvt_ts->bus_transfer_len;
 		}
 	}
 
@@ -554,10 +609,14 @@ static void nvt_set_bld_crc_bank(uint32_t DES_ADDR, uint32_t SRAM_ADDR,
 	fwbuf[0] = LENGTH_ADDR & 0x7F;
 	fwbuf[1] = (size) & 0xFF;
 	fwbuf[2] = (size >> 8) & 0xFF;
-	ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 3);
+	if (nvt_ts->chip_data->ic_type == NT36675) {
+		fwbuf[3] = (size >> 16) & 0x01;
+		ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 4);
+	} else {
+		ret = novatek_ts_kit_write(I2C_FW_Address, fwbuf, 3);
+	}
 	if (ret)
-		TS_LOG_ERR("%s : nvt_set_page error\n", __func__);
-
+		TS_LOG_ERR("set_bld_crc_bank: write length FAIL\n");
 	/* write golden dlm checksum */
 	//nvt_set_page(G_CHECKSUM_ADDR);
 	fwbuf[0] = G_CHECKSUM_ADDR & 0x7F;
@@ -642,7 +701,7 @@ static int32_t nvt_download_firmware_hw_crc(void)
 
 		ret = nvt_kit_check_fw_reset_state(RESET_STATE_INIT);
 		if (ret) {
-			TS_LOG_ERR("nvt_kit_check_fw_reset_state failed. (%d)\n", ret);
+			TS_LOG_ERR("kit_check_fw_reset_state failed, %d\n", ret);
 			goto fail;
 		} else {
 			break;
@@ -656,7 +715,7 @@ fail:
 		}
 	}
 
-	do_gettimeofday(&end);
+	do_gettimeofday(&g_end);
 
 	return ret;
 }
@@ -698,7 +757,8 @@ int32_t nvt_kit_fw_update_boot_spi(char *file_name)
 	}
 
 	TS_LOG_INFO("Update firmware success! <%ld us>\n",
-			(end.tv_sec - start.tv_sec)*1000000L + (end.tv_usec - start.tv_usec));
+		(g_end.tv_sec - start.tv_sec)*1000000L +
+		(g_end.tv_usec - start.tv_usec));
 
 	/* Get FW Info */
 	ret = nvt_kit_get_fw_info();

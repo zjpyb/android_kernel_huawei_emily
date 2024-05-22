@@ -481,7 +481,7 @@ static void bu27006_handle_als(struct bu27006_ctx *ctx)
 		ctx->alg_ctx.data.ir = COMB_WORD(adc[7], adc[6]);
 		ctx->alg_ctx.rgbc_valid = false;
 
-		hwlog_debug("%s r=%d, g=%d, b=%d, ir=%d\n", __func__,
+		hwlog_info("%s r=%d, g=%d, b=%d, ir=%d\n", __func__,
 			ctx->alg_ctx.data.r, ctx->alg_ctx.data.g,
 			ctx->alg_ctx.data.b, ctx->alg_ctx.data.ir);
 	} else {
@@ -1542,7 +1542,7 @@ static int __init rohm_bu27006_init(void)
 	int rc;
 	struct device_node *np = NULL;
 
-	hwlog_warn("%s\n", __func__);
+	hwlog_info("%s\n", __func__);
 	np = of_find_node_by_name(NULL, "bu27006");
 	if (!np) {
 		hwlog_err("bu27006 node NOT found\n");
@@ -1556,7 +1556,7 @@ static int __init rohm_bu27006_init(void)
 
 static void __exit rohm_bu27006_exit(void)
 {
-	hwlog_warn("%s\n", __func__);
+	hwlog_info("%s\n", __func__);
 	i2c_del_driver(&rohm_bu27006_driver);
 }
 

@@ -14,6 +14,7 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/bio.h>
+#include <linux/blkdev.h>
 #include <linux/dcache.h>
 #include <crypto/skcipher.h>
 #include <crypto/aead.h>
@@ -21,13 +22,13 @@
 
 #define FS_CRYPTO_BLOCK_SIZE		16
 
-
 /* Encryption parameters */
 #define FS_IV_SIZE                     16
 #define FS_KEY_DERIVATION_NONCE_SIZE           64
 #define FS_KEY_DERIVATION_IV_SIZE              16
 #define FS_KEY_DERIVATION_TAG_SIZE             16
 #define FS_KEY_DERIVATION_CIPHER_SIZE          (64 + 16) /* nonce + tag */
+#define METADATA_BYTE_IN_KDF                   16
 
 /**
  * Encryption context for inode
@@ -66,12 +67,14 @@ struct fscrypt_info {
 	void *ci_key;
 	int ci_key_len;
 	int ci_key_index;
-	u8  ci_hw_enc_flag;
+	u8 ci_metadata[METADATA_BYTE_IN_KDF];
+	u8 ci_hw_enc_flag;
 };
 
-#ifdef CONFIG_HWAA
-#define HWAA_XATTR_NAME "hwaa"
-#define HWAA_XATTR_ENABLE_FLAG 0x0010
+#ifdef CONFIG_HWDPS
+#define HWDPS_XATTR_NAME "hwdps"
+#define HWDPS_XATTR_ENABLE_FLAG_NEW 0x0020
+#define HWDPS_XATTR_ENABLE_FLAG 0x0010
 #endif
 
 static inline void *fscrypt_ci_key(struct inode *inode)
@@ -98,6 +101,15 @@ static inline int fscrypt_ci_key_index(struct inode *inode)
 	return inode->i_crypt_info->ci_key_index;
 #else
 	return -1;
+#endif
+}
+
+static inline u8 *fscrypt_ci_metadata(struct inode *inode)
+{
+#if IS_ENABLED(CONFIG_FS_ENCRYPTION)
+	return inode->i_crypt_info->ci_metadata;
+#else
+	return NULL;
 #endif
 }
 
@@ -163,13 +175,62 @@ struct fscrypt_operations {
 	unsigned int max_namelen;
 	int (*get_keyinfo)(struct inode *, void *, int *);
 	int (*is_file_sdp_encrypted)(struct inode *);
-#ifdef CONFIG_HWAA
-	int (*set_hwaa_attr)(struct inode *, const void *, size_t, void *);
-	int (*update_hwaa_attr)(struct inode *, const void *, size_t, void *);
-	int (*get_hwaa_attr)(struct inode *, void *, size_t);
-	int (*get_hwaa_flags)(struct inode *, void *, u32 *);
-	int (*set_hwaa_flags)(struct inode *, void *, u32 *);
+#ifdef CONFIG_HWDPS
+	int (*set_hwdps_attr)(struct inode *, const void *, size_t, void *);
+	int (*set_hwdps_flags)(struct inode *, void *, u32 *);
+	int (*update_hwdps_attr)(struct inode *, const void *, size_t, void *);
+	int (*get_hwdps_attr)(struct inode *, void *, size_t, u32, struct page *);
+	int (*get_hwdps_flags)(struct inode *, void *, u32 *);
 #endif
+	bool (*encrypt_file_check)(struct inode *);
+	enum encrypto_type (*get_encrypt_type)(struct inode *);
+	int (*get_metadata_context)(struct inode *, void *, size_t, void *);
+	int (*get_ex_metadata_context)(struct inode *, void *, size_t, void *);
+	int (*set_ex_metadata_context)(struct inode *, const void *, size_t, void *);
+	int (*is_file_ece_encrypted)(struct inode *);
+	/*
+	 * This interface is just for compatibility of F2FS.
+	 * It should be deleted after F2FS optimise
+	 */
+	int (*open_metadata)(struct inode *, struct fscrypt_info *);
+	void (*get_generate_nonce)(u8 *, struct inode *, size_t);
 };
+
+#ifndef F2FS_FS_SDP_ENCRYPTION
+#define F2FS_FS_SDP_ENCRYPTION 1
+#endif
+
+#define CI_KEY_LEN_NEW 48
+#define FILE_ENCRY_TYPE_BEGIN_BIT 8
+#define FILE_ENCRY_TYPE_MASK 0xFF
+
+enum encrypto_type {
+	PLAIN = 0,
+	CD,
+	ECE,
+	SECE,
+};
+
+extern int fscrypt_generate_metadata_nonce(u8 *nonce,
+				struct inode *inode, size_t len);
+extern int fscrypt_get_metadata(struct inode *inode,
+				 struct fscrypt_info *ci_info);
+extern int fscrypt_new_ece_metadata(struct inode *inode,
+			struct fscrypt_info *ci_info, void *fs_data);
+extern int fscrypt_new_sece_metadata(struct inode *inode,
+			struct fscrypt_info *ci_info, void *fs_data);
+extern int fscrypt_get_ece_metadata(struct inode *inode,
+			struct fscrypt_info *ci_info, void *fs_data, bool create);
+extern int fscrypt_get_sece_metadata(struct inode *inode,
+			struct fscrypt_info *ci_info, void *fs_data, bool create);
+extern int fscrypt_check_sece_metadata(struct inode *inode,
+			struct fscrypt_info *ci_info, void *fs_data);
+extern int fscrypt_vm_op_check(struct inode *inode);
+extern int fscrypt_lld_protect(const struct request *request);
+
+extern int rw_begin(struct file *file);
+extern void rw_finish(int read_write, struct file *file);
+extern void fbe3_lock_in(void);
+extern void fbe3_unlock_in(void);
 
 #endif	/* _LINUX_FSCRYPT_COMMON_H */

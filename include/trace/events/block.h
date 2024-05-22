@@ -169,8 +169,8 @@ DECLARE_EVENT_CLASS(block_rq,
 
 		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, blk_rq_bytes(rq));
 		__get_str(cmd)[0] = '\0';
-#ifdef CONFIG_HISI_BLK
-		memcpy(__entry->comm, rq->hisi_req.task_comm, TASK_COMM_LEN);
+#ifdef CONFIG_MAS_BLK
+		memcpy(__entry->comm, rq->mas_req.task_comm, TASK_COMM_LEN);
 #else
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 #endif
@@ -639,11 +639,11 @@ TRACE_EVENT(block_rq_remap,
 		  (unsigned long long)__entry->old_sector, __entry->nr_bios)
 );
 
-#ifdef CONFIG_HISI_IO_TRACE
-#define HISI_IO_TRACE_BUF_LEN   128
-TRACE_EVENT(hisi_io,  /* [false alarm]:debug code  */
+#ifdef CONFIG_MAS_IO_TRACE
+#define HISI_IO_TRACE_LEN   128
+TRACE_EVENT(hisi_io,
 
-	TP_PROTO(const char *func, char *str_info),
+	TP_PROTO(const char *func, const char *str_info, const unsigned int len),
 
 	TP_ARGS(func, str_info),
 
@@ -659,7 +659,7 @@ TRACE_EVENT(hisi_io,  /* [false alarm]:debug code  */
 
 	TP_printk("[%s]:%s", __get_str(info_func), __get_str(info_string)));
 
-TRACE_EVENT(block_submit_bio,  /* [false alarm]:debug code  */
+TRACE_EVENT(block_submit_bio,
 
 	TP_PROTO(struct bio *bio, int enter),
 
@@ -688,7 +688,7 @@ TRACE_EVENT(block_submit_bio,  /* [false alarm]:debug code  */
 		  (unsigned long long)__entry->sector,
 		  __entry->nr_sector, __entry->is_enter, __entry->comm)
 );
-#endif /* CONFIG_HISI_IO_TRACE */
+#endif /* CONFIG_MAS_IO_TRACE */
 #endif /* _TRACE_BLOCK_H */
 
 /* This part must be outside protection */

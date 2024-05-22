@@ -1,9 +1,5 @@
 /*
- * aux_idebug.c
- *
- * aux grp debug header
- *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2021. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,6 +10,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
+ * aux grp debug header
  */
 
 #include <linux/proc_fs.h>
@@ -22,33 +19,39 @@
 
 #include "include/aux_info.h"
 #include "include/aux.h"
+#include "include/set_rtg.h"
 
 /*
  * This allows printing both to /proc/sched_debug and
  * to the console
  */
-#define SEQ_printf(m, x...)			\
-do {						\
-	if (m)					\
-		seq_printf(m, x);		\
-	else					\
-		printk(x);			\
+#define aux_seq_printf(sfile, info...) \
+do { \
+	if (sfile) \
+		seq_printf(sfile, info); \
+	else \
+		printk(info); \
 } while (0)
 
-static inline void print_aux_info(struct seq_file *m,
-		struct related_thread_group *grp)
+static void print_aux_info(const struct seq_file *sfile,
+	const struct related_thread_group *grp)
 {
 	struct aux_info *aux_info = (struct aux_info *) grp->private_data;
 
-	SEQ_printf(m, "AUX_INFO      : MIN_UTIL:%d##BOOST_UTIL:%d##PRIO:%d\n",
-			aux_info->min_util,
-			aux_info->boost_util,
-			aux_info->prio);
-	SEQ_printf(m, "AUX_CLUSTER   : %d\n",
-			grp->preferred_cluster ? grp->preferred_cluster->id : -1);
+	aux_seq_printf(sfile, "AUX_INFO    : MIN_UTIL:%d##BOOST_UTIL:%d##PRIO:%d\n",
+		aux_info->min_util,
+		aux_info->boost_util,
+		aux_info->prio);
+#ifdef CONFIG_HW_RTG_SCHED
+	aux_seq_printf(sfile, "AUX_CLUSTER : %d\n",
+		grp->preferred_cluster ? grp->preferred_cluster->id : -1);
+#endif
+#ifdef CONFIG_HW_RTG_SCHED_RT_THREAD_LIMIT
+	aux_seq_printf(sfile, "RTG_RT_THREAD_NUM : %d/%d\n", read_rtg_rt_thread_num(), RTG_MAX_RT_THREAD_NUM);
+#endif
 }
 
-static inline char aux_task_state_to_char(struct task_struct *tsk)
+static char aux_task_state_to_char(const struct task_struct *tsk)
 {
 	static const char state_char[] = "RSDTtXZPI";
 	unsigned int tsk_state = READ_ONCE(tsk->state);
@@ -63,26 +66,40 @@ static inline char aux_task_state_to_char(struct task_struct *tsk)
 	return state_char[fls(state)];
 }
 
-
-static inline void print_aux_task_header(struct seq_file *m, char *header, int run, int nr)
+static void print_aux_task_header(const struct seq_file *sfile,
+	const char *header, int run, int nr)
 {
-	SEQ_printf(m,
+	aux_seq_printf(sfile,
 		"%s   : %d/%d\n"
-		"STATE		COMM	   PID	PRIO	CPU\n"
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+		"STATE		COMM	TGID	PID	PRIO	  CPU	  UTIL\n"
+#else
+		"STATE		COMM	TGID	PID	PRIO	  CPU\n"
+#endif
 		"---------------------------------------------------------\n",
 		header, run, nr);
 }
 
-static inline void print_aux_task(struct seq_file *m, struct task_struct *p)
+static void print_aux_task(const struct seq_file *sfile,
+	const struct task_struct *p)
 {
-	SEQ_printf(m, "%5c %15s %5d %5d %5d(%*pbl)\n",
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+	aux_seq_printf(sfile, "%5c %15s %6d %6d %6d %5d(%*pbl) %8d\n",
+#else
+	aux_seq_printf(sfile, "%5c %15s %6d %6d %6d %5d(%*pbl)\n",
+#endif
 		aux_task_state_to_char(p), p->comm,
-		p->pid, p->prio,
+		p->tgid, p->pid, p->prio,
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+		task_cpu(p), cpumask_pr_args(&p->cpus_allowed),
+		p->uclamp.min_util);
+#else
 		task_cpu(p), cpumask_pr_args(&p->cpus_allowed));
+#endif
 }
 
-static inline void print_aux_threads(struct seq_file *m,
-		struct related_thread_group *grp)
+static void print_aux_threads(const struct seq_file *sfile,
+	const struct related_thread_group *grp)
 {
 	struct task_struct *p = NULL;
 	int nr_thread = 0;
@@ -90,36 +107,36 @@ static inline void print_aux_threads(struct seq_file *m,
 	list_for_each_entry(p, &grp->tasks, grp_list) {
 		nr_thread++;
 	}
-	print_aux_task_header(m, "AUX_THREADS", grp->nr_running, nr_thread);
+	print_aux_task_header(sfile, "AUX_THREADS", grp->nr_running, nr_thread);
 	list_for_each_entry(p, &grp->tasks, grp_list) {
 		if (!p)
 			continue;
 		get_task_struct(p);
-		print_aux_task(m, p);
+		print_aux_task(sfile, p);
 		put_task_struct(p);
 	}
 }
 
-static int sched_aux_debug_show(struct seq_file *m, void *v)
+static int sched_aux_debug_show(struct seq_file *sfile, void *v)
 {
 	struct related_thread_group *grp = NULL;
 	unsigned long flags;
 
 	grp = lookup_related_thread_group(DEFAULT_AUX_ID);
 	if (!grp) {
-		SEQ_printf(m, "IPROVISION AUX none\n");
+		aux_seq_printf(sfile, "IPROVISION AUX none\n");
 		return 0;
 	}
 
 	raw_spin_lock_irqsave(&grp->lock, flags);
 	if (list_empty(&grp->tasks)) {
 		raw_spin_unlock_irqrestore(&grp->lock, flags);
-		SEQ_printf(m, "IPROVISION AUX tasklist empty\n");
+		aux_seq_printf(sfile, "IPROVISION AUX tasklist empty\n");
 		return 0;
 	}
 
-	print_aux_info(m, grp);
-	print_aux_threads(m, grp);
+	print_aux_info(sfile, grp);
+	print_aux_threads(sfile, grp);
 	raw_spin_unlock_irqrestore(&grp->lock, flags);
 
 	return 0;
@@ -137,15 +154,15 @@ static int sched_aux_debug_open(struct inode *inode, struct file *filp)
 }
 
 static const struct file_operations sched_aux_debug_fops = {
-	.open		= sched_aux_debug_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= sched_aux_debug_release,
+	.open = sched_aux_debug_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = sched_aux_debug_release,
 };
 
 static int __init init_aux_sched_debug_procfs(void)
 {
-	struct proc_dir_entry *pe;
+	struct proc_dir_entry *pe = NULL;
 
 	pe = proc_create("sched_aux_debug",
 		0444, NULL, &sched_aux_debug_fops);

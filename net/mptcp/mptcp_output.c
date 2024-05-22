@@ -682,6 +682,14 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 	tcp_mstamp_refresh(meta_tp);
 #endif
 
+	if (inet_csk(meta_sk)->icsk_retransmits) {
+		/* If the timer already once fired, retransmit the head of the
+		 * queue to unblock us ASAP.
+		 */
+		if (meta_tp->packets_out && !mpcb->infinite_mapping_snd)
+			mptcp_retransmit_skb(meta_sk, tcp_write_queue_head(meta_sk));
+	}
+
 	while ((skb = mpcb->sched_ops->next_segment(meta_sk, &reinject, &subsk,
 						    &sublimit))) {
 		unsigned int limit;
@@ -732,16 +740,10 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 		 * to reinjection to recover from a window-stall or reduce latency.
 		 * Therefore, Nagle check should be disabled in that case.
 		 */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
-		if (unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
-					     (tcp_skb_is_last(meta_sk, skb) ?
-					      nonagle : TCP_NAGLE_PUSH))))
-#else
 		if (!reinject &&
 		    unlikely(!tcp_nagle_test(meta_tp, skb, mss_now,
 					     (tcp_skb_is_last(meta_sk, skb) ?
 					      nonagle : TCP_NAGLE_PUSH))))
-#endif
 			break;
 
 		limit = mss_now;
@@ -782,9 +784,10 @@ bool mptcp_write_xmit(struct sock *meta_sk, unsigned int mss_now, int nonagle,
 #else
 		meta_tp->lsndtime = tcp_time_stamp;
 
-		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
 		skb_mstamp_get(&skb->skb_mstamp);
 #endif
+		path_mask |= mptcp_pi_to_flag(subtp->mptcp->path_index);
+
 		if (!reinject) {
 			mptcp_check_sndseq_wrap(meta_tp,
 						TCP_SKB_CB(skb)->end_seq -
@@ -1352,8 +1355,7 @@ void mptcp_send_active_reset(struct sock *meta_sk, gfp_t priority)
 	/* May happen if no subflow is in an appropriate state, OR
 	 * we are in infinite mode or about to go there - just send a reset
 	 */
-	if (!sk || mpcb->infinite_mapping_snd || mpcb->send_infinite_mapping ||
-	    mpcb->infinite_mapping_rcv) {
+	if (!sk || mptcp_in_infinite_mapping_weak(mpcb)) {
 
 		/* tcp_done must be handled with bh disabled */
 		if (!in_serving_softirq())
@@ -1554,6 +1556,8 @@ int mptcp_retransmit_skb(struct sock *meta_sk, struct sk_buff *skb)
 		limit = tcp_mss_split_point(meta_sk, skb, mss_now,
 					    UINT_MAX / mss_now,
 					    TCP_NAGLE_OFF);
+
+	limit = min(limit, tcp_wnd_end(meta_tp) - TCP_SKB_CB(skb)->seq);
 
 	if (skb->len > limit &&
 	    unlikely(mptcp_fragment(meta_sk, skb, limit,

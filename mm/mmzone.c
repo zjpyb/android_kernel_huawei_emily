@@ -10,7 +10,7 @@
 #include <linux/mm.h>
 #include <linux/mmzone.h>
 #ifdef CONFIG_TASK_PROTECT_LRU
-#include <linux/hisi/protect_lru.h>
+#include <linux/protect_lru.h>
 #endif
 
 struct pglist_data *first_online_pgdat(void)

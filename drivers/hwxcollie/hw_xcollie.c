@@ -178,7 +178,7 @@ int hw_xcollie_callback_should_limit(int flag)
 int hw_dump_pid_stack(pid_t pid)
 {
 	struct stack_trace trace;
-	unsigned long *entries = NULL;
+	uintptr_t *entries = NULL;
 	int err;
 	int i;
 	struct task_struct *task = NULL;
@@ -496,7 +496,7 @@ static void hw_xcollie_sleep(unsigned long second)
 		msecs = (delta.tv_sec % TEN_SECOND) * THOUSAND +
 			delta.tv_nsec / MILLION;
 
-		if (msecs > (TEN_SECOND*THOUSAND)) {
+		if (msecs > (TEN_SECOND * THOUSAND)) {
 			pr_err("hwxcollie: xcollie_sleep ovt %u\n", msecs);
 			break;
 		}
@@ -549,7 +549,7 @@ static int hw_xcollie_thread_handle(void *arg)
 	pr_info("hwxcollie: thread start run\n");
 
 	while (1) {
-		msleep(HW_TIMERRING_CHECK_INTVAL * THOUSAND);
+		msleep(HW_XCOLLIE_CHECK_PERIOD * HW_TIMERRING_CHECK_INTVAL * THOUSAND);
 
 #ifdef HW_XCOLLIE_FAULT_INJECT
 		struct timespec t1, t2, t3;

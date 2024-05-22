@@ -1,5 +1,19 @@
 #ifndef __HICODEC_DEBUG_H__
 #define __HICODEC_DEBUG_H__
+#include "soc_acpu_baseaddr_interface.h"
+
+#define ASP_CODECLESS_START_OFFSET 0x00
+#define ASP_CODECLESS_END_OFFSET   0x28C
+#define PAGE_CODECLESS_BASE_ADDR (SOC_ACPU_ASP_CODEC_BASE_ADDR)
+#define DBG_CODECLESS_START_ADDR \
+	(PAGE_CODECLESS_BASE_ADDR + ASP_CODECLESS_START_OFFSET)
+#define DBG_CODECLESS_END_ADDR (PAGE_CODECLESS_BASE_ADDR + ASP_CODECLESS_END_OFFSET)
+
+enum asp_codec_type {
+	ASP_CODECLESS = 0,
+	ASP_CODEC,
+	ASP_CODEC_CNT,
+};
 
 enum {
 	HICODEC_DEBUG_FLAG_READ = 0,
@@ -35,14 +49,14 @@ struct hicodec_dump_reg_info
  * @codec:
  * @info: codec-specific infos
  */
-int hicodec_debug_init(struct snd_soc_codec *codec, const struct hicodec_dump_reg_info *info);
+int hicodec_debug_init(struct snd_soc_component *codec, const struct hicodec_dump_reg_info *info);
 
 /*
  * hicodec_debug_uninit:
  *     uninit when codec driver is removing
  * @codec:
  */
-void hicodec_debug_uninit(struct snd_soc_codec *codec);
+void hicodec_debug_uninit(struct snd_soc_component *codec);
 
 /*
  * hicodec_debug_reg_rw_cache:

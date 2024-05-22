@@ -21,7 +21,7 @@
 #include "hw_kernel_stp_scanner.h"
 
 #define KERNEL_STP_TRIGGER_MARK 0xffffffff
-#define KERNEL_STP_PROC_MAX_LEN 16
+#define KERNEL_STP_PROC_MAX_LEN 1023
 #define KERNEL_STP_PROC_HEX_BASE 16
 
 int kernel_stp_proc_init(void);

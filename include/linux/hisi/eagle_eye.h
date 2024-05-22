@@ -2,20 +2,20 @@
 #ifndef __HISI_EAGLE_EYE_H
 #define __HISI_EAGLE_EYE_H
 
-/*unit:nanosecond, keep with (watchdog_thresh*2)/5 in kernel/watchdog.c*/
+/* unit:nanosecond, keep with (watchdog_thresh*2)/5 in kernel/watchdog.c */
 #define ALARM_DETECT_TIMEOUT	(4L*1000000000L)
 
 #define EAGLE_EYE_RT_PRIORITY	97
 
 struct alarm_detect_info {
 	struct list_head  list;
-	u32 reason;/* 预警原因或类型*/
+	u32 reason; /* warning cause or type */
 	u32 alarm_cpu;
 	void *data;
 
-	/*Constraints:	此函数在原子上下文，禁止使用会睡眠的函数*/
+	/* Constraints: This function is in the atomic context. Do not use functions that can sleep. */
 	int (*detect)(struct alarm_detect_info *info);
-	int (*process)(struct alarm_detect_info *info);/*运行在非原子上下文*/
+	int (*process)(struct alarm_detect_info *info); /* running in non-atomic contexts */
 	char *desc;
 };
 
@@ -51,5 +51,5 @@ static inline int  eeye_alarm_detect(void) { return 0; }
 static inline int  eeye_is_alarm_detecting(int cpu) { return 0; }
 #endif
 
-#endif /*__HISI_EAGLE_EYE_H*/
+#endif /* __HISI_EAGLE_EYE_H */
 

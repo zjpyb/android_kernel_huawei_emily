@@ -1,147 +1,131 @@
 /*
- *	slimbus is a kernel driver which is used to manager SLIMbus devices
- *	Copyright (C) 2014	Hisilicon
-
- *	This program is free software: you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation, either version 3 of the License, or
- *	(at your option) any later version.
-
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
-
- *	You should have received a copy of the GNU General Public License
- *	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * slimbus is a kernel driver which is used to manager slimbus devices
+ *
+ * Copyright (c) 2012-2018 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
 
 #ifndef __SLIMBUS_H__
 #define __SLIMBUS_H__
 
+#include <linux/timer.h>
 #include <linux/types.h>
-#include "slimbus_types.h"
 #include <sound/asound.h>
+#include "slimbus_types.h"
 
 #define SLIMBUS_TRACK_ERROR 0xFFFFFFFF
 
+#define SLIMBUS_DRV_ADDRESS 0x400
+
 /* slimbus can attach more than one devices */
-typedef enum {
-	SLIMBUS_DEVICE_HI6402 = 0,
-	SLIMBUS_DEVICE_HI6403,
-#ifdef CONFIG_SND_SOC_HI6405
-	SLIMBUS_DEVICE_HI6405,
+enum slimbus_device {
+	SLIMBUS_DEVICE_DA_COMBINE_V3 = 0,
+#ifdef CONFIG_SND_SOC_DA_COMBINE_V5
+	SLIMBUS_DEVICE_DA_COMBINE_V5,
 #endif
 	SLIMBUS_DEVICE_NUM,
+};
 
-} slimbus_device_type_t;
-
-typedef enum {
+enum slimbus_framer {
 	SLIMBUS_FRAMER_SOC = 0,
 	SLIMBUS_FRAMER_CODEC,
 	SLIMBUS_FRAMER_NUM,
+};
 
-} slimbus_framer_type_t;
-
-typedef enum {
+enum slimbus_bus_type {
 	SLIMBUS_BUS_CONFIG_NORMAL          = 0,
 	SLIMBUS_BUS_CONFIG_IMGDOWN         = 1,
 	SLIMBUS_BUS_CONFIG_SWITCH_FRAMER   = 2,
 	SLIMBUS_BUS_CONFIG_REGIMGDOWN      = 3,
 	SLIMBUS_BUS_CONFIG_MAX,
-} slimbus_bus_config_type_t;
+};
 
-
-extern slimbus_track_config_t track_config_table[SLIMBUS_TRACK_MAX];
-
-typedef struct slimbus_sound_trigger_params {
+struct slimbus_sound_trigger_params {
 	uint32_t channels;
 	uint32_t sample_rate;
 	uint32_t track_type;
-}slimbus_sound_trigger_params_t;
+};
+
+struct select_scene {
+	enum slimbus_scene_config_type scene_config_type;
+	enum slimbus_clock_gear cg;
+	enum slimbus_subframe_mode sm;
+	bool (*select_scene)(uint32_t active_tracks);
+};
+
+struct slimbus_private_data {
+	struct device                *dev;
+	void __iomem                 *base_addr;          /* SoC slimbus base address (virtual address) */
+	void __iomem                 *asp_reg_base_addr;  /* asp address(virtual address) */
+	void __iomem                 *sctrl_base_addr;    /* sctrl address(virtual address) */
+	uint32_t                     asp_power_state_offset;
+	uint32_t                     asp_clk_state_offset;
+	int32_t                      irq;                 /* SoC slimbus irq num */
+	struct regulator             *regu_asp;           /* regulator of asp */
+	struct pinctrl               *pctrl;
+	struct pinctrl_state         *pin_default;        /* pinctrl default */
+	struct pinctrl_state         *pin_idle;           /* pinctrl idle */
+	struct clk                   *pmu_audio_clk;      /* codec 19.2M clk */
+	struct clk                   *asp_subsys_clk;
+	uint32_t                     portstate;
+	enum slimbus_framer          framerstate;
+	enum slimbus_framer          lastframer;
+	enum platform_type           type;
+	enum slimbus_device          device_type;
+	struct timer_list            timer;
+	bool                         slimbus_dynamic_freq_enable;
+	struct slimbus_device_ops    *dev_ops;
+	struct slimbus_track_config  *track_config_table;
+	uint32_t                     slimbus_track_max;
+	bool                         pm_runtime_support;
+	bool                         switch_framer_disable;
+	bool                         *track_state;
+	bool                         freq_update_disable;
+	bool                         da_combine_reset_in_kernel;
+};
 
 struct slimbus_device_ops {
-	int (*create_slimbus_device)(slimbus_device_info_t **device);
-	void (*release_slimbus_device)(slimbus_device_info_t *device);
-	void (*slimbus_device_param_init)(slimbus_device_info_t *dev);
-	int (*slimbus_device_param_set)(
-				slimbus_device_info_t *dev,
-				uint32_t track_type,
-				slimbus_track_param_t *params);
-	void (*slimbus_device_param_update)(
-				slimbus_device_info_t *dev,
-				uint32_t   track_type,
-				slimbus_track_param_t *params);
-	void (*slimbus_get_soundtrigger_params)(slimbus_sound_trigger_params_t *params);
+	int32_t (*create_slimbus_device)(struct slimbus_device_info **device);
+	void (*release_slimbus_device)(struct slimbus_device_info *device);
+	void (*slimbus_device_param_init)(const struct slimbus_device_info *dev);
+	int32_t (*slimbus_device_param_set)(struct slimbus_device_info *dev,
+		uint32_t track_type, struct slimbus_track_param *params);
+	void (*slimbus_device_param_update)(const struct slimbus_device_info *dev,
+		uint32_t track_type, const struct slimbus_track_param *params);
+	void (*slimbus_get_soundtrigger_params)(struct slimbus_sound_trigger_params *params);
 
-	int (*slimbus_track_soundtrigger_activate)(
-						uint32_t track,
-						bool slimbus_dynamic_freq_enable,
-						struct slimbus_device_info *dev,
-						slimbus_track_param_t *params);
+	int32_t (*slimbus_track_soundtrigger_activate)(uint32_t track, bool slimbus_dynamic_freq_enable,
+		struct slimbus_device_info *dev, struct slimbus_track_param *params);
 
-	int (*slimbus_track_soundtrigger_deactivate)(uint32_t track);
+	int32_t (*slimbus_track_soundtrigger_deactivate)(uint32_t track);
 	bool (*slimbus_track_is_fast_soundtrigger)(uint32_t track);
 
-	int (*slimbus_check_scenes)(
-				uint32_t track,
-				uint32_t scenes,
-				bool track_enable);
-	int (*slimbus_select_scenes)(
-				struct slimbus_device_info *dev,
-				uint32_t track,
-				slimbus_track_param_t *params,
-				bool track_enable);
+	int32_t (*slimbus_check_scenes)(uint32_t track,
+		uint32_t scenes, bool track_enable);
+	int32_t (*slimbus_select_scenes)(struct slimbus_device_info *dev,
+		uint32_t track, const struct slimbus_track_param *params, bool track_enable);
 };
-typedef struct slimbus_device_ops slimbus_device_ops_t;
-
-
-/*
- * read element value via byte address (see specification for more details
- * about difference between byte address and element address)
- * @dev, pointer to slimbus device instance
- * @byte_address, byte address of element
- * @slice_size, see slimbus_slice_size_t
- * @value, pre-allocated memory, contains read element value
- *
- * return 0 if read successful, otherwise, read failed
- */
-extern int slimbus_element_read(
-				slimbus_device_info_t *dev,
-				uint32_t byte_address,
-				slimbus_slice_size_t slice_size,
-				void *value);
-
-/*
- * write element value via byte address (see specification for more details
- * about difference between byte address and element address)
- * @dev_type, pointer to slimbus device type
- * @byte_address, byte address of element
- * @slice_size, see slimbus_slice_size_t
- * @value, values to be writtern
- *
- * return 0 if write successful, otherwise, write failed
- */
-extern int slimbus_element_write(
-				slimbus_device_info_t *dev,
-				uint32_t byte_address,
-				slimbus_slice_size_t slice_size,
-				void *value);
 
 /*
  * setup channel, this step should be done by sending CONNECT_SOURCE,
  * CONNECT_SINK, NEXT_DEFINE_CHANNEL, NEXT_DEFINE_CONTENT NEXT_ACTIVATE_CHANNEL messages
  * @dev_type, pointer to slimbus device type
- * @track,	track type
+ * @track, track type
  * @params, pcm parameters
  *
  * return 0 if successful, otherwise, failed
  */
-extern int slimbus_track_activate(
-			slimbus_device_type_t dev_type,
-			uint32_t track,
-			slimbus_track_param_t *params);
+extern int32_t slimbus_activate_track(enum slimbus_device dev_type,
+	uint32_t track, struct slimbus_track_param *params);
 
 
 /*
@@ -152,10 +136,8 @@ extern int slimbus_track_activate(
  *
  * return 0 if successful, otherwise, failed
  */
-extern int slimbus_track_deactivate(
-				slimbus_device_type_t dev_type,
-				uint32_t track,
-				slimbus_track_param_t *params);
+extern int32_t slimbus_deactivate_track(enum slimbus_device dev_type,
+	uint32_t track, struct slimbus_track_param *params);
 
 /*
  * switch framer, this step should be done by sending
@@ -165,9 +147,8 @@ extern int slimbus_track_deactivate(
  *
  * return 0 if successful, otherwise, failed
  */
-extern int slimbus_switch_framer(
-				slimbus_device_type_t dev_type,
-				slimbus_framer_type_t framer_type);
+extern int32_t slimbus_switch_framer(enum slimbus_device dev_type,
+	enum slimbus_framer framer_type);
 
 /*
  * pause clock, this step should be done by sending
@@ -177,20 +158,36 @@ extern int slimbus_switch_framer(
  *
  * return 0 if successful, otherwise, failed
  */
-extern int slimbus_pause_clock(
-				slimbus_device_type_t dev_type,
-				slimbus_restart_time_t newrestarttime);
+extern int32_t slimbus_pause_clock(enum slimbus_device dev_type,
+	enum slimbus_restart_time newrestarttime);
 
-extern int slimbus_track_recover(void);
+extern int32_t slimbus_track_recover(void);
 
-
-/*
- * get slimbus framer type
- */
-extern slimbus_framer_type_t slimbus_debug_get_framer(void);
-extern slimbus_device_type_t slimbus_debug_get_device_type(void);
+extern enum slimbus_framer slimbus_debug_get_framer(void);
+extern enum slimbus_device slimbus_debug_get_device_type(void);
 extern uint32_t slimbus_trackstate_get(void);
 extern void slimbus_trackstate_set(uint32_t track, bool state);
-extern bool track_state_is_on(uint32_t track);
-extern bool get_slimbus_freq_update_status(void);
+extern bool slimbus_track_state_is_on(uint32_t track);
+extern struct slimbus_bus_config *slimbus_get_bus_config(enum slimbus_bus_type type);
+extern struct slimbus_track_config *slimbus_get_track_config_table(void);
+extern uint32_t slimbus_read_4byte(uint32_t reg);
+extern uint32_t slimbus_read_1byte(uint32_t reg);
+extern void slimbus_write_1byte(uint32_t reg, uint32_t val);
+extern void slimbus_write_4byte(uint32_t reg, uint32_t val);
+extern void slimbus_read_pageaddr(void);
+extern int32_t slimbus_bus_configure(enum slimbus_bus_type type);
+extern void slimbus_logcount_set(uint32_t count);
+extern uint32_t slimbus_logcount_get(void);
+extern uint32_t slimbus_logtimes_get(void);
+extern void slimbus_logtimes_set(uint32_t times);
+extern volatile uint32_t slimbus_drv_lostms_get(void);
+extern void slimbus_drv_lostms_set(uint32_t count);
+extern struct slimbus_device_info *slimbus_get_devices_info(enum slimbus_device device);
+extern bool slimbus_is_da_combine_reset_in_kernel(void);
+extern int32_t slimbus_get_rpm(void);
+extern int32_t slimbus_enum_codec_device(void);
+extern void slimbus_put_rpm(void);
+extern void slimbus_clear_port_fifo(uint8_t port);
+
 #endif /* __SLIMBUS_H__ */
+

@@ -28,7 +28,7 @@
 
 #define PGCACHE_DUMP_HEAD_LINE		"[PGCACHE_LOG],"
 
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 extern unsigned int pagecache_dump;
 extern struct fs_pagecache_info *pagecache_info;
 
@@ -50,7 +50,7 @@ struct fs_pagecache_info {
 
 static inline int is_pagecache_stats_enable(void)
 {
-	return pagecache_info->enable == 1 ? 1 : 0;
+	return (pagecache_info->enable == 1) ? 1 : 0;
 }
 
 #define stat_inc_hit_count()					(atomic64_inc(&(pagecache_info)->stat->hit_total))

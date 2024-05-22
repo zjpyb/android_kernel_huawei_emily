@@ -26,7 +26,7 @@
 #include <net/mptcp.h>
 #include <linux/inet.h>
 #ifdef CONFIG_HUAWEI_XENGINE
-#include <huawei_platform/emcom/emcom_xengine.h>
+#include <emcom/emcom_xengine.h>
 #endif
 
 enum  SCHED_STATE {
@@ -241,12 +241,7 @@ static void xengine_report_mptcp_path_switch(struct tcp_sock *primary,
 			report.sock.uid, report.sock.pid, report.sock.fd);
 	} else {
 		char ip_str[INET_ADDRSTRLEN];
-
-		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_UID)
-			report.sock.type = (enum mptcp_hw_ext_sock_cap)MPTCP_CAP_UID;
-		else
-			report.sock.type = (enum mptcp_hw_ext_sock_cap)MPTCP_CAP_UID_DIP_DPORT;
-
+		report.sock.type = (enum mptcp_hw_ext_sock_cap)(tcp_sk(meta_sk)->mptcp_cap_flag);
 		report.sock.uid = sock_i_uid(meta_sk).val;
 		report.sock.dip = meta_sk->sk_daddr;
 		if (mptcp_hw_ext_get_port_key(meta_sk, report.sock.port,

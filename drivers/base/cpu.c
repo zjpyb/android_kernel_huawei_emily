@@ -181,7 +181,7 @@ static struct attribute_group crash_note_cpu_attr_group = {
 };
 #endif
 
-#if defined(CONFIG_HISI_CPU_ISOLATION) && defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_CPU_ISOLATION_OPT) && defined(CONFIG_HISI_DEBUG_FS)
 
 static ssize_t isolate_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
@@ -238,7 +238,7 @@ static const struct attribute_group *common_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
-#if defined(CONFIG_HISI_CPU_ISOLATION) && defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_CPU_ISOLATION_OPT) && defined(CONFIG_HISI_DEBUG_FS)
 	&cpu_isolated_attr_group,
 #endif
 	NULL
@@ -248,7 +248,7 @@ static const struct attribute_group *hotplugable_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
-#if defined(CONFIG_HISI_CPU_ISOLATION) && defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_CPU_ISOLATION_OPT) && defined(CONFIG_HISI_DEBUG_FS)
 	&cpu_isolated_attr_group,
 #endif
 	NULL
@@ -280,7 +280,7 @@ static struct cpu_attr cpu_attrs[] = {
 	_CPU_ATTR(online, &__cpu_online_mask),
 	_CPU_ATTR(possible, &__cpu_possible_mask),
 	_CPU_ATTR(present, &__cpu_present_mask),
-#if defined(CONFIG_HISI_CPU_ISOLATION) && defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_CPU_ISOLATION_OPT) && defined(CONFIG_HISI_DEBUG_FS)
 	_CPU_ATTR(core_ctl_isolated, &__cpu_isolated_mask),
 #endif
 };
@@ -476,6 +476,7 @@ __cpu_device_create(struct device *parent, void *drvdata,
 	dev->parent = parent;
 	dev->groups = groups;
 	dev->release = device_create_release;
+	device_set_pm_not_required(dev);
 	dev_set_drvdata(dev, drvdata);
 
 	retval = kobject_set_name_vargs(&dev->kobj, fmt, args);
@@ -519,7 +520,7 @@ static struct attribute *cpu_root_attrs[] = {
 	&cpu_attrs[0].attr.attr,
 	&cpu_attrs[1].attr.attr,
 	&cpu_attrs[2].attr.attr,
-#if defined(CONFIG_HISI_CPU_ISOLATION) && defined(CONFIG_HISI_DEBUG_FS)
+#if defined(CONFIG_CPU_ISOLATION_OPT) && defined(CONFIG_HISI_DEBUG_FS)
 	&cpu_attrs[3].attr.attr,
 #endif
 	&dev_attr_kernel_max.attr,
@@ -598,11 +599,18 @@ ssize_t __weak cpu_show_l1tf(struct device *dev,
 	return sprintf(buf, "Not affected\n");
 }
 
+ssize_t __weak cpu_show_mds(struct device *dev,
+			    struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "Not affected\n");
+}
+
 static DEVICE_ATTR(meltdown, 0444, cpu_show_meltdown, NULL);
 static DEVICE_ATTR(spectre_v1, 0444, cpu_show_spectre_v1, NULL);
 static DEVICE_ATTR(spectre_v2, 0444, cpu_show_spectre_v2, NULL);
 static DEVICE_ATTR(spec_store_bypass, 0444, cpu_show_spec_store_bypass, NULL);
 static DEVICE_ATTR(l1tf, 0444, cpu_show_l1tf, NULL);
+static DEVICE_ATTR(mds, 0444, cpu_show_mds, NULL);
 
 static struct attribute *cpu_root_vulnerabilities_attrs[] = {
 	&dev_attr_meltdown.attr,
@@ -610,6 +618,7 @@ static struct attribute *cpu_root_vulnerabilities_attrs[] = {
 	&dev_attr_spectre_v2.attr,
 	&dev_attr_spec_store_bypass.attr,
 	&dev_attr_l1tf.attr,
+	&dev_attr_mds.attr,
 	NULL
 };
 

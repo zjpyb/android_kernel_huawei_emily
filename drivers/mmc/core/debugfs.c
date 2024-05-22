@@ -18,11 +18,13 @@
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/dw_mmc.h>
 
 #include "core.h"
 #include "card.h"
 #include "host.h"
 #include "mmc_ops.h"
+#include "../host/dw_mmc.h"
 
 #ifdef CONFIG_EMMC_FAULT_INJECT
 #include <linux/mmc/emmc_fault_inject.h>
@@ -295,6 +297,40 @@ static int mmc_sim_remove_sd_set(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(sim_remove_sd_fops, mmc_sim_remove_sd_get,
 			mmc_sim_remove_sd_set, "%llu\n");
+
+static int mmc_nano_sd_remove_get(void *data, u64 *val)
+{
+	struct mmc_host *mmc = data;
+
+	pr_err("%s %d sim_remove_nano: %lu\n",
+			__func__, __LINE__, mmc->sim_remove_nano);
+	*val = mmc->sim_remove_nano;
+
+	return 0;
+}
+
+static int mmc_nano_sd_remove_set(void *data, u64 val)
+{
+	struct mmc_host *mmc = data;
+	struct dw_mci_slot *slot = mmc_priv(mmc);
+	struct dw_mci *dw_mci_host = slot->host;
+
+	if (val == mmc->sim_remove_nano) {
+		pr_err("%s %d Nothing changed!\n", __func__, __LINE__);
+		return 0;
+	}
+
+	pr_err("%s nano sd status set val: %lu\n", __func__, val);
+	if (!mmc->card || mmc_card_mmc(mmc->card)) {
+		mmc->sim_remove_nano = val;
+		queue_work(dw_mci_host->card_workqueue, &dw_mci_host->card_work);
+	}
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(nano_sd_remove_fops, mmc_nano_sd_remove_get,
+			mmc_nano_sd_remove_set, "%llu\n");
 #endif /* CONFIG_HISI_DEBUG_FS */
 
 void mmc_add_host_debugfs(struct mmc_host *host)
@@ -320,9 +356,15 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 		goto err_node;
 
 #ifdef CONFIG_HISI_DEBUG_FS
-	if (!debugfs_create_file("sim_remove_sd", S_IRUSR | S_IWUSR, root, host,
-			&sim_remove_sd_fops))
-		goto err_node;
+	if (host->index == 1) {
+		if (!debugfs_create_file("sim_remove_sd", S_IRUSR | S_IWUSR, root, host,
+				&sim_remove_sd_fops))
+			goto err_node;
+
+		if (!debugfs_create_file("sim_remove_nano", S_IRUSR | S_IWUSR, root, host,
+				&nano_sd_remove_fops))
+			goto err_node;
+	}
 #endif
 
 #ifdef CONFIG_FAIL_MMC_REQUEST
@@ -456,7 +498,7 @@ void mmc_add_card_debugfs(struct mmc_card *card)
 		 * create the directory. */
 		goto err;
 
-        card->debugfs_sdxc = sdxc_root;
+	card->debugfs_sdxc = sdxc_root;
 	card->debugfs_root = root;
 
 	if (!debugfs_create_x32("state", S_IRUSR, root, &card->state))

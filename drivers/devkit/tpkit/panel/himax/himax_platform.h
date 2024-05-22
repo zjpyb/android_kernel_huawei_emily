@@ -22,8 +22,8 @@
 #include <linux/types.h>
 #include <linux/i2c.h>
 #include "linux/interrupt.h"
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 
 #define CONFIG_HMX_DB
 
@@ -65,8 +65,8 @@ struct himax_i2c_platform_data {
 	int abs_pressure_fuzz;
 	int abs_width_min;
 	int abs_width_max;
-	int screenWidth;
-	int screenHeight;
+	unsigned int screenWidth;
+	unsigned int screenHeight;
 	uint8_t fw_version;
 	uint8_t tw_id;
 	uint8_t powerOff3V3;

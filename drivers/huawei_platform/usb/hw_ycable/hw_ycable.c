@@ -3,7 +3,7 @@
  *
  * huawei ycable driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,24 +16,24 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
+#include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/platform_device.h>
-#include <linux/power_supply.h>
 #include <linux/gpio.h>
+#include <linux/hisi/hisi_adc.h>
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
-#include <huawei_platform/log/hw_log.h>
 #include <linux/of_gpio.h>
-#include <linux/delay.h>
+#include <linux/platform_device.h>
+#include <linux/power_supply.h>
 #include <linux/workqueue.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <linux/hisi/hisi_adc.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
+#include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_ycable.h>
-#include <huawei_platform/power/power_dts.h>
 #include "../otg_gpio_id/hw_otg_id.h"
 
 #ifdef HWLOG_TAG
@@ -45,7 +45,7 @@ HWLOG_REGIST();
 
 static struct ycable_info *g_ycable;
 
-static const char * const ycable_id_status_table[YCABLE_ID_END] = {
+static const char * const g_ycable_id_status_table[YCABLE_ID_END] = {
 	[YCABLE_ID_HIGH] = "id_high",
 	[YCABLE_ID_LOW_OTG] = "id_low_otg",
 	[YCABLE_ID_LOW_WITH_CHARGE] = "id_low_with_charge",
@@ -55,7 +55,7 @@ static const char * const ycable_id_status_table[YCABLE_ID_END] = {
 static const char *ycable_get_id_status_name(unsigned int index)
 {
 	if ((index >= YCABLE_ID_BEGIN) && (index < YCABLE_ID_END))
-		return ycable_id_status_table[index];
+		return g_ycable_id_status_table[index];
 
 	return "id_invalid";
 }
@@ -246,7 +246,6 @@ bool ycable_is_charge_connect(int vol_value)
 	enum ycable_id_status id_status;
 
 	id_status = ycable_get_id_status(vol_value);
-
 	if (id_status == YCABLE_ID_LOW_WITH_CHARGE) {
 		hwlog_info("now ycable is with charger\n");
 		return true;
@@ -283,7 +282,7 @@ static void ycable_monitor_work(struct work_struct *work)
 	int vol_value;
 	int gpio_value = GPIO_HIGH;
 	bool need_return = false;
-	enum ycable_id_status id_status = YCABLE_ID_LOW_INVALID;
+	enum ycable_id_status id_status;
 
 	if (!di) {
 		hwlog_err("di is null\n");
@@ -309,7 +308,6 @@ static void ycable_monitor_work(struct work_struct *work)
 		vol_value = YCABLE_INVALID_THRESHOLD_VOLTAGE;
 
 	id_status = ycable_get_id_status(vol_value);
-
 	if ((id_status == YCABLE_ID_LOW_WITH_CHARGE) &&
 		(di->ycable_status != YCABLE_CHARGER)) {
 		hwlog_info("ycable charger plugin,id_status=%s vol_value=%d\n",
@@ -352,7 +350,6 @@ static int ycable_usb_notifier_call(struct notifier_block *nb,
 		di->ycable_otg_enable_flag = false;
 		di->ycable_charger_enable_flag = false;
 		break;
-	/* fall through: SDP,CDP,DCP,UNKNOWN all are charging event */
 	case CHARGER_TYPE_SDP:
 	case CHARGER_TYPE_CDP:
 	case CHARGER_TYPE_DCP:
@@ -430,12 +427,14 @@ static int ycable_parse_dts(struct ycable_info *di, struct device_node *np)
 	}
 	di->ycable_support = true;
 
-	(void)power_dts_read_u32(np, "ycable_iin_curr",
-		(u32 *)&di->ycable_iin_curr, YCABLE_CURR_DEFAULT);
-	(void)power_dts_read_u32(np, "ycable_ichg_curr",
-		(u32 *)&di->ycable_ichg_curr, YCABLE_CURR_DEFAULT);
-	if (power_dts_read_u32(np, "ycable_adc_channel",
-		&di->otg_adc_channel, 0))
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ycable_iin_curr", (u32 *)&di->ycable_iin_curr,
+		YCABLE_CURR_DEFAULT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ycable_ichg_curr", (u32 *)&di->ycable_ichg_curr,
+		YCABLE_CURR_DEFAULT);
+	if (power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ycable_adc_channel", &di->otg_adc_channel, 0))
 		return -EINVAL;
 
 	return 0;
@@ -447,8 +446,6 @@ static int ycable_probe(struct platform_device *pdev)
 	struct device_node *np = NULL;
 	struct device *dev = NULL;
 	struct ycable_info *di = NULL;
-
-	hwlog_info("probe begin\n");
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -468,7 +465,7 @@ static int ycable_probe(struct platform_device *pdev)
 		goto fail_parse_dts;
 
 	di->usb_nb.notifier_call = ycable_usb_notifier_call;
-	ret = hisi_charger_type_notifier_register(&di->usb_nb);
+	ret = chip_charger_type_notifier_register(&di->usb_nb);
 	if (ret) {
 		hwlog_err("charger_type_notifier register failed\n");
 		goto fail_register_notifier;
@@ -479,7 +476,6 @@ static int ycable_probe(struct platform_device *pdev)
 
 	INIT_DELAYED_WORK(&di->ycable_work, ycable_monitor_work);
 
-	hwlog_info("probe end\n");
 	return 0;
 
 fail_register_notifier:
@@ -494,8 +490,6 @@ static int ycable_remove(struct platform_device *pdev)
 {
 	struct ycable_info *di = platform_get_drvdata(pdev);
 
-	hwlog_info("remove begin\n");
-
 	if (!di)
 		return -ENODEV;
 
@@ -503,7 +497,6 @@ static int ycable_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, di);
 	g_ycable = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

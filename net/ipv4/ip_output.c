@@ -95,11 +95,15 @@ extern uint8_t BST_FG_Proc_Send_RPacket_Priority(struct sock *pstSock);
 #endif
 
 #ifdef CONFIG_HUAWEI_BASTET
-int g_FastGrabDscp = 0;    /*fg app dscp value,get from hilink*/
+int g_fast_grab_dscp = 0; /*fg app dscp value,get from hilink*/
 #endif
 
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
 #include <hwnet/ipv4/wifi_delayst.h>
+#endif
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include <hwnet/booster/hw_pt.h>
 #endif
 
 #ifdef CONFIG_HW_WIFIPRO
@@ -322,8 +326,9 @@ static int ip_finish_output(struct net *net, struct sock *sk, struct sk_buff *sk
 
 	ret = BPF_CGROUP_RUN_PROG_INET_EGRESS(sk, skb);
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
-	if (skb_dst(skb) && hw_bypass_skb(AF_INET, HW_PFB_INET_BPF_EGRESS, sk, skb,
-			NULL, skb_dst(skb)->dev, ret ? DROP : PASS))
+	if (skb_dst(skb) &&
+	    hw_bypass_skb(AF_INET, HW_PFB_INET_BPF_EGRESS, sk, skb,
+			  NULL, skb_dst(skb)->dev, ret ? DROP : PASS))
 		ret = 0;
 #endif
 	if (ret) {
@@ -346,7 +351,7 @@ static int ip_finish_output(struct net *net, struct sock *sk, struct sk_buff *sk
 #ifdef CONFIG_HW_BOOSTER
 	if (skb_dst(skb))
 		booster_update_tcp_statistics(AF_INET, skb, NULL,
-			skb_dst(skb)->dev);
+					      skb_dst(skb)->dev);
 #endif
 
 	mtu = ip_skb_dst_mtu(sk, skb);
@@ -366,8 +371,9 @@ static int ip_mc_finish_output(struct net *net, struct sock *sk,
 
 	ret = BPF_CGROUP_RUN_PROG_INET_EGRESS(sk, skb);
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
-	if (skb_dst(skb) && hw_bypass_skb(AF_INET, HW_PFB_INET_BPF_EGRESS, sk, skb,
-			NULL, skb_dst(skb)->dev, ret ? DROP : PASS))
+	if (skb_dst(skb) &&
+	    hw_bypass_skb(AF_INET, HW_PFB_INET_BPF_EGRESS, sk, skb,
+			  NULL, skb_dst(skb)->dev, ret ? DROP : PASS))
 		ret = 0;
 #endif
 	if (ret) {
@@ -527,12 +533,13 @@ packet_routed:
 		goto no_route;
 
 #ifdef CONFIG_HUAWEI_BASTET
-	/*if get dscp value and this socket belong to fg, modify dscp to support high pri transmission*/
-	if (g_FastGrabDscp != 0 && sk->fg_Spec > 0 && inet->tos == 0)
-	{
-		/*dscp is the highest 6 bits of tos*/
-		inet->tos = (((__u8)g_FastGrabDscp) << 2);
-	}
+	/*
+	 * if get dscp value and this socket belong to fg,
+	 * modify dscp to support high pri transmission
+	 */
+	if (g_fast_grab_dscp != 0 && sk->fg_Spec > 0 && inet->tos == 0)
+		/* dscp is the highest 6 bits of tos */
+		inet->tos = (((__u8)g_fast_grab_dscp) << 2);
 #endif
 
 	/* OK, we know where to send it, allocate and build IP header. */
@@ -572,7 +579,7 @@ packet_routed:
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
 	if (skb_dst(skb))
 		hw_bypass_skb(AF_INET, HW_PFB_INET_IP_XMIT, sk, skb, NULL,
-			skb_dst(skb)->dev, PASS);
+			      skb_dst(skb)->dev, PASS);
 #endif
 
 	res = ip_local_out(net, sk, skb);
@@ -592,6 +599,7 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 	to->pkt_type = from->pkt_type;
 	to->priority = from->priority;
 	to->protocol = from->protocol;
+	to->skb_iif = from->skb_iif;
 	skb_dst_drop(to);
 	skb_dst_copy(to, from);
 	to->dev = from->dev;
@@ -604,7 +612,7 @@ static void ip_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 
 #ifdef CONFIG_WIFI_DELAY_STATISTIC
 	if(DELAY_STATISTIC_SWITCH_ON) {
-		MEMCPY_SKB_CB(to,from);
+		memcpy_skb_cb(to,from);
 	}
 #endif
 #ifdef CONFIG_NET_SCHED
@@ -958,11 +966,13 @@ static int __ip_append_data(struct sock *sk,
 	int csummode = CHECKSUM_NONE;
 	struct rtable *rt = (struct rtable *)cork->dst;
 	u32 tskey = 0;
+	bool paged;
 
 	skb = skb_peek_tail(queue);
 
 	exthdrlen = !skb ? rt->dst.header_len : 0;
-	mtu = cork->fragsize;
+	mtu = cork->gso_size ? IP_MAX_MTU : cork->fragsize;
+	paged = !!cork->gso_size;
 	if (cork->tx_flags & SKBTX_ANY_SW_TSTAMP &&
 	    sk->sk_tsflags & SOF_TIMESTAMPING_OPT_ID)
 		tskey = sk->sk_tskey++;
@@ -986,7 +996,7 @@ static int __ip_append_data(struct sock *sk,
 	if (transhdrlen &&
 	    length + fragheaderlen <= mtu &&
 	    rt->dst.dev->features & (NETIF_F_HW_CSUM | NETIF_F_IP_CSUM) &&
-	    !(flags & MSG_MORE) &&
+	    (!(flags & MSG_MORE) || cork->gso_size) &&
 	    !exthdrlen)
 		csummode = CHECKSUM_PARTIAL;
 
@@ -1013,6 +1023,7 @@ static int __ip_append_data(struct sock *sk,
 			unsigned int fraglen;
 			unsigned int fraggap;
 			unsigned int alloclen;
+			unsigned int pagedlen = 0;
 			struct sk_buff *skb_prev;
 alloc_new_skb:
 			skb_prev = skb;
@@ -1031,10 +1042,16 @@ alloc_new_skb:
 			fraglen = datalen + fragheaderlen;
 
 			if ((flags & MSG_MORE) &&
-			    !(rt->dst.dev->features&NETIF_F_SG))
+			    !(rt->dst.dev->features&NETIF_F_SG)) {
 				alloclen = mtu;
-			else
+			}
+			else if (!paged) {
 				alloclen = fraglen;
+			}
+			else {
+				alloclen = min_t(int, fraglen, MAX_HEADER);
+				pagedlen = fraglen - alloclen;
+			}
 
 			alloclen += exthdrlen;
 
@@ -1079,7 +1096,7 @@ alloc_new_skb:
 			/*
 			 *	Find where to start putting bytes.
 			 */
-			data = skb_put(skb, fraglen + exthdrlen);
+			data = skb_put(skb, fraglen + exthdrlen - pagedlen);
 			skb_set_network_header(skb, exthdrlen);
 			skb->transport_header = (skb->network_header +
 						 fragheaderlen);
@@ -1095,7 +1112,7 @@ alloc_new_skb:
 				pskb_trim_unique(skb_prev, maxfraglen);
 			}
 
-			copy = datalen - transhdrlen - fraggap;
+			copy = datalen - transhdrlen - fraggap - pagedlen;
 			if (copy > 0 && getfrag(from, data + transhdrlen, offset, copy, fraggap, skb) < 0) {
 				err = -EFAULT;
 				kfree_skb(skb);
@@ -1103,7 +1120,7 @@ alloc_new_skb:
 			}
 
 			offset += copy;
-			length -= datalen - fraggap;
+			length -= copy + transhdrlen;
 			transhdrlen = 0;
 			exthdrlen = 0;
 			csummode = CHECKSUM_NONE;
@@ -1207,6 +1224,8 @@ static int ip_setup_cork(struct sock *sk, struct inet_cork *cork,
 	*rtp = NULL;
 	cork->fragsize = ip_sk_use_pmtu(sk) ?
 			 dst_mtu(&rt->dst) : rt->dst.dev->mtu;
+
+	cork->gso_size = sk->sk_type == SOCK_DGRAM ? ipc->gso_size : 0;
 	cork->dst = &rt->dst;
 	cork->length = 0;
 	cork->ttl = ipc->ttl;
@@ -1286,7 +1305,7 @@ ssize_t	ip_append_page(struct sock *sk, struct flowi4 *fl4, struct page *page,
 		return -EOPNOTSUPP;
 
 	hh_len = LL_RESERVED_SPACE(rt->dst.dev);
-	mtu = cork->fragsize;
+	mtu = cork->gso_size ? IP_MAX_MTU : cork->fragsize;
 
 	fragheaderlen = sizeof(struct iphdr) + (opt ? opt->optlen : 0);
 	maxfraglen = ((mtu - fragheaderlen) & ~7) + fragheaderlen;
@@ -1416,7 +1435,6 @@ struct sk_buff *__ip_make_skb(struct sock *sk,
 	if (!skb)
 		goto out;
 	tail_skb = &(skb_shinfo(skb)->frag_list);
-
 	/* move skb->data to ip header from ext header */
 	if (skb->data < skb_network_header(skb))
 		__skb_pull(skb, skb_network_offset(skb));
@@ -1542,9 +1560,8 @@ struct sk_buff *ip_make_skb(struct sock *sk,
 					int len, int odd, struct sk_buff *skb),
 			    void *from, int length, int transhdrlen,
 			    struct ipcm_cookie *ipc, struct rtable **rtp,
-			    unsigned int flags)
+			    struct inet_cork *cork, unsigned int flags)
 {
-	struct inet_cork cork;
 	struct sk_buff_head queue;
 	int err;
 
@@ -1553,22 +1570,22 @@ struct sk_buff *ip_make_skb(struct sock *sk,
 
 	__skb_queue_head_init(&queue);
 
-	cork.flags = 0;
-	cork.addr = 0;
-	cork.opt = NULL;
-	err = ip_setup_cork(sk, &cork, ipc, rtp);
+	cork->flags = 0;
+	cork->addr = 0;
+	cork->opt = NULL;
+	err = ip_setup_cork(sk, cork, ipc, rtp);
 	if (err)
 		return ERR_PTR(err);
 
-	err = __ip_append_data(sk, fl4, &queue, &cork,
+	err = __ip_append_data(sk, fl4, &queue, cork,
 			       &current->task_frag, getfrag,
 			       from, length, transhdrlen, flags);
 	if (err) {
-		__ip_flush_pending_frames(sk, &queue, &cork);
+		__ip_flush_pending_frames(sk, &queue, cork);
 		return ERR_PTR(err);
 	}
 
-	return __ip_make_skb(sk, fl4, &queue, &cork);
+	return __ip_make_skb(sk, fl4, &queue, cork);
 }
 
 /*
@@ -1602,6 +1619,10 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 	struct sk_buff *nskb;
 	int err;
 	int oif;
+
+#ifdef CONFIG_HW_PACKET_TRACKER
+	hw_pt_set_skb_stamp(skb);
+#endif
 
 	if (__ip_options_echo(net, &replyopts.opt.opt, skb, sopt))
 		return;
@@ -1649,7 +1670,9 @@ void ip_send_unicast_reply(struct sock *sk, struct sk_buff *skb,
 		ip_flush_pending_frames(sk);
 		goto out;
 	}
-
+#ifdef CONFIG_HISI_PAGE_TRACE
+	alloc_skb_with_frags_stats_inc(IP_SEND_UNICAST_REPLY_COUNT);
+#endif
 	nskb = skb_peek(&sk->sk_write_queue);
 	if (nskb) {
 		if (arg->csumoffset >= 0)

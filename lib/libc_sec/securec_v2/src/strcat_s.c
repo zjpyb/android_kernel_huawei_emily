@@ -44,18 +44,18 @@ SECUREC_INLINE errno_t SecDoCat(char *strDest, size_t destMax, const char *strSr
 
 /*
  * <FUNCTION DESCRIPTION>
- *    The strcat_s function appends a copy of the string pointed to by strSrc (including the terminating null character)
- *    to the end of the  string pointed to by strDest.
- *    The initial character of strSrc overwrites the terminating null character of strDest.
- *    strcat_s will return EOVERLAP_AND_RESET if the source and destination strings overlap.
+ *  The strcat_s function appends a copy of the string pointed to by strSrc (including the terminating null character)
+ *  to the end of the  string pointed to by strDest.
+ *  The initial character of strSrc overwrites the terminating null character of strDest.
+ *  strcat_s will return EOVERLAP_AND_RESET if the source and destination strings overlap.
  *
- *    Note that the second parameter is the total size of the buffer, not the
- *    remaining size.
+ *  Note that the second parameter is the total size of the buffer, not the
+ *  remaining size.
  *
  * <INPUT PARAMETERS>
- *    strDest             Null-terminated destination string buffer.
- *    destMax             Size of the destination string buffer.
- *    strSrc              Null-terminated source string buffer.
+ *  strDest             Null-terminated destination string buffer.
+ *  destMax             Size of the destination string buffer.
+ *  strSrc              Null-terminated source string buffer.
  *
  * <OUTPUT PARAMETERS>
  *    strDest             is updated
@@ -63,8 +63,8 @@ SECUREC_INLINE errno_t SecDoCat(char *strDest, size_t destMax, const char *strSr
  * <RETURN VALUE>
  *    EOK                 Success
  *    EINVAL              strDest is  NULL and destMax != 0 and destMax <= SECUREC_STRING_MAX_LEN
- *    EINVAL_AND_RESET    (strDest unterminated  and all other parameters are valid)or
- *                         (strDest != NULL and strSrc is NULL and destMax != 0 and destMax <= SECUREC_STRING_MAX_LEN)
+ *    EINVAL_AND_RESET    (strDest unterminated  and all other parameters are valid) or
+ *                        (strDest != NULL and strSrc is NULL and destMax != 0 and destMax <= SECUREC_STRING_MAX_LEN)
  *    ERANGE              destMax is 0 and destMax > SECUREC_STRING_MAX_LEN
  *    ERANGE_AND_RESET      strDest have not enough space  and all other parameters are valid  and not overlap
  *    EOVERLAP_AND_RESET   dest buffer and source buffer are overlapped and all  parameters are valid

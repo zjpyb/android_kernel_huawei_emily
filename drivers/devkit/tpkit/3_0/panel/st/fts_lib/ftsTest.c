@@ -48,6 +48,10 @@
 #include "../fts_limits.h"
 #endif
 
+#define SELF_DATA_SIZE 1
+#define SENSE_COLUMNS_SIZE 4
+#define LIMITS_ROWS_SIZE 1
+#define LIMITS_MAX_SIZE 800
 
 TestToDo tests;	/* /< global variable that specify the tests to perform during
 		 * the Mass Production Test */
@@ -83,7 +87,7 @@ int initTestToDo(void)
 
 	tests.MutualCx1 = 0;
 	tests.MutualCx2 = 1;
-	tests.MutualCx2Adj = 0;
+	tests.MutualCx2Adj = 1; /* Calibration value  test switch */
 	tests.MutualCxTotal = 0;
 	tests.MutualCxTotalAdj = 0;
 
@@ -848,6 +852,20 @@ static void st_fill_rawdata_buf(struct ts_rawdata_info *info, short *source_data
 		info->hybrid_buff_used_size += rows * columns;
 		TS_LOG_INFO("[%s]info->hybrid_buff_used_size -> %d\n",__func__,info->hybrid_buff_used_size);
 		break;
+	case FTS_ITO_CAP_TYPE:
+		if ((info->self_buff_size + (rows * columns)) >
+			TS_RAWDATA_BUFF_MAX) {
+			TS_LOG_ERR("%s:out of buffer range\n", __func__);
+			return;
+		}
+		data_ptr = info->self_buff + info->self_buff_size;
+		for (i = 0; i < rows; i++) {
+			for (j = 0; j < columns; j++)
+				data_ptr[k++] =
+					(int)source_data[(i * columns) + j];
+		}
+		info->self_buff_size += rows * columns;
+		break;
 	default:
 		break;
 	}
@@ -959,6 +977,130 @@ int checkLimitsMapAdjTotal(u16 *data, int row, int column, int *max)
 	return count;	/* if count is 0 = OK, test completed successfully */
 }
 
+static int check_limits_map(const short *data, int row, int column,
+	const int *min, const int *max)
+{
+	int i;
+	int j;
+	int count = 0;
+
+	if (!data || !min || !max) {
+		TS_LOG_ERR("%s ERROR %08X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
+		return ERROR_OP_NOT_ALLOW;
+	}
+	for (i = 0; i < row; i++) {
+		for (j = 0; j < column; j++) {
+			if (data[i * column + j] < min[i * column + j] ||
+				data[i * column + j] > max[i * column + j]) {
+				TS_LOG_ERR("%s %d,%d %d exceed limit %d %d\n",
+					__func__, i, j, data[i * column + j],
+					min[i * column + j],
+					max[i * column + j]);
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
+static int check_limits_map_u8(const u8 *data, int row, int column,
+	const int *min, const int *max)
+{
+	int i;
+	int j;
+	int count = 0;
+
+	if (!data || !min || !max) {
+		TS_LOG_ERR("%s ERROR %08X\n",
+			__func__, ERROR_OP_NOT_ALLOW);
+		return ERROR_OP_NOT_ALLOW;
+	}
+	for (i = 0; i < row; i++) {
+		for (j = 0; j < column; j++) {
+			if (data[i * column + j] < min[i * column + j] ||
+				data[i * column + j] > max[i * column + j]) {
+				TS_LOG_ERR("%s %d,%d %d exceed limit %d %d\n",
+					__func__, i, j, data[i * column + j],
+					min[i * column + j],
+					max[i * column + j]);
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
+static int ito_raw_min_max_test(char *path_limits,
+	MutualSenseFrame ms_raw_frame, TestResult *result)
+{
+	int ret;
+	int *thresholds_min = NULL;
+	int *thresholds_max = NULL;
+	int rows = 0;
+	int columns = 0;
+
+	if (!path_limits || !result) {
+		TS_LOG_ERR("%s: path_limits result NULL %08X\n", __func__,
+			ERROR_PROD_TEST_ITO);
+		return ERROR_PROD_TEST_ITO;
+	}
+	TS_LOG_INFO("%s:\n", __func__);
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		MS_RAW_ITO_MAX, &thresholds_max, &rows, &columns);
+	if ((ret < OK) || (rows != ms_raw_frame.header.force_node) ||
+		(columns != ms_raw_frame.header.sense_node)) {
+		TS_LOG_ERR("%s: Test Limits failed %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		goto error;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		MS_RAW_ITO_MIN, &thresholds_min, &rows, &columns);
+	if ((ret < OK) || (rows != ms_raw_frame.header.force_node) ||
+		(columns != ms_raw_frame.header.sense_node)) {
+		TS_LOG_ERR("%s: Test Limits failed %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		goto error;
+	}
+	ret = check_limits_map(ms_raw_frame.node_data,
+		ms_raw_frame.header.force_node,
+		ms_raw_frame.header.sense_node,
+		thresholds_min, thresholds_max);
+	if (ret != OK) {
+		TS_LOG_ERR("%s:ms rawmin max test failed error count %d\n",
+			__func__, ret);
+		result->ito_raw_min_max = false;
+	} else {
+		result->ito_raw_min_max = true;
+		TS_LOG_INFO("%s ms rawmin max test: OK\n", __func__);
+	}
+error:
+	kfree(thresholds_min);
+	thresholds_min = NULL;
+	kfree(thresholds_max);
+	thresholds_max = NULL;
+	return ret;
+}
+
+static void ito_rawdata_adjacent_results(int results, TestResult *result)
+{
+	struct fts_ts_info *ts_info = fts_get_info();
+
+	if (!ts_info) {
+		TS_LOG_ERR("%s data is null\n", __func__);
+		return;
+	}
+	if (ts_info->support_raw_adjacent_test) {
+		if (results == OK)
+			result->ito_raw_adjacent_test = true;
+		else
+			result->ito_raw_adjacent_test = false;
+	} else {
+		if (results < OK)
+			result->ITO_Test_Res = false;
+	}
+}
+
 /**
   * Perform an ITO test setting all the possible options
   * (see @link ito_opt ITO Options @endlink) and checking MS Raw ADJ if enabled
@@ -967,9 +1109,11 @@ int checkLimitsMapAdjTotal(u16 *data, int row, int column, int *max)
   * @param todo pointer to a TestToDo variable which select the test to do
   * @return OK if success or an error code which specify the type of error
   */
-int production_test_ito(char *path_limits, TestToDo *todo, TestResult *result)
+int production_test_ito(char *path_limits, TestToDo *todo,
+	TestResult *result, struct ts_rawdata_info *info)
 {
 	int res = OK;
+	int ret;
 	u8 sett[2] = { 0x00, 0x00 };
 	MutualSenseFrame msRawFrame;
 	int *thresholds = NULL;
@@ -977,6 +1121,7 @@ int production_test_ito(char *path_limits, TestToDo *todo, TestResult *result)
 	int trows = 0;
 	int tcolumns = 0;
 	short ** temp1 =NULL;
+	struct fts_ts_info *fts_info = fts_get_info();
 
 	TS_LOG_INFO( "%s ITO Production test is starting...\n", __func__);
 	if(!path_limits || !todo || !result) {
@@ -1008,21 +1153,31 @@ int production_test_ito(char *path_limits, TestToDo *todo, TestResult *result)
 	sett[1] = 0xFF;
 	TS_LOG_INFO( "%s ITO Check command sent...\n", __func__);
 	res = writeSysCmd(SYS_CMD_ITO, sett, 2);
-	if (res < OK) {
-		TS_LOG_ERR("%s production_test_ito: ERROR %08X\n", __func__,
-			 (res | ERROR_PROD_TEST_ITO));
-		return res | ERROR_PROD_TEST_ITO;
+	if (res == OK)
+		result->ITO_Test_Res = true;
+	ret = getMSFrame3(MS_RAW, &msRawFrame);
+	if (ret < OK) {
+		TS_LOG_ERR("%s: getMSFrame failed ERROR %08X\n",
+			__func__, ERROR_PROD_TEST_ITO);
+		res = ret;
+		goto ERROR;
+	}
+	if (fts_info->chip_data->support_ito_cap_test) {
+		st_fill_rawdata_buf(info, msRawFrame.node_data,
+			msRawFrame.header.force_node,
+			msRawFrame.header.sense_node,
+			FTS_ITO_CAP_TYPE);
+		ret = ito_raw_min_max_test(path_limits, msRawFrame, result);
+		if (ret != OK) {
+			TS_LOG_ERR("%s: ito_raw_min_max_test failed\n",
+				__func__);
+			ret = ERROR_PROD_TEST_ITO;
+		}
 	}
 	TS_LOG_INFO( "%s ITO Command = OK!\n", __func__);
 
 	TS_LOG_INFO( "%s MS RAW ITO ADJ TEST:\n", __func__);
 	if (todo->MutualRawAdjITO == 1) {
-		TS_LOG_INFO( "%s Collecting MS Raw data...\n", __func__);
-		res |= getMSFrame3(MS_RAW, &msRawFrame);
-		if (res < OK) {
-			TS_LOG_ERR("%s: getMSFrame failed... ERROR %08X\n",__func__, ERROR_PROD_TEST_ITO);
-			goto ERROR;
-		}
 		TS_LOG_INFO( "%s MS RAW ITO ADJ HORIZONTAL TEST:\n", __func__);
 		res = computeAdjHorizTotal(msRawFrame.node_data,
 					   msRawFrame.header.force_node,
@@ -1108,9 +1263,6 @@ int production_test_ito(char *path_limits, TestToDo *todo, TestResult *result)
 			TS_LOG_INFO("%s MS RAW ITO ADJ VERTICAL TEST:.................OK\n",
 				 __func__);
         }
-		if(result != NULL) {
-			result->ITO_Test_Res =true;
-        }
 		kfree(thresholds);
 		thresholds = NULL;
 
@@ -1122,6 +1274,7 @@ int production_test_ito(char *path_limits, TestToDo *todo, TestResult *result)
     }
 
 ERROR:
+	ito_rawdata_adjacent_results(res, result);
 	if (thresholds != NULL) {
         kfree(thresholds);
     }
@@ -1212,7 +1365,7 @@ int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit, T
 		goto end;
 	}
 	TS_LOG_INFO( "%s MAIN Production test is starting...\n", __func__);
-	res = production_test_ito(pathThresholds, todo,result);
+	res = production_test_ito(pathThresholds, todo, result, info);
 	if (res < 0) {
 		TS_LOG_ERR("%s Error ITO TEST! ERROR %08X\n", __func__, res);
 		if (stop_on_fail)
@@ -1325,6 +1478,11 @@ int production_test_ms_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
 				__func__, ERROR_PROD_TEST_DATA);
 			return ret | ERROR_PROD_TEST_DATA;
 		}
+		ret = production_test_ss_raw(path_limits, stop_on_fail, todo,
+			info, result);
+		if (ret < 0)
+			TS_LOG_ERR("%s production_test_ss_raw failed = %08X\n",
+				__func__, ret);
 		ret = setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
 		msleep(WAIT_FOR_FRESH_FRAMES);
 		ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
@@ -1706,6 +1864,113 @@ ERROR_LIMITS:
 	return ret;
 }
 
+static int production_test_vertical_difference(char *path_limits,
+	MutualSenseData ms_temp_data)
+{
+	int ret;
+	u8 *adj_vertical = NULL;
+	int rows = 0;
+	int columns = 0;
+	int *thresholds_max = NULL;
+
+	if (!path_limits) {
+		TS_LOG_ERR("%s path_limits NULL\n", __func__);
+		return ERROR_PROD_TEST_DATA;
+	}
+	ret = computeAdjVert(ms_temp_data.node_data,
+		ms_temp_data.header.force_node,
+		ms_temp_data.header.sense_node, &adj_vertical);
+	if (ret < 0) {
+		TS_LOG_INFO("%s computeAdjVert faile ERROR %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		MS_CX2_ADJV_MAP_MAX, &thresholds_max, &rows, &columns);
+	/* check  rows - 1 times */
+	if ((ret < 0) || (rows != (ms_temp_data.header.force_node - 1)) ||
+		(columns != ms_temp_data.header.sense_node)) {
+		TS_LOG_INFO("%s parse Limits CX2 ADJV MAP MAX failed %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	/* check columns - 1 times */
+	ret = checkLimitsMapAdj(adj_vertical,
+		ms_temp_data.header.force_node - 1,
+		ms_temp_data.header.sense_node, thresholds_max);
+	if (ret != OK)
+		TS_LOG_INFO("%s CX2 ADJ VERTICAL TEST: failed count = %d\n",
+			__func__, ret);
+	else
+		TS_LOG_INFO("%s MS CX2 ADJ VERTICAL TEST: OK\n", __func__);
+error:
+	kfree(thresholds_max);
+	thresholds_max = NULL;
+	kfree(adj_vertical);
+	adj_vertical = NULL;
+	return ret;
+}
+
+static int production_test_calibration_difference(char *path_limits,
+	MutualSenseData ms_temp_data)
+{
+	int ret;
+	int result;
+	u8 *adj_horizontal = NULL;
+	int *thresholds_max = NULL;
+	int rows = 0;
+	int columns = 0;
+
+	if (!path_limits) {
+		TS_LOG_ERR("%s path_limits NULL\n", __func__);
+		return ERROR_PROD_TEST_DATA;
+	}
+	ret = computeAdjHoriz(ms_temp_data.node_data,
+		ms_temp_data.header.force_node,
+		ms_temp_data.header.sense_node, &adj_horizontal);
+	if (ret < 0) {
+		TS_LOG_INFO("%s computeAdjHoriz failed ERROR %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		MS_CX2_ADJH_MAP_MAX, &thresholds_max, &rows, &columns);
+	/* check  columns - 1 times */
+	if ((ret < 0) || (rows != ms_temp_data.header.force_node) ||
+		(columns != (ms_temp_data.header.sense_node - 1))) {
+		TS_LOG_INFO("%s parse Limits CX2 ADJH MAP MAX failed %08X\n",
+			__func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+
+	}
+	/* check  columns - 1 times */
+	ret = checkLimitsMapAdj(adj_horizontal, ms_temp_data.header.force_node,
+		ms_temp_data.header.sense_node - 1, thresholds_max);
+	if (ret != OK)
+		TS_LOG_INFO("%s CX2 ADJ HORIZONTAL TEST: failed count = %d\n",
+			__func__, ret);
+	else
+		TS_LOG_INFO("%s MS CX2 ADJ HORIZONTAL TEST: OK\n", __func__);
+
+	result = production_test_vertical_difference(path_limits, ms_temp_data);
+	if (result != OK)
+		TS_LOG_ERR("%s test vertical %d\n", __func__, ret);
+	if ((result == OK) && (ret == OK))
+		TS_LOG_INFO("%s test OK\n", __func__);
+	else
+		ret = ERROR_PROD_TEST_DATA;
+error:
+	kfree(thresholds_max);
+	thresholds_max = NULL;
+	kfree(adj_horizontal);
+	adj_horizontal = NULL;
+	return ret;
+}
+
 /**
   * Perform all the tests selected in a TestTodo variable related to MS Init
   * data (touch, keys etc..)
@@ -1734,7 +1999,6 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 	int columns;
 	u16 *temp_u16_array = NULL;
 	short **temp_short = NULL;
-	struct fts_ts_info *fts_info = fts_get_info();
 
 	/* MS CX TEST */
 	TS_LOG_INFO("%s MS CX Testes are starting\n", __func__);
@@ -1763,7 +2027,8 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 	}
 
 	TS_LOG_INFO("%s MS CX2 MIN MAX TEST:\n", __func__);
-	if ((todo->MutualCx2 == 1) && fts_info->check_mutual_raw) {
+	result->self_calibration_row_difference = true;
+	if (todo->MutualCx2) {
 		ret = parseProductionTestLimits(path_limits, &limit_file,
 						MS_CX2_MAP_MIN, &thresholds_min,
 						&trows, &tcolumns);
@@ -1797,11 +2062,10 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 			TS_LOG_ERR("%s: MS CX2 MIN MAX failed ERROR COUNT %d\n",
 				 __func__, ret);
 			count_fail += 1;
-			result->MutualRawResGap = false;
+			result->self_calibration_row_difference = false;
 			if (stop_on_fail)
 				goto error;
 		} else {
-			result->MutualRawResGap = true;
 			TS_LOG_INFO("%s MS CX2 MIN MAX TEST: OK\n", __func__);
 		}
 		kfree(thresholds_min);
@@ -1834,6 +2098,19 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 			result->mutal_cal_res_buf);
 	kfree(temp_u16_array);
 
+	if (todo->MutualCx2Adj) {
+		ret = production_test_calibration_difference(path_limits,
+			msCompData);
+		if (ret != OK) {
+			TS_LOG_INFO("%s mutual Cx2 Adj failed\n", __func__);
+			result->self_calibration_row_difference = false;
+			count_fail += 1;
+		} else {
+			TS_LOG_INFO("%s Mutual Cx2 Adj OK\n", __func__);
+		}
+	} else {
+		TS_LOG_INFO("%s MS CX2 ADJ TEST: SKIPPED\n", __func__);
+	}
 error:
 	TS_LOG_INFO("%s\n", __func__);
 	if (count_fail == 0) {
@@ -1908,6 +2185,12 @@ int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
 	/************** Self Sense Test **************/
 
 	TS_LOG_INFO( "%s Getting SS Frame...\n", __func__);
+	ret = getSSFrame3(SS_STRENGTH, &ssStrengthFrame);
+	if (ret < 0) {
+		TS_LOG_ERR("%s getSS Strength Frame failed ERROR %08X\n",
+			 __func__, ERROR_PROD_TEST_DATA);
+		return ret;
+	}
 	ret = setScanMode(SCAN_MODE_LOCKED, LOCKED_ACTIVE);
 	msleep(WAIT_FOR_FRESH_FRAMES);
 	ret |= setScanMode(SCAN_MODE_ACTIVE, 0x00);
@@ -1915,22 +2198,12 @@ int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,
 	flushFIFO();
 	ret |= getSSFrame3(SS_RAW, &ssRawFrame);
 	if (ret < 0) {
-		TS_LOG_ERR("%s production_test_data: getSSFrame failed... ERROR %08X\n",
+		TS_LOG_ERR("%s production_test_data: getSSFrame failed %08X\n",
 			 __func__, ERROR_PROD_TEST_DATA);
-		return ret | ERROR_PROD_TEST_DATA;
-	}
-	ret |= getSSFrame3(SS_STRENGTH, &ssStrengthFrame);
-	if (ret < 0) {
-		TS_LOG_ERR("%s production_test_data: getSS Strength Frame failed... ERROR %08X\n",
-			 __func__, ERROR_PROD_TEST_DATA);
-        if(ssRawFrame.force_data != NULL){
-	    	kfree(ssRawFrame.force_data);
-	    	ssRawFrame.force_data = NULL;
-	    }
-	    if(ssRawFrame.sense_data != NULL){
-	    	kfree(ssRawFrame.sense_data);
-	    	ssRawFrame.sense_data = NULL;
-	    }
+		kfree(ssStrengthFrame.force_data);
+		ssStrengthFrame.force_data = NULL;
+		kfree(ssStrengthFrame.sense_data);
+		ssStrengthFrame.sense_data = NULL;
 		return ret | ERROR_PROD_TEST_DATA;
 	}
 	fts_mode_handler(st_info,0);
@@ -2301,6 +2574,222 @@ ERROR_LIMITS:
 	return ret;
 }
 
+static void fill_selfdata_buf_u8(struct ts_rawdata_info *info,
+	const u8 *source_data, int rows, int columns)
+{
+	int i;
+	int j;
+	int k = 0;
+	int *data_ptr = NULL;
+
+	if ((source_data == NULL) || (info == NULL)) {
+		TS_LOG_ERR("%s:source_data or info is NULL\n", __func__);
+		return;
+	}
+	if ((rows <= 0) || (columns <= 0)) {
+		TS_LOG_ERR("%s:invalid row is %d, column is %d\n", __func__,
+			rows, columns);
+		return;
+	}
+	data_ptr = info->self_buff + info->self_buff_size;
+	if ((info->self_buff_size + (rows * columns)) > TS_RAWDATA_BUFF_MAX) {
+		TS_LOG_ERR("%s:self_buff_size size error\n", __func__);
+		return;
+	}
+	for (i = 0; i < rows; i++) {
+		for (j = 0; j < columns; j++) {
+			data_ptr[k++] = source_data[i * columns + j];
+			TS_LOG_DEBUG("data_ptr = %d\n",
+				source_data[i * columns + j]);
+		}
+	}
+	info->self_buff_size += rows * columns;
+	TS_LOG_INFO("%s info->self_buff_size -> %lu\n", __func__,
+		info->self_buff_size);
+}
+
+static void fill_selfdata_buf_i8(struct ts_rawdata_info *info,
+	const i8 *source_data, int rows, int columns)
+{
+	int i;
+	int j;
+	int k = 0;
+	int *data_ptr = NULL;
+
+	if ((source_data == NULL) || (info == NULL)) {
+		TS_LOG_ERR("%s:source_data or info is NULL\n", __func__);
+		return;
+	}
+	if ((rows <= 0) || (columns <= 0)) {
+		TS_LOG_ERR("%s:invalid row is %d, column is %d\n", __func__,
+			rows, columns);
+		return;
+	}
+	data_ptr = info->self_buff + info->self_buff_size;
+	if ((info->self_buff_size + (rows * columns)) > TS_RAWDATA_BUFF_MAX) {
+		TS_LOG_ERR("%s:self_buff_size size error\n", __func__);
+		return;
+	}
+	for (i = 0; i < rows; i++) {
+		for (j = 0; j < columns; j++) {
+			data_ptr[k++] = source_data[i * columns + j];
+			TS_LOG_DEBUG("data_ptr = %d\n",
+				source_data[i * columns + j]);
+		}
+	}
+	info->self_buff_size += rows * columns;
+	TS_LOG_INFO("%s info->self_buff_size -> %lu\n", __func__,
+		info->self_buff_size);
+}
+
+static int self_calibrate_force_min_max_test(char *path_limits,
+	SelfSenseData ssCompData, TestResult *result)
+{
+	int ret;
+	int rows = 0;
+	int columns = 0;
+	int *thresholds_min = NULL;
+	int *thresholds_max = NULL;
+
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		SS_TX_IX_FORCE_MIN, &thresholds_min, &rows, &columns);
+	if ((ret < 0) || (rows != LIMITS_ROWS_SIZE) ||
+		(columns != ssCompData.header.force_node)) {
+		TS_LOG_ERR("%s : parse Test Limits failed %08X\n",
+			 __func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		SS_TX_IX_FORCE_MAX, &thresholds_max, &rows, &columns);
+	if ((ret < 0) || (rows != LIMITS_ROWS_SIZE) ||
+		(columns != ssCompData.header.force_node)) {
+		TS_LOG_ERR("%s : parse Test Limits failed %08X\n",
+			 __func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = check_limits_map_u8(ssCompData.ix2_fm, rows,
+		ssCompData.header.force_node, thresholds_min, thresholds_max);
+	if (ret != OK) {
+		TS_LOG_ERR("%s:ss ix2_fm failed error count %d\n",
+			__func__, ret);
+		result->self_calibrate_min_max = false;
+	} else {
+		TS_LOG_INFO("%s ss ix2_fm: OK\n", __func__);
+	}
+error:
+	kfree(thresholds_min);
+	thresholds_min = NULL;
+	kfree(thresholds_max);
+	thresholds_max = NULL;
+	return ret;
+}
+
+static int self_calibrate_ix_min_max_test(char *path_limits,
+	SelfSenseData ssCompData, TestResult *result)
+{
+	int ret;
+	int rows = 0;
+	int columns = 0;
+	int *thresholds_min = NULL;
+	int *thresholds_max = NULL;
+
+	if (!path_limits || !result) {
+		TS_LOG_ERR("%s path_limits result null\n", __func__);
+		return ERROR_PROD_TEST_DATA;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		SS_RX_IX_SENSE_MIN, &thresholds_min, &rows, &columns);
+	if ((ret < 0) || (rows != LIMITS_ROWS_SIZE) ||
+		(columns != ssCompData.header.sense_node)) {
+		TS_LOG_ERR("%s : parse Test Limits failed %08X\n",
+			 __func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		SS_RX_IX_SENSE_MAX, &thresholds_max, &rows, &columns);
+	if ((ret < 0) || (rows != LIMITS_ROWS_SIZE) ||
+		(columns != ssCompData.header.sense_node)) {
+		TS_LOG_ERR("%s : parse Test Limits failed %08X\n",
+			 __func__, ERROR_PROD_TEST_DATA);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	ret = check_limits_map_u8(ssCompData.ix2_sn, rows,
+		ssCompData.header.sense_node, thresholds_min, thresholds_max);
+	if (ret != OK) {
+		TS_LOG_ERR("%s ix2_sn failed error count %d\n", __func__, ret);
+		result->self_calibrate_min_max = false;
+	} else {
+		TS_LOG_INFO("%s ss ix2_sn: OK\n", __func__);
+	}
+	ret = self_calibrate_force_min_max_test(path_limits, ssCompData,
+		result);
+	if (ret < 0)
+		TS_LOG_ERR("%s force min max failed\n", __func__);
+error:
+	kfree(thresholds_min);
+	thresholds_min = NULL;
+	kfree(thresholds_max);
+	thresholds_max = NULL;
+	return ret;
+}
+
+static int self_calibrate_min_max_test(char *path_limits,
+	SelfSenseData ssCompData, struct ts_rawdata_info *info,
+	TestResult *result)
+{
+	int ret;
+	int rows = 0;
+	int columns = 0;
+	int *thresholds = NULL;
+
+	if (!path_limits || !info || !result) {
+		TS_LOG_ERR("%s path_limits result NULL\n", __func__);
+		return ERROR_PROD_TEST_DATA;
+	}
+	info->self_buff_size = ssCompData.header.sense_node *
+		ssCompData.header.force_node;
+	info->self_buff[info->self_buff_size] = ssCompData.f_ix1;
+	info->self_buff_size++;
+	info->self_buff[info->self_buff_size] = ssCompData.s_ix1;
+	info->self_buff_size++;
+	fill_selfdata_buf_u8(info, ssCompData.ix2_sn, SELF_DATA_SIZE,
+		ssCompData.header.sense_node);
+	fill_selfdata_buf_i8(info, ssCompData.cx2_sn, SELF_DATA_SIZE,
+		ssCompData.header.sense_node);
+	fill_selfdata_buf_u8(info, ssCompData.ix2_fm,
+		ssCompData.header.force_node, SELF_DATA_SIZE);
+	fill_selfdata_buf_i8(info, ssCompData.cx2_fm,
+		ssCompData.header.force_node, SELF_DATA_SIZE);
+	result->self_calibrate_min_max = true;
+	ret = parseProductionTestLimits(path_limits, &limit_file,
+		SS_IX1_SENSE_FORCE_MIN_MAX, &thresholds, &rows, &columns);
+	/* SENSE_COLUMNS_SIZE columns sense force size , rowx size 1 */
+	if ((ret < 0) || (rows != LIMITS_ROWS_SIZE) ||
+		(columns != SENSE_COLUMNS_SIZE)) {
+		TS_LOG_ERR("%s parseLimits failed\n", __func__);
+		ret = ERROR_PROD_TEST_DATA;
+		goto error;
+	}
+	if ((ssCompData.f_ix1 < thresholds[0]) ||
+		(ssCompData.f_ix1 > thresholds[1]) ||
+		(ssCompData.s_ix1 < thresholds[2]) ||
+		(ssCompData.s_ix1 > thresholds[3])) {
+		result->self_calibrate_min_max = false;
+		TS_LOG_ERR("%s: ix1 sense force test failed\n", __func__);
+	}
+	ret = self_calibrate_ix_min_max_test(path_limits, ssCompData, result);
+	if (ret < 0)
+		TS_LOG_ERR("%s: self ix min max test failed\n", __func__);
+error:
+	kfree(thresholds);
+	thresholds = NULL;
+	return ret;
+}
+
 /**
   * Perform all the tests selected in a TestTodo variable related to SS Init
   * data (touch, keys etc..)
@@ -2313,7 +2802,7 @@ ERROR_LIMITS:
   * @return OK if success or an error code which specify the type of error
   */
 int production_test_ss_ix_cx(char *path_limits, int stop_on_fail,
-			     TestToDo *todo)
+	TestToDo *todo, struct ts_rawdata_info *info, TestResult *result)
 {
 	int ret = 0;
 	int count_fail = 0;
@@ -2326,6 +2815,7 @@ int production_test_ss_ix_cx(char *path_limits, int stop_on_fail,
 	i8** temp_i8 = NULL;
 	u16 ** temp_u16 = NULL;
 	short ** temp_short = NULL;
+	struct fts_ts_info *fts_info = fts_get_info();
 
 	SelfSenseData ssCompData;
 	TotSelfSenseData totCompData;
@@ -2492,7 +2982,16 @@ int production_test_ss_ix_cx(char *path_limits, int stop_on_fail,
 		}
 	} else
 		TS_LOG_INFO( "%s SS IX CX LP TEST:.................SKIPPED\n",__func__);
-
+	if (fts_info->chip_data->support_self_calibrate_test) {
+		TS_LOG_INFO("%s test self data\n", __func__);
+		ret = self_calibrate_min_max_test(path_limits, ssCompData,
+			info, result);
+		if (ret != OK) {
+			result->self_calibrate_min_max = false;
+			TS_LOG_ERR("%s self calibrate test failed\n",
+				__func__);
+		}
+	}
 ERROR:
 	TS_LOG_INFO( "%s\n", __func__);
 	if (count_fail == 0) {
@@ -2950,19 +3449,12 @@ int production_test_data(char *path_limits, int stop_on_fail, TestToDo *todo,
 	res |= ret;
 	if (ret < 0) {
 		TS_LOG_ERR("%s production_test_data: production_test_ms_cx failed... ERROR = %08X\n",__func__, ret);
+		result->self_calibration_row_difference = false;
 		if (stop_on_fail == 1)
 			goto END;
 	}
-
-	ret = production_test_ss_raw(path_limits, stop_on_fail, todo, info, result);
-	res |= ret;
-	if (ret < 0) {
-		TS_LOG_ERR("%s production_test_data: production_test_ss_raw failed... ERROR = %08X\n",__func__, ret);
-		if (stop_on_fail == 1)
-			goto END;
-	}
-
-	ret = production_test_ss_ix_cx(path_limits, stop_on_fail, todo);
+	ret = production_test_ss_ix_cx(path_limits, stop_on_fail, todo,
+		info, result);
 	res |= ret;
 	if (ret < 0) {
 		TS_LOG_ERR("%s production_test_data: production_test_ss_ix_cx failed... ERROR = %08X\n", __func__, ret);
@@ -2996,7 +3488,7 @@ int getLimitsFile(char *path, LimitFile *file)
 	const struct firmware *fw = NULL;
 //	struct device *dev = NULL;
 	int fd = -1;
-	struct fts_ts_info *fts_info;
+	struct fts_ts_info *fts_info = NULL;
 
 	TS_LOG_INFO( "%s Get Limits File starting... %s\n", __func__, path);
 
@@ -3118,7 +3610,7 @@ int parseProductionTestLimits(char *path, LimitFile *file, char *label,
 	int ret = OK;
 	char *token = NULL;
 	char *line2 = NULL;
-	char line[800] = {0};
+	char line[LIMITS_MAX_SIZE] = {0};
 	char *buf = NULL;
 	char *data_file = NULL;
 
@@ -3276,7 +3768,8 @@ int readLine(char *data, char *line, int size, int *n)
 		return ERROR_OP_NOT_ALLOW;
 	}
 
-	while (data[i] != '\n' && i < size) {
+	while ((data[i] != '\n') && (i < size) &&
+		(i < (LIMITS_MAX_SIZE - 1))) {
 		line[i] = data[i];
 		i++;
 	}
@@ -3306,6 +3799,23 @@ static void string_lookup_replace(char *str, char original_char,
 	for (i = 0; i < str_len; i++) {
 		if (str[i] == original_char)
 			str[i] = target_char;
+	}
+}
+
+static void adjacent_rawdata_aftertest(struct ts_rawdata_info *info,
+	TestResult *result)
+{
+	struct fts_ts_info *ts_info = fts_get_info();
+
+	if (!ts_info) {
+		TS_LOG_ERR("%s data is null\n", __func__);
+		return;
+	}
+	if (ts_info->support_raw_adjacent_test) {
+		if (result->ito_raw_adjacent_test)
+			strncat(info->result, "-14P", strlen("-14P"));
+		else
+			strncat(info->result, "-14F", strlen("-14F"));
 	}
 }
 
@@ -3382,7 +3892,6 @@ int st_get_rawdata_aftertest(struct ts_rawdata_info *info,u8 signature)
 	} else {
 		strncat(info->result, "-3F", strlen("-3F"));
 	}
-
 	if (TestRes->ITO_Test_Res) {
 		strncat(info->result, "-5P", strlen("-5P"));
 	} else {
@@ -3393,16 +3902,29 @@ int st_get_rawdata_aftertest(struct ts_rawdata_info *info,u8 signature)
 	} else {
 		strncat(info->result, "-6F", strlen("-6F"));
 	}
-	if (TestRes->SelfSenseStrengthData && TestRes->SelfForceStrengthData) {
+	if (TestRes->SelfSenseStrengthData && TestRes->SelfForceStrengthData)
 		strncat(info->result, "-9P", strlen("-9P"));
-	} else {
+	else
 		strncat(info->result, "-9F", strlen("-9F"));
+	if (tests.MutualCx2Adj || tests.MutualCx2) {
+		if (TestRes->self_calibration_row_difference)
+			strncat(info->result, "-11P", strlen("-11P"));
+		else
+			strncat(info->result, "-11F", strlen("-11F"));
 	}
-//	if (TestRes->SelfSenseData) {
-//		strncat(info->result, "-10P", strlen("-10P"));
-//	} else {
-//		strncat(info->result, "-10F", strlen("-10F"));
-//	}
+	if (fts_info->chip_data->support_ito_cap_test) {
+		if (TestRes->ito_raw_min_max)
+			strncat(info->result, "-12P", strlen("-12P"));
+		else
+			strncat(info->result, "-12F", strlen("-12F"));
+	}
+	if (fts_info->chip_data->support_self_calibrate_test) {
+		if (TestRes->self_calibrate_min_max)
+			strncat(info->result, "-13P", strlen("-13P"));
+		else
+			strncat(info->result, "-13F", strlen("-13F"));
+	}
+	adjacent_rawdata_aftertest(info, TestRes);
 	strncat(info->result, TestRes->mutal_raw_res_buf, ST_NP_TEST_RES_BUF_LEN);
 	strncat(info->result, TestRes->mutal_noise_res_buf, ST_NP_TEST_RES_BUF_LEN);
 	strncat(info->result, TestRes->mutal_cal_res_buf, ST_NP_TEST_RES_BUF_LEN);

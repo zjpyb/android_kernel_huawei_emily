@@ -1,3 +1,9 @@
+config SUPERSWITCH
+	tristate "superswitch support"
+	default n
+	help
+	  Say Y here to enable superswitch support.
+
 config SUPERSWITCH_FSC
 	tristate "fsc superswitch support"
 	depends on SUPERSWITCH

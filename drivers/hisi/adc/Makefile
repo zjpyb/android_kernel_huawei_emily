@@ -1,1 +1,1 @@
-obj-$(CONFIG_HISI_HKADC) += hisi_adc.o
+obj-$(CONFIG_LPM_HKADC) += adc.o

@@ -79,17 +79,18 @@ static long anc_hs_default_ioctl(struct file *file, unsigned int cmd,
 {
 	int ret;
 	int adc_value;
-	unsigned int __user *p_user = (unsigned int __user *)arg;
+	uintptr_t arg_tmp = (uintptr_t)arg;
+	unsigned int __user *p_user = (unsigned int __user *)arg_tmp;
 
 	if (!g_anc_hs_default_priv)
 		return -ENODEV;
 
 	switch (cmd) {
-	case IOCTL_ANC_HS_GET_HEADSET_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_CMD:
 		ret = put_user((__u32)(g_anc_hs_default_priv->headset_type),
 			p_user);
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_RESISTANCE_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_RESISTANCE_CMD:
 		adc_value = 0;
 		ret = put_user((__u32)(adc_value), p_user);
 		break;
@@ -113,7 +114,7 @@ static const struct file_operations anc_hs_default_fops = {
 
 static struct miscdevice anc_hs_default_device = {
 	.minor  = MISC_DYNAMIC_MINOR,
-	.name   = "anc_hs",
+	.name   = "ana_hs",
 	.fops   = &anc_hs_default_fops,
 };
 

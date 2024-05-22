@@ -22,6 +22,7 @@ bool DSRAM_Flag = false;
 int Flash_Size = FW_SIZE_64k;
 int self_test_nc_flag = 0;
 
+#define MOV_3BIT 3
 #define COLUMNS_LEN 16
 #define REG_COMMON_LEN 128
 #define DIAG_COMMAND_MAX_SIZE 80
@@ -245,10 +246,10 @@ static ssize_t himax_diag_show(struct device *dev,struct device_attribute *attr,
 
 	dsram_type = g_diag_command /10;
 
-	//check if devided by zero
+	// check if divided by zero
 	if (x_channel == 0)
 	{
-		TS_LOG_ERR("%s devided by zero.");
+		TS_LOG_ERR("diag_show: divided by zero\n");
 		return count;
 	}
 
@@ -455,29 +456,6 @@ static ssize_t himax_diag_dump(struct device *dev, struct device_attribute *attr
 		himax_nc_int_enable(g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->irq_id,0);
 
 		//Open file for save raw data log
-		#if 0
-		if (storage_type == 4)
-		{
-			switch (rawdata_type)
-			{
-				case 1:
-					diag_sram_fn = filp_open(IIR_DUMP_FILE,O_CREAT | O_WRONLY ,0);
-					break;
-				case 2:
-					diag_sram_fn = filp_open(DC_DUMP_FILE,O_CREAT | O_WRONLY ,0);
-					break;
-				case 3:
-					diag_sram_fn = filp_open(BANK_DUMP_FILE,O_CREAT | O_WRONLY ,0);
-					break;
-				default:
-					TS_LOG_INFO("%s raw data type is not true. raw data type is %d \n",__func__, rawdata_type);
-			}
-		}
-
-		TS_LOG_INFO("%s: Start get raw data in DSRAM\n", __func__);
-		if (storage_type == 4)
-			msleep(HX_SLEEP_6S);
-		#endif
 		//3. Set DSRAM flag
 		DSRAM_Flag = true;
 
@@ -591,6 +569,7 @@ static ssize_t himax_register_store(struct device *dev,struct device_attribute *
 {
 	char buf_tmp[DIAG_COMMAND_MAX_SIZE]= {0};
 	char *data_str = NULL;
+	uint8_t buff_size = 0;
 	uint8_t length = 0;
 	uint8_t loop_i = 0;
 	uint8_t flg_cnt = 0;
@@ -627,9 +606,11 @@ static ssize_t himax_register_store(struct device *dev,struct device_attribute *
 		TS_LOG_INFO("%s: %s.\n", __func__,data_str);
 		length = strlen(data_str+1) - 1;
 
-		if (buff[0] == 'r')
-		{
-			memcpy(buf_tmp, data_str + 1, length);
+		if (buff[0] == 'r') {
+			if (length < DIAG_COMMAND_MAX_SIZE)
+				memcpy(buf_tmp, data_str + 1, length);
+			else
+				TS_LOG_INFO("register_store: length more than 80 bytes\n");
 			byte_length = length/2;
 			if (!kstrtoul(buf_tmp, 16, &result))
 			{
@@ -639,10 +620,12 @@ static ssize_t himax_register_store(struct device *dev,struct device_attribute *
 				}
 			}
 			TS_LOG_INFO("%s: buff[0] == 'r'\n", __func__);
-		}
-		else if (buff[0] == 'w')
-		{
-			memcpy(buf_tmp, buff + 3, length);
+		} else if (buff[0] == 'w') {
+			buff_size = (strlen(buff + MOV_3BIT) < DIAG_COMMAND_MAX_SIZE) ? strlen(buff + MOV_3BIT) : DIAG_COMMAND_MAX_SIZE;
+			if (length < buff_size)
+				memcpy(buf_tmp, buff + MOV_3BIT, length);
+			else
+				TS_LOG_INFO("register_store: length too long\n");
 			if(flg_cnt < 3)
 			{
 				byte_length = length/2;

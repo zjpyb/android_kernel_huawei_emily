@@ -8,6 +8,7 @@
  */
 #include "compress.h"
 #include <linux/lz4.h>
+#include <linux/delay.h>
 
 #ifndef LZ4_DISTANCE_MAX	/* history window size */
 #define LZ4_DISTANCE_MAX 65535	/* set to maximum value by default */
@@ -128,6 +129,8 @@ static int lz4_decompress(struct z_erofs_decompress_req *rq, u8 *out)
 	u8 *src;
 	bool copied;
 	int ret;
+	static DEFINE_SPINLOCK(erofs_print_lock);
+	uint nr;
 
 	if (rq->inputsize > PAGE_SIZE)
 		return -ENOTSUPP;
@@ -145,11 +148,11 @@ static int lz4_decompress(struct z_erofs_decompress_req *rq, u8 *out)
 
 	copied = false;
 	inlen = rq->inputsize - inputmargin;
+	nr = PAGE_ALIGN(rq->pageofs_out +
+			   rq->outputsize) >> PAGE_SHIFT;
 	if (rq->inplace_io) {
 		const uint oend = (rq->pageofs_out +
 				   rq->outputsize) & ~PAGE_MASK;
-		const uint nr = PAGE_ALIGN(rq->pageofs_out +
-					   rq->outputsize) >> PAGE_SHIFT;
 
 		if (rq->partial_decoding ||
 		    !(sbi->requirements & EROFS_REQUIREMENT_LZ4_0PADDING) ||
@@ -163,19 +166,45 @@ static int lz4_decompress(struct z_erofs_decompress_req *rq, u8 *out)
 	}
 
 	ret = z_erofs_lz4_decompress_partial(src + inputmargin, out,
-//	ret = LZ4_decompress_safe_partial(src + inputmargin, out,
 					  inlen, rq->outputsize,
 					  test_opt(sbi, LZ4ASM),
 					  rq->inplace_io);
 	if (ret < 0) {
-		errln("%s, failed to decompress, in[%p, %u, %u] out[%p, %u]",
-		      __func__, src + inputmargin, inlen, inputmargin,
-		      out, rq->outputsize);
-		WARN_ON(1);
-		print_hex_dump(KERN_DEBUG, "[ in]: ", DUMP_PREFIX_OFFSET,
+		const int max_log_size = 128;
+		int i;
+		int outputsize;
+
+		spin_lock(&erofs_print_lock);
+		errln("%s, sb(%s) mapping[%px], failed to decompress, in[%px, %u, %u] out[%px, %u] ret:%d",
+		      __func__, rq->sb->s_id, MNGD_MAPPING(sbi), src + inputmargin, inlen, inputmargin,
+		      out, rq->outputsize, ret);
+
+		errln("rq->in[0]:[%px] index[%lu] flag[%lx] page_count[%d] mapping[%px] pageofs_out[%u] inplace_io[%u] partial_decoding[%u]",
+			rq->in[0], rq->in[0]->index, rq->in[0]->flags, page_count(rq->in[0]), rq->in[0]->mapping,
+			rq->pageofs_out, rq->inplace_io, rq->partial_decoding);
+
+		for (i = 0; i < nr; i++) {
+			struct address_space *mapping = NULL;
+			int count = -1;
+			unsigned long index = 0;
+
+			if (rq->out[i]) {
+				count = page_count(rq->out[i]);
+				mapping = rq->out[i]->mapping;
+				index = rq->out[i]->index;
+			}
+
+			errln("rq->out[%d]:[%px] index[%lu] page_count[%d] mapping[%px]",
+				i, rq->out[i], index, count, mapping);
+		}
+		outputsize = rq->outputsize < max_log_size ?
+			rq->outputsize : max_log_size;
+		print_hex_dump(KERN_ERR, "[ in]: ", DUMP_PREFIX_OFFSET,
 			       16, 1, src + inputmargin, inlen, true);
-		print_hex_dump(KERN_DEBUG, "[out]: ", DUMP_PREFIX_OFFSET,
-			       16, 1, out, rq->outputsize, true);
+		print_hex_dump(KERN_ERR, "[out]: ", DUMP_PREFIX_OFFSET,
+			       16, 1, out, outputsize, true);
+		spin_unlock(&erofs_print_lock);
+		DBG_BUGON(1);
 		ret = -EIO;
 	}
 
@@ -309,14 +338,20 @@ static int shifted_decompress(const struct z_erofs_decompress_req *rq,
 		memcpy(dst + rq->pageofs_out, src, righthalf);
 	}
 
-	if (rq->out[1] == *rq->in) {
-		memmove(src, src + righthalf, rq->pageofs_out);
-	} else if (nrpages_out == 2) {
-		if (dst)
-			kunmap_atomic(dst);
-		DBG_BUGON(!rq->out[1]);
-		dst = kmap_atomic(rq->out[1]);
-		memcpy(dst, src + righthalf, rq->pageofs_out);
+	/*
+	 * Shifted transformation should only allow 2 pages for now,
+	 * the second half will be placed to the second output page.
+	 */
+	if (nrpages_out == 2) {
+		if (rq->out[1] == *rq->in) {
+			memmove(src, src + righthalf, rq->pageofs_out);
+		} else {
+			if (dst)
+				kunmap_atomic(dst);
+			DBG_BUGON(!rq->out[1]);
+			dst = kmap_atomic(rq->out[1]);
+			memcpy(dst, src + righthalf, rq->pageofs_out);
+		}
 	}
 	if (dst)
 		kunmap_atomic(dst);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  * Description: This file is the internal header file for the
  *              TCP parameter collection module.
  * Author: liuleimin1@huawei.com

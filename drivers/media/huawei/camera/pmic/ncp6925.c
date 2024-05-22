@@ -81,7 +81,6 @@ typedef enum {
 }ncp6925_pin_type;
 
 struct ncp6925_private_data_t {
-
     /* pmic control pin */
     unsigned int pin[MAX_PIN];
     unsigned int voltage[VOUT_MAX];
@@ -190,9 +189,9 @@ static int ncp6925_remove(struct i2c_client *client)
 
 static int ncp6925_init(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
-    struct ncp6925_private_data_t *pdata;
+    struct hisi_pmic_i2c_client *i2c_client = NULL;
+    struct hisi_pmic_i2c_fn_t *i2c_func = NULL;
+    struct ncp6925_private_data_t *pdata = NULL;
     u8 device_id = 0;
     u8 external_id = 0;
     int ret = 0;
@@ -310,7 +309,7 @@ err1:
 
 static int ncp6925_exit(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct ncp6925_private_data_t *pdata;
+    struct ncp6925_private_data_t *pdata = NULL;
 
     cam_debug("%s enter.", __func__);
 
@@ -328,9 +327,9 @@ static int ncp6925_exit(struct hisi_pmic_ctrl_t *pmic_ctrl)
 
 static int ncp6925_on(struct hisi_pmic_ctrl_t *pmic_ctrl, void *data)
 {
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
-    struct ncp6925_private_data_t *pdata;
+    struct hisi_pmic_i2c_client *i2c_client = NULL;
+    struct hisi_pmic_i2c_fn_t *i2c_func = NULL;
+    struct ncp6925_private_data_t *pdata = NULL;
     int gpio_value = 0;
 
     cam_debug("%s enter.", __func__);
@@ -363,7 +362,7 @@ static int ncp6925_on(struct hisi_pmic_ctrl_t *pmic_ctrl, void *data)
 
 static int ncp6925_off(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct ncp6925_private_data_t *pdata;
+    struct ncp6925_private_data_t *pdata = NULL;
     cam_debug("%s enter.", __func__);
 
     if (NULL == pmic_ctrl) {
@@ -383,8 +382,8 @@ static int ncp6925_off(struct hisi_pmic_ctrl_t *pmic_ctrl)
 
 static int ncp6925_check_state_exception(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
+    struct hisi_pmic_i2c_client *i2c_client = NULL;
+    struct hisi_pmic_i2c_fn_t *i2c_func = NULL;
     u8 reg_value = 0;
 
     if (NULL == pmic_ctrl) {
@@ -435,8 +434,8 @@ static int ncp6925_check_state_exception(struct hisi_pmic_ctrl_t *pmic_ctrl)
 
 static int twl80125_check_state_exception(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
+    struct hisi_pmic_i2c_client *i2c_client = NULL;
+    struct hisi_pmic_i2c_fn_t *i2c_func = NULL;
     u8 reg_value = 0;
 
     if (NULL == pmic_ctrl) {
@@ -463,7 +462,7 @@ static int twl80125_check_state_exception(struct hisi_pmic_ctrl_t *pmic_ctrl)
 
 static int pmic_check_state_exception(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct ncp6925_private_data_t *pdata;
+    struct ncp6925_private_data_t *pdata = NULL;
     if (NULL == pmic_ctrl) {
         cam_err("%s pmic_ctrl is NULL.", __func__);
         return -1;
@@ -510,13 +509,13 @@ static void ncp6925_get_extern_cfg(struct device_node* dev_node)
 
 static int ncp6925_get_dt_data(struct hisi_pmic_ctrl_t *pmic_ctrl)
 {
-    struct ncp6925_private_data_t *pdata;
-    struct device_node *dev_node;
+    struct ncp6925_private_data_t *pdata = NULL;
+    struct device_node *dev_node = NULL;
     int i;
     int rc = -1;
     int pmic_sensor_1v8 = 0;
     int pmic_sensor_3v3 = 0;
-    struct hisi_pmic_info *pmic_info;
+    struct hisi_pmic_info *pmic_info = NULL;
 
     cam_info("%s enter.\n", __func__);
 
@@ -652,8 +651,8 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
     u8 voltage_val = 0;
     u8 buck12_prog = 0;
     u8 buck12_prog_old = 0;
-    struct hisi_pmic_i2c_client *i2c_client;
-    struct hisi_pmic_i2c_fn_t *i2c_func;
+    struct hisi_pmic_i2c_client *i2c_client = NULL;
+    struct hisi_pmic_i2c_fn_t *i2c_func = NULL;
     int ret = 0;
 
     cam_debug("%s enter.", __func__);
@@ -727,13 +726,9 @@ static int ncp6925_seq_config(struct hisi_pmic_ctrl_t *pmic_ctrl, pmic_seq_index
 }
 
 
-
 static int ncp6925_register_attribute(struct hisi_pmic_ctrl_t *pmic_ctrl, struct device *dev)
 {
-
-
     return 0;
-
 }
 
 

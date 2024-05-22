@@ -136,6 +136,13 @@ static void vunmap_page_range(unsigned long addr, unsigned long end)
 	} while (pgd++, addr = next, addr != end);
 }
 
+#ifdef CONFIG_HKIP_PRMEM
+void prmem_vunmap_page_range(unsigned long addr, unsigned long end)
+{
+	vunmap_page_range(addr, end);
+}
+#endif
+
 static int vmap_pte_range(pmd_t *pmd, unsigned long addr,
 		unsigned long end, pgprot_t prot, struct page **pages, int *nr)
 {
@@ -249,6 +256,14 @@ static int vmap_page_range(unsigned long start, unsigned long end,
 	flush_cache_vmap(start, end);
 	return ret;
 }
+
+#ifdef CONFIG_HKIP_PRMEM
+int prmem_vmap_page_range(unsigned long start, unsigned long end,
+			  pgprot_t prot, struct page **pages)
+{
+	return vmap_page_range(start, end, prot, pages);
+}
+#endif
 
 int is_vmalloc_or_module_addr(const void *x)
 {
@@ -1528,7 +1543,7 @@ static void __vunmap(const void *addr, int deallocate_pages)
 			addr))
 		return;
 
-	area = find_vmap_area((unsigned long)addr)->vm;
+	area = find_vm_area(addr);
 	if (unlikely(!area)) {
 		WARN(1, KERN_ERR "Trying to vfree() nonexistent vm area (%p)\n",
 				addr);
@@ -1658,7 +1673,7 @@ void *lb_vmap(struct page **pages, unsigned int count, unsigned int offset,
 		unsigned long flags, pgprot_t prot)
 {
 	int ret;
-	struct vm_struct *area;
+	struct vm_struct *area = NULL;
 	unsigned long size; /* In bytes */
 	unsigned long vm_start, vm_end, vm_mid;
 
@@ -1768,7 +1783,6 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	nr_pages = get_vm_area_size(area) >> PAGE_SHIFT;
 	array_size = (nr_pages * sizeof(struct page *));
 
-	area->nr_pages = nr_pages;
 	/* Please note that the recursion is strictly bounded. */
 	if (array_size > PAGE_SIZE) {
 		pages = __vmalloc_node(array_size, 1, nested_gfp|highmem_mask,
@@ -1776,12 +1790,15 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	} else {
 		pages = kmalloc_node(array_size, nested_gfp, node);
 	}
-	area->pages = pages;
-	if (!area->pages) {
+
+	if (!pages) {
 		remove_vm_area(area->addr);
 		kfree(area);
 		return NULL;
 	}
+
+	area->pages = pages;
+	area->nr_pages = nr_pages;
 
 	for (i = 0; i < area->nr_pages; i++) {
 		struct page *page;
@@ -1855,6 +1872,12 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	addr = __vmalloc_area_node(area, gfp_mask, prot, node);
 	if (!addr)
 		return NULL;
+
+	/*
+	 * First make sure the mappings are removed from all page-tables
+	 * before they are freed.
+	 */
+	vmalloc_sync_all();
 
 	/*
 	 * In this function, newly allocated vm_struct has VM_UNINITIALIZED
@@ -2408,6 +2431,9 @@ EXPORT_SYMBOL(remap_vmalloc_range);
 /*
  * Implement a stub for vmalloc_sync_all() if the architecture chose not to
  * have one.
+ *
+ * The purpose of this function is to make sure the vmalloc area
+ * mappings are identical in all page-tables in the system.
  */
 void __weak vmalloc_sync_all(void)
 {

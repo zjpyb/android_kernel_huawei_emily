@@ -8,5 +8,7 @@ menuconfig HUAWEI_BATTERY_INFORMATION
 source "drivers/huawei_platform/power/battery/battery_ct/maxim/Kconfig"
 source "drivers/huawei_platform/power/battery/battery_ct/nxp/Kconfig"
 source "drivers/huawei_platform/power/battery/battery_ct/onewire/Kconfig"
+source "drivers/huawei_platform/power/battery/battery_ct/richtek/Kconfig"
+source "drivers/huawei_platform/power/battery/battery_ct/infineon/Kconfig"
 
 endmenu

@@ -45,4 +45,3 @@ int swscanf_s(const wchar_t *buffer, const wchar_t *format, ...)
     return ret;
 }
 
-

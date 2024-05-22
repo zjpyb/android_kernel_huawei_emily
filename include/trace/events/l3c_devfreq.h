@@ -1,3 +1,20 @@
+/*
+ * l3c_devfreq.h
+ *
+ * L3cache devfreq
+ *
+ * Copyright (c) 2017-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM l3c_devfreq
 
@@ -6,7 +23,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(l3c_devfreq_counter_info,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(l3c_devfreq_counter_info,
 	TP_PROTO(unsigned long l3_count, unsigned long ba_count),
 	TP_ARGS(l3_count, ba_count),
 	TP_STRUCT__entry(
@@ -22,7 +39,7 @@ TRACE_EVENT(l3c_devfreq_counter_info,/* [false alarm]:原生宏定义 */
 		  __entry->l3_count, __entry->ba_count)
 );
 
-TRACE_EVENT(l3c_devfreq_bw_info,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(l3c_devfreq_bw_info,
 	TP_PROTO(unsigned long usec_delta, unsigned long cur_freq,
 		 unsigned long l3c_bw, unsigned long hit_bw),
 	TP_ARGS(usec_delta, cur_freq, l3c_bw, hit_bw),
@@ -44,27 +61,7 @@ TRACE_EVENT(l3c_devfreq_bw_info,/* [false alarm]:原生宏定义 */
 		  __entry->l3c_bw, __entry->hit_bw)
 );
 
-TRACE_EVENT(l3c_cpufreq_transition,/* [false alarm]:原生宏定义 */
-	TP_PROTO(unsigned int cpu, unsigned int old_freq, unsigned int new_freq, int flag),
-	TP_ARGS(cpu, old_freq, new_freq, flag),
-	TP_STRUCT__entry(
-		__field(unsigned int, cpu)
-		__field(unsigned int, old_freq)
-		__field(unsigned int, new_freq)
-		__field(int, flag)
-	),
-	TP_fast_assign(
-		__entry->cpu = cpu;
-		__entry->old_freq = old_freq;
-		__entry->new_freq = new_freq;
-		__entry->flag = flag;
-	),
-
-	TP_printk("cpu=%u old=%u new=%u, allow_boost=%u",
-		  __entry->cpu, __entry->old_freq, __entry->new_freq, __entry->flag)
-);
-
-TRACE_EVENT(l3c_devfreq_target,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(l3c_devfreq_target,
 	TP_PROTO(unsigned long taget_freq),
 	TP_ARGS(taget_freq),
 	TP_STRUCT__entry(
@@ -76,20 +73,6 @@ TRACE_EVENT(l3c_devfreq_target,/* [false alarm]:原生宏定义 */
 
 	TP_printk("taget_freq=%lu",
 		  __entry->taget_freq)
-);
-
-TRACE_EVENT(l3c_devfreq_read_event,/* [false alarm]:原生宏定义 */
-	TP_PROTO(u64 total),
-	TP_ARGS(total),
-	TP_STRUCT__entry(
-		__field(unsigned long, total)
-	),
-	TP_fast_assign(
-		__entry->total = total;
-	),
-
-	TP_printk("total=0x%lx",
-		  __entry->total)
 );
 
 #endif /* _TRACE_DSU_PCTRL_H */

@@ -3,7 +3,7 @@
  *
  * charger uevent driver
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,12 +21,18 @@
 
 #include <huawei_platform/power/huawei_charger.h>
 
-extern struct blocking_notifier_head charger_event_notify_head;
-
-void charge_event_notify(int event);
+#ifdef CONFIG_HUAWEI_CHARGER
 void charge_send_uevent(int input_events);
-void direct_charge_connect_send_uevent(void);
-void direct_charge_disconnect_send_uevent(void);
-void wireless_charge_connect_send_uevent(void);
+void charge_send_icon_uevent(int icon_type);
+void wired_connect_send_icon_uevent(int icon_type);
+void wired_disconnect_send_icon_uevent(void);
+void wireless_connect_send_icon_uevent(int icon_type);
+#else
+static inline void charge_send_uevent(int input_events) {}
+static inline void charge_send_icon_uevent(int icon_type) {}
+static inline void wired_connect_send_icon_uevent(int icon_type) {}
+static inline void wired_disconnect_send_icon_uevent(void) {}
+static inline void wireless_connect_send_icon_uevent(int icon_type) {}
+#endif /* CONFIG_HUAWEI_CHARGER */
 
 #endif /* _HUAWEI_CHARGER_UEVENT_H_ */

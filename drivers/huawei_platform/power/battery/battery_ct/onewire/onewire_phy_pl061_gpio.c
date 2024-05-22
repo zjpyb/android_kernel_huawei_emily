@@ -3,7 +3,7 @@
  *
  * this is for maxim onewire ic
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +16,7 @@
  *
  */
 
-#include <huawei_platform/power/battery_type_identify.h>
+#include <chipset_common/hwpower/battery/battery_type_identify.h>
 
 #include "onewire_common.h"
 
@@ -33,37 +33,52 @@ static struct ow_treq *ow_trq;
 
 static const char gpio_name[] = "onewire_phy_pl061_gpio";
 
-/* onewire reset operation */
 static unsigned char onewire_reset(void)
+{
+	unsigned char presence = 0;
+
+	gpio_direction_output_unsafe(LOW_VOLTAGE, &pl061_gpio);
+	__hw_delay(ow_trq->reset_init_low_cycles);
+	gpio_set_value_unsafe(HIGH_VOLTAGE, &pl061_gpio);
+
+	if (ow_trq->reset_slave_response_delay_cycles > 0) {
+		gpio_direction_input_unsafe(&pl061_gpio);
+		__hw_delay(ow_trq->reset_slave_response_delay_cycles);
+		presence = gpio_get_value_unsafe(&pl061_gpio);
+	}
+
+	__hw_delay(ow_trq->reset_hold_high_cycles);
+	return presence;
+}
+
+/* onewire reset operation */
+static unsigned char onewire_lock_reset(void)
 {
 	unsigned char presence;
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(pl061_gpio.lock, flags);
 	get_current_gpio_bank_dir(&pl061_gpio);
-	gpio_direction_output_unsafe(LOW_VOLTAGE, &pl061_gpio);
-	__hw_delay(ow_trq->reset_init_low_cycles);
-	gpio_set_value_unsafe(HIGH_VOLTAGE, &pl061_gpio);
-	gpio_direction_input_unsafe(&pl061_gpio);
-	__hw_delay(ow_trq->reset_slave_response_delay_cycles);
-	presence = gpio_get_value_unsafe(&pl061_gpio);
-	__hw_delay(ow_trq->reset_hold_high_cycles);
+	presence = onewire_reset();
 	raw_spin_unlock_irqrestore(pl061_gpio.lock, flags);
 
 	return presence;
 }
 
 /* onewire bit operation */
-static inline void onewire_read_bit(unsigned char *value)
+static void onewire_read_bit(unsigned char *value, unsigned char offset)
 {
 	gpio_direction_output_unsafe(LOW_VOLTAGE, &pl061_gpio);
 	__hw_delay(ow_trq->read_init_low_cycles);
 	gpio_direction_input_unsafe(&pl061_gpio);
-	*value = (*value) | (gpio_get_value_unsafe(&pl061_gpio) << SHIFT_7);
+	if (ow_trq->read_wait_slave_cycles > 0)
+		__hw_delay(ow_trq->read_wait_slave_cycles);
+
+	*value = (*value) | (gpio_get_value_unsafe(&pl061_gpio) << offset);
 	__hw_delay(ow_trq->read_residual_cycles);
 }
 
-static inline void onewire_write_bit(const unsigned char bitval)
+static void onewire_write_bit(const unsigned char bitval)
 {
 	gpio_direction_output_unsafe(LOW_VOLTAGE, &pl061_gpio);
 	__hw_delay(ow_trq->write_init_low_cycles);
@@ -81,22 +96,28 @@ static unsigned char onewire_read_byte(void)
 
 	raw_spin_lock_irqsave(pl061_gpio.lock, flags);
 	get_current_gpio_bank_dir(&pl061_gpio);
+
 	/* data from IC bit0 bit1 ... bit7 */
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
-	value >>= SHIFT_1;
-	onewire_read_bit(&value);
+	if (ow_trq->transport_bit_order == ONEWIRE_BIT_ORDER_LSB) {
+		onewire_read_bit(&value, SHIFT_0);
+		onewire_read_bit(&value, SHIFT_1);
+		onewire_read_bit(&value, SHIFT_2);
+		onewire_read_bit(&value, SHIFT_3);
+		onewire_read_bit(&value, SHIFT_4);
+		onewire_read_bit(&value, SHIFT_5);
+		onewire_read_bit(&value, SHIFT_6);
+		onewire_read_bit(&value, SHIFT_7);
+	} else {
+		onewire_read_bit(&value, SHIFT_7);
+		onewire_read_bit(&value, SHIFT_6);
+		onewire_read_bit(&value, SHIFT_5);
+		onewire_read_bit(&value, SHIFT_4);
+		onewire_read_bit(&value, SHIFT_3);
+		onewire_read_bit(&value, SHIFT_2);
+		onewire_read_bit(&value, SHIFT_1);
+		onewire_read_bit(&value, SHIFT_0);
+	}
+
 	/* set gpio for powering eeprom program & hmac computation */
 	gpio_direction_output_unsafe(HIGH_VOLTAGE, &pl061_gpio);
 	raw_spin_unlock_irqrestore(pl061_gpio.lock, flags);
@@ -106,18 +127,45 @@ static unsigned char onewire_read_byte(void)
 
 static void onewire_write_byte(const unsigned char val)
 {
+	if (ow_trq->transport_bit_order == ONEWIRE_BIT_ORDER_LSB) {
+		onewire_write_bit(val & BIT_0);
+		onewire_write_bit(val & BIT_1);
+		onewire_write_bit(val & BIT_2);
+		onewire_write_bit(val & BIT_3);
+		onewire_write_bit(val & BIT_4);
+		onewire_write_bit(val & BIT_5);
+		onewire_write_bit(val & BIT_6);
+		onewire_write_bit(val & BIT_7);
+	} else {
+		onewire_write_bit(val & BIT_7);
+		onewire_write_bit(val & BIT_6);
+		onewire_write_bit(val & BIT_5);
+		onewire_write_bit(val & BIT_4);
+		onewire_write_bit(val & BIT_3);
+		onewire_write_bit(val & BIT_2);
+		onewire_write_bit(val & BIT_1);
+		onewire_write_bit(val & BIT_0);
+	}
+}
+
+static void onewire_reset_write_byte(const unsigned char val)
+{
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(pl061_gpio.lock, flags);
 	get_current_gpio_bank_dir(&pl061_gpio);
-	onewire_write_bit(val & BIT_0);
-	onewire_write_bit(val & BIT_1);
-	onewire_write_bit(val & BIT_2);
-	onewire_write_bit(val & BIT_3);
-	onewire_write_bit(val & BIT_4);
-	onewire_write_bit(val & BIT_5);
-	onewire_write_bit(val & BIT_6);
-	onewire_write_bit(val & BIT_7);
+	onewire_reset();
+	onewire_write_byte(val);
+	raw_spin_unlock_irqrestore(pl061_gpio.lock, flags);
+}
+
+static void onewire_lock_write_byte(const unsigned char val)
+{
+	unsigned long flags;
+
+	raw_spin_lock_irqsave(pl061_gpio.lock, flags);
+	get_current_gpio_bank_dir(&pl061_gpio);
+	onewire_write_byte(val);
 	raw_spin_unlock_irqrestore(pl061_gpio.lock, flags);
 }
 
@@ -138,9 +186,10 @@ static void onewire_set_time_request(struct ow_treq *ic_ow_trq)
 
 static int pl061_gpio_register(struct ow_phy_ops *ow_phy_ops)
 {
-	ow_phy_ops->reset = onewire_reset;
+	ow_phy_ops->reset = onewire_lock_reset;
 	ow_phy_ops->read_byte = onewire_read_byte;
-	ow_phy_ops->write_byte = onewire_write_byte;
+	ow_phy_ops->write_byte = onewire_lock_write_byte;
+	ow_phy_ops->reset_write_byte = onewire_reset_write_byte;
 	ow_phy_ops->set_time_request = onewire_set_time_request;
 	ow_phy_ops->wait_for_ic = onewire_wait_for_ic;
 
@@ -173,7 +222,7 @@ static int onewire_phy_pl061_close_ic(void)
 	return 0;
 }
 
-static const struct security_ic_ops onewire_phy_pl061_ops = {
+static const struct bat_security_ic_ops onewire_phy_pl061_ops = {
 	.open_ic = onewire_phy_pl061_open_ic,
 	.close_ic = onewire_phy_pl061_close_ic,
 };
@@ -196,7 +245,6 @@ static int onewire_phy_pl061_gpio_driver_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-
 	ret = of_property_read_u32(pdev->dev.of_node, "phandle", &myid);
 	if (ret) {
 		hwlog_err("Can't find dts node phandle in %s\n", __func__);
@@ -206,7 +254,7 @@ static int onewire_phy_pl061_gpio_driver_probe(struct platform_device *pdev)
 	pl061_gpio_reg_node.gpio = &pl061_gpio;
 	pl061_gpio_reg_node.dev_phandle = myid;
 	add_to_onewire_phy_list(&pl061_gpio_reg_node);
-	register_security_ic_ops(&onewire_phy_pl061_ops);
+	bat_security_ic_ops_register(&onewire_phy_pl061_ops);
 	hwlog_info("onewire_phy: pl061 gpio probed success\n");
 
 	return ONEWIRE_PHY_SUCCESS;
@@ -214,7 +262,7 @@ static int onewire_phy_pl061_gpio_driver_probe(struct platform_device *pdev)
 
 static int onewire_phy_pl061_gpio_driver_remove(struct platform_device *pdev)
 {
-	unregister_security_ic_ops(&onewire_phy_pl061_ops);
+	bat_security_ic_ops_unregister(&onewire_phy_pl061_ops);
 	return ONEWIRE_PHY_SUCCESS;
 }
 

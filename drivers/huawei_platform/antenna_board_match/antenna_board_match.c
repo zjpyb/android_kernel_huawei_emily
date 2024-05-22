@@ -3,7 +3,7 @@
  *
  * Check the antenna board match status.
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,26 +16,26 @@
  *
  */
 
-#include <huawei_platform/antenna_board_match/antenna_board_match.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <huawei_platform/log/hw_log.h>
+#include <huawei_platform/antenna_board_match/antenna_board_match.h>
 
 #define HWLOG_TAG antenna_board_match
 HWLOG_REGIST();
 
 struct antenna_device_ops *g_antenna_board_match_ops;
 
-#define ANTENNA_SYSFS_FIELD(_name, n, m, store) {	\
+#define antenna_sysfs_field(_name, n, m, store) {	\
 	.attr = __ATTR(_name, m, antenna_show, store),	\
 	.name = ANTENNA_##n,	\
 }
 
-#define ANTENNA_SYSFS_FIELD_RO(_name, n)	\
-		ANTENNA_SYSFS_FIELD(_name, n, 0444, NULL)
+#define antenna_sysfs_field_ro(_name, n)	\
+		antenna_sysfs_field(_name, n, 0444, NULL)
 
 static ssize_t antenna_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
@@ -46,8 +46,8 @@ struct antenna_sysfs_field_info {
 };
 
 static struct antenna_sysfs_field_info antenna_tb[] = {
-	ANTENNA_SYSFS_FIELD_RO(antenna_board_match,    BOARD_MATCH),
-	ANTENNA_SYSFS_FIELD_RO(antenna_board_voltage,  BOARD_VOLTAGE),
+	antenna_sysfs_field_ro(antenna_board_match,    BOARD_MATCH),
+	antenna_sysfs_field_ro(antenna_board_voltage,  BOARD_VOLTAGE),
 };
 
 static struct attribute *antenna_sysfs_attrs[ARRAY_SIZE(antenna_tb) + 1];

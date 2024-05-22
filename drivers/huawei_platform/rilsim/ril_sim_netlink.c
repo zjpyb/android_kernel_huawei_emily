@@ -1,27 +1,27 @@
 
 
 #include "ril_sim_netlink.h"
+#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/errno.h>
-#include <linux/mutex.h>
-#include <linux/semaphore.h>
-#include <linux/time.h>
-#include <linux/spinlock.h>
-#include <linux/skbuff.h>
-#include <linux/types.h>
 #include <linux/kthread.h>
-#include <linux/socket.h>
+#include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/netlink.h>
-#include <uapi/linux/netlink.h>
-#include <net/sock.h>
-#include <net/netlink.h>
-#include <net/ip.h>
-#include <net/tcp.h>
-#include <net/route.h>
+#include <linux/semaphore.h>
+#include <linux/skbuff.h>
+#include <linux/socket.h>
+#include <linux/spinlock.h>
+#include <linux/time.h>
+#include <linux/types.h>
 #include <net/inet_hashtables.h>
+#include <net/ip.h>
 #include <net/net_namespace.h>
+#include <net/netlink.h>
+#include <net/route.h>
+#include <net/sock.h>
+#include <net/tcp.h>
+#include <uapi/linux/netlink.h>
 #include <huawei_platform/log/hw_log.h>
 
 #undef HWLOG_TAG
@@ -34,7 +34,7 @@ DEFINE_MUTEX(sim_receive_sem);
 DEFINE_MUTEX(sim_send_sem);
 
 #define KNL_SUCCESS         0
-#define KNL_FAILED          -1
+#define KNL_FAILED          (-1)
 
 static u32 req_pid = 0;
 static u32 rcv_msg_type = 0;
@@ -54,7 +54,7 @@ static int is_slot_valid(int slot)
 	return 1;
 }
 
-static int process_sim_update_msg(struct nlmsghdr *nlh)
+static int process_sim_update_msg(const struct nlmsghdr *nlh)
 {
 	int slot_id;
 	knl_sim_pin_info *pin_info = (knl_sim_pin_info *)nlmsg_data(nlh);
@@ -75,7 +75,7 @@ static int process_sim_update_msg(struct nlmsghdr *nlh)
 	return KNL_SUCCESS;
 }
 
-static int process_sim_get_pin_msg(struct nlmsghdr *nlh)
+static int process_sim_get_pin_msg(const struct nlmsghdr *nlh)
 {
 	int slot_id;
 	knl_ril_sim_card_info *p_card_info = (knl_ril_sim_card_info *)nlmsg_data(nlh);
@@ -101,7 +101,7 @@ static int process_sim_get_pin_msg(struct nlmsghdr *nlh)
 	return KNL_SUCCESS;
 }
 
-static int process_sim_msg(struct nlmsghdr *nlh)
+static int process_sim_msg(const struct nlmsghdr *nlh)
 {
 	int slot_id;
 
@@ -133,8 +133,8 @@ static int process_sim_msg(struct nlmsghdr *nlh)
 static void kernel_ril_sim_receive(struct sk_buff *__skb)
 {
 	int ret;
-	struct nlmsghdr *nlh;
-	struct sk_buff *skb;
+	struct nlmsghdr *nlh = NULL;
+	struct sk_buff *skb = NULL;
 
 	hwlog_info("%s: enter\n", __func__);
 	if (!__skb) {
@@ -175,8 +175,8 @@ static int send_get_pin_info_cnf(u32 pid, int slot_id)
 {
 	int ret;
 	int size;
-	struct sk_buff *skb;
-	struct nlmsghdr *nlh;
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL;
 
 	mutex_lock(&sim_send_sem);
 
@@ -232,8 +232,8 @@ static int send_query_verified_cnf(u32 pid)
 	int size;
 	int slot_id;
 	int is_verified = 1; // 1 means verified
-	struct sk_buff *skb;
-	struct nlmsghdr *nlh;
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL;
 
 	mutex_lock(&sim_send_sem);
 

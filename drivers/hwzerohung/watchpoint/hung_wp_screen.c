@@ -17,6 +17,12 @@
  */
 
 #ifdef CONFIG_HW_ZEROHUNG
+#include <linux/version.h>
+/* no sched/clock.h before kernel4.14 in which sched_show_task is declared */
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+#include <linux/sched/clock.h>
+#include <linux/sched/debug.h>
+#endif
 #include "chipset_common/hwzrhung/zrhung.h"
 #include "chipset_common/hwzrhung/hung_wp_screen.h"
 #include <log/log_usertype.h>
@@ -39,11 +45,11 @@
 #include <mntn_public_interface.h>
 #endif
 
-#ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
-#include <linux/hisi/hisi_powerkey_event.h>
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
+#include <linux/hisi/powerkey_event.h>
 #endif
 
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #define OF_GPIO_ACTIVE_LOW 0x1
@@ -92,7 +98,7 @@ struct zrhung_powerkeyevent_config {
 struct hung_wp_screen_data {
 	struct hung_wp_screen_config *config;
 	struct timer_list timer;
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 	struct timer_list long_press_timer;
 #endif
 	struct workqueue_struct *workq;
@@ -110,7 +116,9 @@ static struct hung_wp_screen_config on_config;
 static struct hung_wp_screen_config off_config;
 static struct hung_wp_screen_data data;
 static unsigned int vkeys_pressed;
-
+#ifdef CONFIG_MTK_ZRHUNG_FEATURE
+static unsigned int vkeys_temp;
+#endif
 static bool prkyevt_config_done;
 static struct zrhung_powerkeyevent_config event_config = {0};
 
@@ -123,7 +131,13 @@ static unsigned int headevt;
 struct work_struct powerkeyevent_config;
 struct work_struct powerkeyevent_sendwork;
 
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 static struct notifier_block hung_wp_screen_powerkey_nb;
+#endif
+
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+static int *check_off_point = NULL;
+#endif
 
 /* Get configuration from zerohung_config.xml */
 static int zrhung_powerkeyevent_get_config(struct zrhung_powerkeyevent_config *cfg)
@@ -302,13 +316,27 @@ int hung_wp_screen_has_boot_success(void)
  * the event that screen being set to off would be stopped so screen-off
  * watchpoint should not report this normal situation.
  * -function call back from volume keys driver and get state to vkeys_pressed
+ *
+ * NOTE: 'value' must be in {0,1}
  */
 void hung_wp_screen_vkeys_cb(unsigned int knum, unsigned int value)
 {
-	if ((knum == WP_SCREEN_VUP_KEY) || (knum == WP_SCREEN_VDOWN_KEY))
+	if ((knum == WP_SCREEN_VUP_KEY) || (knum == WP_SCREEN_VDOWN_KEY)) {
+#ifdef CONFIG_MTK_ZRHUNG_FEATURE
+		vkeys_pressed = knum;
+		// flag: bit 1 for VOLUME UP, bit 0 for VOLUME DOWN
+		// value: set 1 for PRESS, set 0 for RELEASE
+		if (knum == WP_SCREEN_VUP_KEY) {
+			vkeys_temp = (value << 1) + (vkeys_temp & 1);
+		} else {
+			vkeys_temp = (vkeys_temp & 2) + value;
+		}
+#else
 		vkeys_pressed |= knum;
-	else
+#endif
+	} else {
 		pr_err("%s: unkown volume keynum:%u\n", __func__, knum);
+	}
 }
 
 /* get a value which indicates if any vkeys has pressed */
@@ -363,6 +391,18 @@ static void hung_wp_screen_config_work(struct work_struct *work)
 	}
 }
 
+#ifndef HUNG_WP_FACTORY_MODE
+int g_screen_bl_level = 100;  /* inital screen backlight, non-zero value */
+#else
+int g_screen_bl_level = 0;  /* inital screen backlight, for factory-mode zero value */
+#endif
+
+/* Get lcd screen backlight */
+int hung_wp_screen_getbl(void)
+{
+	return g_screen_bl_level;
+}
+
 /*
  * Called from lcd driver when setting backlight for mark:
  *   For hisi platform, it's "hisifb_set_backlight" in hisi_fb_bl.c
@@ -377,6 +417,7 @@ void hung_wp_screen_setbl(int level)
 
 	spin_lock_irqsave(&(data.lock), flags);
 	data.bl_level = level;
+	g_screen_bl_level = level;
 	if (!config_done) {
 		spin_unlock_irqrestore(&(data.lock), flags);
 		return;
@@ -399,6 +440,7 @@ void hung_wp_screen_send_work(struct work_struct *work)
 	char cmd_buf[COMAND_LEN_MAX] = {0};
 	u64 cur_stamp;
 
+	show_state_filter(TASK_UNINTERRUPTIBLE);
 #ifdef CONFIG_HISI_TIME
 	cur_stamp = hisi_getcurtime() / NANOS_PER_SECOND;
 #else
@@ -415,7 +457,13 @@ void hung_wp_screen_send_work(struct work_struct *work)
 			 cur_stamp + BUFFER_TIME_END);
 
 	pr_err("%s: cmd_buf: %s\n", __func__, cmd_buf);
+
+#if (defined CONFIG_MTK_ZRHUNG_FEATURE) && (defined CONFIG_FINAL_RELEASE)
+	if (data.check_id != ZRHUNG_WP_SCREENOFF)
+		zrhung_send_event(data.check_id, cmd_buf, "none");
+#else
 	zrhung_send_event(data.check_id, cmd_buf, "none");
+#endif
 	pr_err("%s: send event: %d\n", __func__, data.check_id);
 	spin_lock_irqsave(&(data.lock), flags);
 	data.check_id = ZRHUNG_WP_NONE;
@@ -423,10 +471,13 @@ void hung_wp_screen_send_work(struct work_struct *work)
 }
 
 /* Send event when timeout */
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+static void hung_wp_screen_send(struct timer_list *t)
+#else
 static void hung_wp_screen_send(unsigned long pdata)
+#endif
 {
 	del_timer(&data.timer);
-	show_state_filter(TASK_UNINTERRUPTIBLE);
 	pr_err("%s: hung_wp_screen_%d end\n", __func__, data.tag_id);
 	queue_work(data.workq, &data.send_work);
 }
@@ -464,7 +515,7 @@ void hung_wp_screen_start(int check_id)
 
 }
 
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 
 /* Store the powerkey and volume down key state for key state check */
 void *hung_wp_screen_qcom_pkey_press(int type, int state)
@@ -473,6 +524,8 @@ void *hung_wp_screen_qcom_pkey_press(int type, int state)
 
 	if ((type >= PON_KPDPWR) && (type < PON_KEYS))
 		keys[type] = state;
+	if (type == PON_RESIN)
+		vkeys_pressed = PON_RESIN;
 
 	return (void *)keys;
 }
@@ -519,21 +572,32 @@ static int hung_wp_screen_qcom_vkey_get(void)
 	return vol_state;
 }
 
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+static void hung_wp_screen_qcom_lpress(struct timer_list *t)
+{
+	int *check_off = check_off_point;
+#else
 static void hung_wp_screen_qcom_lpress(unsigned long pdata)
 {
+	int *check_off = (int *)pdata;
+#endif
 	unsigned long flags = 0;
+#ifndef CONFIG_MTK_ZRHUNG_FEATURE
 	int *state = (int *)hung_wp_screen_qcom_pkey_press(PON_KEYS, 0);
 
 	pr_err("%s: get powerkey state:%d\n", __func__, *state);
-
+#endif
 	spin_lock_irqsave(&(data.lock), flags);
+#ifndef CONFIG_MTK_ZRHUNG_FEATURE
 	if (*state) {
+#endif
 		pr_err("%s: check_id=%d, level=%d\n", __func__,
 		       data.check_id, data.bl_level);
 		/* don't check screen off when powerkey long pressed */
-		int *check_off = (int *)pdata;
 		*check_off = 0;
+#ifndef CONFIG_MTK_ZRHUNG_FEATURE
 	}
+#endif
 	spin_unlock_irqrestore(&(data.lock), flags);
 
 	del_timer(&data.long_press_timer);
@@ -558,10 +622,10 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 		queue_work(data.workq, &data.config_work);
 		return;
 	}
-#ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 	volkeys = gpio_key_vol_updown_press_get();
-#elif CONFIG_MTK_ZRHUNG_FEATURE
-	volkeys = vkeys_pressed > 0 ? true : false;
+#elif defined CONFIG_MTK_ZRHUNG_FEATURE
+	volkeys = vkeys_temp > 0 ? true : false;
 #else
 	volkeys = hung_wp_screen_qcom_vkey_get();
 #endif
@@ -576,9 +640,13 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 		} else if (volkeys == 0) {
 			hung_wp_screen_clear_vkeys_pressed();
 			check_off = 1;
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 			pr_err("start longpress test timer\n");
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+			check_off_point = &check_off;
+#else
 			data.long_press_timer.data = (unsigned long)&check_off;
+#endif
 			data.long_press_timer.expires = jiffies + msecs_to_jiffies(TIME_CONVERT_UNIT);
 			if (!timer_pending(&data.long_press_timer))
 				add_timer(&data.long_press_timer);
@@ -587,15 +655,18 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 		zrhung_powerkeyevent_handler();
 	} else if (check_off) {
 		check_off = 0;
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 		del_timer(&data.long_press_timer);
 #endif
 		if ((event == WP_SCREEN_PWK_RELEASE) && (volkeys == 0)) {
 			vkeys_pressed_tmp = hung_wp_screen_has_vkeys_pressed();
-			if (vkeys_pressed_tmp)
+			if (vkeys_pressed_tmp) {
 				pr_err("%s: vkeys_pressed_tmp:0x%x\n",
 				       __func__, vkeys_pressed_tmp);
-			else
+				spin_unlock_irqrestore(&(data.lock), flags);
+				return;
+			}
+			if (data.bl_level != 0)
 				hung_wp_screen_start(ZRHUNG_WP_SCREENOFF);
 		}
 	}
@@ -603,19 +674,21 @@ void hung_wp_screen_powerkey_ncb(unsigned long event)
 #endif
 }
 
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 static int hung_wp_screen_powerkey_reg_ncb(struct notifier_block *powerkey_nb,
 					   unsigned long event, void *data)
 {
-#ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
-	if (event == HISI_PRESS_KEY_DOWN)
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
+	if (event == PRESS_KEY_DOWN)
 		hung_wp_screen_powerkey_ncb(WP_SCREEN_PWK_PRESS);
-	else if (event == HISI_PRESS_KEY_UP)
+	else if (event == PRESS_KEY_UP)
 		hung_wp_screen_powerkey_ncb(WP_SCREEN_PWK_RELEASE);
-	else if (event == HISI_PRESS_KEY_1S)
+	else if (event == PRESS_KEY_1S)
 		hung_wp_screen_powerkey_ncb(WP_SCREEN_PWK_LONGPRESS);
 #endif
 	return 0;
 }
+#endif
 
 /* return backlight to huawei_hung_task */
 int hwhungtask_get_backlight(void)
@@ -636,13 +709,21 @@ static int __init hung_wp_screen_init(void)
 	data.tag_id = 0;
 	data.check_id = ZRHUNG_WP_NONE;
 	spin_lock_init(&(data.lock));
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+	timer_setup(&data.timer, hung_wp_screen_send, 0);
+#else
 	init_timer(&data.timer);
 	data.timer.function = hung_wp_screen_send;
 	data.timer.data = 0;
-#ifndef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#endif
+#ifndef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
+#if (KERNEL_VERSION(4, 15, 0) <= LINUX_VERSION_CODE)
+	timer_setup(&data.long_press_timer, hung_wp_screen_qcom_lpress, 0);
+#else
 	init_timer(&data.long_press_timer);
 	data.long_press_timer.function = hung_wp_screen_qcom_lpress;
 	data.long_press_timer.data = 0;
+#endif
 	hung_wp_screen_get_qcom_volup_gpio();
 #endif
 	data.workq = create_workqueue("hung_wp_screen_workq");
@@ -654,9 +735,9 @@ static int __init hung_wp_screen_init(void)
 	INIT_WORK(&data.send_work, hung_wp_screen_send_work);
 	INIT_WORK(&powerkeyevent_config, zrhung_powerkeyevent_config_work);
 	INIT_WORK(&powerkeyevent_sendwork, zrhung_powerkeyevent_send_work);
-#ifdef CONFIG_KEYBOARD_HISI_GPIO_KEY
+#ifdef CONFIG_KEYBOARD_HISI_GPIO_VOLUME_KEY
 	hung_wp_screen_powerkey_nb.notifier_call = hung_wp_screen_powerkey_reg_ncb;
-	hisi_powerkey_register_notifier(&hung_wp_screen_powerkey_nb);
+	powerkey_register_notifier(&hung_wp_screen_powerkey_nb);
 #endif
 	init_done = true;
 	pr_err("%s: -\n", __func__);
@@ -668,5 +749,5 @@ module_init(hung_wp_screen_init);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Reporting the frozen screen alarm event");
-MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd");
 

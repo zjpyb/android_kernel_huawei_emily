@@ -1054,6 +1054,7 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 
 		ret = usb_ep_queue(ep->ep, req, GFP_ATOMIC);
 		if (unlikely(ret)) {
+			io_data->req = NULL;
 			usb_ep_free_request(ep->ep, req);
 			goto error_lock;
 		}
@@ -1119,11 +1120,12 @@ static ssize_t ffs_epfile_write_iter(struct kiocb *kiocb, struct iov_iter *from)
 	ENTER();
 
 	if (!is_sync_kiocb(kiocb)) {
-		p = kmalloc(sizeof(io_data), GFP_KERNEL);
+		p = kzalloc(sizeof(io_data), GFP_KERNEL);
 		if (unlikely(!p))
 			return -ENOMEM;
 		p->aio = true;
 	} else {
+		memset(p, 0, sizeof(*p));
 		p->aio = false;
 	}
 
@@ -1155,11 +1157,12 @@ static ssize_t ffs_epfile_read_iter(struct kiocb *kiocb, struct iov_iter *to)
 	ENTER();
 
 	if (!is_sync_kiocb(kiocb)) {
-		p = kmalloc(sizeof(io_data), GFP_KERNEL);
+		p = kzalloc(sizeof(io_data), GFP_KERNEL);
 		if (unlikely(!p))
 			return -ENOMEM;
 		p->aio = true;
 	} else {
+		memset(p, 0, sizeof(*p));
 		p->aio = false;
 	}
 
@@ -1546,6 +1549,7 @@ ffs_fs_kill_sb(struct super_block *sb)
 
 	kill_litter_super(sb);
 	if (sb->s_fs_info) {
+		pr_info("%s(): freeing\n", __func__);
 		ffs_release_dev(sb->s_fs_info);
 		ffs_data_closed(sb->s_fs_info);
 	}
@@ -1605,6 +1609,9 @@ static void ffs_data_opened(struct ffs_data *ffs)
 	refcount_inc(&ffs->ref);
 	if (atomic_add_return(1, &ffs->opened) == 1 &&
 			ffs->state == FFS_DEACTIVATED) {
+		pr_info("%s(): ffs opened %d, do reset\n",
+			__func__,
+			atomic_read(&ffs->opened));
 		ffs->state = FFS_CLOSING;
 		ffs_data_reset(ffs);
 	}
@@ -1631,6 +1638,9 @@ static void ffs_data_closed(struct ffs_data *ffs)
 	ENTER();
 
 	if (atomic_dec_and_test(&ffs->opened)) {
+		pr_info("%s(): ffs opened %d, do reset\n",
+			__func__,
+			atomic_read(&ffs->opened));
 		if (ffs->no_disconnect) {
 			ffs->state = FFS_DEACTIVATED;
 			if (ffs->epfiles) {
@@ -1646,6 +1656,9 @@ static void ffs_data_closed(struct ffs_data *ffs)
 		}
 	}
 	if (atomic_read(&ffs->opened) < 0) {
+		pr_info("%s(): ffs opened %d, do reset\n",
+			__func__,
+			atomic_read(&ffs->opened));
 		ffs->state = FFS_CLOSING;
 		ffs_data_reset(ffs);
 	}
@@ -1669,6 +1682,7 @@ static struct ffs_data *ffs_data_new(const char *dev_name)
 
 	refcount_set(&ffs->ref, 1);
 	atomic_set(&ffs->opened, 0);
+	atomic_set(&ffs->reseting, 0);
 	ffs->state = FFS_READ_DESCRIPTORS;
 	mutex_init(&ffs->mutex);
 	spin_lock_init(&ffs->eps_lock);
@@ -1703,7 +1717,16 @@ static void ffs_data_clear(struct ffs_data *ffs)
 
 static void ffs_data_reset(struct ffs_data *ffs)
 {
+	pr_info("%s(): ffs opened %d, do reset, reseting %d\n",
+		__func__,
+		atomic_read(&ffs->opened),
+		atomic_read(&ffs->reseting));
 	ENTER();
+
+	if (WARN_ON(atomic_inc_return(&ffs->reseting) != 1)) {
+		atomic_dec(&ffs->reseting);
+		return;
+	}
 
 	ffs_data_clear(ffs);
 
@@ -1727,6 +1750,11 @@ static void ffs_data_reset(struct ffs_data *ffs)
 	ffs->state = FFS_READ_DESCRIPTORS;
 	ffs->setup_state = FFS_NO_SETUP;
 	ffs->flags = 0;
+
+	ffs->ms_os_descs_ext_prop_count = 0;
+	ffs->ms_os_descs_ext_prop_name_len = 0;
+	ffs->ms_os_descs_ext_prop_data_len = 0;
+	atomic_set(&ffs->reseting, 0);
 }
 
 
@@ -1816,6 +1844,7 @@ static void ffs_epfiles_destroy(struct ffs_epfile *epfiles, unsigned count)
 {
 	struct ffs_epfile *epfile = epfiles;
 
+	pr_info("%s(): destroy\n", __func__);
 	ENTER();
 
 	for (; count; --count, ++epfile) {

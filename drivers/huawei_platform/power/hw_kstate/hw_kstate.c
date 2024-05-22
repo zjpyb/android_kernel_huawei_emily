@@ -1,76 +1,76 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 1998-2014. All rights reserved.
+ * hw_kstate.c
  *
- * File name: hw_kstate.c
- * Description: This file use to send kernel state
- * Author: gavin.yangsong@huawei.com
- * Version: 0.1
- * Date: 2014/07/17
+ * This file use to send kernel state
+ *
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
+#include <huawei_platform/power/hw_kstate.h>
+#include <net/sock.h>
+#include <securec.h>
 #include <linux/kernel.h>
+#include <linux/kfifo.h>
+#include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/netlink.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
-#include <linux/kfifo.h>
-#include <linux/kthread.h>
-#include <securec.h>
-#include <huawei_platform/power/hw_kstate.h>
-#include <net/sock.h>
-
-MODULE_LICENSE("Dual BSD/GPL");
 
 #define KSTATE_FIFO_SIZE	4096
+#define MAX_LENGTH	(1024 * 1024)
 #define KSTATE_THREAD_NAME	"hw_kstate"
 
 static struct task_struct *kstate_thread = NULL;
 static struct kfifo kstate_fifo; /* fifo is full of pointer to struct ksmsg */
 static spinlock_t kstate_kfifo_lock;
 DEFINE_MUTEX(kstate_hook_lock);
-static struct sock *nlfd = NULL;
+static struct sock *netlink_fd = NULL;
 static int kstate_user_pid = 0;
 static struct list_head kstate_hooks;
 
 static DECLARE_WAIT_QUEUE_HEAD(kstate_wait_queue);
 
 /*
- * Function: is_channel_valid
- * Description: check channel valid or not
- * Input: @channel - channel to check
- * Output:
- * Return: false -- invalid, true -- valid
-*/
+ * check channel valid or not
+ * @param channel: channel to check
+ * @return false for invalid, true for valid
+ */
 static inline bool is_channel_valid(int channel)
 {
 	return ((channel > CHANNEL_ID_NONE) && (channel < CHANNEL_ID_END));
 }
 
 /*
- * Function: is_tag_valid
- * Description: check packet tag valid or not
- * Input: @tag - tag to check
- * Output:
- * Return: false -- invalid, true -- valid
-*/
+ * check packet tag valid or not
+ * @param tag: tag to check
+ * @return false for invalid, true for valid
+ */
 static inline bool is_tag_valid(int tag)
 {
 	return ((tag > PACKET_TAG_NONE) && (tag < PACKET_TAG_END));
 }
 
 /*
- * Function: send_to_user
- * Description: send message to user space and msg
- * must be alloced memory in calling func,
- * and be freed here
- * Input: @msg - source msg
- * Output:
- * Return: -1 -- failed, 0 -- successed
-*/
+ * send message to user space and msg
+ * @param msg: source msg
+ * @return -1 for failed, 0 for successed
+ */
 static int send_to_user(struct ksmsg *msg)
 {
 	struct sk_buff *skb = NULL;
 	struct nlmsghdr *nlh = NULL;
-	int len = 0;
+	int len;
 	int ret  = -1;
 
 	if (IS_ERR_OR_NULL(msg)) {
@@ -84,7 +84,7 @@ static int send_to_user(struct ksmsg *msg)
 	}
 
 	len = sizeof(struct ksmsg) + msg->length;
-	if (len > 1024 * 1024) { /* the default size */
+	if (len > MAX_LENGTH) { /* the default size */
 		pr_err("hw_kstate %s: invalid len: %d!\n", __func__, len);
 		goto err;
 	}
@@ -96,7 +96,6 @@ static int send_to_user(struct ksmsg *msg)
 	}
 
 	nlh = nlmsg_put(skb, 0, 0, 0, len, 0);
-
 	if (memcpy_s(NLMSG_DATA(nlh), len, msg, len) != EOK) {
 		pr_err("hw_kstate %s: fail to memcpy_s!\n", __func__);
 		kfree_skb(skb);
@@ -104,7 +103,7 @@ static int send_to_user(struct ksmsg *msg)
 	}
 
 	/* send up msg */
-	if (netlink_unicast(nlfd, skb, kstate_user_pid, MSG_DONTWAIT) < 0) {
+	if (netlink_unicast(netlink_fd, skb, kstate_user_pid, MSG_DONTWAIT) < 0) {
 		goto err;
 	}
 
@@ -115,12 +114,9 @@ err:
 }
 
 /*
- * Function: fifo_out
- * Description: receive data from module and process it here
- * Input: @data - source data
- * Output:
- * Return: void
-*/
+ * receive data from module and process it here
+ * @param data: source data
+ */
 static int fifo_out(void *data) {
 	struct ksmsg *msg = NULL;
 
@@ -128,11 +124,9 @@ static int fifo_out(void *data) {
 		/* wait module data */
 		wait_event_interruptible(kstate_wait_queue, !kfifo_is_empty(&kstate_fifo));
 		/* fifo has data */
-		while (0 != kfifo_out(&kstate_fifo, &msg, sizeof(struct ksmsg*))) {
+		while (kfifo_out(&kstate_fifo, &msg, sizeof(struct ksmsg*)) != 0) {
 			/* send msg to user space */
-			if (send_to_user(msg) < 0) {
-				/* pr_err("hw_kstate %s: send msg to user failed!\n", __func__); */
-			}
+			send_to_user(msg);
 			kfree(msg);
 		}
 	}
@@ -140,12 +134,10 @@ static int fifo_out(void *data) {
 }
 
 /*
- * Function: fifo_in
- * Description: receive data from module and save it to fifo
- * Input: @msg - msg to save
- * Output:
- * Return: -1 -- failed, 0 -- successed
-*/
+ * receive data from module and save it to fifo
+ * @param msg: msg to save
+ * @return -1 for failed, 0 for successed
+ */
 static int fifo_in(struct ksmsg *msg)
 {
 	int ret = -1;
@@ -157,12 +149,11 @@ static int fifo_in(struct ksmsg *msg)
 
 	/* put data in kfifo */
 	spin_lock_bh(&kstate_kfifo_lock);
-	if (0 == kfifo_in(&kstate_fifo, &msg, sizeof(struct ksmsg*))) {
-		/*put data failed*/
+	if (kfifo_in(&kstate_fifo, &msg, sizeof(struct ksmsg*)) == 0) {
+		/* put data failed */
 		if (kfifo_is_full(&kstate_fifo)) {
-			if (send_to_user(msg) < 0) {
+			if (send_to_user(msg) < 0)
 				pr_err("hw_kstate %s: send msg to user failed!\n", __func__);
-			}
 			kfree(msg);
 		} else {
 			pr_err("hw_kstate %s: kfifo in error!\n", __func__);
@@ -181,12 +172,9 @@ err:
 }
 
 /*
- * Function: process_us_data
- * Description: receive data from user space and process it here
- * Input: @msg - source msg
- * Output:
- * Return: void
-*/
+ * receive data from user space and process it here
+ * @param msg: source msg
+ */
 static void process_us_data(struct ksmsg *msg)
 {
 	struct kstate_opt *elem = NULL;
@@ -217,9 +205,8 @@ static void process_us_data(struct ksmsg *msg)
 		mutex_lock(&kstate_hook_lock);
 		list_for_each_entry(elem, &kstate_hooks, list) {
 			if (elem->tag == msg->tag) {
-				if (!IS_ERR_OR_NULL(elem->hook)) {
+				if (!IS_ERR_OR_NULL(elem->hook))
 					elem->hook(msg->src, msg->tag, msg->buffer, msg->length);
-				}
 			}
 		}
 		mutex_unlock(&kstate_hook_lock);
@@ -227,12 +214,9 @@ static void process_us_data(struct ksmsg *msg)
 }
 
 /*
- * Function: recv_from_user
- * Description: receive command from user calling process_us_data() to process it
- * Input: @skb - source command
- * Output:
- * Return: void
-*/
+ * receive command from user calling process_us_data() to process it
+ * @param skb: source command
+ */
 static void recv_from_user(struct sk_buff *skb)
 {
 	struct sk_buff *tmp_skb = NULL;
@@ -253,9 +237,8 @@ static void recv_from_user(struct sk_buff *skb)
 			kstate_user_pid = nlh->nlmsg_pid;
 		len = NLMSG_PAYLOAD(nlh, 0);
 		data = (struct ksmsg*)NLMSG_DATA(nlh);
-
 		if ((len >= (sizeof(struct ksmsg) + data->length))
-			&& (len < 1024 * 1024) /* default size */
+			&& (len < MAX_LENGTH) /* default size */
 			&& (len > 0)
 			&& (tmp_skb->len >= nlh->nlmsg_len)) {
 			msg = (struct ksmsg*)kmalloc(len, GFP_ATOMIC);
@@ -280,19 +263,17 @@ static void recv_from_user(struct sk_buff *skb)
 }
 
 /*
- * Function: kstate
- * Description: kernel information entry function
- * Input: @dst - user to send
- *        @tag - packet tag
- *        @data - source data
- *        @len - data len
- * Output:
- * Return: -1 -- failed, 0 -- successed
-*/
-int kstate(CHANNEL_ID dst, PACKET_TAG tag, const char *data, size_t len)
+ * kernel information entry
+ * @param dst: user to send
+ * @param tag: packet tag
+ * @param data: source data
+ * @param len: data len
+ * @return -1 for failed, 0 for successed
+ */
+int kstate(channel_id dst, packet_tag tag, const char *data, size_t len)
 {
 	struct ksmsg *msg = NULL;
-	int msg_len = 0;
+	int msg_len;
 
 	if (!is_channel_valid(dst)) {
 		pr_err("hw_kstate %s: channel is invalid!\n", __func__);
@@ -342,12 +323,10 @@ int kstate(CHANNEL_ID dst, PACKET_TAG tag, const char *data, size_t len)
 }
 
 /*
- * Function: kstate_register_hook
- * Description: register hook function to kstate
- * Input: @opt - kstate_opt struct to register
- * Output:
- * Return: -1 -- failed, 0 -- successed
-*/
+ * register hook function to kstate
+ * @param opt: kstate_opt struct to register
+ * @return -1 for failed, 0 for successed
+ */
 int kstate_register_hook(struct kstate_opt *opt)
 {
 	struct kstate_opt *elem = NULL;
@@ -386,12 +365,9 @@ err:
 }
 
 /*
- * Function: kstate_unregister_hook
- * Description: unregister hook function from kstate
- * Input: @opt - kstate_opt struct to unregister
- * Output:
- * Return: void
-*/
+ * unregister hook function from kstate
+ * @param opt: kstate_opt struct to unregister
+ */
 void kstate_unregister_hook(struct kstate_opt *opt)
 {
 	struct kstate_opt *elem = NULL;
@@ -413,18 +389,14 @@ void kstate_unregister_hook(struct kstate_opt *opt)
 }
 
 /*
- * Function: release_netlink_sock
- * Description: release netlink sock from skb queue
- * Input:
- * Output:
- * Return: void
-*/
+ * release netlink sock from skb queue
+ */
 static void release_netlink_sock(void)
 {
-	if (!IS_ERR_OR_NULL(nlfd) && nlfd->sk_socket) {
-		if (!IS_ERR_OR_NULL(nlfd->sk_socket)) {
-			sock_release(nlfd->sk_socket);
-			nlfd = NULL;
+	if (!IS_ERR_OR_NULL(netlink_fd) && netlink_fd->sk_socket) {
+		if (!IS_ERR_OR_NULL(netlink_fd->sk_socket)) {
+			sock_release(netlink_fd->sk_socket);
+			netlink_fd = NULL;
 		}
 	}
 }
@@ -442,9 +414,9 @@ static int __init kstate_init(void)
 	spin_lock_init(&kstate_kfifo_lock);
 
 	/* create netlink sock to receive command from user space */
-	nlfd = netlink_kernel_create(&init_net, NETLINK_HW_KSTATE, &cfg);
-	if (IS_ERR_OR_NULL(nlfd)) {
-		ret = PTR_ERR(nlfd);
+	netlink_fd = netlink_kernel_create(&init_net, NETLINK_HW_KSTATE, &cfg);
+	if (IS_ERR_OR_NULL(netlink_fd)) {
+		ret = PTR_ERR(netlink_fd);
 		pr_err("hw_kstate %s: create netlink error!\n", __func__);
 		goto err_create_netlink;
 	}
@@ -489,3 +461,6 @@ static void __exit kstate_exit(void)
 
 module_init(kstate_init);
 module_exit(kstate_exit);
+MODULE_LICENSE("GPL v2");
+MODULE_DESCRIPTION("use to send kernel state");
+MODULE_AUTHOR("Huawei Technologies Co., Ltd.");

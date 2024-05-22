@@ -245,7 +245,7 @@ int ilitek_update_flash_data(int ap_startaddr, int ap_endaddr, const struct firm
 int ilitek_fw_update(char *file_name)
 {
 	int ret = 0, upgrade_status = 0, i = 0, j = 0, k = 0;
-	unsigned char buf[3] = {0};
+	unsigned char buf[4] = {0};
 	unsigned long ap_startaddr = 0, ap_endaddr = 0, temp = 0, ap_len = 0;
 	unsigned char firmware_ver[4];
 	int retry = 0;

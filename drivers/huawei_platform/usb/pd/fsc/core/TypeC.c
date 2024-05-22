@@ -1,37 +1,25 @@
-/****************************************************************************
- * FileName:        TypeC.c
- * Processor:       PIC32MX250F128B
- * Compiler:        MPLAB XC32
- * Company:         Fairchild Semiconductor
+/*
+ * TypeC.c
  *
- * Author           Date          Comment
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * M. Smith         12/04/2014    Initial Version
+ * TypeC driver
  *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * Software License Agreement:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
- * The software supplied herewith by Fairchild Semiconductor (the ?Company?)
- * is supplied to you, the Company's customer, for exclusive use with its
- * USB Type C / USB PD products.  The software is owned by the Company and/or
- * its supplier, and is protected under applicable copyright laws.
- * All rights are reserved. Any use in violation of the foregoing restrictions
- * may subject the user to criminal sanctions under applicable laws, as well
- * as to civil liability for the breach of the terms and conditions of this
- * license.
- *
- * THIS SOFTWARE IS PROVIDED IN AN ?AS IS? CONDITION. NO WARRANTIES,
- * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
- * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
- * IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
- * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
- *
- *****************************************************************************/
+ */
+
 #include <linux/kernel.h>
 #include <linux/printk.h>
+#include <linux/version.h>
+#include <linux/workqueue.h>
 
 #include "TypeC.h"
 #include "fusb30X.h"
@@ -52,8 +40,9 @@ static FSC_BOOL audio_debounce;
 #include "../Platform_Linux/platform_helpers.h"
 #include "../Platform_Linux/fusb30x_global.h"
 #include "core.h"
-#include <linux/hisi/usb/hisi_hifi_usb.h>
+#include <linux/hisi/usb/hifi_usb.h>
 #include <linux/usb/class-dual-role.h>
+#include <chipset_common/hwpower/protocol/adapter_protocol_pd.h>
 #define CHIP_INIT_STATE 0x01
 
 /////////////////////////////////////////////////////////////////////////////
@@ -197,9 +186,6 @@ void InitializeTypeCVariables(void)
     Registers.Control4.TOG_USRC_EXIT = 0;                                       // Enable Ra-Ra Toggle Exit
     DeviceWrite(regControl4, 1, &Registers.Control4.byte);
 
-//    Registers.Switches.SPECREV = 0b10;                                          // Set Spec Rev to v3.0
-//    DeviceWrite(regSwitches1, 1, &Registers.Switches.byte[1]);
-
     switch(RP_Value)
     {
         case 0:
@@ -297,7 +283,7 @@ void InitializeTypeCVariables(void)
 
 #define HARD_RESET_REG_ADDR 0x09
 #define HARD_RESET_CONFIG    0x40
-static void fusb_pd_dpm_hard_reset(void* client)
+static void fusb_pd_dpm_hard_reset(void *dev_data)
 {
 	FSC_BOOL ret = 0;
 	FSC_U8 data = HARD_RESET_CONFIG;
@@ -310,7 +296,7 @@ static void fusb_pd_dpm_hard_reset(void* client)
 	FSC_PRINT("%s--\n", __func__);
 }
 
-static void fusb_pd_dpm_set_voltage(void* client, int set_voltage)
+static void fusb_pd_dpm_set_voltage(int set_voltage, void *dev_data)
 {
 	struct fusb30x_chip* chip = fusb30x_GetChip();
 
@@ -429,13 +415,17 @@ static void fusb_reinitialize_fusb302(void *client)
 extern bool fusb30x_pd_dpm_get_hw_dock_svid_exist(void* client);
 extern void fusb30x_set_cc_mode(int mode);
 static struct pd_dpm_ops fusb_device_pd_dpm_ops = {
-	.pd_dpm_hard_reset = fusb_pd_dpm_hard_reset,
 	.pd_dpm_set_cc_mode = fusb30x_set_cc_mode,
 	.pd_dpm_get_hw_dock_svid_exist = fusb30x_pd_dpm_get_hw_dock_svid_exist,
-	.pd_dpm_set_voltage = fusb_pd_dpm_set_voltage,
 	.pd_dpm_get_cc_state = fusb_pd_dpm_get_cc_state,
 	.pd_dpm_disable_pd = fusb_pd_dpm_disable_pd,
 	.pd_dpm_reinit_chip = fusb_reinitialize_fusb302,
+};
+
+static struct pd_protocol_ops fusb_device_pd_protocol_ops = {
+	.chip_name = "fusb30x",
+	.hard_reset_master = fusb_pd_dpm_hard_reset,
+	.set_output_voltage = fusb_pd_dpm_set_voltage,
 };
 
 void InitializeTypeC(void)
@@ -446,6 +436,7 @@ void InitializeTypeC(void)
     InitializeStateLog(&TypeCStateLog); // Initialize log
 #endif // FSC_DEBUG
     pd_dpm_ops_register(&fusb_device_pd_dpm_ops, NULL);
+	pd_protocol_ops_register(&fusb_device_pd_protocol_ops);
     SetStateDelayUnattached();
 }
 
@@ -963,7 +954,7 @@ void StateMachineAttachWaitSource(void)
     else if (((Registers.Status.COMP == 0) && (CCDebounceTimer.expired == TRUE))
 		&& ((VCONNTerm == CCTypeOpen) || (VCONNTerm == CCTypeRa)))      // If CC1 is Rd and CC2 is not...
     {
-		if (!checkForRa() && !isVBUSOverVoltage(VBUS_MDAC_1P68V)) {
+		if (!checkForRa() && !isVBUSOverVoltage(VBUS_MDAC_2P94)) {
 #ifdef FSC_HAVE_DRP
             if(blnSnkPreferred)
             {
@@ -1024,9 +1015,9 @@ void StateMachineAttachedSource(void)
         case 0:
             if((Registers.Status.I_BC_LVL == 1) && (PolicyState == peSourceDisabled))
             {
-                FSC_PRINT("FUSB %s : enter hisi_usb_check_hifi_usb_status\n", __func__);
-                hisi_usb_check_hifi_usb_status(HIFI_USB_TCPC);
-                FSC_PRINT("FUSB %s : exit hisi_usb_check_hifi_usb_status\n", __func__);
+			FSC_PRINT("FUSB %s : enter check_hifi_usb_status\n", __func__);
+			check_hifi_usb_status(HIFI_USB_TCPC);
+			FSC_PRINT("FUSB %s : exit check_hifi_usb_status\n", __func__);
             }
 
 		if ((loopCounter != 0) || (PolicyState == peSourceStartup) ||
@@ -1370,7 +1361,7 @@ void stateMachineTryWaitSource(void)
     if(((Registers.Status.COMP == 0) && (PDDebounceTimer.expired == TRUE))
 		&& ((VCONNTerm == CCTypeOpen) || (VCONNTerm == CCTypeRa)))      // If CC1 is Rd and CC2 is not...
     {
-		if (!isVBUSOverVoltage(VBUS_MDAC_1P68V))
+		if (!isVBUSOverVoltage(VBUS_MDAC_2P94))
 			SetStateAttachedSource();
     }
     else if(Registers.Status.COMP == 1)
@@ -1839,13 +1830,6 @@ void SetStateAttachWaitAccessory(void)
     DeviceWrite(regMaska, 1, &Registers.MaskAdv.byte[0]);
     platform_enable_timer(TRUE);
 #endif
-/*
-    if(loopCounter++ > MAX_CABLE_LOOP)                                          // Swap toggle state machine current if looping
-    {
-        SetStateIllegalCable();
-        return;
-    }
-	*/
 
     platform_set_vbus_lvl_enable(VBUS_LVL_ALL, FALSE, FALSE);       // Disable the vbus outputs
     ConnState = AttachWaitAccessory;                                // Set the state machine variable to AttachWait.Accessory
@@ -1876,8 +1860,6 @@ void SetStateAttachedSource(void)
 
     setStateSource(TRUE);
     platform_set_vbus_lvl_enable(VBUS_LVL_5V, TRUE, TRUE);                      // Enable only the 5V output
-
-    //platform_notify_cc_orientation(blnCCPinIsCC2);
 
     USBPDEnable(TRUE, (SourceOrSink)TRUE);                                                    // Enable the USB PD state machine if applicable (no need to write to Device again), set as DFP
     platform_set_timer(&StateTimer, tIllegalCable);                                                 // Start dangling illegal cable timeout
@@ -1926,7 +1908,11 @@ void SetStateAttachedSink(void)
 
     FSC_PRINT("FUSB %s - C to A Cable Detected: %d\n", __func__, c2a_cable);
 
-    USBPDEnable(TRUE, (SourceOrSink)FALSE);                                      // Enable the USB PD state machine (no need to write Device again since we are doing it here)
+	/*
+	 * enable the usb pd state machine
+	 * (no need to write device again since we are doing it here)
+	 */
+	USBPDEnable(TRUE, (SourceOrSink)FALSE);
     platform_set_timer(&StateTimer, T_TIMER_DISABLE);                                         // Disable the state timer, not used in this state
 }
 #endif // FSC_HAVE_SNK
@@ -1934,6 +1920,14 @@ void SetStateAttachedSink(void)
 #ifdef FSC_HAVE_DRP
 void RoleSwapToAttachedSink(void)
 {
+	struct fusb30x_chip* chip = NULL;
+
+	chip = fusb30x_GetChip();
+	if (!chip) {
+		pr_err("FUSB %s Error: Chip structure is NULL\n", __func__);
+		return;
+	}
+
     FSC_PRINT("FUSB %s\n", __func__);
     ConnState = AttachedSink;                                       // Set the state machine variable to Attached.Sink
     sourceOrSink = SINK;
@@ -1963,6 +1957,9 @@ void RoleSwapToAttachedSink(void)
     platform_set_timer(&PDDebounceTimer, tPDDebounce);                                // Set the debounce timer to tPDDebounceMin for detecting changes in advertised current
     platform_set_timer(&CCDebounceTimer, tCCDebounce);                                     // Disable the 2nd level debounce timer, not used in this state
     platform_set_timer(&PDFilterTimer, T_TIMER_DISABLE);  // Disable PD filter timer
+
+	if (chip->dual_role)
+		dual_role_instance_changed(chip->dual_role);
 
 #ifdef FSC_DEBUG
     WriteStateLog(&TypeCStateLog, ConnState,
@@ -2167,7 +2164,6 @@ void SetStatePoweredAccessory(void)
 #endif
 
     platform_set_vbus_lvl_enable(VBUS_LVL_ALL, FALSE, FALSE);       // Disable the vbus outputs
-    //platform_set_vbus_lvl_enable(VBUS_LVL_5V, TRUE, TRUE);                      // Enable the 5V output for debugging
     ConnState = PoweredAccessory;                                   // Set the state machine variable to powered.accessory
     setStateSource(TRUE);
     if (SourceCurrent == utccDefault)   // If the current is default set it to 1.5A advert (Must be 1.5 or 3.0)

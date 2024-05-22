@@ -22,6 +22,7 @@
 #include <linux/etherdevice.h>
 
 #include <linux/atomic.h>
+#include <linux/hisi/usb/chip_usb_log.h>
 
 #include "u_ether.h"
 #include "u_ether_configfs.h"
@@ -403,7 +404,7 @@ static void rndis_response_available(void *_rndis)
 	__le32				*data = req->buf;
 	int				status;
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	if (atomic_read(&rndis->notify_count) == -1 ||
 		atomic_inc_return(&rndis->notify_count) != 1)
 		return;
@@ -441,7 +442,7 @@ static void rndis_response_complete(struct usb_ep *ep, struct usb_request *req)
 	case -ECONNRESET:
 	case -ESHUTDOWN:
 		/* connection gone */
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 		/* set notify_count -1 */
 		pr_info("RNDIS connection gone !\n");
 		atomic_set(&rndis->notify_count, -1);
@@ -488,7 +489,7 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 
 	/* received RNDIS command from USB_CDC_SEND_ENCAPSULATED_COMMAND */
 //	spin_lock(&dev->lock);
-	status = rndis_msg_parser(rndis->params, (u8 *) req->buf);
+	status = rndis_msg_parser(rndis->params, (u8 *) req->buf, req->actual);
 	if (status < 0)
 		pr_err("RNDIS command error %d, %d/%d\n",
 			status, req->actual, req->length);
@@ -594,6 +595,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 
 	/* we know alt == 0 */
 
+	hiusb_pr_info("+\n");
 	if (intf == rndis->ctrl_id) {
 		VDBG(cdev, "reset rndis control %d\n", intf);
 		usb_ep_disable(rndis->notify);
@@ -603,7 +605,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			if (config_ep_by_speed(cdev->gadget, f, rndis->notify))
 				goto fail;
 		}
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 		/* init notify_count */
 		atomic_set(&rndis->notify_count, 0);
 #endif
@@ -613,11 +615,13 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		struct net_device	*net;
 
 		if (rndis->port.in_ep->enabled) {
+			hiusb_pr_info("reset rndis\n");
 			DBG(cdev, "reset rndis\n");
 			gether_disconnect(&rndis->port);
 		}
 
 		if (!rndis->port.in_ep->desc || !rndis->port.out_ep->desc) {
+			hiusb_pr_info("init rndis\n");
 			DBG(cdev, "init rndis\n");
 			if (config_ep_by_speed(cdev->gadget, f,
 					       rndis->port.in_ep) ||
@@ -646,6 +650,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		 */
 		rndis->port.cdc_filter = 0;
 
+		hiusb_pr_info("RNDIS RX/TX early activation ... \n");
 		DBG(cdev, "RNDIS RX/TX early activation ... \n");
 		net = gether_connect(&rndis->port);
 		if (IS_ERR(net))
@@ -655,6 +660,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 				&rndis->port.cdc_filter);
 	} else
 		goto fail;
+	hiusb_pr_info("-\n");
 
 	return 0;
 fail:
@@ -666,6 +672,7 @@ static void rndis_disable(struct usb_function *f)
 	struct f_rndis		*rndis = func_to_rndis(f);
 	struct usb_composite_dev *cdev = f->config->cdev;
 
+	hiusb_pr_info("+\n");
 	if (!rndis->notify->enabled)
 		return;
 
@@ -675,6 +682,8 @@ static void rndis_disable(struct usb_function *f)
 	gether_disconnect(&rndis->port);
 
 	usb_ep_disable(rndis->notify);
+	rndis->notify->desc = NULL;
+	hiusb_pr_info("-\n");
 }
 
 /*-------------------------------------------------------------------------*/
@@ -757,7 +766,7 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 	 */
 	if (!rndis_opts->bound) {
 		gether_set_gadget(rndis_opts->net, cdev->gadget);
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 		/* overide netdev which set in gether_set_gadget*/
 		SET_NETDEV_DEV(rndis_opts->net, &rndis_opts->dev);
 #endif
@@ -967,7 +976,7 @@ static void rndis_free_inst(struct usb_function_instance *f)
 			free_netdev(opts->net);
 	}
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	device_unregister(&opts->dev);
 #endif
 
@@ -975,8 +984,8 @@ static void rndis_free_inst(struct usb_function_instance *f)
 	kfree(opts);
 }
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
-#include "function-hisi/f_rndis_hisi.c"
+#ifdef CONFIG_CHIP_USB_CONFIGFS
+#include "function-hisi/f_rndis_chip.c"
 #else
 static struct usb_function_instance *rndis_alloc_inst(void)
 {

@@ -39,8 +39,8 @@
 
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_api.h"
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
@@ -56,19 +56,49 @@
 #endif
 
 #define NOVATEK_ABNORMAL_DEFAULT_STATUS 0x0000
-#define NOVATEK_ERROR_CODE_0XFDFD 		0xFDFD
-#define NOVATEK_ERROR_CODE_0XFEFE 		0xFEFE
-#define NOVATEK_VENDER_NAME  "novatek"
-#define NOVATEK_GESTURE_SUPPORTED			"gesture_supported"
-#define NOVATEK_GESTURE_MODULE		    	"gesture_module"
-#define NOVATEK_FRAME_PERIOD  (35)
+#define NOVATEK_ERROR_CODE_0XFDFD 0xFDFD
+#define NOVATEK_ERROR_CODE_0XFEFE 0xFEFE
+#define NOVATEK_VENDER_NAME "novatek"
+#define NOVATEK_GESTURE_SUPPORTED "gesture_supported"
+#define NOVATEK_GESTURE_MODULE "gesture_module"
+#define NOVATEK_FRAME_PERIOD (35)
 #define FINGER_ENTER (0x01)
 #define FINGER_MOVING (0x02)
-#define GLOVE_TOUCH  (0x06)
+#define GLOVE_TOUCH (0x06)
 #define CSVFILE_USE_SYSTEM_TYPE "huawei,csvfile_use_system"
 #define TEST_CAPACITANCE_VIA_CSVFILE "huawei,test_capacitance_via_csvfile"
-#define NOVATEK_TEST_TYPE			"tp_cap_test_type"
-#define NOVATEK_TEST_TYPE_DEFAULT	"Normalize_type:judge_different_reslut"
+#define NOVATEK_TEST_TYPE "tp_cap_test_type"
+#define NOVATEK_TEST_TYPE_DEFAULT "Normalize_type:judge_different_reslut"
+#define IS_IC_RAWDATA_PROC_PRINTF "is_ic_rawdata_proc_printf"
+#define DOWNLOAD_FW_INRECOVERY "download_fw_inrecovery"
+#define HIDE_FW_NAME "hide_fw_name"
+#define GLOVE_SWITCH "glove_switch"
+#define PALM_SWITCH "palm_switch"
+#define ROI_SWITCH "roi_switch"
+#define PINCTRL_SELECT_NORMAL "pinctrl_select_normal"
+#define PINCTRL_SELECT_LOWPOWER "pinctrl_select_lowpower"
+#define GPIO_REQUEST "gpio_request"
+#define CHECK_CHIP_VER_TRIM "check_chip_ver_trim"
+#define ROI_SWITCH "roi_switch"
+#define CHIP_DETECT "chip_detect"
+#define GET_FW_PREFIX "get_fw_prefix"
+#define CHIP_INIT "chip_init"
+#define INPUT_CONFIG "input_config"
+#define WAKEUP_GESTURE_REPORT "wakeup_gesture_report"
+#define CHECK_GESTURE "check_gesture"
+#define FW_UPDATE_BOOT "fw_update_boot"
+#define GET_CAPACITANCE_TEST_TYPE "get_capacitance_test_type"
+#define POWER_ON "power_on"
+#define POWER_OFF_GPIO_SET "power_off_gpio_set"
+#define VCI_ON "vci_on"
+#define VDDIO_ON "vddio_on"
+#define GET_BRIGHTNESS_INFO "get_brightness_info"
+#define SUSPEND "suspend"
+#define BEFORE_SUSPEND "before_suspend"
+#define RESUME "resume"
+#define CHARGER_SWITCH "charger_switch"
+#define SUSPEND "suspend"
+
 #define POINT_DATA_LEN 65
 #define POINT_AFT_DATA_LEN 118 // 0x11E00 ~ 0x11E75
 #define POINT_AFT_DATA_LEN_WX 153 // offset 0x00 ~ 0x98
@@ -86,8 +116,8 @@
 #define NOVATEK_SCENE_DISABLE_CONFIRM 0x7F
 #define NOVATEK_SPI_ROI_START_BYTE  27
 #define NOVATEK_SPI_POINT_START_BYTE  0x99
-#define NOVATEK_GPIO_LOW	0
-#define NOVATEK_GPIO_HIGH	1
+#define NOVATEK_GPIO_LOW 0
+#define NOVATEK_GPIO_HIGH 1
 #define CHARGER_SWITCH_ON 1
 #define CHARGER_SWITCH_OFF 0
 #define COMMAND_0X5A 0x5A
@@ -95,6 +125,10 @@
 #define COMMAND_0X7E 0x7E
 #define CHARGER_SWITCH_LENGTH 2
 #define IN_RECOVERY true
+#define OME_INFO_LEN 16
+#define NOVA_MAX_CAP_TEST_NUM 5
+#define REAL_PROJECT_ID_LEN 10
+
 struct nvt_ts_data *nvt_ts;
 static DEFINE_MUTEX(ts_power_gpio_sem);
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
@@ -111,7 +145,7 @@ struct nvt_lcd_data {
 extern struct ts_tui_data tee_tui_data;
 #endif
 #if defined (CONFIG_HUAWEI_DEVKIT_HISI)
-extern int hostprocessing_get_project_id(char *out);
+extern int hostprocessing_get_project_id(char *out, int len);
 #endif
 #if NVT_TOUCH_PROC
 extern int32_t nvt_kit_flash_proc_init(void);
@@ -765,7 +799,7 @@ return:
 *******************************************************/
 void nvt_kit_hw_reset(void)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("kit_hw_reset enter\n");
 
 	if(!nvt_ts->chip_data->ts_platform_data->reset_gpio){
 		TS_LOG_INFO("product no reset gpio, do not set gpio\n");
@@ -784,7 +818,7 @@ void nvt_kit_hw_reset(void)
 
 static void nvt_hw_reset_down(void)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("hw_reset_down enter\n");
 
 	if(!nvt_ts->chip_data->ts_platform_data->reset_gpio){
 		TS_LOG_INFO("product no reset gpio, do not set gpio\n");
@@ -920,20 +954,19 @@ int32_t nvt_kit_check_fw_reset_state(RST_COMPLETE_STATE check_reset_state)
 
 static int novatek_get_capacitance_test_type(struct ts_test_type_info *info)
 {
-        int ret = 0;
+	int ret = 0;
 
-        TS_LOG_INFO("%s enter\n", __func__);
-        if (!info){
-                TS_LOG_ERR("%s\n", __func__);
-                return -ENOMEM;
-        }
+	TS_LOG_INFO("%s enter\n", GET_CAPACITANCE_TEST_TYPE);
+	if (!info) {
+		TS_LOG_ERR("%s\n", GET_CAPACITANCE_TEST_TYPE);
+		return -ENOMEM;
+	}
+	memcpy(info->tp_test_type, nvt_ts->chip_data->tp_test_type,
+		TS_CAP_TEST_TYPE_LEN);
+	TS_LOG_INFO("%s:test_type=%s\n", GET_CAPACITANCE_TEST_TYPE,
+		info->tp_test_type);
 
-        memcpy(info->tp_test_type,
-            nvt_ts->chip_data->tp_test_type, TS_CAP_TEST_TYPE_LEN);
-
-        TS_LOG_INFO("%s:test_type=%s\n", __func__, info->tp_test_type);
-
-        return ret;
+	return ret;
 }
 
 static int novatek_wakeup_gesture_enable_switch(
@@ -951,16 +984,16 @@ static int novatek_glove_switch(struct ts_glove_info *info)
 	int retval = NO_ERR;
 	u8 sw = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("glove_switch enter\n");
 
 	if (!info) {
-		TS_LOG_ERR("%s: info is Null\n", __func__);
+		TS_LOG_ERR("%s: info is Null\n", GLOVE_SWITCH);
 		retval = -ENOMEM;
 		return retval;
 	}
 
 	if (!info->glove_supported) {
-		TS_LOG_INFO("%s: not support glove\n", __func__);
+		TS_LOG_INFO("%s: not support glove\n", GLOVE_SWITCH);
 		return NO_ERR;
 	}
 
@@ -969,20 +1002,24 @@ static int novatek_glove_switch(struct ts_glove_info *info)
 			buf[0] = 0x5A;
 			retval = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 			if (retval < 0) {
-				TS_LOG_ERR("%s: get glove_switch(%d), failed : %d", __func__, info->glove_switch, retval);
+				TS_LOG_ERR("%s: get glove_switch %d, failed %d",
+					GLOVE_SWITCH, info->glove_switch, retval);
 				break;
 			}
 			info->glove_switch =  ((buf[1]>>1) & 0x01);//buf[1] & 0x02;
-			TS_LOG_INFO("%s: read glove_switch=%d, 1:on 0:off\n", __func__, info->glove_switch);
+			TS_LOG_INFO("%s: read glove_switch=%d, 1:on 0:off\n",
+				GLOVE_SWITCH, info->glove_switch);
 			break;
 
 		case TS_ACTION_WRITE:
-			TS_LOG_INFO("%s: write glove_switch=%d\n", __func__, info->glove_switch);
+			TS_LOG_INFO("%s: write glove_switch=%d\n",
+				GLOVE_SWITCH, info->glove_switch);
 
 			sw = info->glove_switch;
 			if ((GLOVE_SWITCH_ON != sw)
 			    && (GLOVE_SWITCH_OFF != sw)) {
-				TS_LOG_ERR("%s: write wrong state: switch = %d\n", __func__, sw);
+				TS_LOG_ERR("%s: write wrong state: switch = %d\n",
+					GLOVE_SWITCH, sw);
 				retval = -EFAULT;
 				break;
 			}
@@ -993,7 +1030,8 @@ static int novatek_glove_switch(struct ts_glove_info *info)
 				buf[1] = 0x71;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set glove switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set glove switch %d, failed %d",
+						GLOVE_SWITCH, sw, retval);
 				}
 			}
 			else {
@@ -1002,13 +1040,15 @@ static int novatek_glove_switch(struct ts_glove_info *info)
 				buf[1] = 0x72;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set glove switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set glove switch %d, failed %d",
+						GLOVE_SWITCH, sw, retval);
 				}
 			}
 			break;
 
 		default:
-			TS_LOG_ERR("%s: invalid switch status: %d", __func__, info->glove_switch);
+			TS_LOG_ERR("%s: invalid switch status: %d",
+				GLOVE_SWITCH, info->glove_switch);
 			retval = -EINVAL;
 			break;
 	}
@@ -1024,10 +1064,10 @@ static int novatek_palm_switch(struct ts_palm_info *info)
 	int retval = NO_ERR;
 	u8 sw = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", PALM_SWITCH);
 
 	if (!info) {
-		TS_LOG_ERR("%s: info is Null\n", __func__);
+		TS_LOG_ERR("%s: info is Null\n", PALM_SWITCH);
 		retval = -ENOMEM;
 		return retval;
 	}
@@ -1037,20 +1077,24 @@ static int novatek_palm_switch(struct ts_palm_info *info)
 			buf[0] = 0x5A;
 			retval = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 			if (retval < 0) {
-				TS_LOG_ERR("%s: get palm_switch(%d), failed : %d", __func__, info->palm_switch, retval);
+				TS_LOG_ERR("%s: get palm_switch %d, failed %d",
+					PALM_SWITCH, info->palm_switch, retval);
 				break;
 			}
 			info->palm_switch =  (buf[1] & 0x01);//buf[1] & 0x01;
-			TS_LOG_INFO("%s: read palm_switch=%d, 1:on 0:off\n", __func__, info->palm_switch);
+			TS_LOG_INFO("%s: read palm_switch=%d, 1:on 0:off\n",
+				PALM_SWITCH, info->palm_switch);
 			break;
 
 		case TS_ACTION_WRITE:
-			TS_LOG_INFO("%s: write palm_switch=%d\n", __func__, info->palm_switch);
+			TS_LOG_INFO("%s: write palm_switch=%d\n",
+				PALM_SWITCH, info->palm_switch);
 
 			sw = info->palm_switch;
 			if ((PALM_SWITCH_ON != sw)
 			    && (PALM_SWITCH_OFF != sw)) {
-				TS_LOG_ERR("%s: write wrong state: switch = %d\n", __func__, sw);
+				TS_LOG_ERR("%s: write wrong switch: %d\n",
+					PALM_SWITCH, sw);
 				retval = -EFAULT;
 				break;
 			}
@@ -1061,7 +1105,8 @@ static int novatek_palm_switch(struct ts_palm_info *info)
 				buf[1] = 0x73;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set palm switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set palm switch %d, failed %d",
+						PALM_SWITCH, sw, retval);
 				}
 			}
 			else {
@@ -1070,13 +1115,15 @@ static int novatek_palm_switch(struct ts_palm_info *info)
 				buf[1] = 0x74;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set palm switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set palm switch %d, failed %d",
+						PALM_SWITCH, sw, retval);
 				}
 			}
 			break;
 
 		default:
-			TS_LOG_ERR("%s: invalid switch status: %d", __func__, info->palm_switch);
+			TS_LOG_ERR("%s: invalid switch status: %d",
+				PALM_SWITCH, info->palm_switch);
 			retval = -EINVAL;
 			break;
 	}
@@ -1096,7 +1143,7 @@ static int novatek_holster_switch(struct ts_holster_info *info)
 	int x1 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.bottom_right_x1;
 	int y1 = nvt_ts->chip_data->ts_platform_data->feature_info.window_info.bottom_right_y1;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("holster_switch enter\n");
 
 	if (!info) {
 		TS_LOG_ERR("%s: info is Null\n", __func__);
@@ -1132,14 +1179,14 @@ static int novatek_holster_switch(struct ts_holster_info *info)
 				//---enable holster mode & set window---
 				buf[0] = EVENT_MAP_HOST_CMD;
 				buf[1] = 0x75;
-				buf[2] = (uint8_t)(x0 & 0xFF);
-				buf[3] = (uint8_t)((x0 >> 8) & 0xFF);
-				buf[4] = (uint8_t)(y0 & 0xFF);
-				buf[5] = (uint8_t)((y0 >> 8) & 0xFF);
-				buf[6] = (uint8_t)(x1 & 0xFF);
-				buf[7] = (uint8_t)((x1 >> 8) & 0xFF);
-				buf[8] = (uint8_t)(y1 & 0xFF);
-				buf[9] = (uint8_t)((y1 >> 8) & 0xFF);
+				buf[2] = (uint32_t)x0 & 0xFF;
+				buf[3] = ((uint32_t)x0 >> 8) & 0xFF;
+				buf[4] = (uint32_t)y0 & 0xFF;
+				buf[5] = ((uint32_t)y0 >> 8) & 0xFF;
+				buf[6] = (uint32_t)x1 & 0xFF;
+				buf[7] = ((uint32_t)x1 >> 8) & 0xFF;
+				buf[8] = (uint32_t)y1 & 0xFF;
+				buf[9] = ((uint32_t)y1 >> 8) & 0xFF;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 10);
 				if (retval < 0) {
 					TS_LOG_ERR("%s: set holster switch(%d), failed : %d", __func__, sw, retval);
@@ -1174,10 +1221,10 @@ static int novatek_roi_switch(struct ts_roi_info *info)
 	int retval = NO_ERR;
 	u8 sw = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", ROI_SWITCH);
 
 	if (!info) {
-		TS_LOG_ERR("%s: info is Null\n", __func__);
+		TS_LOG_ERR("%s: info is Null\n", ROI_SWITCH);
 		retval = -ENOMEM;
 		return retval;
 	}
@@ -1187,21 +1234,25 @@ static int novatek_roi_switch(struct ts_roi_info *info)
 			buf[0] = 0x5A;
 			retval = novatek_ts_kit_read(I2C_FW_Address, buf, 2);
 			if (retval < 0) {
-				TS_LOG_ERR("%s: get roi_switch(%d), failed : %d", __func__, info->roi_switch, retval);
+				TS_LOG_ERR("%s: get roi_switch %d, failed %d",
+					ROI_SWITCH, info->roi_switch, retval);
 				break;
 			}
 			info->roi_switch = ((buf[1]>>3) & 0x01);//buf[1] & 0x08;
-			TS_LOG_INFO("%s: read roi_switch=%d, 1:on 0:off\n", __func__, info->roi_switch);
+			TS_LOG_INFO("%s: read roi_switch=%d, 1:on 0:off\n",
+				ROI_SWITCH, info->roi_switch);
 			roi_switch = info->roi_switch;
 			break;
 
 		case TS_ACTION_WRITE:
-			TS_LOG_INFO("%s: write roi_switch=%d\n", __func__, info->roi_switch);
+			TS_LOG_INFO("%s: write roi_switch=%d\n",
+				ROI_SWITCH, info->roi_switch);
 
 			sw = info->roi_switch;
 			if ((ROI_SWITCH_ON != sw)
 			    && (ROI_SWITCH_OFF != sw)) {
-				TS_LOG_ERR("%s: write wrong state: switch = %d\n", __func__, sw);
+				TS_LOG_ERR("%s: write wrong switch: %d\n",
+					ROI_SWITCH, sw);
 				retval = -EFAULT;
 				break;
 			}
@@ -1212,7 +1263,8 @@ static int novatek_roi_switch(struct ts_roi_info *info)
 				buf[1] = 0x77;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set roi switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set roi switch %d, failed %d",
+						ROI_SWITCH, sw, retval);
 				}
 			}
 			else {
@@ -1221,14 +1273,16 @@ static int novatek_roi_switch(struct ts_roi_info *info)
 				buf[1] = 0x78;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, 2);
 				if (retval < 0) {
-					TS_LOG_ERR("%s: set roi switch(%d), failed : %d", __func__, sw, retval);
+					TS_LOG_ERR("%s: set roi switch %d, failed %d",
+						ROI_SWITCH, sw, retval);
 				}
 			}
 			roi_switch = info->roi_switch;
 			break;
 
 		default:
-			TS_LOG_ERR("%s: invalid switch status: %d", __func__, info->roi_switch);
+			TS_LOG_ERR("%s: invalid switch status: %d",
+				ROI_SWITCH, info->roi_switch);
 			retval = -EINVAL;
 			break;
 	}
@@ -1242,7 +1296,7 @@ static int novatek_roi_switch(struct ts_roi_info *info)
 static unsigned char *novatek_roi_rawdata(void)
 {
 #ifdef ROI
-	TS_LOG_DEBUG("%s enter\n", __func__);
+	TS_LOG_DEBUG("roi_rawdata enter\n");
 	return (unsigned char *)roi_data;
 #else
 	return NULL;
@@ -1257,7 +1311,7 @@ static int novatek_parse_dts(struct device_node *device,
 	int read_val = 0;
 	uint32_t chip_id = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("parse dts enter\n");
 
 /*	chip_data->irq_gpio = of_get_named_gpio(device, "attn_gpio", 0);
 	if (!gpio_is_valid(chip_data->irq_gpio)) {
@@ -1291,13 +1345,10 @@ static int novatek_parse_dts(struct device_node *device,
 	if (nvt_ts->btype == TS_BUS_I2C) {
 		retval =
 			of_property_read_u32(device,"project_id_flash_address", &read_val);
-		if (!retval) {
-			TS_LOG_INFO("get project id flash address 0x%X\n", read_val);
+		if (!retval)
 			nvt_ts->project_id_flash_address = read_val;
-		} else {
-			TS_LOG_ERR("cannot get project id flash address, use default\n");
+		else
 			nvt_ts->project_id_flash_address = 0x20000;
-		}
 	}
 
 	retval =
@@ -1306,7 +1357,7 @@ static int novatek_parse_dts(struct device_node *device,
 		TS_LOG_ERR("get device x_max failed\n");
 	} else {
 		nvt_ts->abs_x_max = chip_data->x_max;
-		TS_LOG_INFO("nvt_ts->abs_x_max = %d\n",nvt_ts->abs_x_max);
+		TS_LOG_INFO("ts->abs_x_max = %d\n",nvt_ts->abs_x_max);
 	}
 	retval =
 	    of_property_read_u32(device, "y_max", &chip_data->y_max);
@@ -1314,7 +1365,7 @@ static int novatek_parse_dts(struct device_node *device,
 		TS_LOG_ERR("get device y_max failed\n");
 	} else {
 		nvt_ts->abs_y_max = chip_data->y_max;
-		TS_LOG_INFO("nvt_ts->abs_y_max = %d\n",nvt_ts->abs_y_max);
+		TS_LOG_INFO("ts->abs_y_max = %d\n",nvt_ts->abs_y_max);
 	}
 	retval =
 	    of_property_read_u32(device, "x_max_mt",
@@ -1546,26 +1597,24 @@ static int novatek_parse_dts(struct device_node *device,
 	TS_LOG_INFO("tp_status_report_support = %d\n", nvt_ts->tp_status_report_support);
 	if(nvt_ts->tp_status_report_support) {
 		retval = of_property_read_u32_array(device, "report_priority", &nvt_report_priority[0], BIT_MAX);
-		if(retval) {
-			TS_LOG_INFO("device get nvt_report_priority failed, use default value.\n");
+		if (retval) {
+			TS_LOG_INFO("device get report_priority failed, use default value.\n");
 		} else {
 			int i = 0;
-			for(i =0; i < BIT_MAX; i++)
-			{
-				TS_LOG_INFO("nvt_report_priority [%d] = %d.\n", i, nvt_report_priority[i]);
-			}
-			TS_LOG_INFO("device get nvt_report_priority success.\n");
+			for (i =0; i < BIT_MAX; i++)
+				TS_LOG_INFO("report_priority %d = %d.\n",
+					i, nvt_report_priority[i]);
+			TS_LOG_INFO("device get report_priority success.\n");
 		}
 		retval = of_property_read_u32_array(device, "report_priority_limite", &nvt_report_priority_limite[0], BIT_MAX);
 		if(retval) {
-			TS_LOG_INFO("device get nvt_report_priority_limite failed, use default value.\n");
+			TS_LOG_INFO("device get report_priority_limite failed, use default value.\n");
 		} else {
 			int i = 0;
 			for(i =0; i < BIT_MAX; i++)
-			{
-				TS_LOG_INFO("nvt_report_priority_limite [%d] = %d.\n", i, nvt_report_priority_limite[i]);
-			}
-			TS_LOG_INFO("device get nvt_report_priority_limite success.\n");
+				TS_LOG_INFO("report_priority_limite %d = %d.\n",
+					i, nvt_report_priority_limite[i]);
+			TS_LOG_INFO("device get report_priority_limite success.\n");
 		}
 	}
 
@@ -1579,8 +1628,8 @@ static int novatek_parse_dts(struct device_node *device,
 	if (retval) {
 		TS_LOG_INFO("device roi_delay_flag not exit,use default value.\n");
 		chip_data->roi_delay_flag = 0;
-	}else{
-		chip_data->roi_delay_flag |= read_val;
+	} else {
+		chip_data->roi_delay_flag |= (uint32_t)read_val;
 		TS_LOG_INFO("get device roi_delay_flag :%02x\n", chip_data->roi_delay_flag);
 	}
 
@@ -1786,14 +1835,13 @@ void novatek_kit_parse_specific_dts(struct ts_kit_device_data *chip_data)
 	if (!retval && NULL != producer) {
 		strcpy(chip_data->module_name, producer);
 	}
-	TS_LOG_INFO("module_name: %s\n", chip_data->module_name);
 
 	retval = of_property_read_u32(device, "touch_switch_flag", &read_val);
 	if (retval) {
 		TS_LOG_INFO("device touch_switch_flag not exit,use default value.\n");
 		chip_data->touch_switch_flag = 0;
 	}else{
-		chip_data->touch_switch_flag |= read_val;
+		chip_data->touch_switch_flag |= (uint32_t)read_val;
 		TS_LOG_INFO("get device touch_switch_flag:%02x\n", chip_data->touch_switch_flag);
 	}
 
@@ -1826,34 +1874,35 @@ void novatek_kit_parse_specific_dts(struct ts_kit_device_data *chip_data)
 			TS_LOG_INFO("device X_Channel not exit,use default value.\n");
 		}else {
 			*(nvt_ts->NvtTddi_X_Channel) = read_val;
-			TS_LOG_INFO("get device NvtTddi_X_Channel:%d\n", X_Channel);
+			TS_LOG_INFO("get device Tddi_X_Channel:%d\n", X_Channel);
 		}
 
 		retval = of_property_read_u32(device, "NvtTddi_Y_Channel", &read_val);
 		if (retval) {
-			TS_LOG_INFO("device NvtTddi_Y_Channel not exit,use default value.\n");
+			TS_LOG_INFO("device Tddi_Y_Channel not exit,use default value.\n");
 		}else {
 			*(nvt_ts->NvtTddi_Y_Channel) = read_val;
-			TS_LOG_INFO("get device NvtTddi_Y_Channel:%d\n", Y_Channel);
+			TS_LOG_INFO("get device Tddi_Y_Channel:%d\n", Y_Channel);
 		}
 
 		retval = of_property_read_u32(device, "nvttddi_channel_flag", &read_val);
 		if (retval) {
-			TS_LOG_INFO("device nvttddi_channel_flag not exit,use default value.\n");
+			TS_LOG_INFO("device tddi_channel_flag not exit,use default value.\n");
 			nvt_ts->nvttddi_channel_flag = false;
 		}else {
 			nvt_ts->nvttddi_channel_flag = read_val;
-			TS_LOG_INFO("get device nvttddi_channel_flag:%d\n", nvt_ts->nvttddi_channel_flag);
+			TS_LOG_INFO("get device tddi_channel_flag:%d\n",
+				nvt_ts->nvttddi_channel_flag);
 		}
 		if (FLAG_EXIST == nvt_ts->nvttddi_channel_flag) {
 			if (*(nvt_ts->NvtTddi_X_Channel) > U8_MAX || *(nvt_ts->NvtTddi_Y_Channel) > U8_MAX ) {
 				TS_LOG_ERR("%s: data conversion failed!\n", __func__);
 				return;
-			}else {
+			} else {
 				x_channel_size = (uint8_t)*(nvt_ts->NvtTddi_X_Channel);
 				y_channel_size = (uint8_t)*(nvt_ts->NvtTddi_Y_Channel);
 			}
-		}else {
+		} else {
 			x_channel_size = IC_X_CFG_SIZE;
 			y_channel_size = IC_Y_CFG_SIZE;
 		}
@@ -1958,16 +2007,16 @@ void novatek_kit_parse_specific_dts(struct ts_kit_device_data *chip_data)
 
 		retval = of_property_read_u32_array(device, "NVT_TDDI_AIN_X", nvt_ts->NVT_TDDI_AIN_X,IC_X_CFG_SIZE);
 		if (retval) {
-			TS_LOG_INFO("device NVT_TDDI_AIN_X not exit,use default value.\n");
+			TS_LOG_INFO("device TDDI_AIN_X not exit,use default value.\n");
 		}else {
-			TS_LOG_INFO("get NVT_TDDI_AIN_X success\n");
+			TS_LOG_INFO("get TDDI_AIN_X success\n");
 		}
 
 		retval = of_property_read_u32_array(device, "NVT_TDDI_AIN_Y", nvt_ts->NVT_TDDI_AIN_Y,IC_Y_CFG_SIZE);
 		if (retval) {
-			TS_LOG_INFO("device NVT_TDDI_AIN_Y not exit,use default value.\n");
+			TS_LOG_INFO("device TDDI_AIN_Y not exit,use default value.\n");
 		}else {
-			TS_LOG_INFO("get NVT_TDDI_AIN_Y success\n");
+			TS_LOG_INFO("get TDDI_AIN_Y success\n");
 		}
 
 		retval = of_property_read_u32(device, CSVFILE_USE_SYSTEM_TYPE, &read_val);
@@ -1987,12 +2036,41 @@ void novatek_kit_parse_specific_dts(struct ts_kit_device_data *chip_data)
 			TS_LOG_INFO("get device test_capacitance_via_csvfile:%d\n", read_val);
 		}
 
+		retval = of_property_read_u32(device,
+			IS_IC_RAWDATA_PROC_PRINTF, &read_val);
+		if (retval) {
+			nvt_ts->chip_data->is_ic_rawdata_proc_printf = false;
+			TS_LOG_INFO("get is_proc_printf failed,use default\n");
+		} else {
+			nvt_ts->chip_data->is_ic_rawdata_proc_printf = read_val;
+			TS_LOG_INFO("get is_proc_printf:%d\n", read_val);
+		}
+		retval = of_property_read_u32(device,
+			DOWNLOAD_FW_INRECOVERY, &read_val);
+		if (retval) {
+			nvt_ts->chip_data->download_fw_inrecovery = false;
+			TS_LOG_INFO("get fw_inrecovery fail,use default\n");
+		} else {
+			nvt_ts->chip_data->download_fw_inrecovery = read_val;
+			TS_LOG_INFO("get download_fw_inrecovery:%d\n", read_val);
+		}
+		retval = of_property_read_u32(device, HIDE_FW_NAME, &read_val);
+		if (retval) {
+			nvt_ts->chip_data->hide_fw_name = false;
+			TS_LOG_INFO("get fw_inrecovery fail,use default\n");
+		} else {
+			nvt_ts->chip_data->hide_fw_name = read_val;
+			TS_LOG_INFO("get hide_fw_name:%d\n", read_val);
+		}
 		retval = of_property_read_string(device, NOVATEK_TEST_TYPE, &str_value);
 		if (retval) {
-			strncpy(nvt_ts->chip_data->tp_test_type, NOVATEK_TEST_TYPE_DEFAULT, TS_CAP_TEST_TYPE_LEN);
+			strncpy(nvt_ts->chip_data->tp_test_type,
+				NOVATEK_TEST_TYPE_DEFAULT,
+				TS_CAP_TEST_TYPE_LEN - 1);
 			TS_LOG_INFO("get device get tp_test_type not exit,use default value.\n");
-		}else {
-			strncpy(nvt_ts->chip_data->tp_test_type, str_value, TS_CAP_TEST_TYPE_LEN);
+		} else {
+			strncpy(nvt_ts->chip_data->tp_test_type, str_value,
+				TS_CAP_TEST_TYPE_LEN - 1);
 			TS_LOG_INFO("get device get tp_test_type:%s\n", str_value);
 		}
 
@@ -2155,10 +2233,10 @@ static int novatek_pinctrl_get_init(void)
 	int ret = 0;
 
 	if(!nvt_ts->use_pinctrl) {
-		TS_LOG_INFO("%s,not use pinctrl\n", __func__);
+		TS_LOG_INFO("pinctrl_get_init,not use pinctrl\n");
 		return ret;
 	}
-	TS_LOG_INFO("%s called", __func__);
+	TS_LOG_INFO("pinctrl_get_init called\n");
 	nvt_ts->pctrl = devm_pinctrl_get(&nvt_ts->ts_dev->dev);
 	if (IS_ERR(nvt_ts->pctrl)) {
 		TS_LOG_ERR("failed to devm pinctrl get\n");
@@ -2195,10 +2273,10 @@ static int novatek_pinctrl_select_normal(void)
 {
 	int retval = NO_ERR;
 	if(!nvt_ts->use_pinctrl) {
-		TS_LOG_INFO("%s,not use pinctrl\n", __func__);
+		TS_LOG_INFO("%s,not use pinctrl\n", PINCTRL_SELECT_NORMAL);
 		return retval;
 	}
-	TS_LOG_INFO("%s called", __func__);
+	TS_LOG_INFO("%s called", PINCTRL_SELECT_NORMAL);
 	retval =  pinctrl_select_state(nvt_ts->pctrl, nvt_ts->pins_default);
 	if (retval < 0) {
 		TS_LOG_ERR("set iomux normal error, %d\n", retval);
@@ -2210,10 +2288,10 @@ static int novatek_pinctrl_select_lowpower(void)
 {
 	int retval = NO_ERR;
 	if(!nvt_ts->use_pinctrl) {
-		TS_LOG_INFO("%s,not use pinctrl\n", __func__);
+		TS_LOG_INFO("%s,not use pinctrl\n", PINCTRL_SELECT_LOWPOWER);
 		return retval;
 	}
-	TS_LOG_INFO("%s called", __func__);
+	TS_LOG_INFO("%s called", PINCTRL_SELECT_LOWPOWER);
 	retval = pinctrl_select_state(nvt_ts->pctrl, nvt_ts->pins_idle);
 	if (retval < 0) {
 		TS_LOG_ERR("set iomux lowpower error, %d\n", retval);
@@ -2234,7 +2312,7 @@ static void novatek_power_on_gpio_set(void)
 
 static void novatek_vci_on(void)
 {
-	TS_LOG_INFO("%s vci enable\n", __func__);
+	TS_LOG_INFO("%s vci enable\n", VCI_ON);
 	if (1 == nvt_ts->chip_data->vci_regulator_type) {
 		if (!IS_ERR(nvt_ts->tp_vci)) {
 			TS_LOG_INFO("vci enable is called\n");
@@ -2268,9 +2346,8 @@ static void novatek_vddio_on(void)
 
 static void novatek_power_on(void)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
-	if (g_tskit_ic_type < TDDI) 
-	{
+	TS_LOG_INFO("%s enter\n", POWER_ON);
+	if (g_tskit_ic_type < TDDI) {
 		novatek_vci_on();
 		mdelay(5);
 		novatek_vddio_on();
@@ -2281,8 +2358,8 @@ static void novatek_power_on(void)
 
 static void novatek_power_off_gpio_set(void)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
-	
+	TS_LOG_INFO("%s enter\n", POWER_OFF_GPIO_SET);
+
 	//gpio_direction_input(nvt_ts->chip_data->ts_platform_data->reset_gpio);
 	novatek_pinctrl_select_lowpower();
 
@@ -2350,8 +2427,8 @@ static void novatek_power_off(void)
 static int novatek_gpio_request(void)
 {
 	int retval = NO_ERR;
-	
-	TS_LOG_INFO("%s enter\n", __func__);
+
+	TS_LOG_INFO("%s enter\n", GPIO_REQUEST);
 
 /*	retval = gpio_request(nvt_ts->chip_data->ts_platform_data->reset_gpio, "ts_reset_gpio");
 	if (retval < 0) {
@@ -2359,14 +2436,14 @@ static int novatek_gpio_request(void)
 			   nvt_ts->chip_data->ts_platform_data->reset_gpio);
 		goto ts_reset_out;
 	}
-	
+
 	retval = gpio_request(nvt_ts->chip_data->irq_gpio, "ts_irq_gpio");
 	if (retval) {
 		TS_LOG_ERR("unable to request gpio:%d\n",
 			   nvt_ts->chip_data->irq_gpio);
 		goto ts_irq_out;
 	}
-*/	
+*/
 	if ((1 == nvt_ts->chip_data->vci_gpio_type)
 	    && (1 == nvt_ts->chip_data->vddio_gpio_type)) {
 		if (nvt_ts->chip_data->vci_gpio_ctrl ==
@@ -2562,9 +2639,9 @@ static int8_t nvt_ts_check_chip_ver_trim(void)
 			buf[0] = 0x00;
 			buf[1] = 0x35;
 			ret = novatek_ts_kit_write(I2C_HW_Address, buf, 2);
-			if (ret) {
-				TS_LOG_ERR("%s: write cmd fail\n", __func__);
-			}
+			if (ret)
+				TS_LOG_ERR("%s: write cmd fail\n",
+					CHECK_CHIP_VER_TRIM);
 		}
 
 		msleep(10);
@@ -2582,21 +2659,25 @@ static int8_t nvt_ts_check_chip_ver_trim(void)
 		novatek_ts_kit_read(I2C_BLDR_Address, buf, 7);
 
 		TS_LOG_INFO("%s: buf[1]=0x%02X, buf[2]=0x%02X, buf[3]=0x%02X, buf[4]=0x%02X, buf[5]=0x%02X, buf[6]=0x%02X\n",
-				__func__, buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
+			CHECK_CHIP_VER_TRIM, buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
 		if(nvt_ts->btype == TS_BUS_I2C) {
 			if ((nvt_ts->nvt_chip_id_partone == buf[6]) &&
 				(nvt_ts->nvt_chip_id_parttwo == buf[5]) &&
 				(nvt_ts->nvt_chip_id_partthree == buf[4])) {
-				TS_LOG_INFO("%s: chip_id match success\n", __func__);
+				TS_LOG_INFO("%s: chip_id match success\n",
+					CHECK_CHIP_VER_TRIM);
 				ret = novatek_parse_reg_dts();
 				if (ret) {
-					TS_LOG_ERR("%s: parse reg failed\n", __func__);
+					TS_LOG_ERR("%s: parse reg failed\n",
+						CHECK_CHIP_VER_TRIM);
 				} else {
-					TS_LOG_INFO("%s: parse reg success\n", __func__);
+					TS_LOG_INFO("%s: parse reg success\n",
+						CHECK_CHIP_VER_TRIM);
 					return ret;
 				}
 			} else {
-				TS_LOG_INFO("%s: use default mmap\n", __func__);
+				TS_LOG_INFO("%s: use default mmap\n",
+					CHECK_CHIP_VER_TRIM);
 				//nvt_ts->mmap = &NT36772_memory_map;
 				memcpy(nvt_ts->mmap, &NT36772_memory_map, sizeof(struct nvt_ts_mem_map));
 				ret = 0;
@@ -2620,7 +2701,7 @@ static int8_t nvt_ts_check_chip_ver_trim(void)
 				}
 
 				if (found_nvt_chip) {
-					TS_LOG_INFO("This is NVT IC, %d\n",
+					TS_LOG_INFO("detect ok, %d\n",
 						list);
 					nvt_ts->mmap = (struct nvt_ts_mem_map *)trim_id_table[list].mmap;
 					nvt_ts->carrier_system = trim_id_table[list].carrier_system;
@@ -2646,7 +2727,7 @@ static int novatek_chip_detect( struct ts_kit_platform_data *data)
 	uint8_t buf[8] = {0};
 	uint8_t tmp_spi_mode = SPI_MODE_0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", CHIP_DETECT);
 
 	if (!data) {
 		TS_LOG_ERR(" ts_kit_platform_data is NULL \n");
@@ -2697,10 +2778,10 @@ static int novatek_chip_detect( struct ts_kit_platform_data *data)
 #endif
 	novatek_parse_dts(nvt_ts->ts_dev->dev.of_node,nvt_ts->chip_data);
 	//nvt_ts->int_trigger_type = INT_TRIGGER_TYPE;
-	
+
         if(true == nvt_ts->chip_data->check_bulcked){
 	        if(false == isbulcked){
-		        TS_LOG_ERR("%s, no lcd buckled \n", __func__);
+			TS_LOG_ERR("%s, no lcd buckled\n", CHIP_DETECT);
 		        retval = -EFAULT;
 		        goto regulator_err;
 	        }
@@ -2732,6 +2813,14 @@ static int novatek_chip_detect( struct ts_kit_platform_data *data)
 		TS_LOG_INFO("chip not do reset\n");
 	}
 
+	if (nvt_ts->chip_data->ic_type == NT36675)
+		nvt_ts->bus_transfer_len = NVT_TANSFER_LEN_63KB;
+	else
+		nvt_ts->bus_transfer_len = NVT_TANSFER_LEN;
+
+	TS_LOG_ERR("chip_data->bus_transfer_len = %d\n",
+		nvt_ts->bus_transfer_len);
+
 	if (nvt_ts->btype == TS_BUS_I2C) {
 		//---check i2c read befor checking chipid in SH, Mallon 20160928
 		if(novatek_ts_kit_read(I2C_HW_Address,  buf, 2)<0){
@@ -2744,8 +2833,8 @@ static int novatek_chip_detect( struct ts_kit_platform_data *data)
 			}
 			retval = novatek_ts_kit_read(I2C_HW_Address,  buf, 2);
 			if(retval < 0){
-				TS_LOG_INFO("not find novatek devices\n");
-   	                  goto check_err;
+				TS_LOG_INFO("not find devices\n");
+				goto check_err;
 			}
 		}
 	} else if (nvt_ts->btype == TS_BUS_SPI) {
@@ -2753,19 +2842,18 @@ static int novatek_chip_detect( struct ts_kit_platform_data *data)
 		tmp_spi_mode = nvt_ts->spi->mode;
 		nvt_ts->spi->mode = SPI_MODE_0;
 		retval = spi_setup(nvt_ts->spi);
-		if (retval) {
-			TS_LOG_ERR("%s: spi_setup error\n", __func__);
-		}
+		if (retval)
+			TS_LOG_ERR("%s: spi_setup error\n", CHIP_DETECT);
 	}
 	//-------------------------------------------
 	retval = nvt_ts_check_chip_ver_trim();
 	if (retval) {
-		TS_LOG_ERR("not nvt_ts_check_chip_ver_trim\n");
+		TS_LOG_ERR("not ts_check_chip_ver_trim\n");
 		goto check_err;
 	} else {
 		strncpy(nvt_ts->chip_data->chip_name,NOVATEK_VENDER_NAME,strlen(NOVATEK_VENDER_NAME)+1);
 	}
-	TS_LOG_INFO("%s done\n", __func__);
+	TS_LOG_INFO("%s done\n", CHIP_DETECT);
 
 	return NO_ERR;
 
@@ -2786,7 +2874,7 @@ regulator_err:
 			/* restore SPI mode for platform setting */
 			nvt_ts->spi->mode = tmp_spi_mode;
 			if (spi_setup(nvt_ts->spi))
-				TS_LOG_ERR("%s: spi_setup error\n", __func__);
+				TS_LOG_ERR("%s: spi_setup error\n", CHIP_DETECT);
 		}
 		if(nvt_ts->chip_data){
 			kfree(nvt_ts->chip_data);
@@ -2801,37 +2889,46 @@ regulator_err:
 		kfree(nvt_ts);
 		nvt_ts = NULL;
 	}
-	TS_LOG_ERR("novatek_chip_detect fail!\n");
+	TS_LOG_ERR("chip_detect fail!\n");
 	return retval;
 }
 
 static void novatek_get_fw_prefix(void)
 {
-	snprintf(nvt_ts->fw_name, sizeof(nvt_ts->fw_name), "ts/%s_%s_%s_%s.bin",
-		nvt_ts->chip_data->ts_platform_data->product_name,
-		nvt_ts->chip_data->chip_name,
-		novatek_kit_project_id,
-		nvt_ts->chip_data->module_name);
+	if (nvt_ts->chip_data->hide_fw_name) {
+		snprintf(nvt_ts->fw_name, sizeof(nvt_ts->fw_name)-ONE_SIZE,
+			"ts/%s.bin", novatek_kit_project_id);
 
-	snprintf(nvt_ts->fw_name_mp, sizeof(nvt_ts->fw_name_mp), "ts/%s_%s_%s_%s_mp.bin",
-		nvt_ts->chip_data->ts_platform_data->product_name,
-		nvt_ts->chip_data->chip_name,
-		novatek_kit_project_id,
-		nvt_ts->chip_data->module_name);
+		snprintf(nvt_ts->fw_name_mp, sizeof(nvt_ts->fw_name_mp)-ONE_SIZE,
+			"ts/%s_mp.bin", novatek_kit_project_id);
+	} else {
+		snprintf(nvt_ts->fw_name, sizeof(nvt_ts->fw_name),
+			"ts/%s_%s_%s_%s.bin",
+			nvt_ts->chip_data->ts_platform_data->product_name,
+			nvt_ts->chip_data->chip_name,
+			novatek_kit_project_id, nvt_ts->chip_data->module_name);
 
-	TS_LOG_INFO("%s fw name prefix:%s mp fw name is %s", __func__, nvt_ts->fw_name, nvt_ts->fw_name_mp);
+		snprintf(nvt_ts->fw_name_mp, sizeof(nvt_ts->fw_name_mp),
+			"ts/%s_%s_%s_%s_mp.bin",
+			nvt_ts->chip_data->ts_platform_data->product_name,
+			nvt_ts->chip_data->chip_name,
+			novatek_kit_project_id, nvt_ts->chip_data->module_name);
+
+		TS_LOG_INFO("%s fw name prefix:%s mp fw name is %s",
+			GET_FW_PREFIX, nvt_ts->fw_name, nvt_ts->fw_name_mp);
+		}
 }
 
 static int novatek_init(void)
 {
 	int retval = NO_ERR;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", CHIP_INIT);
 
 #if NVT_TOUCH_PROC
 	retval = nvt_kit_flash_proc_init();
 	if (retval != 0) {
-		TS_LOG_ERR("nvt flash proc init failed. retval=%d\n", retval);
+		TS_LOG_ERR("flash proc init failed. retval=%d\n", retval);
 		goto init_NVT_ts_err;
 	}
 #endif
@@ -2839,7 +2936,7 @@ static int novatek_init(void)
 #if NVT_TOUCH_EXT_PROC
 	retval = nvt_kit_extra_proc_init();
 	if (retval != 0) {
-		TS_LOG_ERR("nvt extra proc init failed. retval=%d\n", retval);
+		TS_LOG_ERR("extra proc init failed. retval=%d\n", retval);
 		goto init_NVT_ts_err;
 	}
 #endif
@@ -2865,9 +2962,8 @@ static int novatek_init(void)
 		//get project id and fw version
 		novatek_kit_read_projectid();
 		retval = nvt_kit_get_fw_info();
-		if (retval) {
-			TS_LOG_ERR("nvt_kit_get_fw_info failed. (%d)\n", retval);
-		}
+		if (retval)
+			TS_LOG_ERR("kit_get_fw_info failed, %d\n", retval);
 	} else if (nvt_ts->btype == TS_BUS_SPI) {
 		novatek_kit_read_projectid_spi();
 	}
@@ -2877,7 +2973,7 @@ static int novatek_init(void)
 	if (nvt_ts->btype == TS_BUS_SPI) {
 		novatek_get_fw_prefix();
 	}
-	TS_LOG_INFO("%s done\n", __func__);
+	TS_LOG_INFO("%s done\n", CHIP_INIT);
 	return NO_ERR;
 
 init_NVT_ts_err:
@@ -2886,7 +2982,7 @@ init_NVT_ts_err:
 
 static int novatek_input_config(struct input_dev *input_dev)
 {
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", INPUT_CONFIG);
 
 	//---set input device info.---
 	input_dev->evbit[0] = BIT_MASK(EV_SYN) | BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS) ;
@@ -2910,12 +3006,12 @@ static int novatek_input_config(struct input_dev *input_dev)
 	}
 #endif
 
-    if (nvt_ts->gesture_module == true) {
-        input_set_capability(input_dev, EV_KEY, TS_DOUBLE_CLICK);
-        TS_LOG_INFO("%s gesture_module \n", __func__);
-    } else {
-        TS_LOG_INFO("%s no gesture_module \n", __func__);
-    }
+	if (nvt_ts->gesture_module == true) {
+		input_set_capability(input_dev, EV_KEY, TS_DOUBLE_CLICK);
+		TS_LOG_INFO("%s gesture_module\n", INPUT_CONFIG);
+	} else {
+		TS_LOG_INFO("%s no gesture_module\n", INPUT_CONFIG);
+	}
 
 	return NO_ERR;
 }
@@ -2934,7 +3030,8 @@ static int novatek_wakeup_gesture_report(struct ts_fingers *info,
 	uint32_t reprot_gesture_key_value = 0;
 
 	if ((NULL == info) || (NULL == gesture_report_info)){
-		TS_LOG_ERR("%s: info / gesture_report_info is null point\n", __func__);
+		TS_LOG_ERR("%s: info or gesture_report_info is null\n",
+			WAKEUP_GESTURE_REPORT);
 		return -EINVAL;
 	}
 	TS_LOG_INFO("gesture_id = %d\n", gesture_id);
@@ -2943,12 +3040,14 @@ static int novatek_wakeup_gesture_report(struct ts_fingers *info,
 		case DOUBLE_CLICK_WAKEUP:
 			if (IS_APP_ENABLE_GESTURE(GESTURE_DOUBLE_CLICK) &
 			    gesture_report_info->easy_wakeup_gesture) {
-				TS_LOG_INFO("%s: DOUBLE_CLICK_WAKEUP detected\n", __func__);
+				TS_LOG_INFO("%s: DOUBLE_CLICK_WAKEUP detect\n",
+					WAKEUP_GESTURE_REPORT);
 				reprot_gesture_key_value = TS_DOUBLE_CLICK;
 			}
 			break;
 		default:
-			TS_LOG_INFO("%s: unknow gesture detected!\n", __func__);
+			TS_LOG_INFO("%s: unknow gesture detect\n",
+				WAKEUP_GESTURE_REPORT);
 			return RESULT_ERR;
 	}
 
@@ -2957,7 +3056,8 @@ static int novatek_wakeup_gesture_report(struct ts_fingers *info,
 		__pm_wakeup_event(&nvt_ts->chip_data->ts_platform_data->ts_wake_lock, jiffies_to_msecs(5 * HZ));
 		info->gesture_wakeup_value = reprot_gesture_key_value;
 	}else{
-		TS_LOG_INFO("%s: reprot_gesture_key_value = 0 !!\n", __func__);
+		TS_LOG_INFO("%s: reprot_gesture_key_value = 0\n",
+			WAKEUP_GESTURE_REPORT);
 		return RESULT_ERR;
 	}
 
@@ -2969,14 +3069,14 @@ static void novatek_put_device_into_easy_wakeup(void)
 	uint8_t buf[8] = {0};
 
 	struct ts_easy_wakeup_info *info = &nvt_ts->chip_data->easy_wakeup_info;
-	TS_LOG_DEBUG("novatek_put_device_into_easy_wakeup_info->easy_wakeup_flag =%x \n", info->easy_wakeup_flag);
+	TS_LOG_DEBUG("put_device_into_easy_wakeup_info->easy_wakeup_flag =%x\n",
+		info->easy_wakeup_flag);
 	/*if the sleep_gesture_flag is ture,it presents that  the tp is at sleep state*/
 
 	if (nvt_ts->chip_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value == false ||
 		true == info->easy_wakeup_flag) {
-		TS_LOG_INFO
-		    ("novatek_put_device_into_easy_wakeup  info->easy_wakeup_flag =%x \n",
-		     info->easy_wakeup_flag);
+		TS_LOG_INFO("put_device_into_easy_wakeup easy_wakeup_flag=%x\n",
+			info->easy_wakeup_flag);
 		return;
 	}
 	TS_LOG_INFO("Enabled touch wakeup gesture\n");
@@ -3020,23 +3120,23 @@ static int novatek_check_gesture(struct ts_fingers *info,uint8_t *point_data)
 	struct ts_easy_wakeup_info *gesture_report_info = &nvt_ts->chip_data->easy_wakeup_info;
 
 	if (NULL == info){
-		TS_LOG_ERR("%s: info is null point\n", __func__);
+		TS_LOG_ERR("%s: info is null point\n", CHECK_GESTURE);
 		return -EINVAL;
 	}
 
 	/*if the easy_wakeup_flag is false,status not in gesture;switch_value is false,gesture is no supported*/
 
 	if ((false == nvt_ts->chip_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value) ||
-		(false == gesture_report_info->easy_wakeup_flag)){
-		TS_LOG_DEBUG("%s: gesture \n", __func__);
+		(gesture_report_info->easy_wakeup_flag == false)) {
+		TS_LOG_DEBUG("%s: gesture\n", CHECK_GESTURE);
 		return RESULT_ERR;
 	}
 
 	input_id = (uint8_t)(point_data[1] >> 3);
-	TS_LOG_INFO("%s: input_id = %d\n", __func__, input_id);
+	TS_LOG_INFO("%s: input_id = %d\n", CHECK_GESTURE, input_id);
 	ret = novatek_wakeup_gesture_report(info, gesture_report_info, input_id);
 	if (ret != NO_ERR){
-		TS_LOG_ERR("%s: read gestrue data error\n", __func__);
+		TS_LOG_ERR("%s: read gestrue data error\n", CHECK_GESTURE);
 		return RESULT_ERR;
 	}
 
@@ -3448,7 +3548,7 @@ static int novatek_before_suspend(void)
 	uint8_t buf[SUSPEND_CMD_BUF_SIZE] = {0};
 	int retval = NO_ERR;
 
-    TS_LOG_INFO("%s: tp in sleep\n", __func__);
+	TS_LOG_INFO("%s: tp in sleep\n", BEFORE_SUSPEND);
 	if(nvt_ts->tp_status_report_support &&(!g_tskit_pt_station_flag)) {
 		retval = novatek_get_abnormal_status();
 		if(!retval){
@@ -3462,7 +3562,7 @@ static int novatek_before_suspend(void)
 	switch (nvt_ts->chip_data->easy_wakeup_info.sleep_mode) {
 	case TS_POWER_OFF_MODE:
 		if (POWER_SLEEP_MODE == nvt_ts->power_sleep_mode) {
-			TS_LOG_INFO("%s: tp in sleep\n", __func__);
+			TS_LOG_INFO("%s: tp in sleep\n", BEFORE_SUSPEND);
 			buf[0] = EVENT_MAP_HOST_CMD;
 			buf[1] = 0x11; // 0x11 is  deep sleep mode cmd,and  0x12 is power off cmd;
 			retval = novatek_ts_kit_write(I2C_FW_Address, buf, SUSPEND_CMD_BUF_SIZE);
@@ -3474,10 +3574,13 @@ static int novatek_before_suspend(void)
 	case TS_GESTURE_MODE:
 		if(true == nvt_ts->chip_data->ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value){
 			novatek_put_device_into_easy_wakeup();
-			enable_irq_wake(nvt_ts->client->irq);
+			if (nvt_ts->chip_data->ic_type == NT36675)
+				enable_irq_wake(nvt_ts->chip_data->ts_platform_data->irq_id);
+			else
+				enable_irq_wake(nvt_ts->client->irq);
 		}else{
 			if (POWER_SLEEP_MODE == nvt_ts->power_sleep_mode) {
-				TS_LOG_INFO("%s: tp in sleep\n", __func__);
+				TS_LOG_INFO("%s: tp in sleep\n", BEFORE_SUSPEND);
 				buf[0] = EVENT_MAP_HOST_CMD;
 				buf[1] = 0x11; // 0x11 is  deep sleep mode cmd,and  0x12 is power off cmd;
 				retval = novatek_ts_kit_write(I2C_FW_Address, buf, SUSPEND_CMD_BUF_SIZE);
@@ -3489,7 +3592,7 @@ static int novatek_before_suspend(void)
 		break;
 	default:
 		if (POWER_SLEEP_MODE == nvt_ts->power_sleep_mode) {
-			TS_LOG_INFO("%s: tp in sleep\n", __func__);
+			TS_LOG_INFO("%s: tp in sleep\n", BEFORE_SUSPEND);
 			buf[0] = EVENT_MAP_HOST_CMD;
 			buf[1] = 0x11; // 0x11 is  deep sleep mode cmd,and  0x12 is power off cmd;
 			retval = novatek_ts_kit_write(I2C_FW_Address, buf, SUSPEND_CMD_BUF_SIZE);
@@ -3508,16 +3611,22 @@ static int novatek_suspend(void)
 {
 	int retval = NO_ERR;
 
-	TS_LOG_INFO("%s +\n", __func__);
+	TS_LOG_INFO("%s +\n", SUSPEND);
 
 	nvt_hw_reset_down();
 	if (nvt_ts->btype == TS_BUS_SPI) {
 		novatek_pinctrl_select_lowpower();
 		TS_LOG_INFO("cs_gpio is %d\n", g_ts_kit_platform_data.cs_gpio);
+		if ((nvt_ts->chip_data->ic_type == NT36675) &&
+			(nvt_ts->chip_data->easy_wakeup_info.sleep_mode ==
+			TS_GESTURE_MODE)) {
+			TS_LOG_INFO("gesture mode tp cs high\n");
+			return retval;
+		}
 		gpio_direction_output(g_ts_kit_platform_data.cs_gpio, NOVATEK_GPIO_LOW);
 	}
 
-	TS_LOG_INFO("%s -\n", __func__);
+	TS_LOG_INFO("%s -\n", SUSPEND);
 	return retval;
 }
 
@@ -3528,7 +3637,7 @@ static int novatek_resume(void)
 	int retval = NO_ERR;
 	uint8_t buf[4] = {0};
 
-	TS_LOG_INFO("%s +\n", __func__);
+	TS_LOG_INFO("%s +\n", RESUME);
 	if (nvt_ts->btype == TS_BUS_SPI) {
 		novatek_pinctrl_select_normal();
 		TS_LOG_INFO("cs_gpio is %d\n", g_ts_kit_platform_data.cs_gpio);
@@ -3595,8 +3704,8 @@ static int novatek_resume(void)
 			return retval;
 	}
 
-    TS_LOG_INFO("%s -\n", __func__);
-    return retval;
+	TS_LOG_INFO("%s -\n", RESUME);
+	return retval;
 }
 
 static int novatek_charger_switch(struct ts_charger_info *info)
@@ -3605,7 +3714,7 @@ static int novatek_charger_switch(struct ts_charger_info *info)
 	int retval = NO_ERR;
 	u8 sw = 0;
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", CHARGER_SWITCH);
 
 	if (!info) {
 		TS_LOG_ERR("%s: info is Null\n", __func__);
@@ -3622,11 +3731,13 @@ static int novatek_charger_switch(struct ts_charger_info *info)
 				break;
 			}
 			info->charger_switch = ((buf[1]>>5) & 0x01);//buf[1] & 0x20; //get charger_switch status
-			TS_LOG_INFO("%s: read charger_switch=%d, 1:on 0:off\n", __func__, info->charger_switch);
+			TS_LOG_INFO("%s: read charger_switch=%d, 1:on 0:off\n",
+				CHARGER_SWITCH, info->charger_switch);
 			break;
 
 		case TS_ACTION_WRITE:
-			TS_LOG_INFO("%s: write charger_switch=%d\n", __func__, info->charger_switch);
+			TS_LOG_INFO("%s: write charger_switch=%d\n",
+				CHARGER_SWITCH, info->charger_switch);
 
 			sw = info->charger_switch;
 			if ((CHARGER_SWITCH_ON != sw)
@@ -3656,7 +3767,8 @@ static int novatek_charger_switch(struct ts_charger_info *info)
 			}
 
 			if(nvt_ts->tp_status_report_support && CHARGER_SWITCH_ON == info->charger_switch && !nvt_ts->in_suspend) {
-				TS_LOG_INFO("%s, change charge to no", __func__);
+				TS_LOG_INFO("%s, change charge to no",
+					CHARGER_SWITCH);
 				nova_dmd_charge_info.charge_CHARGER_NOISE_HOP = CHARGE_REPORT_NOT_REPORT;
 				nova_dmd_charge_info.charge_CHARGER_NOISE_EX= CHARGE_REPORT_NOT_REPORT;
 			}
@@ -3858,7 +3970,7 @@ int32_t novatek_kit_read_projectid_spi(void)
 
 	int32_t retval = NO_ERR;
 #if defined (CONFIG_HUAWEI_DEVKIT_HISI)
-	retval = hostprocessing_get_project_id(novatek_kit_project_id);
+	retval = hostprocessing_get_project_id(novatek_kit_project_id, PROJECT_ID_LEN + 2);
 #endif
 	if(nvt_ts->default_project_id) {
 		if (retval || (strncmp(&novatek_kit_project_id[0], nvt_ts->default_project_id, 4))) {
@@ -3871,7 +3983,9 @@ int32_t novatek_kit_read_projectid_spi(void)
 	novatek_kit_project_id[REAL_PROJECT_ID_LEN-1] = 0;
 	strncpy(novatek_kit_product_id, novatek_kit_project_id, REAL_PROJECT_ID_LEN);
 	novatek_kit_product_id[REAL_PROJECT_ID_LEN-1] = 0;
-	TS_LOG_INFO("novatek_kit_project_id=%s\n", novatek_kit_project_id);
+	TS_LOG_INFO("read_project_id=%s\n", novatek_kit_project_id);
+	strncpy(nvt_ts->chip_data->project_id, novatek_kit_project_id,
+		REAL_PROJECT_ID_LEN - 1);
 
 	return retval;
 }
@@ -3922,15 +4036,19 @@ static int novatek_fw_update_boot(char *file_name)
 	int retval = NO_ERR;
 	char fw_file_name[128]={0};
 
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("%s enter\n", FW_UPDATE_BOOT);
 
-	snprintf(fw_file_name, sizeof(fw_file_name), "ts/%s_%s_%s_%s.bin",
-		nvt_ts->chip_data->ts_platform_data->product_name,
-		nvt_ts->chip_data->chip_name,
-		novatek_kit_project_id,
-		nvt_ts->chip_data->module_name);
-	TS_LOG_INFO("fw file_name is :%s\n", fw_file_name);
-
+	if (nvt_ts->chip_data->hide_fw_name) {
+		snprintf(fw_file_name, sizeof(fw_file_name), "ts/%s.bin",
+			novatek_kit_project_id);
+	} else {
+		snprintf(fw_file_name, sizeof(fw_file_name),
+			"ts/%s_%s_%s_%s.bin",
+			nvt_ts->chip_data->ts_platform_data->product_name,
+			nvt_ts->chip_data->chip_name, novatek_kit_project_id,
+			nvt_ts->chip_data->module_name);
+		TS_LOG_INFO("fw file_name is :%s\n", fw_file_name);
+	}
 	if (nvt_ts->btype == TS_BUS_I2C) {
 		retval = nvt_kit_fw_update_boot(fw_file_name);
 	} else if (nvt_ts->btype == TS_BUS_SPI) {
@@ -3938,7 +4056,7 @@ static int novatek_fw_update_boot(char *file_name)
 	}
 	snprintf(nvt_ts->chip_data->version_name, sizeof(nvt_ts->chip_data->version_name), "%02x", nvt_fw_ver);
 
-	TS_LOG_INFO("%s exit\n", __func__);
+	TS_LOG_INFO("%s exit\n", FW_UPDATE_BOOT);
 	return retval;
 }
 
@@ -3980,26 +4098,15 @@ static void novatek_shutdown(void)
 static int novatek_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd)
 {
 	int retval = NO_ERR;
-	TS_LOG_INFO("%s enter\n", __func__);
+	TS_LOG_INFO("get rawdata enter\n");
 
 	retval = nvt_kit_selftest(info);
-	if (retval < 0) 
+	if (retval < 0)
 		TS_LOG_ERR("failed to get rawdata\n");
 
 	return retval;
 }
 
-static void novatek_ghost_detect(int value){
-	if (GHOST_OPERATE_TOO_FAST == value){
-		TS_LOG_INFO("%s operate too fast\n", __func__);
-	}else if (GHOST_OPERATE_TWO_POINT_OPER_TOO_FAST == value){
-		TS_LOG_INFO("%s operate 2 point too fast\n", __func__);
-	}
-	//DMD report
-#if defined (CONFIG_HUAWEI_DSM)
-	ts_dmd_report(DSM_TP_GHOST_TOUCH_ERROR_NO, "novatek ghost touch detect.value =%d\n", value);
-#endif
-}
 static int novatek_chip_check_status(void){
 	TS_LOG_DEBUG("%s +\n", __func__);
 	TS_LOG_DEBUG("%s -\n", __func__);
@@ -4066,9 +4173,9 @@ static int novatek_get_oem_data(uint8_t *data, int32_t size)
 		//Step 4 : Flash Read Command
 		buf[0] = 0x00;
 		buf[1] = 0x03;
-		buf[2] = ((Flash_Address >> 16) & 0xFF);
-		buf[3] = ((Flash_Address >> 8) & 0xFF);
-		buf[4] = (Flash_Address & 0xFF);
+		buf[2] = ((uint32_t)Flash_Address >> 16) & 0xFF;
+		buf[3] = ((uint32_t)Flash_Address >> 8) & 0xFF;
+		buf[4] = (uint32_t)Flash_Address & 0xFF;
 		buf[5] = 0x01;
 		buf[6] = 0x00;
 		retval = novatek_ts_kit_write(I2C_HW_Address, buf, 7);
@@ -4136,7 +4243,9 @@ static int novatek_set_oem_data(uint8_t *data, int32_t size)
 	uint8_t buf[64] = {0};
 	uint32_t XDATA_Addr = nvt_ts->mmap->RW_FLASH_DATA_ADDR;
 	uint32_t Flash_Address = 0x1F000;
-	int32_t i = 0, j = 0, k = 0;
+	int32_t i;
+	int32_t k;
+	uint32_t j;
 	uint8_t tmpvalue = 0;
 	int32_t count_256 = 0;
 	int32_t retry = 0;
@@ -4288,7 +4397,8 @@ static int novatek_set_oem_data(uint8_t *data, int32_t size)
 			}
 			retval = novatek_ts_kit_write(I2C_BLDR_Address, buf, 33);
 			if (retval < 0) {
-				TS_LOG_ERR("%s: Write Page error!!(%d), j=%d\n", __func__, retval, j);
+				TS_LOG_ERR("%s: Write Page error %d, j=%u\n",
+					__func__, retval, j);
 				return retval;
 			}
 		}
@@ -4779,6 +4889,7 @@ static int novatek_get_oem_info(struct ts_oem_info_param *info)
 	int error = NO_ERR;
 	int latest_index = 0;
 	int i;
+	unsigned long info_len;
 
 	TS_LOG_INFO("%s called\n", __func__);
 	if (nvt_ts->btype == TS_BUS_SPI) {
@@ -4833,8 +4944,14 @@ static int novatek_get_oem_info(struct ts_oem_info_param *info)
 	TS_LOG_INFO("%s get type:0x%2x  index = %d\n", __func__, type, latest_index);
 
 	if (latest_index) {
-		TS_LOG_INFO("%s type data find. len = %d\n", __func__, info->length);
-		memcpy(info->data, &(info->buff[latest_index*16]), info->length*16 );
+		if (sizeof(info->data) > (info->length * OME_INFO_LEN)) {
+			info_len = info->length * OME_INFO_LEN;
+		} else {
+			TS_LOG_INFO("%s type data find. len = %d\n",
+				__func__, info_len);
+			info_len = sizeof(info->data);
+		}
+		memcpy(info->data, &(info->buff[latest_index * OME_INFO_LEN]), info_len);
 	} else {
 		info->data[0] = 0x1;
 		TS_LOG_INFO("%s No type data find. info->data[0] = %2x\n", __func__, info->data[0]);
@@ -4888,7 +5005,7 @@ static int novatek_get_brightness_info(void)
 	int error = NO_ERR;
 	int bl_max_nit = 0;
 	struct ts_oem_info_param *info =NULL;
-	TS_LOG_INFO("%s: Enter\n", __func__);
+	TS_LOG_INFO("%s: Enter\n", GET_BRIGHTNESS_INFO);
 
 	if (nvt_ts->btype == TS_BUS_SPI) {
 		TS_LOG_INFO("spi not support brightness\n");
@@ -5195,6 +5312,46 @@ out:
 	return ;
 }
 
+static int rawdata_proc_printf(struct seq_file *m,
+	struct ts_rawdata_info *info, int range_size, int row_size)
+{
+	int i;
+	int j;
+	int sum;
+	int cap_size;
+
+	if ((range_size == 0) || (row_size == 0) || (!info)) {
+		TS_LOG_ERR("%s range or row_is 0 or info is NULL\n", __func__);
+		return -EINVAL;
+	}
+	cap_size = 2 + row_size * range_size * NOVA_MAX_CAP_TEST_NUM;
+	for (i = 0; row_size * i + 2 < cap_size; i++) {
+		if (i == 0)
+			seq_puts(m, "rawdata begin\n");
+		for (j = 0; j < row_size; j++) {
+			sum = 2 + row_size * i + j;
+			seq_printf(m, "%d,", info->buff[sum]);
+		}
+		seq_puts(m, "\n");
+		if ((range_size - 1) == i) {
+			seq_puts(m, "rawdata end\n");
+			seq_puts(m, "diff begin\n");
+		} else if ((range_size * 2 - 1) == i) {
+			seq_puts(m, "diff end\n");
+			seq_puts(m, "short begin\n");
+		} else if ((range_size * 3 - 1) == i) {
+			seq_puts(m, "short end\n");
+			seq_puts(m, "open begin\n");
+		} else if ((range_size * 4 - 1) == i) {
+			seq_puts(m, "open end\n");
+			seq_puts(m, "CC begin\n");
+		} else if ((range_size * 5 - 1) == i) {
+			seq_puts(m, "CC end\n");
+		}
+	}
+	return NO_ERR;
+}
+
 struct ts_device_ops ts_kit_novatek_ops = {
 	.chip_parse_config = novatek_parse_dts,
 	.chip_detect = novatek_chip_detect,
@@ -5237,102 +5394,94 @@ struct ts_device_ops ts_kit_novatek_ops = {
 	.chip_roi_switch = novatek_roi_switch,
 	.chip_roi_rawdata = novatek_roi_rawdata,
 	//---------------------------------------------
-	.chip_ghost_detect = novatek_ghost_detect,
 	.chip_check_status = novatek_chip_check_status,
 	.chip_get_brightness_info = novatek_get_brightness_info,
 	.oem_info_switch = novatek_oem_info_switch,
 	.chip_touch_switch = novatek_chip_touch_switch,
 	.chip_charger_switch = novatek_charger_switch,
+	.chip_special_rawdata_proc_printf = rawdata_proc_printf,
 };
 
-static int __init novatek_ts_module_init(void)
+static int __init ts_kit_module_init(void)
 {
-    bool found = false;
-    struct device_node* child = NULL;
-    struct device_node* root = NULL;
-    int error = NO_ERR;
+	bool found = false;
+	struct device_node *child = NULL;
+	struct device_node *root = NULL;
+	int error = NO_ERR;
 
-    TS_LOG_INFO(" novatek_ts_module_init called here\n");
-    //memset(&novatek_device_data, 0, sizeof(struct ts_kit_device_data));
-    nvt_ts = kzalloc(sizeof(*nvt_ts) * 2, GFP_KERNEL);
-    if (!nvt_ts) {
-    	TS_LOG_ERR("Failed to alloc mem for struct nvt_ts\n");
-       error =  -ENOMEM;
-       return error;
-    }
-    nvt_ts->chip_data = kzalloc(sizeof(struct ts_kit_device_data), GFP_KERNEL);
-    if (!nvt_ts->chip_data) {
-    	TS_LOG_ERR("Failed to alloc mem for struct novatek_chip_data\n");
-       error =  -ENOMEM;
-       goto out;
-    }
+	TS_LOG_INFO("ts_kit_module_init called here\n");
+	nvt_ts = kzalloc(sizeof(*nvt_ts) * 2, GFP_KERNEL);
+	if (!nvt_ts) {
+		TS_LOG_ERR("Failed to alloc mem for struct nvt_ts\n");
+		error = -ENOMEM;
+		return error;
+	}
+	nvt_ts->chip_data = kzalloc(sizeof(struct ts_kit_device_data), GFP_KERNEL);
+	if (!nvt_ts->chip_data) {
+		TS_LOG_ERR("Failed to alloc mem for struct novatek_chip_data\n");
+		error = -ENOMEM;
+		goto out;
+	}
 	nvt_ts->mmap = kzalloc(sizeof(struct nvt_ts_mem_map), GFP_KERNEL);
-	if (NULL == nvt_ts->mmap) {
+	if (nvt_ts->mmap == NULL) {
 		TS_LOG_ERR("%s:alloc mem for device data fail\n", __func__);
 		error =  -ENOMEM;
 		goto out;
 	}
-    root = of_find_compatible_node(NULL, NULL, "huawei,ts_kit");
-    if (!root)
-    {
-	TS_LOG_ERR("huawei_ts, find_compatible_node huawei,ts_kit error\n");
-        error = -EINVAL;
-        goto out;
-    }
+	root = of_find_compatible_node(NULL, NULL, "huawei,ts_kit");
+	if (!root) {
+		TS_LOG_ERR("huawei_ts, find_compatible_node huawei,ts_kit error\n");
+		error = -EINVAL;
+		goto out;
+	}
 
-    for_each_child_of_node(root, child)  //find the chip node
-    {
-        if (of_device_is_compatible(child, NOVATEK_VENDER_NAME))
-        {
-            found = true;
-            break;
-        }
-    }
-    if (!found)
-    {
-	TS_LOG_ERR(" not found chip novatek child node  !\n");
-        error = -EINVAL;
-        goto out;
-    }
-
-    nvt_ts->chip_data->cnode = child;
-    nvt_ts->chip_data->ops = &ts_kit_novatek_ops;
-    nvt_ts->print_criteria = true;
-    nvt_ts->criteria_threshold_flag = false;
-    TS_LOG_INFO("found novatek child node !\n");
-    error = huawei_ts_chip_register(nvt_ts->chip_data);
-    if(error)
-    {
-	  TS_LOG_ERR(" novatek chip register fail !\n");
-	  goto out;
-    }
-    TS_LOG_INFO("novatek chip_register! err=%d\n", error);
-    return error;
-out:
-	if (nvt_ts){
-		if(nvt_ts->chip_data){
-			kfree(nvt_ts->chip_data);
-		    nvt_ts->chip_data = NULL;
+	for_each_child_of_node(root, child) { /* find the chip node */
+		if (of_device_is_compatible(child, NOVATEK_VENDER_NAME)) {
+			found = true;
+			break;
 		}
-		if(nvt_ts->mmap){
+	}
+	if (!found) {
+		TS_LOG_ERR(" not found chip child node!\n");
+		error = -EINVAL;
+		goto out;
+	}
+
+	nvt_ts->chip_data->cnode = child;
+	nvt_ts->chip_data->ops = &ts_kit_novatek_ops;
+	nvt_ts->print_criteria = true;
+	nvt_ts->criteria_threshold_flag = false;
+	TS_LOG_INFO("found child node!\n");
+	error = huawei_ts_chip_register(nvt_ts->chip_data);
+	if (error) {
+		TS_LOG_ERR("chip register fail !\n");
+		goto out;
+	}
+	TS_LOG_INFO("chip_register! err=%d\n", error);
+	return error;
+out:
+	if (nvt_ts) {
+		if (nvt_ts->chip_data) {
+			kfree(nvt_ts->chip_data);
+			nvt_ts->chip_data = NULL;
+		}
+		if (nvt_ts->mmap) {
 			kfree(nvt_ts->mmap);
-		    nvt_ts->mmap = NULL;
+			nvt_ts->mmap = NULL;
 		}
 		kfree(nvt_ts);
 		nvt_ts = NULL;
 	}
-    return error;
+	return error;
 }
 
 static void __exit novatek_ts_module_exit(void)
 {
-
-   TS_LOG_INFO("novatek_ts_module_exit called here\n");
-
-    return;
+	TS_LOG_INFO("ts_module_exit called here\n");
+	return;
 }
 
-late_initcall(novatek_ts_module_init);
+late_initcall(ts_kit_module_init);
 module_exit(novatek_ts_module_exit);
 MODULE_AUTHOR("Huawei Device Company");
 MODULE_DESCRIPTION("Huawei TouchScreen Driver");

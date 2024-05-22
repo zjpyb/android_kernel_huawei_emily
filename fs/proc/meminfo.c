@@ -28,6 +28,10 @@
 #include <linux/of_reserved_mem.h>
 #endif
 
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+#include <linux/protect_lru.h>
+#endif
+
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
 }
@@ -102,7 +106,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "MmapCopy:       ",
 		    (unsigned long)atomic_long_read(&mmap_pages_allocated));
 #endif
-
+#ifdef CONFIG_KZEROD
+	show_val_kb(m, "ZeroedFree:     ", kzerod_get_zeroed_size());
+#endif
 	show_val_kb(m, "SwapTotal:      ", i.totalswap);
 	show_val_kb(m, "SwapFree:       ", i.freeswap);
 	show_val_kb(m, "Dirty:          ",
@@ -122,8 +128,16 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		    global_node_page_state(NR_SLAB_RECLAIMABLE));
 	show_val_kb(m, "SUnreclaim:     ",
 		    global_node_page_state(NR_SLAB_UNRECLAIMABLE));
+#ifdef CONFIG_HISI_PAGE_TRACE
+	show_val_kb(m, "SlabLarge:      ",
+		    global_zone_page_state(NR_LSLAB_PAGES));
+#endif
 	seq_printf(m, "KernelStack:    %8lu kB\n",
 		   global_zone_page_state(NR_KERNEL_STACK_KB));
+#ifdef CONFIG_SHADOW_CALL_STACK
+	seq_printf(m, "ShadowCallStack:%8lu kB\n",
+		   global_zone_page_state(NR_KERNEL_SCS_BYTES) / 1024);
+#endif
 	show_val_kb(m, "PageTables:     ",
 		    global_zone_page_state(NR_PAGETABLE));
 #ifdef CONFIG_QUICKLIST
@@ -166,7 +180,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_ION
 	show_val_kb(m, "IonTotalCache:  ", global_zone_page_state(NR_IONCACHE_PAGES));
 	show_val_kb(m, "IonTotalUsed:   ",
-		    hisi_ion_total() >> PAGE_SHIFT);
+		    mm_ion_total() >> PAGE_SHIFT);
 #endif
 
 #ifdef CONFIG_TASK_PROTECT_LRU
@@ -178,6 +192,8 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 			  global_zone_page_state(NR_PROTECT_ACTIVE_FILE));
 	show_val_kb(m, "PInactive(file):   ",
 			  global_zone_page_state(NR_PROTECT_INACTIVE_FILE));
+#elif defined(CONFIG_MEMCG_PROTECT_LRU)
+	show_val_kb(m, "Protected:      ", get_protected_pages());
 #endif
 #ifdef CONFIG_OF_RESERVED_MEM
 	show_val_kb(m, "RsvTotalUsed:   ",

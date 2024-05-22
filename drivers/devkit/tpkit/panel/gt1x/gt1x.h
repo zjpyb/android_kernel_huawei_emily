@@ -29,8 +29,8 @@
 #include <linux/of_gpio.h>
 #endif
 #include <huawei_platform/log/hw_log.h>
-#include "../../huawei_ts_kit.h"
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
 #if defined(CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif

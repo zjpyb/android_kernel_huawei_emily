@@ -73,10 +73,8 @@ static int print_out_thread_fn(void *arg)
 							buf[OUT_BUF_MAX + i];
 				pd_dbg_buffer[index].
 						buf[OUT_BUF_MAX + i] = '\0';
-				/* while (atomic_read(&busy)); */
 				pd_dbg_buffer[index].
 						buf[OUT_BUF_MAX + i] = temp;
-				/* msleep(2); */
 			}
 			pr_info("PD dbg info///\n");
 		}
@@ -85,34 +83,6 @@ static int print_out_thread_fn(void *arg)
 	}
 	return 0;
 }
-
-#if 0
-static int print_out_thread_fn(void *arg)
-{
-	unsigned int index;
-
-	while (atomic_read(&running)) {
-		mutex_lock(&buff_lock);
-		index = using_buf;
-		using_buf ^= 0x01; /* exchange buffer */
-		mutex_unlock(&buff_lock);
-		if (pd_dbg_buffer[index].used) {
-			pd_dbg_buffer[index].
-				buf[pd_dbg_buffer[index].used] = '\0';
-			/*
-			   pr_info("///PD dbg info\n%s\nPD dbg info///\n",
-						pd_dbg_buffer[index].buf);
-			*/
-			pr_info("///PD dbg info\n");
-			printk(pd_dbg_buffer[index].buf);
-			printk("PD dbg info///\n");
-		}
-		pd_dbg_buffer[index].used = 0;
-		msleep(MSG_POLLING_MS);
-	}
-	return 0;
-}
-#endif
 
 int pd_dbg_info(const char *fmt, ...)
 {

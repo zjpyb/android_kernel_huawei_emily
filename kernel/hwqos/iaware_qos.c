@@ -3,7 +3,7 @@
  *
  * Qos schedule implementation
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,21 +19,20 @@
 #include <chipset_common/hwqos/iaware_qos.h>
 
 #include <linux/device.h>
-#include <linux/module.h>
 #include <linux/miscdevice.h>
-#include <linux/sched/task.h>
+#include <linux/module.h>
 #include <linux/uaccess.h>
+
 #ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 #endif
-#include <chipset_common/hwqos/hwqos_common.h>
 
 struct trans_qos_allow g_qos_trans_allows[QOS_TRANS_THREADS_NUM];
 spinlock_t g_trans_qos_lock;
 
 static void init_trans_qos_allows(void)
 {
-	int i = 0;
+	int i;
 
 	spin_lock_init(&g_trans_qos_lock);
 	for (i = 0; i < QOS_TRANS_THREADS_NUM; i++)
@@ -45,7 +44,7 @@ static void init_trans_qos_allows(void)
 static long qos_ctrl_get_qos_stat(unsigned long arg)
 {
 	struct task_struct *tsk = NULL;
-	struct qos_stat qs;
+	struct task_config qs;
 	void __user *uarg = (void __user *)arg;
 	long ret = 0;
 
@@ -63,7 +62,7 @@ static long qos_ctrl_get_qos_stat(unsigned long arg)
 		if (!tsk)
 			ret = -EFAULT;
 		else
-			qs.qos = get_task_qos(tsk);
+			qs.value = get_task_qos(tsk);
 	}
 	rcu_read_unlock();
 
@@ -78,7 +77,7 @@ static long qos_ctrl_get_qos_stat(unsigned long arg)
 static long qos_ctrl_set_qos_stat(unsigned long arg, bool is_thread)
 {
 	struct task_struct *tsk = NULL;
-	struct qos_stat qs;
+	struct task_config qs;
 	void __user *uarg = (void __user *)arg;
 	long ret = 0;
 
@@ -90,8 +89,8 @@ static long qos_ctrl_set_qos_stat(unsigned long arg, bool is_thread)
 		return -EFAULT;
 	}
 
-	if ((!qs.pid) || (qs.qos < VALUE_QOS_LOW)
-		|| (qs.qos > VALUE_QOS_CRITICAL)) {
+	if ((qs.pid <= 0) || (qs.value < VALUE_QOS_LOW)
+		|| (qs.value > VALUE_QOS_CRITICAL)) {
 		pr_warn("QOS_CTRL_SET_QOS_STAT: bad parameter\n");
 		return -EINVAL;
 	}
@@ -107,9 +106,9 @@ static long qos_ctrl_set_qos_stat(unsigned long arg, bool is_thread)
 		get_task_struct(tsk);
 		rcu_read_unlock();
 		if (is_thread)
-			set_task_qos_by_tid(tsk, qs.qos);
+			set_task_qos_by_tid(tsk, qs.value);
 		else
-			set_task_qos_by_pid(tsk, qs.qos);
+			set_task_qos_by_pid(tsk, qs.value);
 		put_task_struct(tsk);
 	}
 
@@ -159,6 +158,90 @@ static long qos_ctrl_get_qos_whole(unsigned long arg)
 	return ret;
 }
 
+static int sched_set_task_vip_prio(unsigned long arg)
+{
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	struct task_struct *tsk = NULL;
+	struct task_config config;
+	void __user *uarg = (void __user *)arg;
+	int ret = 0;
+
+	if (unlikely(!VIP_PRIO_SET_ENABLE))
+		return ret;
+
+	if (!uarg)
+		return -EINVAL;
+
+	if (copy_from_user(&config, uarg, sizeof(config))) {
+		pr_warn("sched_set_task_vip_prio: failed to copy from user\n");
+		return -EFAULT;
+	}
+
+	if (config.pid <= 0 || config.value < 0) {
+		pr_warn("sched_set_task_vip_prio: bad parameter\n");
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	tsk = find_task_by_vpid(config.pid);
+	if (!tsk) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+	get_task_struct(tsk);
+	rcu_read_unlock();
+
+	ret = set_vip_prio(tsk, (unsigned int)config.value);
+	put_task_struct(tsk);
+
+	return ret;
+#else
+	return 0;
+#endif
+}
+
+static int sched_set_task_min_util(unsigned long arg)
+{
+#ifdef CONFIG_SCHED_HISI_TASK_MIN_UTIL
+	struct task_struct *tsk = NULL;
+	struct task_config config;
+	void __user *uarg = (void __user *)arg;
+	int ret = 0;
+
+	if (unlikely(!MIN_UTIL_SET_ENABLE))
+		return ret;
+
+	if (!uarg)
+		return -EINVAL;
+
+	if (copy_from_user(&config, uarg, sizeof(config))) {
+		pr_warn("sched_set_task_min_util: failed to copy from user\n");
+		return -EFAULT;
+	}
+
+	if (config.pid <= 0 || config.value < 0) {
+		pr_warn("sched_set_task_min_util: bad parameter\n");
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	tsk = find_task_by_vpid(config.pid);
+	if (!tsk) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+	get_task_struct(tsk);
+	rcu_read_unlock();
+
+	ret = set_task_min_util(tsk, (unsigned int)config.value);
+	put_task_struct(tsk);
+
+	return ret;
+#else
+	return 0;
+#endif
+}
+
 static long qos_ctrl_ioctl(struct file *file,
 	unsigned int cmd, unsigned long arg)
 {
@@ -173,7 +256,7 @@ static long qos_ctrl_ioctl(struct file *file,
 		return -EINVAL;
 	}
 
-	if (_IOC_NR(cmd) > QOS_CTRL_MAX_NR) {
+	if (_IOC_NR(cmd) > CTRL_MAX_NR) {
 		pr_warn("qos_ctrl: invalid qos cmd. cmd = %d\n", _IOC_NR(cmd));
 		return -EINVAL;
 	}
@@ -190,6 +273,12 @@ static long qos_ctrl_ioctl(struct file *file,
 		break;
 	case QOS_CTRL_GET_QOS_WHOLE:
 		ret = qos_ctrl_get_qos_whole(arg);
+		break;
+	case CTRL_SET_TASK_VIP_PRIO:
+		ret = sched_set_task_vip_prio(arg);
+		break;
+	case CTRL_SET_TASK_MIN_UTIL:
+		ret = sched_set_task_min_util(arg);
 		break;
 	default:
 		ret = -EINVAL;

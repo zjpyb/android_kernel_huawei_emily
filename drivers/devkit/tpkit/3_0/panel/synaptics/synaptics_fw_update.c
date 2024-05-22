@@ -29,7 +29,7 @@
 #include <asm/uaccess.h>
 #include <linux/vmalloc.h>
 #include "synaptics.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define FORCE_UPDATE false
 /*#define DO_LOCKDOWN false*/
@@ -890,7 +890,7 @@ static int fwu_do_reflash(void)
 	if (retval < 0) {
 		TS_LOG_INFO("fwu_enter_flash_prog fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_enter_flash_prog_fail;
+		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_enter_flash_prog_fail;
 #endif
 		return retval;
 	}
@@ -901,7 +901,7 @@ static int fwu_do_reflash(void)
 	if (retval < 0) {
 		TS_LOG_INFO("fwu_write_bootloader_id fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_write_bootloader_id_fail;
+		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_write_bootloader_id_fail;
 #endif
 		return retval;
 	}
@@ -912,7 +912,7 @@ static int fwu_do_reflash(void)
 	if (retval < 0) {
 		TS_LOG_INFO("fwu_write_f34_command fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_write_f34_command_fail;
+		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_write_f34_command_fail;
 #endif
 		return retval;
 	}
@@ -925,7 +925,7 @@ static int fwu_do_reflash(void)
 	if (retval < 0) {
 		TS_LOG_INFO("fwu_wait_for_idle fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_wait_for_idle_fail;
+		rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_wait_for_idle_fail;
 #endif
 		return retval;
 	}
@@ -937,7 +937,7 @@ static int fwu_do_reflash(void)
 		if (retval < 0) {
 			TS_LOG_INFO("fwu_write_firmware fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-			rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_write_firmware_fail;
+			rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_write_firmware_fail;
 #endif
 			return retval;
 		}
@@ -949,7 +949,7 @@ static int fwu_do_reflash(void)
 		if (retval < 0) {
 			TS_LOG_INFO("fwu_write_configuration fail\n");
 #if defined (CONFIG_HUAWEI_DSM)
-			rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_UPDATE_status = fwu_write_configuration_fail;
+			rmi4_data->synaptics_chip_data->ts_platform_data->dsm_info.constraints_update_status = fwu_write_configuration_fail;
 #endif
 			return retval;
 		}

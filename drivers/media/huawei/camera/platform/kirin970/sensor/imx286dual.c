@@ -32,7 +32,7 @@
 
 #include "hwsensor.h"
 #include "sensor_commom.h"
-#include "hw_csi.h"
+
 #include "../pmic/hw_pmic.h"
 
 #define I2S(i) container_of(i, sensor_t, intf)

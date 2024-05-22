@@ -264,7 +264,7 @@ struct fsg_common;
 struct fsg_common {
 	struct usb_gadget	*gadget;
 	struct usb_composite_dev *cdev;
-	struct fsg_dev		*fsg, *new_fsg;
+	struct fsg_dev		*fsg;
 	wait_queue_head_t	io_wait;
 	wait_queue_head_t	fsg_wait;
 
@@ -293,6 +293,7 @@ struct fsg_common {
 	unsigned int		bulk_out_maxpacket;
 	enum fsg_state		state;		/* For exception handling */
 	unsigned int		exception_req_tag;
+	void			*exception_arg;
 
 	enum data_direction	data_dir;
 	u32			data_size;
@@ -396,7 +397,8 @@ static int fsg_set_halt(struct fsg_dev *fsg, struct usb_ep *ep)
 
 /* These routines may be called in process context or in_irq */
 
-static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
+static void __raise_exception(struct fsg_common *common, enum fsg_state new_state,
+			      void *arg)
 {
 	unsigned long		flags;
 
@@ -409,6 +411,7 @@ static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
 	if (common->state <= new_state) {
 		common->exception_req_tag = common->ep0_req_tag;
 		common->state = new_state;
+		common->exception_arg = arg;
 		if (common->thread_task)
 			send_sig_info(SIGUSR1, SEND_SIG_FORCED,
 				      common->thread_task);
@@ -416,6 +419,10 @@ static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
 	spin_unlock_irqrestore(&common->lock, flags);
 }
 
+static void raise_exception(struct fsg_common *common, enum fsg_state new_state)
+{
+	__raise_exception(common, new_state, NULL);
+}
 
 /*-------------------------------------------------------------------------*/
 
@@ -491,7 +498,7 @@ static int fsg_setup(struct usb_function *f,
 	u16			w_length = le16_to_cpu(ctrl->wLength);
 
 	/* modify to adapt for Android */
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	if (!fsg->common->fsg)
 #else
 	if (!fsg_is_set(fsg->common))
@@ -1184,7 +1191,7 @@ static int do_read_header(struct fsg_common *common, struct fsg_buffhd *bh)
 	return 8;
 }
 
-#include "function-hisi/f_mass_storage_hisi.c"
+#include "function-hisi/f_mass_storage_chip.c"
 
 #ifndef CONFIG_USB_MASS_STORAGE_SUPPORT_MAC
 static int do_read_toc(struct fsg_common *common, struct fsg_buffhd *bh)
@@ -2078,7 +2085,8 @@ unknown_cmnd:
 		reply = check_command(common, common->cmnd_size,
 				      DATA_DIR_UNKNOWN, ~0, 0, unknown);
 		if (reply == 0) {
-			common->curlun->sense_data = SS_INVALID_COMMAND;
+			if (common->curlun)
+				common->curlun->sense_data = SS_INVALID_COMMAND;
 			reply = -EINVAL;
 		}
 		break;
@@ -2323,8 +2331,8 @@ reset:
 static int fsg_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 {
 	struct fsg_dev *fsg = fsg_from_func(f);
-	fsg->common->new_fsg = fsg;
-	raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
+
+	__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, fsg);
 	return USB_GADGET_DELAYED_STATUS;
 }
 
@@ -2333,8 +2341,7 @@ static void fsg_disable(struct usb_function *f)
 	struct fsg_dev *fsg = fsg_from_func(f);
 	int timeout = 2000;
 
-	fsg->common->new_fsg = NULL;
-	raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
+	__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, NULL);
 	if (fsg->common->fsg == fsg) {
 		while (--timeout) {
 			if (fsg->common->fsg != fsg)
@@ -2356,6 +2363,7 @@ static void handle_exception(struct fsg_common *common)
 	enum fsg_state		old_state;
 	struct fsg_lun		*curlun;
 	unsigned int		exception_req_tag;
+	struct fsg_dev		*new_fsg;
 
 	/*
 	 * Clear the existing signals.  Anything but SIGUSR1 is converted
@@ -2409,6 +2417,7 @@ static void handle_exception(struct fsg_common *common)
 	common->next_buffhd_to_fill = &common->buffhds[0];
 	common->next_buffhd_to_drain = &common->buffhds[0];
 	exception_req_tag = common->exception_req_tag;
+	new_fsg = common->exception_arg;
 	old_state = common->state;
 	common->state = FSG_STATE_NORMAL;
 
@@ -2462,8 +2471,8 @@ static void handle_exception(struct fsg_common *common)
 		break;
 
 	case FSG_STATE_CONFIG_CHANGE:
-		do_set_interface(common, common->new_fsg);
-		if (common->new_fsg)
+		do_set_interface(common, new_fsg);
+		if (new_fsg)
 			usb_composite_setup_continue(common->cdev);
 		break;
 
@@ -2601,7 +2610,7 @@ static DEVICE_ATTR_RW(nofua);
 static DEVICE_ATTR(ro, 0, ro_show, ro_store);
 static DEVICE_ATTR(file, 0, file_show, file_store);
 
-#include "function-hisi/hw_msconfig.c"
+#include "hw_msconfig.c"
 
 /****************************** FSG COMMON ******************************/
 
@@ -2870,7 +2879,9 @@ int fsg_common_create_lun(struct fsg_common *common, struct fsg_lun_config *cfg,
 	      lun->ro ? "read only " : "",
 	      lun->cdrom ? "CD-ROM " : "",
 	      p);
-	kfree(pathbuf);
+
+	if (pathbuf)
+		kfree(pathbuf);
 
 	return 0;
 
@@ -3064,8 +3075,7 @@ static void fsg_unbind(struct usb_configuration *c, struct usb_function *f)
 
 	DBG(fsg, "unbind\n");
 	if (fsg->common->fsg == fsg) {
-		fsg->common->new_fsg = NULL;
-		raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE);
+		__raise_exception(fsg->common, FSG_STATE_CONFIG_CHANGE, NULL);
 		/* FIXME: make interruptible or killable somehow? */
 		wait_event(common->fsg_wait, common->fsg != fsg);
 	}
@@ -3438,7 +3448,7 @@ static struct usb_function_instance *fsg_alloc_inst(void)
 	if (rc)
 		goto release_buffers;
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 	if (create_mass_storage_device(&opts->func_inst)) {
 		rc = -ENODEV;
 		goto remove_luns;
@@ -3455,7 +3465,7 @@ static struct usb_function_instance *fsg_alloc_inst(void)
 
 	return &opts->func_inst;
 
-#ifdef CONFIG_HISI_USB_CONFIGFS
+#ifdef CONFIG_CHIP_USB_CONFIGFS
 remove_luns:
 	fsg_common_remove_luns(opts->common);
 #endif

@@ -185,8 +185,6 @@ static int cci_read(struct stmvl53l1_data *dev, int index,
 
 	}
 
-	pr_info("%s: i2c_transfer :%d, @%x reg 0x%x data %d\n",
-		__func__, rc, client->addr, index, *data);
 	cci_access_over(" wr len %d status %d", rc != 2, len);
 	return rc != 2;
 }

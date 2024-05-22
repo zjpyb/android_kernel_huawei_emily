@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <huawei_platform/log/hw_log.h>
 #include "smartpakit.h"
+#include <securec.h>
 
 #define HWLOG_TAG smartpakit
 HWLOG_REGIST();
@@ -108,8 +109,8 @@ static void smartpakit_get_out_device_info(struct smartpakit_info *info)
 	unsigned int offset;
 
 	/* out_device */
-	hwlog_info("%s: out_device: 0x%04x\n", __func__, info->out_device);
-	smartpakit_append_info("out_device: 0x%04x\n", info->out_device);
+	hwlog_info("%s: out_device: 0x%08x\n", __func__, info->out_device);
+	smartpakit_append_info("out_device: 0x%08x\n", info->out_device);
 
 	/* out_device type: spk or rcv */
 	for (i = 0; i < (int)info->pa_num; i++) {
@@ -158,8 +159,11 @@ static int smartpakit_get_pa_info(char *buffer, const struct kernel_param *kp)
 	int len;
 
 	kit = smartpakit_get_misc_priv();
-	memset(info_buffer, 0, sizeof(info_buffer));
-	memset(&info, 0, sizeof(info));
+	if (memset_s(info_buffer, sizeof(info_buffer),
+		0, sizeof(info_buffer)) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
+	if (memset_s(&info, sizeof(info), 0, sizeof(info)) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
 
 	unused(kp);
 	if ((buffer == NULL) || (kit == NULL)) {
@@ -206,8 +210,13 @@ static int smartpakit_get_pa_info(char *buffer, const struct kernel_param *kp)
 	smartpakit_get_chip_vendor_and_model(&info);
 	smartpakit_append_info("special_name: %s\n", info.special_name_config);
 
-	len = snprintf(buffer, (unsigned long)INFO_BUF_MAX, info_buffer);
-	memset(info_buffer, 0, sizeof(info_buffer));
+	len = snprintf_s(buffer, (unsigned long)INFO_BUF_MAX,
+		(unsigned long)INFO_BUF_MAX - 1, info_buffer);
+	if (len < 0)
+		hwlog_err("%s: snprintf_s is failed\n", __func__);
+	if (memset_s(info_buffer, sizeof(info_buffer),
+		0, sizeof(info_buffer)) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
 
 	return len;
 }
@@ -260,19 +269,26 @@ static int smartpakit_get_reg_ctl(char *buffer, const struct kernel_param *kp)
 	}
 
 	if (reg_ctl_flag == 0) {
-		ret = snprintf(buffer, (unsigned long)INFO_BUF_MAX,
-			SMARTPAKIT_INFO_HELP);
+		ret = snprintf_s(buffer, (unsigned long)INFO_BUF_MAX,
+			(unsigned long)INFO_BUF_MAX - 1, SMARTPAKIT_INFO_HELP);
+		if (ret < 0)
+			hwlog_err("%s: snprintf_s is failed\n", __func__);
 		return ret;
 	}
 
 	if (strlen(info_buffer) > 0) {
-		ret = snprintf(buffer, (unsigned long)INFO_BUF_MAX,
-			info_buffer);
-		memset(info_buffer, 0, INFO_BUF_MAX);
+		ret = snprintf_s(buffer, (unsigned long)INFO_BUF_MAX,
+			(unsigned long)INFO_BUF_MAX - 1, info_buffer);
+		if (ret < 0)
+			hwlog_err("%s: snprintf_s is failed\n", __func__);
+		if (memset_s(info_buffer, INFO_BUF_MAX, 0, INFO_BUF_MAX) != EOK)
+			hwlog_err("%s: memset_s is failed\n", __func__);
 	} else {
-		ret = snprintf(buffer, (unsigned long)INFO_BUF_MAX,
-			"smartpa reg_ctl success\n"
+		ret = snprintf_s(buffer, (unsigned long)INFO_BUF_MAX,
+			(unsigned long)INFO_BUF_MAX - 1, "smartpa reg_ctl success\n"
 			"(dmesg -c | grep smartpakit)");
+		if (ret < 0)
+			hwlog_err("%s: snprintf_s is failed\n", __func__);
 	}
 
 	return ret;
@@ -290,11 +306,14 @@ static int smartpakit_info_parse_reg_ctl(const char *val)
 		hwlog_err("%s: val is NULL\n", __func__);
 		return -EINVAL;
 	}
-	memset(&reg_ctl_params, 0, sizeof(reg_ctl_params));
+	if (memset_s(&reg_ctl_params, sizeof(reg_ctl_params), 0, sizeof(reg_ctl_params)) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
 
 	/* ops cmd */
 	hwlog_info("%s: val = %s\n", __func__, val);
-	strncpy(buf, val, (unsigned long)(INFO_BUF_MAX - 1));
+	if (strncpy_s(buf, (unsigned long)INFO_BUF_MAX, val,
+		(unsigned long)(INFO_BUF_MAX - 1)) != EOK)
+		hwlog_err("%s: strncpy_s is failed\n", __func__);
 	reg_ctl_params.cmd = buf[0];
 	pbuf = &buf[KIT_CMD_PARAM_OFFSET];
 
@@ -541,9 +560,12 @@ static int smartpakit_info_reg_read(struct smartpakit_priv *kit)
 	hwlog_info("%s: pa%d read reg 0x%x=0x%x\n", __func__, index,
 		reg_ctl_params.addr_r, value);
 
-	memset(info_buffer, 0, INFO_BUF_MAX);
-	snprintf(info_buffer, (unsigned long)INFO_BUF_MAX,
-		"reg 0x%x=0x%04x\n", reg_ctl_params.addr_r, value);
+	if (memset_s(info_buffer, INFO_BUF_MAX, 0, INFO_BUF_MAX) != EOK)
+		hwlog_err("%s: memset_s is failed\n", __func__);
+	if (snprintf_s(info_buffer, (unsigned long)INFO_BUF_MAX,
+		(unsigned long)INFO_BUF_MAX - 1, "reg 0x%x=0x%04x\n",
+		reg_ctl_params.addr_r, value) < 0)
+		hwlog_err("%s: snprintf_s is failed\n", __func__);
 	return 0;
 }
 

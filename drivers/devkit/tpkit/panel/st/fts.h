@@ -21,7 +21,7 @@
 #include <linux/pm_wakeup.h>
 #include "fts_lib/ftsSoftware.h"
 #include "fts_lib/ftsHardware.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define FTS_POWER_ON     1
 #define FTS_POWER_OFF    0

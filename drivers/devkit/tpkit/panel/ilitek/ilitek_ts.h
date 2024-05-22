@@ -36,8 +36,8 @@
 #include <dsm/dsm_pub.h>
 #endif
 
-#include "../../huawei_ts_kit.h"
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
 #define ILITEK_CHIP_NAME		"ilitek"
 #define HUAWEI_TS_KIT		"huawei,ts_kit"
 #define ILITEK_RESET_MODEL_NORMAL_DELAY		100

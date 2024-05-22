@@ -20,6 +20,7 @@
 #include <linux/module.h>
 #include <linux/string.h>
 #include <huawei_platform/log/hw_log.h>
+#include "securec.h"
 
 #define ERROR_LEVEL 1
 #define INFO_LEVEL  1
@@ -188,8 +189,11 @@ int audio_dsm_report_info(enum audio_device_type dev_type, int error_no,
 	}
 
 	va_start(args, fmt);
-	ret = vsnprintf(dsm_audio_client_table[dev_type].dsm_str_info_buffer,
-			dsm_dev_table[dev_type]->buff_size, fmt, args);
+	ret = vsnprintf_s(dsm_audio_client_table[dev_type].dsm_str_info_buffer,
+			dsm_dev_table[dev_type]->buff_size,
+			dsm_dev_table[dev_type]->buff_size - 1, fmt, args);
+	if (ret < 0)
+		hwlog_err("%s: vsnprintf_s is failed\n", __func__);
 	va_end(args);
 
 	err = dsm_client_ocuppy(dsm_audio_client_table[dev_type].dsm_client);

@@ -616,7 +616,7 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 	if (!access_ok(VERIFY_WRITE, buf, nbytes))
 		return -EFAULT;
 
-#ifndef USB_DEVICE_READ_TRY_LOCK
+#ifndef CONFIG_USB_DEVICE_READ_USE_TRYLOCK
 	mutex_lock(&usb_bus_idr_lock);
 #else
 	if (usb_device_read_mutex_trylock())
@@ -628,7 +628,7 @@ static ssize_t usb_device_read(struct file *file, char __user *buf,
 		if (!bus_to_hcd(bus)->rh_registered)
 			continue;
 
-#ifndef USB_DEVICE_READ_TRY_LOCK
+#ifndef CONFIG_USB_DEVICE_READ_USE_TRYLOCK
 		usb_lock_device(bus->root_hub);
 #else
 		if (usb_device_read_usb_trylock_device(bus->root_hub)) {

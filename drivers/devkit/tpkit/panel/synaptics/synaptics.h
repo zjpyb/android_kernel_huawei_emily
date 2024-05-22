@@ -18,7 +18,7 @@
  */
 #include <linux/device.h>
 #include <linux/platform_device.h>
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define RED_REMOTE
 #define X_RES	1080

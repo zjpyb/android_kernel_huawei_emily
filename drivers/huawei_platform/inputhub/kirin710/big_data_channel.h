@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: Sensor Hub Channel Bridge
+ */
+
 #ifndef __BIG_DATA_CHANNEL_H__
 #define __BIG_DATA_CHANNEL_H__
 
@@ -8,7 +13,6 @@ typedef enum {
 
 typedef enum {
 	BIG_DATA_STR,
-	//BIG_DATA_STR_2,
 } big_data_str_tag_t;
 
 typedef struct {

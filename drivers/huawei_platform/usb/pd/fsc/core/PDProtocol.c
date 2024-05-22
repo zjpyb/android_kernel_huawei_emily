@@ -1,28 +1,21 @@
-/****************************************************************************
- * FileName:        PDProtocol.c
- * Processor:       PIC32MX250F128B
- * Compiler:        MPLAB XC32
- * Company:         Fairchild Semiconductor
+/*
+ * PDProtocol.c
  *
- * Software License Agreement:
+ * PDProtocol driver
  *
- * The software supplied herewith by Fairchild Semiconductor (the “Company”)
- * is supplied to you, the Company's customer, for exclusive use with its
- * USB Type C / USB PD products.  The software is owned by the Company and/or
- * its supplier, and is protected under applicable copyright laws.
- * All rights are reserved. Any use in violation of the foregoing restrictions
- * may subject the user to criminal sanctions under applicable laws, as well
- * as to civil liability for the breach of the terms and conditions of this
- * license.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- * THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
- * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
- * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
- * IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
- * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- *****************************************************************************/
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #include "PDProtocol.h"
 #include "PDPolicy.h"
 #include "TypeC.h"
@@ -302,17 +295,12 @@ blah:
 		&&(PolicyRxDataObj[0].SVDM.CommandType == 0))
 	{
 		/* Wait for idle to figure out if new message has been received */
-		//i = 0;
-		//while(i < 3)
-		//{
 			platform_delay_10us(100);
 			DeviceRead(regInterruptb, 3, &Registers.Status.byte[3]);
 			if(g_crcsent_lock && Registers.Status.I_GCRCSENT)
 			{
 				g_crcsent_lock = 0;
 			}
-			//if(Registers.Status.ACTIVITY == 0) i++;
-		//}
 
 		if(!g_crcsent_lock || !Registers.Status.RX_EMPTY)
 		{
@@ -391,8 +379,6 @@ void ProtocolTransmitMessage(void)
     if(manualRetriesEnabled)
     {
         ProtocolState = PRLManualRetries;
-		//platform_delay_10us(150);
-		//manualRetries();
     }
     else
     {
@@ -480,7 +466,6 @@ void ProtocolVerifyGoodCRC(void)
 
         if (PolicyRxHeader.MessageID != MIDcompare)                             // If the message ID doesn't match...
         {
-            //DeviceRead(regFIFO, 4, &ProtocolCRC[0]);                           // Read out the 4 CRC bytes to move the address to the next packet beginning
 #ifdef FSC_DEBUG
             StoreUSBPDToken(FALSE, pdtBadMessageID);                            // Store that there was a bad message ID received in the buffer
 #endif // FSC_DEBUG
@@ -501,7 +486,6 @@ void ProtocolVerifyGoodCRC(void)
 
             ProtocolState = PRLIdle;                                            // Set the idle state
             PDTxStatus = txSuccess;                                             // Set the transmission status to success to signal the policy engine
-            //DeviceRead(regFIFO, 4, &ProtocolCRC[0]);                           // Read out the 4 CRC bytes to move the address to the next packet beginning
 #ifdef FSC_DEBUG
             StoreUSBPDMessage(PolicyRxHeader, &PolicyRxDataObj[0], FALSE, data[0]);   // Store the received PD message for the device policy manager (VB GUI)
 #endif // FSC_DEBUG
@@ -515,8 +499,6 @@ void ProtocolVerifyGoodCRC(void)
         s = TokenToSopType(data[0]);
         if ((PolicyRxHeader.NumDataObjects == 0) && (PolicyRxHeader.MessageType == CMTSoftReset))
         {
-            //DeviceRead(regFIFO, 4, &ProtocolCRC[0]);                           // Read out the 4 CRC bytes to move the address to the next packet beginning
-
             MessageIDCounter = 0;                                 // Clear the message ID counter for tx
             MessageID = 0xFF;                                                   // Reset the message ID (always alert policy engine of soft reset)
             ProtocolMsgRx = TRUE;                                               // Set the flag to pass the message to the policy engine
@@ -527,7 +509,6 @@ void ProtocolVerifyGoodCRC(void)
         }
         else if (PolicyRxHeader.MessageID != MessageID)                         // If the message ID does not match the stored...
         {
-            //DeviceRead(regFIFO, 4, &ProtocolCRC[0]);                           // Read out the 4 CRC bytes to move the address to the next packet beginning
             MessageID = PolicyRxHeader.MessageID;                               // Update the stored message ID
             ProtocolMsgRx = TRUE;                                               // Set the flag to pass the message to the policy engine
             ProtocolMsgRxSop = s;

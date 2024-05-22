@@ -21,6 +21,7 @@
 #define SMARTPAKIT_NAME_MAX       64
 #define SMARTPAKIT_NAME_INVALID   "none"
 #define SMARTPAKIT_VENDR_INVALID  0xff
+#define RESERVED_NUM              200
 
 /* platform type */
 enum smartpakit_soc_platform {
@@ -72,7 +73,10 @@ enum smartpakit_pa_id {
 	SMARTPAKIT_PA_ID_PRIR,
 	SMARTPAKIT_PA_ID_SECL,
 	SMARTPAKIT_PA_ID_SECR,
-
+	SMARTPAKIT_PA_ID_THIRDL,
+	SMARTPAKIT_PA_ID_THIRDR,
+	SMARTPAKIT_PA_ID_FOURTHL,
+	SMARTPAKIT_PA_ID_FOURTHR,
 	SMARTPAKIT_PA_ID_MAX,
 	SMARTPAKIT_PA_ID_ALL   = 0xFF,
 };
@@ -86,16 +90,23 @@ enum smartpakit_chip_vendor {
 	SMARTPAKIT_CHIP_VENDOR_OTHER = SMARTPAKIT_CHIP_VENDOR_CS,  // other
 	SMARTPAKIT_CHIP_VENDOR_CUSTOMIZE,    // huawei customize
 	SMARTPAKIT_CHIP_VENDOR_RT,           // richtek
+	SMARTPAKIT_CHIP_VENDOR_AWINIC,       // awinic
+	SMARTPAKIT_CHIP_VENDOR_FOURSEMI,     // foursemi
 
 	SMARTPAKIT_CHIP_VENDOR_MAX,
 };
 
 /* For hismartpa */
-struct hismartpa_cfg {
+struct hismartpa_coeff {
 	unsigned short kv1;
 	unsigned short kv2;
 	unsigned short kr1;
 	unsigned short kr2;
+};
+
+enum gpio_state {
+	GPIO_LOW = 0,
+	GPIO_HIGH,
 };
 
 struct smartpakit_info {
@@ -104,13 +115,21 @@ struct smartpakit_info {
 	unsigned int algo_in;
 	unsigned int out_device;
 	unsigned int pa_num;
+	unsigned int param_version;
 	char special_name_config[SMARTPAKIT_NAME_MAX];
 
 	/* smartpa chip info */
 	unsigned int algo_delay_time;
 	unsigned int chip_vendor;
 	char chip_model[SMARTPAKIT_NAME_MAX];
+	char chip_model_list[SMARTPAKIT_PA_ID_MAX][SMARTPAKIT_NAME_MAX];
 	char cust[SMARTPAKIT_NAME_MAX];
+	char product_name[SMARTPAKIT_NAME_MAX];
+	struct hismartpa_coeff otp[SMARTPAKIT_PA_ID_MAX];
+	unsigned int cali_data_update_mode;
+
+	/* reserved field */
+	char reserved[RESERVED_NUM];
 };
 
 struct smartpakit_get_param {
@@ -122,8 +141,8 @@ struct smartpakit_get_param {
 /* for ioctl cmd SMARTPAKIT_W_ALL */
 #define SMARTPAKIT_PA_CTL_MASK        0x1
 #define SMARTPAKIT_PA_CTL_OFFSET      4
-#define SMARTPAKIT_NEED_RESUME_MASK   0x10000000
-#define SMARTPAKIT_PA_MUTE_MASK       0x20000000
+#define SMARTPAKIT_NEED_RESUME_MASK   0x80000000
+#define SMARTPAKIT_PA_MUTE_MASK       0x40000000
 
 /* for system/lib64/x.so(64 bits) */
 struct smartpakit_set_param {
@@ -179,6 +198,9 @@ struct smartpakit_set_param_compat {
 	_IOW('M', 0x25, struct smartpakit_set_param_compat)
 #define SMARTPAKIT_W_SECR_COMPAT \
 	_IOW('M', 0x26, struct smartpakit_set_param_compat)
+
+// pa check loop
+#define SMARTPAKIT_CHECK    _IOW('M', 0x27, int)
 
 #endif /* __SMARTPAKIT_DEFS_H__ */
 

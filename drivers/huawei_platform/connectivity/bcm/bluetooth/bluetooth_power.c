@@ -290,11 +290,11 @@ Output:
 Return:         int ret
 Others:         NA
 *************************************************/
- static ssize_t bluetooth_power_read_data_calibrate(struct file *filp,
+static ssize_t bluetooth_power_read_data_calibrate(struct file *filp,
 					  char __user *buffer,
 					  size_t len, loff_t *off)
 {
-       char BtCalDateBuf[BLUETOOTH_HUAWEI_NV_BTNVRAM_LENGTH + 1];
+	char BtCalDateBuf[BLUETOOTH_HUAWEI_NV_BTNVRAM_LENGTH + 1];
 	int CalDataLen = 0;
 
 	pr_info("bluetooth_power_read_data_calibrate \n");
@@ -303,7 +303,11 @@ Others:         NA
 	if (CalDataLen <= 0) {
 		pr_err("%s: calibrate data is empty, no need to calibrate nvram\n",  __func__);
 		return -EINVAL;
+	}
 
+	if (CalDataLen > len) {
+		pr_err("%s: user space buffer len too small\n", __func__);
+		return -EINVAL;
 	}
 
 	if( 0 != copy_to_user(buffer, BtCalDateBuf, CalDataLen))

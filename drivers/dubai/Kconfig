@@ -13,4 +13,11 @@ config HUAWEI_DUBAI_TASK_CPU_POWER
 	help
 	  Get task cpu power
 
+config HUAWEI_DUBAI_RGB_STATS
+	bool "Huawei DUBAI Rgb Stats"
+	default n
+	depends on HUAWEI_DUBAI && FB
+	help
+	  Get Rgb Stats
+
 endmenu

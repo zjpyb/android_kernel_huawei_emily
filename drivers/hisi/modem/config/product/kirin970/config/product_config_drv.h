@@ -1,4 +1,4 @@
-/* MD5: dedfd0f03d390c3f92d06175313398a5*/
+/* MD5: 58a4ac10963b933faf7deb0e16909c23*/
 #if !defined(__PRODUCT_CONFIG_DRV_H__)
 #define __PRODUCT_CONFIG_DRV_H__
 
@@ -435,10 +435,6 @@
 #endif 
 
 #ifndef CONFIG_PDLOCK
-#endif 
-
-#ifndef CONFIG_CORESIGHT
-#define CONFIG_CORESIGHT 
 #endif 
 
 #ifndef CONFIG_WATCHPOINT

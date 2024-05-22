@@ -4,5 +4,5 @@ config HIFI_MAILBOX
      bool "hifi mailbox driver base on ipc"
      default n
      help
-          transplant balong mailbox driver.
+          transplant modem mailbox driver.
 endmenu

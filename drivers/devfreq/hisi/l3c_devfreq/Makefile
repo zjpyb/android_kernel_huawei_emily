@@ -1,3 +1,3 @@
-obj-$(CONFIG_HISI_L3C_DEVFREQ)   += l3c_devfreq.o
+obj-$(CONFIG_L3C_DEVFREQ)   += l3c_devfreq.o
 
-ccflags-$(CONFIG_HISI_DEVFREQ)  += -Idrivers/devfreq
+ccflags-$(CONFIG_L3C_DEVFREQ) += -Idrivers/devfreq

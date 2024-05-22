@@ -351,8 +351,13 @@ static int rasf2fs_get_area_index(struct f2fs_sb_info *sbi,
 	*relative_index = relative_block_offset;
 	return 0;
 }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 static int rasprobe_handler(get_meta_page) (struct rasprobe_instance *ri,
 					    struct pt_regs *regs) {
+#else
+static int rasprobe_handler(get_meta_page_ex) (struct rasprobe_instance *ri,
+					    struct pt_regs *regs) {
+#endif
 	struct RasRegs *rd = (struct RasRegs *)ri->data;
 	struct f2fs_sb_info *sbi = rd->args[0];
 	block_t disk_index = (block_t) (u64) rd->args[1];
@@ -435,9 +440,18 @@ static int rasprobe_handler(__bread_gfp) (struct rasprobe_instance *ri,
 }
 
 rasprobe_define(__bread_gfp);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 rasprobe_define(get_meta_page);
+#else
+rasprobe_define(get_meta_page_ex);
+#endif
+
 static struct rasprobe *probes[] = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	&rasprobe_name(get_meta_page),
+#else
+	&rasprobe_name(get_meta_page_ex),
+#endif
 	&rasprobe_name(__bread_gfp),
 };
 static int cmd_main(void *data, int argc, char *args[])
@@ -515,7 +529,6 @@ module_param(debug, int, S_IRUGO);
 static int tool_init(void)
 {
 	int i = 0;
-
 	/*1. initialize memory */
 	ras_debugset(debug);
 	ras_retn_iferr(ras_check());

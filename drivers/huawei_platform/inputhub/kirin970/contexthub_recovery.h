@@ -60,37 +60,37 @@
 #define SH_DUMP_START 1
 #define SH_DUMP_FINISH 2
 
-typedef enum
-{
-    SH_FAULT_HARDFAULT = 0,
-    SH_FAULT_BUSFAULT,
-    SH_FAULT_USAGEFAULT,
-    SH_FAULT_MEMFAULT,
-    SH_FAULT_NMIFAULT,
-    SH_FAULT_ASSERT,
-    SH_FAULT_INTERNELFAULT = 16,
-    SH_FAULT_IPC_RX_TIMEOUT,
-    SH_FAULT_IPC_TX_TIMEOUT,
-    SH_FAULT_RESET,
-    SH_FAULT_USER_DUMP,
-    SH_FAULT_RESUME,
-    SH_FAULT_REDETECT,
-    SH_FAULT_PANIC,
-    SH_FAULT_NOC,
-    SH_FAULT_EXP_BOTTOM,
-} exp_source_t;
+enum exp_source {
+	SH_FAULT_HARDFAULT = 0,
+	SH_FAULT_BUSFAULT,
+	SH_FAULT_USAGEFAULT,
+	SH_FAULT_MEMFAULT,
+	SH_FAULT_NMIFAULT,
+	SH_FAULT_ASSERT,
+	SH_FAULT_INTERNELFAULT = 16,
+	SH_FAULT_IPC_RX_TIMEOUT,
+	SH_FAULT_IPC_TX_TIMEOUT,
+	SH_FAULT_RESET,
+	SH_FAULT_USER_DUMP,
+	SH_FAULT_RESUME,
+	SH_FAULT_REDETECT,
+	SH_FAULT_PANIC,
+	SH_FAULT_NOC,
+	SH_FAULT_EXP_BOTTOM,
+};
 
-typedef struct
-{
-    uint32_t cnt;
-    uint32_t len;
-    uint32_t tuncate;
-} dump_zone_head_t;
+struct dump_zone_head {
+	uint32_t cnt;
+	uint32_t len;
+	uint32_t tuncate;
+};
+
+extern int g_iom3_state;
 
 int thp_prox_event_report(int value[], int length);
-extern int iom3_need_recovery(int modid, exp_source_t f);
+extern int iom3_need_recovery(int modid, enum exp_source f);
 extern int recovery_init(void);
 extern int register_iom3_recovery_notifier(struct notifier_block *nb);
-extern int iom3_rec_sys_callback(const pkt_header_t *head);
+extern int iom3_rec_sys_callback(const struct pkt_header *head);
 
 #endif //__LINUX_RECOVERY_H__

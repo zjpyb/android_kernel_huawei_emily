@@ -1,27 +1,27 @@
 /*
- * PCIe host controller driver for Kirin 960 SoCs
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2020. All rights reserved.
+ * Description: PCIe host controller driver for Kirin SoCs.
+ * Create: 2016-6-16
  *
- * Copyright (C) 2015 Huawei Electronics Co., Ltd.
- *		http://www.huawei.com
- *
- * Author: Xiaowei Song <songxiaowei@huawei.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is distributed under the terms of the GNU General
+ * Public License ("GPL") as published by the Free Software Foundation,
+ * either version 2 of that License or (at your option) any later version.
  */
 
-#ifndef _PCIE_KIRIN_API_H
-#define _PCIE_KIRIN_API_H
+#ifndef _KIRIN_PCIE_API_H
+#define _KIRIN_PCIE_API_H
+
+#include <linux/types.h>
+#include <linux/pci.h>
 
 enum kirin_pcie_event {
-	KIRIN_PCIE_EVENT_MIN_INVALID = 0x0,		/*min invalid value*/
-	KIRIN_PCIE_EVENT_LINKUP = 0x1,		/* linkup event  */
-	KIRIN_PCIE_EVENT_LINKDOWN = 0x2,		/* linkdown event */
-	KIRIN_PCIE_EVENT_WAKE = 0x4,	/* wake event*/
-	KIRIN_PCIE_EVENT_L1SS = 0x8,	/* l1ss event*/
-	KIRIN_PCIE_EVENT_CPL_TIMEOUT = 0x10,	/* completion timeout event */
-	KIRIN_PCIE_EVENT_MAX_INVALID = 0x1F,	/* max invalid value*/
+	KIRIN_PCIE_EVENT_MIN_INVALID = 0x0, /* min invalid value */
+	KIRIN_PCIE_EVENT_LINKUP = 0x1, /* linkup event */
+	KIRIN_PCIE_EVENT_LINKDOWN = 0x2, /* linkdown event */
+	KIRIN_PCIE_EVENT_WAKE = 0x4, /* wake event */
+	KIRIN_PCIE_EVENT_L1SS = 0x8, /* l1ss event */
+	KIRIN_PCIE_EVENT_CPL_TIMEOUT = 0x10, /* completion timeout event */
+	KIRIN_PCIE_EVENT_MAX_INVALID = 0x1F, /* max invalid value */
 };
 
 enum kirin_pcie_trigger {
@@ -47,7 +47,7 @@ struct kirin_pcie_register_event {
 	u32 options;
 };
 
-#ifdef CONFIG_PCIE_KIRIN
+#ifdef CONFIG_PCIE_KPORT_V1
 int kirin_pcie_register_event(struct kirin_pcie_register_event *reg);
 int kirin_pcie_deregister_event(struct kirin_pcie_register_event *reg);
 int kirin_pcie_pm_control(int power_ops, u32 rc_idx);
@@ -57,10 +57,9 @@ int kirin_pcie_enumerate(u32 rc_idx);
 int kirin_pcie_remove_ep(u32 rc_idx);
 int kirin_pcie_rescan_ep(u32 rc_idx);
 int pcie_ep_link_ltssm_notify(u32 rc_id, u32 link_status);
-int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
-				int (*poweroff)(void* data), void* data);
+int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void *data),
+				int (*poweroff)(void *data), void *data);
 void kirin_pcie_apb_info_dump(void);
-
 #else
 static inline int kirin_pcie_register_event(struct kirin_pcie_register_event *reg)
 {
@@ -107,18 +106,14 @@ static inline int pcie_ep_link_ltssm_notify(u32 rc_id, u32 link_status)
 	return -EINVAL;
 }
 
-static inline int kirin_pcie_power_notifiy_register(u32 rc_id, int (*poweron)(void* data),
-				int (*poweroff)(void* data), void* data)
+static inline int kirin_pcie_power_notifiy_register(u32 rc_id,
+				int (*poweron)(void *data),
+				int (*poweroff)(void *data), void *data)
 {
 	return -EINVAL;
 }
 
-static inline void kirin_pcie_apb_info_dump(void)
-{
-	return;
-}
-
-#endif /* CONFIG_PCIE_KIRIN */
+static inline void kirin_pcie_apb_info_dump(void) {}
+#endif /* CONFIG_PCIE_KPORT */
 
 #endif
-

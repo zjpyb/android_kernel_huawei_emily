@@ -177,7 +177,7 @@ static int async_read(void __user *arg)
 /* write data to i2c asynchronous,
 ** success return bytes write, else return <= 0
 */
-static int async_write(void __user *arg)
+static int async_write(const void __user *arg)
 {
 	u8 *databuf = NULL;
 	int ret = 0;
@@ -370,7 +370,7 @@ static long goodix_tools_compat_ioctl(struct file *file, unsigned int cmd,
 
 	if (!file->f_op || !file->f_op->unlocked_ioctl)
 		return -ENOTTY;
-	return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)arg32);
+	return file->f_op->unlocked_ioctl(file, cmd, (unsigned long)(uintptr_t)arg32);
 }
 #endif
 

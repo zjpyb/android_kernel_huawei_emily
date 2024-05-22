@@ -3,7 +3,7 @@
  *
  * vbat hkadc driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,6 +21,7 @@
 
 #define VBAT_HKADC_RETRY_TIMES      3
 #define VBAT_HKADC_COEF_MULTIPLE    1000
+#define VBAT_CALI_MULTIPLE          1000000
 
 #define V_OFFSET_A_DEFAULT          1000000
 #define V_OFFSET_A_MIN              800000
@@ -28,10 +29,14 @@
 #define V_OFFSET_B_DEFAULT          0
 #define V_OFFSET_B_MIN              (-2000000)  /* uV */
 #define V_OFFSET_B_MAX              2000000     /* uV */
+#define V_OFFSET_C_DEFAULT          0
+#define V_OFFSET_C_MIN              (-40000)
+#define V_OFFSET_C_MAX              40000
 
 enum vbat_hkadc_sysfs_type {
 	VBAT_HKADC_SYSFS_V_OFFSET_A,
 	VBAT_HKADC_SYSFS_V_OFFSET_B,
+	VBAT_HKADC_SYSFS_V_OFFSET_C,
 	VBAT_HKADC_SYSFS_BAT1_CALI_VOL,
 };
 

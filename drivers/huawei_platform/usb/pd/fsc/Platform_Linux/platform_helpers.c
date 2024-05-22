@@ -1,11 +1,30 @@
+/*
+ * platform_helpers.c
+ *
+ * platform_helpers driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
+#include "platform_helpers.h"
 #include <linux/kernel.h>
-#include <linux/stat.h>                                                         // File permission masks
-#include <linux/types.h>                                                        // Kernel datatypes
-#include <linux/i2c.h>                                                          // I2C access, mutex
-#include <linux/errno.h>                                                        // Linux kernel error definitions
-#include <linux/hrtimer.h>                                                      // hrtimer
-#include <linux/workqueue.h>                                                    // work_struct, delayed_work
-#include <linux/delay.h>                                                        // udelay, usleep_range, msleep
+#include <linux/stat.h>
+#include <linux/types.h>
+#include <linux/i2c.h>
+#include <linux/errno.h>
+#include <linux/hrtimer.h>
+#include <linux/workqueue.h>
+#include <linux/delay.h>
 #include <linux/pm_wakeup.h>
 #include <linux/of_device.h>
 #include <linux/of_gpio.h>
@@ -16,95 +35,84 @@
 #include <linux/kthread.h>
 #include <linux/irqflags.h>
 #include <linux/version.h>
-#include "fusb30x_global.h"                                                     // Chip structure access
-#include "../core/core.h"                                                       // Core access
-#include "platform_helpers.h"
-#include "huawei_platform/power/charger/charger_ap/direct_charger/loadswitch/rt9748/rt9748.h"
+#include "fusb30x_global.h"
+#include "../core/core.h"
 #include "../core/platform.h"
 #include "../core/TypeC_Types.h"
 #include "../core/TypeC.h"
 #include "../core/vendor_info.h"
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
-#include <uapi/linux/sched/types.h>
-#endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+#include <uapi/linux/sched/types.h>
 #include <linux/sched/types.h>
 #endif
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
 #endif
+
 #ifdef FSC_DEBUG
 #include "hostcomm.h"
-#include "../core/PD_Types.h"                                                   // State Log states
-#endif // FSC_DEBUG
-#ifdef CONFIG_CONTEXTHUB_PD
-extern void hw_pd_wait_dptx_ready(void);
-#endif
+#include "../core/PD_Types.h"
+#endif /* FSC_DEBUG */
 
-
-/*********************************************************************************************************************/
-/*********************************************************************************************************************/
-/********************************************        GPIO Interface         ******************************************/
-/*********************************************************************************************************************/
-/*********************************************************************************************************************/
-const char* FUSB_DT_INTERRUPT_INTN =    "fsc_interrupt_int_n";      // Name of the INT_N interrupt in the Device Tree
-#define FUSB_DT_GPIO_INTN               "fairchild,int_n"           // Name of the Int_N GPIO pin in the Device Tree
-#define FUSB_DT_GPIO_VBUS_5V            "fairchild,vbus5v"          // Name of the VBus 5V GPIO pin in the Device Tree
-#define FUSB_DT_GPIO_VBUS_OTHER         "fairchild,vbusOther"       // Name of the VBus Other GPIO pin in the Device Tree
+/* GPIO Interface */
+/* Name of the INT_N interrupt in the Device Tree */
+const char *fusb_dt_interrupt_intn = "fsc_interrupt_int_n";
+/* Name of the Int_N GPIO pin in the Device Tree */
+#define FUSB_DT_GPIO_INTN            "fairchild,int_n"
+/* Name of the VBus 5V GPIO pin in the Device Tree */
+#define FUSB_DT_GPIO_VBUS_5V         "fairchild,vbus5v"
+/* Name of the VBus Other GPIO pin in the Device Tree */
+#define FUSB_DT_GPIO_VBUS_OTHER      "fairchild,vbusOther"
+#define FUSB_FORCE_ROLESWAP_TIMEOUT  500
 
 #ifdef FSC_DEBUG
-#define FUSB_DT_GPIO_DEBUG_SM_TOGGLE    "fairchild,dbg_sm"          // Name of the debug State Machine toggle GPIO pin in the Device Tree
-#endif  // FSC_DEBUG
+/* Name of the debug State Machine toggle GPIO pin in the Device Tree */
+#define FUSB_DT_GPIO_DEBUG_SM_TOGGLE "fairchild,dbg_sm"
+#endif /* FSC_DEBUG */
 
 #ifdef FSC_INTERRUPT_TRIGGERED
 /* Internal forward declarations */
 static irqreturn_t _fusb_isr_intn(int irq, void *dev_id);
-#endif  // FSC_INTERRUPT_TRIGGERED
-
-#define FUSB_FORCE_ROLESWAP_TIMEOUT  500
-
-
+#endif /* FSC_INTERRUPT_TRIGGERED */
 
 static void fusb_force_source(struct dual_role_phy_instance *dual_role)
 {
-    struct fusb30x_chip* chip = NULL;
+	struct fusb30x_chip *chip = NULL;
 
-    chip = fusb30x_GetChip();
-    if (!chip)
-    {
-        pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
-        return;
-    }
+	chip = fusb30x_GetChip();
+	if (!chip) {
+		pr_err("FUSB %s Error: Chip structure is NULL\n", __func__);
+		return;
+	}
 
-    FSC_PRINT("FUSB  %s - Force State Source\n", __func__);
-    core_set_source();
-	fusb_StartTimers(&chip->timer_force_timeout,
-	 			FUSB_FORCE_ROLESWAP_TIMEOUT); /* ms */
-    if (dual_role) {
-	dual_role_instance_changed(dual_role);
-    }
+	FSC_PRINT("FUSB %s Force State Source\n", __func__);
+	core_set_source();
+	fusb_StartTimers(&chip->timer_force_timeout, FUSB_FORCE_ROLESWAP_TIMEOUT);
+
+	if (dual_role)
+		dual_role_instance_changed(dual_role);
 }
 
 static void fusb_force_sink(struct dual_role_phy_instance *dual_role)
 {
-    struct fusb30x_chip* chip = NULL;
-    chip = fusb30x_GetChip();
-    if (!chip)
-    {
-        pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
-        return;
-    }
+	struct fusb30x_chip *chip = NULL;
 
-    FSC_PRINT("FUSB  %s - Force State Sink\n", __func__);
-    core_set_sink();
-	fusb_StartTimers(&chip->timer_force_timeout,
-				FUSB_FORCE_ROLESWAP_TIMEOUT); /* ms */
-    if (dual_role) {
-	dual_role_instance_changed(dual_role);
-    }
+	chip = fusb30x_GetChip();
+	if (!chip) {
+		pr_err("FUSB %s Error: Chip structure is NULL\n", __func__);
+		return;
+	}
+
+	FSC_PRINT("FUSB %s Force State Sink\n", __func__);
+	core_set_sink();
+	fusb_StartTimers(&chip->timer_force_timeout, FUSB_FORCE_ROLESWAP_TIMEOUT);
+
+	if (dual_role)
+		dual_role_instance_changed(dual_role);
 }
+
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 static enum dual_role_property fusb_dual_role_props[] = {
 	DUAL_ROLE_PROP_SUPPORTED_MODES,
@@ -113,35 +121,41 @@ static enum dual_role_property fusb_dual_role_props[] = {
 	DUAL_ROLE_PROP_DR,
 	DUAL_ROLE_PROP_VCONN_SUPPLY,
 };
+
 static int fusb_get_dual_role_mode(void)
 {
-	struct fusb30x_chip* chip = fusb30x_GetChip();
 	int mode = DUAL_ROLE_PROP_MODE_NONE;
-	FSC_PRINT("%s + orientation %d, sourceOrSink %d, mode %d\n", __func__, chip->orientation,sourceOrSink, mode);
+	struct fusb30x_chip *chip = NULL;
 
-	if (chip->orientation != NONE)
-	{
-		if (sourceOrSink == SOURCE)
-		{
-			mode = DUAL_ROLE_PROP_MODE_DFP;
-		}
-		else
-		{
-			mode = DUAL_ROLE_PROP_MODE_UFP;
-		}
+	chip = fusb30x_GetChip();
+	if (!chip) {
+		pr_err("FUSB %s Error: Chip structure is NULL\n", __func__);
+		return -1;
 	}
-	else if(chip->orientation == NONE)
-	{
+
+	FSC_PRINT("%s orientation %d, sourceOrSink %d, mode %d\n", __func__,
+		chip->orientation, sourceOrSink, mode);
+
+	if (chip->orientation != NONE) {
+		if (sourceOrSink == SOURCE)
+			mode = DUAL_ROLE_PROP_MODE_DFP;
+		else
+			mode = DUAL_ROLE_PROP_MODE_UFP;
+	} else if (chip->orientation == NONE) {
 		mode = DUAL_ROLE_PROP_MODE_NONE;
 	}
+
 	return mode;
 }
+
 static int fusb_dual_role_get_prop(struct dual_role_phy_instance *dual_role,
-			enum dual_role_property prop, unsigned int *val)
+	enum dual_role_property prop, unsigned int *val)
 {
 	int ret = 0;
 	int mode = fusb_get_dual_role_mode();
-	FSC_PRINT("%s + prop =  %d, mode = %d\n", __func__, prop, mode);
+
+	FSC_PRINT("%s prop=%d,mode=%d\n", __func__, prop, mode);
+
 	switch (prop) {
 	case DUAL_ROLE_PROP_SUPPORTED_MODES:
 		*val = DUAL_ROLE_SUPPORTED_MODES_DFP_AND_UFP;
@@ -150,131 +164,144 @@ static int fusb_dual_role_get_prop(struct dual_role_phy_instance *dual_role,
 		*val = mode;
 		break;
 	case DUAL_ROLE_PROP_PR:
-		{
-			switch(mode)
-			{
-				case DUAL_ROLE_PROP_MODE_DFP:
-					*val = DUAL_ROLE_PROP_PR_SRC;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_PR_SRC\n", __func__, prop);
-					break;
-				case DUAL_ROLE_PROP_MODE_UFP:
-					*val = DUAL_ROLE_PROP_PR_SNK;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_PR_SNK\n", __func__, prop);
-					break;
-				default:
-					*val = DUAL_ROLE_PROP_PR_NONE;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_PR_NONE\n", __func__, prop);
-					break;
-			}
+		switch (mode) {
+		case DUAL_ROLE_PROP_MODE_DFP:
+			*val = DUAL_ROLE_PROP_PR_SRC;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_PR_SRC\n",
+				__func__, prop);
+			break;
+		case DUAL_ROLE_PROP_MODE_UFP:
+			*val = DUAL_ROLE_PROP_PR_SNK;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_PR_SNK\n",
+				__func__, prop);
+			break;
+		default:
+			*val = DUAL_ROLE_PROP_PR_NONE;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_PR_NONE\n",
+				__func__, prop);
+			break;
 		}
 		break;
 	case DUAL_ROLE_PROP_DR:
-		{
-			switch(mode)
-			{
-				case DUAL_ROLE_PROP_MODE_DFP:
-					*val = DUAL_ROLE_PROP_DR_HOST;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_HOST\n", __func__, prop);
-					break;
-				case DUAL_ROLE_PROP_MODE_UFP:
-					*val = DUAL_ROLE_PROP_DR_DEVICE;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_DEVICE\n", __func__, prop);
-					break;
-				default:
-					*val = DUAL_ROLE_PROP_DR_NONE;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_NONE\n", __func__, prop);
-					break;
-			}
+		switch (mode) {
+		case DUAL_ROLE_PROP_MODE_DFP:
+			*val = DUAL_ROLE_PROP_DR_HOST;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_DR_HOST\n",
+				__func__, prop);
+			break;
+		case DUAL_ROLE_PROP_MODE_UFP:
+			*val = DUAL_ROLE_PROP_DR_DEVICE;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_DR_DEVICE\n",
+				__func__, prop);
+			break;
+		default:
+			*val = DUAL_ROLE_PROP_DR_NONE;
+			FSC_PRINT("%s prop=%d,mode=DUAL_ROLE_PROP_DR_NONE\n",
+				__func__, prop);
+			break;
 		}
 		break;
 	case DUAL_ROLE_PROP_VCONN_SUPPLY:
-		{
-			switch(mode)
-			{
-				case DUAL_ROLE_PROP_MODE_DFP:
-					*val = DUAL_ROLE_PROP_VCONN_SUPPLY_YES;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_HOST\n", __func__, prop);
-					break;
-				case DUAL_ROLE_PROP_MODE_UFP:
-					*val = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_DEVICE\n", __func__, prop);
-					break;
-				default:
-					*val = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
-					FSC_PRINT("%s + prop =  %d, mode = DUAL_ROLE_PROP_DR_NONE\n", __func__, prop);
-					break;
-			}
+		switch (mode) {
+		case DUAL_ROLE_PROP_MODE_DFP:
+			*val = DUAL_ROLE_PROP_VCONN_SUPPLY_YES;
+			FSC_PRINT("%s prop=%d, mode=DUAL_ROLE_PROP_DR_HOST\n",
+				__func__, prop);
+			break;
+		case DUAL_ROLE_PROP_MODE_UFP:
+			*val = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
+			FSC_PRINT("%s prop=%d, mode=DUAL_ROLE_PROP_DR_DEVICE\n",
+				__func__, prop);
+			break;
+		default:
+			*val = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
+			FSC_PRINT("%s prop=%d, mode=DUAL_ROLE_PROP_DR_NONE\n",
+				__func__, prop);
+			break;
 		}
 		break;
 	default:
 		ret = -EINVAL;
 		break;
 	}
-	FSC_PRINT("%s - %d\n", __func__, ret);
+
+	FSC_PRINT("%s %d\n", __func__, ret);
 	return ret;
 }
+
 static int fusb_dual_role_prop_is_writeable(
 	struct dual_role_phy_instance *dual_role, enum dual_role_property prop)
 {
-	FSC_PRINT("%s +\n", __func__);
+	FSC_PRINT("%s in\n", __func__);
 
 	switch (prop) {
 	/* pr and dr return 0 */
 	case DUAL_ROLE_PROP_PR:
 	case DUAL_ROLE_PROP_DR:
 		return 0;
-
 	default:
 		return 1;
 	}
 }
 static int fusb_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
-			enum dual_role_property prop, const unsigned int *val)
+	enum dual_role_property prop, const unsigned int *val)
 {
-	int mode = DUAL_ROLE_PROP_MODE_NONE;
-	mode = fusb_get_dual_role_mode();
-	FSC_PRINT("%s +  prop= %d   val=  %d   mode = %d\n", __func__, prop, *val, mode);
+	int mode_cur = fusb_get_dual_role_mode();
+	int mode_set = DUAL_ROLE_PROP_MODE_NONE;
+
+	FSC_PRINT("%s prop=%d, val=%d, mode=%d\n", __func__, prop, *val, mode_cur);
 
 	switch (prop) {
-		case DUAL_ROLE_PROP_MODE:
-			if(*val != mode)
-			{
-				if(DUAL_ROLE_PROP_MODE_UFP == mode)
-					fusb_force_source(dual_role);
-				else if(DUAL_ROLE_PROP_MODE_DFP == mode)
-					fusb_force_sink(dual_role);
-			}
-			break;
-		case DUAL_ROLE_PROP_PR:
-			FSC_PRINT("%s DUAL_ROLE_PROP_PR\n", __func__);
-
-			break;
-		case DUAL_ROLE_PROP_DR:
-			FSC_PRINT("%s DUAL_ROLE_PROP_DR\n", __func__);
-			break;
-		default:
-			FSC_PRINT("%s default case\n", __func__);
-			break;
+	case DUAL_ROLE_PROP_MODE:
+		mode_set = *val;
+		break;
+	case DUAL_ROLE_PROP_PR:
+		if (*val == DUAL_ROLE_PROP_PR_SRC)
+			mode_set = DUAL_ROLE_PROP_MODE_DFP;
+		else if (*val == DUAL_ROLE_PROP_PR_SNK)
+			mode_set = DUAL_ROLE_PROP_MODE_UFP;
+		FSC_PRINT("%s DUAL_ROLE_PROP_PR\n", __func__);
+		break;
+	case DUAL_ROLE_PROP_DR:
+		FSC_PRINT("%s DUAL_ROLE_PROP_DR\n", __func__);
+		break;
+	default:
+		FSC_PRINT("%s default case\n", __func__);
+		break;
 	}
-	FSC_PRINT("%s -\n", __func__);
+
+	if (mode_set != mode_cur) {
+		if (mode_set == DUAL_ROLE_PROP_MODE_DFP)
+			fusb_force_source(dual_role);
+		else if (mode_set == DUAL_ROLE_PROP_MODE_UFP)
+			fusb_force_sink(dual_role);
+	}
+
+	FSC_PRINT("%s out\n", __func__);
 	return 0;
 }
+
 FSC_S32 fusb_dual_role_phy_init(void)
 {
 	struct dual_role_phy_desc *dual_desc = NULL;
 	struct dual_role_phy_instance *dual_role = NULL;
-	struct fusb30x_chip* chip = fusb30x_GetChip();
-	FSC_PRINT("%s +\n", __func__);
+	struct fusb30x_chip *chip = NULL;
+
+	FSC_PRINT("%s in\n", __func__);
+
+	chip = fusb30x_GetChip();
 	if (!chip) {
 		pr_err("invalid fusb30x_chip\n");
 		return -EINVAL;
 	}
 
-	dual_desc = devm_kzalloc(&chip->client->dev, sizeof(struct dual_role_phy_desc), GFP_KERNEL);
+	dual_desc = devm_kzalloc(&chip->client->dev, sizeof(*dual_desc),
+		GFP_KERNEL);
 	if (!dual_desc) {
 		pr_err("unable to allocate dual role descriptor\n");
 		return -ENOMEM;
 	}
+
 	dual_desc->name = "otg_default";
 	dual_desc->supported_modes = DUAL_ROLE_SUPPORTED_MODES_DFP_AND_UFP;
 	dual_desc->properties = fusb_dual_role_props;
@@ -283,168 +310,69 @@ FSC_S32 fusb_dual_role_phy_init(void)
 	dual_desc->set_property = fusb_dual_role_set_prop;
 	dual_desc->property_is_writeable = fusb_dual_role_prop_is_writeable;
 
-	dual_role = devm_dual_role_instance_register(&chip->client->dev, dual_desc);
+	dual_role = devm_dual_role_instance_register(&chip->client->dev,
+		dual_desc);
 	if (IS_ERR(dual_role)) {
 		pr_err("fusb fail to register dual role usb\n");
 		devm_kfree(&chip->client->dev, dual_desc);
 		return -EINVAL;
 	}
+
 	chip->dual_desc = dual_desc;
 	chip->dual_role = dual_role;
-	FSC_PRINT("%s -\n", __func__);
+	FSC_PRINT("%s out\n", __func__);
 	return 0;
 }
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
 FSC_S32 fusb_InitializeGPIO(void)
 {
-    FSC_S32 ret = 0;
-    struct device_node* node;
-    struct fusb30x_chip* chip = fusb30x_GetChip();
-    if (!chip)
-    {
-        pr_err("FUSB  %s - Error: Chip structure is NULL!\n", __func__);
-        return -ENOMEM;
-    }
-    /* Get our device tree node */
-    node = chip->client->dev.of_node;
+	s32 ret;
+	struct device_node *node = NULL;
+	struct fusb30x_chip *chip = NULL;
 
-    /* Get our GPIO pins from the device tree, allocate them, and then set their direction (input/output) */
-    chip->gpio_IntN = of_get_named_gpio(node, FUSB_DT_GPIO_INTN, 0);
-    if (!gpio_is_valid(chip->gpio_IntN))
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not get named GPIO for Int_N! Error code: %d\n", __func__, chip->gpio_IntN);
-        return chip->gpio_IntN;
-    }
+	chip = fusb30x_GetChip();
+	if (!chip) {
+		pr_err("FUSB %s Error: Chip structure is NULL\n", __func__);
+		return -ENOMEM;
+	}
 
-    // Request our GPIO to reserve it in the system - this should help ensure we have exclusive access (not guaranteed)
-    ret = gpio_request(chip->gpio_IntN, FUSB_DT_GPIO_INTN);
-    if (ret < 0)
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not request GPIO for Int_N! Error code: %d\n", __func__, ret);
-        return ret;
-    }
+	/* Get our device tree node */
+	node = chip->client->dev.of_node;
 
-    ret = gpio_direction_input(chip->gpio_IntN);
-    if (ret < 0)
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not set GPIO direction to input for Int_N! Error code: %d\n", __func__, ret);
-        return ret;
-    }
+	/*
+	 * Get our GPIO pins from the device tree, allocate them
+	 * and then set their direction (input/output)
+	 */
+	chip->gpio_IntN = of_get_named_gpio(node, FUSB_DT_GPIO_INTN, 0);
+	if (!gpio_is_valid(chip->gpio_IntN)) {
+		dev_err(&chip->client->dev,
+			"%s Error: Could not get named GPIO for Int_N! Error code: %d\n",
+			__func__, chip->gpio_IntN);
+		return chip->gpio_IntN;
+	}
 
-    return ret;
+	/*
+	 * Request our GPIO to reserve it in the system
+	 * this should help ensure we have exclusive access (not guaranteed)
+	 */
+	ret = gpio_request(chip->gpio_IntN, FUSB_DT_GPIO_INTN);
+	if (ret < 0) {
+		dev_err(&chip->client->dev,
+			"%s Error: Could not request GPIO for Int_N! Error code: %d\n",
+			__func__, ret);
+		return ret;
+	}
 
-#ifdef FSC_DEBUG
-    /* Export to sysfs */
-    gpio_export(chip->gpio_IntN, false);
-    gpio_export_link(&chip->client->dev, FUSB_DT_GPIO_INTN, chip->gpio_IntN);
-#endif // FSC_DEBUG
+	ret = gpio_direction_input(chip->gpio_IntN);
+	if (ret < 0) {
+		dev_err(&chip->client->dev,
+			"%s Error: Could not set GPIO direction to input for Int_N! Error code: %d\n",
+			__func__, ret);
+		return ret;
+	}
 
-    FSC_PRINT("FUSB  %s - INT_N GPIO initialized as pin '%d'\n", __func__, chip->gpio_IntN);
-
-
-    // VBus 5V
-    chip->gpio_VBus5V = of_get_named_gpio(node, FUSB_DT_GPIO_VBUS_5V, 0);
-    if (!gpio_is_valid(chip->gpio_VBus5V))
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not get named GPIO for VBus5V! Error code: %d\n", __func__, chip->gpio_VBus5V);
-        fusb_GPIO_Cleanup();
-        return chip->gpio_VBus5V;
-    }
-
-    // Request our GPIO to reserve it in the system - this should help ensure we have exclusive access (not guaranteed)
-    ret = gpio_request(chip->gpio_VBus5V, FUSB_DT_GPIO_VBUS_5V);
-    if (ret < 0)
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not request GPIO for VBus5V! Error code: %d\n", __func__, ret);
-        return ret;
-    }
-
-    ret = gpio_direction_output(chip->gpio_VBus5V, chip->gpio_VBus5V_value);
-    if (ret < 0)
-    {
-        dev_err(&chip->client->dev, "%s - Error: Could not set GPIO direction to output for VBus5V! Error code: %d\n", __func__, ret);
-        fusb_GPIO_Cleanup();
-        return ret;
-    }
-
-#ifdef FSC_DEBUG
-    // Export to sysfs
-    gpio_export(chip->gpio_VBus5V, false);
-    gpio_export_link(&chip->client->dev, FUSB_DT_GPIO_VBUS_5V, chip->gpio_VBus5V);
-#endif // FSC_DEBUG
-
-    FSC_PRINT("FUSB  %s - VBus 5V initialized as pin '%d' and is set to '%d'\n", __func__, chip->gpio_VBus5V, chip->gpio_VBus5V_value ? 1 : 0);
-
-    // VBus other (eg. 12V)
-    // NOTE - This VBus is optional, so if it doesn't exist then fake it like it's on.
-    chip->gpio_VBusOther = of_get_named_gpio(node, FUSB_DT_GPIO_VBUS_OTHER, 0);
-    if (!gpio_is_valid(chip->gpio_VBusOther))
-    {
-        // Soft fail - provide a warning, but don't quit because we don't really need this VBus if only using VBus5v
-        pr_warning("%s - Warning: Could not get GPIO for VBusOther! Error code: %d\n", __func__, chip->gpio_VBusOther);
-    }
-    else
-    {
-        // Request our GPIO to reserve it in the system - this should help ensure we have exclusive access (not guaranteed)
-        ret = gpio_request(chip->gpio_VBusOther, FUSB_DT_GPIO_VBUS_OTHER);
-        if (ret < 0)
-        {
-            dev_err(&chip->client->dev, "%s - Error: Could not request GPIO for VBusOther! Error code: %d\n", __func__, ret);
-            return ret;
-        }
-
-        ret = gpio_direction_output(chip->gpio_VBusOther, chip->gpio_VBusOther_value);
-        if (ret != 0)
-        {
-            dev_err(&chip->client->dev, "%s - Error: Could not set GPIO direction to output for VBusOther! Error code: %d\n", __func__, ret);
-            return ret;
-        }
-        else
-        {
-            FSC_PRINT("FUSB  %s - VBusOther initialized as pin '%d' and is set to '%d'\n", __func__, chip->gpio_VBusOther, chip->gpio_VBusOther_value ? 1 : 0);
-
-        }
-    }
-
-#ifdef FSC_DEBUG
-    // State Machine Debug Notification
-    // Optional GPIO - toggles each time the state machine is called
-    chip->dbg_gpio_StateMachine = of_get_named_gpio(node, FUSB_DT_GPIO_DEBUG_SM_TOGGLE, 0);
-    if (!gpio_is_valid(chip->dbg_gpio_StateMachine))
-    {
-        // Soft fail - provide a warning, but don't quit because we don't really need this VBus if only using VBus5v
-        pr_warning("%s - Warning: Could not get GPIO for Debug GPIO! Error code: %d\n", __func__, chip->dbg_gpio_StateMachine);
-    }
-    else
-    {
-        // Request our GPIO to reserve it in the system - this should help ensure we have exclusive access (not guaranteed)
-        ret = gpio_request(chip->dbg_gpio_StateMachine, FUSB_DT_GPIO_DEBUG_SM_TOGGLE);
-        if (ret < 0)
-        {
-            dev_err(&chip->client->dev, "%s - Error: Could not request GPIO for Debug GPIO! Error code: %d\n", __func__, ret);
-            return ret;
-        }
-
-        ret = gpio_direction_output(chip->dbg_gpio_StateMachine, chip->dbg_gpio_StateMachine_value);
-        if (ret != 0)
-        {
-            dev_err(&chip->client->dev, "%s - Error: Could not set GPIO direction to output for Debug GPIO! Error code: %d\n", __func__, ret);
-            return ret;
-        }
-        else
-        {
-            FSC_PRINT("FUSB  %s - Debug GPIO initialized as pin '%d' and is set to '%d'\n", __func__, chip->dbg_gpio_StateMachine, chip->dbg_gpio_StateMachine_value ? 1 : 0);
-
-        }
-
-        // Export to sysfs
-        gpio_export(chip->dbg_gpio_StateMachine, true); // Allow direction to change to provide max debug flexibility
-        gpio_export_link(&chip->client->dev, FUSB_DT_GPIO_DEBUG_SM_TOGGLE, chip->dbg_gpio_StateMachine);
-    }
-#endif  // FSC_DEBUG
-
-    return 0;   // Success!
+	return ret;
 }
 
 void fusb_GPIO_Set_VBus5v(FSC_BOOL set)
@@ -722,7 +650,6 @@ FSC_BOOL fusb_I2C_WriteData(FSC_U8 address, FSC_U8 length, FSC_U8* data)
             else if (ret == -EPIPE) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EPIPE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTO) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EPROTO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTONOSUPPORT) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EPROTONOSUPPORT.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
-            else if (ret == -ERANGE) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -ERANGE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMCHG) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EREMCHG.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTE) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EREMOTE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTEIO) { dev_err(&chip->client->dev, "%s - I2C Error block writing byte data. Address: '0x%02x', Return: -EREMOTEIO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
@@ -828,7 +755,6 @@ FSC_BOOL fusb_I2C_ReadData(FSC_U8 address, FSC_U8* data)
             else if (ret == -EPIPE) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EPIPE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTO) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EPROTO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTONOSUPPORT) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EPROTONOSUPPORT.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
-            else if (ret == -ERANGE) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -ERANGE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMCHG) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EREMCHG.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTE) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EREMOTE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTEIO) { dev_err(&chip->client->dev, "%s - I2C Error reading byte data. Address: '0x%02x', Return: -EREMOTEIO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
@@ -935,7 +861,6 @@ FSC_BOOL fusb_I2C_ReadBlockData(FSC_U8 address, FSC_U8 length, FSC_U8* data)
             else if (ret == -EPIPE) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EPIPE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTO) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EPROTO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EPROTONOSUPPORT) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EPROTONOSUPPORT.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
-            else if (ret == -ERANGE) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -ERANGE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMCHG) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EREMCHG.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTE) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EREMOTE.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
             else if (ret == -EREMOTEIO) { dev_err(&chip->client->dev, "%s - I2C Error block reading byte data. Address: '0x%02x', Return: -EREMOTEIO.  Attempt #%d / %d...\n", __func__, address, i, chip->numRetriesI2C); }
@@ -1028,8 +953,6 @@ enum hrtimer_restart _fusb_TimerHandler(struct hrtimer* timer)
     need_hardreset = TRUE;
 
     FSC_PRINT("FUSB  %s - Hard Reset Thread Started\n", __func__);
-    //kthread_run(_send_hard_reset, (void*)&dummy, "hard_reset_thread");
-    //wake_up_processs(chip->hard_reset_thread);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
     kthread_queue_work(&chip->hardreset_worker, &chip->hardreset_work);
 #else
@@ -2380,7 +2303,6 @@ static ssize_t _fusb_Sysfs_Hostcomm_show(struct device* dev, struct device_attri
                 {
                     // Special parsing for this state - TimeStampSeconds is really the number of I2C reads performed, and TimeStampMS10ths is the time elapsed (in ms)
                     numChars += sprintf(tempBuf, "%02u|0.%04u\tdbgGetRxPacket\t\t\tNumber of I2C bytes read | Time elapsed\n", TimeStampSeconds, TimeStampMS10ths);
-                //    numChars += sprintf(tempBuf, "%u | %u\tdbgGetRxPacket\t\t\tHeader[0] | Header[1]", chip->HostCommBuf[i + 1], chip->HostCommBuf[i + 3]);
                     strcat(buf, tempBuf);
                     break;
                 }
@@ -2389,7 +2311,6 @@ static ssize_t _fusb_Sysfs_Hostcomm_show(struct device* dev, struct device_attri
                 {
                     // Special parsing for this state - TimeStampSeconds is really the number of I2C reads performed, and TimeStampMS10ths is the time elapsed (in ms)
                     numChars += sprintf(tempBuf, "%02u|0.%04u\tdbgGetTxPacket\t\t\tNumber of I2C bytes sent | Time elapsed\n", TimeStampSeconds, TimeStampMS10ths);
-                    //    numChars += sprintf(tempBuf, "%u | %u\tdbgGetRxPacket\t\t\tHeader[0] | Header[1]", chip->HostCommBuf[i + 1], chip->HostCommBuf[i + 3]);
                     strcat(buf, tempBuf);
                     break;
                 }
@@ -2632,8 +2553,8 @@ static ssize_t _fusb_Sysfs_Hostcomm_store(struct device* dev, struct device_attr
                 }
             }
         }
-
-        fusb_ProcessMsg(temp_input, output);                                                // Handle the message
+		/* Handle the message */
+		fusb_process_msg(temp_input, output);
         memcpy(chip->HostCommBuf, output, FSC_HOSTCOMM_BUFFER_SIZE);                        // Copy input into temp buffer
     }
 
@@ -2654,8 +2575,8 @@ static ssize_t _fusb_Sysfs_PDStateLog_show(struct device* dev, struct device_att
     FSC_U8 tempBuf[FUSB_MAX_BUF_SIZE] = { 0 };
     tempBuf[0] = CMD_READ_PD_STATE_LOG;                 // To request the PD statelog from Hostcomm
 
-    /* Get the PD State Log */
-    fusb_ProcessMsg(tempBuf, output);
+	/* Get the PD State Log */
+	fusb_process_msg(tempBuf, output);
 
     numLogs = output[3];
     /* First byte echos the command, 4th byte is number of logs (2nd and 3rd bytes reserved as 0) */
@@ -3401,8 +3322,6 @@ static ssize_t _fusb_Sysfs_PDStateLog_show(struct device* dev, struct device_att
             case dbgGetRxPacket:		        // Debug point for measuring Rx packet handling time in ProtocolGetRxPacket()
             {
                 // Special parsing for this state - TimeStampSeconds is really the number of I2C reads performed, and TimeStampMS10ths is the time elapsed (in ms)
-           //   numChars += sprintf(tempBuf, "%02u|0.%04u\tdbgGetRxPacket\t\t\tNumber of I2C bytes read | Time elapsed\n", TimeStampSeconds, TimeStampMS10ths);
-
                 // Recombine the 2 header bytes into a u16
                 PDMessageHeader = output[i + 4];                // Get MSByte
                 PDMessageHeader = PDMessageHeader << 8;         // Shift into MS position
@@ -3445,8 +3364,8 @@ static ssize_t _fusb_Sysfs_TypeCStateLog_show(struct device* dev, struct device_
     FSC_S8 tempBuf[FUSB_MAX_BUF_SIZE] = { 0 };
     tempBuf[0] = CMD_READ_STATE_LOG;                    // To request the Type-C statelog from Hostcomm
 
-    /* Get the PD State Log */
-    fusb_ProcessMsg(tempBuf, output);
+	/* Get the PD State Log */
+	fusb_process_msg(tempBuf, output);
 
     numLogs = output[3];
     /* First byte echos the command, 4th byte is number of logs (2nd and 3rd bytes reserved as 0) */
@@ -3601,13 +3520,11 @@ static ssize_t _fusb_Sysfs_TypeCStateLog_show(struct device* dev, struct device_
 
 static ssize_t _fusb_force_sink(struct device* dev, struct device_attribute* attr, char* buf)
 {
-	//fusb_force_sink();
     return 0;   // Account for newline and return number of bytes to be shown
 }
 
 static ssize_t _fusb_force_source(struct device* dev, struct device_attribute* attr, char* buf)
 {
-	//fusb_force_source();
     return 0;   // Account for newline and return number of bytes to be shown
 }
 
@@ -3720,6 +3637,11 @@ void fusb_InitChipData(void)
 		if (ret != 0)
 			chip->modal_operation_supported = 1;
 
+		ret = of_property_read_u32(node, "wait_goodcrc_timeout_en",
+			&chip->wait_goodcrc_timeout_en);
+		if (ret != 0)
+			chip->wait_goodcrc_timeout_en = 0;
+
 		chip->product_type_ama = of_property_read_bool(node,
 			"product_type_ama");
         chip->discover_mode_supported = of_property_read_bool(node, "discover_mode_supported");
@@ -3747,6 +3669,7 @@ void fusb_InitChipData(void)
         chip->enter_mode_supported = 0;
         chip->discover_svid_supported = 0;
         chip->sink_pdo_number = Num_Snk_PDOs;
+	chip->wait_goodcrc_timeout_en = 0;
     }
     pr_err("%s Device Tree Validation Check vconn_swap_to_on_supported: %d\n", __func__,chip->vconn_swap_to_on_supported);
     pr_err("%s Device Tree Validation Check vconn_swap_to_off_supported: %d\n", __func__,chip->vconn_swap_to_off_supported);
@@ -3865,7 +3788,6 @@ static void fusb302_main_work_handler(struct kthread_work *work)
     } while(platform_get_device_irq_state());
 
     fusb_StartTimers(&chip->timer_wake_unlock, 3000); /* 3 second */
-    //wake_unlock(&chip->fusb302_wakelock);
     FSC_PRINT("FUSB %s - Exiting State Machine via Timer Interrupt\n", __func__);
     mutex_unlock(&chip->thread_lock);
 
@@ -3899,7 +3821,11 @@ FSC_S32 fusb_EnableInterrupts(void)
     pr_debug("%s - Success: Requested INT_N IRQ: '%d'\n", __func__, chip->gpio_IntN_irq);
 
     /* Request threaded IRQ because we will likely sleep while handling the interrupt, trigger is active-low, don't handle concurrent interrupts */
-    ret = devm_request_threaded_irq(&chip->client->dev, chip->gpio_IntN_irq, NULL, _fusb_isr_intn, IRQF_ONESHOT | IRQF_TRIGGER_FALLING | IRQF_NO_SUSPEND, FUSB_DT_INTERRUPT_INTN, chip);  // devm_* allocation/free handled by system
+	/* devm_* allocation/free handled by system */
+	ret = devm_request_threaded_irq(&chip->client->dev, chip->gpio_IntN_irq,
+		NULL, _fusb_isr_intn,
+		IRQF_ONESHOT | IRQF_TRIGGER_FALLING | IRQF_NO_SUSPEND,
+		fusb_dt_interrupt_intn, chip);
     if (ret)
     {
         dev_err(&chip->client->dev, "%s - Error: Unable to request threaded IRQ for INT_N GPIO! Error code: %d\n", __func__, ret);
@@ -4015,7 +3941,6 @@ static irqreturn_t _fusb_isr_intn(FSC_S32 irq, void *dev_id)
 
     FSC_PRINT("FUSB  %s - Scheduling Wake Unlock\n", __func__);
     fusb_StartTimers(&chip->timer_wake_unlock, 3000); /* 3 second */
-    //wake_unlock(&chip->fusb302_wakelock);
     mutex_unlock(&chip->thread_lock);
 
     FSC_PRINT("FUSB %s - Exiting ISR\n", __func__);

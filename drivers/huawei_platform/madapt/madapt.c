@@ -1,5 +1,6 @@
 /*
- * Copyright (C) Huawei Technologies Co., Ltd. 2012-2015. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2018. All rights reserved.
+ * Description: madapt modem interface
  * foss@huawei.com
  *
  * If distributed as part of the Linux kernel, the following license terms
@@ -47,73 +48,74 @@
  */
 
 /*lint --e{533,830}*/
-#include <linux/device.h>
-#include <linux/fs.h>
-#include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
-#include <linux/cdev.h>
-#include <linux/mutex.h>
-#include <linux/err.h>
-#include <linux/kernel.h>
-#include <linux/unistd.h>
-#include <linux/syscalls.h>
 #include <asm/uaccess.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/err.h>
+#include <linux/fs.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/syscalls.h>
+#include <linux/unistd.h>
+#include <linux/vmalloc.h>
+#include <securec.h>
 #include <huawei_platform/log/hw_log.h>
 
 #define HWLOG_TAG madapt
 HWLOG_REGIST();
 
 
-/*madapt support write/read nv by hisi modem nv API. All code with this feature, should be contained by this macro
+/* madapt support write/read nv by hisi modem nv API. All code with this feature, should be contained by this macro
 * nvcfg version before 3.0, this macro will be defined, otherwise nvcfg 4.0 or more high nvcfg version will not define.
 */
 #if defined(CONFIG_HISI_BALONG_MODEM) && !defined(CONFIG_HISI_SECBOOT_IMG)
 #define MADAPT_HISI_MODEM_NV_RW_API
 #endif
 
-#define BSP_ERR_MADAPT_OK                    (0)
-#define BSP_ERR_MADAPT_PARAM_ERR            (1)
-#define BSP_ERR_MADAPT_MALLOC_FAIL            (2)
-#define BSP_ERR_MADAPT_COPY_FROM_USER_ERR    (3)
-#define BSP_ERR_MADAPT_OPEN_FILE_ERR        (4)
-#define BSP_ERR_MADAPT_FILE_SIZE_ERR        (5)
-#define BSP_ERR_MADAPT_READ_FILE_ERR        (6)
-#define BSP_ERR_MADAPT_FILE_HDR_CHECK_ERR    (7)
-#define BSP_ERR_MADAPT_NV_HDR_CHECK_ERR        (8)
-#define BSP_ERR_MADAPT_WRITE_NV_ERR            (9)
-#define BSP_ERR_MADAPT_TIMEOUT                (10)
-#define BSP_ERR_MADAPT_PTR_NULL                (11)
-#define BSP_ERR_MADAPT_READ_NV_ERR          (12)
-#define BSP_ERR_MADAPT_REMOVE_FILE_ERR          (13)
+#define BSP_ERR_MADAPT_OK                    0
+#define BSP_ERR_MADAPT_PARAM_ERR            1
+#define BSP_ERR_MADAPT_MALLOC_FAIL            2
+#define BSP_ERR_MADAPT_COPY_FROM_USER_ERR    3
+#define BSP_ERR_MADAPT_OPEN_FILE_ERR        4
+#define BSP_ERR_MADAPT_FILE_SIZE_ERR        5
+#define BSP_ERR_MADAPT_READ_FILE_ERR        6
+#define BSP_ERR_MADAPT_FILE_HDR_CHECK_ERR    7
+#define BSP_ERR_MADAPT_NV_HDR_CHECK_ERR        8
+#define BSP_ERR_MADAPT_WRITE_NV_ERR            9
+#define BSP_ERR_MADAPT_TIMEOUT                10
+#define BSP_ERR_MADAPT_PTR_NULL                11
+#define BSP_ERR_MADAPT_READ_NV_ERR          12
+#define BSP_ERR_MADAPT_REMOVE_FILE_ERR          13
 #define BSP_ERR_MADAPT_COPY_TO_USER_ERR 14
-#define BSP_ERR_MADAPT_COMMON_ERR            (100)
-/*AR000AD08A sunjun/00290209 20180807 begin*/
-#define BSP_ERR_MADAPT_NO_THIS_NV             (0x10100016)
-/*AR000AD08A sunjun/00290209 20180807 end*/
+#define BSP_ERR_MADAPT_COMMON_ERR            100
+/* AR000AD08A sunjun/00290209 20180807 begin */
+#define BSP_ERR_MADAPT_NO_THIS_NV             0x10100016
+/* AR000AD08A sunjun/00290209 20180807 end */
 
-#define MADAPT_SUCCESS      (0)
-#define MADAPT_FAIL      (1)
+#define MADAPT_SUCCESS      0
+#define MADAPT_FAIL      1
 
 #define MADAPT_DEVICE_NAME                "madapt"
 #define MADAPT_DEVICE_CLASS                "madapt_class"
 #define MADAPT_FILE_MAX_SIZE            (1024*1024)
-#define MADAPT_MAX_USER_BUFF_LEN        (96)
-#define MADAPT_FILE_END_FLAG            (0xFFFFFFFF)
-#define MADAPT_FILE_NOTBIT_FLAG         (0xFFFFFFFF)
-#define MADAPT_NV_ID_INVALID         (0xFFFFFFFF)
-#define MADAPT_MIN_NV_MODEM_ID            (1)
-#define MADAPT_MAX_NV_MODEM_ID            (3)
+#define MADAPT_MAX_USER_BUFF_LEN        96
+#define MADAPT_FILE_END_FLAG            0xFFFFFFFF
+#define MADAPT_FILE_NOTBIT_FLAG         0xFFFFFFFF
+#define MADAPT_NV_ID_INVALID         0xFFFFFFFF
+#define MADAPT_MIN_NV_MODEM_ID            1
+#define MADAPT_MAX_NV_MODEM_ID            3
 #define MADAPT_MODEM_ID_0 1
 #define MADAPT_MODEM_ID_1 2
 #define MADAPT_NVFILE_PATH    "/cust_spec/modemConfig/nvcfg/"
-#define MADAPT_NVFILE_VERSION            (0x0601)
-#define MADAPT_BIT_LENGTH_SIZE          (32)
-#define MADAPT_MAX_NV_LENGTH_SIZE           (2048)
-#define MADAPT_MODEMID_CONVERT(x)        (x-1)
+#define MADAPT_NVFILE_VERSION            0x0601
+#define MADAPT_BIT_LENGTH_SIZE          32
+#define MADAPT_MAX_NV_LENGTH_SIZE           2048
+#define madapt_modemid_convert(x)        ((x)-1)
 #define MADAPT_MAX_PATH_LENGTH 80
 
-#define MADAPT_MODEMID_INVALID          (0xFF)
+#define MADAPT_MODEMID_INVALID          0xFF
 #define MADAPT_WORK_WAIT_TIMER      30
 #define MADAPT_READ_WORK_WAIT_TIMER 2
 #define MADAPT_VALID_PATH_HEAD_ODM    "/odm/"
@@ -131,11 +133,12 @@ HWLOG_REGIST();
 #define MADAPT_PARAM_COMMON "common"
 #define MADAPT_NVCFG_RESULT_NVID 0xD14D
 #define MADAPT_NVCFG_RESULT_UPDATED 1
+#define MADAPT_NCFG_FILE_MODE 0644
 
 struct madapt_nvcfg_result_type {
-	unsigned int others    :8;
-	unsigned int rsv_nvcfg :1;
-	unsigned int reserved  :23;
+	unsigned int others    : 8;
+	unsigned int rsv_nvcfg : 1;
+	unsigned int reserved  : 23;
 };
 
 struct madapt_file_stru {
@@ -188,10 +191,10 @@ struct nv_item_map {
 };
 
 
-static struct cdev cdev;
+static struct cdev g_cdev;
 static unsigned int madapt_major;
 static struct class *madapt_class;
-static struct madapt_file_stru *kbuf;
+static struct madapt_file_stru *g_kbuf;
 static struct madapt_file_stru_ex *kbuf_ex;
 static struct completion my_completion;
 static struct my_work_struct test_work;
@@ -215,7 +218,7 @@ static char commbin_path[][MADAPT_MAX_PATH_LENGTH] = {
 ssize_t madapt_dev_read(struct file *file, char __user *buf, size_t count, loff_t *ppos);
 ssize_t madapt_dev_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos);
 
-static const struct file_operations nv_fops = {
+static const struct file_operations g_nv_fops = {
 	.owner = THIS_MODULE,
 	.read = madapt_dev_read,
 	.write = madapt_dev_write,
@@ -228,29 +231,38 @@ extern unsigned int mdrv_nv_get_length(unsigned int itemid, unsigned int *data_l
 extern unsigned int mdrv_nv_flush(void);
 #endif
 
-static void madapt_free(void *buf)
+static void madapt_free(const void *buf)
 {
-	if (buf != NULL) {
+	if (buf != NULL)
 		kfree(buf);
-	}
 }
 
 #ifdef MADAPT_HISI_MODEM_NV_RW_API
-static unsigned int nv_buffer_update(unsigned int ul_offset,void *nv_buffer,
-			void *data, unsigned int data_len)
+static unsigned int nv_buffer_update(unsigned int ul_offset, void *nv_buffer,
+			const void *data, unsigned int data_len)
 {
+	int ret;
 	unsigned char *nv_offset = nv_buffer;
 	nv_offset += ul_offset;
-	memcpy(nv_offset, (unsigned char *)data, data_len);
+	ret = memcpy_s(nv_offset, (MADAPT_MAX_NV_LENGTH_SIZE-ul_offset), (unsigned char *)data, data_len);
+	if (ret != EOK) {
+		hwlog_err("nv_buffer_update memcpy fail\n");
+		return MADAPT_FAIL;
+	}
 	return MADAPT_SUCCESS;
 }
 
 static unsigned int nv_read_from_buffer(unsigned int ul_offset, void *nv_buffer,
 			void *data, unsigned int data_len)
 {
+	int ret;
 	unsigned char *nv_offset = nv_buffer;
 	nv_offset += ul_offset;
-	memcpy(data, nv_offset, data_len);
+	ret = memcpy_s(data, (MADAPT_MAX_NV_LENGTH_SIZE-ul_offset), nv_offset, data_len);
+	if (ret != EOK) {
+		hwlog_err("nv_read_from_buffer memcpy fail\n");
+		return MADAPT_FAIL;
+	}
 	return MADAPT_SUCCESS;
 }
 
@@ -264,7 +276,7 @@ static void set_bit_value(unsigned char *nv_value_byte, int pos,
 		nv_value_byte[pos / 8] &= ~(1UL << (pos % 8));  // 8: 1byte == 8 bit
 	} else {
 		hwlog_err("no changed\n");
-		return ;
+		return;
 	}
 }
 
@@ -274,7 +286,7 @@ static int madapt_write_nv_item(unsigned int modem_id, unsigned int nv_id,
 	int ret = MADAPT_SUCCESS;
 
 	if (nv_id != MADAPT_NV_ID_INVALID) {
-		ret = mdrv_nv_writeex(MADAPT_MODEMID_CONVERT(modem_id),
+		ret = mdrv_nv_writeex(madapt_modemid_convert(modem_id),
 					nv_id, nv_buffer, nv_item_len);
 		if (ret != MADAPT_SUCCESS)
 			ret = MADAPT_FAIL;
@@ -297,7 +309,7 @@ static int madapt_read_nv(unsigned int modem_id, unsigned int nv_item_number,
 	}
 
 	if (nv_length < MADAPT_MAX_NV_LENGTH_SIZE) {
-		ret = mdrv_nv_readex(MADAPT_MODEMID_CONVERT(modem_id),
+		ret = mdrv_nv_readex(madapt_modemid_convert(modem_id),
 					nv_item_number, nv_buffer, nv_length);
 		if (ret != MADAPT_SUCCESS)
 			ret = BSP_ERR_MADAPT_READ_NV_ERR;
@@ -317,7 +329,7 @@ static int madapt_read_nvcfg_result_flag(void)
 	unsigned int nv_item_length = sizeof(struct madapt_nvcfg_result_type);
 	unsigned int nv_item_number = MADAPT_NVCFG_RESULT_NVID;
 	struct madapt_nvcfg_result_type nvcfg_result;
-	memset(&nvcfg_result, 0x00, sizeof(nvcfg_result));
+	memset_s(&nvcfg_result, sizeof(nvcfg_result), 0x00, sizeof(nvcfg_result));
 
 	ret = madapt_read_nv(MADAPT_MODEM_ID_0,
 			nv_item_number, (char *)&nvcfg_result, &nv_item_length);
@@ -340,7 +352,7 @@ static int madapt_set_nvcfg_result_flag(void)
 	unsigned int nv_item_length = sizeof(struct madapt_nvcfg_result_type);
 	unsigned int nv_item_number = MADAPT_NVCFG_RESULT_NVID;
 	struct madapt_nvcfg_result_type nvcfg_result;
-	memset(&nvcfg_result, 0x00, sizeof(nvcfg_result));
+	memset_s(&nvcfg_result, sizeof(nvcfg_result), 0x00, sizeof(nvcfg_result));
 
 	ret = madapt_read_nv(MADAPT_MODEM_ID_0,
 			nv_item_number, (char *)&nvcfg_result, &nv_item_length);
@@ -371,14 +383,13 @@ static int madapt_check_nv_header_valid_atonv(struct madapt_item_ato_hdr_type *n
 {
 	int ret = MADAPT_SUCCESS;
 
-	if ( nv_header->nv_modem_id < MADAPT_MIN_NV_MODEM_ID
+	if (nv_header->nv_modem_id < MADAPT_MIN_NV_MODEM_ID
 		|| nv_header->nv_modem_id > MADAPT_MAX_NV_MODEM_ID
 		|| nv_header->nv_item_byte_length == 0
 		|| nv_header->nv_item_byte_length >= MADAPT_MAX_NV_LENGTH_SIZE
 		|| nv_header->nv_item_byte_start >= MADAPT_MAX_NV_LENGTH_SIZE
-		|| (nv_header->nv_item_byte_start + nv_header->nv_item_byte_length) >= MADAPT_MAX_NV_LENGTH_SIZE) {
+		|| (nv_header->nv_item_byte_start + nv_header->nv_item_byte_length) >= MADAPT_MAX_NV_LENGTH_SIZE)
 		ret = MADAPT_FAIL;
-	}
 
 	return ret;
 }
@@ -390,17 +401,17 @@ static int madapt_read_current_head_nv_atonv(struct madapt_item_ato_hdr_type *nv
 	unsigned int nv_length = 0;
 
 	ret = mdrv_nv_get_length(nv_header->nv_item_number, &nv_length);
-	/*AR000AD08A sunjun/00290209 20180807 begin*/
+	/* AR000AD08A sunjun/00290209 20180807 begin */
 	if (ret == BSP_ERR_MADAPT_NO_THIS_NV) {
-		hwlog_err("read curNV = %x,not exist, goto next\n",nv_header->nv_item_number);
+		hwlog_err("read curNV = %x,not exist, goto next\n", nv_header->nv_item_number);
 		return ret;
 	}
-	/*AR000AD08A sunjun/00290209 20180807 end*/
+	/* AR000AD08A sunjun/00290209 20180807 end */
 
 	if ((nv_header->nv_item_byte_start + nv_header->nv_item_byte_length) <= nv_length
 		&& nv_length < MADAPT_MAX_NV_LENGTH_SIZE
 		&& ret == MADAPT_SUCCESS) {
-		ret = mdrv_nv_readex(MADAPT_MODEMID_CONVERT(nv_header->nv_modem_id),
+		ret = mdrv_nv_readex(madapt_modemid_convert(nv_header->nv_modem_id),
 					nv_header->nv_item_number, nv_buffer, nv_length);
 		if (ret != MADAPT_SUCCESS)
 			ret = BSP_ERR_MADAPT_READ_NV_ERR;
@@ -414,7 +425,7 @@ static int madapt_read_current_head_nv_atonv(struct madapt_item_ato_hdr_type *nv
 	*nv_item_length = nv_length;
 	return ret;
 }
-static void madapt_parse_header_atonv(struct madapt_item_ato_hdr_type *nv_header, void *data)
+static void madapt_parse_header_atonv(struct madapt_item_ato_hdr_type *nv_header, const void *data)
 {
 	nv_header->nv_item_number = ((struct madapt_item_ato_hdr_type *)data)->nv_item_number;
 	nv_header->nv_modem_id = ((struct madapt_item_ato_hdr_type *)data)->nv_modem_id;
@@ -429,14 +440,14 @@ static int madapt_parse_and_writeatonv(char *ptr, int len)
 	unsigned int ret = MADAPT_SUCCESS;
 	struct madapt_item_ato_hdr_type nv_header;
 	unsigned int nv_item_length = 0;
-	unsigned int lastNV = MADAPT_NV_ID_INVALID;
-	unsigned int currentNV=MADAPT_NV_ID_INVALID;
-	unsigned char nv_bitType_value[MADAPT_BIT_LENGTH_SIZE+1];
+	unsigned int last_nv = MADAPT_NV_ID_INVALID;
+	unsigned int current_nv=MADAPT_NV_ID_INVALID;
+	unsigned char nv_bittype_value[MADAPT_BIT_LENGTH_SIZE+1];
 
-	memset(&nv_header, 0, sizeof(struct madapt_item_ato_hdr_type));
-	memset(nv_bitType_value, '\0', sizeof(nv_bitType_value));
+	memset_s(&nv_header, sizeof(struct madapt_item_ato_hdr_type), 0, sizeof(struct madapt_item_ato_hdr_type));
+	memset_s(nv_bittype_value, sizeof(nv_bittype_value), '\0', sizeof(nv_bittype_value));
 
-	//NV value max size must be no more than 2048 byte
+	// NV value max size must be no more than 2048 byte
 	nv_buffer = (char *)vmalloc(MADAPT_MAX_NV_LENGTH_SIZE*sizeof(char));
 	if (nv_buffer == NULL) {
 		hwlog_err("madapt_parse_and_writeatonv_new, vmalloc error\n");
@@ -447,7 +458,7 @@ static int madapt_parse_and_writeatonv(char *ptr, int len)
 		nv_header.feature_index = ((struct madapt_item_ato_hdr_type *)ptr)->feature_index;
 
 		if (nv_header.feature_index== MADAPT_FILE_END_FLAG) {
-			ret = madapt_write_nv_item(nv_header.nv_modem_id, lastNV, nv_buffer, nv_item_length);
+			ret = madapt_write_nv_item(nv_header.nv_modem_id, last_nv, nv_buffer, nv_item_length);
 			if (ret != MADAPT_SUCCESS) {
 				vfree(nv_buffer);
 				return BSP_ERR_MADAPT_WRITE_NV_ERR;
@@ -474,18 +485,18 @@ static int madapt_parse_and_writeatonv(char *ptr, int len)
 			return BSP_ERR_MADAPT_NV_HDR_CHECK_ERR;
 		}
 
-		currentNV = nv_header.nv_item_number;
-		if (currentNV != lastNV) {
-			ret = madapt_write_nv_item(nv_header.nv_modem_id, lastNV, nv_buffer, nv_item_length);
+		current_nv = nv_header.nv_item_number;
+		if (current_nv != last_nv) {
+			ret = madapt_write_nv_item(nv_header.nv_modem_id, last_nv, nv_buffer, nv_item_length);
 			if (ret != MADAPT_SUCCESS) {
 				vfree(nv_buffer);
 				return BSP_ERR_MADAPT_WRITE_NV_ERR;
 			}
 
-			memset(nv_buffer, '\0', MADAPT_MAX_NV_LENGTH_SIZE);
+			memset_s(nv_buffer, MADAPT_MAX_NV_LENGTH_SIZE, '\0', MADAPT_MAX_NV_LENGTH_SIZE);
 			ret = madapt_read_current_head_nv_atonv(&nv_header, nv_buffer, &nv_item_length);
 			if (ret == BSP_ERR_MADAPT_NO_THIS_NV) {
-				lastNV = MADAPT_NV_ID_INVALID;
+				last_nv = MADAPT_NV_ID_INVALID;
 				goto next_nv_ptr;
 			}
 
@@ -494,8 +505,8 @@ static int madapt_parse_and_writeatonv(char *ptr, int len)
 				return BSP_ERR_MADAPT_READ_NV_ERR;
 			}
 
-			nv_buffer[nv_item_length]='\0';
-			lastNV = currentNV;
+			nv_buffer[nv_item_length] = '\0';
+			last_nv = current_nv;
 		}
 
 		if (nv_header.nv_ato_bit_pos == MADAPT_FILE_NOTBIT_FLAG) {
@@ -503,20 +514,20 @@ static int madapt_parse_and_writeatonv(char *ptr, int len)
 						ptr, nv_header.nv_item_byte_length);
 		} else {
 			ret = nv_read_from_buffer(nv_header.nv_item_byte_start, nv_buffer,
-						nv_bitType_value, nv_header.nv_item_byte_length);
-			set_bit_value(nv_bitType_value, nv_header.nv_ato_bit_pos, (unsigned char *)ptr);
-			ret = nv_buffer_update( nv_header.nv_item_byte_start, nv_buffer,
-						nv_bitType_value, nv_header.nv_item_byte_length);
+						nv_bittype_value, nv_header.nv_item_byte_length);
+			set_bit_value(nv_bittype_value, nv_header.nv_ato_bit_pos, (unsigned char *)ptr);
+			ret = nv_buffer_update(nv_header.nv_item_byte_start, nv_buffer,
+						nv_bittype_value, nv_header.nv_item_byte_length);
 		}
 
 		if (ret != MADAPT_SUCCESS) {
-			hwlog_err("madapt_parse_and_writeatonv, nv_buffer_update error,ret=%d.\n",ret);
+			hwlog_err("madapt_parse_and_writeatonv, nv_buffer_update error,ret=%d.\n", ret);
 			vfree(nv_buffer);
 			return BSP_ERR_MADAPT_WRITE_NV_ERR;
 		}
-	/*AR000AD08A sunjun/00290209 20180807 begin*/
+	/* AR000AD08A sunjun/00290209 20180807 begin */
 next_nv_ptr:
-	/*AR000AD08A sunjun/00290209 20180807 end*/
+	/* AR000AD08A sunjun/00290209 20180807 end */
 		len -= (sizeof(struct madapt_item_ato_hdr_type) + nv_header.nv_item_byte_length);
 		ptr += nv_header.nv_item_byte_length;
 	} while (len > 0);
@@ -543,22 +554,21 @@ static int madapt_check_nv_header_valid(struct madapt_item_hdr_type *nv_header)
 {
 	int ret = MADAPT_SUCCESS;
 
-	if ( nv_header->nv_modem_id < MADAPT_MIN_NV_MODEM_ID ||
+	if (nv_header->nv_modem_id < MADAPT_MIN_NV_MODEM_ID ||
 		nv_header->nv_modem_id > MADAPT_MAX_NV_MODEM_ID ||
 		nv_header->nv_item_size == 0 ||
-		nv_header->nv_item_size >= MADAPT_FILE_MAX_SIZE) {
+		nv_header->nv_item_size >= MADAPT_FILE_MAX_SIZE)
 		ret = MADAPT_FAIL;
-	}
 
 	return ret;
 }
 
 static int madapt_parse_and_writenv(char *ptr, int len, unsigned int modem_id)
 {
-	unsigned int ret = 0;
+	unsigned int ret;
 	struct madapt_item_hdr_type nv_header;
 
-	memset(&nv_header, 0, sizeof(struct madapt_item_hdr_type));
+	memset_s(&nv_header, sizeof(struct madapt_item_hdr_type), 0, sizeof(struct madapt_item_hdr_type));
 	do {
 		nv_header.nv_item_number = ((struct madapt_item_hdr_type *)ptr)->nv_item_number;
 		if (nv_header.nv_item_number == MADAPT_FILE_END_FLAG) {
@@ -576,14 +586,14 @@ static int madapt_parse_and_writenv(char *ptr, int len, unsigned int modem_id)
 			 return BSP_ERR_MADAPT_NV_HDR_CHECK_ERR;
 		}
 
-		ret = mdrv_nv_writeex( MADAPT_MODEMID_CONVERT(nv_header.nv_modem_id),
+		ret = mdrv_nv_writeex(madapt_modemid_convert(nv_header.nv_modem_id),
 						nv_header.nv_item_number, ptr, nv_header.nv_item_size);
 		if (ret != MADAPT_SUCCESS) {
-			/*AR000AD08A sunjun/00290209 20180807 begin*/
-			if (BSP_ERR_MADAPT_NO_THIS_NV == ret) {
-				hwlog_err("write curNV = %x,not exist, goto next\n",nv_header.nv_item_number);
+			/* AR000AD08A sunjun/00290209 20180807 begin */
+			if (ret == BSP_ERR_MADAPT_NO_THIS_NV) {
+				hwlog_err("write curNV = %x,not exist, goto next\n", nv_header.nv_item_number);
 			} else {
-			/*AR000AD08A sunjun/00290209 20180807 end*/
+			/* AR000AD08A sunjun/00290209 20180807 end */
 				hwlog_err("madapt_parse_and_writenv, nv[%d] with modemid[%d] and size[%d] write fail, ret=%d.\n",
 					nv_header.nv_item_number, nv_header.nv_modem_id, nv_header.nv_item_size, ret);
 				return BSP_ERR_MADAPT_WRITE_NV_ERR;
@@ -619,7 +629,7 @@ static int madapt_remove_mbn_carrirer_file(void)
 	old_fs = get_fs();
 	set_fs((unsigned long)KERNEL_DS);
 	ret = sys_unlink(NCFG_BIN_FILE_PATH_IN_MODEM);
-	if ( ret < 0) {
+	if (ret < 0) {
 		hwlog_err("remove carrier bin file failed. ret=%d", ret);
 		ret= BSP_ERR_MADAPT_REMOVE_FILE_ERR;
 	}
@@ -628,17 +638,17 @@ static int madapt_remove_mbn_carrirer_file(void)
 	return ret;
 }
 
-static int madapt_write_mbn_carrirer_file(char *file_buffer, size_t buffer_Size, int is_appended)
+static int madapt_write_mbn_carrirer_file(const char *file_buffer, size_t buffer_size, int is_appended)
 {
 	struct file *fp = NULL;
 	mm_segment_t old_fs = {0};
-	loff_t pos = 0;
-	ssize_t size = 0;
-	int ret_sync = 0;
-	int file_size = 0;
+	loff_t pos;
+	ssize_t size;
+	int ret_sync;
+	int file_size;
 
-	//should add O_SYNC flag for some platform kernel sync file system delay.
-	fp = filp_open(NCFG_BIN_FILE_PATH_IN_MODEM, O_RDWR|O_CREAT|O_SYNC, 0644);
+	// should add O_SYNC flag for some platform kernel sync file system delay.
+	fp = filp_open(NCFG_BIN_FILE_PATH_IN_MODEM, O_RDWR | O_CREAT | O_SYNC, MADAPT_NCFG_FILE_MODE);
 	if (IS_ERR(fp)) {
 		hwlog_err("madapt_write_mbn_carrirer_file, create file error! \n");
 		return BSP_ERR_MADAPT_OPEN_FILE_ERR;
@@ -647,16 +657,16 @@ static int madapt_write_mbn_carrirer_file(char *file_buffer, size_t buffer_Size,
 	old_fs = get_fs();
 	set_fs((unsigned long)KERNEL_DS);
 
-	vfs_llseek(fp, 0L, (is_appended==0) ? SEEK_SET : SEEK_END);
+	vfs_llseek(fp, 0L, (is_appended == 0) ? SEEK_SET : SEEK_END);
 	pos = fp->f_pos;
-	size = vfs_write(fp, file_buffer, buffer_Size, &pos);
+	size = vfs_write(fp, file_buffer, buffer_size, &pos);
 	hwlog_err("madapt_write_mbn_carrirer_file,  vfs_write pos =%d, write size=%zu \n", (int)pos, size);
-	//sync to hardware flash immediately, some system will sync delay.
-	ret_sync = vfs_fsync(fp,0);
+	// sync to hardware flash immediately, some system will sync delay.
+	ret_sync = vfs_fsync(fp, 0);
 	file_size = file_inode(fp)->i_size;
-	hwlog_err("copy file new size(%d) success!sync ret=%d\n", file_size, ret_sync);
+	hwlog_err("copy file new size=%d success!sync ret=%d\n", file_size, ret_sync);
 
-	filp_close(fp,NULL);
+	filp_close(fp, NULL);
 	set_fs(old_fs);
 	return BSP_ERR_MADAPT_OK;
 }
@@ -664,26 +674,43 @@ static int madapt_write_mbn_carrirer_file(char *file_buffer, size_t buffer_Size,
 /* selinux limit: kernel can read system attr file path.
  * so change /data/vendor/cota/? file patch to /data/cota/?.
  */
-static void replace_vendor_cota_path(char * file)
+static void replace_vendor_cota_path(char *file)
 {
 	char file_tmp[MADAPT_MAX_USER_BUFF_LEN];
+	int ret = BSP_ERR_MADAPT_OK;
 
 	if (file == strstr(file, MADAPT_VALID_PATH_HEAD_COTA_VENDER)) {
-		memset(file_tmp, 0x00, sizeof(file_tmp));
-		snprintf(file_tmp, sizeof(file_tmp), "%s%s",
-				MADAPT_VALID_PATH_HEAD_COTA,
-				file + strlen(MADAPT_VALID_PATH_HEAD_COTA_VENDER));
-		strcpy(file, file_tmp);
+		ret = memset_s(file_tmp, sizeof(file_tmp), 0x00, sizeof(file_tmp));
+		if (ret != EOK) {
+			hwlog_err("replace vendor cota path memset file tmp error\n");
+			return;
+		}
+
+		ret = snprintf_s(file_tmp, sizeof(file_tmp), sizeof(file_tmp) - 1, "%s%s",
+						 MADAPT_VALID_PATH_HEAD_COTA,
+						 file + strlen(MADAPT_VALID_PATH_HEAD_COTA_VENDER));
+		if (ret < 0) {
+			hwlog_err("replace vendor cota path print error %d\n", ret);
+			return;
+		}
+
+		ret = strcpy_s(file, MADAPT_MAX_USER_BUFF_LEN, file_tmp);
+		if (ret != EOK) {
+			hwlog_err("replace vendor cota path cpy file error %d\n", ret);
+			return;
+		}
+
 		file[strlen(file_tmp)] = '\0';
 		hwlog_err("change vendor patch to cota file path(%s)\n", file);
 	}
+	return;
 }
 
-static int check_file_path_valid(const char * file)
+static int check_file_path_valid(const char *file)
 {
 	int ret = BSP_ERR_MADAPT_OK;
 
-	//file star with special path head
+	// file star with special path head
 	if (file == strstr(file, MADAPT_VALID_PATH_HEAD_ODM) ||
 		file == strstr(file, MADAPT_VALID_PATH_HEAD_HW_ODM) ||
 		file == strstr(file, MADAPT_VALID_PATH_HEAD_COTA) ||
@@ -701,20 +728,19 @@ static int check_file_path_valid(const char * file)
 * when read success, will return BSP_ERR_MADAPT_OK and must kfree *file_buf memory.
 * when return others, will not any change *file_buf value.
 */
-static int madapt_read_mbn_file(char * file, char **file_buf, int *file_buf_size)
+static int madapt_read_mbn_file(char *file, char **file_buf, int *file_buf_size)
 {
 	struct file *fp = NULL;
 	mm_segment_t fs = {0};
-	loff_t pos = 0;
-	int ret_size = 0;
-	int size = 0;
-	int ret = BSP_ERR_MADAPT_OK;
+	loff_t pos;
+	int ret_size;
+	int size;
+	int ret;
 	char *k_buffer = NULL;
 
 	ret = check_file_path_valid(file);
-	if (ret != BSP_ERR_MADAPT_OK) {
+	if (ret != BSP_ERR_MADAPT_OK)
 		return ret;
-	}
 
 	replace_vendor_cota_path(file);
 
@@ -730,7 +756,7 @@ static int madapt_read_mbn_file(char * file, char **file_buf, int *file_buf_size
 
 	size = file_inode(fp)->i_size;
 	if (size <= 0 || size >= MADAPT_FILE_MAX_SIZE) {
-		hwlog_err("madapt_read_mbn_file, file size(%d) error!\n", size);
+		hwlog_err("madapt_read_mbn_file, file size = %d error!\n", size);
 		ret = BSP_ERR_MADAPT_FILE_SIZE_ERR;
 		filp_close(fp, NULL);
 		set_fs(fs);
@@ -747,7 +773,7 @@ static int madapt_read_mbn_file(char * file, char **file_buf, int *file_buf_size
 		return ret;
 	}
 
-	memset(k_buffer, 0, size);
+	memset_s(k_buffer, size, 0, size);
 	ret_size = vfs_read(fp, k_buffer, size, &pos);
 	if (size != ret_size) {
 		hwlog_err("madapt_read_mbn_file, error vfs_read ret: %d, readsize: %d\n", ret_size, (int)(size));
@@ -761,7 +787,7 @@ static int madapt_read_mbn_file(char * file, char **file_buf, int *file_buf_size
 
 	*file_buf = k_buffer;
 	*file_buf_size = size;
-	hwlog_err("madapt_read_mbn_file success, get nvbin file size(%d)!\n", *file_buf_size );
+	hwlog_err("madapt_read_mbn_file success, get nvbin file size = %d!\n", *file_buf_size);
 
 	filp_close(fp, NULL);
 	set_fs(fs);
@@ -780,27 +806,24 @@ static int parse_write_file(struct madapt_file_stru *file)
 	}
 
 	if (file->len > MADAPT_MAX_USER_BUFF_LEN) {
-		hwlog_err("parse_write_file, file->len(%d) too large!\n",
+		hwlog_err("parse_write_file, file->len = %d too large!\n",
 					file->len);
 		return BSP_ERR_MADAPT_PARAM_ERR;
 	}
 
-	if (file->modem_id == MADAPT_MODEMID_INVALID) {
+	if (file->modem_id == MADAPT_MODEMID_INVALID)
 		ret = madapt_remove_mbn_carrirer_file();
-	}
 
 	ret = madapt_read_mbn_file(file->file, &k_buffer, &size);
-	if (ret != BSP_ERR_MADAPT_OK) {
+	if (ret != BSP_ERR_MADAPT_OK)
 		return ret;
-	}
 
 	if (file->modem_id  == MADAPT_MODEMID_INVALID) {
-		/*speical for copy NV BIN file from odm to mnvm2:0 */
+		/* speical for copy NV BIN file from odm to mnvm2:0 */
 		ret = madapt_write_mbn_carrirer_file(k_buffer, size, MADAPT_RW_FILE_TRIL);
-
 	} else {
 #ifdef MADAPT_HISI_MODEM_NV_RW_API
-		if (strstr(file->file,".ato") != NULL) {
+		if (strstr(file->file, ".ato") != NULL) {
 			ret = madapt_parse_and_writeatonv(k_buffer, size);
 		} else {
 			ret = madapt_parse_and_writenv(k_buffer, size, file->modem_id);
@@ -811,77 +834,74 @@ static int parse_write_file(struct madapt_file_stru *file)
 #endif
 	}
 
-
 	kfree(k_buffer);
 	k_buffer = NULL;
 	return ret;
 }
 
-/*speical for copy NV BIN file from odm to mnvm2:0 */
+/* speical for copy NV BIN file from odm to mnvm2:0 */
 static int madapt_copy_multi_mbn_files(struct madapt_file_stru_ex *file)
 {
 	int ret = BSP_ERR_MADAPT_OK;
+	errno_t cpy_err;
 	int size = 0;
-	int index = 0;
+	int index;
 	char *k_buffer = NULL;
 	struct madapt_mbn_file_head new_head;
 
-	for (index = 0; index < file->file_count; index++)
-	{
-		hwlog_err("madapt_copy_multi_mbn_files, start copy file index=%d\n", index );
+	for (index = 0; index < file->file_count; index++) {
+		hwlog_err("madapt_copy_multi_mbn_files, start copy file index=%d\n", index);
 		ret = madapt_read_mbn_file(file->file[index], &k_buffer, &size);
-		if(ret != BSP_ERR_MADAPT_OK)
-		{
+		if (ret != BSP_ERR_MADAPT_OK)
 			break;
-		}
 
 		if (index == 0) {
-			/*first file, copy total nv bin file to mnvm2:0*/
+			/* first file, copy total nv bin file to mnvm2:0 */
 			 ret = madapt_write_mbn_carrirer_file(k_buffer, size, MADAPT_RW_FILE_HEAD);
-			 memcpy(&new_head, k_buffer, sizeof(struct madapt_mbn_file_head));
-			 hwlog_err(" file index(%d) new head data_len is :%u\n", index, new_head.data_len);
+			 cpy_err = memcpy_s(&new_head, sizeof(struct madapt_mbn_file_head), k_buffer, sizeof(struct madapt_mbn_file_head));
+			 if (cpy_err != EOK)
+				hwlog_err(" file index=%d copy buffer fails\n", index);
+
+			 hwlog_err(" file index=%d new head data_len is :%u\n", index, new_head.data_len);
 		} else {
-			ret = madapt_write_mbn_carrirer_file(k_buffer +sizeof(struct madapt_mbn_file_head),
+			ret = madapt_write_mbn_carrirer_file(k_buffer + sizeof(struct madapt_mbn_file_head),
 					size - sizeof(struct madapt_mbn_file_head), MADAPT_RW_FILE_TRIL);
-			/* increase file head length*/
+			/* increase file head length */
 			new_head.data_len +=  ((struct madapt_mbn_file_head*)k_buffer)->data_len;
-			/*decrease head size*/
+			/* decrease head size */
 			new_head.data_len -= sizeof(struct madapt_mbn_file_head);
-			hwlog_err(" file index(%d) new head data_len is :%u\n", index, new_head.data_len);
+			hwlog_err(" file index=%d new head data_len is :%u\n", index, new_head.data_len);
 		}
 
 		kfree(k_buffer);
 		k_buffer = NULL;
 
 		if (ret != BSP_ERR_MADAPT_OK)
-		{
 			break;
-		}
 	}
 
-	if (ret == BSP_ERR_MADAPT_OK) {
+	if (ret == BSP_ERR_MADAPT_OK)
 		ret = madapt_write_mbn_carrirer_file((char*)&new_head, sizeof(new_head), MADAPT_RW_FILE_HEAD);
-	}
+
 	return ret;
 }
 #ifdef MADAPT_HISI_MODEM_NV_RW_API
 static int madapt_parse_and_write_mbn_files(struct madapt_file_stru_ex *file)
 {
 	int ret = BSP_ERR_MADAPT_OK;
-	int size = 0;
-	int index = 0;
+	int size;
+	int index;
 	char *k_buffer = NULL;
 
-	for (index = 0; index < file->file_count; index++)
-	{
-		hwlog_err("madapt_parse_multi_mbn_file, start copy file index=%d\n", index );
+	for (index = 0; index < file->file_count; index++) {
+		hwlog_err("madapt_parse_multi_mbn_file, start copy file index=%d\n", index);
 		ret = madapt_read_mbn_file(file->file[index], &k_buffer, &size);
 		if (ret != BSP_ERR_MADAPT_OK) {
 			break;
 		}
 
 		if (NULL != strstr(file->file[index], ".ato")) {
-			//decode nv ato file
+			// decode nv ato file
 			ret = madapt_parse_and_writeatonv(k_buffer, size);
 		} else {
 			ret = madapt_parse_and_writenv(k_buffer, size, file->modem_id);
@@ -889,9 +909,8 @@ static int madapt_parse_and_write_mbn_files(struct madapt_file_stru_ex *file)
 
 		kfree(k_buffer);
 		k_buffer = NULL;
-		if (ret != BSP_ERR_MADAPT_OK) {
+		if (ret != BSP_ERR_MADAPT_OK)
 			break;
-		}
 	}
 
 	return ret;
@@ -907,7 +926,7 @@ static int madapt_parse_multi_mbn_file(struct madapt_file_stru_ex *file)
 		return BSP_ERR_MADAPT_PTR_NULL;
 	}
 
-	if (MADAPT_MODEMID_INVALID == file->modem_id) {
+	if (file->modem_id == MADAPT_MODEMID_INVALID) {
 		(void)madapt_remove_mbn_carrirer_file();
 		ret = madapt_copy_multi_mbn_files(file);
 	} else {
@@ -927,23 +946,23 @@ static void do_proc_nv_file(struct work_struct *p_work)
 	if (kbuf_ex != NULL) {
 		work_ret = madapt_parse_multi_mbn_file(kbuf_ex);
 	} else {
-		work_ret = parse_write_file(kbuf);
+		work_ret = parse_write_file(g_kbuf);
 	}
 
 	if (work_ret != BSP_ERR_MADAPT_OK) {
-		hwlog_err("do_proc_nv_file, parse_write_file fail with errcode(%d)!\n", (int)work_ret);
+		hwlog_err("do_proc_nv_file, parse_write_file fail with errcode = %d!\n", (int)work_ret);
 	} else {
 		hwlog_err("do_proc_nv_file, proc all success\n");
 	}
 
 	madapt_free(kbuf_ex);
 	kbuf_ex = NULL;
-	madapt_free(kbuf);
-	kbuf = NULL;
+	madapt_free(g_kbuf);
+	g_kbuf = NULL;
 	complete(&(my_completion));
 }
 
-static ssize_t madapt_copy_user_data(void** dest_buf, size_t dest_buf_size, const char __user *src_buf , size_t src_buf_size)
+static ssize_t madapt_copy_user_data(void** dest_buf, size_t dest_buf_size, const char __user *src_buf, size_t src_buf_size)
 {
 	ssize_t ret = BSP_ERR_MADAPT_OK;
 
@@ -956,7 +975,10 @@ static ssize_t madapt_copy_user_data(void** dest_buf, size_t dest_buf_size, cons
 		return ret;
 	}
 
-	memset(*dest_buf , 0, dest_buf_size);
+	ret = memset_s(*dest_buf, dest_buf_size, 0, dest_buf_size);
+	if (ret != BSP_ERR_MADAPT_OK)
+		return ret;
+
 	if (copy_from_user(*dest_buf, src_buf, src_buf_size)) {
 		ret = BSP_ERR_MADAPT_COPY_FROM_USER_ERR;
 		madapt_free(*dest_buf);
@@ -978,10 +1000,10 @@ static ssize_t madapt_dev_copy_buf(const char __user *buf, size_t count)
 			return ret;
 		}
 	} else {
-		ret = madapt_copy_user_data((void**)&kbuf, sizeof(struct madapt_file_stru), buf, count);
+		ret = madapt_copy_user_data((void**)&g_kbuf, sizeof(struct madapt_file_stru), buf, count);
 		if (ret != BSP_ERR_MADAPT_OK) {
-			madapt_free(kbuf);
-			kbuf = NULL;
+			madapt_free(g_kbuf);
+			g_kbuf = NULL;
 			return ret;
 		}
 	}
@@ -995,9 +1017,8 @@ static ssize_t madapt_check_buf_size(size_t count)
 
 	if ((count <= sizeof(unsigned int))
 		|| (count >= sizeof(struct madapt_file_stru)
-			&& count != sizeof(struct madapt_file_stru_ex))) {
+			&& count != sizeof(struct madapt_file_stru_ex)))
 		ret = BSP_ERR_MADAPT_PARAM_ERR;
-	}
 
 	return ret;
 }
@@ -1008,14 +1029,12 @@ ssize_t madapt_dev_write(struct file *file, const char __user *buf, size_t count
 	ssize_t ret = BSP_ERR_MADAPT_OK;
 	int ticks_left = 0;
 
-	if (buf == NULL) {
+	if (buf == NULL)
 		return BSP_ERR_MADAPT_PARAM_ERR;
-	}
 
 	ret = madapt_check_buf_size(count);
-	if (ret != BSP_ERR_MADAPT_OK) {
+	if (ret != BSP_ERR_MADAPT_OK)
 		return ret;
-	}
 
 	mutex_lock(&madapt_mutex);
 	ret = madapt_dev_copy_buf(buf, count);
@@ -1062,7 +1081,7 @@ static int get_commbin_last_modify_time(void)
 	}
 
 	modify_time = file_inode(fp)->i_mtime.tv_sec;
-	hwlog_info("get common bin file modify time：%lu\n", modify_time);
+	hwlog_info("get common bin file modify time=%lu\n", modify_time);
 	filp_close(fp, NULL);
 
 	return BSP_ERR_MADAPT_OK;
@@ -1092,7 +1111,8 @@ ssize_t madapt_dev_read(struct file *file, char __user *buf, size_t count, loff_
 	if (copy_from_user(dest_buf, buf, read_size))
 		return BSP_ERR_MADAPT_COPY_FROM_USER_ERR;
 
-	if (!strcmp(dest_buf, MADAPT_PARAM_COMMON)) {
+	dest_buf[read_size] = '\0';
+	if (strcmp(dest_buf, MADAPT_PARAM_COMMON) == 0) {
 		mutex_lock(&madapt_mutex);
 
 		schedule_work(&(test_read_work.proc_nv));
@@ -1110,11 +1130,11 @@ ssize_t madapt_dev_read(struct file *file, char __user *buf, size_t count, loff_
 
 #ifdef MADAPT_HISI_MODEM_NV_RW_API
 		if (modify_time == MADAPT_DEFAULT_MODIFY_TIME)
-			(void)sprintf(read_time_buf, "%u", nvcfg_result_flag);
+			(void)sprintf_s(read_time_buf, MADAPT_BIT_LENGTH_SIZE, "%u", nvcfg_result_flag);
 		else
-			(void)sprintf(read_time_buf, "%lu", modify_time);
+			(void)sprintf_s(read_time_buf, MADAPT_BIT_LENGTH_SIZE, "%lu", modify_time);
 #else
-		(void)sprintf(read_time_buf, "%lu", modify_time);
+		(void)sprintf_s(read_time_buf, MADAPT_BIT_LENGTH_SIZE, "%lu", modify_time);
 #endif
 		read_time_buf[MADAPT_BIT_LENGTH_SIZE - 1] = '\0';
 		if (copy_to_user(buf, read_time_buf, sizeof(read_time_buf))) {
@@ -1131,11 +1151,11 @@ ssize_t madapt_dev_read(struct file *file, char __user *buf, size_t count, loff_
 /*lint -save --e{529}*/
 int madapt_init(void)
 {
-	int ret = 0;
+	int ret;
 	dev_t dev = 0;
 	unsigned int devno;
 
-	/*dynamic dev num use*/
+	/* dynamic dev num use */
 	ret = alloc_chrdev_region(&dev, 0, 1, MADAPT_DEVICE_NAME);
 	madapt_major = MAJOR(dev);
 
@@ -1146,13 +1166,13 @@ int madapt_init(void)
 
 	devno = MKDEV(madapt_major, 0);
 
-	memset(&cdev, 0, sizeof(struct cdev));
+	memset_s(&g_cdev, sizeof(struct cdev), 0, sizeof(struct cdev));
 
-	cdev_init(&cdev, &nv_fops);
-	cdev.owner = THIS_MODULE;
-	cdev.ops = &nv_fops;
+	cdev_init(&g_cdev, &g_nv_fops);
+	g_cdev.owner = THIS_MODULE;
+	g_cdev.ops = &g_nv_fops;
 
-	ret = cdev_add(&cdev, devno, 1);
+	ret = cdev_add(&g_cdev, devno, 1);
 	if (ret) {
 		hwlog_err("madapt_init, cdev_add fail!\n");
 		return ret;
@@ -1172,17 +1192,16 @@ int madapt_init(void)
 	init_completion(&(my_completion));
 	init_completion(&my_read_completion);
 
-	kbuf = NULL;
+	g_kbuf = NULL;
 	kbuf_ex = NULL;
 	hwlog_err("madapt_init, complete!\n");
 	return BSP_ERR_MADAPT_OK;
 }
 /*lint -restore*/
 
-
 void madapt_exit(void)
 {
-	cdev_del(&cdev);
+	cdev_del(&g_cdev);
 	class_destroy(madapt_class);
 	unregister_chrdev_region(MKDEV(madapt_major, 0), 1);
 }

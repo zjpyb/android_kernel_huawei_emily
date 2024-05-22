@@ -1,34 +1,34 @@
 /*
- * Copyright (C) 2011-2013 Samsung India Software Operations
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * ufs-kirin-lib.h
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- * See the COPYING file in the top-level directory or visit
- * <http://www.gnu.org/licenses/gpl-2.0.html>
+ * The header file for ufs-kirin-lib.c
+ *
+ * Copyright (c) 2013-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
- * This program is provided "AS IS" and "WITH ALL FAULTS" and
- * without warranty of any kind. You are solely responsible for
- * determining the appropriateness of using and distributing
- * the program and assume all risks associated with your exercise
- * of rights with respect to the program, including but not limited
- * to infringement of third party rights, the risks and costs of
- * program errors, damage to or loss of data, programs or equipment,
- * and unavailability or interruption of operations. Under no
- * circumstances will the contributor of this Program be liable for
- * any damages of any kind arising from your use or distribution of
- * this program.
  */
 
-#ifndef _UFS_KIRIN_LIB_H
-#define _UFS_KIRIN_LIB_H
+#ifndef _HUFS_LIB_H
+#define _HUFS_LIB_H
+
+#ifdef CONFIG_HISI_DIEID
+#ifdef CONFIG_SCSI_UFSHCD
+int hufs_get_dieid(char *dieid, unsigned int len);
+#else
+int hufs_get_dieid(char *dieid, unsigned int len)
+{
+	return -1;
+}
+#endif
+#endif
 
 void ufs_get_boot_partition_type(struct ufs_hba *hba);
 int ufs_set_boot_partition_type(int boot_partition_type);

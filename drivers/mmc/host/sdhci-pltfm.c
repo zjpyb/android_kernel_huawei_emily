@@ -36,8 +36,8 @@
 #endif
 #include "sdhci-pltfm.h"
 #include <linux/hisi/hw_cmdline_parse.h> /*for runmode_is_factory*/
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>/*for is_hisi_battery_exist*/
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>/*for is_hisi_battery_exist*/
 #endif
 
 unsigned int sdhci_pltfm_clk_get_max_clock(struct sdhci_host *host)
@@ -161,13 +161,28 @@ void sdhci_get_of_property(struct platform_device *pdev)
 			host->quirks2 &= ~SDHCI_QUIRK2_BROKEN_HS200;
 		}
 
+		if (of_find_property(np, "delaymeas_code_1_3T", NULL)) {
+			dev_info(&pdev->dev, "set strobe clk 1/3T\n");
+			host->flags |= SDHCI_SET_TX_CLK_1_3T;
+		}
+
+		if (of_find_property(np, "mmc_disable_tuning_move", NULL)) {
+			dev_info(&pdev->dev, "mmc_disable_tuning_move\n");
+			host->flags |= SDHCI_WITHOUT_TUNING_MOVE;
+		}
+
 		if (of_find_property(np, "caps2-mmc-packed-command", NULL))
 			host->mmc->caps2 |= MMC_CAP2_PACKED_CMD;
 
+		if (of_find_property(np, "disable-wp", NULL)) {
+			host->mmc->caps2 |= MMC_CAP2_NO_WRITE_PROTECT;
+			dev_info(&pdev->dev, "disable-wp is set in dts\n");
+		}
+
 		runmode_normal = !runmode_is_factory();
 
-#ifdef CONFIG_HISI_COUL
-		batterystate_exist = is_hisi_battery_exist();
+#ifdef CONFIG_COUL_DRV
+		batterystate_exist = coul_drv_is_battery_exist();
 #else
 		batterystate_exist = 0;
 #endif

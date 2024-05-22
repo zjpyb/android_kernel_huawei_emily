@@ -9,12 +9,12 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/delay.h>
+#include <cdn_stdtypes.h>
+#include <cdn_errno.h>
 
 #include "cdn_stdint.h"
 #include "cdn_errno.h"
 #include <csmi.h>
-#include <cdn_stdtypes.h>
-#include <cdn_errno.h>
 #include "csmi_sanity.h"
 #include "csmi_regs.h"
 #include "cps.h"
@@ -291,6 +291,7 @@
 #define CSMI_FIFO_WAIT_TIMEOUT								   5500
 
 #define CSMI_FIFO_CLEAR_MASK								   0x40404040
+#define CSMI_CYCLES_TIME							           20
 
 
 /* Get/Set Message fields Macros */
@@ -651,7 +652,7 @@ static inline uint8_t CSMI_SliceSizeToBytes(CSMI_SliceSize sliceSize) {
 	case CSMI_SS_16_BYTES:
 		return 16;
 	default:
-	    SLIMBUS_CORE_LIMIT_ERR("slice size is invalid: %d\n", sliceSize);
+	    slimbus_core_limit_err("slice size is invalid: %d\n", sliceSize);
 		return 0;
 	}
 }
@@ -749,7 +750,7 @@ static uint32_t CSMI_DecodeMessage(CSMI_Instance *instance, uint8_t *receivedMes
 		lengthArbitrationField = CSMI_MESSAGE_ARBITRATION_LENGTH_SHORT;
 		break;
 	default:
-		SLIMBUS_CORE_LIMIT_ERR("arbitration type is invalid: %d\n", message->arbitrationType);
+		slimbus_core_limit_err("arbitration type is invalid: %d\n", message->arbitrationType);
 		return EINVAL;
 	}
 	message->arbitrationPriority = CSMI_GetMsgField(receivedMessage, offset, ARBITRATION_PRIORITY);
@@ -786,7 +787,7 @@ static uint32_t CSMI_DecodeMessage(CSMI_Instance *instance, uint8_t *receivedMes
 		break;
 
 	default:
-		SLIMBUS_CORE_LIMIT_ERR("destination type is invalid: %d\n", message->destinationType);
+		slimbus_core_limit_err("destination type is invalid: %d\n", message->destinationType);
 		return EINVAL;
 	}
 
@@ -794,7 +795,7 @@ static uint32_t CSMI_DecodeMessage(CSMI_Instance *instance, uint8_t *receivedMes
 	offset = lengthArbitrationField + lengthHeaderField;
 
 	if (remainingLength > (CSMI_MESSAGE_PAYLOAD_MAX_LENGTH + lengthHeaderField)) {
-		SLIMBUS_CORE_LIMIT_ERR("remaining length is invalid: %d, %d\n", remainingLength, (CSMI_MESSAGE_PAYLOAD_MAX_LENGTH + lengthHeaderField));
+		slimbus_core_limit_err("remaining length is invalid: %d, %d\n", remainingLength, (CSMI_MESSAGE_PAYLOAD_MAX_LENGTH + lengthHeaderField));
 		return EINVAL;
 	}
 
@@ -806,7 +807,7 @@ static uint32_t CSMI_DecodeMessage(CSMI_Instance *instance, uint8_t *receivedMes
 	 */
 	message->response = CSMI_GetMsgField(receivedMessage, (offset + message->payloadLength), RESPONSE_CODE);
 	if (CSMI_MR_POSITIVE_ACK != message->response) {
-		SLIMBUS_CORE_LIMIT_ERR("SLIMbus received message not PACK:%#x ! \n", message->response);//fixme: by lyq
+		slimbus_core_limit_err("SLIMbus received message not PACK:%#x ! \n", message->response);//fixme: by lyq
 	}
 
 	/* Payload data */
@@ -847,7 +848,7 @@ static uint32_t CSMI_EncodeMessage(CSMI_Instance *instance, uint8_t *memoryToFil
 		lengthArbitrationField = CSMI_MESSAGE_ARBITRATION_LENGTH_SHORT;
 		break;
 	default:
-		SLIMBUS_CORE_LIMIT_ERR("arbitration type is invalid: %d\n", message->arbitrationType);
+		slimbus_core_limit_err("arbitration type is invalid: %d\n", message->arbitrationType);
 		return 0;
 	}
 	CSMI_SetMsgField(memoryToFill, message->arbitrationPriority, offset, ARBITRATION_PRIORITY);
@@ -876,7 +877,7 @@ static uint32_t CSMI_EncodeMessage(CSMI_Instance *instance, uint8_t *memoryToFil
 		break;
 
 	default:
-		SLIMBUS_CORE_LIMIT_ERR("destination type is invalid: %d\n", message->destinationType);
+		slimbus_core_limit_err("destination type is invalid: %d\n", message->destinationType);
 		return 0;
 	}
 
@@ -900,7 +901,7 @@ static uint32_t CSMI_EncodeMessage(CSMI_Instance *instance, uint8_t *memoryToFil
 		messageIntegrity = CSMI_CrcMessageIntegrity(memoryToFill, primaryIntegrityBytes -1, remainingLength - 3 + 1, primaryIntegrity);
 		CSMI_SetMsgField(memoryToFill, messageIntegrity, (offset + message->payloadLength), MESSAGE_INTEGRITY);
 	}
-	return lengthArbitrationField + lengthHeaderField + message->payloadLength + 1;/* [false alarm]:fortify Îó¾¯  */
+	return lengthArbitrationField + lengthHeaderField + message->payloadLength + 1;/* [false alarm]:fortify */
 
 }
 
@@ -921,7 +922,7 @@ static uint32_t CSMI_fifo_wait_reception(CSMI_Instance *instance, _Bool wait)
 					INTERRUPTS__INT__TX_ERR__SET(reg);
 					CSMI_WriteReg(INTERRUPTS.INT, reg);
 				}
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message TX_ERR happened!\n");
+				slimbus_core_limit_err("SLIMbus send message TX_ERR happened!\n");
 				return EIO;
 			}
 
@@ -937,7 +938,7 @@ static uint32_t CSMI_fifo_wait_reception(CSMI_Instance *instance, _Bool wait)
 			/* CSMI_Irq will read and clear interrupt flag before it will be accessed here by polling.
 			These variables are set by interrupt handling function. */
 			if (instance->sendingFailed) {
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message failed!\n");
+				slimbus_core_limit_err("SLIMbus send message failed!\n");
 				return EIO;
 			}
 
@@ -948,7 +949,7 @@ static uint32_t CSMI_fifo_wait_reception(CSMI_Instance *instance, _Bool wait)
 			if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
 				udelay(200);
 				if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
-					SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message timeout!\n");
+					slimbus_core_limit_err("SLIMbus send message timeout!\n");
 					return EIO;
 				}
 			}
@@ -981,7 +982,7 @@ static uint32_t CSMI_FifoTransmit(CSMI_Instance *instance, uint8_t *txFifoData, 
 		if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
 			udelay(200);
 			if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_FULL timeout!\n");
+				slimbus_core_limit_err("SLIMbus send message wait TX_FULL timeout!\n");
 				return EIO;
 			}
 		}
@@ -1009,7 +1010,7 @@ static uint32_t CSMI_FifoTransmit(CSMI_Instance *instance, uint8_t *txFifoData, 
 		if (timeout > CSMI_FIFO_DELAY_TIMEOUT) {
 			udelay(200);
 			if (timeout == CSMI_FIFO_WAIT_TIMEOUT) {
-				SLIMBUS_CORE_LIMIT_ERR("SLIMbus send message wait TX_PUSH timeout!\n");
+				slimbus_core_limit_err("SLIMbus send message wait TX_PUSH timeout!\n");
 				ret = EIO;
 				goto exit;
 			}
@@ -1045,7 +1046,7 @@ static uint32_t CSMI_FifoReceive(CSMI_Instance *instance, uint8_t *rxFifoData, u
 
 	if (rxFifoFlag & (1 << CSMI_RX_FIFO_FLAG_RX_OVERFLOW)) { //Message Overflow
 		result = 0;
-		SLIMBUS_CORE_LIMIT_ERR("SLIMbus RX_FIFO Message Overflow! \n");
+		slimbus_core_limit_err("SLIMbus RX_FIFO Message Overflow! \n");
 		goto rxFifoEnd;
 	}
 
@@ -1087,18 +1088,18 @@ static uint32_t CSMI_TransmitMessage(CSMI_Instance *instance, CSMI_Message *mess
 
 	fifoSize = CSMI_EncodeMessage(instance, txFifoData, message);
 	if (fifoSize == 0) {
-		SLIMBUS_CORE_LIMIT_ERR("encode message fail\n");
+		slimbus_core_limit_err("encode message fail\n");
 		return EINVAL;
 	}
 
 	if (instance->basicCallbacks.onRawMessageSending != NULL)
 		instance->basicCallbacks.onRawMessageSending((void *) instance, (void *) txFifoData, fifoSize);
 
-	spin_lock_irqsave(&slimbus_spinlock, flag);
+	spin_lock_irqsave(slimbus_drv_get_spinlock(), flag);
 	result = CSMI_FifoTransmit(instance, txFifoData, fifoSize, 1);
-	spin_unlock_irqrestore(&slimbus_spinlock, flag);
+	spin_unlock_irqrestore(slimbus_drv_get_spinlock(), flag);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("fifo transmit fail\n");
+		slimbus_core_limit_err("fifo transmit fail\n");
 		return EIO;
 	}
 
@@ -1116,18 +1117,18 @@ static uint32_t CSMI_TransmitMessage(CSMI_Instance *instance, CSMI_Message *mess
  * @return EINVAL if AssignLogicalAddressHandler is invalid
  */
 static inline uint32_t CSMI_AssignLogicalAddress(CSMI_Instance *instance, CSMI_Message *message) {
-	uint8_t logicalAddress = 0x0;
+	uint8_t logical_addr = 0x0;
 	if (instance->basicCallbacks.onAssignLogicalAddress == NULL) {
-		SLIMBUS_CORE_LIMIT_ERR("instance->basicCallbacks.onAssignLogicalAddress is NULL\n");
+		slimbus_core_limit_err("instance->basicCallbacks.onAssignLogicalAddress is NULL\n");
 		return EINVAL;
 	}
 
-	logicalAddress = instance->basicCallbacks.onAssignLogicalAddress(message->sourceAddress, message->payload[0]);
-	if (logicalAddress > 0xEF) { //Reserved value was used
-		SLIMBUS_CORE_LIMIT_ERR("logical address is invalid: %x\n", logicalAddress);
+	logical_addr = instance->basicCallbacks.onAssignLogicalAddress(message->sourceAddress, message->payload[0]);
+	if (logical_addr > 0xEF) { //Reserved value was used
+		slimbus_core_limit_err("logical addr is invalid: %x\n", logical_addr);
 		return EINVAL;
 	}
-	return CSMI_MsgAssignLogicalAddress((void *) instance, message->sourceAddress, logicalAddress);
+	return CSMI_MsgAssignLogicalAddress((void *) instance, message->sourceAddress, logical_addr);
 }
 
 /**
@@ -1151,7 +1152,7 @@ static inline uint32_t CSMI_CheckInformationElement(CSMI_Instance *instance, CSM
 	uint8_t informationSliceLen;
 
 	if (message->messageCode != CSMI_MESSAGE_CODE_REPORT_INFORMATION) {
-		SLIMBUS_CORE_LIMIT_ERR("message code is invalid: %d\n", message->messageCode);
+		slimbus_core_limit_err("message code is invalid: %d\n", message->messageCode);
 		return EINVAL;
 	}
 
@@ -1168,7 +1169,7 @@ static inline uint32_t CSMI_CheckInformationElement(CSMI_Instance *instance, CSM
 	if (ecAccessByteBased) {
 		ecSliceSize = CSMI_GetMsgPayloadField(ELEMENT_CODE_SLICE_SIZE, elementCode);
 		if (CSMI_SliceSizeToBytes(ecSliceSize) != (message->payloadLength - 2)) {
-			SLIMBUS_CORE_LIMIT_ERR("payload don't match witch slice size: %d, %d\n", CSMI_SliceSizeToBytes(ecSliceSize), (message->payloadLength - 2));
+			slimbus_core_limit_err("payload don't match witch slice size: %d, %d\n", CSMI_SliceSizeToBytes(ecSliceSize), (message->payloadLength - 2));
 			return EINVAL; //Received Slice Size is different than payload
 		}
 	} else {
@@ -1179,7 +1180,7 @@ static inline uint32_t CSMI_CheckInformationElement(CSMI_Instance *instance, CSM
 	informationSliceLen = message->payloadLength - CSMI_ELEMENT_CODE_LENGTH;
 
 	if (informationSliceLen == 0) {
-		SLIMBUS_CORE_LIMIT_ERR("information slice len is zero\n");
+		slimbus_core_limit_err("information slice len is zero\n");
 		return EINVAL;
 	}
 
@@ -1276,7 +1277,7 @@ static inline uint32_t CSMI_CheckInformationElement(CSMI_Instance *instance, CSM
 			break;
 
 		default:
-			SLIMBUS_CORE_LIMIT_ERR("device class is invalide: %d\n", deviceClass);
+			slimbus_core_limit_err("device class is invalide: %d\n", deviceClass);
 			return EINVAL;
 		}
 	} else {
@@ -1368,7 +1369,7 @@ static inline uint32_t CSMI_ProcessReceivedMessage(CSMI_Instance *instance, CSMI
 		break;
 
 	default:
-		SLIMBUS_CORE_LIMIT_ERR("mesage code is invalid: %d\n", message->messageCode);
+		slimbus_core_limit_err("mesage code is invalid: %d\n", message->messageCode);
 		return EINVAL;
 
 	}
@@ -1387,33 +1388,43 @@ static inline uint8_t CSMI_ReceiveMessages(CSMI_Instance *instance) {
 	uint32_t reg = 0;
 	uint8_t errors = 0;
 	CSMI_Message rxMsg;
+	uint8_t count = 0;
 
 	for (;;) {
+		count++;
+		if (count % CSMI_CYCLES_TIME == 0)
+			slimbus_core_limit_err("count is %d, rx pull state is %d\n",
+				count, COMMAND_STATUS__STATE__RX_NOTEMPTY__READ(reg));
 		reg = CSMI_ReadReg(COMMAND_STATUS.STATE);
 		if (COMMAND_STATUS__STATE__RX_PULL__READ(reg))
 			continue;
 
 		if (COMMAND_STATUS__STATE__RX_NOTEMPTY__READ(reg) == 0)
 			return 0;
+		if (count % CSMI_CYCLES_TIME == 0)
+			slimbus_core_limit_err("begin receive data from rx fifo\n");
 
 		fifoSize = CSMI_FifoReceive(instance, rxFifoData, CSMI_RX_FIFO_MSG_MAX_SIZE);
 		if ((fifoSize > 0) && (fifoSize <= CSMI_MESSAGE_MAX_LENGTH)) {
 			if (instance->basicCallbacks.onRawMessageReceived != NULL)
 				instance->basicCallbacks.onRawMessageReceived((void *) instance, (void *) rxFifoData, fifoSize);
 
+			if (count % CSMI_CYCLES_TIME == 0)
+				slimbus_core_limit_err("fifosize is %d\n", fifoSize);
+
 			errors += CSMI_DecodeMessage(instance, rxFifoData, fifoSize, &rxMsg);
 			if (errors)
-				SLIMBUS_CORE_LIMIT_ERR("decode message fail\n");
+				slimbus_core_limit_err("decode message fail\n");
 
 			if (instance->basicCallbacks.onMessageReceived != NULL)
 				instance->basicCallbacks.onMessageReceived((void *) instance, &rxMsg);
 
 			errors += (CSMI_ProcessReceivedMessage(instance, &rxMsg) != 0);
 			if (errors)
-				SLIMBUS_CORE_LIMIT_ERR("process message fail\n");
+				slimbus_core_limit_err("process message fail\n");
 		}
 	}
-	return errors ? EIO : 0;													/* [false alarm]:fortify Îó¾¯  */
+	return errors ? EIO : 0;													/* [false alarm]:fortify */
 }
 
 
@@ -1437,7 +1448,7 @@ static uint32_t CSMI_CfgStrobeCheck(CSMI_Instance *instance) {
 		msleep(1);
 		reg = CSMI_ReadReg(COMMAND_STATUS.COMMAND);
 		if (++timeout_count == 100) {
-			SLIMBUS_CORE_LIMIT_ERR("cfg strobe check timeout\n");
+			slimbus_core_limit_err("cfg strobe check timeout\n");
 			return EIO;
 		}
 	}
@@ -1469,7 +1480,7 @@ static uint32_t CSMI_Probe(const CSMI_Config* config, uint16_t* requiredMemory) 
 
 	uint32_t result = CSMI_ProbeSanity(config, requiredMemory);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1484,32 +1495,32 @@ static uint32_t CSMI_Init(void* pD, const CSMI_Config* config, CSMI_Callbacks* c
 
 	uint32_t result = CSMI_InitSanity(pD, config, callbacks);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	if (callbacks->onDeviceClassRequest == NULL) {
-		SLIMBUS_CORE_LIMIT_ERR("device class request callback is NULL\n");
+		slimbus_core_limit_err("device class request callback is NULL\n");
 		return EINVAL;
 	}
 
 	if ((callbacks->onAssignLogicalAddress == NULL) && (config->enumerateDevices == 1)) {
-		SLIMBUS_CORE_LIMIT_ERR("assign logical address callback is NULL\n");
+		slimbus_core_limit_err("assign logical address callback is NULL\n");
 		return EINVAL;
 	}
 
 	if (config->eaInterfaceId == config->eaGenericId) {
-		SLIMBUS_CORE_LIMIT_ERR("config->eaInterfaceId == config->eaGenericId\n");
+		slimbus_core_limit_err("config->eaInterfaceId == config->eaGenericId\n");
 		return EINVAL;
 	}
 
 	if (config->eaInterfaceId == config->eaFramerId) {
-		SLIMBUS_CORE_LIMIT_ERR("config->eaInterfaceId == config->eaFramerId\n");
+		slimbus_core_limit_err("config->eaInterfaceId == config->eaFramerId\n");
 		return EINVAL;
 	}
 
 	if (config->eaGenericId == config->eaFramerId) {
-		SLIMBUS_CORE_LIMIT_ERR("config->eaGenericId == config->eaFramerId\n");
+		slimbus_core_limit_err("config->eaGenericId == config->eaFramerId\n");
 		return EINVAL;
 	}
 
@@ -1520,7 +1531,7 @@ static uint32_t CSMI_Init(void* pD, const CSMI_Config* config, CSMI_Callbacks* c
 	/* Exit if Manager component is already enabled */
 	reg = CSMI_ReadReg(CONFIGURATION.CONFIG_MODE);
 	if (CONFIGURATION__CONFIG_MODE__ENABLE__READ(reg)) {
-		SLIMBUS_CORE_LIMIT_ERR("operation now in progress\n");
+		slimbus_core_limit_err("operation now in progress\n");
 		return EINPROGRESS;
 	}
 
@@ -1587,7 +1598,7 @@ static uint32_t CSMI_Isr(void* pD) {
 
 	uint32_t result = CSMI_IsrSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1659,7 +1670,7 @@ static uint32_t CSMI_Start(void* pD) {
 
 	uint32_t result = CSMI_StartSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1668,7 +1679,7 @@ static uint32_t CSMI_Start(void* pD) {
 	/* Exit if Manager component is already enabled */
 	reg = CSMI_ReadReg(CONFIGURATION.CONFIG_MODE);
 	if (CONFIGURATION__CONFIG_MODE__ENABLE__READ(reg)) {
-		SLIMBUS_CORE_LIMIT_ERR("operation now in progress\n");
+		slimbus_core_limit_err("operation now in progress\n");
 		return EINPROGRESS;
 	}
 
@@ -1691,7 +1702,7 @@ static uint32_t CSMI_Start(void* pD) {
         msleep(1);
 		reg = CSMI_ReadReg(COMMAND_STATUS.STATE);
     	if (++timeout_count == 100) {
-			SLIMBUS_CORE_LIMIT_ERR("SLIMbus start wait sync timeout!\n");
+			slimbus_core_limit_err("SLIMbus start wait sync timeout!\n");
 			return EIO;
 		}
     }
@@ -1705,14 +1716,14 @@ static uint32_t CSMI_Stop(void* pD) {
 	uint32_t reg;
 	uint32_t result = CSMI_StopSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -1735,7 +1746,7 @@ static uint32_t CSMI_Stop(void* pD) {
 static uint32_t CSMI_Destroy(void* pD) {
 	uint32_t result = CSMI_DestroySanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 	   return result;
 	}
 
@@ -1749,7 +1760,7 @@ static uint32_t CSMI_SetInterrupts(void* pD, uint8_t interruptMask) {
 
 	uint32_t result = CSMI_SetInterruptsSanity(pD, interruptMask);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1775,7 +1786,7 @@ static uint32_t CSMI_GetInterrupts(void* pD, uint8_t* interruptMask) {
 
 	uint32_t result = CSMI_GetInterruptsSanity(pD, interruptMask);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1795,7 +1806,7 @@ static uint32_t CSMI_SetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t
 
 	uint32_t result = CSMI_SetDataPortInterruptsSanity(pD, portNumber, interruptMask);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1856,7 +1867,7 @@ static uint32_t CSMI_GetDataPortInterrupts(void* pD, uint8_t portNumber, uint8_t
 
 	uint32_t result = CSMI_GetDataPortInterruptsSanity(pD, portNumber, interruptMask);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1915,7 +1926,7 @@ static uint32_t CSMI_ClearDataPortFifo(void* pD, uint8_t portNumber) {
 
 	uint32_t result = CSMI_ClearDataPortFifoSanity(pD, portNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1955,7 +1966,7 @@ static uint32_t CSMI_SetPresenceRateGeneration(void* pD, uint8_t portNumber, boo
 
 	uint32_t result = CSMI_SetPresenceRateGenerationSanity(pD, portNumber, enable);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -1995,7 +2006,7 @@ static uint32_t CSMI_GetPresenceRateGeneration(void* pD, uint8_t portNumber, boo
 
 	uint32_t result = CSMI_GetPresenceRateGenerationSanity(pD, portNumber, enable);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2030,7 +2041,7 @@ static uint32_t CSMI_AssignMessageCallbacks(void* pD, CSMI_MessageCallbacks* msg
 
 	uint32_t result = CSMI_AssignMessageCallbacksSanity(pD, msgCallbacks);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2047,7 +2058,7 @@ static uint32_t CSMI_SendRawMessage(void* pD, void* message, uint8_t messageLeng
 
 	uint32_t result = CSMI_SendRawMessageSanity(pD, message, messageLength);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2062,7 +2073,7 @@ static uint32_t CSMI_SendMessage(void* pD, CSMI_Message* message) {
 
 	uint32_t result = CSMI_SendMessageSanity(pD, message);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2071,45 +2082,45 @@ static uint32_t CSMI_SendMessage(void* pD, CSMI_Message* message) {
 	return CSMI_TransmitMessage(instance, message);
 }
 
-static uint32_t CSMI_GetRegisterValue(void* pD, uint16_t regAddress, uint32_t* regContent) {
+static uint32_t CSMI_GetRegisterValue(void* pD, uint16_t reg_addr, uint32_t* regContent) {
 	CSMI_Instance* instance = NULL;
 
-	uint32_t result = CSMI_GetRegisterValueSanity(pD, regAddress, regContent);
+	uint32_t result = CSMI_GetRegisterValueSanity(pD, reg_addr, regContent);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
-	if (regAddress & 0x3) { //Register address must be aligned to 32-bits
-		SLIMBUS_CORE_LIMIT_ERR("reg address is invalid: 0x%x\n", regAddress);
+	if (reg_addr & 0x3) { //Register address must be aligned to 32-bits
+		slimbus_core_limit_err("reg is invalid: 0x%x\n", reg_addr);
 		return EINVAL;
 	}
 
-	*regContent = CPS_UncachedRead32((uint32_t *) instance->registerBase + (regAddress >> 2) );
+	*regContent = CPS_UncachedRead32((uint32_t *) instance->registerBase + (reg_addr >> 2) );
 
 	return 0;
 }
 
 
-static uint32_t CSMI_SetRegisterValue(void* pD, uint16_t regAddress, uint32_t regContent) {
+static uint32_t CSMI_SetRegisterValue(void* pD, uint16_t reg_addr, uint32_t regContent) {
 	CSMI_Instance* instance = NULL;
 
-	uint32_t result = CSMI_SetRegisterValueSanity(pD, regAddress, regContent);
+	uint32_t result = CSMI_SetRegisterValueSanity(pD, reg_addr, regContent);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
-	if (regAddress & 0x3) { //Register address must be aligned to 32-bits
-		SLIMBUS_CORE_LIMIT_ERR("reg address is invalid: 0x%x\n", regAddress);
+	if (reg_addr & 0x3) { //Register address must be aligned to 32-bits
+		slimbus_core_limit_err("reg is invalid: 0x%x\n", reg_addr);
 		return EINVAL;
 	}
 
-	CPS_UncachedWrite32((uint32_t *) instance->registerBase + (regAddress >> 2), regContent);
+	CPS_UncachedWrite32((uint32_t *) instance->registerBase + (reg_addr >> 2), regContent);
 
 	return 0;
 }
@@ -2121,7 +2132,7 @@ static uint32_t CSMI_SetMessageChannelLapse(void* pD, uint8_t mchLapse) {
 
 	uint32_t result = CSMI_SetMessageChannelLapseSanity(pD, mchLapse);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2140,7 +2151,7 @@ static uint32_t CSMI_GetMessageChannelLapse(void* pD, uint8_t* mchLapse) {
 
 	uint32_t result = CSMI_GetMessageChannelLapseSanity(pD, mchLapse);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2158,7 +2169,7 @@ static uint32_t CSMI_GetMessageChannelUsage(void* pD, uint16_t* mchUsage) {
 
 	uint32_t result = CSMI_GetMessageChannelUsageSanity(pD, mchUsage);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2177,7 +2188,7 @@ static uint32_t CSMI_GetMessageChannelCapacity(void* pD, uint16_t* mchCapacity) 
 
 	uint32_t result =CSMI_GetMessageChannelCapacitySanity(pD, mchCapacity);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2196,14 +2207,14 @@ static uint32_t CSMI_SetSnifferMode(void* pD, bool state) {
 
 	uint32_t result = CSMI_SetSnifferModeSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2223,7 +2234,7 @@ static uint32_t CSMI_GetSnifferMode(void* pD, bool* state) {
 
 	uint32_t result = CSMI_GetSnifferModeSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2242,14 +2253,14 @@ static uint32_t CSMI_SetFramerEnabled(void* pD, bool state) {
 
 	uint32_t result = CSMI_SetFramerEnabledSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2269,7 +2280,7 @@ static uint32_t CSMI_GetFramerEnabled(void* pD, bool* state) {
 
 	uint32_t result = CSMI_GetFramerEnabledSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2288,14 +2299,14 @@ static uint32_t CSMI_SetDeviceEnabled(void* pD, bool state) {
 
 	uint32_t result = CSMI_SetDeviceEnabledSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2315,7 +2326,7 @@ static uint32_t CSMI_GetDeviceEnabled(void* pD, bool* state) {
 
 	uint32_t result = CSMI_GetDeviceEnabledSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2334,14 +2345,14 @@ static uint32_t CSMI_SetGoAbsent(void* pD, bool state) {
 
 	uint32_t result = CSMI_SetGoAbsentSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2361,7 +2372,7 @@ static uint32_t CSMI_GetGoAbsent(void* pD, bool* state) {
 
 	uint32_t result = CSMI_GetGoAbsentSanity(pD, state);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2380,7 +2391,7 @@ static uint32_t CSMI_SetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) 
 
 	uint32_t result = CSMI_SetFramerConfigSanity(pD, framerConfig);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2388,14 +2399,14 @@ static uint32_t CSMI_SetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) 
 	     && (framerConfig->quality != CSMI_FQ_LOW_JITTER)
 	     && (framerConfig->quality != CSMI_FQ_PUNCTURED)
 	     && (framerConfig->quality != CSMI_FQ_REGULAR)) {
-		SLIMBUS_CORE_LIMIT_ERR("framer config's quality is invalid: %d\n", framerConfig->quality);
+		slimbus_core_limit_err("framer config's quality is invalid: %d\n", framerConfig->quality);
 		return EINVAL;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2417,7 +2428,7 @@ static uint32_t CSMI_GetFramerConfig(void* pD, CSMI_FramerConfig* framerConfig) 
 
 	uint32_t result = CSMI_GetFramerConfigSanity(pD, framerConfig);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2439,24 +2450,24 @@ static uint32_t CSMI_SetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 
 	uint32_t result = CSMI_SetGenericDeviceConfigSanity(pD, genericDeviceConfig);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	/* Checking input structure parameters */
 	/* Limit maximum values, based on register field length */
 	if (genericDeviceConfig->presenceRatesSupported > 0xFFFFFF) {
-		SLIMBUS_CORE_LIMIT_ERR("device config param is invalid: 0x%x\n", genericDeviceConfig->presenceRatesSupported);
+		slimbus_core_limit_err("device config param is invalid: 0x%x\n", genericDeviceConfig->presenceRatesSupported);
 		return EINVAL;
 	}
 
 	if (genericDeviceConfig->dataPortClockPrescaler > 0xF) {
-		SLIMBUS_CORE_LIMIT_ERR("device config param is invalid: 0x%x\n", genericDeviceConfig->dataPortClockPrescaler);
+		slimbus_core_limit_err("device config param is invalid: 0x%x\n", genericDeviceConfig->dataPortClockPrescaler);
 		return EINVAL;
 	}
 
 	if (genericDeviceConfig->cportClockDivider > 0x7) {
-		SLIMBUS_CORE_LIMIT_ERR("device config param is invalid: 0x%x\n", genericDeviceConfig->cportClockDivider);
+		slimbus_core_limit_err("device config param is invalid: 0x%x\n", genericDeviceConfig->cportClockDivider);
 		return EINVAL;
 	}
 
@@ -2464,14 +2475,14 @@ static uint32_t CSMI_SetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 			&& (genericDeviceConfig->referenceClockSelector != CSMI_RC_CLOCK_GEAR_7)
 			&& (genericDeviceConfig->referenceClockSelector != CSMI_RC_CLOCK_GEAR_8)
 			&& (genericDeviceConfig->referenceClockSelector != CSMI_RC_CLOCK_GEAR_9)) {
-		SLIMBUS_CORE_LIMIT_ERR("device config param is invalid: 0x%x\n", genericDeviceConfig->referenceClockSelector);
+		slimbus_core_limit_err("device config param is invalid: 0x%x\n", genericDeviceConfig->referenceClockSelector);
  		return EINVAL;
 	}
 
 	instance = (CSMI_Instance*) pD;
 
 	if (CSMI_CfgStrobeCheck(instance)) {
-		SLIMBUS_CORE_LIMIT_ERR("strobe check fail\n");
+		slimbus_core_limit_err("strobe check fail\n");
 		return EIO;
 	}
 
@@ -2511,7 +2522,7 @@ static uint32_t CSMI_GetGenericDeviceConfig(void* pD, CSMI_GenericDeviceConfig* 
 
 	uint32_t result = CSMI_GetGenericDeviceConfigSanity(pD, genericDeviceConfig);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2545,7 +2556,7 @@ static uint32_t CSMI_GetDataPortStatus(void* pD, uint8_t portNumber, CSMI_DataPo
 
 	uint32_t result = CSMI_GetDataPortStatusSanity(pD, portNumber, portStatus);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2578,7 +2589,7 @@ static uint32_t CSMI_Unfreeze(void* pD) {
 
 	uint32_t result = CSMI_UnfreezeSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2594,7 +2605,7 @@ static uint32_t CSMI_CancelConfiguration(void* pD) {
 
 	uint32_t result = CSMI_CancelConfigurationSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2611,7 +2622,7 @@ static uint32_t CSMI_GetStatusSynchronization(void* pD, bool* fSync, bool* sfSyn
 
 	uint32_t result = CSMI_GetStatusSynchronizationSanity(pD, fSync, sfSync, mSync, sfbSync, phSync);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2638,7 +2649,7 @@ static uint32_t CSMI_GetStatusDetached(void* pD, bool* detached) {
 
 	uint32_t result = CSMI_GetStatusDetachedSanity(pD, detached);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2657,7 +2668,7 @@ static uint32_t CSMI_GetStatusSlimbus(void* pD, CSMI_SubframeMode* subframeMode,
 
 	uint32_t result = CSMI_GetStatusSlimbusSanity(pD, subframeMode, clockGear, rootFr);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2680,7 +2691,7 @@ static uint32_t CSMI_MsgAssignLogicalAddress(void* pD, uint64_t destinationEa, u
 
 	uint32_t result = CSMI_MsgAssignLogicalAddressSanity(pD, destinationEa, newLa);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2711,7 +2722,7 @@ static uint32_t CSMI_MsgResetDevice(void* pD, uint8_t destinationLa) {
 
 	uint32_t result = CSMI_MsgResetDeviceSanity(pD, destinationLa);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2741,7 +2752,7 @@ static uint32_t CSMI_MsgChangeLogicalAddress(void* pD, uint8_t destinationLa, ui
 
 	uint32_t result = CSMI_MsgChangeLogicalAddressSanity(pD, destinationLa, newLa);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2772,7 +2783,7 @@ static uint32_t CSMI_MsgChangeArbitrationPriority(void* pD, bool broadcast, uint
 
 	uint32_t result = CSMI_MsgChangeArbitrationPrioritySanity(pD, broadcast, destinationLa, newArbitrationPriority);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2808,7 +2819,7 @@ static uint32_t CSMI_MsgRequestSelfAnnouncement(void* pD) {
 
 	uint32_t result = CSMI_MsgRequestSelfAnnouncementSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2838,7 +2849,7 @@ static uint32_t CSMI_MsgConnectSource(void* pD, uint8_t destinationLa, uint8_t p
 
 	uint32_t result = CSMI_MsgConnectSourceSanity(pD, destinationLa, portNumber, channelNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2871,7 +2882,7 @@ static uint32_t CSMI_MsgConnectSink(void* pD, uint8_t destinationLa, uint8_t por
 
 	uint32_t result = CSMI_MsgConnectSinkSanity(pD, destinationLa, portNumber, channelNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2904,7 +2915,7 @@ static uint32_t CSMI_MsgDisconnectPort(void* pD, uint8_t destinationLa, uint8_t 
 
 	uint32_t result = CSMI_MsgDisconnectPortSanity(pD, destinationLa, portNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2935,7 +2946,7 @@ static uint32_t CSMI_MsgChangeContent(void* pD, uint8_t channelNumber, bool freq
 
 	uint32_t result = CSMI_MsgChangeContentSanity(pD, channelNumber, frequencyLockedBit, presenceRate, auxiliaryBitFormat, dataType, channelLink, dataLength);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -2972,7 +2983,7 @@ static uint32_t CSMI_MsgRequestInformation(void* pD, bool broadcast, uint8_t des
 
 	uint32_t result = CSMI_MsgRequestInformationSanity(pD, broadcast, destinationLa, transactionId, elementCode);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3013,12 +3024,12 @@ static uint32_t CSMI_MsgRequestClearInformation(void* pD, bool broadcast, uint8_
 	uint32_t result = CSMI_MsgRequestClearInformationSanity(pD, broadcast, destinationLa, transactionId, elementCode, clearMask, clearMaskSize);
 
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	if ((clearMask == NULL) && (clearMaskSize > 0)) {
-		SLIMBUS_CORE_LIMIT_ERR("input param is invalid\n");
+		slimbus_core_limit_err("input param is invalid\n");
 		return EINVAL;
 	}
 
@@ -3063,12 +3074,12 @@ static uint32_t CSMI_MsgClearInformation(void* pD, bool broadcast, uint8_t desti
 	uint32_t result = CSMI_MsgClearInformationSanity(pD, broadcast, destinationLa, elementCode, clearMask, clearMaskSize);
 
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	if ((clearMask == NULL) && (clearMaskSize > 0)) {
-		SLIMBUS_CORE_LIMIT_ERR("input param is invalid\n");
+		slimbus_core_limit_err("input param is invalid\n");
 		return EINVAL;
 	}
 
@@ -3110,7 +3121,7 @@ static uint32_t CSMI_MsgBeginReconfiguration(void* pD) {
 
 	uint32_t result = CSMI_MsgBeginReconfigurationSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3140,7 +3151,7 @@ static uint32_t CSMI_MsgNextActiveFramer(void* pD, uint8_t incomingFramerLa, uin
 
 	uint32_t result = CSMI_MsgNextActiveFramerSanity(pD, incomingFramerLa, outgoingFramerClockCycles, incomingFramerClockCycles);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3178,7 +3189,7 @@ static uint32_t CSMI_MsgNextSubframeMode(void* pD, CSMI_SubframeMode newSubframe
 
 	uint32_t result = CSMI_MsgNextSubframeModeSanity(pD, newSubframeMode);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3209,7 +3220,7 @@ static uint32_t CSMI_MsgNextClockGear(void* pD, CSMI_ClockGear newClockGear) {
 
 	uint32_t result = CSMI_MsgNextClockGearSanity(pD, newClockGear);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3240,7 +3251,7 @@ static uint32_t CSMI_MsgNextRootFrequency(void* pD, CSMI_RootFrequency newRootFr
 
 	uint32_t result = CSMI_MsgNextRootFrequencySanity(pD, newRootFrequency);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3271,7 +3282,7 @@ static uint32_t CSMI_MsgNextPauseClock(void* pD, CSMI_RestartTime newRestartTime
 
 	uint32_t result = CSMI_MsgNextPauseClockSanity(pD, newRestartTime);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3302,7 +3313,7 @@ static uint32_t CSMI_MsgNextResetBus(void* pD) {
 
 	uint32_t result = CSMI_MsgNextResetBusSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3332,7 +3343,7 @@ static uint32_t CSMI_MsgNextShutdownBus(void* pD) {
 
 	uint32_t result = CSMI_MsgNextShutdownBusSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3362,7 +3373,7 @@ static uint32_t CSMI_MsgNextDefineChannel(void* pD, uint8_t channelNumber, CSMI_
 
 	uint32_t result = CSMI_MsgNextDefineChannelSanity(pD, channelNumber, transportProtocol, segmentDistribution, segmentLength);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3400,7 +3411,7 @@ static uint32_t CSMI_MsgNextDefineContent(void* pD, uint8_t channelNumber, bool 
 
 	uint32_t result = CSMI_MsgNextDefineContentSanity(pD, channelNumber, frequencyLockedBit, presenceRate, auxiliaryBitFormat, dataType, channelLink, dataLength);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3440,7 +3451,7 @@ static uint32_t CSMI_MsgNextActivateChannel(void* pD, uint8_t channelNumber) {
 	uint32_t result = CSMI_MsgNextActivateChannelSanity(pD, channelNumber);
 
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3471,7 +3482,7 @@ static uint32_t CSMI_MsgNextDeactivateChannel(void* pD, uint8_t channelNumber) {
 
 	uint32_t result = CSMI_MsgNextDeactivateChannelSanity(pD, channelNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3502,7 +3513,7 @@ static uint32_t CSMI_MsgNextRemoveChannel(void* pD, uint8_t channelNumber) {
 
 	uint32_t result = CSMI_MsgNextRemoveChannelSanity(pD, channelNumber);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3533,7 +3544,7 @@ static uint32_t CSMI_MsgReconfigureNow(void* pD) {
 
 	uint32_t result = CSMI_MsgReconfigureNowSanity(pD);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3563,7 +3574,7 @@ static uint32_t CSMI_MsgRequestValue(void* pD, bool broadcast, uint8_t destinati
 
 	uint32_t result = CSMI_MsgRequestValueSanity(pD, broadcast, destinationLa, transactionId, elementCode);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
@@ -3604,12 +3615,12 @@ static uint32_t CSMI_MsgRequestChangeValue(void* pD, bool broadcast, uint8_t des
 
 	uint32_t result = CSMI_MsgRequestChangeValueSanity(pD, broadcast, destinationLa, transactionId, elementCode, valueUpdate, valueUpdateSize);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	if ((valueUpdate == NULL) && (valueUpdateSize > 0)) {
-		SLIMBUS_CORE_LIMIT_ERR("input param is invalid\n");
+		slimbus_core_limit_err("input param is invalid\n");
 		return EINVAL;
 	}
 
@@ -3654,12 +3665,12 @@ static uint32_t CSMI_MsgChangeValue(void* pD, bool broadcast, uint8_t destinatio
 
 	uint32_t result = CSMI_MsgChangeValueSanity(pD, broadcast, destinationLa, elementCode, valueUpdate, valueUpdateSize);
 	if (result) {
-		SLIMBUS_CORE_LIMIT_ERR("check sanity fail\n");
+		slimbus_core_limit_err("check sanity fail\n");
 		return result;
 	}
 
 	if ((valueUpdate == NULL) && (valueUpdateSize > 0)) {
-		SLIMBUS_CORE_LIMIT_ERR("input param is invalid\n");
+		slimbus_core_limit_err("input param is invalid\n");
 		return EINVAL;
 	}
 

@@ -4,7 +4,7 @@
  * implement the ioctl for user space to get memory usage information,
  * and also provider control command
  *
- * Copyright (c) 2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,8 +18,8 @@
  */
 
 #include "memcheck_common.h"
+#include "memcheck_interface.h"
 #include <linux/uaccess.h>
-#include <linux/hisi/mem_trace.h>
 #include <chipset_common/hwmemcheck/memcheck.h>
 
 static int get_count(u16 type)
@@ -28,7 +28,7 @@ static int get_count(u16 type)
 	int cnt;
 
 	for (i = 0, cnt = 0; i < NUM_KERN_MAX; i++) {
-		if (TEST_BIT(type, i + IDX_KERN_START))
+		if (TEST_BIT(type, (unsigned int)(i + IDX_KERN_START)))
 			cnt++;
 	}
 	return cnt;

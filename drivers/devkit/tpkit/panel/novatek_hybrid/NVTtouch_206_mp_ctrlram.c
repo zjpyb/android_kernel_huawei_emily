@@ -28,10 +28,10 @@
 
 #include "NVTtouch_207.h"
 
-#include <../../huawei_ts_kit.h>
+#include <huawei_ts_kit.h>
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -304,7 +304,7 @@ typedef enum ctrl_ram_item {
 	CtrlRam_ITEM_LAST
 } nvt_206_ctrl_ram_item_e;
 
-static char mmitest_result[NVT_206_MmiTestResult] = {0};/*store mmi test result*/
+static char mmitest_result[TP_MMI_RESULT_LEN] = {0}; /* store mmi test result */
 
 static void goto_next_line(char **ptr)
 {
@@ -1625,7 +1625,7 @@ static int32_t nvt_206_read_short_txrx(void)
 {
 	int32_t ret = 0;
 	int32_t i2cRet = 0;
-	int32_t i = 0;
+	uint32_t i;
 	int32_t j = 0;
 	int32_t k = 0;
 	uint8_t buf[128] = {0};
@@ -1986,7 +1986,7 @@ static int32_t nvt_206_read_open(void)
 {
 	int32_t ret = 0;
 	int32_t i2c_ret;
-	int32_t i = 0;
+	uint32_t i = 0;
 	int32_t j = 0;
 	int32_t k = 0;
 	uint8_t buf[128]={0};
@@ -3204,7 +3204,8 @@ err_nvt_i2c_read:
 		|| (NVT_206_TestResult_Noise ==-1)
 		|| (NVT_206_TestResult_FW_Diff == -1)
 		|| (NVT_206_TestResult_FWMutual == -1))
-		strncpy(selftest_failed_reason, "-panel_reason", NVT_206_TP_TEST_FAILED_REASON_LEN);
+		strncpy(selftest_failed_reason, "-panel_reason",
+			(NVT_206_TP_TEST_FAILED_REASON_LEN - 1));
 
 	//---String Copy---
 	memset(mmitest_result, 0, sizeof(mmitest_result));

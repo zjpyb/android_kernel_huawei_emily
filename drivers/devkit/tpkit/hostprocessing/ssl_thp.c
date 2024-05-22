@@ -1,3 +1,18 @@
+/*
+ * Huawei Touchscreen Driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -21,42 +36,42 @@
 #endif
 
 #ifndef TRUE
-#define TRUE (1)
+#define TRUE 1
 #endif
 #ifndef FALSE
-#define FALSE (0)
+#define FALSE 0
 #endif
 
 #define SSL_IC_NAME "ssl_thp"
 #define THP_SSL_DEV_NODE_NAME "ssl_thp"
 
-#define MXT680U2_FAMILY_ID            166
-#define MXT680U2_VARIANT_ID           22
+#define MXT680U2_FAMILY_ID 166
+#define MXT680U2_VARIANT_ID 22
 
-#define MXT_WAKEUP_TIME               10
-#define BIT_SHIFT_8                    8
-#define T144_ACTIVE_TIMER_OFFSET       8
-#define T144_ACTIVE_DOZING_READ_LEN    8
+#define MXT_WAKEUP_TIME 10
+#define BIT_SHIFT_8 8
+#define T144_ACTIVE_TIMER_OFFSET 8
+#define T144_ACTIVE_DOZING_READ_LEN 8
 // opcodes
-#define SPI_WRITE_REQ            0x01
-#define SPI_WRITE_OK             0x81
-#define SPI_WRITE_FAIL           0x41
-#define SPI_READ_REQ             0x02
-#define SPI_READ_OK              0x82
-#define SPI_READ_FAIL            0x42
-#define SPI_INVALID_REQ          0x04
-#define SPI_INVALID_CRC          0x08
-#define SPI_APP_HEADER_LEN       6
-#define SPI_BOOTL_HEADER_LEN     2
-#define T117_BYTES_READ_LIMIT    1505 /* 7 x 215 (T117 size) */
-#define WRITE_DUMMY_BYTE         400
-#define READ_DUMMY_BYTE          400
-#define FRAME_READ_DUMMY_BYTE    400
-#define NUMBER_OF_HEADER         2
-#define SPI_APP_DATA_MAX_LEN     64
-#define SPI_APP_BUF_SIZE_WRITE   (SPI_APP_HEADER_LEN + SPI_APP_DATA_MAX_LEN +\
+#define SPI_WRITE_REQ 0x01
+#define SPI_WRITE_OK 0x81
+#define SPI_WRITE_FAIL 0x41
+#define SPI_READ_REQ 0x02
+#define SPI_READ_OK 0x82
+#define SPI_READ_FAIL 0x42
+#define SPI_INVALID_REQ 0x04
+#define SPI_INVALID_CRC  0x08
+#define SPI_APP_HEADER_LEN 6
+#define SPI_BOOTL_HEADER_LEN 2
+#define T117_BYTES_READ_LIMIT 1505 /* 7 x 215 (T117 size) */
+#define WRITE_DUMMY_BYTE 400
+#define READ_DUMMY_BYTE 400
+#define FRAME_READ_DUMMY_BYTE 400
+#define NUMBER_OF_HEADER 2
+#define SPI_APP_DATA_MAX_LEN 64
+#define SPI_APP_BUF_SIZE_WRITE (SPI_APP_HEADER_LEN + SPI_APP_DATA_MAX_LEN +\
 				WRITE_DUMMY_BYTE)
-#define SPI_APP_BUF_SIZE_READ    (NUMBER_OF_HEADER * SPI_APP_HEADER_LEN +\
+#define SPI_APP_BUF_SIZE_READ (NUMBER_OF_HEADER * SPI_APP_HEADER_LEN +\
 				T117_BYTES_READ_LIMIT + FRAME_READ_DUMMY_BYTE)
 /* for tp ic mxt3662 */
 #define MXT3562_FAMILY_ID 166
@@ -66,49 +81,49 @@
 #define WRITE_DUMMY_BYTE_FOR_MXT3662 600
 #define READ_DUMMY_BYTE_FOR_MXT3662 600
 #define BOOTLOADER_READ_LEN_FOR_MXT3662 40
-#define MXT_OBJECT_START         0x07 /* after struct mxt_info */
-#define MXT_INFO_CHECKSUM_SIZE   3    /* after list of struct mxt_object */
-#define GETPDSDATA_COMMAND       0x81
+#define MXT_OBJECT_START 0x07 /* after struct mxt_info */
+#define MXT_INFO_CHECKSUM_SIZE 3    /* after list of struct mxt_object */
+#define GETPDSDATA_COMMAND 0x81
 #define MXT_T6_DIAGNOSTIC_OFFSET 0x05
 #define READ_ID_RETRY_TIMES 3
 
-#define SSL_T117_ADDR            117
-#define SSL_T7_ADDR              7
-#define SSL_T6_ADDR              6
-#define SSL_T37_ADDR             37
-#define SSL_T118_ADDR            118
-#define SSL_T24_ADDR             24
-#define SSL_T144_ADDR            144
-#define SSL_T8_ADDR              8
-#define SSL_T145_ADDR            145
+#define SSL_T117_ADDR 117
+#define SSL_T7_ADDR 7
+#define SSL_T6_ADDR 6
+#define SSL_T37_ADDR 37
+#define SSL_T118_ADDR 118
+#define SSL_T24_ADDR 24
+#define SSL_T144_ADDR 144
+#define SSL_T8_ADDR 8
+#define SSL_T145_ADDR 145
 
-#define THP_BOOTLOADER_SPI_FREQ_HZ      100000U
+#define THP_BOOTLOADER_SPI_FREQ_HZ 100000U
 #define BOOTLOADER_READ_CNT 2
-#define BOOTLOADER_READ_LEN             1
-#define BOOTLOADER_CRC_ERROR_CODE       0x60
-#define BOOTLOADER_WAITING_CMD_MODE_0   0xC0
-#define BOOTLOADER_WAITING_CMD_MODE_1   0xE0
+#define BOOTLOADER_READ_LEN 1
+#define BOOTLOADER_CRC_ERROR_CODE 0x60
+#define BOOTLOADER_WAITING_CMD_MODE_0 0xC0
+#define BOOTLOADER_WAITING_CMD_MODE_1 0xE0
 
-#define PDS_HEADER_OFFSET               4
-#define PROJECTID_ARR_LEN               32
-#define SSL_T7_COMMAMD_LEN              2
-#define T24_GESTURE_ON_MASK             0x03
-#define T117_HEADER_STATUS_OFFSET       0x05
-#define T117_GESTURE_EVENT              0x40
-#define SEND_COMMAND_RETRY              3
+#define PDS_HEADER_OFFSET 4
+#define PROJECTID_ARR_LEN 32
+#define SSL_T7_COMMAMD_LEN 2
+#define T24_GESTURE_ON_MASK 0x03
+#define T117_HEADER_STATUS_OFFSET 0x05
+#define T117_GESTURE_EVENT 0x40
+#define SEND_COMMAND_RETRY 3
 #define SSL_WAIT_FOR_SPI_BUS_RESUMED_DELAY 20
 #define SSL_WAIT_FOR_SPI_BUS_READ_DELAY 5
 
-#define MXT_T145_SCREEN_OFF_CMD         1
-#define SCREEN_OFF_MODE_SCAN_RATE       50
-#define SCREEN_OFF_SCAN_MODE            2
-#define SCREEN_OFF_MCT_SCAN_MODE        3
-#define T8_MEASIDLEDEF_OFFSET           11
-#define MXT_T145_CMD_OFFSET             9
+#define MXT_T145_SCREEN_OFF_CMD 1
+#define SCREEN_OFF_MODE_SCAN_RATE 50
+#define SCREEN_OFF_SCAN_MODE 2
+#define SCREEN_OFF_MCT_SCAN_MODE 3
+#define T8_MEASIDLEDEF_OFFSET 11
+#define MXT_T145_CMD_OFFSET 9
 
-#define MOVE_8BIT                       8
-#define MOVE_16BIT                      16
-#define MOVE_24BIT                      24
+#define MOVE_8BIT 8
+#define MOVE_16BIT 16
+#define MOVE_24BIT 24
 #define SSL_SYNC_DATA_REG_DEFAULT_ADDR 238
 #define CHIP_IDENTIFIED_START_ADDR 0
 #define OVERRIDE_LIMIT_VALUE 0
@@ -149,15 +164,15 @@ static uint16_t t145_address;
 static u8 is_bootloader_mode;
 static unsigned int g_thp_udfp_status;
 
-static int ssl_wakeup_gesture_enable_switch(struct thp_device *tdev,
-				u8 switch_value);
-static void thp_ssl_exit(struct thp_device *tdev);
+static int touch_driver_wakeup_gesture_en_switch(
+	struct thp_device *tdev, u8 switch_value);
+static void touch_driver_exit(struct thp_device *tdev);
 
 static u8 get_crc8_iter(u8 crc, u8 data)
 {
 	static const u8 crc_inter_check = 0x8c;
 	u8 index = 8;
-	u8 fb = 0;
+	u8 fb;
 
 	do {
 		fb = (crc ^ data) & 0x01;
@@ -175,7 +190,7 @@ static u8 get_header_crc(u8 *p_msg)
 	int i = 0;
 
 	if (p_msg == NULL) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return -EINVAL;
 	}
 	for (; i < (SPI_APP_HEADER_LEN - 1); i++)
@@ -185,19 +200,21 @@ static u8 get_header_crc(u8 *p_msg)
 }
 
 static void spi_prepare_header(u8 *header, u8 opcode,
-		u16 start_register, u16 count)
+	u16 start_register, u16 count)
 {
+	int index = 0;
+
 	if (header == NULL) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return;
 	}
 
-	header[0] = opcode;
-	header[1] = start_register & 0xff;
-	header[2] = start_register >> MOVE_8BIT;
-	header[3] = count & 0xff;
-	header[4] = count >> MOVE_8BIT;
-	header[5] = get_header_crc(header);
+	header[index++] = opcode;
+	header[index++] = start_register & 0xff;
+	header[index++] = start_register >> MOVE_8BIT;
+	header[index++] = count & 0xff;
+	header[index++] = count >> MOVE_8BIT;
+	header[index++] = get_header_crc(header);
 }
 
 /*
@@ -221,20 +238,20 @@ static int bootloader_one_byte_transfer(
 	int rc;
 	int i;
 
-	THP_LOG_INFO("%s call\n", __func__);
+	thp_log_info("%s call\n", __func__);
 	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev) ||
 		(!tx_buf) || (!rx_buf) || (!buf_len)) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return -EINVAL;
 	}
 	sdev = tdev->thp_core->sdev;
 	if (tdev->thp_core->suspended) {
-		THP_LOG_ERR("%s: suspended\n", __func__);
+		thp_log_err("%s: suspended\n", __func__);
 		return 0;
 	}
 	xfer = kzalloc(buf_len * sizeof(*xfer), GFP_KERNEL);
 	if (xfer == NULL) {
-		THP_LOG_ERR("%s: kzalloc failed\n", __func__);
+		thp_log_err("%s: kzalloc failed\n", __func__);
 		return -EIO;
 	}
 	spi_message_init(&msg);
@@ -248,7 +265,7 @@ static int bootloader_one_byte_transfer(
 	}
 	rc = thp_bus_lock();
 	if (rc < 0) {
-		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		thp_log_err("%s:get lock failed:%d\n", __func__, rc);
 		kfree(xfer);
 		return rc;
 	}
@@ -258,7 +275,7 @@ static int bootloader_one_byte_transfer(
 	return rc;
 }
 
-static int mxt_bootloader_write(struct thp_device *tdev,
+static int touch_driver_bootloader_write(struct thp_device *tdev,
 	struct spi_device *client, unsigned char const *buf, int count)
 {
 	unsigned char op_header[] = { 0U, 0U };
@@ -269,7 +286,7 @@ static int mxt_bootloader_write(struct thp_device *tdev,
 	if ((tdev == NULL) || (client == NULL) || (buf == NULL) ||
 		(tdev->tx_buff == NULL) || (tdev->rx_buff == NULL) ||
 		(count == 0)) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return -EINVAL;
 	}
 	spi_message_init(&spimsg);
@@ -283,19 +300,19 @@ static int mxt_bootloader_write(struct thp_device *tdev,
 	spi_message_add_tail(&spitr, &spimsg);
 	ret_val = thp_bus_lock();
 	if (ret_val) {
-		THP_LOG_ERR("%s: get lock failed\n", __func__);
+		thp_log_err("%s: get lock failed\n", __func__);
 		return -EINVAL;
 	}
 	ret_val = spi_sync(client, &spimsg);
 	thp_bus_unlock();
 	if (ret_val < 0)
-		THP_LOG_ERR("%s:Error reading from spi %d\n",
+		thp_log_err("%s:Error reading from spi %d\n",
 			__func__, ret_val);
 	return ret_val;
 }
 
-static int mxt_bootloader_read(struct thp_device *tdev,
-		struct spi_device *client, unsigned char *buf, int count)
+static int touch_driver_bootloader_read(struct thp_device *tdev,
+	struct spi_device *client, unsigned char *buf, int count)
 {
 	/* Require SPI LSB 0x01 for read op */
 	static const char op_header[] = { 0x01, 0x00 };
@@ -305,7 +322,7 @@ static int mxt_bootloader_read(struct thp_device *tdev,
 
 	if ((tdev == NULL) || (client == NULL) || (buf == NULL) ||
 		(tdev->tx_buff == NULL) || (tdev->rx_buff == NULL)) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return -EINVAL;
 	}
 	spi_message_init(&spi_msg);
@@ -318,36 +335,35 @@ static int mxt_bootloader_read(struct thp_device *tdev,
 	spi_message_add_tail(&transfer, &spi_msg);
 	ret_val = thp_bus_lock();
 	if (ret_val) {
-		THP_LOG_ERR("%s: get lock failed\n", __func__);
+		thp_log_err("%s: get lock failed\n", __func__);
 		return -EINVAL;
 	}
 	ret_val = spi_sync(client, &spi_msg);
 	thp_bus_unlock();
 	if (ret_val < 0) {
-		THP_LOG_ERR("%s: Error reading from spi ret = %d\n",
+		thp_log_err("%s: Error reading from spi ret = %d\n",
 			__func__, ret_val);
 		return ret_val;
 	}
 	memcpy(buf, tdev->rx_buff + sizeof(op_header), count);
 	return ret_val;
-
 }
 
-static int mxt_wait_for_chg_is_low(struct thp_device *tdev)
+static int touch_driver_wait_for_chg_is_low(struct thp_device *tdev)
 {
 	int ret_val;
 	int count_timeout = 100; // 100 msec
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	while ((gpio_get_value(tdev->gpios->irq_gpio) != 0) &&
 		(count_timeout > 0)) {
 		count_timeout--;
-		mdelay(1); // 1 msec
+		mdelay(1); /* 1 msec */
 	}
-	ret_val = count_timeout > 0 ? 0 : -1;
+	ret_val = (count_timeout > 0) ? 0 : -1;
 	return ret_val;
 }
 
@@ -356,7 +372,7 @@ static int mxt_wait_for_chg_is_low(struct thp_device *tdev)
 #define PDS_DELIMITER_BYTE_3 0xAD
 #define PDS_DELIMITER_BYTE_4 0xDA
 #define BOOTLOADER_STATUS_BYTE_LEN 8
-static int mxt_check_bootloader_status(struct thp_device *tdev,
+static int touch_driver_check_bootloader_status(struct thp_device *tdev,
 	u8 const *status_byte, int status_byte_size)
 {
 	int i;
@@ -367,7 +383,7 @@ static int mxt_check_bootloader_status(struct thp_device *tdev,
 		return -EINVAL;
 	/* 0x60: CRC error  0xE0: waiting cmd mode */
 	if ((status_byte[0] == 0xE0) || (status_byte[0] == 0x60)) {
-		THP_LOG_INFO("bootloader mode found status byte is 0x%x\n",
+		thp_log_info("bootloader mode found status byte is 0x%x\n",
 			status_byte[0]);
 		for (i = 0; i < check_head_offset; i++) {
 			/* 1~4:project id delimiter offset */
@@ -378,8 +394,9 @@ static int mxt_check_bootloader_status(struct thp_device *tdev,
 				memcpy(&tdev->thp_core->project_id,
 					(status_byte + i + 4),
 					THP_PROJECT_ID_LEN);
-				tdev->thp_core->project_id[THP_PROJECT_ID_LEN] = '\0';
-				THP_LOG_INFO("projectid %s\n",
+				tdev->thp_core->project_id[THP_PROJECT_ID_LEN] =
+					'\0';
+				thp_log_info("projectid %s\n",
 					tdev->thp_core->project_id);
 				break;
 			}
@@ -389,7 +406,7 @@ static int mxt_check_bootloader_status(struct thp_device *tdev,
 	return -EINVAL;
 }
 
-static int mxt_check_is_bootloader_for_mxt3662(
+static int touch_driver_check_is_bootloader_for_3662(
 	struct thp_device *tdev)
 {
 	u8 status_byte[BOOTLOADER_READ_LEN_FOR_MXT3662] = {0};
@@ -400,24 +417,24 @@ static int mxt_check_is_bootloader_for_mxt3662(
 	/* option header command ,0x01 0x00 */
 	static const char op_header[] = { 0x01, 0x00 };
 
-	THP_LOG_INFO("%s:max thp spi clock= %d\n", __func__, max_thp_spi_clock);
+	thp_log_info("%s:max thp spi clock= %d\n", __func__, max_thp_spi_clock);
 	tdev->thp_core->sdev->max_speed_hz = THP_BOOTLOADER_SPI_FREQ_HZ;
-	THP_LOG_INFO("%s:set max thp spi clock= %d\n",
+	thp_log_info("%s:set max thp spi clock= %d\n",
 		__func__, tdev->thp_core->sdev->max_speed_hz);
 	do {
-		THP_LOG_INFO("%s:call bootloader_one_byte_transfer\n",
+		thp_log_info("%s:call bootloader_one_byte_transfer\n",
 			__func__);
 		memcpy(tdev->tx_buff, op_header, sizeof(op_header));
 		ret = bootloader_one_byte_transfer(tdev, tdev->tx_buff,
 			tdev->rx_buff, BOOTLOADER_READ_LEN_FOR_MXT3662);
 		if (ret)
-			THP_LOG_ERR("%s: transfer failed\n", __func__);
+			thp_log_err("%s: transfer failed\n", __func__);
 		memcpy(status_byte, tdev->rx_buff,
 			BOOTLOADER_READ_LEN_FOR_MXT3662);
-		THP_LOG_INFO("%s:status_byte %*ph\n", __func__,
+		thp_log_info("%s:status_byte %*ph\n", __func__,
 			BOOTLOADER_READ_LEN_FOR_MXT3662,
 			status_byte);
-		ret = mxt_check_bootloader_status(tdev, status_byte,
+		ret = touch_driver_check_bootloader_status(tdev, status_byte,
 			BOOTLOADER_READ_LEN_FOR_MXT3662);
 		if (ret == 0) {
 			/* it is bootloader mode ,return 1 */
@@ -426,11 +443,11 @@ static int mxt_check_is_bootloader_for_mxt3662(
 		}
 	} while (bootloader_read_cnt-- > 0);
 	tdev->thp_core->sdev->max_speed_hz = max_thp_spi_clock;
-	THP_LOG_INFO("%s:call end ret_value = %d\n", __func__, ret_value);
+	thp_log_info("%s:call end ret_value = %d\n", __func__, ret_value);
 	return ret_value;
 }
 
-static int mxt_check_is_bootloader(struct thp_device *tdev)
+static int touch_driver_check_is_bootloader(struct thp_device *tdev)
 {
 	u8 status_byte = 0;
 	int ret_value = 0;
@@ -441,35 +458,39 @@ static int mxt_check_is_bootloader(struct thp_device *tdev)
 
 	if (tdev == NULL || tdev->thp_core == NULL ||
 		(tdev->thp_core->sdev == NULL)) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
 	if (cd->support_vendor_ic_type == MXT3662)
-		return mxt_check_is_bootloader_for_mxt3662(tdev);
+		return touch_driver_check_is_bootloader_for_3662(tdev);
 
 	max_thp_spi_clock = tdev->thp_core->sdev->max_speed_hz;
-	THP_LOG_INFO("max thp spi clock= %d\n", max_thp_spi_clock);
+	thp_log_info("max thp spi clock= %d\n", max_thp_spi_clock);
 	tdev->thp_core->sdev->max_speed_hz = THP_BOOTLOADER_SPI_FREQ_HZ;
-	THP_LOG_INFO("set max thp spi clock= %d\n",
+	thp_log_info("set max thp spi clock= %d\n",
 		tdev->thp_core->sdev->max_speed_hz);
 
 	do {
-		if (mxt_wait_for_chg_is_low(tdev) < 0) {
-			THP_LOG_ERR("%s:CHG doesn't change to LOW\n", __func__);
+		if (touch_driver_wait_for_chg_is_low(tdev) < 0) {
+			thp_log_err("%s:CHG doesn't change to LOW\n", __func__);
 		} else {
-			ret = mxt_bootloader_read(tdev, tdev->thp_core->sdev,
+			ret = touch_driver_bootloader_read(tdev,
+				tdev->thp_core->sdev,
 				&status_byte, BOOTLOADER_READ_LEN);
 			if (ret)
-				THP_LOG_ERR("%s: mxt_bootloader_read failed\n",
+				thp_log_err("%s: bootloader_read failed\n",
 					__func__);
-			THP_LOG_INFO("the bootloader status byte is %d\n",
+			thp_log_info("the bootloader status byte is %d\n",
 				status_byte);
 			if ((status_byte == BOOTLOADER_CRC_ERROR_CODE) ||
-				(status_byte == BOOTLOADER_WAITING_CMD_MODE_0) ||
-				(status_byte == BOOTLOADER_WAITING_CMD_MODE_1)) {
+				(status_byte ==
+					BOOTLOADER_WAITING_CMD_MODE_0) ||
+				(status_byte ==
+					BOOTLOADER_WAITING_CMD_MODE_1)) {
 				/* 0x60: CRC error  0xE0: waiting cmd mode */
-				THP_LOG_INFO("bootloader mode found -status is 0x%x\n",
+				thp_log_info(
+					"bootloader mode found -status is 0x%x\n",
 					status_byte);
 				ret_value = 1;
 				break;
@@ -480,8 +501,8 @@ static int mxt_check_is_bootloader(struct thp_device *tdev)
 	return ret_value;
 }
 
-static int __mxt_read_reg(struct thp_device *tdev,
-		struct spi_device *client, u16 start_register, u16 len, u8 *val)
+static int touch_driver_read_reg(struct thp_device *tdev,
+	struct spi_device *client, u16 start_register, u16 len, u8 *val)
 {
 	u8 attempt = 0;
 	int ret_val;
@@ -497,7 +518,7 @@ static int __mxt_read_reg(struct thp_device *tdev,
 	if ((tdev == NULL) || (client == NULL) || (val == NULL) ||
 		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL) ||
 		(tdev->thp_core == NULL)) {
-		THP_LOG_ERR("%s: tdev or client or val null\n", __func__);
+		thp_log_err("%s: tdev or client or val null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
@@ -516,8 +537,9 @@ static int __mxt_read_reg(struct thp_device *tdev,
 	do {
 		attempt++;
 		if (attempt > 1) {
+			/* 5 is spi write max Retries */
 			if (attempt > 5) {
-				THP_LOG_ERR("%s:Too many Retries\n", __func__);
+				thp_log_err("%s:Too many Retries\n", __func__);
 				return -EIO;
 			}
 			if (len < T117_BYTES_READ_LIMIT)
@@ -540,7 +562,7 @@ static int __mxt_read_reg(struct thp_device *tdev,
 		spi_message_add_tail(&transfer, &spi_msg);
 		ret_val = spi_sync(client, &spi_msg);
 		if (ret_val < 0) {
-			THP_LOG_ERR("%s: Error reading from spi ret = %d\n",
+			thp_log_err("%s: Error reading from spi ret = %d\n",
 				__func__, ret_val);
 			return ret_val;
 		}
@@ -548,13 +570,14 @@ static int __mxt_read_reg(struct thp_device *tdev,
 			if (rx_buf[SPI_APP_HEADER_LEN + i] == SPI_READ_OK) {
 				dummy_offset = i + SPI_APP_HEADER_LEN;
 				if (dummy_offset > READ_DUMMY_BYTE / 2)
-					THP_LOG_INFO("Found read dummy offset %d\n",
+					thp_log_info(
+						"Found read dummy offset %d\n",
 						dummy_offset);
 				break;
 			}
 		}
 		if (dummy_offset == 0) {
-			THP_LOG_ERR("cannot find dummy byte offset %u\n",
+			thp_log_err("cannot find dummy byte offset %u\n",
 				start_register);
 			if (len == T117_BYTES_READ_LIMIT)
 				return -EINVAL;
@@ -566,7 +589,7 @@ static int __mxt_read_reg(struct thp_device *tdev,
 			 */
 			if ((tx_buf[1] != rx_buf[1 + dummy_offset]) ||
 				(tx_buf[2] != rx_buf[2 + dummy_offset])) {
-				THP_LOG_ERR("%s: Unexpected offset %u != %u\n",
+				thp_log_err("%s: Unexpected offset %u != %u\n",
 					__func__,
 					(rx_buf[1 + dummy_offset] |
 					(rx_buf[2 + dummy_offset] << 8)),
@@ -577,10 +600,12 @@ static int __mxt_read_reg(struct thp_device *tdev,
 				else   /* T117 should not retry */
 					return -EINVAL;
 			} else if ((tx_buf[3] != rx_buf[3 + dummy_offset]) ||
-					(tx_buf[4] != rx_buf[4 + dummy_offset])) {
-				THP_LOG_ERR("%s: Unexpected count %d != %d reading from spi\n",
-					__func__,
-					rx_buf[3 + dummy_offset] | (rx_buf[4 + dummy_offset] << 8), len);
+					(tx_buf[4] != rx_buf[4 +
+					dummy_offset])) {
+				thp_log_err(
+					"%s: Unexpected count %d != %d reading from spi\n",
+					__func__, rx_buf[3 + dummy_offset] |
+					(rx_buf[4 + dummy_offset] << 8), len);
 				/* normal register read retry */
 				if (len < T117_BYTES_READ_LIMIT)
 					dummy_offset = 0;
@@ -595,12 +620,12 @@ static int __mxt_read_reg(struct thp_device *tdev,
 	return 0;
 }
 
-static int __mxt_write_reg(struct thp_device *tdev,
-		struct spi_device *client, u16 start_register,
-		u16 len, const u8 *val)
+static int touch_driver_write_reg(struct thp_device *tdev,
+	struct spi_device *client, u16 start_register,
+	u16 len, const u8 *val)
 {
 	int i;
-	int ret_val = -EINVAL;
+	int ret_val;
 	int attempt = 0;
 	struct spi_message  spi_msg;
 	struct spi_transfer transfer;
@@ -614,7 +639,7 @@ static int __mxt_write_reg(struct thp_device *tdev,
 	if ((tdev == NULL) || (client == NULL) || (val == NULL) ||
 		(tdev->rx_buff == NULL) || (tdev->tx_buff == NULL) ||
 		(tdev->thp_core == NULL)) {
-		THP_LOG_ERR("%s:point is  null\n", __func__);
+		thp_log_err("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
@@ -627,11 +652,12 @@ static int __mxt_write_reg(struct thp_device *tdev,
 	do {
 		attempt++;
 		if (attempt > 1) {
+			/* 5 is spi write max Retries */
 			if (attempt > 5) {
-				THP_LOG_ERR("Too many spi write Retries\n");
+				thp_log_err("Too many spi write Retries\n");
 				return -EIO;
 			}
-			THP_LOG_INFO("%s: retry %d after write fail\n",
+			thp_log_info("%s: retry %d after write fail\n",
 				__func__, attempt - 1);
 			mdelay(MXT_WAKEUP_TIME);
 		}
@@ -651,7 +677,7 @@ static int __mxt_write_reg(struct thp_device *tdev,
 		spi_message_add_tail(&transfer, &spi_msg);
 		ret_val = spi_sync(client, &spi_msg);
 		if (ret_val < 0) {
-			THP_LOG_ERR("%s:Error writing to spi\n", __func__);
+			thp_log_err("%s:Error writing to spi\n", __func__);
 			continue;
 		}
 
@@ -659,7 +685,8 @@ static int __mxt_write_reg(struct thp_device *tdev,
 			if (rx_buf[SPI_APP_HEADER_LEN + i] == SPI_WRITE_OK) {
 				dummy_offset = i + SPI_APP_HEADER_LEN;
 				if (dummy_offset > WRITE_DUMMY_BYTE / 2)
-					THP_LOG_INFO("Found big write dummy offset %d\n",
+					thp_log_info(
+						"Found big write dummy offset %d\n",
 						dummy_offset);
 				break;
 			}
@@ -672,21 +699,24 @@ static int __mxt_write_reg(struct thp_device *tdev,
 			// tx[4] or rx[4] :MSB of len
 			if ((tx_buf[1] != rx_buf[1 + dummy_offset]) ||
 				(tx_buf[2] != rx_buf[2 + dummy_offset])) {
-				THP_LOG_ERR("Unexpected register %u != %u\n",
+				thp_log_err(
+					"Unexpected register %u != %u\n",
 					(rx_buf[1 + dummy_offset] |
-					(rx_buf[2 + dummy_offset] << MOVE_8BIT)),
-					start_register);
+					(rx_buf[2 + dummy_offset] <<
+					MOVE_8BIT)), start_register);
 				dummy_offset = 0;
 			} else if ((tx_buf[3] != rx_buf[3 + dummy_offset]) ||
-					(tx_buf[4] != rx_buf[4 + dummy_offset])) {
-				THP_LOG_ERR("Unexpected count %d != %d reading from spi\n",
-						(rx_buf[3 + dummy_offset] |
-						(rx_buf[4 + dummy_offset] << MOVE_8BIT)),
-						len);
+					(tx_buf[4] != rx_buf[4 +
+					dummy_offset])) {
+				thp_log_err(
+					"Unexpected count %d != %d reading from spi\n",
+					(rx_buf[3 + dummy_offset] |
+					(rx_buf[4 + dummy_offset] <<
+					MOVE_8BIT)), len);
 				dummy_offset = 0;
 			}
 		} else {
-			THP_LOG_ERR("%s: Cannot found write dummy offset %u\n",
+			thp_log_err("%s: Cannot found write dummy offset %u\n",
 				__func__, start_register);
 		}
 	} while ((get_header_crc(rx_buf + dummy_offset) !=
@@ -695,21 +725,21 @@ static int __mxt_write_reg(struct thp_device *tdev,
 	return 0;
 }
 
-static int mxt_read_blks(struct thp_device *tdev,
-		struct spi_device *client, u16 start, u16 count,
-		u8 *buf, u16 override_limit)
+static int touch_driver_read_blks(struct thp_device *tdev,
+	struct spi_device *client, u16 start, u16 count,
+	u8 *buf, u16 override_limit)
 {
 	u16 offset = 0;
 	int ret_val;
 	u16 size;
 
 	if ((tdev == NULL) || (client == NULL) || (buf == NULL)) {
-		THP_LOG_ERR("%s:point is  null\n", __func__);
+		thp_log_err("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
 	ret_val = thp_bus_lock();
 	if (ret_val < 0) {
-		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		thp_log_err("%s:get lock failed\n", __func__);
 		return -EINVAL;
 	}
 	while (offset < count) {
@@ -717,7 +747,7 @@ static int mxt_read_blks(struct thp_device *tdev,
 			size = min(SPI_APP_DATA_MAX_LEN, count - offset);
 		else
 			size = min(override_limit, (u16)(count - offset));
-		ret_val = __mxt_read_reg(tdev, client, (start + offset),
+		ret_val = touch_driver_read_reg(tdev, client, (start + offset),
 			size, (buf + offset));
 		if (ret_val)
 			break;
@@ -727,28 +757,27 @@ static int mxt_read_blks(struct thp_device *tdev,
 	return ret_val;
 }
 
-static int mxt_write_blks(struct thp_device *tdev,
-		struct spi_device *client,
-		u16 start, u16 count, u8 *buf)
+static int touch_driver_write_blks(struct thp_device *tdev,
+	struct spi_device *client, u16 start, u16 count, u8 *buf)
 {
 	u16 offset = 0;
 	int ret_val;
 	u16 size;
 
 	if ((tdev == NULL) || (client == NULL) || (buf == NULL)) {
-		THP_LOG_ERR("%s:point is  null\n", __func__);
+		thp_log_err("%s:point is  null\n", __func__);
 		return -EINVAL;
 	}
 	ret_val = thp_bus_lock();
 	if (ret_val < 0) {
-		THP_LOG_ERR("%s:get lock failed\n", __func__);
+		thp_log_err("%s:get lock failed\n", __func__);
 		return -EINVAL;
 	}
 	while (offset < count) {
 		size = min(SPI_APP_DATA_MAX_LEN, count - offset);
 
-		ret_val = __mxt_write_reg(tdev, client, start + offset, size,
-			buf + offset);
+		ret_val = touch_driver_write_reg(tdev, client,
+			start + offset, size, buf + offset);
 		if (ret_val)
 			break;
 		offset += size;
@@ -757,42 +786,42 @@ static int mxt_write_blks(struct thp_device *tdev,
 	return ret_val;
 }
 
-static int thp_ssl_init(struct thp_device *tdev)
+static int touch_driver_init(struct thp_device *tdev)
 {
 	int rc;
 	struct thp_core_data *cd = NULL;
 	struct device_node *ssl_node = NULL;
 
-	THP_LOG_INFO("%s: called\n", __func__);
+	thp_log_info("%s: called\n", __func__);
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
 	ssl_node = of_get_child_by_name(cd->thp_node, THP_SSL_DEV_NODE_NAME);
 	if (ssl_node == NULL) {
-		THP_LOG_INFO("%s: syna dev not config in dts\n", __func__);
+		thp_log_info("%s: syna dev not config in dts\n", __func__);
 		return -ENODEV;
 	}
 
-	THP_LOG_INFO("%s >>>\n", __func__);
+	thp_log_info("%s >>>\n", __func__);
 
 	rc = thp_parse_spi_config(ssl_node, cd);
 	if (rc)
-		THP_LOG_ERR("%s: spi config parse fail\n", __func__);
+		thp_log_err("%s: spi config parse fail\n", __func__);
 
 	rc = thp_parse_timing_config(ssl_node, &tdev->timing_config);
 	if (rc)
-		THP_LOG_ERR("%s: timing config parse fail\n", __func__);
+		thp_log_err("%s: timing config parse fail\n", __func__);
 
 	rc = thp_parse_feature_config(ssl_node, cd);
 	if (rc)
-		THP_LOG_ERR("%s: feature_config fail\n", __func__);
+		thp_log_err("%s: feature_config fail\n", __func__);
 
 	rc = thp_parse_trigger_config(ssl_node, cd);
 	if (rc)
-		THP_LOG_ERR("%s: trigger_config fail\n", __func__);
+		thp_log_err("%s: trigger_config fail\n", __func__);
 	if (cd->support_gesture_mode) {
 		cd->easy_wakeup_info.sleep_mode = TS_POWER_OFF_MODE;
 		cd->easy_wakeup_info.easy_wakeup_gesture = false;
@@ -801,8 +830,8 @@ static int thp_ssl_init(struct thp_device *tdev)
 	return 0;
 }
 
-static int thp_ssl_get_project_id(struct thp_device *tdev, char *buf,
-		unsigned int len)
+static int touch_driver_get_project_id(struct thp_device *tdev, char *buf,
+	unsigned int len)
 {
 	int ret = -EINVAL;
 	int i;
@@ -815,7 +844,7 @@ static int thp_ssl_get_project_id(struct thp_device *tdev, char *buf,
 	memset(buff, 0, sizeof(buff));
 
 	if ((tdev == NULL) || (buf == NULL) || (tdev->thp_core == NULL)) {
-		THP_LOG_ERR("%s:tdev or buf is  null\n", __func__);
+		thp_log_err("%s:tdev or buf is  null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
@@ -827,51 +856,51 @@ static int thp_ssl_get_project_id(struct thp_device *tdev, char *buf,
 			project_id = cd->project_id_dummy;
 			memcpy(buf, project_id, len);
 		}
-		THP_LOG_INFO("The project id is set to %s in bootloader mode\n",
+		thp_log_info("The project id is set to %s in bootloader mode\n",
 			buf);
 		return 0;
 	}
 
 	if ((t37_address == 0) || (t6_address == 0) ||
 		(len > (sizeof(buff) - PDS_HEADER_OFFSET - 1))) {
-		THP_LOG_ERR("%s: condition check fail, read len = %u\n",
+		thp_log_err("%s: condition check fail, read len = %u\n",
 			__func__, len);
 		return ret;
 	}
 	do {
-		ret = mxt_write_blks(tdev, tdev->thp_core->sdev,
+		ret = touch_driver_write_blks(tdev, tdev->thp_core->sdev,
 			t6_address + MXT_T6_DIAGNOSTIC_OFFSET, 1, &write_value);
 		if (ret != 0)
-			THP_LOG_ERR("Failed to send T6 diagnositic command\n");
+			thp_log_err("Failed to send T6 diagnositic command\n");
 		mdelay(3 + READ_ID_RETRY_TIMES - retry);
 
-		ret = mxt_read_blks(tdev, tdev->thp_core->sdev, t37_address,
-			len + PDS_HEADER_OFFSET, buff, 0);
+		ret = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+			t37_address, len + PDS_HEADER_OFFSET, buff, 0);
 		for (i = 0; i < len; i++)
-			THP_LOG_INFO(" [%2x] ", buff[i]);
+			thp_log_info(" [%2x] ", buff[i]);
 
 		if ((ret != 0) || (buff[0] != 0x81) || (buff[1] != 0) ||
 			(buff[2] != 0x24) || (buff[PDS_HEADER_OFFSET] == 0)) {
-			THP_LOG_ERR("Failed to read T37 data for project ID\n");
+			thp_log_err("Failed to read T37 data for project ID\n");
 		} else {
-			THP_LOG_INFO("read T37 data for project ID\n");
+			thp_log_info("read T37 data for project ID\n");
 			break;
 		}
 	} while (retry-- > 0);
 
 	if (retry < 0) {
-		THP_LOG_ERR("read T37 data for projecd ID timeout\n");
+		thp_log_err("read T37 data for projecd ID timeout\n");
 		return -1;
 	}
 	memcpy(buf, buff + PDS_HEADER_OFFSET, len);
-	THP_LOG_INFO("the project id is %s\n", buff + PDS_HEADER_OFFSET);
+	thp_log_info("the project id is %s\n", buff + PDS_HEADER_OFFSET);
 	return 0;
 }
 
-static void thp_ssl_update_addr(struct mxt_object *object)
+static void touch_driver_update_addr(struct mxt_object *object)
 {
 	if (object == NULL) {
-		THP_LOG_ERR("[%s] object is  NULL\n", __func__);
+		thp_log_err("[%s] object is  NULL\n", __func__);
 		return;
 	}
 	switch (object->type) {
@@ -903,12 +932,12 @@ static void thp_ssl_update_addr(struct mxt_object *object)
 		t144_address = object->start_address;
 		break;
 	default:
-		THP_LOG_DEBUG("%s: unused reg address\n", __func__);
+		thp_log_debug("%s: unused reg address\n", __func__);
 		break;
 	}
 }
 
-static int thp_ssl_update_obj_addr(struct thp_device *tdev)
+static int touch_driver_update_obj_addr(struct thp_device *tdev)
 {
 	int ret_val;
 	int i;
@@ -918,35 +947,36 @@ static int thp_ssl_update_obj_addr(struct thp_device *tdev)
 	struct mxt_object *object_table = NULL;
 	struct mxt_object *object = NULL;
 
-	THP_LOG_INFO("%s: called\n", __func__);
+	memset(&mxtinfo, 0, sizeof(mxtinfo));
+
+	thp_log_info("%s: called\n", __func__);
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 
 	curr_size = MXT_OBJECT_START;
 
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 		CHIP_IDENTIFIED_START_ADDR, curr_size,
 		(u8 *)&mxtinfo, OVERRIDE_LIMIT_VALUE);
 	if (ret_val) {
-		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
+		thp_log_err("touch_driver_read_blks--info block read error\n");
 		return -EINVAL;
 	}
 
 	curr_size += mxtinfo.object_num * sizeof(struct mxt_object) +
 		MXT_INFO_CHECKSUM_SIZE;
-	buff = (u8 *)kzalloc(curr_size, GFP_KERNEL);
+	buff = kzalloc(curr_size, GFP_KERNEL);
 	if (buff == NULL) {
-		THP_LOG_ERR("%s:buff alloc faild\n", __func__);
+		thp_log_err("%s:buff alloc faild\n", __func__);
 		return -ENOMEM;
 	}
 
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 		MXT_OBJECT_START, curr_size, buff, OVERRIDE_LIMIT_VALUE);
-
 	if (ret_val) {
-		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
+		thp_log_err("touch_driver_read_blks--info block read error\n");
 		goto error_free;
 	}
 
@@ -955,118 +985,118 @@ static int thp_ssl_update_obj_addr(struct thp_device *tdev)
 	for (i = 0; i < mxtinfo.object_num; i++) {
 		object = object_table + i;
 		le16_to_cpus(&object->start_address);
-		thp_ssl_update_addr(object);
+		touch_driver_update_addr(object);
 	}
 
 	tdev->thp_core->frame_data_addr = t117_address;
-	THP_LOG_INFO("%s:frame_data_addr %d\n", __func__,
+	thp_log_info("%s:frame_data_addr %d\n", __func__,
 			tdev->thp_core->frame_data_addr);
 error_free:
 	kfree(buff);
 	return ret_val;
 }
 
-static int mxt_power_init(struct thp_device *tdev)
+static int touch_driver_power_init(struct thp_device *tdev)
 {
 	int ret;
 
-	THP_LOG_INFO("%s: called\n", __func__);
+	thp_log_info("%s: called\n", __func__);
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	ret = thp_power_supply_get(THP_VCC);
 	if (ret)
-		THP_LOG_ERR("%s: failed to get vcc\n", __func__);
+		thp_log_err("%s: failed to get vcc\n", __func__);
 	ret = thp_power_supply_get(THP_IOVDD);
 	if (ret)
-		THP_LOG_ERR("%s: failed to get vddio\n", __func__);
+		thp_log_err("%s: failed to get vddio\n", __func__);
 	return 0;
 }
 
-static int mxt_power_on_for_mxt3662(struct thp_device *tdev)
+static int touch_driver_power_on_for_3662(struct thp_device *tdev)
 {
 	int ret;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	gpio_direction_output(tdev->gpios->cs_gpio, GPIO_HIGH);
-	THP_LOG_INFO("%s call cs high\n", __func__);
+	thp_log_info("%s call cs high\n", __func__);
 	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_HIGH);
-	THP_LOG_INFO("%s call reset high\n", __func__);
+	thp_log_info("%s call reset high\n", __func__);
 
 	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
-	THP_LOG_INFO("%s call reset low\n", __func__);
+	thp_log_info("%s call reset low\n", __func__);
 	thp_do_time_delay(tdev->timing_config.boot_reset_low_delay_ms);
-	THP_LOG_INFO("%s call delay %dms\n", __func__,
+	thp_log_info("%s call delay %dms\n", __func__,
 		tdev->timing_config.boot_reset_low_delay_ms);
 
 	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_ON, 0); /* 0ms */
 	if (ret)
-		THP_LOG_ERR("%s:power on ctrl vcc failed\n", __func__);
+		thp_log_err("%s:power on ctrl vcc failed\n", __func__);
 
 	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON, 0); /* 0ms */
 	if (ret)
-		THP_LOG_ERR("%s:power on ctrl vddio failed\n", __func__);
+		thp_log_err("%s:power on ctrl vddio failed\n", __func__);
 
 	thp_do_time_delay(tdev->timing_config.boot_vddio_on_after_delay_ms);
-	THP_LOG_INFO("%s call delay %dms\n", __func__,
+	thp_log_info("%s call delay %dms\n", __func__,
 		tdev->timing_config.boot_vddio_on_after_delay_ms);
 
-	THP_LOG_INFO("%s pull up tp ic reset\n", __func__);
+	thp_log_info("%s pull up tp ic reset\n", __func__);
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	thp_do_time_delay(tdev->timing_config.boot_reset_hi_delay_ms);
-	THP_LOG_INFO("%s call delay %dms\n", __func__,
+	thp_log_info("%s call delay %dms\n", __func__,
 		tdev->timing_config.boot_reset_hi_delay_ms);
 	return ret;
 }
 
-static void mxt_power_release(void)
+static void touch_driver_power_release(void)
 {
 	thp_power_supply_put(THP_VCC);
 	thp_power_supply_put(THP_IOVDD);
 }
 
-static int mxt_power_on(struct thp_device *tdev)
+static int touch_driver_power_on(struct thp_device *tdev)
 {
 	int ret;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
 	mdelay(1);
 	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON, 1); /* 1ms */
 	if (ret)
-		THP_LOG_ERR("%s:power on ctrl vddio failed\n", __func__);
+		thp_log_err("%s:power on ctrl vddio failed\n", __func__);
 	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_ON, 1); /* 1ms */
 	if (ret)
-		THP_LOG_ERR("%s:power on ctrl vcc failed\n", __func__);
-	THP_LOG_INFO("%s pull up tp ic reset\n", __func__);
+		thp_log_err("%s:power on ctrl vcc failed\n", __func__);
+	thp_log_info("%s pull up tp ic reset\n", __func__);
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	return ret;
 }
 
-static int mxt_power_off(struct thp_device *tdev)
+static int touch_driver_power_off(struct thp_device *tdev)
 {
 	int ret;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
-	THP_LOG_INFO("%s pull down tp ic reset\n", __func__);
+	thp_log_info("%s pull down tp ic reset\n", __func__);
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
 	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_OFF, 0);
 	if (ret)
-		THP_LOG_ERR("%s:power off ctrl vddio failed\n", __func__);
+		thp_log_err("%s:power off ctrl vddio failed\n", __func__);
 	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_OFF, 1); /* 1ms */
 	if (ret)
-		THP_LOG_ERR("%s:power off ctrl vcc failed\n", __func__);
+		thp_log_err("%s:power off ctrl vcc failed\n", __func__);
 	return ret;
 }
 
@@ -1076,35 +1106,36 @@ static int mxt_power_off(struct thp_device *tdev)
 static int set_bootloader_to_normal_mode(
 	struct thp_device *tdev)
 {
-	u8 status_byte;
+	u8 status_byte = 0;
 	int ret;
 	/* app mode cmd */
 	u8 appmode_sequence[APP_MODE_CMD_LEN] = { 0x00, 0x00 };
 
-	THP_LOG_INFO("%s call\n", __func__);
+	thp_log_info("%s call\n", __func__);
 	/*
 	 * Try to kick the device out of bootloader mode
 	 * Do another bootloader read (ensure 0xE0 state
 	 * rather than 0x60)
 	 */
-	ret = mxt_bootloader_read(tdev, tdev->thp_core->sdev, &status_byte, 1);
+	ret = touch_driver_bootloader_read(tdev, tdev->thp_core->sdev,
+		&status_byte, 1);
 	if (ret)
-		THP_LOG_INFO("%s:bootloader read failed\n", __func__);
-	THP_LOG_INFO("%s:status_byte = %d\n", __func__, status_byte);
+		thp_log_info("%s:bootloader read failed\n", __func__);
+	thp_log_info("%s:status_byte = %d\n", __func__, status_byte);
 	if ((status_byte & BOOTLOADER_MODE_STATUS) == BOOTLOADER_MODE_STATUS) {
 		/* Reset the device into application mode */
-		ret = mxt_bootloader_write(tdev, tdev->thp_core->sdev,
+		ret = touch_driver_bootloader_write(tdev, tdev->thp_core->sdev,
 			appmode_sequence, APP_MODE_CMD_LEN);
 		if (ret)
-			THP_LOG_INFO("%s:bootloader write failed\n", __func__);
-		/* delay 1.2s for bootloader mode at 0x60 */
+			thp_log_info("%s:bootloader write failed\n", __func__);
+		/* delay 1200ms for bootloader mode at 0x60 */
 		msleep(1200);
 	}
-	THP_LOG_INFO("%s call end\n", __func__);
+	thp_log_info("%s call end\n", __func__);
 	return ret;
 }
 
-static int mxt_is_support_ic_type(const struct mxt_info *mxtinfo)
+static int touch_driver_is_support_ic_type(const struct mxt_info *mxtinfo)
 {
 	if (((mxtinfo->family_id == MXT680U2_FAMILY_ID) &&
 		(mxtinfo->variant_id == MXT680U2_VARIANT_ID)) ||
@@ -1120,32 +1151,33 @@ static int mxt_is_support_ic_type(const struct mxt_info *mxtinfo)
 #define SUPPORT_IC_TYPE 1
 #define IS_BOOTLOADE_MODE 0
 #define NOT_SSL_DEVICE (-1)
-static int mxt_check_boot_mode(struct thp_device *tdev,
+static int touch_driver_check_boot_mode(struct thp_device *tdev,
 	struct mxt_info *mxtinfo)
 {
 	int ret_val;
 	u8 status_byte = 0;
 
-	if (mxt_is_support_ic_type(mxtinfo)) {
-		THP_LOG_INFO("%s: support ic,unnecessary check boot mode\n",
+	if (touch_driver_is_support_ic_type(mxtinfo)) {
+		thp_log_info("%s: support ic,unnecessary check boot mode\n",
 			__func__);
 		return SUPPORT_IC_TYPE;
 	}
-	THP_LOG_ERR("%s:chip is not identified, try to check bootloader mode\n",
+	thp_log_err("%s:chip is not identified, try to check bootloader mode\n",
 		__func__);
-	if (mxt_check_is_bootloader(tdev)) {
+	if (touch_driver_check_is_bootloader(tdev)) {
 		if (tdev->thp_core->support_vendor_ic_type == MXT3662) {
 			ret_val = set_bootloader_to_normal_mode(tdev);
 			if (ret_val)
-				THP_LOG_ERR("%s:set_bootloader_to_normal_mode failed\n",
+				thp_log_err(
+					"%s:set_bootloader_to_normal_mode failed\n",
 					__func__);
-			ret_val = mxt_bootloader_read(tdev,
+			ret_val = touch_driver_bootloader_read(tdev,
 				tdev->thp_core->sdev,
 				&status_byte, 1); /* 1: status_byte len */
 			if (ret_val)
-				THP_LOG_INFO("%s:bootloader read failed\n",
+				thp_log_info("%s:bootloader read failed\n",
 					__func__);
-			THP_LOG_INFO("%s status_byte = %u\n", __func__,
+			thp_log_info("%s status_byte = %u\n", __func__,
 				status_byte);
 			if (status_byte == BOOTLOADER_CRC_ERROR_CODE ||
 				status_byte == BOOTLOADER_WAITING_CMD_MODE_1) {
@@ -1163,41 +1195,41 @@ static int mxt_check_boot_mode(struct thp_device *tdev,
 			return IS_BOOTLOADE_MODE;
 		}
 	}
-	THP_LOG_ERR("chip is not identified return no dev\n");
-	ret_val = mxt_power_off(tdev);
+	thp_log_err("chip is not identified return no dev\n");
+	ret_val = touch_driver_power_off(tdev);
 	if (ret_val)
-		THP_LOG_ERR("%s:power_off failed\n", __func__);
-	mxt_power_release();
+		thp_log_err("%s:power_off failed\n", __func__);
+	touch_driver_power_release();
 	return NOT_SSL_DEVICE;
 }
 
-static void mxt_chip_identified(struct thp_device *tdev,
+static void touch_driver_chip_identified(struct thp_device *tdev,
 	struct mxt_info *mxtinfo)
 {
 	int ret_val;
 	int retry_time = READ_ID_RETRY_TIMES;
 
-	THP_LOG_INFO("%s call\n", __func__);
+	thp_log_info("%s call\n", __func__);
 	do {
-		ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+		ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 			CHIP_IDENTIFIED_START_ADDR,
 			sizeof(*mxtinfo), (u8 *)mxtinfo, OVERRIDE_LIMIT_VALUE);
 		if (ret_val) {
-			THP_LOG_ERR("%s:read device ID failed\n", __func__);
+			thp_log_err("%s:read device ID failed\n", __func__);
 			continue;
 		}
-		if (mxt_is_support_ic_type(mxtinfo)) {
-			THP_LOG_INFO("%s: Chip is identified OK %d, %d\n",
+		if (touch_driver_is_support_ic_type(mxtinfo)) {
+			thp_log_info("%s: Chip is identified OK %d, %d\n",
 				__func__, mxtinfo->family_id,
 				mxtinfo->variant_id);
 			break;
 		}
-		THP_LOG_INFO("%s:retry time is %d\n", __func__, retry_time);
+		thp_log_info("%s:retry time is %d\n", __func__, retry_time);
 	} while (retry_time-- > 0);
-	THP_LOG_INFO("%s call end\n", __func__);
+	thp_log_info("%s call end\n", __func__);
 }
 
-static int mxt_read_obj_addr(struct thp_device *tdev,
+static int touch_driver_read_obj_addr(struct thp_device *tdev,
 	size_t curr_size, const struct mxt_info *mxtinfo)
 {
 	int ret_val;
@@ -1206,20 +1238,20 @@ static int mxt_read_obj_addr(struct thp_device *tdev,
 	struct mxt_object *object = NULL;
 	struct mxt_object *object_table = NULL;
 
-	THP_LOG_INFO("%s call\n", __func__);
+	thp_log_info("%s call\n", __func__);
 
 	curr_size += mxtinfo->object_num * sizeof(*object) +
 		MXT_INFO_CHECKSUM_SIZE;
-	buff = (u8 *)kzalloc(curr_size, GFP_KERNEL);
+	buff = kzalloc(curr_size, GFP_KERNEL);
 	if (buff == NULL) {
-		THP_LOG_ERR("%s:buff alloc failed\n", __func__);
+		thp_log_err("%s:buff alloc failed\n", __func__);
 		ret_val = -ENOMEM;
 		goto error_free;
 	}
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 		MXT_OBJECT_START, curr_size, buff, OVERRIDE_LIMIT_VALUE);
 	if (ret_val) {
-		THP_LOG_ERR("%s:info block reading error\n", __func__);
+		thp_log_err("%s:info block reading error\n", __func__);
 		goto error_free;
 	}
 	object_table = (struct mxt_object *)(buff);
@@ -1232,96 +1264,99 @@ static int mxt_read_obj_addr(struct thp_device *tdev,
 		 * loop through the object table
 		 */
 		le16_to_cpus(&object->start_address);
-		thp_ssl_update_addr(object);
+		touch_driver_update_addr(object);
 	}
 	/* 0:invalid addr */
 	if (t117_address == 0) {
 		t117_address = SSL_SYNC_DATA_REG_DEFAULT_ADDR;
-		THP_LOG_ERR("%s: get t117 reg failed, set to default\n",
+		thp_log_err("%s: get t117 reg failed, set to default\n",
 			__func__);
 	}
 	tdev->thp_core->frame_data_addr = t117_address;
-	THP_LOG_INFO("%s:tui_tp_addr %d\n", __func__,
+	thp_log_info("%s:tui_tp_addr %d\n", __func__,
 		tdev->thp_core->frame_data_addr);
 error_free:
 	kfree(buff);
-	THP_LOG_INFO("%s call end\n", __func__);
+	thp_log_info("%s call end\n", __func__);
 	return ret_val;
 }
 
-static int thp_ssl_chip_detect(struct thp_device *tdev)
+static int touch_driver_chip_detect(struct thp_device *tdev)
 {
 	int ret_val;
 	struct mxt_info mxtinfo;
 	size_t curr_size;
 
+	memset(&mxtinfo, 0, sizeof(mxtinfo));
+
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
-	THP_LOG_INFO("%s: called\n", __func__);
-	ret_val = mxt_power_init(tdev);
+	thp_log_info("%s: called\n", __func__);
+	ret_val = touch_driver_power_init(tdev);
 	if (ret_val)
-		THP_LOG_ERR("%s:mxt_power_init failed\n", __func__);
+		thp_log_err("%s:touch_driver_power_init failed\n", __func__);
 	curr_size = MXT_OBJECT_START;
 
 	if (tdev->thp_core->support_vendor_ic_type == MXT3662)
-		ret_val = mxt_power_on_for_mxt3662(tdev);
+		ret_val = touch_driver_power_on_for_3662(tdev);
 	else
-		ret_val = mxt_power_on(tdev);
+		ret_val = touch_driver_power_on(tdev);
 
 	if (ret_val)
-		THP_LOG_ERR("%s:mxt_power_on failed\n", __func__);
+		thp_log_err("%s:touch_driver_power_on failed\n", __func__);
 
 	thp_do_time_delay(tdev->timing_config.boot_reset_after_delay_ms);
-	mxt_chip_identified(tdev, &mxtinfo);
-	ret_val = mxt_check_boot_mode(tdev, &mxtinfo);
+	touch_driver_chip_identified(tdev, &mxtinfo);
+	ret_val = touch_driver_check_boot_mode(tdev, &mxtinfo);
 	/* 0:bootloader mode,-ENODEV: no device ,need return */
 	if (ret_val == NOT_SSL_DEVICE) {
-		thp_ssl_exit(tdev);
+		touch_driver_exit(tdev);
 		return ret_val;
 	}
 	if (ret_val == IS_BOOTLOADE_MODE) {
-		THP_LOG_INFO("%s:bootloader mode,update fw\n", __func__);
+		thp_log_info("%s:bootloader mode,update fw\n", __func__);
 		return ret_val;
 	}
-	ret_val = mxt_read_obj_addr(tdev, curr_size, &mxtinfo);
+	ret_val = touch_driver_read_obj_addr(tdev, curr_size, &mxtinfo);
 	if (ret_val)
-		THP_LOG_ERR("%s:read obj addr failed\n", __func__);
-	THP_LOG_INFO("%s call end\n", __func__);
+		thp_log_err("%s:read obj addr failed\n", __func__);
+	thp_log_info("%s call end\n", __func__);
 	return ret_val;
 }
 
 #define T117_HEADER_DATA_READ_LEN 13
 #define T117_PAYLOAD_LEN_MSB_OFFSET 11
 #define T117_PAYLOAD_LEN_LSB_OFFSET 12
-static int thp_ssl_get_frame_for_mxt3662(
+static int touch_driver_get_frame_for_3662(
 	struct thp_device *tdev, char *buf)
 {
 	int ret_val;
 	unsigned int payload_len;
 
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t117_address,
-		T117_HEADER_DATA_READ_LEN, buf, 0);
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+		t117_address, T117_HEADER_DATA_READ_LEN, buf, 0);
 	if (ret_val)
-		THP_LOG_ERR("%s:read len failed\n", __func__);
+		thp_log_err("%s:read len failed\n", __func__);
 	payload_len = (buf[T117_PAYLOAD_LEN_MSB_OFFSET] << MOVE_8BIT);
 	payload_len |= buf[T117_PAYLOAD_LEN_LSB_OFFSET];
-	THP_LOG_DEBUG("%s:T117 2stage SPI Read payload len %d %x %x\n",
+	thp_log_debug("%s:T117 2stage SPI Read payload len %d %x %x\n",
 		__func__, payload_len, buf[T117_PAYLOAD_LEN_MSB_OFFSET],
 		buf[T117_PAYLOAD_LEN_LSB_OFFSET]);
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 		t117_address + T117_HEADER_DATA_READ_LEN, payload_len,
 		(buf + T117_HEADER_DATA_READ_LEN),
 		T117_BYTES_READ_LIMIT);
 	if (ret_val)
-		THP_LOG_ERR("%s:read frame failed\n", __func__);
+		thp_log_err("%s:read frame failed\n", __func__);
 
 	return ret_val;
 }
 
-static int thp_ssl_get_frame(struct thp_device *tdev, char *buf, unsigned int len)
+static int touch_driver_get_frame(struct thp_device *tdev, char *buf,
+	unsigned int len)
 {
 	int ret_val;
 	struct thp_core_data *cd = NULL;
@@ -1329,95 +1364,103 @@ static int thp_ssl_get_frame(struct thp_device *tdev, char *buf, unsigned int le
 	if ((tdev == NULL) || (buf == NULL) ||
 		(tdev->thp_core == NULL) ||
 		(tdev->thp_core->sdev == NULL)) {
-		THP_LOG_INFO("%s: input dev or buf null\n", __func__);
+		thp_log_info("%s: input dev or buf null\n", __func__);
 		return -ENOMEM;
 	}
 
 	if (!len) {
-		THP_LOG_INFO("%s: read len illegal\n", __func__);
+		thp_log_info("%s: read len illegal\n", __func__);
 		return -ENOMEM;
 	}
 	cd = tdev->thp_core;
 	if (cd->support_vendor_ic_type == MXT3662)
-		return thp_ssl_get_frame_for_mxt3662(tdev, buf);
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t117_address, len,
-				buf, T117_BYTES_READ_LIMIT);
+		return touch_driver_get_frame_for_3662(tdev, buf);
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+		t117_address, len, buf, T117_BYTES_READ_LIMIT);
 	return ret_val;
 }
 
-static int thp_ssl_set_screen_off_mode(struct thp_device *tdev)
+static int touch_driver_set_screen_off_mode(struct thp_device *tdev)
 {
 	int ret_val;
 
 	u8 t7_idle_scan_rate = SCREEN_OFF_MODE_SCAN_RATE;
+	/* 2 is scan mode len */
 	u8 t8_scan_mode[2] = { SCREEN_OFF_SCAN_MODE, SCREEN_OFF_MCT_SCAN_MODE };
 	u8 t145_cmd = MXT_T145_SCREEN_OFF_CMD;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: input dev null\n", __func__);
+		thp_log_err("%s: input dev null\n", __func__);
 		return -ENOMEM;
 	}
 
 	if ((t7_address == 0) || (t8_address == 0) || (t145_address == 0)) {
-		THP_LOG_ERR("Object address for screen off is not correct\n");
+		thp_log_err("Object address for screen off is not correct\n");
 		return -ENOMEM;
 	}
 
-	ret_val = mxt_write_blks(tdev, tdev->thp_core->sdev, t7_address,
-				1, &t7_idle_scan_rate);
-	ret_val |= mxt_write_blks(tdev, tdev->thp_core->sdev,
-				t8_address + T8_MEASIDLEDEF_OFFSET,
-				2, t8_scan_mode);
-	ret_val |= mxt_write_blks(tdev, tdev->thp_core->sdev,
-				t145_address + MXT_T145_CMD_OFFSET,
-				1, &t145_cmd);
-
-	THP_LOG_INFO("mxt set screen off mode done\n");
+	ret_val = touch_driver_write_blks(tdev, tdev->thp_core->sdev,
+		t7_address, sizeof(t7_idle_scan_rate), &t7_idle_scan_rate);
+	if (ret_val != 0)
+		thp_log_err("write t7_address failed\n");
+	ret_val = touch_driver_write_blks(tdev, tdev->thp_core->sdev,
+		t8_address + T8_MEASIDLEDEF_OFFSET,
+		sizeof(t8_scan_mode), t8_scan_mode);
+	if (ret_val != 0)
+		thp_log_err("write t8_address failed\n");
+	ret_val = touch_driver_write_blks(tdev, tdev->thp_core->sdev,
+		t145_address + MXT_T145_CMD_OFFSET,
+		sizeof(t145_cmd), &t145_cmd);
+	if (ret_val != 0)
+		thp_log_err("write t145_address failed\n\n");
+	thp_log_info("mxt set screen off mode done\n");
 	return ret_val;
 }
 
-static int thp_ssl_get_active_idle_timer(struct thp_device *tdev,
-		uint32_t *active_time, uint32_t *dozing_time)
+static int touch_driver_get_active_idle_timer(struct thp_device *tdev,
+	uint32_t *active_time, uint32_t *dozing_time)
 {
 	int ret_val;
 	u8 buf[T144_ACTIVE_DOZING_READ_LEN] = {0};
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: input dev null\n", __func__);
+		thp_log_err("%s: input dev null\n", __func__);
 		return -ENOMEM;
 	}
 
 	if (t144_address == 0) {
-		THP_LOG_ERR("T144 address is not correct\n");
+		thp_log_err("T144 address is not correct\n");
 		return -ENOMEM;
 	}
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t144_address +
-				T144_ACTIVE_TIMER_OFFSET,
-				T144_ACTIVE_DOZING_READ_LEN, buf, 0);
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+		t144_address + T144_ACTIVE_TIMER_OFFSET,
+		T144_ACTIVE_DOZING_READ_LEN, buf, 0);
 	if (ret_val) {
-		THP_LOG_ERR("mxt_read_blks--info block reading error\n");
+		thp_log_err("touch_driver_read_blks--info block read error\n");
 		ret_val = -ENOMEM;
 	}
-	// use buf[0],buf[1],buf[2],buf[3] to concatenate active time
-	// use buf[4],buf[5],buf[6],buf[7] to concatenate dozing time
+	/*
+	 * use buf[0],buf[1],buf[2],buf[3] to concatenate active time
+	 * use buf[4],buf[5],buf[6],buf[7] to concatenate dozing time
+	 */
 	*active_time = (buf[0] << MOVE_24BIT) | (buf[1] << MOVE_16BIT) |
 			(buf[2] << MOVE_8BIT) | buf[3];
 	*dozing_time = (buf[4] << MOVE_24BIT) | (buf[5] << MOVE_16BIT) |
 			(buf[6] << MOVE_8BIT) | buf[7];
 
-	THP_LOG_INFO("%s: Active time%d, Dozing time %d\n", __func__,
+	thp_log_info("%s: Active time%d, Dozing time %d\n", __func__,
 		*active_time, *dozing_time);
 	return ret_val;
 }
 
-static int thp_ssl_resume(struct thp_device *tdev)
+static int touch_driver_resume(struct thp_device *tdev)
 {
 	int ret = 0;
 	uint32_t active_time = 0;
 	uint32_t dozing_time = 0;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	if (is_pt_test_mode(tdev)) {
@@ -1425,43 +1468,45 @@ static int thp_ssl_resume(struct thp_device *tdev)
 		mdelay(tdev->timing_config.resume_reset_after_delay_ms);
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	} else if (g_thp_udfp_status || tdev->thp_core->support_ring_feature ||
-		(tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE)) {
-		THP_LOG_INFO("get_active_idle_timer\n");
-		ret = thp_ssl_get_active_idle_timer(tdev, &active_time,
+		(tdev->thp_core->easy_wakeup_info.sleep_mode ==
+			TS_GESTURE_MODE)) {
+		thp_log_info("get_active_idle_timer\n");
+		ret = touch_driver_get_active_idle_timer(tdev, &active_time,
 							&dozing_time);
 		if (ret)
-			THP_LOG_ERR("%s: thp_ssl_get_active_idle_timer failed\n",
+			thp_log_err("%s: get_active_idle_timer failed\n",
 				__func__);
 #ifdef CONFIG_HUAWEI_DUBAI
 		HWDUBAI_LOGE("DUBAI_TAG_TP_DURATION", "active=%d dozing=%d",
 					active_time, dozing_time);
 #endif
-		THP_LOG_INFO("%s TS_GESTURE_MODE or tp_ud enable ,so reset\n",
+		thp_log_info("%s TS_GESTURE_MODE or tp_ud enable ,so reset\n",
 			__func__);
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
 		mdelay(tdev->timing_config.resume_reset_after_delay_ms);
 		gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
 	} else {
 		if (tdev->thp_core->support_vendor_ic_type == MXT3662)
-			ret = mxt_power_on_for_mxt3662(tdev);
+			ret = touch_driver_power_on_for_3662(tdev);
 		else
-			ret = mxt_power_on(tdev);
+			ret = touch_driver_power_on(tdev);
 	}
-	THP_LOG_INFO("%s: called end\n", __func__);
+	thp_log_info("%s: called end\n", __func__);
 	return ret;
 }
 
-static int thp_ssl_after_resume(struct thp_device *tdev)
+static int touch_driver_after_resume(struct thp_device *tdev)
 {
 	int ret = 0;
 
-	THP_LOG_INFO("%s: called\n", __func__);
+	thp_log_info("%s: called\n", __func__);
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	if (!g_thp_udfp_status)
-		thp_do_time_delay(tdev->timing_config.boot_reset_after_delay_ms);
+		thp_do_time_delay(
+			tdev->timing_config.boot_reset_after_delay_ms);
 	return ret;
 }
 
@@ -1471,63 +1516,68 @@ static int pt_mode_set(struct thp_device *tdev)
 	u8 t7_active[SSL_T7_COMMAMD_LEN] = { 8, 8 }; /* pt station cmd */
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	if (t7_address == 0) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
-	ret = mxt_write_blks(tdev, tdev->thp_core->sdev, t7_address,
+	ret = touch_driver_write_blks(tdev, tdev->thp_core->sdev, t7_address,
 			SSL_T7_COMMAMD_LEN, t7_active);
 	if (ret != 0) {
-		THP_LOG_ERR("Failed to send T7 always active command\n");
+		thp_log_err("Failed to send T7 always active command\n");
 		return -EINVAL;
 	}
 	return ret;
 }
 
-static int thp_ssl_suspend(struct thp_device *tdev)
+static int touch_driver_suspend(struct thp_device *tdev)
 {
-	int ret = -EINVAL;
+	int ret;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev is  null\n", __func__);
+		thp_log_err("%s: tdev is  null\n", __func__);
 		return -EINVAL;
 	}
 	g_thp_udfp_status = thp_get_status(THP_STATUS_UDFP);
-	THP_LOG_INFO("%s: called udfp_status = %u\n",
+	thp_log_info("%s: called udfp_status = %u\n",
 		__func__, g_thp_udfp_status);
 	if (is_pt_test_mode(tdev)) {
-		THP_LOG_INFO("%s: suspend PT mode\n", __func__);
+		thp_log_info("%s: suspend PT mode\n", __func__);
 		ret = pt_mode_set(tdev);
 		if (ret != 0)
-			THP_LOG_ERR("Failed to send T7 always active command\n");
-	} else if (g_thp_udfp_status || tdev->thp_core->support_ring_feature ||
-		(tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE)) {
-		if (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
-			THP_LOG_INFO("%s TS_GESTURE_MODE\n", __func__);
-			ret = ssl_wakeup_gesture_enable_switch(tdev, 1);
+			thp_log_err(
+				"Failed to send T7 always active command\n");
+	} else if (g_thp_udfp_status ||
+		tdev->thp_core->support_ring_feature ||
+		(tdev->thp_core->easy_wakeup_info.sleep_mode ==
+			TS_GESTURE_MODE)) {
+		if (tdev->thp_core->easy_wakeup_info.sleep_mode ==
+			TS_GESTURE_MODE) {
+			thp_log_info("%s TS_GESTURE_MODE\n", __func__);
+			ret = touch_driver_wakeup_gesture_en_switch(tdev, 1);
 			if (ret != 0)
-				THP_LOG_ERR("Failed to send wakeup gesture enable command\n");
+				thp_log_err(
+					"Failed to send wakeup gesture enable command\n");
 			mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 			tdev->thp_core->easy_wakeup_info.off_motion_on = true;
 			mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
 		}
-		ret = thp_ssl_set_screen_off_mode(tdev);
+		ret = touch_driver_set_screen_off_mode(tdev);
 		if (ret != 0)
-			THP_LOG_ERR("Failed to set_screen_off_mode command\n");
+			thp_log_err("Failed to set_screen_off_mode command\n");
 	} else {
-		ret = mxt_power_off(tdev);
-		THP_LOG_INFO("enter poweroff mode\n");
+		ret = touch_driver_power_off(tdev);
+		thp_log_info("enter poweroff mode\n");
 	}
-	THP_LOG_INFO("%s: called end\n", __func__);
+	thp_log_info("%s: called end\n", __func__);
 	return ret;
 }
 
-static void thp_ssl_exit(struct thp_device *tdev)
+static void touch_driver_exit(struct thp_device *tdev)
 {
-	THP_LOG_INFO("%s: called\n", __func__);
+	thp_log_info("%s: called\n", __func__);
 	if (tdev != NULL) {
 		if (tdev->tx_buff != NULL) {
 			kfree(tdev->tx_buff);
@@ -1542,151 +1592,159 @@ static void thp_ssl_exit(struct thp_device *tdev)
 	}
 }
 
-static int thp_ssl_afe_notify_callback(struct thp_device *tdev, unsigned long event)
+static int touch_driver_afe_notify_callback(struct thp_device *tdev,
+	unsigned long event)
 {
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
-	return thp_ssl_update_obj_addr(tdev);
+	return touch_driver_update_obj_addr(tdev);
 }
 
-static int thp_ssl_set_fw_update_mode(struct thp_device *tdev,
-		struct thp_ioctl_set_afe_status set_afe_status)
+static int touch_driver_set_fw_update_mode(struct thp_device *tdev,
+	struct thp_ioctl_set_afe_status set_afe_status)
 {
 	int rc = -EINVAL;
 
 	if (tdev == NULL) {
-		THP_LOG_ERR("%s: tdev null\n", __func__);
+		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	if (set_afe_status.status == THP_AFE_FW_UPDATE_SET_SPI_COM_MODE)
-		rc = thp_set_spi_com_mode(tdev->thp_core, set_afe_status.parameter);
+		rc = thp_set_spi_com_mode(tdev->thp_core,
+			set_afe_status.parameter);
 
 	return rc;
 }
 
 #define SSL_SCREEN_OFF_MODE 0x04
-static void thp_ssl_check_screen_off_mode(struct thp_device *tdev)
+static void touch_driver_check_screen_off_mode(struct thp_device *tdev)
 {
 	int ret_val;
 	u8 buffer = 0;
 
 	if (!tdev) {
-		THP_LOG_INFO("%s: input dev null\n", __func__);
+		thp_log_info("%s: input dev null\n", __func__);
 		return;
 	}
 
 	if (!t118_address) {
-		THP_LOG_INFO("%s: invalid T118 frame data address\n", __func__);
+		thp_log_info("%s: invalid T118 frame data address\n", __func__);
 		return;
 	}
 
-	ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
+	ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
 		t118_address, 0, &buffer, 0);
-
 	if (!ret_val) {
 		if ((buffer & SSL_SCREEN_OFF_MODE) != SSL_SCREEN_OFF_MODE) {
-			THP_LOG_ERR("%s: TPIC is NOT in screen off mode [%d], try to set screen off mode\n",
+			thp_log_err(
+				"%s: TPIC is NOT in screen off mode [%d], try to set screen off mode\n",
 				__func__, buffer);
 
-			ret_val = ssl_wakeup_gesture_enable_switch(tdev, 1);
+			ret_val = touch_driver_wakeup_gesture_en_switch(tdev,
+				1);
 			if (ret_val != 0)
-				THP_LOG_ERR("Failed to send wakeup gesture enable command\n");
+				thp_log_err(
+					"Failed to send wakeup gesture enable command\n");
 
-			ret_val = thp_ssl_set_screen_off_mode(tdev);
+			ret_val = touch_driver_set_screen_off_mode(tdev);
 			if (ret_val != 0)
-				THP_LOG_ERR("Failed to set_screen_off_mode command\n");
+				thp_log_err(
+					"Failed to set_screen_off_mode command\n");
 		} else {
-			THP_LOG_INFO("%s: TPIC is in screen off mode [%d]\n",
+			thp_log_info("%s: TPIC is in screen off mode [%d]\n",
 				__func__, buffer);
 		}
 	}
 }
 
-// add this function in ISR to get the double tap gesture event
-// buffer=0 -> no event   buffer = 0x40 -> double tap gesture event
+/*
+ * add this function in ISR to get the double tap gesture event
+ * buffer=0 -> no event   buffer = 0x40 -> double tap gesture event
+ */
 #define GESTRUE_EVENT_RETRY_TIME 10
-int thp_ssl_check_gesture_event(struct thp_device *tdev,
-		unsigned int *gesture_wakeup_value)
+int touch_driver_check_gesture_event(struct thp_device *tdev,
+	unsigned int *gesture_wakeup_value)
 {
 	int ret_val;
 	u8 buffer[T117_HEADER_STATUS_OFFSET + 2] = {0};
 	int i;
 
 	if (tdev == NULL) {
-		THP_LOG_INFO("%s: input dev null\n", __func__);
+		thp_log_info("%s: input dev null\n", __func__);
 		return -ENOMEM;
 	}
 
 	if (!t117_address) {
-		THP_LOG_INFO("%s: invalid T117 frame data address\n", __func__);
+		thp_log_info("%s: invalid T117 frame data address\n", __func__);
 		return -ENOMEM;
 	}
 
-	THP_LOG_INFO("%s\n", __func__);
+	thp_log_info("%s\n", __func__);
 	/* wait spi bus resume */
 	msleep(SSL_WAIT_FOR_SPI_BUS_RESUMED_DELAY);
 	for (i = 0; i < GESTRUE_EVENT_RETRY_TIME; i++) {
-		ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev,
-					t117_address,
-					T117_HEADER_STATUS_OFFSET + 1,
-					buffer, 0);
-		if (ret_val == 0) {
+		ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+			t117_address, T117_HEADER_STATUS_OFFSET + 1,
+			buffer, 0);
+		if (ret_val == 0)
 			break;
-		} else {
-			THP_LOG_ERR("%s: spi not work normal, ret %d\n",
-				__func__, ret_val);
-			msleep(SSL_WAIT_FOR_SPI_BUS_READ_DELAY);
-		}
+		thp_log_err("%s: spi not work normal, ret %d\n",
+			__func__, ret_val);
+		msleep(SSL_WAIT_FOR_SPI_BUS_READ_DELAY);
 	}
 	if (!ret_val) {
 		if ((buffer[T117_HEADER_STATUS_OFFSET] & T117_GESTURE_EVENT) ==
 			T117_GESTURE_EVENT) {
-			THP_LOG_INFO("THP found double tap gesture [%x]\n",
+			thp_log_info("THP found double tap gesture [%x]\n",
 					buffer[T117_HEADER_STATUS_OFFSET]);
 			mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
-			if (tdev->thp_core->easy_wakeup_info.off_motion_on == true) {
-				tdev->thp_core->easy_wakeup_info.off_motion_on = false;
+			if (tdev->thp_core->easy_wakeup_info.off_motion_on ==
+				true) {
+				tdev->thp_core->easy_wakeup_info.off_motion_on =
+					false;
 				*gesture_wakeup_value = TS_DOUBLE_CLICK;
 			}
 			mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
 		} else {
-			THP_LOG_ERR("NO gesture event found status %x,%x\n",
+			thp_log_err("NO gesture event found status %x,%x\n",
 				buffer[T117_HEADER_STATUS_OFFSET],
 				buffer[T117_HEADER_STATUS_OFFSET + 1]);
-			thp_ssl_check_screen_off_mode(tdev);
+			touch_driver_check_screen_off_mode(tdev);
 		}
 	}
 	return ret_val;
 }
 
-/* enable=1: to enable gesture function, enable=0: to disable gesture function */
-static int ssl_wakeup_gesture_enable_switch(struct thp_device *tdev,
-				u8 switch_value)
+/* enable=1:to enable gesture function, enable=0:to disable gesture function */
+static int touch_driver_wakeup_gesture_en_switch(
+	struct thp_device *tdev, u8 switch_value)
 {
 	int ret_val;
 	u8 t24_ctrl = 0;
 	u16 retry = 0;
 
 	if (tdev == NULL) {
-		THP_LOG_INFO("%s: input dev null\n", __func__);
+		thp_log_info("%s: input dev null\n", __func__);
 		return -EINVAL;
 	}
 	if (!t24_address) {
-		THP_LOG_INFO("%s: invalid T24 frame data address\n", __func__);
+		thp_log_info("%s: invalid T24 frame data address\n", __func__);
 		return -ENOMEM;
 	}
 	while (retry++ < SEND_COMMAND_RETRY) {
-		ret_val = mxt_read_blks(tdev, tdev->thp_core->sdev, t24_address,
-					1, &t24_ctrl, 0);
+		ret_val = touch_driver_read_blks(tdev, tdev->thp_core->sdev,
+			t24_address, 1, &t24_ctrl, 0);
 		if (!ret_val)
 			t24_ctrl = switch_value ?
 			(t24_ctrl | T24_GESTURE_ON_MASK) :
 			(t24_ctrl & (~T24_GESTURE_ON_MASK));
-		ret_val |= mxt_write_blks(tdev, tdev->thp_core->sdev,
-					t24_address, 1, &t24_ctrl);
-		THP_LOG_INFO("%s t24_ctrl is 0x%x,switch_value is %d\n",
+		ret_val = touch_driver_write_blks(tdev, tdev->thp_core->sdev,
+			t24_address, sizeof(t24_ctrl), &t24_ctrl);
+		if (ret_val != 0)
+			thp_log_err("write t24_address failed\n");
+		thp_log_info("%s t24_ctrl is 0x%x,switch_value is %d\n",
 				__func__, t24_ctrl, switch_value);
 		if (ret_val == 0)
 			break;
@@ -1694,29 +1752,29 @@ static int ssl_wakeup_gesture_enable_switch(struct thp_device *tdev,
 	return ret_val;
 }
 
-static int ssl_wrong_touch(struct thp_device *tdev)
+static int touch_driver_wrong_touch(struct thp_device *tdev)
 {
 	if (!tdev) {
-		THP_LOG_ERR("%s: input dev null\n", __func__);
+		thp_log_err("%s: input dev null\n", __func__);
 		return -EINVAL;
 	}
 	if (tdev->thp_core->support_gesture_mode) {
 		mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 		tdev->thp_core->easy_wakeup_info.off_motion_on = true;
 		mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
-		THP_LOG_INFO("%s: done\n", __func__);
+		thp_log_info("%s: done\n", __func__);
 	}
 	return 0;
 }
 
-static int ssl_gesture_report(struct thp_device *tdev,
-					 unsigned int *gesture_wakeup_value)
+static int touch_driver_gesture_report(struct thp_device *tdev,
+	unsigned int *gesture_wakeup_value)
 {
 	int retval;
 
-	retval = thp_ssl_check_gesture_event(tdev, gesture_wakeup_value);
+	retval = touch_driver_check_gesture_event(tdev, gesture_wakeup_value);
 	if (retval != 0) {
-		THP_LOG_ERR("[%s] retval-> %d\n", __func__, retval);
+		thp_log_err("[%s] retval-> %d\n", __func__, retval);
 		return -EINVAL;
 	}
 	return 0;
@@ -1724,9 +1782,9 @@ static int ssl_gesture_report(struct thp_device *tdev,
 
 #define BOOT_HEAD_LEN 4
 #define READ_BOOT_HEAD_COUNT 5
-static int ssl_spi_transfer_one_byte_bootloader(struct thp_device *tdev,
-	const char * const tx_buf, char * const rx_buf,
-	const unsigned int buf_len)
+static int touch_driver_spi_transfer_one_byte_bootloader(
+	struct thp_device *tdev, const char * const tx_buf,
+	char * const rx_buf, const unsigned int buf_len)
 {
 	register unsigned int idx;
 	struct spi_message msg;
@@ -1737,22 +1795,25 @@ static int ssl_spi_transfer_one_byte_bootloader(struct thp_device *tdev,
 
 	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev) ||
 		(!tx_buf) || (!rx_buf) || (!buf_len)) {
-		THP_LOG_ERR("%s: point null\n", __func__);
+		thp_log_err("%s: point null\n", __func__);
 		return -EINVAL;
 	}
 	sdev = tdev->thp_core->sdev;
 	if (tdev->thp_core->suspended) {
-		THP_LOG_ERR("%s - suspended\n", __func__);
+		thp_log_err("%s - suspended\n", __func__);
 		return 0;
 	}
 
 	xfer = kzalloc(buf_len * sizeof(*xfer), GFP_KERNEL);
 	if (xfer == NULL) {
-		THP_LOG_INFO("%s -> zalloc failed\n", __func__);
+		thp_log_info("%s -> zalloc failed\n", __func__);
 		return -EIO;
 	}
 	spi_message_init(&msg);
-	/* Solomon firmware upgrade process is very special 1:use ssl mxt3662 only */
+	/*
+	 * Solomon firmware upgrade process is very special
+	 * 1:use ssl mxt3662 only
+	 */
 	if (tdev->thp_core->support_vendor_ic_type == MXT3662) {
 		for (idx = 0; idx < READ_BOOT_HEAD_COUNT; idx++) {
 			xfer[idx].tx_buf = &tx_buf[idx];
@@ -1777,7 +1838,7 @@ static int ssl_spi_transfer_one_byte_bootloader(struct thp_device *tdev,
 	}
 	rc = thp_bus_lock();
 	if (rc < 0) {
-		THP_LOG_ERR("%s:get lock failed:%d\n", __func__, rc);
+		thp_log_err("%s:get lock failed:%d\n", __func__, rc);
 		kfree(xfer);
 		return rc;
 	}
@@ -1788,40 +1849,41 @@ static int ssl_spi_transfer_one_byte_bootloader(struct thp_device *tdev,
 }
 
 struct thp_device_ops ssl_dev_ops = {
-	.init = thp_ssl_init,
-	.detect = thp_ssl_chip_detect,
-	.get_frame = thp_ssl_get_frame,
-	.resume = thp_ssl_resume,
-	.after_resume = thp_ssl_after_resume,
-	.suspend = thp_ssl_suspend,
-	.get_project_id = thp_ssl_get_project_id,
-	.exit = thp_ssl_exit,
-	.afe_notify = thp_ssl_afe_notify_callback,
-	.set_fw_update_mode = thp_ssl_set_fw_update_mode,
-	.chip_wakeup_gesture_enable_switch = ssl_wakeup_gesture_enable_switch,
-	.chip_wrong_touch = ssl_wrong_touch,
-	.chip_gesture_report = ssl_gesture_report,
+	.init = touch_driver_init,
+	.detect = touch_driver_chip_detect,
+	.get_frame = touch_driver_get_frame,
+	.resume = touch_driver_resume,
+	.after_resume = touch_driver_after_resume,
+	.suspend = touch_driver_suspend,
+	.get_project_id = touch_driver_get_project_id,
+	.exit = touch_driver_exit,
+	.afe_notify = touch_driver_afe_notify_callback,
+	.set_fw_update_mode = touch_driver_set_fw_update_mode,
+	.chip_wakeup_gesture_enable_switch =
+		touch_driver_wakeup_gesture_en_switch,
+	.chip_wrong_touch = touch_driver_wrong_touch,
+	.chip_gesture_report = touch_driver_gesture_report,
 	.spi_transfer_one_byte_bootloader =
-		ssl_spi_transfer_one_byte_bootloader,
+		touch_driver_spi_transfer_one_byte_bootloader,
 };
 
-static int __init thp_ssl_module_init(void)
+static int __init touch_driver_module_init(void)
 {
 	int rc;
 	struct thp_device *dev = NULL;
 	struct thp_core_data *cd = thp_get_core_data();
 
-	THP_LOG_INFO("%s: called\n", __func__);
+	thp_log_info("%s: called\n", __func__);
 	dev = kzalloc(sizeof(struct thp_device), GFP_KERNEL);
 	if (dev == NULL) {
-		THP_LOG_ERR("%s: thp device malloc fail\n", __func__);
+		thp_log_err("%s: thp device malloc fail\n", __func__);
 		return -ENOMEM;
 	}
 
 	dev->tx_buff = kzalloc(THP_MAX_FRAME_SIZE, GFP_KERNEL);
 	dev->rx_buff = kzalloc(THP_MAX_FRAME_SIZE, GFP_KERNEL);
 	if ((dev->tx_buff == NULL) || (dev->rx_buff == NULL)) {
-		THP_LOG_ERR("%s: out of memory\n", __func__);
+		thp_log_err("%s: out of memory\n", __func__);
 		rc = -ENOMEM;
 		goto err;
 	}
@@ -1839,22 +1901,22 @@ static int __init thp_ssl_module_init(void)
 	}
 	rc = thp_register_dev(dev);
 	if (rc) {
-		THP_LOG_ERR("%s: register fail\n", __func__);
+		thp_log_err("%s: register fail\n", __func__);
 		goto err;
 	} else {
-		THP_LOG_INFO("%s: register success\n", __func__);
+		thp_log_info("%s: register success\n", __func__);
 	}
 
 	return rc;
 err:
-	thp_ssl_exit(dev);
+	touch_driver_exit(dev);
 	return rc;
 }
 
-static void __exit thp_ssl_module_exit(void)
+static void __exit touch_driver_module_exit(void)
 {
-	THP_LOG_ERR("%s: called\n", __func__);
+	thp_log_err("%s: called\n", __func__);
 };
 
-module_init(thp_ssl_module_init);
-module_exit(thp_ssl_module_exit);
+module_init(touch_driver_module_init);
+module_exit(touch_driver_module_exit);

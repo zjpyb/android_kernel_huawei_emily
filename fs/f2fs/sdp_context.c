@@ -4,6 +4,7 @@
 #include "f2fs.h"
 #include "xattr.h"
 #include "sdp_internal.h"
+#include "sdp_metadata.h"
 
 #if F2FS_FS_SDP_ENCRYPTION
 static int f2fs_get_sdp_context(struct inode *inode, void *ctx, size_t len,
@@ -88,7 +89,6 @@ static int f2fs_set_sdp_encrypt_flags(struct inode *inode, void *fs_data,
 		set_page_dirty(fs_data);
 	else if (xpage)
 		set_page_dirty(xpage);
-
 	f2fs_put_page(xpage, 1);
 
 	f2fs_mark_inode_dirty_sync(inode, true);
@@ -106,6 +106,10 @@ out_unlock:
 const struct f2fs_sdp_fscrypt_operations f2fs_sdp_cryptops = {
 	.get_sdp_context = f2fs_get_sdp_context,
 	.set_sdp_context = f2fs_set_sdp_context,
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	.get_sdp_metadata_context = f2fs_get_sdp_metadata_context,
+	.set_sdp_metadata_context = f2fs_set_sdp_metadata_context,
+#endif
 	.update_sdp_context = f2fs_update_sdp_context,
 	.update_context = f2fs_update_context,
 	.get_sdp_encrypt_flags = f2fs_get_sdp_encrypt_flags,

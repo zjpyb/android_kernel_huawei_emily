@@ -23,6 +23,8 @@
 #define FTS_VBUS		"fts-io"
 #define FTS_IC_TYPES		"ic_type"
 #define FTS_IS_IN_CELL		"is_in_cell"
+#define FTS_CHARGER_SUPPORTED "charger_supported"
+#define FTS_CHARGER_SWITCH_ADDR "charger_switch_addr"
 #define FTS_WD_CHECK		"need_wd_check_status"
 #define FTS_CHECK_STATUS_WATCHDOG_TIMEOUT		"check_status_watchdog_timeout"
 #define FTS_PRAM_PROJECTID_ADDR		"pram_projectid_addr"
@@ -47,6 +49,7 @@
 #define FTS_ROI_SWITCH_ADDR		"roi_switch_addr"
 #define FTS_ROI_PKG_NUM_ADDR	"roi_pkg_num_addr"
 #define FTS_PALM_IRON_SUPPORT	"palm_iron_support"
+#define FTS_PALM_ESD_SUPPORT "palm_esd_support"
 
 #define FTS_VCI_LDO_VALUE		"vci_value"
 #define FTS_VDDIO_LDO_VALUE		"vddio_value"
@@ -108,10 +111,13 @@
 #define FTS_CB_UNIFORMITY_TEST_CSV			"cb_uniformity_test_threshold"
 #define FTS_CB_INCREASE_CSV			"cb_increase_test_threshold"
 #define IS_IC_RAWDATA_PROC_PRINTF	"is_ic_rawdata_proc_printf"
+#define FTS_SUPPORT_POINT_TO_PINT_TEST "support_point_to_point_test"
+#define CAPACITANCE_TEST_SEQUENCE "capa_test_sequence"
 
 #define FTS_TEST_TYPE_DEFAULT	"Normalize_type:judge_last_result"
 
 #define FTS_GESTURE_SUPPORTED			"gesture_supported"
+#define FTS_WAKEUP_GESTURE_SWITCH_VALUE "wakeup_gesture_switch_value"
 #define FTS_POINT_BY_POINT_JUDGE	"threshold,point_by_point_judge"
 #define FTS_OPEN_ONCE_THRESHOLD		"only_open_once_captest_threshold"
 #define FTS_ENABLE_EDGE_TOUCH		"enable_edge_touch"
@@ -125,6 +131,8 @@
 #define FTS_FW_UPDATE_DURATION_CHECK	"fw_update_duration_check"
 #define FTS_USE_PINCTRL			"fts_use_pinctrl"
 #define FTS_READ_DEBUG_REG_AND_DIFFER	"read_debug_reg_and_differ"
+#define FTS_ALLOW_PRINT_FW_VERSION "allow_print_fw_version"
+#define FTS_ALLOW_REFRESH_IC_TYPE "allow_refresh_ic_type"
 int focal_get_vendor_name_from_dts(char *project_id,
 	char *vendor_name, size_t size);
 

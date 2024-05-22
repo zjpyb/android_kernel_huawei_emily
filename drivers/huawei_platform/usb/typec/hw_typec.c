@@ -3,7 +3,7 @@
  *
  * typec driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,27 +16,30 @@
  *
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/device.h>
-#include <linux/platform_device.h>
-#include <linux/slab.h>
 #include <linux/delay.h>
-#include <linux/jiffies.h>
-#include <linux/pm_wakeup.h>
-#include <linux/io.h>
+#include <linux/device.h>
 #include <linux/gpio.h>
+#include <linux/hisi/usb/hisi_usb.h>
+#include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/io.h>
 #include <linux/irq.h>
-#include <linux/notifier.h>
+#include <linux/jiffies.h>
+#include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/notifier.h>
+#include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
+#include <linux/slab.h>
 #include <linux/version.h>
-
+#include <chipset_common/hwpower/common_module/power_sysfs.h>
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_typec_dev.h>
 #include <huawei_platform/usb/hw_typec_platform.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <huawei_platform/usb/switch/switch_ap/switch_usb_class.h>
+#include <huawei_platform/usb/switch/switch_fsa9685.h>
+#include "huawei_platform/usb/switch/usbswitch_common.h"
+
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
 #endif
@@ -49,7 +52,6 @@
 HWLOG_REGIST();
 
 static struct typec_device_info *g_typec_di;
-static struct class *g_typec_class;
 static struct device *g_typec_dev;
 
 void typec_wake_lock(struct typec_device_info *di)
@@ -74,18 +76,6 @@ void typec_wake_unlock(struct typec_device_info *di)
 	}
 }
 
-int typec_current_notifier_register(struct notifier_block *nb)
-{
-	struct typec_device_info *di = g_typec_di;
-
-	if (!di || !nb) {
-		hwlog_err("di or nb is null\n");
-		return -EINVAL;
-	}
-
-	return blocking_notifier_chain_register(&di->typec_current_nh, nb);
-}
-
 static void typec_current_notifier_call(struct typec_device_info *di)
 {
 	if (!di) {
@@ -93,14 +83,13 @@ static void typec_current_notifier_call(struct typec_device_info *di)
 		return;
 	}
 
-	blocking_notifier_call_chain(&di->typec_current_nh,
-		TYPEC_CURRENT_CHANGE, NULL);
+	power_event_bnc_notify(POWER_BNT_TYPEC, POWER_NE_TYPEC_CURRENT_CHANGE, NULL);
 }
 
 /*
  * start otg work by calling related modules.
  * usbswitch_common_manual_sw() is to connect USB signal path.
- * hisi_usb_id_change() is to open VBUS to charge slave devices.
+ * chip_usb_id_change() is to open VBUS to charge slave devices.
  */
 static void typec_open_otg(void)
 {
@@ -109,7 +98,7 @@ static void typec_open_otg(void)
 
 	mdelay(10); /* delay 10ms */
 
-	hisi_usb_id_change(ID_FALL_EVENT);
+	chip_usb_id_change(ID_FALL_EVENT);
 }
 
 /*
@@ -119,7 +108,7 @@ static void typec_close_otg(void)
 {
 	usbswitch_common_dcd_timeout_enable(false);
 
-	hisi_usb_id_change(ID_RISE_EVENT);
+	chip_usb_id_change(ID_RISE_EVENT);
 }
 
 /*
@@ -304,6 +293,17 @@ static const struct attribute_group typec_attr_group = {
 	.attrs = typec_ctrl_attributes,
 };
 
+static struct device *typec_create_group(void)
+{
+	return power_sysfs_create_group("hw_typec", "typec",
+		&typec_attr_group);
+}
+
+static void typec_remove_group(struct device *dev)
+{
+	power_sysfs_remove_group(dev, &typec_attr_group);
+}
+
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 static enum dual_role_property fusb_drp_properties[] = {
 	DUAL_ROLE_PROP_MODE,
@@ -326,7 +326,6 @@ static int dual_role_get_local_prop(struct dual_role_phy_instance *dual_role,
 	}
 
 	port_mode = typec_detect_port_mode();
-
 	if (port_mode == TYPEC_DEV_PORT_MODE_DFP) {
 		if (prop == DUAL_ROLE_PROP_MODE)
 			*val = DUAL_ROLE_PROP_MODE_DFP;
@@ -400,7 +399,6 @@ static int dual_role_set_mode_prop(struct dual_role_phy_instance *dual_role,
 		return -EINVAL;
 
 	port_mode = typec_detect_port_mode();
-
 	if (port_mode != TYPEC_DEV_PORT_MODE_DFP &&
 		port_mode != TYPEC_DEV_PORT_MODE_UFP)
 		return 0;
@@ -528,7 +526,6 @@ static void typec_attach(struct typec_device_info *di)
 	int cc_orient;
 
 	port_mode = typec_detect_port_mode();
-
 	/* Type-C attached as DFP */
 	if (port_mode == TYPEC_DEV_PORT_MODE_DFP) {
 		if (di->typec_trigger_otg) {
@@ -585,7 +582,7 @@ static void typec_attach(struct typec_device_info *di)
 		 * AS DFP to AS UFP direct, VBUS should be turned off first
 		 */
 		if (di->sink_attached) {
-			hwlog_info("%s: remove Sink first\n", __func__);
+			hwlog_info("remove Sink first\n");
 			typec_close_otg();
 			di->reverse_state = 0;
 			di->trysnk_attempt = 0;
@@ -618,7 +615,6 @@ static void typec_attach(struct typec_device_info *di)
 			hwlog_info("detected type c current is default\n");
 		else
 			hwlog_err("cannot detect a correct input current\n");
-
 	} else {
 		hwlog_err("cannot detect a correct port mode\n");
 	}
@@ -637,7 +633,7 @@ static void typec_detach(struct typec_device_info *di)
 	hwlog_info("typec detach\n");
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
-	/* set current advertisement to high when detach*/
+	/* set current advertisement to high when detach */
 	di->ops->ctrl_output_current(TYPEC_HOST_CURRENT_HIGH);
 	/* turn off VBUS when unattached */
 	if (di->sink_attached) {
@@ -684,7 +680,6 @@ static void typec_intb_work(struct work_struct *work)
 	mutex_lock(&di->typec_lock);
 
 	attach_status = typec_detect_attachment_status();
-
 	if (attach_status == TYPEC_ATTACH) {
 		hwlog_info("typec attach\n");
 		typec_attach(di);
@@ -709,26 +704,8 @@ static void typec_intb_work(struct work_struct *work)
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
 	typec_clean_int_mask();
-
 	typec_wake_unlock(di);
 }
-
-/*
- * create a class for both core layer and chip layers.
- */
-struct class *hw_typec_get_class(void)
-{
-	if (!g_typec_class) {
-		g_typec_class = class_create(THIS_MODULE, "hw_typec");
-		if (IS_ERR(g_typec_class)) {
-			hwlog_err("cannot create class\n");
-			return NULL;
-		}
-	}
-
-	return g_typec_class;
-}
-EXPORT_SYMBOL_GPL(hw_typec_get_class);
 
 /*
  * register ops pointer for chip layer.
@@ -739,7 +716,6 @@ struct typec_device_info *typec_chip_register(
 	struct typec_device_info *device_info,
 	struct typec_device_ops *ops, struct module *owner)
 {
-	int ret;
 	struct typec_device_info *di = g_typec_di;
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 	struct dual_role_phy_desc *desc = NULL;
@@ -783,36 +759,16 @@ struct typec_device_info *typec_chip_register(
 	desc->num_properties = ARRAY_SIZE(fusb_drp_properties);
 	desc->property_is_writeable = dual_role_is_writeable;
 	dual_role = devm_dual_role_instance_register(device_info->dev, desc);
+	if (!dual_role)
+		return NULL;
 	dual_role->drv_data = di;
 	di->dual_role = dual_role;
 	di->desc = desc;
 #endif /* CONFIG_DUAL_ROLE_USB_INTF */
 
-	g_typec_class = class_create(THIS_MODULE, "hw_typec");
-	if (IS_ERR(g_typec_class)) {
-		hwlog_err("cannot create class\n");
-		return NULL;
-	}
-
-	if (g_typec_class) {
-		g_typec_dev = device_create(g_typec_class, NULL, 0, NULL, "typec");
-		if (IS_ERR(g_typec_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			return NULL;
-		}
-
-		ret = sysfs_create_group(&g_typec_dev->kobj, &typec_attr_group);
-		if (ret) {
-			hwlog_err("sysfs group create failed\n");
-			goto fail_free_sysfs;
-		}
-	}
+	g_typec_dev = typec_create_group();
 
 	return di;
-
-fail_free_sysfs:
-	sysfs_remove_group(&g_typec_dev->kobj, &typec_attr_group);
-	return NULL;
 }
 EXPORT_SYMBOL_GPL(typec_chip_register);
 
@@ -820,33 +776,25 @@ static int __init typec_init(void)
 {
 	struct typec_device_info *di = NULL;
 
-	hwlog_info("probe begin\n");
-
 	di = kzalloc(sizeof(*di), GFP_KERNEL);
 	if (!di)
 		return -ENOMEM;
 
 	g_typec_di = di;
-
-	BLOCKING_INIT_NOTIFIER_HEAD(&di->typec_current_nh);
 	wakeup_source_init(&di->wake_lock, "typec_wake_lock");
 
-	hwlog_info("probe end\n");
 	return 0;
 }
 
 static void __exit typec_exit(void)
 {
-	hwlog_info("remove begin\n");
-
-	if (!g_typec_class || !g_typec_dev || !g_typec_di)
+	if (!g_typec_dev || !g_typec_di)
 		return;
 
-	class_destroy(g_typec_class);
-	sysfs_remove_group(&g_typec_dev->kobj, &typec_attr_group);
+	typec_remove_group(g_typec_dev);
 	wakeup_source_trash(&g_typec_di->wake_lock);
-
-	hwlog_info("remove end\n");
+	g_typec_dev = NULL;
+	g_typec_di = NULL;
 }
 
 subsys_initcall(typec_init);

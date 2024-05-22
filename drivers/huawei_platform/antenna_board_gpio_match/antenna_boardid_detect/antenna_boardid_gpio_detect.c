@@ -3,7 +3,7 @@
  *
  * Antenna boardid detect driver,detect the antenna board id by gpio.
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,7 +16,6 @@
  *
  */
 
-#include "antenna_boardid_gpio_detect.h"
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -29,17 +28,18 @@
 #include <linux/of.h>
 #include <linux/pinctrl/consumer.h>
 #include <huawei_platform/log/hw_log.h>
+#include "antenna_boardid_gpio_detect.h"
 
 #define HWLOG_TAG antenna_boardid_detect
 HWLOG_REGIST();
 
-#define ANTENNA_DETECT(_name, n, m, store) {	\
+#define antenna_detect(_name, n, m, store) {	\
 	.attr = __ATTR(_name, m, antenna_detect_show, store),	\
 	.name = ANTENNA_##n,	\
 }
 
-#define ANTENNA_DETECT_RO(_name, n)	\
-		ANTENNA_DETECT(_name, n, 0444, NULL)
+#define antenna_detect_ro(_name, n)	\
+		antenna_detect(_name, n, 0444, NULL)
 
 struct pinctrl_state *pinctrl_def;
 struct pinctrl_state *pinctrl_idle;
@@ -63,8 +63,8 @@ static int g_gpio[MAX_GPIO_NUM] = {0};
 static int g_gpio_expect = -1;
 
 static struct antenna_detect_info antenna_detect_tb[] = {
-	ANTENNA_DETECT_RO(antenna_board_match, BOARDID_GPIO_DETECT),
-	ANTENNA_DETECT_RO(antenna_boardid_status, BOARDID_GPIO_STATUS),
+	antenna_detect_ro(antenna_board_match, BOARDID_GPIO_DETECT),
+	antenna_detect_ro(antenna_boardid_status, BOARDID_GPIO_STATUS),
 };
 
 static struct attribute *antenna_sysfs_attrs[ARRAY_SIZE(antenna_detect_tb) + 1];
@@ -115,8 +115,8 @@ static ssize_t antenna_detect_show(struct device *dev,
 	int i;
 	int ret;
 	int gpio_value = 0;
-	int match = 0;
-	int temp_value = 0;
+	int match;
+	int temp_value;
 	struct antenna_detect_info *info = NULL;
 
 	info = antenna_detect_lookup(attr->attr.name);
@@ -202,9 +202,8 @@ static int antenna_dts_parse(struct device_node *antenna_node, int *gpio_sub)
 	}
 
 	if (of_property_read_u32(antenna_node, "expect_value",
-		&g_gpio_expect)) {
+		&g_gpio_expect))
 		g_gpio_expect = -1;
-	}
 
 	for (i = 0; i < array_len; i++) {
 		ret = of_property_read_string_index(antenna_node, "temp_gpio",

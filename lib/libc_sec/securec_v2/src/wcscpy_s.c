@@ -13,7 +13,7 @@ SECUREC_INLINE errno_t SecDoCpyW(wchar_t *strDest, size_t destMax, const wchar_t
     SECUREC_CALC_WSTR_LEN(strSrc, destMax, &srcStrLen);
 
     if (srcStrLen == destMax) {
-        strDest[0] = '\0';
+        strDest[0] = L'\0';
         SECUREC_ERROR_INVALID_RANGE("wcscpy_s");
         return ERANGE_AND_RESET;
     }
@@ -76,5 +76,4 @@ errno_t wcscpy_s(wchar_t *strDest, size_t destMax, const wchar_t *strSrc)
     }
     return SecDoCpyW(strDest, destMax, strSrc);
 }
-
 

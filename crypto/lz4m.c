@@ -1,3 +1,29 @@
+/*
+ * Copyright (C) 2018 HUAWEI, Inc.
+ *             http://www.huawei.com/
+ *
+ * Original code taken from 'lz4.c'
+ */
+/*
+ * Cryptographic API.
+ *
+ * Copyright (c) 2013 Chanho Min <chanho.min@lge.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc., 51
+ * Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ *
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/crypto.h>
@@ -33,7 +59,7 @@ static int lz4m_compress_crypto(struct crypto_tfm *tfm, const u8 *src,
 	size_t tmp_len = *dlen;
 	int err;
 
-	err = lz4m_fast_encode(src, slen, dst, &tmp_len, ctx->lz4m_comp_mem);
+	err = lz4m_compress(src, slen, dst, &tmp_len, ctx->lz4m_comp_mem);
 
 	if (err < 0)
 		return -EINVAL;

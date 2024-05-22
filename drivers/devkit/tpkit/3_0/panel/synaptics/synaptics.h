@@ -18,7 +18,7 @@
  */
 #include <linux/device.h>
 #include <linux/platform_device.h>
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define RED_REMOTE
 #define X_RES	1080
@@ -692,6 +692,8 @@ struct synaptics_rmi4_data {
 	unsigned int screenoff_status_support;
 	unsigned int sensitivity_adjust_reg;
 	unsigned int sensitivity_adjust_support;
+	unsigned int aod_touch_enable;
+	unsigned int aod_display_no_power_off;
 
 };
 

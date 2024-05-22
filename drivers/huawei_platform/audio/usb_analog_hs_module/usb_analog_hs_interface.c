@@ -35,9 +35,6 @@
 #define HWLOG_TAG usb_ana_hs_interface
 HWLOG_REGIST();
 
-#define IN_FUNCTION   hwlog_info("%s function comein\n", __func__)
-#define OUT_FUNCTION  hwlog_info("%s function comeout\n", __func__)
-
 static struct usb_analog_hs_ops *usb_ana_hs_pdata;
 
 bool check_usb_analog_hs_support(void)
@@ -47,7 +44,7 @@ bool check_usb_analog_hs_support(void)
 	return false;
 }
 
-int usb_analog_hs_dev_register(struct usb_analog_hs_dev *dev, void *codec_data)
+int usb_analog_hs_dev_register(struct ana_hs_codec_dev *dev, void *codec_data)
 {
 	if (usb_ana_hs_pdata && usb_ana_hs_pdata->usb_ana_hs_dev_register)
 		return usb_ana_hs_pdata->usb_ana_hs_dev_register(dev,
@@ -60,7 +57,7 @@ int usb_analog_hs_check_headset_pluged_in(void)
 	if (usb_ana_hs_pdata &&
 		usb_ana_hs_pdata->usb_ana_hs_check_headset_pluged_in)
 		return usb_ana_hs_pdata->usb_ana_hs_check_headset_pluged_in();
-	return USB_ANA_HS_PLUG_OUT;
+	return ANA_HS_PLUG_OUT;
 }
 
 void usb_analog_hs_plug_in_out_handle(int hs_state)

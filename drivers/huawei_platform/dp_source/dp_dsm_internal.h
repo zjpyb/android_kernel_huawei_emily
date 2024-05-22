@@ -27,8 +27,10 @@
 
 #define DP_DSM_BUF_SIZE 1024
 
-// for print debug log
-//#define DP_DSM_DEBUG
+/*
+ * Uncomment when doing bring up or other messy debugging.
+ * #define DP_DSM_DEBUG
+ */
 
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
@@ -128,7 +130,7 @@
 // 2. link training retval
 #define DP_DSM_ERRNO_DEVICE_SRS_FAILED  0xFFFF
 
-// from tca.h (vendor\hisi\ap\kernel\include\linux\hisi\contexthub)
+// from tca.h (vendor\hisi\ap\kernel\include\linux\hisi\usb)
 enum tca_irq_type {
 	TCA_IRQ_HPD_OUT = 0,
 	TCA_IRQ_HPD_IN = 1,
@@ -280,6 +282,10 @@ struct dp_typec_in_out {
 	struct timeval out_time[DP_DSM_TYPEC_IN_OUT_NUM];
 };
 
+struct dp_link_state_node {
+	struct list_head list;
+	enum dp_link_state state;
+};
 
 struct dp_dsm_priv {
 	struct list_head list;
@@ -395,8 +401,11 @@ struct dp_dsm_priv {
 
 struct dp_imonitor_report_info {
 	struct list_head list_head;
+	struct list_head uevent_list_head;
 	struct mutex lock;
+	spinlock_t uevent_lock;
 	struct delayed_work imonitor_work;
+	struct delayed_work uevent_work;
 
 	// check whether hpd existed or not
 	struct delayed_work hpd_work;
@@ -469,7 +478,7 @@ do { \
 	(p->hotplug_state & (1 << s))
 #define DP_REPORT_LINK_STATE(p, s) \
 do { \
-	dp_link_state_event(s, p->is_dptx_vr); \
+	dp_add_state_to_uevent_list((s), (p)->is_dptx_vr); \
 	p->last_hotplug_state |= (1 << s); \
 } while (0)
 

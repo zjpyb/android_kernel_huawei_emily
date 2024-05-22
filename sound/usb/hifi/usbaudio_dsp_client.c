@@ -16,10 +16,14 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/version.h>
 #include <linux/string.h>
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
 #include <linux/usb/audio-v2.h>
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,19,0))
+#include <linux/usb/audio-v3.h>
+#endif
 #include <linux/slab.h>
 
 #include <sound/control.h>
@@ -47,7 +51,7 @@ struct usbaudio_pcm_cfg {
 	unsigned int rates;
 };
 
-u32 special_usb_ids[] = {
+u32 forced_match_arm_usb_ids[] = {
 	USB_ID(0x041e, 0x3000),
 	USB_ID(0x041e, 0x3010),
 	USB_ID(0x041e, 0x3020),
@@ -173,6 +177,27 @@ u32 customsized_usb_ids[] = {
 	USB_ID(0x12d1, 0x3a07),
 };
 
+u32 forced_match_hifi_usb_ids[] = {
+	USB_ID(0x262a, 0x9302), // iBasso-DC-Series
+};
+
+static bool need_reset_vbus(u32 usb_id)
+{
+	int i;
+	static const u32 reset_vbus_usb_ids[] = {
+		/* Letv Headset */
+		USB_ID(0x262a, 0x1534),
+		/* OnePlus ED117 */
+		USB_ID(0x2a70, 0x1881),
+	};
+
+	for (i = 0; i < ARRAY_SIZE(reset_vbus_usb_ids); i++) {
+		if (reset_vbus_usb_ids[i] == usb_id)
+			return true;
+	}
+	return false;
+}
+
 /* find an input terminal descriptor (either UAC1 or UAC2) with the given
  * terminal id
  */
@@ -208,7 +233,7 @@ static struct uac2_output_terminal_descriptor *
 	return NULL;
 }
 
-static int parse_uac_endpoint_attributes(struct snd_usb_audio *chip,
+static unsigned int parse_uac_endpoint_attributes(struct snd_usb_audio *chip,
 					 struct usb_host_interface *alts,
 					 int protocol, int iface_no)
 {
@@ -216,7 +241,7 @@ static int parse_uac_endpoint_attributes(struct snd_usb_audio *chip,
 	 * header first which is the same for both versions */
 	struct uac_iso_endpoint_descriptor *csep = NULL;
 	struct usb_interface_descriptor *altsd = get_iface_desc(alts);
-	int attributes = 0;
+	unsigned int attributes = 0;
 
 	csep = snd_usb_find_desc(alts->endpoint[0].extra, alts->endpoint[0].extralen, NULL, USB_DT_CS_ENDPOINT);
 
@@ -273,6 +298,10 @@ static int snd_usb_parse_audio_interface(struct snd_usb_audio *chip, int iface_n
 
 	/* parse the interface's altsettings */
 	iface = usb_ifnum_to_if(dev, iface_no);
+	if (!iface) {
+		dev_err(&dev->dev, "%d : does not exist\n", iface_no);
+		return -EINVAL;
+	}
 
 	num = iface->num_altsetting;
 
@@ -606,6 +635,20 @@ bool is_customized_headset(u32 usb_id)
 	return false;
 }
 
+bool is_forced_match_hifi_headset(u32 usb_id)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(forced_match_hifi_usb_ids); i++) {
+		if (usb_id == forced_match_hifi_usb_ids[i]) {
+			pr_info("forced match hifi usbid 0x%x\n", usb_id);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool hifi_samplerate_compare(struct audioformat *fp, struct usbaudio_pcm_cfg *pcm_cfg)
 {
 	int i,j;
@@ -695,7 +738,7 @@ bool hifi_channel_compare(struct audioformat *fp, struct usbaudio_pcm_cfg *pcm_c
 	return found;
 }
 
-bool hifi_usbaudio_protocal_compare(struct usb_device *dev, struct audioformat *fp)
+bool hifi_usbaudio_protocal_compare(struct usb_device *dev, struct audioformat *fp, u32 usb_id)
 {
 	struct usb_host_interface *alts = NULL;
 	struct usb_interface_descriptor *altsd = NULL;
@@ -708,7 +751,7 @@ bool hifi_usbaudio_protocal_compare(struct usb_device *dev, struct audioformat *
 	alts = &iface->altsetting[fp->altset_idx];
 	altsd = get_iface_desc(alts);
 
-	if (altsd->bNumEndpoints != 1) {
+	if (altsd->bNumEndpoints != 1 && !is_forced_match_hifi_headset(usb_id)) {
 		pr_err("endpoint num is not match, bNumEndpoints %u \n", altsd->bNumEndpoints);
 		return false;
 	}
@@ -838,7 +881,7 @@ bool match_hifi_format(struct usb_device *dev, struct list_head *fp_list, struct
 		for (i = 0; i < fp->nr_rates; i++)
 			pr_err("rate[%d]:%d\n",i,fp->rate_table[i]);
 		pr_err("-----------end \n");
-		if (hifi_usbaudio_protocal_compare(dev, fp) &&
+		if (hifi_usbaudio_protocal_compare(dev, fp, usb_id) &&
 			hifi_samplerate_compare(fp, pcm_cfg) &&
 			hifi_formats_compare(fp, pcm_cfg) &&
 			hifi_channel_compare(fp, pcm_cfg)) {
@@ -974,19 +1017,19 @@ bool is_usbaudio_device(struct usb_device *udev)
 		audio_intf_num, hid_intf_num, other_intf_num);
 
 	if ((audio_intf_num == 1) && (hid_intf_num <= 1) && (other_intf_num == 0)) {
-		pr_info("[%s]to hisi_usb_start_hifi_usb\n", __func__);
+		pr_info("[%s]to usb_start_hifi_usb\n", __func__);
 		return true;
 	}
 
 	return false;
 }
 
-bool is_special_usbid(u32 usb_id)
+bool is_forced_match_arm_usbid(u32 usb_id)
 {
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(special_usb_ids); i++) {
-		if (usb_id == special_usb_ids[i]) {
+	for (i = 0; i < ARRAY_SIZE(forced_match_arm_usb_ids); i++) {
+		if (usb_id == forced_match_arm_usb_ids[i]) {
 			pr_info("device's usbid!!!0x%x\n", usb_id);
 			return true;
 		}
@@ -1003,7 +1046,7 @@ static void _customsized_headset_volume_set(struct usb_device *dev, u32 usb_id)
 
 	for (i = 0; i < ARRAY_SIZE(customsized_usb_ids); i++) {
 		if (usb_id == customsized_usb_ids[i]) {
-			pr_info("huawei headset 0x%x\n", usb_id);
+			pr_info("audio headset 0x%x\n", usb_id);
 			ret = usb_control_msg(dev, usb_rcvctrlpipe(dev, 0), /*lint !e648 */
 				USB_REQ_SET_VOLUME,
 				USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
@@ -1025,15 +1068,14 @@ static void _customsized_headset_volume_set(struct usb_device *dev, u32 usb_id)
 bool controller_switch(struct usb_device *dev, u32 usb_id, struct usb_host_interface *ctrl_intf, int ctrlif, struct usbaudio_pcms *pcms)
 {
 	int ret = 0;
-	if (is_usbaudio_device(dev) && !is_special_usbid(usb_id) && is_match_hifi_format(dev, usb_id, ctrl_intf, ctrlif, pcms)) {
-		if (!hisi_usb_using_hifi_usb(dev)) {
+	if (is_usbaudio_device(dev) && !is_forced_match_arm_usbid(usb_id) && is_match_hifi_format(dev, usb_id, ctrl_intf, ctrlif, pcms)) {
+		if (!usb_using_hifi_usb(dev)) {
 			ret = usbaudio_nv_check();
 			if (ret == 0) {
-				/* Some special device need reset power */
-				if (usb_id == USB_ID(0x262a, 0x1534)) {
-					if (!hisi_usb_start_hifi_usb_reset_power())
+				if (need_reset_vbus(usb_id)) {
+					if (!usb_start_hifi_usb_reset_power())
 						return true;
-				} else if (!hisi_usb_start_hifi_usb()) {
+				} else if (!usb_start_hifi_usb()) {
 					return true;
 				} else {
 					pr_err("start hifi usb fail \n");
@@ -1045,14 +1087,14 @@ bool controller_switch(struct usb_device *dev, u32 usb_id, struct usb_host_inter
 				return true;
 			}
 		} else {
-			/* set volume for huawei headset */
+			/* set volume for audio headset */
 			_customsized_headset_volume_set(dev, usb_id);
 			pr_info("already using hifiusb\n");
 		}
 	} else {
-		if (hisi_usb_using_hifi_usb(dev)) {
+		if (usb_using_hifi_usb(dev)) {
 			pr_info("using hifiuusb, switch to arm usb\n");
-			hisi_usb_stop_hifi_usb();
+			usb_stop_hifi_usb();
 			return true;
 		}
 	}
@@ -1063,7 +1105,7 @@ bool controller_switch(struct usb_device *dev, u32 usb_id, struct usb_host_inter
 bool send_usbaudioinfo2hifi(struct snd_usb_audio *chip, struct usbaudio_pcms *pcms)
 {
 	int i = 0;
-	if (hisi_usb_using_hifi_usb(chip->dev)) {
+	if (usb_using_hifi_usb(chip->dev)) {
 		if(0 == usbaudio_probe_msg(pcms)) {
 			for (i = 0; i < USBAUDIO_PCM_NUM; i++) {
 				pr_err("-----------begin \n");
@@ -1119,13 +1161,13 @@ bool send_usbaudioinfo2hifi(struct snd_usb_audio *chip, struct usbaudio_pcms *pc
 
 void usbaudio_nv_check_complete(unsigned int usb_id)
 {
-	if (usb_id == USB_ID(0x262a, 0x1534)) {
-		pr_info("letv reset power \n");
-		if (hisi_usb_start_hifi_usb_reset_power())
+	if (need_reset_vbus(usb_id)) {
+		pr_info("start hifi usb reset power\n");
+		if (usb_start_hifi_usb_reset_power())
 			pr_err("%s start hifi usb reset power err \n", __FUNCTION__);
 	} else {
-		pr_info("not letv start hifi usb \n");
-		if (hisi_usb_start_hifi_usb())
+		pr_info("do not start hifi usb reset power\n");
+		if (usb_start_hifi_usb())
 			pr_err("%s start hifi usb err \n", __FUNCTION__);
 	}
 }
@@ -1143,9 +1185,9 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 
 	if (running == START_STREAM) {
 		pr_info("call usb API to check usb power status \n");
-		ret = hisi_usb_check_hifi_usb_status(HIFI_USB_AUDIO);
+		ret = check_hifi_usb_status(HIFI_USB_AUDIO);
 		if(ret)
-			pr_err("call hisi_usb_check_hifi_usb_status return fail(%d) \n", ret);
+			pr_err("call check_hifi_usb_status return fail(%d) \n", ret);
 
 	}
 
@@ -1153,7 +1195,7 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 	if (ret < 0) {
 		pr_err("%d:%d: usb_set_interface failed (%d)\n", fmt->iface, 0, ret);
 		if (ret == -ETIMEDOUT)
-			hisi_usb_stop_hifi_usb_reset_power();
+			usb_stop_hifi_usb_reset_power();
 		return ret;
 	}
 
@@ -1162,7 +1204,7 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 		if (ret < 0) {
 			pr_err("%d:%d: usb_set_interface failed (%d)\n", fmt->iface, fmt->altsetting, ret);
 			if (ret == -ETIMEDOUT)
-				hisi_usb_stop_hifi_usb_reset_power();
+				usb_stop_hifi_usb_reset_power();
 			return ret;
 		}
 
@@ -1171,6 +1213,11 @@ static int usbaudio_set_interface(int direction, struct snd_usb_audio *chip, str
 		cur_audiofmt.protocol = fmt->protocol;
 		cur_audiofmt.clock = fmt->clock;
 		iface = usb_ifnum_to_if(chip->dev, fmt->iface);
+		if (!iface) {
+			pr_err("usb_set_interface failed, iface: %d\n", fmt->iface);
+			return -EINVAL;
+		}
+
 		alts = &iface->altsetting[fmt->altset_idx];
 		ret = snd_usb_init_sample_rate(chip,
 					       fmt->iface,
@@ -1210,21 +1257,21 @@ int usb_power_resume(void)
 {
 	int ret;
 	pr_info("call usb API to check usb power status \n");
-	ret = hisi_usb_check_hifi_usb_status(HIFI_USB_AUDIO);
+	ret = check_hifi_usb_status(HIFI_USB_AUDIO);
 	if(ret)
-		pr_err("call hisi_usb_check_hifi_usb_status return fail(%d) \n", ret);
+		pr_err("call check_hifi_usb_status return fail(%d) \n", ret);
 
 	return ret;
 }
 
 bool controller_query(struct snd_usb_audio *chip)
 {
-	return hisi_usb_using_hifi_usb(chip->dev);
+	return usb_using_hifi_usb(chip->dev);
 }
 
 int disconnect(struct snd_usb_audio *chip, unsigned int dsp_reset_flag)
 {
-	if (hisi_usb_using_hifi_usb(chip->dev))
+	if (usb_using_hifi_usb(chip->dev))
 		return usbaudio_disconnect_msg(dsp_reset_flag);
 	else
 		return 0;

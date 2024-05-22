@@ -429,7 +429,7 @@ static inline void cpufreq_resume(void) {}
 
 #define CPUFREQ_TRANSITION_NOTIFIER	(0)
 #define CPUFREQ_POLICY_NOTIFIER		(1)
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 #define CPUFREQ_GOVINFO_NOTIFIER	(2)
 #endif
 
@@ -441,7 +441,7 @@ static inline void cpufreq_resume(void) {}
 #define CPUFREQ_ADJUST			(0)
 #define CPUFREQ_NOTIFY			(1)
 
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 /* Govinfo Notifiers */
 #define CPUFREQ_LOAD_CHANGE		(0)
 
@@ -456,7 +456,7 @@ struct cpufreq_govinfo {
 };
 extern struct atomic_notifier_head cpufreq_govinfo_notifier_list;
 
-#endif /* CONFIG_HISI_CORE_CTRL */
+#endif /* CONFIG_CORE_CTRL */
 
 #ifdef CONFIG_CPU_FREQ
 int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list);
@@ -1026,4 +1026,14 @@ unsigned int cpufreq_generic_get(unsigned int cpu);
 int cpufreq_generic_init(struct cpufreq_policy *policy,
 		struct cpufreq_frequency_table *table,
 		unsigned int transition_latency);
+
+#if defined(CONFIG_HISI_CPUFREQ) && defined(CONFIG_CPU_FREQ_GOV_USERSPACE)
+extern unsigned int cpufreq_userspace_gov_started(unsigned int cpu);
+#else
+static inline unsigned int cpufreq_userspace_gov_started(unsigned int cpu)
+{
+	return 0;
+}
+#endif
+
 #endif /* _LINUX_CPUFREQ_H */

@@ -395,7 +395,7 @@ int gps_bcm4775_node_init(struct device_node *np, struct gpio *Pgpio, int node,
               struct file_operations *gps_proc_fops)
 {
     int ret = 0;
-    struct proc_dir_entry* file;
+	struct proc_dir_entry* file = NULL;
 
     if(np == NULL  || Pgpio == NULL  || gps_proc_fops == NULL )
     {

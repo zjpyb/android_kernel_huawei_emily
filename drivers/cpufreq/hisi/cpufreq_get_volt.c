@@ -1,14 +1,19 @@
 /*
- * Hisilicon Platforms GET_CPU_VOLT support
+ * cpufreq_get_volt.c
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * cpufreq get volt module
  *
- * This program is distributed "as is" WITHOUT ANY WARRANTY of any
- * kind, whether express or implied; without even the implied warranty
- * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -29,89 +34,81 @@
 #include <linux/init.h>
 #include <linux/mutex.h>
 #include <linux/compiler.h>
+#include <linux/arm-smccc.h>
 #include <asm/compiler.h>
 #include <linux/proc_fs.h>
+#include <bl31_smc.h>
+#include <linux/rdr_lpm3.h>
+#include <securec.h>
 
+#define AVS_VOLT_MAX_BYTE				192U
+#define HPM_VOLT_MAX_BYTE				102U
+#define DIEID_MAX_BYTE					20U
 
-#define CPU_VOLT_FN_GET_VAL				(0xc800aa01)
-#define AVS_VOLT_MAX_BYTE				(192)
-#ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
-#define HPM_VOLT_MAX_BYTE				(102)
-#define DIEID_MAX_BYTE					(20)
+#ifdef CONFIG_LP_ENABLE_HPM_DATA_COLLECT
+#define VOLT_SIZE	(AVS_VOLT_MAX_BYTE + HPM_VOLT_MAX_BYTE + DIEID_MAX_BYTE + 2U)
+#else
+#define VOLT_SIZE	(AVS_VOLT_MAX_BYTE)
 #endif
 
 struct tag_cpu_volt_data {
 	phys_addr_t phy_addr;
 	unsigned char *virt_addr;
+	/* mutex lock for cpu_volt-data */
 	struct mutex cpu_mutex;
 };
 
 static struct tag_cpu_volt_data g_cpu_volt_data;
-extern char *g_lpmcu_rdr_ddr_addr;
-extern u32 rdr_lpm3_buf_len;
-
-/*lint -e715 -e838*/
-noinline int atfd_hisi_service_get_val_smc(u64 function_id, u64 arg0, u64 arg1, u64 arg2)
-{
-	asm volatile (
-		__asmeq("%0", "x0")
-		__asmeq("%1", "x1")
-		__asmeq("%2", "x2")
-		__asmeq("%3", "x3")
-		"smc	#0\n"
-		: "+r" (function_id)
-		: "r" (arg0), "r" (arg1), "r" (arg2));
-
-	return (int)function_id;
-}
 
 static int get_volt_show(struct seq_file *m, void *v)
 {
-	int i = 0;
-	int ret = 0;
-
+	struct arm_smccc_res res = {0};
+	int i;
+#ifdef CONFIG_HISI_LPMCU_BB
+	u32 rdr_lpm3_buf_len;
+	char *lpmcu_rdr_addr = NULL;
+	int ret;
+#endif
 	mutex_lock(&g_cpu_volt_data.cpu_mutex);
 
-#ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
-	ret = atfd_hisi_service_get_val_smc((u64)CPU_VOLT_FN_GET_VAL,
-					    g_cpu_volt_data.phy_addr,
-					    (u64)(AVS_VOLT_MAX_BYTE + HPM_VOLT_MAX_BYTE + DIEID_MAX_BYTE +2), 0ULL);
-#else
-	ret = atfd_hisi_service_get_val_smc((u64)CPU_VOLT_FN_GET_VAL,
-					    g_cpu_volt_data.phy_addr,
-					    (u64)AVS_VOLT_MAX_BYTE, 0ULL);
-#endif
-	if (ret != 0) {
-		(void)seq_printf(m, "get val failed.\n");
+	arm_smccc_1_1_smc(HISI_GET_CPU_VOLT_FID_VALUE,
+			  g_cpu_volt_data.phy_addr, VOLT_SIZE, &res);
+	if (res.a0 != 0) {
+		(void)seq_printf(m, "get val failed\n");
 		mutex_unlock(&g_cpu_volt_data.cpu_mutex);
 		return -EAGAIN;
 	}
-#ifdef CONFIG_HISI_ENABLE_HPM_DATA_COLLECT
-	for (i = 0; i < (AVS_VOLT_MAX_BYTE + HPM_VOLT_MAX_BYTE + DIEID_MAX_BYTE + 2); i++) {
+
+	for (i = 0; i < VOLT_SIZE; i++) {
+#ifdef CONFIG_LP_ENABLE_HPM_DATA_COLLECT
 		if (i == AVS_VOLT_MAX_BYTE) {
-			seq_printf(m, "\n hpm_volt: \n");
+			seq_printf(m, "\n hpm_volt:\n");
 		} else if (i == (AVS_VOLT_MAX_BYTE + HPM_VOLT_MAX_BYTE)) {
 			i += 2;
-			seq_printf(m, "\n die_id: \n");
+			seq_printf(m, "\n die_id:\n");
 		}
-		seq_printf(m, "0x%-2x ", g_cpu_volt_data.virt_addr[i]);
-		if ((i != 0) && (i % 16 == 15))
-			seq_printf(m, "\n");
-	}
-#else
-	for (i = 0; i < AVS_VOLT_MAX_BYTE; i++) {
-		seq_printf(m, "0x%-2x ", g_cpu_volt_data.virt_addr[i]);
-		if ((i != 0) && (i % 16 == 15))
-			seq_printf(m, "\n");
-	}
 #endif
+		seq_printf(m, "0x%-2x ", g_cpu_volt_data.virt_addr[i]);
+		if (i % 16 == 15)
+			seq_printf(m, "\n");
+	}
 
+#ifdef CONFIG_HISI_LPMCU_BB
+	rdr_lpm3_buf_len = rdr_lpm3_buf_len_get();
 	if (rdr_lpm3_buf_len < AVS_VOLT_MAX_BYTE) {
 		mutex_unlock(&g_cpu_volt_data.cpu_mutex);
 		return -ENOSPC;
 	}
-
-	memcpy((void *)(g_lpmcu_rdr_ddr_addr+rdr_lpm3_buf_len-AVS_VOLT_MAX_BYTE), g_cpu_volt_data.virt_addr, (size_t)AVS_VOLT_MAX_BYTE);
+	lpmcu_rdr_addr = lpmcu_rdr_ddr_addr_get();
+	ret = memcpy_s((void *)(lpmcu_rdr_addr + rdr_lpm3_buf_len -
+				AVS_VOLT_MAX_BYTE),
+		       (size_t)AVS_VOLT_MAX_BYTE, g_cpu_volt_data.virt_addr,
+		       (size_t)AVS_VOLT_MAX_BYTE);
+	if (ret != EOK) {
+		mutex_unlock(&g_cpu_volt_data.cpu_mutex);
+		return -ENOMEM;
+	}
+#endif
 
 	mutex_unlock(&g_cpu_volt_data.cpu_mutex);
 
@@ -123,54 +120,51 @@ static int get_volt_open(struct inode *inode, struct file *file)
 	return single_open(file, get_volt_show, NULL);
 }
 
-/*lint -e785*/
 static const struct file_operations get_volt_operations = {
-	.open		= get_volt_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
+	.open = get_volt_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
-/*lint +e785*/
+
 static int __init cpufreq_get_volt_init(void)
 {
 	int ret;
 	struct device_node *np = NULL;
-	uint32_t data[2] = { 0 };
+	u32 data[2] = {0};
 
 	phys_addr_t bl31_smem_base =
-	    HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
+		HISI_SUB_RESERVED_BL31_SHARE_MEM_PHYMEM_BASE;
 	np = of_find_compatible_node(NULL, NULL, "hisilicon, get_val");
-	if (!np) {
-		pr_err("%s: no compatible node found.\n", __func__);
+	if (np == NULL) {
+		pr_err("%s: no compatible node found\n", __func__);
 		return -EPERM;
 	}
 
-	ret = of_property_read_u32_array(np, "hisi,bl31-share-mem", &data[0], 2UL);
-	if (ret) {
-		pr_err("%s , get val mem compatible node err.\n",
-		     __func__);
-		return -EPERM;
+	ret = of_property_read_u32_array(np, "hisi,bl31-share-mem",
+					 &data[0], 2UL);
+	if (ret != 0) {
+		pr_err("%s, get val mem compatible node err\n", __func__);
+		goto err_out;
 	}
 
 	g_cpu_volt_data.phy_addr = bl31_smem_base + data[0];
 	g_cpu_volt_data.virt_addr =
-	    (unsigned char *)ioremap(bl31_smem_base + data[0], (size_t)data[1]);
-	if (NULL == g_cpu_volt_data.virt_addr) {
-		pr_err
-		    ("%s: %d: allocate memory for g_cpu_volt_data.virt_addr failed.\n",
-		     __func__, __LINE__);
-		return -EPERM;
+		(unsigned char *)ioremap(bl31_smem_base + data[0], (size_t)data[1]);
+	if (g_cpu_volt_data.virt_addr == NULL) {
+		pr_err("%s: %d: alloc memory for virt_addr failed\n",
+		       __func__, __LINE__);
+		goto err_out;
 	}
-	mutex_init(&(g_cpu_volt_data.cpu_mutex));
+	mutex_init(&g_cpu_volt_data.cpu_mutex);
 
-	proc_create("param", 0660, NULL, &get_volt_operations);
+	proc_create("param", 0440, NULL, &get_volt_operations);
 
 	return 0;
+err_out:
+	of_node_put(np);
+	return -EPERM;
 }
-/*lint +e715 +e838*/
-/*lint -e528 -esym(528,*)*/
-/*lint -e753 -esym(753,*)*/
+
 module_init(cpufreq_get_volt_init);
-/*lint -e528 +esym(528,*)*/
-/*lint -e753 +esym(753,*)*/
 

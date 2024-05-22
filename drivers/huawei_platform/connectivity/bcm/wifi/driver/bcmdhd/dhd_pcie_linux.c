@@ -1539,11 +1539,9 @@ dhdpcie_bus_request_irq(struct dhd_bus *bus)
 extern void dhdpcie_advertise_bus_cleanup(dhd_pub_t	 *dhdp);
 extern void dhd_devwake_release(dhd_pub_t *dhdp);
 #endif
-extern void pcie_set_dbi_flag(void);
 void dhdpcie_shutdown(dhd_pub_t *dhd_pub) {
 	unsigned long flags;
 	DHD_ERROR(("##> %s\n", __FUNCTION__));
-	pcie_set_dbi_flag();
 #ifdef HW_PCIE_STABILITY
 	/* Avoid false alarm happened when sending hang report */
 	DHD_GENERAL_LOCK(dhd_pub, flags);

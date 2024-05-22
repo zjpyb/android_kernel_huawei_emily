@@ -12,10 +12,7 @@
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include "sensor_commom.h"
-#include "hw_cci.h"
-#include "hw_isp_io.h"
 #include "hw_pmic.h"
-//#include "isp_ops.h"
 #include "../../clt/hisi_clt_flag.h"
 //lint -save -e529 -e542
 static int is_fpga = 0; //default is no fpga
@@ -260,8 +257,6 @@ void hw_sensor_i2c_config(sensor_t *s_ctrl,
 		return;
 
 	if (POWER_ON == state) {
-		hw_isp_config_i2c(&s_ctrl->board_info->i2c_config);
-
 		if (0 != power_setting->delay) {
 			hw_camdrv_msleep(power_setting->delay);
 		}
@@ -281,11 +276,11 @@ int hw_sensor_pmic_config(hwsensor_board_info_t *sensor_info,
     //todo ...
     //use wangzhengyong pmic interface
     if (ncp6925_ctrl.func_tbl->pmic_seq_config) {
-	rc = ncp6925_ctrl.func_tbl->pmic_seq_config(&ncp6925_ctrl, power_setting->seq_val, power_setting->config_val, state); /*lint !e64 */
+        rc = ncp6925_ctrl.func_tbl->pmic_seq_config(&ncp6925_ctrl, power_setting->seq_val, power_setting->config_val, state); /*lint !e64 */
     }
 
     if (0 != power_setting->delay) {
-    	hw_camdrv_msleep(power_setting->delay);
+        hw_camdrv_msleep(power_setting->delay);
     }
 
     return rc;

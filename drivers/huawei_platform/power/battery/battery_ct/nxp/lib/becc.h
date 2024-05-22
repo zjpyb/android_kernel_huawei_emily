@@ -3,7 +3,7 @@
  *
  * Binary ECC operations
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -62,7 +62,7 @@ void becc_to_epif(bitstr_t destination, const bitstr_t x_value);
  * A Output bitstream
  * B Input bitstream
  */
-#define BECC_BITSTR_COPY(x, y)	memcpy((x), (y), sizeof(bitstr_t))
+#define becc_bitstr_copy(x, y)	memcpy((x), (y), sizeof(bitstr_t))
 
 /*
  * Copy point
@@ -71,10 +71,10 @@ void becc_to_epif(bitstr_t destination, const bitstr_t x_value);
  * x2 X-coordinate input
  * y2 Y-coordinate input
  */
-#define BECC_POINT_COPY(x1, y1, x2, y2)			\
-do {							\
-	BECC_BITSTR_COPY(x1, x2);			\
-	BECC_BITSTR_COPY(y1, y2);			\
+#define becc_point_copy(x1, y1, x2, y2) \
+do { \
+	becc_bitstr_copy(x1, x2); \
+	becc_bitstr_copy(y1, y2); \
 } while (0)
 
 /* Point multiplication via double-and-add algorithm */

@@ -126,7 +126,7 @@ VL53L1_Error VL53L1_is_firmware_ready_silicon(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  comms_buffer[5];
 

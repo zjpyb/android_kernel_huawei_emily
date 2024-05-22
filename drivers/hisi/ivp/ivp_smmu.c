@@ -1,17 +1,19 @@
 /*
- * Copyright (C) 20013-2013 hisilicon. All rights reserved.
+ * ipc smmu function
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
+
 #define pr_fmt(fmt) "[ivp-smmu]  " fmt
 
+#include "ivp_smmu.h"
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/list.h>
@@ -23,9 +25,8 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/hisi-iommu.h>
-#include "ivp_smmu.h"
-#include "ivp_log.h"
 #include <linux/hisi/rdr_hisi_platform.h>
+#include "ivp_log.h"
 //lint -save -e750 -e753 -e750 -e528 -e144 -e82 -e64 -e785 -e715 -e712 -e40
 //lint -save -e63 -e732 -e42 -e550 -e438 -e834 -e648 -e747 -e778 -e50 -e838
 //lint -save -e571
@@ -39,7 +40,7 @@
 #define     SMMU_NS_GFSYNR0         0x0050
 #define     SMMU_NS_GFSYNR1         0x0054
 #define     SMMU_NS_GFSYNR2         0x0058
-#define     SMMU_NS_TLBIVMID        0x0064 //invalid tlb by VMID
+#define     SMMU_NS_TLBIVMID        0x0064 // invalid tlb by VMID
 #define     SMMU_NS_TLBGSYNC        0x0070
 #define     SMMU_NS_TLBGSTATUS      0x0074
 #define     SMMU_NS_CBA2R0          0x1800
@@ -48,22 +49,22 @@
 #define     SMMU_NS_CBAR0           0x1000
 #define     SMMU_NS_CB0_SCTLR       0x8000
 #define     SMMU_NS_CB0_RESUME      0x8008
-#define     SMMU_NS_CB0_TTBCR2      0x8010 //SMMU_CB0_TCR2
+#define     SMMU_NS_CB0_TTBCR2      0x8010 // SMMU_CB0_TCR2
 #define     SMMU_NS_CB0_TTBR0_LOW   0x8020
 #define     SMMU_NS_CB0_TTBR0_HIGH  0x8024
-#define     SMMU_NS_CB0_TTBCR       0x8030 //SMMU_CB0_TCR
+#define     SMMU_NS_CB0_TTBCR       0x8030 // SMMU_CB0_TCR
 #define     SMMU_NS_CB0_FSR         0x8058
 #define     SMMU_NS_CB0_FAR_LOW     0x8060
 #define     SMMU_NS_CB0_FAR_HIGH    0x8064
 #define     SMMU_NS_CB0_FSYNR0      0x8068
 
-#define     SMMU_IDR0_CTTW          BIT(14) //Coherent Translation Table Walk
+#define     SMMU_IDR0_CTTW          BIT(14) // Coherent Translation Table Walk
 
-#define     SMMU_FAULT_READ         0x0         //smmu read  fault
-#define     SMMU_FAULT_WRITE        0x1         //smmu write fault
+#define     SMMU_FAULT_READ         0x0         // smmu read  fault
+#define     SMMU_FAULT_WRITE        0x1         // smmu write fault
 
-#define     SMMU_CB_IDX_IVP         0           //cbidx for ivp
-#define     SMMU_CB_VMID_IVP        0           //vmid  for ivp
+#define     SMMU_CB_IDX_IVP         0           // cbidx for ivp
+#define     SMMU_CB_VMID_IVP        0           // vmid  for ivp
 
 #define     SMMU_CB_FSYNR0_WNR          (1 << 4)
 #define     SMMU_CB_FSR_SS              BIT(30)
@@ -93,10 +94,15 @@
 #define     SMMU_NS_CB0_TTBCR2_SETVAL    0x0
 #endif
 
+#define     SMMU_ISR_W_CB0_SCTLR         0x25
+#define     SMMU_ISR_W_CR0               0x200032
+#define     SMMU_REMOVE_W_CR0            0x200037
+#define     DEV_IVP_BUFF_SIZE            256
+#define     OFFSET_BIT_32                32
 struct ivp_smmu_dev *g_smmu_dev;
 struct dsm_client *client_ivp;
 
-struct dsm_client_ops ops5 = {
+struct dsm_client_ops client_ops5 = {
 	.poll_state = NULL,
 	.dump_func = NULL,
 };
@@ -106,8 +112,8 @@ struct dsm_dev dev_ivp = {
 	.device_name = NULL,
 	.ic_name = NULL,
 	.module_name = NULL,
-	.fops = &ops5,
-	.buff_size = 256,
+	.fops = &client_ops5,
+	.buff_size = DEV_IVP_BUFF_SIZE,
 };
 
 void ivp_dsm_error_notify(int error_no)
@@ -129,7 +135,7 @@ static void ivp_smmu_tlb_sync(struct ivp_smmu_dev *smmu_dev)
 	while (readl(smmu_dev->reg_base + SMMU_NS_TLBGSTATUS)
 			& SMMU_TLBGSTATUS_GSACTIVE) {
 		if (++count == SMMU_TLB_LOOP_TIMEOUT) {
-			pr_err("TLB sync timed out -- SMMU may be deadlocked\n");
+			ivp_err("TLB sync timed out -- SMMU may be deadlocked\n");
 			return;
 		}
 		udelay(1);
@@ -141,6 +147,11 @@ int ivp_smmu_invalid_tlb(struct ivp_smmu_dev *smmu_dev, unsigned int vmid)
 {
 	unsigned long flags = 0;
 
+	if (!smmu_dev) {
+		ivp_err("smmu_dev is null!");
+		return -EINVAL;
+	}
+
 	spin_lock_irqsave(&smmu_dev->spinlock, flags);
 
 	/* vmid = smmu_dev->vmid */
@@ -149,24 +160,23 @@ int ivp_smmu_invalid_tlb(struct ivp_smmu_dev *smmu_dev, unsigned int vmid)
 
 	spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
 
-	return 0;
+	return EOK;
 }
 
 /* Flush cache for the page tables after pgt updated */
-void ivp_smmu_flush_pgtable(struct ivp_smmu_dev *smmu_dev, void *addr,
-								size_t size)
+void ivp_smmu_flush_pgtable(struct ivp_smmu_dev *smmu_dev,
+	void *addr, size_t size)
 {
 	unsigned long offset = (unsigned long)(uintptr_t)addr & ~PAGE_MASK;
-	unsigned int idr0 = 0;
+	unsigned int idr0;
 
 	if (!smmu_dev || !addr) {
-		pr_err("smmu_dev or addr is null!");
+		ivp_err("smmu_dev or addr is null!");
 		return;
 	}
 
 	/* IDR0 */
 	idr0 = readl(smmu_dev->reg_base + SMMU_NS_IDR0); //lint -e838
-
 	/* Coherent translation table walks are supported */
 	if (idr0 & SMMU_IDR0_CTTW) {
 		dsb(ishst);
@@ -179,7 +189,7 @@ void ivp_smmu_flush_pgtable(struct ivp_smmu_dev *smmu_dev, void *addr,
 		 * through another SMMU.
 		 */
 		dma_map_page(smmu_dev->dev, virt_to_page((uintptr_t)addr),
-						offset, size, DMA_TO_DEVICE); //lint -e834 -e648
+			offset, size, DMA_TO_DEVICE); //lint -e834 -e648
 	}
 }
 
@@ -189,25 +199,29 @@ int ivp_smmu_trans_enable(struct ivp_smmu_dev *smmu_dev)
 	unsigned long flags = 0;
 	unsigned int  cbar0 = 0;
 
-	if (request_irq(smmu_dev->irq, smmu_dev->isr, 0,
-					"ivp-smmu-isr", (void *)smmu_dev)) {
-		pr_err("%s: failed to request IRQ[%d]\n",
-				__func__, smmu_dev->irq);
+	if (!smmu_dev) {
+		ivp_err("smmu_dev is null!");
+		return -EINVAL;
 	}
+
+	if (request_irq(smmu_dev->irq, smmu_dev->isr, 0,
+		"ivp-smmu-isr", (void *)smmu_dev))
+		ivp_err("%s: failed to request IRQ[%d]\n",
+			__func__, smmu_dev->irq);
 
 	spin_lock_irqsave(&smmu_dev->spinlock, flags);
 
 	/* Check the smmu state */
 	if (smmu_dev->state == SMMU_STATE_ENABLE) {
 		spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
-		pr_err("%s: SMMU re-enable\n", __func__);
+		ivp_err("%s: SMMU re-enable\n", __func__);
 		return -EBUSY;
 	}
 
 	/* Check pgd base address */
 	if (!smmu_dev->pgd_base) {
 		spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
-		pr_err("%s: invalid pgd_base\n", __func__);
+		ivp_err("%s: invalid pgd_base\n", __func__);
 		return -EINVAL;
 	}
 
@@ -274,7 +288,7 @@ int ivp_smmu_trans_enable(struct ivp_smmu_dev *smmu_dev)
 	writel((u32)smmu_dev->pgd_base,
 			(smmu_dev->reg_base + SMMU_NS_CB0_TTBR0_LOW));
 
-	writel((u32)((smmu_dev->pgd_base) >> 32),
+	writel((u32)((smmu_dev->pgd_base) >> OFFSET_BIT_32),
 			(smmu_dev->reg_base + SMMU_NS_CB0_TTBR0_HIGH));
 
 	/**
@@ -287,7 +301,7 @@ int ivp_smmu_trans_enable(struct ivp_smmu_dev *smmu_dev)
 	smmu_dev->state = SMMU_STATE_ENABLE;
 	spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
 
-	return 0;
+	return EOK;
 }
 
 /* Disable the translation mode of SMMU (switch to bypass mode) */
@@ -308,11 +322,11 @@ int ivp_smmu_trans_disable(struct ivp_smmu_dev *smmu_dev)
 	disable_irq(smmu_dev->irq);
 	free_irq(smmu_dev->irq, (void *)smmu_dev);
 
-	return 0;
+	return EOK;
 }
 
 /* Return the smmu device handler to upper layer */
-struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select)
+struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select __attribute__((unused)))
 {
 	return g_smmu_dev;
 }
@@ -321,6 +335,10 @@ struct ivp_smmu_dev *ivp_smmu_get_device(unsigned long select)
 int ivp_smmu_set_pgd_base(struct ivp_smmu_dev *smmu_dev, unsigned long pgd_base)
 {
 	unsigned long flags = 0;
+	if (!smmu_dev) {
+		ivp_err("smmu_dev is NULL.\n");
+		return -EINVAL;
+	}
 
 	spin_lock_irqsave(&smmu_dev->spinlock, flags);
 	/* It's should be disabled then re-enabled */
@@ -332,17 +350,34 @@ int ivp_smmu_set_pgd_base(struct ivp_smmu_dev *smmu_dev, unsigned long pgd_base)
 	smmu_dev->pgd_base = pgd_base;
 	spin_unlock_irqrestore(&smmu_dev->spinlock, flags);
 
-	return 0;
+	return EOK;
+}
+
+static unsigned long ivp_read_far(struct ivp_smmu_dev *smmu_dev)
+{
+	u32 far;
+	unsigned long iova;
+
+	far = readl(smmu_dev->reg_base + SMMU_NS_CB0_FAR_LOW);
+	iova = far; //lint -e732
+	far = readl(smmu_dev->reg_base + SMMU_NS_CB0_FAR_HIGH);
+	iova |= (((unsigned long)far) << OFFSET_BIT_32); //lint -e571
+
+	return iova;
 }
 
 /* SMMU ISR, handler that SMMU reports fault to */
 static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
 {
 	struct ivp_smmu_dev *smmu_dev = (struct ivp_smmu_dev *)dev_id;
-	u32 gfsr, gfsynr0, gfsynr1, gfsynr2;
-	u32 fsr, far, fsynr;
-	unsigned long iova = 0;
-	int flags = 0;
+	u32 gfsr;
+	u32 gfsynr0;
+	u32 gfsynr1;
+	u32 gfsynr2;
+	u32 fsr;
+	u32 fsynr;
+	unsigned long iova;
+	int flags;
 
 	ivp_dsm_error_notify(DSM_IVP_SMMU_ERROR_NO);
 
@@ -352,9 +387,9 @@ static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
 		gfsynr0 = readl(smmu_dev->reg_base + SMMU_NS_GFSYNR0);
 		gfsynr1 = readl(smmu_dev->reg_base + SMMU_NS_GFSYNR1);
 		gfsynr2 = readl(smmu_dev->reg_base + SMMU_NS_GFSYNR2);
-		pr_err("Unexpected global fault, this could be serious\n");
-		pr_err("\tGFSR 0x%08x, GFSYNR0 0x%08x, GFSYNR1 0x%08x, GFSYNR2 0x%08x\n",
-				gfsr, gfsynr0, gfsynr1, gfsynr2);
+		ivp_err("Unexpected global fault, this could be serious\n");
+		ivp_err("\tGFSR 0x%08x, GFSYNR0 0x%08x, GFSYNR1 0x%08x, GFSYNR2 0x%08x\n",
+			gfsr, gfsynr0, gfsynr1, gfsynr2);
 		writel(gfsr, smmu_dev->reg_base + SMMU_NS_GFSR);
 	}
 
@@ -362,93 +397,88 @@ static irqreturn_t ivp_smmu_isr(int irq, void *dev_id)
 	fsr = readl(smmu_dev->reg_base + SMMU_NS_CB0_FSR);
 
 	fsynr = readl(smmu_dev->reg_base + SMMU_NS_CB0_FSYNR0); //lint -e63
-	flags = fsynr & SMMU_CB_FSYNR0_WNR ? SMMU_FAULT_WRITE : SMMU_FAULT_READ;
+	flags = (fsynr & SMMU_CB_FSYNR0_WNR) ? SMMU_FAULT_WRITE : SMMU_FAULT_READ;
 
-	far = readl(smmu_dev->reg_base + SMMU_NS_CB0_FAR_LOW);
-	iova = far; //lint -e732
-	far = readl(smmu_dev->reg_base + SMMU_NS_CB0_FAR_HIGH);
-	iova |= (((unsigned long)far) << 32); //lint -e571
+	iova = ivp_read_far(smmu_dev);
 
-	pr_err("Unexpected context fault (fsr 0x%x)\n", fsr);
-	pr_err("Unhandled  context fault: iova=0x%08lx, fsynr=0x%x\n",
-			iova, fsynr);
+	ivp_err("Unexpected context fault (fsr 0x%x)\n", fsr);
+	ivp_err("Unhandled context fault: iova=0x%08lx, fsynr=0x%x\n", iova, fsynr);
 
 	/* Report about an MMU fault to high-level users */
-	if (smmu_dev->domain) {
-		report_iommu_fault(smmu_dev->domain, smmu_dev->dev,
-							iova, flags);
-	}
+	if (smmu_dev->domain)
+		report_iommu_fault(smmu_dev->domain, smmu_dev->dev, iova, flags);
 
 	/* Clear the faulting FSR */
 	writel(fsr, smmu_dev->reg_base + SMMU_NS_CB0_FSR);
 
 	/* Retry or terminate any stalled transactions */
-	if (fsr & SMMU_CB_FSR_SS) {
+	if (fsr & SMMU_CB_FSR_SS)
 		writel(SMMU_CB_RESUME_TERMINATE,
-				smmu_dev->reg_base + SMMU_NS_CB0_RESUME);
-	}
+			smmu_dev->reg_base + SMMU_NS_CB0_RESUME);
 
 	/*
 	 * Because ivp dma error or cause error may cause many smmu fault
 	 * continuously, there we only report once.
 	 */
-	pr_info("Disable smmu irq");
-	writel(0x25, (smmu_dev->reg_base + SMMU_NS_CB0_SCTLR));
-	writel(0x200032, (smmu_dev->reg_base + SMMU_NS_CR0));
+	ivp_info("Disable smmu irq");
+	writel(SMMU_ISR_W_CB0_SCTLR, (smmu_dev->reg_base + SMMU_NS_CB0_SCTLR));
+	writel(SMMU_ISR_W_CR0, (smmu_dev->reg_base + SMMU_NS_CR0));
 
-	pr_err("ivp dma cause a smmu fault!\n");
+	ivp_err("ivp dma cause a smmu fault!\n");
 	if (smmu_dev->err_handler) {
 		smmu_dev->err_handler();
 	} else {
 	}
 
-	return IRQ_HANDLED;  //lint !e527
+	return IRQ_HANDLED; /*lint !e527*/
 }
 
-int ivp_iommu_fault_handler_t(struct iommu_domain *pdomain,
-	struct device *pdev, unsigned long size, int val, void *data)
+int ivp_iommu_fault_handler_t(
+	struct iommu_domain *pdomain __attribute__((unused)),
+	struct device *pdev __attribute__((unused)),
+	unsigned long size __attribute__((unused)),
+	int val __attribute__((unused)), void *data __attribute__((unused)))
 {
-	pr_err("%s:iommu fault\n", __func__);
-	return 0;
+	ivp_err("%s:iommu fault\n", __func__);
+	return EOK;
 }
 
 static int ivp_smmu_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct ivp_smmu_dev *smmu_dev  = NULL;
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-	struct iommu_domain_data *domain_info = NULL;
-#endif
 	struct resource *res = NULL;
 	unsigned int *ver = NULL;
 
-	pr_info("%s: smmu driver start\n", __func__);
+	ivp_info("%s: smmu driver start\n", __func__);
 
-	smmu_dev = devm_kzalloc(&pdev->dev, sizeof(*smmu_dev), GFP_KERNEL);
+	smmu_dev = devm_kzalloc(&pdev->dev, sizeof(struct ivp_smmu_dev), GFP_KERNEL);
 	if (!smmu_dev) {
-		pr_err("%s: devm_kzalloc is failed\n", __func__);
+		ivp_err("%s: devm_kzalloc is failed\n", __func__);
 		return -ENOMEM;
 	}
 	smmu_dev->dev = &pdev->dev;
 	smmu_dev->state = SMMU_STATE_DISABLE;
 
 	/* get smmu version */
-	ver = (unsigned int *)of_get_property(np, "hisi,smmu-version", NULL);
+	ver = (unsigned int *)of_get_property(np, "smmu-version", NULL);
 	if (ver) {
 		smmu_dev->version = be32_to_cpu(*ver);
-		pr_info("%s: smmu version is %u\n", __func__, be32_to_cpu(*ver));
+		ivp_info("%s: smmu version is %u\n", __func__, be32_to_cpu(*ver));
 	}
 
 	/* get IOMEM resource */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		pr_err("%s:platform_get_resource err\n", __func__);
+		ivp_err("%s:platform_get_resource err\n", __func__);
+		devm_kfree(&pdev->dev, smmu_dev);
 		return -ENOENT;/*lint !e429*/
 	}
 
 	smmu_dev->reg_base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(smmu_dev->reg_base)) {
-		pr_err("%s: remap resource err\n", __func__);
+		ivp_err("%s: remap resource err\n", __func__);
+		devm_kfree(&pdev->dev, smmu_dev);
 		return PTR_ERR(smmu_dev->reg_base);/*lint !e429*/
 	}
 	smmu_dev->reg_size = resource_size(res);
@@ -456,32 +486,18 @@ static int ivp_smmu_probe(struct platform_device *pdev)
 	/* get IRQ resource */
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
-		pr_err("%s: get IRQ IS failed\n", __func__);
+		ivp_err("%s: get IRQ IS failed\n", __func__);
+		devm_kfree(&pdev->dev, smmu_dev);
 		return -ENOENT;/*lint !e429*/
 	}
 	smmu_dev->irq = (unsigned int)res->start;
 	smmu_dev->isr = ivp_smmu_isr;
 
-#if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
-	/**
-	 * get domain and physical pgd base address
-	 */
-	smmu_dev->domain = hisi_ion_enable_iommu(pdev);
-	if (!smmu_dev->domain) {
-		pr_err("%s: get domain failed\n", __func__);
-		return -ENODEV;/*lint !e429*/
-	}
-
-	iommu_set_fault_handler(smmu_dev->domain, ivp_iommu_fault_handler_t, NULL);
-	domain_info = (struct iommu_domain_data *)smmu_dev->domain->priv;
-	smmu_dev->pgd_base = (unsigned long)domain_info->phy_pgd_base;
-#else
 	/**
 	 * get physical pgd base address
 	 */
 	dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)); /*lint !e598 !e648*/
 	smmu_dev->pgd_base = (unsigned long)hisi_domain_get_ttbr(smmu_dev->dev);
-#endif
 
 	/**
 	 * for the ivp subsys, only support:
@@ -494,36 +510,36 @@ static int ivp_smmu_probe(struct platform_device *pdev)
 	spin_lock_init(&smmu_dev->spinlock);
 	g_smmu_dev = smmu_dev;
 
-	pr_info("%s: smmu driver probes finish\n", __func__);
+	ivp_info("%s: smmu driver probes finish\n", __func__);
 
 	if (!client_ivp)
 		client_ivp = dsm_register_client(&dev_ivp);
 
-	return 0;
+	return EOK;
 }
 
-static int ivp_smmu_remove(struct platform_device *pdev)
+static int ivp_smmu_remove(struct platform_device *pdev __attribute__((unused)))
 {
 	struct ivp_smmu_dev *smmu_dev = g_smmu_dev;
 
 	if (!smmu_dev) {
-		pr_err("%s: smmu_dev invalid\n", __func__);
+		ivp_err("%s: smmu_dev invalid\n", __func__);
 		return -ENODEV;
 	}
 
 	/**
 	 * clientpd-0b1(bit0):transcation disable (switch to bypass mode)
 	 */
-	writel(0x200037, (smmu_dev->reg_base + SMMU_NS_CR0));
+	writel(SMMU_REMOVE_W_CR0, (smmu_dev->reg_base + SMMU_NS_CR0));
 
 	g_smmu_dev = NULL;
 
-	return 0;
+	return EOK;
 }
 
 static const struct of_device_id of_smmu_match_tbl[] = {
 	{
-		.compatible = "hisi,ivp-smmu",
+		.compatible = "hisilicon,ivp-smmu",
 	},
 	{ },
 };
@@ -548,7 +564,8 @@ static void __exit ivp_smmu_exit(void)
 	return platform_driver_unregister(&ivp_smmu_driver);
 }
 
-void ivp_smmu_set_err_handler(struct ivp_smmu_dev *smmu_dev, smmu_err_handler_t err_func)
+void ivp_smmu_set_err_handler(struct ivp_smmu_dev *smmu_dev,
+	smmu_err_handler_t err_func)
 {
 	if (smmu_dev)
 		smmu_dev->err_handler = err_func;

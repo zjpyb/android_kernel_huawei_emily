@@ -23,7 +23,7 @@
 #define FTS_TEST_H
 
 #include "ftsSoftware.h"
-#include "../../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 #ifndef LIMITS_H_FILE
 /* /< Name of the Production Test Limit File */
 #define LIMITS_FILE			"stm_fts_production_limits.csv"
@@ -84,6 +84,8 @@
 #define MS_RAW_GAP			"MS_RAW_DATA_GAP"
 #define MS_RAW_ADJH			"MS_RAW_DATA_ADJ_HORIZONTAL"
 #define MS_RAW_ADJV			"MS_RAW_DATA_ADJ_VERTICAL"
+#define MS_RAW_ITO_MIN "MS_RAW_ITO_DATA_MIN"
+#define MS_RAW_ITO_MAX "MS_RAW_ITO_DATA_MAX"
 #define MS_RAW_ITO_ADJH			"MS_RAW_ITO_DATA_ADJ_HORIZONTAL"
 #define MS_RAW_ITO_ADJV			"MS_RAW_ITO_DATA_ADJ_VERTICAL"
 #define MS_RAW_LP_MIN_MAX		"MS_RAW_LOWPOWER_DATA_MIN_MAX"
@@ -168,6 +170,12 @@
 #define SS_TOTAL_CX_SENSE_ADJH_MAP_MAX \
 	"SS_TOUCH_ACTIVE_TOTAL_CX_ADJ_HORIZONTAL"
 
+#define SS_IX1_SENSE_FORCE_MIN_MAX "SS_IX1_SENSE_FORCE_MIN_MAX"
+#define SS_RX_IX_SENSE_MIN "SS_RX_IX_SENSE_MIN"
+#define SS_RX_IX_SENSE_MAX "SS_RX_IX_SENSE_MAX"
+#define SS_TX_IX_FORCE_MIN "SS_TX_IX_FORCE_MIN"
+#define SS_TX_IX_FORCE_MAX "SS_TX_IX_FORCE_MAX"
+
 /* Idle (LP)  version*/
 #define SS_IX1_LP_FORCE_MIN_MAX		"SS_TOUCH_IDLE_IX1_FORCE_MIN_MAX"
 #define SS_IX1_LP_SENSE_MIN_MAX	    "SS_TOUCH_IDLE_IX1_SENSE_MIN_MAX"
@@ -225,26 +233,31 @@
 #define SSFORCEPRXTYPE 0x06
 #define SSSENSEPRXTYPE 0x07
 #define SSSENSEDATATYPE 0x08
-typedef struct {
-    bool I2c_Check;
-    bool Init_Res;
-    bool MutualRawRes;
-    bool MutualRawResGap;
-    bool MutualCx2Res;
-    bool MutualCx2Adj;
-    bool MutualStrengthRes;
-    bool SelfForceRawRes;
-    bool SelfForceIxTotalRes;
-    bool SelfSenseRawRes;
-    bool SelfSenseStrengthData;
-    bool SelfForceStrengthData;
-    bool SelfSenseIxTotalRes;
-    bool ITO_Test_Res;
-    bool SelfSenseData;
-    char mutal_raw_res_buf[ST_NP_TEST_RES_BUF_LEN];
-    char mutal_noise_res_buf[ST_NP_TEST_RES_BUF_LEN];
-    char mutal_cal_res_buf[ST_NP_TEST_RES_BUF_LEN];
+#define FTS_ITO_CAP_TYPE 0x09
 
+typedef struct {
+	bool I2c_Check;
+	bool Init_Res;
+	bool MutualRawRes;
+	bool MutualRawResGap;
+	bool MutualCx2Res;
+	bool MutualCx2Adj;
+	bool MutualStrengthRes;
+	bool SelfForceRawRes;
+	bool SelfForceIxTotalRes;
+	bool SelfSenseRawRes;
+	bool SelfSenseStrengthData;
+	bool SelfForceStrengthData;
+	bool SelfSenseIxTotalRes;
+	bool ITO_Test_Res;
+	bool ito_raw_adjacent_test;
+	bool SelfSenseData;
+	bool ito_raw_min_max;
+	bool self_calibrate_min_max;
+	bool self_calibration_row_difference;
+	char mutal_raw_res_buf[ST_NP_TEST_RES_BUF_LEN];
+	char mutal_noise_res_buf[ST_NP_TEST_RES_BUF_LEN];
+	char mutal_cal_res_buf[ST_NP_TEST_RES_BUF_LEN];
 } TestResult;
 
 /**
@@ -424,7 +437,8 @@ int checkLimitsMapAdjTotal(u16 *data, int row, int column, int *max);
 int checkLimitsGap(short *data, int row, int column, int threshold);
 int checkLimitsGapOffsets(short *data, int row, int column, int threshold,
         int row_start, int column_start, int row_end, int column_end);
-int production_test_ito(char *path_limits, TestToDo *todo,TestResult *result);
+int production_test_ito(char *path_limits, TestToDo *todo,
+	TestResult *result, struct ts_rawdata_info *info);
 int production_test_initialization(u8 type);
 int production_test_main(char *pathThresholds, int stop_on_fail, int saveInit,
              TestToDo *todo, u8 mpflag,struct ts_rawdata_info *info, TestResult *result);
@@ -435,7 +449,7 @@ int production_test_ms_cx(char *path_limits, int stop_on_fail, TestToDo *todo,
 int production_test_ss_raw(char *path_limits, int stop_on_fail, TestToDo *todo,struct ts_rawdata_info *info, TestResult *result);
 int production_test_ss_raw_lp(char *path_limits, int stop_on_fail,TestToDo *todo);
 int production_test_ss_ix_cx(char *path_limits, int stop_on_fail,
-                 TestToDo *todo);
+	TestToDo *todo, struct ts_rawdata_info *info, TestResult *result);
 int production_test_ss_ix_cx_lp(char *path_limits, int stop_on_fail,
                  TestToDo *todo);
 int production_test_data(char *path_limits, int stop_on_fail, TestToDo *todo,

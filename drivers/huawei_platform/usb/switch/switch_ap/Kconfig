@@ -26,12 +26,6 @@ menuconfig SWITCH_USB
 	  Say Y here to enable switch usb class support. This allows
 	  monitoring usb switches by userspace via sysfs.
 
-config SWITCH_USB_CLS
-	tristate "USB Switch class support"
-	depends on GPIOLIB
-	help
-	  Say Y here to enable USB based switch class support.
-
 config FSA9685_DEBUG_FS
 	tristate "FSA9685_DEBUG_FS"
 	default n

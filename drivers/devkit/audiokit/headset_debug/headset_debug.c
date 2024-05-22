@@ -27,6 +27,7 @@
 #include <sound/jack.h>
 #include <huawei_platform/log/hw_log.h>
 #include "headset_debug.h"
+#include "securec.h"
 
 #define HWLOG_TAG headset_debug
 HWLOG_REGIST();
@@ -84,13 +85,13 @@ void headset_debug_set_state(int state, bool use_snd_jack_input_dev)
 		break;
 	}
 }
-EXPORT_SYMBOL_GPL(headset_debug_set_state);
+EXPORT_SYMBOL_GPL(headset_debug_set_state);//lint !e580
 
 void headset_debug_input_set_state(int state, bool use_snd_jack_input_dev)
 {
 	headset_debug_set_state(state, use_snd_jack_input_dev);
 }
-EXPORT_SYMBOL_GPL(headset_debug_input_set_state);
+EXPORT_SYMBOL_GPL(headset_debug_input_set_state);//lint !e580
 
 static ssize_t headset_debug_state_read(struct file *file,
 		char __user *user_buf, size_t count,
@@ -99,8 +100,9 @@ static ssize_t headset_debug_state_read(struct file *file,
 	char kn_buf[INT_HEX_STR_SIZE] = { 0 };
 	ssize_t byte_read;
 
-	snprintf(kn_buf, INT_HEX_STR_SIZE, "%d",
-			atomic_read(&g_headset_debug.state));
+	if (snprintf_s(kn_buf, INT_HEX_STR_SIZE, INT_HEX_STR_SIZE - 1, "%d",
+			atomic_read(&g_headset_debug.state)) < 0)
+		hwlog_err("%s: snprintf_s is failed\n", __func__);
 	byte_read = simple_read_from_buffer(user_buf, count, ppos,
 			kn_buf, strlen(kn_buf));
 
@@ -207,18 +209,15 @@ static void headset_debug_jack_report(int status)
 		if (jack_report == 0)
 			return;
 
-		if (jack_report & SND_JACK_MICROPHONE) {
+		if (jack_report & SND_JACK_MICROPHONE)
 			input_report_switch(g_headset_debug.input_dev,
 					SW_MICROPHONE_INSERT, 1);
-		}
-		if (jack_report & SND_JACK_HEADPHONE) {
+		if (jack_report & SND_JACK_HEADPHONE)
 			input_report_switch(g_headset_debug.input_dev,
 					SW_HEADPHONE_INSERT, 1);
-		}
-		if (jack_report & SND_JACK_LINEOUT) {
+		if (jack_report & SND_JACK_LINEOUT)
 			input_report_switch(g_headset_debug.input_dev,
 					SW_LINEOUT_INSERT, 1);
-		}
 		input_sync(g_headset_debug.input_dev);
 	}
 }
@@ -226,10 +225,8 @@ static void headset_debug_jack_report(int status)
 static void headset_debug_key_report(int status)
 {
 	int value = headset_debug_convert_key_value(status);
-
 	if (value == 0)
 		return;
-
 	if (g_headset_debug.use_snd_jack_report) {
 		snd_soc_jack_report(g_headset_debug.jack, value,
 				HEADSET_DEBUG_ALL_KEY_TYPE);
@@ -358,7 +355,7 @@ void headset_debug_uninit(void)
 	g_headset_debug.sdev = NULL;
 #endif
 }
-EXPORT_SYMBOL_GPL(headset_debug_uninit);
+EXPORT_SYMBOL_GPL(headset_debug_uninit);//lint !e580
 
 void headset_debug_input_init(struct input_dev *accdet_input_dev)
 {
@@ -371,13 +368,13 @@ void headset_debug_input_init(struct input_dev *accdet_input_dev)
 
 	headset_debug_init_fs();
 }
-EXPORT_SYMBOL_GPL(headset_debug_input_init);
+EXPORT_SYMBOL_GPL(headset_debug_input_init);//lint !e580
 
 void headset_debug_input_uninit(void)
 {
 	headset_debug_uninit();
 }
-EXPORT_SYMBOL_GPL(headset_debug_input_uninit);
+EXPORT_SYMBOL_GPL(headset_debug_input_uninit);//lint !e580
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("headset debug driver");

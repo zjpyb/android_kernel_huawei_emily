@@ -27,6 +27,7 @@
 #include <linux/version.h>
 #include <linux/ioctl.h>
 #include <linux/uaccess.h>
+#include "securec.h"
 #include "huawei_platform/log/hw_log.h"
 #include "chipset_common/hwerecovery/erecovery.h"
 #include "erecovery_common.h"
@@ -45,7 +46,7 @@ long erecovery_report(struct erecovery_eventobj *eventdata)
 		ERECOVERY_ERROR("eventdata is null");
 		return -EINVAL;
 	}
-	memset(&evt, 0, sizeof(evt));
+	(void)memset_s(&evt, sizeof(evt), 0, sizeof(evt));
 	evt.magic = ERECOVERY_MAGIC_NUM;
 	evt.ere_obj = *eventdata;
 	ret = erecovery_write_event_kernel(&evt);

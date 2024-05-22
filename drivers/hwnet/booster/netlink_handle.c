@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  * Description: This module is for sending and receiving netlink messages
  *              for data service app qoe.
  *              If you want to add a new module, you need to add a module
@@ -14,6 +14,7 @@
 #include "netlink_handle.h"
 #ifdef CONFIG_HW_NETWORK_QOE
 #include "ip_para_collec_ex.h"
+#include "wifi_para_collec.h"
 #endif
 
 #include <linux/init.h>
@@ -36,6 +37,38 @@
 
 #ifdef CONFIG_HW_PACKET_FILTER_BYPASS
 #include "hw_packet_filter_bypass.h"
+#endif
+
+#ifdef CONFIG_HW_NETWORK_SLICE
+#include "network_slice_management.h"
+#endif
+#include "sock_destroy_handler.h"
+
+#ifdef CONFIG_HW_ICMP_PING_DETECT
+#include "icmp_ping_detect.h"
+#endif
+
+#ifdef CONFIG_TCP_CONG_ALGO_CTRL
+#include "tcp_cong_algo_ctrl.h"
+#endif
+#ifdef CONFIG_HW_PACKET_TRACKER
+#include "hw_pt.h"
+#endif
+
+#ifdef CONFIG_CHR_NETLINK_MODULE
+#include "chr_manager.h"
+#endif
+
+#ifdef CONFIG_APP_ACCELERATOR
+#include <hwnet/booster/app_accelerator.h>
+#endif
+
+#ifdef CONFIG_HW_STEADY_SPEED_STATS
+#include "hw_steady_speed.h"
+#endif
+
+#ifdef CONFIG_STREAM_DETECT
+#include "stream_detect.h"
 #endif
 
 #undef HWLOG_TAG
@@ -75,18 +108,18 @@ struct handle_ctx {
 	struct list_head msg_head;
 
 	/* Message processing callback functions */
-	msg_process * model_cb[MODEL_NUM];
+	msg_process *model_cb[MODEL_NUM];
 };
 static struct handle_ctx g_ctx;
 
-/*Message list structure*/
+/* Message list structure */
 struct msg_entity {
 	struct list_head head;
 	struct res_msg_head msg;
 };
 
-/*Message mapping table for external modules*/
-const u16 cmd_map_model[CMD_NUM][MAP_ENTITY_NUM] = {
+/* Message mapping table for external modules */
+const u16 cmd_map_model[CMD_NUM_MAX][MAP_ENTITY_NUM] = {
 	{APP_QOE_SYNC_CMD, IP_PARA_COLLEC},
 	{UPDATE_APP_INFO_CMD, IP_PARA_COLLEC},
 	/* hw_packet_filter_bypass begin */
@@ -96,11 +129,33 @@ const u16 cmd_map_model[CMD_NUM][MAP_ENTITY_NUM] = {
 	{NOPASS_FG_UID, PACKET_FILTER_BYPASS},
 	/* hw_packet_filter_bypass end */
 	{TCP_PKT_COLLEC_CMD, TCP_PARA_COLLEC},
+	{BIND_UID_PROCESS_TO_NETWORK_CMD, NETWORK_SLICE_MANAGEMENT},
+	{DEL_UID_BIND_CMD, NETWORK_SLICE_MANAGEMENT},
+	{SLICE_RPT_CTRL_CMD, NETWORK_SLICE_MANAGEMENT},
+	{SOCK_DESTROY_HANDLER_CMD, SOCK_DESTROY_HANDLER},
+	{ ICMP_PING_DETECT_CMD, ICMP_PING_DETECT },
+	/* tcp_cong_algo_ctrl ops */
+	{ UPDATE_TCP_CA_CONFIG, TCP_CONG_ALGO_CTRL },
+	{ UPDATE_UID_STATE, TCP_CONG_ALGO_CTRL },
+	{ UPDATE_DS_STATE, TCP_CONG_ALGO_CTRL },
+	{ BIND_PROCESS_TO_SLICE_CMD, NETWORK_SLICE_MANAGEMENT },
+	{ DEL_SLICE_BIND_CMD, NETWORK_SLICE_MANAGEMENT },
+	{ APP_ACCELARTER_CMD, APP_ACCELERATOR },
+	/* steady speed statistics */
+	{ UPDATE_UID_LIST, STEADY_SPEED },
+	{SPEED_TEST_STATUS, APP_ACCELERATOR },
+	{ WIFI_PARA_COLLECT_START, WIFI_PARA_COLLEC },
+	{ WIFI_PARA_COLLECT_STOP, WIFI_PARA_COLLEC },
+	{ WIFI_PARA_COLLECT_UPDATE, WIFI_PARA_COLLEC },
+	{ WIFI_RPT_TIMER, WIFI_PARA_COLLEC},
+	{ STREAM_DETECTION_START, STREAM_DETECT },
+	{ STREAM_DETECTION_STOP, STREAM_DETECT },
+	{ UPDAT_INTERFACE_NAME, IP_PARA_COLLEC }
 };
 
 static void nl_notify_event(struct res_msg_head *msg)
 {
-	struct msg_entity *p;
+	struct msg_entity *p = NULL;
 	u32 len;
 
 	if (!msg) {
@@ -134,7 +189,7 @@ static void process_cmd(struct req_msg_head *cmd)
 	if (cmd == NULL)
 		return;
 
-	for (i = 0; i < CMD_NUM; i++) {
+	for (i = 0; i < CMD_NUM_MAX; i++) {
 		if (cmd_map_model[i][MAP_KEY_INDEX] != cmd->type)
 			continue;
 		if (g_ctx.model_cb[cmd_map_model[i][MAP_VALUE_INDEX]] == NULL)
@@ -248,10 +303,9 @@ nty_end:
 
 static int netlink_handle_thread(void *data)
 {
-	struct msg_entity *p;
+	struct msg_entity *p = NULL;
 
 	while (!kthread_should_stop()) {
-
 		down(&g_ctx.sema);
 
 		if (g_ctx.native_pid == 0)
@@ -316,8 +370,50 @@ static void netlink_handle_exit(void)
 	}
 }
 
+typedef msg_process* (*net_link_init_func)(notify_event *fn);
+typedef struct {
+	enum install_model model;
+	net_link_init_func pfn_handler;
+	char* func_name;
+} net_link_func_handler_stru;
+
+static const net_link_func_handler_stru s_init_comm_msg_tbl[] = {
+#ifdef CONFIG_HW_NETWORK_QOE
+	{ IP_PARA_COLLEC, ip_para_collec_init, "ip_para_collec_init" },
+	{ WIFI_PARA_COLLEC, wifi_para_collec_init, "wifi_para_collec_init" },
+#endif
+#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
+	{ PACKET_FILTER_BYPASS, hw_packet_filter_bypass_init, "hw_packet_filter_bypass_init" },
+#endif
+	{ TCP_PARA_COLLEC, tcp_para_collec_init, "tcp_para_collec_init" },
+#ifdef CONFIG_HW_NETWORK_SLICE
+	{ NETWORK_SLICE_MANAGEMENT, network_slice_management_init, "network_slice_management_init" },
+#endif
+	{ SOCK_DESTROY_HANDLER, sock_destroy_handler_init, "sock_destroy_handler_init" },
+#ifdef CONFIG_HW_ICMP_PING_DETECT
+	{ ICMP_PING_DETECT, icmp_ping_detect_init, "icmp_ping_detect_init" },
+#endif
+#ifdef CONFIG_TCP_CONG_ALGO_CTRL
+	{ TCP_CONG_ALGO_CTRL, hw_tcp_cong_algo_ctrl_init, "hw_tcp_cong_algo_ctrl_init" },
+#endif
+#ifdef CONFIG_HW_PACKET_TRACKER
+	{ PACKET_TRACKER, hw_pt_init, "hw_pt_init" },
+#endif
+#ifdef CONFIG_APP_ACCELERATOR
+	{ APP_ACCELERATOR, app_acc_init, "app_acc_init" },
+#endif
+#ifdef CONFIG_HW_STEADY_SPEED_STATS
+	{ STEADY_SPEED, hw_steady_speed_init, "hw_steady_speed_init" },
+#endif
+#ifdef CONFIG_STREAM_DETECT
+	{ STREAM_DETECT, stream_detect_init, "stream_detect_init" },
+#endif
+};
+
 static int __init netlink_handle_module_init(void)
 {
+	int index;
+	int count;
 	msg_process *fn = NULL;
 
 	if (netlink_handle_init()) {
@@ -327,32 +423,18 @@ static int __init netlink_handle_module_init(void)
 	}
 
 	memset(&g_ctx.model_cb[0], 0, MODEL_NUM * sizeof(msg_process *));
-#ifdef CONFIG_HW_NETWORK_QOE
-	fn = ip_para_collec_init(nl_notify_event);
-	if (fn == NULL) {
-		hwlog_err("%s:init ip para failed\n", __func__);
-		return -1;
+	count = (int)(sizeof(s_init_comm_msg_tbl) / sizeof(s_init_comm_msg_tbl[0]));
+	for (index = 0; index < count; index++) {
+		fn = s_init_comm_msg_tbl[index].pfn_handler(nl_notify_event);
+		if (fn == NULL) {
+			hwlog_err("%s:init %s failed\n", __func__, s_init_comm_msg_tbl[index].func_name);
+			return -1;
+		}
+		g_ctx.model_cb[s_init_comm_msg_tbl[index].model] = fn;
 	}
-	g_ctx.model_cb[IP_PARA_COLLEC] = fn;
+#ifdef CONFIG_CHR_NETLINK_MODULE
+	chr_manager_init(nl_notify_event);
 #endif
-
-#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
-	/* init the packet filter bypass module */
-	fn = hw_packet_filter_bypass_init(nl_notify_event);
-	if (fn == NULL) {
-		hwlog_err("%s:init packet filter bypass failed\n", __func__);
-		return -1;
-	}
-	g_ctx.model_cb[PACKET_FILTER_BYPASS] = fn;
-#endif
-
-	fn = tcp_para_collec_init(nl_notify_event);
-	if (fn == NULL) {
-		hwlog_err("%s:init tcp para failed\n", __func__);
-		return -1;
-	}
-	g_ctx.model_cb[TCP_PARA_COLLEC] = fn;
-
 	hwlog_info("%s:netlink_handle module inited:\n", __func__);
 	return 0;
 }
@@ -361,6 +443,7 @@ static void __exit netlink_handle_module_exit(void)
 {
 #ifdef CONFIG_HW_NETWORK_QOE
 	ip_para_collec_exit();
+	wifi_para_collec_exit();
 #endif
 	g_ctx.chan_state = NETLINK_HANDLE_EXIT;
 	netlink_handle_exit();

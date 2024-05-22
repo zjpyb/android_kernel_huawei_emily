@@ -1,11 +1,15 @@
 #ifndef __BBOX_DIAGINFO_ID_DEF_H__
 #define __BBOX_DIAGINFO_ID_DEF_H__ 
 enum bbox_diaginfo_errid {
- SoC_DIAGINFO_START=925200000,
- L3_ECC_1BIT_ERROR = SoC_DIAGINFO_START,
+ SoC_DIAGINFO_START = 925200000,
+ L3_ECC_CE = SoC_DIAGINFO_START,
  CPU_UP_FAIL,
- DDR_DIAGINFO_START=925202000,
+ L3_ECC_UE = 925201200,
+ DDR_DIAGINFO_START = 925202000,
  LPM3_DDR_FAIl = DDR_DIAGINFO_START,
+ FBE_DIAG_FAIL_ID = 925204500,
+ BLOCK_DMD_CP_IO = 925205500,
+ BLOCK_DMD_NORMAL_IO = 925205501,
  BBOX_DIAGINFO_END = 925299999
 };
 enum bbox_diaginfo_module {
@@ -14,8 +18,8 @@ enum bbox_diaginfo_module {
  DDR,
 };
 enum bbox_diaginfo_level {
- Critical = 1,
- Warning,
+ CRITICAL = 1,
+ WARNING,
  INFO,
 };
 enum bbox_diaginfo_type {

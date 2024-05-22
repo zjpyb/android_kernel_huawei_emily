@@ -1,109 +1,53 @@
 /*
- * drivers/inputhub/sensor_detect.h
- *
- * sensors detection header file
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2021. All rights reserved.
+ * Description: sensor detect header file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
 #ifndef __SENSOR_DETECT_H
 #define __SENSOR_DETECT_H
 
+#include <linux/completion.h>
+#include <linux/device.h>
+#include <linux/mutex.h>
+#include <linux/version.h>
+#include <linux/workqueue.h>
+
 #include "protocol.h"
 
 #define AOD_FEATURE_NUM 2
 
+#define AUX_FILE_LIST_ARGS 2
 #define MAX_CHIP_INFO_LEN 50
-#define PDC_SIZE 27
 #define MAX_STR_SIZE 1024
 #define MAX_PHONE_COLOR_NUM 15
 #define CYPRESS_CHIPS 2
 #define SENSOR_PLATFORM_EXTEND_DATA_SIZE 50
 #define SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE 68
-#define BH1745_MAX_ThRESHOLD_NUM 23
-#define BH1745_MIN_ThRESHOLD_NUM 24
-
-#define APDS9251_MAX_ThRESHOLD_NUM 17
-#define APDS9251_MIN_ThRESHOLD_NUM 18
-
-#define TMD3725_MAX_ThRESHOLD_NUM 27
-#define TMD3725_MIN_ThRESHOLD_NUM 28
-
-#define LTR582_MAX_ThRESHOLD_NUM 24
-#define LTR582_MIN_ThRESHOLD_NUM 25
-
-#define LTR578_APDS9922_MAX_ThRESHOLD_NUM 8
-#define LTR578_APDS9922_MIN_ThRESHOLD_NUM 9
-
-#define RPR531_MAX_ThRESHOLD_NUM 14
-#define RPR531_MIN_ThRESHOLD_NUM 15
-
-#define TMD2745_MAX_ThRESHOLD_NUM 8
-#define TMD2745_MIN_ThRESHOLD_NUM 9
-
-#define APDS9999_MAX_ThRESHOLD_NUM 22
-#define APDS9999_MIN_ThRESHOLD_NUM 23
-
-#define TMD3702_MAX_ThRESHOLD_NUM 27
-#define TMD3702_MIN_ThRESHOLD_NUM 28
-
-#define TCS3707_MAX_THRESHOLD_NUM 27
-#define TCS3707_MIN_THRESHOLD_NUM 28
-#define TCS3701_MAX_ThRESHOLD_NUM 30
-#define TCS3701_MIN_ThRESHOLD_NUM 31
-
-#define VCNL36658_MAX_ThRESHOLD_NUM 28
-#define VCNL36658_MIN_ThRESHOLD_NUM 29
-
-#define TP_COORDINATE_THRESHOLD 4
-
-#define TSL2591_MAX_ThRESHOLD_NUM 15
-#define TSL2591_MIN_ThRESHOLD_NUM 16
-
-#define BH1726_MAX_ThRESHOLD_NUM 14
-#define BH1726_MIN_ThRESHOLD_NUM 15
-
-#define BH1749_MAX_ThRESHOLD_NUM 25
-#define BH1749_MIN_ThRESHOLD_NUM 26
-
-#define VD6281_MAX_ThRESHOLD_NUM 6
-#define VD6281_MIN_ThRESHOLD_NUM 7
-
-#define LTR2594_MAX_ThRESHOLD_NUM 32
-#define LTR2594_MIN_ThRESHOLD_NUM 33
-
-#define STK3638_MAX_THRESHOLD_NUM 28
-#define STK3638_MIN_THRESHOLD_NUM 29
 
 #define KB_DEFAULT_UART_NUM 8
 #define KB_DEFAULT_DETECT_ADC_NUM 7
 #define KB_DEFAULT_DISCONNECT_ADC_VOL 1700
 
-#define CAP_MODEM_THRESHOLE_LEN 8
-#define CAP_CALIBRATE_THRESHOLE_LEN 4
-
-#define CAP_CHIPID_DATA_LENGTH 2
-
 #define THP_MAX_PROJECT_ID_LENGTH 11
 
-#define ACC_SENSOR_DEFAULT_ID "1"
-#define GYR_SENSOR_DEFAULT_ID "4"
-#define MAG_SENSOR_DEFAULT_ID "2"
-#define CAP_SENSOR_DEFAULT_ID "65541"
+#define FP_IC_MAX_LEN   20
+#define FP_MATCH_LEN    3
+#define FP_IC_MATCH_LEN 6
+#define SAR_USE_PH_NUM 2
 
-typedef uint16_t GPIO_NUM_TYPE;
+#define DEF_SENSOR_COM_SETTING \
+{\
+	.bus_type = TAG_I2C,\
+	.bus_num = 0,\
+	.disable_sample_thread = 0,\
+	{ .data = 0 } \
+}
 
-typedef enum {
+#define GPIO_NUM_TYPE uint16_t
+
+enum sensor_detect_list {
 	ACC,
 	MAG,
 	GYRO,
@@ -124,24 +68,34 @@ typedef enum {
 	SH_AOD,
 	ACC1,
 	GYRO1,
-	ACC2,
-	GYRO2,
+	ALS1,
 	MAG1,
+	ALS2,
 	CAP_PROX1,
 	KB,
 	MOTION,
 	THP,
 	IOMCU_MODEM,
+	SOUND,
+	THERMOMETER,
+	TP_UD_EXTRA,
 	SENSOR_MAX
-} SENSOR_DETECT_LIST;
+};
 
 #define SENSOR_DETECT_RETRY 2
-typedef enum {
+enum detect_mode {
 	BOOT_DETECT,
 	DETECT_RETRY,
 	BOOT_DETECT_END = DETECT_RETRY + SENSOR_DETECT_RETRY - 1,
 	REDETECT_LATER
-} DETECT_MODE;
+};
+
+enum ALS_UD_TYPE_T
+{
+	ALS_UD_NONE,
+	ALS_UD_MINUS_TP_RGB,
+	ALS_UD_MINUS_DSS_NOISE,
+};
 
 struct sleeve_detect_pare {
 	unsigned int tp_color;
@@ -155,154 +109,9 @@ struct sensor_combo_cfg {
 	union {
 		uint32_t data;
 		uint32_t i2c_address;
-		union SPI_CTRL ctrl;
+		union spi_ctrl ctrl;
 	};
 } __packed;
-
-struct g_sensor_platform_data {
-	struct sensor_combo_cfg cfg;
-	uint8_t axis_map_x;
-	uint8_t axis_map_y;
-	uint8_t axis_map_z;
-	uint8_t negate_x;
-	uint8_t negate_y;
-	uint8_t negate_z;
-	uint8_t used_int_pin;
-	GPIO_NUM_TYPE gpio_int1;
-	GPIO_NUM_TYPE gpio_int2;
-	GPIO_NUM_TYPE gpio_int2_sh;
-	uint16_t poll_interval;
-	int offset_x;
-	int offset_y;
-	int offset_z;
-	int sensitivity_x;
-	int sensitivity_y;
-	int sensitivity_z;
-	uint8_t device_type;
-	uint8_t calibrate_style;
-	uint8_t calibrate_way;
-	uint16_t x_calibrate_thredhold;
-	uint16_t y_calibrate_thredhold;
-	uint16_t z_calibrate_thredhold;
-	uint8_t wakeup_duration;
-	uint8_t g_sensor_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
-	uint8_t gpio_int2_sh_func;
-};
-
-struct gyro_platform_data {
-	struct sensor_combo_cfg cfg;
-	uint8_t exist;
-	uint8_t position;
-	uint8_t axis_map_x;
-	uint8_t axis_map_y;
-	uint8_t axis_map_z;
-	uint8_t negate_x;
-	uint8_t negate_y;
-	uint8_t negate_z;
-	GPIO_NUM_TYPE gpio_int1;
-	GPIO_NUM_TYPE gpio_int2;
-	GPIO_NUM_TYPE gpio_int2_sh;
-	uint16_t poll_interval;
-	uint8_t fac_fix_offset_Y;
-	uint8_t still_calibrate_threshold;
-	uint8_t calibrate_way;
-	uint16_t calibrate_thredhold;
-	uint16_t gyro_range;
-	uint8_t gyro_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
-};
-
-struct compass_platform_data {
-	struct sensor_combo_cfg cfg;
-	uint8_t axis_map_x;
-	uint8_t axis_map_y;
-	uint8_t axis_map_z;
-	uint8_t negate_x;
-	uint8_t negate_y;
-	uint8_t negate_z;
-	uint8_t outbit;
-	uint8_t calibrate_method;
-	GPIO_NUM_TYPE gpio_drdy;
-	GPIO_NUM_TYPE gpio_rst;
-	uint8_t soft_filter;
-	uint8_t charger_trigger;
-	uint8_t pdc_data[PDC_SIZE];
-	uint16_t poll_interval;
-	uint8_t compass_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
-};
-
-struct als_platform_data {
-	struct sensor_combo_cfg cfg;
-	GPIO_NUM_TYPE gpio_int1;
-	uint8_t atime;
-	uint8_t again;
-	uint16_t poll_interval;
-	uint16_t init_time;
-	s16 threshold_value;
-	s16 GA1;
-	s16 GA2;
-	s16 GA3;
-	s16 COE_B;
-	s16 COE_C;
-	s16 COE_D;
-	uint8_t als_phone_type;
-	uint8_t als_phone_version;
-	uint8_t als_phone_tp_colour;
-	uint8_t als_extend_data[SENSOR_PLATFORM_EXTEND_ALS_DATA_SIZE];
-	uint8_t is_close;
-	uint8_t tp_info;
-	uint8_t is_bllevel_supported;
-};
-
-struct ps_platform_data {
-	struct sensor_combo_cfg cfg;
-	int min_proximity_value;
-	int pwindows_value;
-	int pwave_value;
-	int threshold_value;
-	int rdata_under_sun;           /* threshold under sun detect */
-	int pwindows_screenon_value;
-	int pwave_screenon_value;
-	int threshold_screenon_value;
-	GPIO_NUM_TYPE gpio_int1;
-	GPIO_NUM_TYPE gpio_int1_sh;
-	uint16_t oily_max_near_pdata;
-	uint16_t max_oily_add_pdata;
-	uint16_t poll_interval;
-	uint16_t init_time;
-	uint16_t use_oily_judge;
-	uint16_t ps_tp_threshold;
-	uint16_t ps_calib_20cm_threshold;
-	uint16_t ps_calib_5cm_threshold;
-	uint16_t ps_calib_3cm_threshold;
-	uint8_t need_reduce_interference;
-	uint8_t ps_pulse_count;        /* Pulse number for proximity */
-	uint8_t persistent;            /* consecutive Interrupt persistence */
-	uint8_t ptime;                 /* Prox integration time */
-	uint8_t p_on;                  /* need to close oscillator */
-	uint8_t ps_oily_threshold;
-	uint8_t wtime;                 /* wait time (ms) */
-	uint8_t pulse_len;             /* pulse length (us) */
-	uint8_t pgain;                 /* ps gain */
-	uint8_t led_current;           /* mA */
-	uint8_t prox_avg;              /* open filter or not */
-	uint8_t offset_max;
-	uint8_t offset_min;
-	uint8_t max_near_pdata_loop;
-	uint8_t oily_count_size;
-	uint8_t digital_offset_max;
-	uint8_t is_always_on;
-};
-
-struct airpress_platform_data {
-	struct sensor_combo_cfg cfg;
-	int offset;
-	int IsSupportTouch;
-	uint16_t poll_interval;
-	uint16_t touch_fac_order;
-	uint16_t touch_fac_wait_time;
-	uint16_t tp_touch_coordinate_threshold[TP_COORDINATE_THRESHOLD];
-	uint8_t airpress_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
-};
 
 struct tof_platform_data {
 	struct sensor_combo_cfg cfg;
@@ -312,81 +121,11 @@ struct tof_platform_data {
 	int tof_calib_60cm_threshold;
 };
 
-struct handpress_platform_data {
-	struct sensor_combo_cfg cfg;
-	uint8_t bootloader_type;
-	uint8_t id[CYPRESS_CHIPS];
-	uint8_t i2c_address[CYPRESS_CHIPS];
-	uint8_t t_pionts[CYPRESS_CHIPS];
-	uint16_t poll_interval;
-	uint32_t irq[CYPRESS_CHIPS];
-	uint8_t handpress_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
-};
-
 #define STG_SUPPORTED_NUM 3
 #define TO_MODEM_SUPPORTED_LEVEL_NUM 8
 #define DEFAULT_THRESHOLD 0xC8
 #define ADUX_REGS_NEED_INITIATED_NUM 16
 #define SEMTECH_REGS_NEED_INITIATED_NUM 12
-#define CALIBRATE_THRED_NUM 4
-
-struct semteck_sar_data {
-	uint16_t threshold_to_ap;
-	uint16_t phone_type;
-	uint16_t threshold_to_modem[8]; /* default array length */
-	uint32_t init_reg_val[17];
-	uint8_t ph;
-	uint16_t calibrate_thred[4];
-};
-
-struct abov_sar_data {
-	uint16_t phone_type;
-	uint16_t abov_project_id;
-	uint16_t threshold_to_modem[CAP_MODEM_THRESHOLE_LEN];
-	uint8_t ph;
-	uint16_t calibrate_thred[CAP_CALIBRATE_THRESHOLE_LEN];
-};
-
-union sar_data {
-	struct semteck_sar_data	semteck_data;
-	struct abov_sar_data abov_data;
-	/* add the others here */
-};
-
-/*
- * calibrate_type: config by bit(0~7): 0-free 1-near 2-far other-reserve
- * sar_datas: data for diffrent devices
- */
-struct sar_platform_data {
-	struct sensor_combo_cfg cfg;
-	GPIO_NUM_TYPE gpio_int;
-	GPIO_NUM_TYPE gpio_int_sh;
-	uint16_t poll_interval;
-	uint16_t  calibrate_type;
-	union sar_data	sar_datas;
-};
-
-struct sar_sensor_detect {
-	struct sensor_combo_cfg cfg;
-	uint8_t detect_flag;
-	uint16_t chip_id;
-	uint32_t chip_id_value[2];
-};
-
-struct cap_prox_platform_data {
-	struct sensor_combo_cfg cfg;
-	GPIO_NUM_TYPE gpio_int;
-	uint16_t poll_interval;
-	int  calibrate_type;
-	uint32_t init_reg_val[17];        /* init value */
-	uint16_t high_threshold;
-	uint16_t low_threshold;
-	uint16_t swap_flag[3];            /* 0x06 */
-	uint16_t cal_fact_base[3];        /* read:0x71  write:0x79 */
-	uint16_t cal_offset[3];           /* 0x09 */
-	uint16_t digi_offset[3];          /* 0x0a */
-	uint16_t cap_prox_extend_data[2]; /* 3, 3mm and 8mm threshold */
-};
 
 struct connectivity_platform_data {
 	struct sensor_combo_cfg cfg;
@@ -398,6 +137,9 @@ struct connectivity_platform_data {
 	GPIO_NUM_TYPE gpio3_wakeup_gps_ap;
 	GPIO_NUM_TYPE gpio3_wakeup_gps_sh;
 	uint32_t i3c_frequency;
+	uint16_t gpio1_gps_cmd_pinmux;
+	uint16_t gpio2_gps_ready_pinmux;
+	uint16_t gpio3_wakeup_gps_pinmux;
 };
 
 struct fingerprint_platform_data {
@@ -453,6 +195,15 @@ struct tp_ud_platform_data {
 	uint16_t soft_reset_support;
 	struct tp_ud_algo_config algo_conf;
 	uint16_t touch_report_restore_support;
+	uint16_t tp_sensorhub_platform;
+	uint16_t aod_display_support;
+	uint16_t tsa_event_to_udfp;
+	uint32_t multi_ic_id;
+};
+
+struct tp_multi_panel_info {
+	uint32_t support_multi_panel_attach;
+	uint32_t panel_index;
 };
 
 struct thp_gesture_capability {
@@ -462,6 +213,18 @@ struct thp_gesture_capability {
 	uint8_t support_hw_m_pen;
 };
 
+struct fp_gpio_config {
+	GPIO_NUM_TYPE gpio_reset;
+	GPIO_NUM_TYPE gpio_cs;
+	GPIO_NUM_TYPE gpio_irq;
+};
+
+struct fp_sensor_config {
+	char ic_code[FP_IC_MAX_LEN];
+	uint16_t length;
+	void (*func)(struct fp_gpio_config *config);
+};
+
 struct thp_platform_data {
 	struct sensor_combo_cfg cfg;
 	uint16_t reg;
@@ -469,7 +232,7 @@ struct thp_platform_data {
 	GPIO_NUM_TYPE gpio_irq_sh;
 	GPIO_NUM_TYPE gpio_cs;
 	uint16_t gpio_irq_pull_up_status;
-	uint16_t pressure_support;
+	uint16_t feature_config;
 	uint16_t anti_forgery_support;
 	uint32_t ic_type;
 	uint32_t hover_enable;
@@ -536,6 +299,10 @@ struct vibrator_paltform_data {
 	uint8_t rst_value;
 	uint8_t reg_addr_bytes;
 	uint8_t reg_value_bytes;
+	uint8_t ps_disable;
+	uint8_t dma_channel;
+	uint16_t dma_irq_gpio;
+	uint32_t dma_irq_gpio_addr;
 };
 
 struct magn_bracket_platform_data {
@@ -550,6 +317,7 @@ struct magn_bracket_platform_data {
 
 struct motion_platform_data {
 	uint8_t motion_horizontal_pickup_flag;
+	uint8_t angle_gap;
 };
 
 struct aod_platform_data {
@@ -568,10 +336,8 @@ struct rpc_platform_data {
 	uint16_t default_value;
 	uint16_t mask_enable;
 	uint16_t sar_choice;
-};
-
-struct mag_platform_iron_data {
-	uint8_t pdc_data_far[PDC_SIZE];
+	uint16_t sim_type_swtich_flag;
+	uint16_t fusion_type;
 };
 
 struct kb_platform_data {
@@ -581,21 +347,21 @@ struct kb_platform_data {
 	uint16_t kb_disable_angle;
 };
 
-#define max_tx_rx_len 32
+#define MAX_TX_RX_LEN 32
 struct detect_word {
 	struct sensor_combo_cfg cfg;
 	uint32_t tx_len;
-	uint8_t tx[max_tx_rx_len];
+	uint8_t tx[MAX_TX_RX_LEN];
 	uint32_t rx_len;
-	uint8_t rx_msk[max_tx_rx_len];
+	uint8_t rx_msk[MAX_TX_RX_LEN];
 	uint32_t exp_n;
-	uint8_t rx_exp[max_tx_rx_len];
+	uint8_t rx_exp[MAX_TX_RX_LEN];
 };
 
 #define MAX_SENSOR_NAME_LENGTH 20
 struct sensor_detect_manager {
 	char sensor_name_str[MAX_SENSOR_NAME_LENGTH];
-	SENSOR_DETECT_LIST sensor_id;
+	enum sensor_detect_list sensor_id;
 	uint8_t detect_result;
 	int tag;
 	const void *spara;
@@ -628,7 +394,7 @@ struct sensorlist_info {
 	int32_t version;
 
 	/* maximum range of this sensor's value in SI units */
-	int32_t maxRange;
+	int32_t max_range;
 
 	/* smallest difference between two values reported by this sensor */
 	int32_t resolution;
@@ -643,7 +409,7 @@ struct sensorlist_info {
 	 * one-shot  :-1
 	 * special   : 0, unless otherwise noted
 	 */
-	int32_t minDelay;
+	int32_t min_delay;
 
 	/*
 	 * number of events reserved for this sensor in the batch mode FIFO.
@@ -651,14 +417,14 @@ struct sensorlist_info {
 	 * size of this FIFO. If the FIFO is shared with other sensors,
 	 * this is the size reserved for that sensor and it can be zero.
 	 */
-	uint32_t fifoReservedEventCount;
+	uint32_t fifo_reserved_event_count;
 
 	/*
 	 * maximum number of events of this sensor that could be batched.
 	 * This is especially relevant when the FIFO is shared between
 	 * several sensors; this value is then set to the size of that FIFO.
 	 */
-	uint32_t fifoMaxEventCount;
+	uint32_t fifo_max_event_count;
 	/*
 	 * This value is defined only for continuous mode and on-change sensors.
 	 * It is the delay between two sensor events corresponding to the
@@ -670,16 +436,16 @@ struct sensorlist_info {
 	 *
 	 * @note
 	 *   1) period_ns is in nanoseconds
-	 *      where as maxDelay/minDelay are in microseconds.
+	 *      where as min_delay/minDelay are in microseconds.
 	 *         continuous, on-change: maximum sampling period
 	 *                                allowed in microseconds.
 	 *         one-shot, special : 0
-	 *   2) maxDelay should always fit within a 32 bit signed integer.
+	 *   2) max_delay should always fit within a 32 bit signed integer.
 	 *      It is declared as 64 bit
 	 *      on 64 bit architectures only for binary compatibility reasons.
 	 * Availability: SENSORS_DEVICE_API_VERSION_1_3
 	 */
-	int32_t maxDelay;
+	int32_t max_delay;
 
 	/*
 	 * Flags for sensor. See SENSOR_FLAG_* above.
@@ -691,22 +457,39 @@ struct sensorlist_info {
 	uint32_t flags;
 };
 
-extern int mag_opend;
-extern int akm_need_charger_current;
-extern int akm_current_x_fac;
-extern int akm_current_y_fac;
-extern int akm_current_z_fac;
-
+void send_parameter_to_mcu(enum sensor_detect_list s_id, int cmd);
+void read_aux_file_list(uint16_t fileid, uint16_t tag);
+void read_dyn_file_list(uint16_t fileid);
+void read_chip_info(struct device_node *dn, enum sensor_detect_list sname);
+void read_sensorlist_info(struct device_node *dn, int sensor);
+int _device_detect(struct device_node *dn, int index,
+	struct sensor_combo_cfg *p_succ_ret);
+int get_combo_bus_tag(const char *bus, uint8_t *tag);
 int init_sensors_cfg_data_from_dts(void);
-SENSOR_DETECT_LIST get_id_by_sensor_tag(int tag);
+enum sensor_detect_list get_id_by_sensor_tag(int tag);
 int sensor_set_cfg_data(void);
 int send_fileid_to_mcu(void);
 void sensor_redetect_enter(void);
 void sensor_redetect_init(void);
 int sensor_set_fw_load(void);
-int sensor_get_als_bh1749_flag(void);
-int motion_set_cfg_data(void);
-void resend_als_parameters_to_mcu(void);
 void resend_vibrator_parameters_to_mcu(void);
-
+int is_power_off_charging_posture(void);
+struct sensor_detect_manager *get_sensor_manager(void);
+int get_hall_number(void);
+int get_hall_sen_type(void);
+int get_support_hall_hishow(void);
+int get_support_hall_pen(void);
+int get_support_hall_keyboard(void);
+uint32_t get_hall_hishow_value(void);
+uint32_t get_hall_pen_value(void);
+uint32_t get_hall_keyboard_value(void);
+struct vibrator_paltform_data *get_vibrator_data(void);
+int get_sensor_tof_flag(void);
+int get_hifi_supported(void);
+uint16_t *get_sensorlist(void);
+void add_sensor_list_info_id(uint16_t id);
+struct sensorlist_info *get_sensorlist_info_by_index(enum sensor_detect_list index);
+struct sleeve_detect_pare *get_sleeve_detect_parameter(void);
+int get_support_hall_lightstrap(void);
+uint32_t get_hall_lightstrap_value(void);
 #endif /* __SENSOR_DETECT_H */

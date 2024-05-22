@@ -1,4 +1,19 @@
-
+/*
+ * =============================================================================
+ *
+ *       Filename:  huawei_system_wp.c
+ *
+ *    Description:  system power on write protect
+ *
+ *        Version:  1.0
+ *        Created:  03/15/2016 09:35:40 AM
+ *       Revision:  none
+ *       Compiler:  gcc
+ *
+ *   Organization:  Huawei
+ *
+ * =============================================================================
+ */
 
 #include <linux/moduleparam.h>
 #include <linux/module.h>

@@ -273,7 +273,7 @@ int  bt_sock_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg);
 int  bt_sock_wait_state(struct sock *sk, int state, unsigned long timeo);
 int  bt_sock_wait_ready(struct sock *sk, unsigned long flags);
 
-void bt_accept_enqueue(struct sock *parent, struct sock *sk);
+void bt_accept_enqueue(struct sock *parent, struct sock *sk, bool bh);
 void bt_accept_unlink(struct sock *sk);
 struct sock *bt_accept_dequeue(struct sock *parent, struct socket *newsock);
 
@@ -350,6 +350,10 @@ static inline struct sk_buff *bt_skb_send_alloc(struct sock *sk,
 
 	if (!skb && *err)
 		return NULL;
+
+#ifdef CONFIG_HISI_PAGE_TRACE
+	alloc_skb_with_frags_stats_inc(BT_SKB_SEND_ALLOC_COUNT);
+#endif
 
 	*err = sock_error(sk);
 	if (*err)

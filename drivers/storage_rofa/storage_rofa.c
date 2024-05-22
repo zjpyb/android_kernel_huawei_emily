@@ -20,18 +20,19 @@
 #include <linux/string.h>
 
 #include <chipset_common/storage_rofa/storage_rofa.h>
+#include <hwbootfail/core/boot_recovery.h>
 
 #define STORAGE_ROFA_STR_CHECK      "check"
 #define STORAGE_ROFA_STR_BYPASS     "bypass"
 #define ANDROID_BOOT_MODE_NORMAL    "normal"
 
-#define BOPD_MODE_STORAGE_READONLY 0x03
-#define BOPD_MODE_STORAGE_READONLY_WITH_CORE_DEGRADE 0x07
-
 static unsigned int g_storage_rochk;
 static unsigned int g_storage_row;
 static unsigned int g_androidboot_normalmode;
 static unsigned int g_bopd_enable_row;
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+static unsigned int g_bopd_row_skip_part;
+#endif
 
 static int __init early_parse_storage_rofa_cmdline(char *cmdline_opt)
 {
@@ -72,10 +73,28 @@ static int __init early_parse_bopd_mode_cmdline(char *bopd_mode_cmdline)
 
 	pr_info("early_param bopd.mode option is [%s]\n", bopd_mode_cmdline);
 
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+	if (kstrtoull(bopd_mode_cmdline, 16, &value) == 0) {
+/*
+ * If we enter BOPD with the disk is Read-Only, we enable ROW on the
+ * whole disk; If we enter BOPD with the disk is NOT Read-Only, we still
+ * enable ROW on the whole disk, but skip ROW on DFX partitions, such as
+ * log, misc, splash2, rrecord. So the system can still write to DFX
+ * partitions.
+ */
+		if (is_bopd_run_mode(value))
+			g_bopd_enable_row = 1;
+
+		if (value != BOPD_STG_RO_BEFORE_DL &&
+			value != BOPD_STG_RO_HW_DEG_BEFORE_DL)
+			g_bopd_row_skip_part = 1;
+	}
+#else
 	if (kstrtoull(bopd_mode_cmdline, 16, &value) == 0 &&
-	    (value == BOPD_MODE_STORAGE_READONLY ||
-	    value == BOPD_MODE_STORAGE_READONLY_WITH_CORE_DEGRADE))
+		(value == BOPD_STG_RO_BEFORE_DL ||
+		value == BOPD_STG_RO_HW_DEG_BEFORE_DL))
 		g_bopd_enable_row = 0x01;
+#endif
 
 	return 0;
 }
@@ -92,3 +111,10 @@ unsigned int get_storage_rofa_bootopt(void)
 	else
 		return STORAGE_ROFA_BOOTOPT_NOP;
 }
+
+#ifdef CONFIG_STORAGE_ROW_SKIP_PART
+unsigned int is_bopd_row_skip_part(void)
+{
+	return g_bopd_row_skip_part;
+}
+#endif

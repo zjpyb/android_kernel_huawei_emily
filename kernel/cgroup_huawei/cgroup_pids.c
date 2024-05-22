@@ -1,30 +1,21 @@
 /*
+ * cgroup_pids.c
+ *
  * Process number limiting controller for cgroups.
  *
  * Used to allow a cgroup hierarchy to stop any new processes
  * from fork()ing after a certain limit is reached.
  *
- * Since it is trivial to hit the task limit without hitting
- * any kmemcg limits in place, PIDs are a fundamental resource.
- * As such, PID exhaustion must be preventable in the scope of
- * a cgroup hierarchy by allowing resource limiting of the
- * number of tasks in a cgroup.
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
  *
- * In order to use the `pids` controller, set the maximum number
- * of tasks in pids.max (this is not available in the root cgroup
- * for obvious reasons). The number of processes currently
- * in the cgroup is given by pids.current. Organisational operations
- * are not blocked by cgroup policies, so it is possible to have
- * pids.current > pids.max. However, fork()s will still not work.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
- * To set a cgroup to have no limit, set pids.max to "max". fork()
- * will return -EBUSY if forking would cause a cgroup policy to be
- * violated.
- *
- * pids.current tracks all child cgroup hierarchies, so
- * parent/pids.current is a superset of parent/child/pids.current.
- *
- * Copyright (C) 2015 Aleksa Sarai <cyphar@cyphar.com>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
 
@@ -230,28 +221,11 @@ static void pids_css_free(struct cgroup_subsys_state *css)
 	kfree(css_pids(css));
 }
 
-/*
- * pids_cancel - uncharge the local pid count
- * @pids: the pid cgroup state
- * @num: the number of pids to cancel
- *
- * This function will WARN if the pid count goes under 0,
- * because such a case is a bug in the pids controller proper.
- */
 static void pids_cancel(struct pids_cgroup *pids, int num)
 {
-	/*
-	 * A negative count (or overflow for that matter) is invalid,
-	 * and indicates a bug in the pids controller proper.
-	 */
 	WARN_ON_ONCE(atomic64_add_negative(-num, &pids->counter));
 }
 
-/*
- * pids_uncharge - hierarchically uncharge the pid count
- * @pids: the pid cgroup state
- * @num: the number of pids to uncharge
- */
 static void pids_uncharge(struct pids_cgroup *pids, int num)
 {
 	struct pids_cgroup *p = NULL;
@@ -260,15 +234,6 @@ static void pids_uncharge(struct pids_cgroup *pids, int num)
 		pids_cancel(p, num);
 }
 
-/*
- * pids_charge - hierarchically charge the pid count
- * @pids: the pid cgroup state
- * @num: the number of pids to charge
- *
- * This function does *not* follow the pid limit set. It cannot
- * fail and the new pid count may exceed the limit, because
- * organisational operations cannot fail in the unified hierarchy.
- */
 static void pids_charge(struct pids_cgroup *pids, int num)
 {
 	struct pids_cgroup *p = NULL;
@@ -277,15 +242,6 @@ static void pids_charge(struct pids_cgroup *pids, int num)
 		atomic64_add(num, &p->counter);
 }
 
-/*
- * pids_try_charge - hierarchically try to charge the pid count
- * @pids: the pid cgroup state
- * @num: the number of pids to charge
- *
- * This function follows the set limit. It will fail if the charge
- * would cause the new value to exceed the hierarchical limit.
- * Returns 0 if the charge succeded, otherwise -EAGAIN.
- */
 static int pids_try_charge(struct pids_cgroup *pids, int num)
 {
 	struct pids_cgroup *p = NULL;
@@ -364,11 +320,6 @@ static void pids_attach(struct cgroup_taskset *tset)
 
 	spin_unlock(&group_pids_lock);
 
-	/*
-	 * Attaching to a cgroup is allowed to overcome the
-	 * the PID limit, so that organisation operations aren't
-	 * blocked by the `pids` cgroup controller.
-	 */
 	pids_charge(pids, num);
 
 	tmp_gp = NULL;
@@ -398,7 +349,6 @@ int cgroup_pids_can_fork(void)
 	}
 	spin_unlock(&group_pids_lock);
 	return ret;
-
 }
 
 void cgroup_pids_cancel_fork(void)
@@ -463,10 +413,6 @@ static int pids_max_write(struct cgroup_subsys_state *css,
 	if ((max < 0) || (max > INT_MAX))
 		return -EINVAL;
 
-	/*
-	 * Limit updates don't need to be mutex'd, since it isn't
-	 * critical that any racing fork()s follow the new limit.
-	 */
 	pids->limit = max;
 	return 0;
 }
@@ -486,17 +432,11 @@ static s64 pids_current_read(struct cgroup_subsys_state *css,
 	return atomic64_read(&pids->counter);
 }
 
-/*
- * a notify eventfd to report which process to over the process number limit
- */
 struct pids_event {
 	struct eventfd_ctx *efd;
 	struct list_head node;
 };
 
-/*
- * when a process have soft limit
- */
 static void pids_event(struct pids_cgroup *pids, struct group_pids *gp)
 {
 	struct pids_event *ev = NULL;
@@ -541,9 +481,6 @@ static int group_pids_events_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-/*
- * cgroup_event represents events which userspace want to receive.
- */
 struct pids_cgroup_event {
 	/* memcg which the event belongs to. */
 	struct pids_cgroup *pids;
@@ -551,24 +488,10 @@ struct pids_cgroup_event {
 	struct eventfd_ctx *eventfd;
 	/* Each of these stored in a list by the cgroup. */
 	struct list_head list;
-	/*
-	 * register_event() callback will be used to add new userspace
-	 * waiter for changes related to this event.  Use eventfd_signal()
-	 * on eventfd to send notification to userspace.
-	 */
 	int (*register_event)(struct pids_cgroup *pids,
 			      struct eventfd_ctx *eventfd, const char *args);
-	/*
-	 * unregister_event() callback will be called when userspace closes
-	 * the eventfd or on cgroup removing.  This callback must be set,
-	 * if you want provide notification functionality.
-	 */
 	void (*unregister_event)(struct pids_cgroup *pids,
 				  struct eventfd_ctx *eventfd);
-	/*
-	 * All fields below needed to unregister event when
-	 * userspace closes eventfd.
-	 */
 	poll_table pt;
 #if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 	struct wait_queue_head *wqh;
@@ -614,21 +537,6 @@ static void pids_cgroup_usage_unregister_event(struct pids_cgroup *pids,
 	spin_unlock(&pids->event_list_lock);
 }
 
-/*
- * DO NOT USE IN NEW FILES.
- *
- * "cgroup.event_control" implementation.
- *
- * This is way over-engineered.  It tries to support fully configurable
- * events for each user.  Such level of flexibility is completely
- * unnecessary especially in the light of the planned unified hierarchy.
- *
- * Please deprecate this and replace with something simpler if at all
- * possible.
- *
- * Unregister event and free resources.
- * Gets called from workqueue.
- */
 static void pids_event_remove(struct work_struct *work)
 {
 	struct pids_cgroup_event *event = container_of(work, struct pids_cgroup_event, remove);
@@ -646,10 +554,6 @@ static void pids_event_remove(struct work_struct *work)
 	css_put(&pids->css);
 }
 
-/*
- * Gets called on POLLHUP on eventfd when user closes it.
- * Called with wqh->lock held and interrupts disabled.
- */
 #if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 static int pids_event_wake(struct wait_queue_entry *wait, unsigned int mode,
 #else
@@ -662,22 +566,9 @@ static int pids_event_wake(wait_queue_t *wait, unsigned int mode,
 	uintptr_t flags = (uintptr_t)key;
 
 	if (flags & POLLHUP) {
-		/*
-		 * If the event has been detached at cgroup removal, we
-		 * can simply return knowing the other side will cleanup
-		 * for us.
-		 *
-		 * We can't race against event freeing since the other
-		 * side will require wqh->lock via remove_wait_queue(),
-		 * which we hold.
-		 */
 		spin_lock(&pids->event_list_lock);
 		if (!list_empty(&event->list)) {
 			list_del_init(&event->list);
-			/*
-			 * We are in atomic context, but cgroup_event_remove()
-			 * may sleep, so we have to call it in workqueue.
-			 */
 			schedule_work(&event->remove);
 		}
 		spin_unlock(&pids->event_list_lock);
@@ -700,12 +591,6 @@ static void pids_event_ptable_queue_proc(struct file *file,
 	add_wait_queue(wqh, &event->wait);
 }
 
-/*
- * DO NOT USE IN NEW FILES.
- * Parse input and register new cgroup event handler.
- * Input must be in format '<event_fd> <control_fd> <args>'.
- * Interpretation of args is defined by control file implementation.
- */
 static ssize_t pids_write_event_control(struct kernfs_open_file *of,
 					char *buf, size_t nbytes, loff_t off)
 {
@@ -767,13 +652,6 @@ static ssize_t pids_write_event_control(struct kernfs_open_file *of,
 	if (ret < 0)
 		goto out_put_cfile;
 
-	/*
-	 * Determine the event callbacks and set them in @event.  This used
-	 * to be done via struct cftype but cgroup core no longer knows
-	 * about these events.  The following is crude but the whole thing
-	 * is for compatibility anyway.
-	 * DO NOT ADD NEW FILES.
-	 */
 	name = cfile.file->f_path.dentry->d_name.name;
 
 	if (!strcmp(name, "pids.group_event")) {
@@ -784,11 +662,6 @@ static ssize_t pids_write_event_control(struct kernfs_open_file *of,
 		goto out_put_cfile;
 	}
 
-	/*
-	 * Verify @cfile should belong to @css.  Also, remaining events are
-	 * automatically removed on cgroup destruction but the removal is
-	 * asynchronous, so take an extra ref on @css.
-	 */
 	cfile_css = css_tryget_online_from_dir(cfile.file->f_path.dentry->d_parent,
 					       &pids_cgrp_subsys);
 	ret = -EINVAL;
@@ -834,11 +707,6 @@ static void pids_css_offline(struct cgroup_subsys_state *css)
 	struct pids_cgroup_event *event = NULL;
 	struct pids_cgroup_event *tmp = NULL;
 
-	/*
-	 * Unregister events and notify userspace.
-	 * Notify userspace about cgroup removing only after rmdir of cgroup
-	 * directory to avoid race between userspace and kernelspace.
-	 */
 	spin_lock(&pids->event_list_lock);
 	list_for_each_entry_safe(event, tmp, &pids->event_list, list) {
 		list_del_init(&event->list);

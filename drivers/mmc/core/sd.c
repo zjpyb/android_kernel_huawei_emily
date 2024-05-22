@@ -28,6 +28,7 @@
 #include "mmc_ops.h"
 #include "sd.h"
 #include "sd_ops.h"
+#include "../host/dw_mmc_zodiac.h"
 #ifdef CONFIG_MMC_PASSWORDS
 #include "lock.h"
 #endif
@@ -239,6 +240,14 @@ static int mmc_decode_scr(struct mmc_card *card)
 
 	if (scr->sda_spec3)
 		scr->cmds = UNSTUFF_BITS(resp, 32, 2);
+
+	/* SD Spec says: any SD Card shall set at least bits 0 and 2 */
+	if (!(scr->bus_widths & SD_SCR_BUS_WIDTH_1) ||
+	    !(scr->bus_widths & SD_SCR_BUS_WIDTH_4)) {
+		pr_err("%s: invalid bus width\n", mmc_hostname(card->host));
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -472,6 +481,7 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 	mmc_hostname(card->host),(card->host->caps & MMC_CAP_UHS_SDR12 ? "SDR12":""),(card->host->caps & MMC_CAP_UHS_SDR25 ? "SDR25":""),
 	(card->host->caps & MMC_CAP_UHS_SDR50 ? "SDR50":""),(card->host->caps & MMC_CAP_UHS_SDR104 ? "SDR104":""),
 	(card->host->caps & MMC_CAP_UHS_DDR50 ? "DDR50":""));
+
 	if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
 	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104)) {
 			card->sd_bus_speed = UHS_SDR104_BUS_SPEED;
@@ -1320,7 +1330,7 @@ static void mmc_sd_remove(struct mmc_host *host)
 static int mmc_sd_alive(struct mmc_host *host)
 {
 #ifdef CONFIG_HISI_DEBUG_FS
-	if (host->sim_remove_sd)
+	if (host->sim_remove_sd || host->sim_remove_nano)
 		return -1;
 #endif
 	return mmc_send_status(host->card, NULL);
@@ -1518,7 +1528,7 @@ static int mmc_sd_runtime_resume(struct mmc_host *host)
 	return 0;
 }
 
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 static int mmc_sd_reset(struct mmc_host *host)
 {
 	mmc_power_cycle(host, host->card->ocr);
@@ -1526,7 +1536,6 @@ static int mmc_sd_reset(struct mmc_host *host)
 }
 #endif
 
-#ifdef CONFIG_SD_SDIO_CRC_RETUNING
 /*After power up sd card,try to reinit sd card in mmc_sd_power_restore*/
 static int mmc_sd_power_restore(struct mmc_host *host)
 {
@@ -1538,13 +1547,12 @@ static int mmc_sd_power_restore(struct mmc_host *host)
 
 	return ret;
 }
-#endif
 
 static const struct mmc_bus_ops mmc_sd_ops = {
 #ifdef CONFIG_SD_SDIO_CRC_RETUNING
 	.mmc_retuning = mmc_retuning,
-	.power_restore = mmc_sd_power_restore,
 #endif
+	.power_restore = mmc_sd_power_restore,
 	.remove = mmc_sd_remove,
 	.detect = mmc_sd_detect,
 	.runtime_suspend = mmc_sd_runtime_suspend,
@@ -1583,6 +1591,9 @@ int mmc_attach_sd(struct mmc_host *host)
 	sd card initialization to ensure that we support SDR104 for a new
 	detecting sd card*/
 	host->caps  |= MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 | MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104;
+#ifdef CONFIG_HISI_DEBUG_FS
+	test_sd_delete_host_caps(host);
+#endif
 	err = mmc_send_app_op_cond(host, 0, &ocr);
 	if (err)
 		return err;
@@ -1601,6 +1612,12 @@ int mmc_attach_sd(struct mmc_host *host)
 		if (err)
 			goto err;
 	}
+
+	/*
+	 * Some SD cards claims an out of spec VDD voltage range. Let's treat
+	 * these bits as being in-valid and especially also bit7.
+	 */
+	ocr &= ~0x7FFF;
 
 	rocr = mmc_select_voltage(host, ocr);
 
@@ -1684,4 +1701,3 @@ unsigned int mmc_get_sd_speed(void)
    return speed;
 }
 #endif
-

@@ -1,9 +1,5 @@
 /*
- * aux_info.h
- *
- * aux grp info header
- *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,10 +10,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
+ * aux grp info header
  */
 
-#ifndef __AUX_INFO_H
-#define __AUX_INFO_H
+#ifndef AUX_INFO_H
+#define AUX_INFO_H
 
 #include <linux/types.h>
 #include <linux/sched.h>

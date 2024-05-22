@@ -41,7 +41,7 @@
 #include <linux/platform_device.h>
 #include <linux/ctype.h>
 #include "synaptics_tcm.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #ifdef CONFIG_FB
 #include <linux/fb.h>

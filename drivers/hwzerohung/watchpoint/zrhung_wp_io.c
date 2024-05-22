@@ -31,6 +31,7 @@
 #include <linux/list_sort.h>
 #include <linux/pm_runtime.h>
 #include <linux/math64.h>
+#include "securec.h"
 
 #define CFG_SIZE 64
 #define CMD_SIZE 64
@@ -154,7 +155,9 @@ static void iowp_event_ctor(struct iowp_event *this, pid_t pid, pid_t tgid,
 	/* copy IO latency timeout info */
 	this->cur_pid = pid;
 	this->tgid = tgid;
-	memcpy(this->name, device_name, strlen(device_name) + 1);
+	if (memcpy_s(this->name, BDEVNAME_SIZE, device_name, strlen(device_name) + 1) != EOK)
+		IOWP_WARN("memcpy from device_name to this->name failed\n");
+
 	IOWP_INFO("cur_pid:[%d], tgid[%d], device_name[%s]\n", this->cur_pid,
 		  this->tgid, this->name);
 }
@@ -183,7 +186,7 @@ static size_t iowp_format_events(unsigned int pos)
 	return written_len;
 }
 
-static void iowp_format_cmd(char *cmd)
+static void iowp_format_cmd(char *cmd, unsigned int len)
 {
 	if (cmd != NULL) {
 #ifdef CONFIG_HISI_TIME
@@ -191,7 +194,10 @@ static void iowp_format_cmd(char *cmd)
 #else
 		u64 cur_stamp = local_clock() / NANOS_PER_SECOND;
 #endif
-		snprintf(cmd, CMD_SIZE, "d=%d,e=%llu", LATENCY_ZRHUNG_LOG_DURATION, cur_stamp);
+		int ret = snprintf_s(cmd, len, len - 1, "d=%d,e=%llu", LATENCY_ZRHUNG_LOG_DURATION, cur_stamp);
+		if (ret == -1)
+			IOWP_WARN("output cmd snprintf_s error\n");
+
 		IOWP_INFO("cur_stamp: %llu\n", cur_stamp);
 	}
 }
@@ -245,7 +251,7 @@ void iowp_event_send_work(struct work_struct *work)
 	char zrhung_cmd[CMD_SIZE] = {0};
 
 	IOWP_INFO("%s: send event: %d\n", __func__, ZRHUNG_WP_IO);
-	iowp_format_cmd(zrhung_cmd);
+	iowp_format_cmd(zrhung_cmd, sizeof(zrhung_cmd));
 	IOWP_INFO("%s: cmd_buf: %s\n", __func__, zrhung_cmd);
 	zrhung_send_event(ZRHUNG_WP_IO, zrhung_cmd, iowp_logbuf);
 	IOWP_INFO("%s: send event buffer: %s\n", __func__, iowp_logbuf);

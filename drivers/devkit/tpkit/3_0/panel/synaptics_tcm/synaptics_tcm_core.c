@@ -37,12 +37,13 @@
 #include <linux/interrupt.h>
 #include <linux/regulator/consumer.h>
 #include <linux/input/mt.h>
+#include <huawei_platform/inputhub/thphub.h>
 
 #include "synaptics_tcm_core.h"
 
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
-#include "../../huawei_ts_kit_api.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_api.h"
 
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
@@ -50,11 +51,11 @@
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define ABNORMAL_STATE_LEN 9
 
-static int syna_tcm_hdl_get_state(void);
+static int tskit_driver_hdl_get_state(void);
 
 #define SYNAPTICS_CHIP_INFO  "synaptics"
 #define RESET_ON_RESUME
@@ -86,8 +87,10 @@ static int syna_tcm_hdl_get_state(void);
 #define PROJECT_ID_FW_LEN 9
 #define SYNAPTICS_TEST_TYPE "tp_test_type"
 #define FW_IMAGE_NAME_SD "ts/S3706.img"
+#define TS_FIRMWARE_SD "ts/touch_screen_firmware.img"
 #define REFLASH_IMAGE_NAME "ts/S3618.img"
 #define SYNA_VENDOR_NAME "synaptics_tcm"
+#define FW_NAME_MAX_LEN 50
 
 #define SPI_MAX_SPEED_READ		10000000
 #define SPI_MAX_SPEED_WRITE		10000000
@@ -105,13 +108,19 @@ static int syna_tcm_hdl_get_state(void);
 #define SYNA_CHECKSUM_POLY 0xedb88320L
 #define SYNA_CHECKSUM_TABLE_SIZE 256
 #define SYNA_CHECKSUM_TABLE_ROWS 8
+#define MAX_ABS_MT_TOUCH_MAJOR 15
+#define READ_BUFFER_DBG_LEN 30
+#define POWER_OFF 0
+#define POWER_ON 1
+#define POWER_OFF_DELAY 5
 
 static int syna_report_priority[BIT_MAX] = {0,3,8,7,12,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 static int syna_report_priority_limite[BIT_MAX] = {50,20,20,20,20,50,50,50,20,20,20,20,50,50,50,50};
 struct tp_status_and_count tp_status_dmd_bit_status[BIT_MAX];
 static struct dmd_report_charger_status syna_dmd_charge_info;
 
-static void syna_tcm_report_dmd_state(int dmd_bit);
+static void tskit_driver_report_dmd_state(int dmd_bit);
+extern void ts_i2c_error_dmd_report(u8* reg_addr);
 
 struct syna_tcm_hcd *tcm_hcd = NULL;
 struct syna_tcm_board_data *bdata = NULL;
@@ -123,6 +132,7 @@ static unsigned int buf_size = 0;
 static unsigned char buffer[FIXED_READ_LENGTH] = {0};
 static u8 pre_finger_status = 0;
 extern struct ts_kit_platform_data g_ts_kit_platform_data;
+
 DECLARE_COMPLETION(response_complete);
 
 #if defined (CONFIG_TEE_TUI)
@@ -131,97 +141,220 @@ extern struct ts_tui_data tee_tui_data;
 extern int tp_i2c_get_hwlock(void);
 extern void tp_i2c_release_hwlock(void);
 
-static int syna_tcm_comm_check(void);
-static int syna_tcm_mmi_test(struct ts_rawdata_info *info,
-				 struct ts_cmd_node *out_cmd);
-//static int syna_tcm_chip_get_info(struct ts_chip_info_param *info);
-static int syna_tcm_fw_update_boot(char *file_name);
-static int syna_tcm_fw_update_sd(void);
-static int syna_tcm_before_suspend(void);
-static int syna_tcm_suspend(void);
-static int syna_tcm_resume(void);
-static int syna_tcm_after_resume(void *feature_info);
-static int syna_tcm_set_info_flag(struct ts_kit_platform_data *info);
-static int syna_tcm_irq_bottom_half(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);
-static int syna_tcm_irq_top_half(struct ts_cmd_node *cmd);
-static int syna_tcm_input_config(struct input_dev * input_dev);
-static int syna_tcm_parse_dts(struct device_node *np, struct ts_kit_device_data *chip_data);
-//static int syna_tcm_get_brightness_info(void);
-static int syna_tcm_init_chip(void);
-static int syna_tcm_chip_detect(struct ts_kit_platform_data* data);
-static int synaptics_tcm_chip_get_capacitance_test_type(struct ts_test_type_info *info);
-static int syna_tcm_roi_switch(struct ts_roi_info *info);
-static unsigned char *syna_tcm_roi_rawdata(void);
-static int syna_tcm_charger_switch(struct ts_charger_info *info);
-static int syna_tcm_glove_switch(struct ts_glove_info *info);
-static int syna_tcm_status_resume(void);
-extern int hostprocessing_get_project_id(char *out);
-static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info);
-static void synaptics_tcm_chip_touch_switch(void);
-static int syna_tcm_chip_detect_hwlock(struct ts_kit_platform_data *data);
-static int syna_tcm_init_chip_hwlock(void);
-static int syna_tcm_irq_bottom_half_hwlock(struct ts_cmd_node *in_cmd,
-					struct ts_cmd_node *out_cmd);
-static int syna_tcm_fw_update_boot_hwlock(char *file_name);
-static int syna_tcm_fw_update_sd_hwlock(void);
-static int syna_tcm_suspend_hwlock(void);
-static int syna_tcm_resume_hwlock(void);
-static int syna_tcm_after_resume_hwlock(void *feature_info);
-static int syna_tcm_mmi_test_hwlock(struct ts_rawdata_info *info,
-				 struct ts_cmd_node *out_cmd);
-static int syna_tcm_glove_switch_hwlock(struct ts_glove_info *info);
-static int syna_tcm_charger_switch_hwlock(struct ts_charger_info *info);
-static int syna_tcm_roi_switch_hwlock(struct ts_roi_info *info);
-
+static int tskit_driver_comm_check(void);
+static int tskit_driver_mmi_test(struct ts_rawdata_info *info,
+	struct ts_cmd_node *out_cmd);
+static int tskit_driver_fw_update_boot(char *file_name, bool force);
+static int tskit_driver_fw_update_sd(void);
+static int tskit_driver_before_suspend(void);
+static int tskit_driver_suspend(void);
+static int tskit_driver_resume(void);
+static int tskit_driver_after_resume(void *feature_info);
+static int tskit_driver_set_info_flag(
+	struct ts_kit_platform_data *info);
+static int tskit_driver_irq_bottom_half(struct ts_cmd_node *in_cmd,
+	struct ts_cmd_node *out_cmd);
+static int tskit_driver_irq_top_half(struct ts_cmd_node *cmd);
+static int tskit_driver_input_config(struct input_dev *input_dev);
+static int tskit_driver_parse_dts(struct device_node *np,
+	struct ts_kit_device_data *chip_data);
+static int tskit_driver_init_chip(void);
+static int tskit_driver_chip_detect(struct ts_kit_platform_data *data);
+static int tskit_driver_chip_get_capacitance_test_type(
+	struct ts_test_type_info *info);
+static int tskit_driver_roi_switch(struct ts_roi_info *info);
+static unsigned char *tskit_driver_roi_rawdata(void);
+static int tskit_driver_charger_switch(struct ts_charger_info *info);
+static int tskit_driver_glove_switch(struct ts_glove_info *info);
+static int tskit_driver_status_resume(void);
+static int tskit_driver_chip_get_info(
+	struct ts_chip_info_param *info);
+static void tskit_driver_chip_touch_switch(void);
+static int tskit_driver_chip_detect_hwlock(
+	struct ts_kit_platform_data *data);
+static int tskit_driver_init_chip_hwlock(void);
+static int tskit_driver_irq_bottom_half_hwlock(
+	struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);
+static int tskit_driver_fw_update_boot_hwlock(char *file_name);
+static int tskit_driver_fw_update_sd_hwlock(void);
+static int tskit_driver_suspend_hwlock(void);
+static int tskit_driver_resume_hwlock(void);
+static int tskit_driver_after_resume_hwlock(void *feature_info);
+static int tskit_driver_mmi_test_hwlock(
+	struct ts_rawdata_info *info, struct ts_cmd_node *out_cmd);
+static int tskit_driver_glove_switch_hwlock(
+	struct ts_glove_info *info);
+static int tskit_driver_charger_switch_hwlock(
+	struct ts_charger_info *info);
+static int tskit_driver_roi_switch_hwlock(
+	struct ts_roi_info *info);
+static int tskit_driver_chip_reset(void);
 static unsigned int checksum_table[SYNA_CHECKSUM_TABLE_SIZE];
+static int tskit_driver_gesture_mode_config(bool en, unsigned char mode);
+static int touch_driver_holster_switch(struct ts_holster_info *info);
+static int touch_driver_enable_closed_cover(bool enable);
+static int tskit_driver_chip_check_status(void);
 
 struct ts_device_ops ts_kit_syna_tcm_ops = {
-	.chip_detect = syna_tcm_chip_detect_hwlock,
-	.chip_init = syna_tcm_init_chip_hwlock,
-//	.chip_get_brightness_info = syna_tcm_get_brightness_info,
-	.chip_parse_config = syna_tcm_parse_dts,
-	.chip_input_config = syna_tcm_input_config,
-	.chip_irq_top_half = syna_tcm_irq_top_half,
-	.chip_irq_bottom_half = syna_tcm_irq_bottom_half_hwlock,
-	.chip_fw_update_boot = syna_tcm_fw_update_boot_hwlock,
-	.chip_fw_update_sd = syna_tcm_fw_update_sd_hwlock,
-//	.oem_info_switch = synaptics_oem_info_switch,
-	.chip_get_info = synaptics_tcm_chip_get_info,
+	.chip_detect = tskit_driver_chip_detect_hwlock,
+	.chip_init = tskit_driver_init_chip_hwlock,
+	.chip_parse_config = tskit_driver_parse_dts,
+	.chip_input_config = tskit_driver_input_config,
+	.chip_irq_top_half = tskit_driver_irq_top_half,
+	.chip_irq_bottom_half = tskit_driver_irq_bottom_half_hwlock,
+	.chip_fw_update_boot = tskit_driver_fw_update_boot_hwlock,
+	.chip_fw_update_sd = tskit_driver_fw_update_sd_hwlock,
+	.chip_get_info = tskit_driver_chip_get_info,
 	.chip_get_capacitance_test_type =
-		synaptics_tcm_chip_get_capacitance_test_type,
-	.chip_set_info_flag = syna_tcm_set_info_flag,
-	.chip_before_suspend = syna_tcm_before_suspend,
-	.chip_suspend = syna_tcm_suspend_hwlock,
-	.chip_resume = syna_tcm_resume_hwlock,
-	.chip_after_resume = syna_tcm_after_resume_hwlock,
-//	.chip_wakeup_gesture_enable_switch =
-//		synaptics_wakeup_gesture_enable_switch,
-	.chip_get_rawdata = syna_tcm_mmi_test_hwlock,
-//	.chip_get_calibration_data = synaptics_get_calibration_data,
-//	.chip_get_calibration_info = synaptics_get_calibration_info,
-//	.chip_get_debug_data = synaptics_get_debug_data,
-	.chip_glove_switch = syna_tcm_glove_switch_hwlock,
-//	.chip_shutdown = synaptics_shutdown,
-	.chip_charger_switch = syna_tcm_charger_switch_hwlock,
-//	.chip_holster_switch = synaptics_holster_switch,
-	.chip_roi_switch = syna_tcm_roi_switch_hwlock,
-	.chip_roi_rawdata = syna_tcm_roi_rawdata,
-//	.chip_palm_switch = synaptics_palm_switch,
-//	.chip_regs_operate = synaptics_regs_operate,
-//	.chip_calibrate = synaptics_calibrate,
-//	.chip_calibrate_wakeup_gesture = synaptics_calibrate_wakeup_gesture,
-//	.chip_reset = synaptics_reset_device,
-//#ifdef HUAWEI_TOUCHSCREEN_TEST
-//	.chip_test = test_dbg_cmd_test,
-//#endif
-//	.chip_wrong_touch = synaptics_wrong_touch,
-//	.chip_work_after_input = synaptics_work_after_input_kit,
-//	.chip_ghost_detect = synaptics_ghost_detect,
-//	.chip_check_status = synaptics_chip_check_status,
-	.chip_touch_switch = synaptics_tcm_chip_touch_switch,
+		tskit_driver_chip_get_capacitance_test_type,
+	.chip_set_info_flag = tskit_driver_set_info_flag,
+	.chip_before_suspend = tskit_driver_before_suspend,
+	.chip_suspend = tskit_driver_suspend_hwlock,
+	.chip_resume = tskit_driver_resume_hwlock,
+	.chip_after_resume = tskit_driver_after_resume_hwlock,
+	.chip_get_rawdata = tskit_driver_mmi_test_hwlock,
+	.chip_glove_switch = tskit_driver_glove_switch_hwlock,
+	.chip_holster_switch = touch_driver_holster_switch,
+	.chip_charger_switch = tskit_driver_charger_switch_hwlock,
+	.chip_roi_switch = tskit_driver_roi_switch_hwlock,
+	.chip_roi_rawdata = tskit_driver_roi_rawdata,
+	.chip_touch_switch = tskit_driver_chip_touch_switch,
+	.chip_reset = tskit_driver_chip_reset,
+	.chip_check_status = tskit_driver_chip_check_status,
 };
 
-static void syna_tcm_report_dmd_state_report(void)
+static int touch_driver_enable_closed_cover(bool enable)
+{
+	int retval;
+	unsigned char out_buf[3]; /* cmd length is 3 */
+	unsigned char resp_buf[10] = {0}; /* response length is 10 */
+	unsigned int resp_buf_size = 0;
+	unsigned int resp_length = 0;
+
+	out_buf[0] = DC_ENABLE_CLOSED_COVER;
+	out_buf[1] = (enable) ? 0x01 : 0x00;
+	out_buf[2] = 0x00;
+	TS_LOG_INFO("%s cover enter\n", (enable) ? "enable" : "disable");
+
+	retval = tcm_hcd->write_message(tcm_hcd,
+					CMD_SET_DYNAMIC_CONFIG,
+					out_buf,
+					sizeof(out_buf),
+					(unsigned char **)&resp_buf[0],
+					&resp_buf_size,
+					&resp_length,
+					NULL,
+					0);
+	if (retval < 0) {
+		TS_LOG_ERR("Failed to %s closed cover\n",
+			(enable) ? "enable" : "disable");
+		goto exit;
+	}
+	TS_LOG_INFO("%s cover end\n", (enable) ? "enable" : "disable");
+exit:
+	return retval;
+}
+
+static int touch_driver_holster_switch(struct ts_holster_info *info)
+{
+	int retval = NO_ERR;
+
+	if (!info) {
+		TS_LOG_ERR("holster_switch: info is Null\n");
+		return -EINVAL;
+	}
+	TS_LOG_INFO("holster switch %d, action: %d\n",
+		info->holster_switch, info->op_action);
+
+	if ((tcm_hcd->bdata->support_vendor_ic_type == S3909) &&
+		(tcm_hcd->after_resume_done == false)) {
+		TS_LOG_ERR("%s: ic in suspend,return directly\n", __func__);
+		return 0;
+	}
+
+	switch (info->op_action) {
+	case TS_ACTION_WRITE:
+		retval = touch_driver_enable_closed_cover(info->holster_switch);
+		if (retval < 0)
+			TS_LOG_ERR("set holster switch %d, failed: %d\n",
+				info->holster_switch, retval);
+		break;
+	case TS_ACTION_READ:
+		TS_LOG_INFO("holster switch %d, action: %d\n",
+			 info->holster_switch, info->op_action);
+		break;
+	default:
+		TS_LOG_INFO("invalid holster switch %d, action: %d\n",
+			info->holster_switch, info->op_action);
+		retval = -EINVAL;
+		break;
+	}
+	return retval;
+}
+
+static int tskit_driver_gesture_mode_config(bool en, unsigned char mode)
+{
+	int retval;
+	unsigned char out_buf[3]; /* cmd length is 3 */
+	unsigned char resp_buf[10] = {0}; /* response length is 10 */
+	unsigned int resp_buf_size = 0;
+	unsigned int resp_length = 0;
+	int read_retry;
+
+	if (!en)
+		mode = (unsigned char)~mode; /* disable */
+	TS_LOG_INFO("%s: mode is 0x%x\n", __func__, mode);
+
+	out_buf[0] = (unsigned char)DC_IN_WAKEUP_GESTURE_MODE;
+	out_buf[1] = (unsigned char)mode;
+	out_buf[2] = (unsigned char)(mode >> 8);
+	/*lint -e545*/
+	retval = tcm_hcd->write_message(tcm_hcd,
+					CMD_SET_DYNAMIC_CONFIG,
+					out_buf,
+					sizeof(out_buf),
+					(unsigned char **)&resp_buf,
+					&resp_buf_size,
+					&resp_length,
+					NULL,
+					0);
+	/*lint +e545*/
+	if (retval < 0) {
+		TS_LOG_ERR("Failed to %s gesture mode: 0x%x\n",
+			(en ? "enable" : "disable"), mode);
+		goto exit;
+	}
+	read_retry = 0;
+	do {
+		mdelay(5); /* delay 5ms to wait ic ready */
+		retval = tskit_driver_read(tcm_hcd,
+			resp_buf, sizeof(resp_buf));
+		if ((retval >= 0) && (resp_buf[0] == MESSAGE_MARKER))
+			break;
+	} while (++read_retry < READ_RETRY);
+	if (retval < 0 || resp_buf[0] != MESSAGE_MARKER)
+		TS_LOG_ERR("Failed to read response %s\n",
+			STR(CMD_SET_DYNAMIC_CONFIG));
+exit:
+	return retval;
+}
+
+static int tskit_driver_chip_reset(void)
+{
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		TS_LOG_INFO("%s reset\n", __func__);
+		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+			GPIO_OUTPUT_LOW);
+		mdelay(5); /* sequential */
+		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+			GPIO_OUTPUT_HIGH);
+		mdelay(30); /* 30:30ms after reset delay 30ms to wait ic ready */
+		tskit_driver_status_resume();
+	}
+	return 0;
+}
+
+static void tskit_driver_report_dmd_state_report(void)
 {
 	int i = 0;
 	uint16_t buf[2] = {0};
@@ -262,7 +395,8 @@ static void syna_tcm_report_dmd_state_report(void)
 	for(i = 0; i < count; i++) {
 		if(tp_status_dmd_bit_status[report_index].bit_count) {
 			tp_status_dmd_bit_status[report_index].bit_count--;
-			syna_tcm_report_dmd_state(syna_report_priority[report_index]);
+			tskit_driver_report_dmd_state(
+				syna_report_priority[report_index]);
 			if(count - 1 > report_index) {
 				report_index++;
 			} else {
@@ -276,7 +410,7 @@ static void syna_tcm_report_dmd_state_report(void)
 		}
 	}
 }
-static void syna_tcm_report_dmd_state(int dmd_bit)
+static void tskit_driver_report_dmd_state(int dmd_bit)
 {
 	TS_LOG_INFO("%s, input bit is %d",__func__, dmd_bit);
 #if defined (CONFIG_HUAWEI_DSM)
@@ -330,7 +464,7 @@ static void syna_tcm_report_dmd_state(int dmd_bit)
 	}
 #endif
 }
-static int syna_tcm_hdl_get_state(void)
+static int tskit_driver_hdl_get_state(void)
 {
 	int retval = NO_ERR;
 	unsigned char *temp_buf;
@@ -346,7 +480,7 @@ static int syna_tcm_hdl_get_state(void)
 		return -ENOMEM;
 	}
 
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			CMD_GET_TP_ABNORMAL_STATE,
 			NULL,
 			0,
@@ -366,7 +500,7 @@ static int syna_tcm_hdl_get_state(void)
 	if (tcm_hcd->in_before_suspend) {
 		while (retry) {
 			mdelay(1);
-			retval = syna_tcm_read(tcm_hcd,
+			retval = tskit_driver_read(tcm_hcd,
 					temp_buf,
 					ABNORMAL_STATE_LEN);
 			if (temp_buf[1] != STATUS_OK)
@@ -401,7 +535,7 @@ exit:
 	return retval;
 }
 
-static int synaptics_tcm_get_project_id(char *project_id)
+static int tskit_driver_get_project_id(char *project_id)
 {
 	int retval = NO_ERR;
 	int projectid_lenth = 0;
@@ -437,11 +571,12 @@ static int synaptics_tcm_get_project_id(char *project_id)
 	return retval;
 }
 
-static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info)
+static int tskit_driver_chip_get_info(struct ts_chip_info_param *info)
 {
 	int retval = 0;
 	char buf_proj_id[CHIP_INFO_LENGTH] = {0};
 	char buf_fw_ver[CHIP_INFO_LENGTH] = {0};
+	char config_id[CHIP_INFO_LENGTH] = {0};
 	int projectid_lenth = 0;
 	int len = 0;
 
@@ -458,7 +593,7 @@ static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info)
 	memset(info->fw_vendor, 0, sizeof(info->fw_vendor));
 
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		retval = synaptics_tcm_get_project_id(buf_proj_id);
+		retval = tskit_driver_get_project_id(buf_proj_id);
 		if (retval) {
 			TS_LOG_ERR("%s get project id error.\n", __func__);
 			return -EINVAL;
@@ -471,7 +606,8 @@ static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info)
 	snprintf(buf_fw_ver, CHIP_INFO_LENGTH-1, "PR%d", tcm_hcd->packrat_number);
 	TS_LOG_INFO("buf_fw_ver = %s", buf_fw_ver);
 
-	if(!tcm_hcd->syna_tcm_chip_data->ts_platform_data->hide_plain_id)  {
+	if ((!tcm_hcd->syna_tcm_chip_data->ts_platform_data->hide_plain_id) ||
+		ts_is_factory()) {
 		len = MIN(sizeof(info->ic_vendor) - 1, sizeof(SYNAPTICS_CHIP_INFO));
 		memcpy(info->ic_vendor, SYNAPTICS_CHIP_INFO, len);
 	} else {
@@ -479,19 +615,47 @@ static int synaptics_tcm_chip_get_info(struct ts_chip_info_param *info)
 		memcpy(info->ic_vendor, buf_proj_id, len);
 	}
 
-	strncpy(info->mod_vendor, buf_proj_id, CHIP_INFO_LENGTH-1);
+	strncpy(info->mod_vendor, buf_proj_id, CHIP_INFO_LENGTH - 1);
 	strncpy(info->fw_vendor, buf_fw_ver, CHIP_INFO_LENGTH-1);
 
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		/*
+		 * store 2 byte config id
+		 * 2,3 : config id flag
+		 */
+		snprintf(config_id, SYNC_TCM_CONFIG_ID_ARRY_SIZE,
+			"_%02x%02x",
+			tcm_hcd->app_info.customer_config_id[2],
+			tcm_hcd->app_info.customer_config_id[3]);
+		if ((strlen(info->fw_vendor) + strlen(config_id)) >=
+			sizeof(info->fw_vendor)) {
+			TS_LOG_ERR("invalid len :fw_vendor = %lu, config_id = %lu\n",
+				strlen(info->fw_vendor), strlen(config_id));
+		} else {
+			strncat(info->fw_vendor, config_id, strlen(config_id));
+			TS_LOG_INFO("fw_vendor :%s\n", info->fw_vendor);
+		}
+		if (tcm_hcd->syna_tcm_chip_data->ts_platform_data->hide_plain_id &&
+			(!ts_is_factory())) {
+			/*
+		 	 * The length of ic_vendor is CHIP_INFO_LENGTH * 2
+		 	 * no overwriting occurs
+		 	 */
+			snprintf(info->ic_vendor, CHIP_INFO_LENGTH * 2,
+				"TP-%s-%s", info->mod_vendor, info->fw_vendor);
+			TS_LOG_INFO("info->ic_vendor :%s\n", info->ic_vendor);
+		}
+	}
 	return 0;
 }
 
-static int synaptics_tcm_chip_get_capacitance_test_type(struct ts_test_type_info
-		*info)
+static int tskit_driver_chip_get_capacitance_test_type(
+	struct ts_test_type_info *info)
 {
 	int retval = NO_ERR;
 
 	if (!info) {
-		TS_LOG_ERR("synaptics_chip_get_capacitance_test_type: info is Null\n");
+		TS_LOG_ERR("%s: info is Null\n", __func__);
 		return -ENOMEM;
 	}
 	switch (info->op_action) {
@@ -512,15 +676,12 @@ static int synaptics_tcm_chip_get_capacitance_test_type(struct ts_test_type_info
 	return retval;
 }
 
-#define XFER_ATTEMPTS 10
+#define XFER_ATTEMPTS 3
 #define TEMP_I2C_ADDR 0x2c
 
-static int syna_tcm_i2c_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
-		unsigned int size)
+static int tskit_driver_i2c_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
+	unsigned int size)
 {
-	//static unsigned int buf_size;
-	//struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
-
 	if (size > buf_size) {
 		if (buf_size)
 			kfree(buf);
@@ -537,7 +698,7 @@ static int syna_tcm_i2c_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
 	return 0;
 }
 
-static int syna_tcm_get_hw_lock(void)
+static int tskit_driver_get_hw_lock(void)
 {
 	int retval;
 
@@ -551,13 +712,13 @@ static int syna_tcm_get_hw_lock(void)
 	return 0;
 }
 
-static void syna_tcm_release_hw_lock(void)
+static void tskit_driver_release_hw_lock(void)
 {
 	if (g_ts_kit_platform_data.i2c_hwlock.tp_i2c_hwlock_flag)
 		tp_i2c_release_hwlock();
 }
 
-static int syna_tcm_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_i2c_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
 {
 	int retval = 0;
@@ -601,7 +762,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 		unsigned short addr, unsigned char *data, unsigned int length)
 {
 	int retval;
@@ -609,11 +770,10 @@ static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	unsigned int byte_count;
 	struct i2c_msg msg;
 	struct i2c_client *i2c = tcm_hcd->syna_tcm_chip_data->ts_platform_data->client;
-	//const struct syna_tcm_board_data *bdata = tcm_hcd->hw_if->bdata;
 
 	byte_count = length + 1;
 
-	retval = syna_tcm_i2c_alloc_mem(tcm_hcd, byte_count);
+	retval = tskit_driver_i2c_alloc_mem(tcm_hcd, byte_count);
 	if (retval < 0) {
 		TS_LOG_ERR(
 				"Failed to allocate memory\n");
@@ -623,7 +783,6 @@ static int syna_tcm_i2c_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	buf[0] = (unsigned char)addr;
 	memcpy(&buf[1], data, length);
 
-	//msg.addr = bdata->ubl_i2c_addr;
 	msg.addr = TEMP_I2C_ADDR;
 	msg.flags = 0;
 	msg.len = byte_count;
@@ -651,8 +810,8 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_i2c_read_data(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_i2c_read_data(struct syna_tcm_hcd *tcm_hcd,
+	unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 	unsigned int attempt = 0;
@@ -675,6 +834,10 @@ static int syna_tcm_i2c_read_data(struct syna_tcm_hcd *tcm_hcd, unsigned char *d
 
 		if (attempt + 1 == XFER_ATTEMPTS) {
 			retval = -EIO;
+#if defined (CONFIG_HUAWEI_DSM)
+			ts_i2c_error_dmd_report((u8 *)&i2c->addr);
+			TS_LOG_INFO("i2c read error\n");
+#endif
 			goto exit;
 		}
 
@@ -685,8 +848,8 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_i2c_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_i2c_write(struct syna_tcm_hcd *tcm_hcd,
+	unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 	unsigned int attempt = 0;
@@ -698,7 +861,7 @@ static int syna_tcm_i2c_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	msg.len = length;
 	msg.buf = data;
 
-	TS_LOG_ERR("write i2c addr: %x\n",msg.addr);
+	TS_LOG_DEBUG("write i2c addr: %x\n",msg.addr);
 	for (attempt = 0; attempt < XFER_ATTEMPTS; attempt++) {
 		if (i2c_transfer(i2c->adapter, &msg, 1) == 1) {
 			retval = length;
@@ -710,6 +873,10 @@ static int syna_tcm_i2c_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 
 		if (attempt + 1 == XFER_ATTEMPTS) {
 			retval = -EIO;
+#if defined (CONFIG_HUAWEI_DSM)
+			ts_i2c_error_dmd_report((u8 *)&i2c->addr);
+			TS_LOG_INFO("i2c write error\n");
+#endif
 			goto exit;
 		}
 
@@ -720,7 +887,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_spi_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_spi_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
 		unsigned int size)
 {
 	if (size > buf_size) {
@@ -738,8 +905,9 @@ static int syna_tcm_spi_alloc_mem(struct syna_tcm_hcd *tcm_hcd,
 	return 0;
 }
 
-static int syna_tcm_spi_rmi_read_stransfer(struct syna_tcm_hcd *tcm_hcd,
-		unsigned short addr, unsigned char *data, unsigned int length)
+static int tskit_driver_spi_rmi_read_stransfer(
+	struct syna_tcm_hcd *tcm_hcd, unsigned short addr,
+	unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 	struct spi_device *spi = tcm_hcd->syna_tcm_chip_data->ts_platform_data->spi;
@@ -779,8 +947,8 @@ static int syna_tcm_spi_rmi_read_stransfer(struct syna_tcm_hcd *tcm_hcd,
 	return retval;
 }
 
-static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
-		unsigned short addr, unsigned char *data, unsigned int length)
+static int tskit_driver_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
+	unsigned short addr, unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 
@@ -790,13 +958,14 @@ static int syna_tcm_spi_rmi_read(struct syna_tcm_hcd *tcm_hcd,
 	}
 #endif
 
-	retval = syna_tcm_spi_alloc_mem(tcm_hcd, length + 2);
+	retval = tskit_driver_spi_alloc_mem(tcm_hcd, length + 2);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to allocate memory\n");
 		goto exit;
 	}
 
-	retval = syna_tcm_spi_rmi_read_stransfer(tcm_hcd, addr, data, length);
+	retval = tskit_driver_spi_rmi_read_stransfer(tcm_hcd,
+		addr, data, length);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to spi rmi read transfer\n");
 		goto exit;
@@ -806,8 +975,9 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_spi_rmi_write_transfer(struct syna_tcm_hcd *tcm_hcd,
-		unsigned short addr, unsigned char *data, unsigned int length)
+static int tskit_driver_spi_rmi_write_transfer(
+	struct syna_tcm_hcd *tcm_hcd, unsigned short addr,
+	unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 	struct spi_device *spi = tcm_hcd->syna_tcm_chip_data->ts_platform_data->spi;
@@ -852,8 +1022,8 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_spi_rmi_write(struct syna_tcm_hcd *tcm_hcd,
-		unsigned short addr, unsigned char *data, unsigned int length)
+static int tskit_driver_spi_rmi_write(struct syna_tcm_hcd *tcm_hcd,
+	unsigned short addr, unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 
@@ -863,12 +1033,13 @@ static int syna_tcm_spi_rmi_write(struct syna_tcm_hcd *tcm_hcd,
 	}
 #endif
 
-	retval = syna_tcm_spi_alloc_mem(tcm_hcd, (length + 2));
+	retval = tskit_driver_spi_alloc_mem(tcm_hcd, (length + 2));
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to allocate memory\n");
 		goto exit;
 	}
-	retval = syna_tcm_spi_rmi_write_transfer(tcm_hcd, addr, data, (length + 2));
+	retval = tskit_driver_spi_rmi_write_transfer(tcm_hcd,
+		addr, data, (length + 2));
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to spi rmi write transfer\n");
 		goto exit;
@@ -877,8 +1048,9 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_spi_read_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_spi_read_transfer(
+	struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
+	unsigned int length)
 {
 	int retval = NO_ERR;
 	struct spi_device *spi = tcm_hcd->syna_tcm_chip_data->ts_platform_data->spi;
@@ -916,8 +1088,8 @@ static int syna_tcm_spi_read_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned cha
 	return retval;
 }
 
-static int syna_tcm_spi_read(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_spi_read(struct syna_tcm_hcd *tcm_hcd,
+	unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
 
@@ -927,13 +1099,13 @@ static int syna_tcm_spi_read(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	}
 #endif
 
-	retval = syna_tcm_spi_alloc_mem(tcm_hcd, length);
+	retval = tskit_driver_spi_alloc_mem(tcm_hcd, length);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to allocate memory\n");
 		goto exit;
 	}
 
-	retval = syna_tcm_spi_read_transfer(tcm_hcd, data, length);
+	retval = tskit_driver_spi_read_transfer(tcm_hcd, data, length);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to spi read transfer\n");
 		goto exit;
@@ -943,8 +1115,9 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_spi_write_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_spi_write_transfer(
+	struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
+	unsigned int length)
 {
 	int retval = NO_ERR;
 	struct spi_device *spi = tcm_hcd->syna_tcm_chip_data->ts_platform_data->spi;
@@ -979,8 +1152,9 @@ static int syna_tcm_spi_write_transfer(struct syna_tcm_hcd *tcm_hcd, unsigned ch
 	return retval;
 }
 
-static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
-		unsigned int length)
+static int tskit_driver_spi_write(
+	struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
+	unsigned int length)
 {
 	int retval = NO_ERR;
 
@@ -990,7 +1164,7 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 	}
 #endif
 
-	retval = syna_tcm_spi_write_transfer(tcm_hcd, data, length);
+	retval = tskit_driver_spi_write_transfer(tcm_hcd, data, length);
 	if (retval < 0) {
 			TS_LOG_ERR("Failed to spi write transfer\n");
 	}
@@ -999,7 +1173,7 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
 }
 
 /**
- * syna_tcm_dispatch_report() - dispatch report received from device
+ * tskit_driver_dispatch_report() - dispatch report received from device
  *
  * @tcm_hcd: handle of core module
  *
@@ -1009,7 +1183,7 @@ static int syna_tcm_spi_write(struct syna_tcm_hcd *tcm_hcd, unsigned char *data,
  * report occurrence.
  */
 
-static void syna_tcm_dispatch_report(struct syna_tcm_hcd *tcm_hcd)
+static void tskit_driver_dispatch_report(struct syna_tcm_hcd *tcm_hcd)
 {
 	LOCK_BUFFER(tcm_hcd->in);
 	LOCK_BUFFER(tcm_hcd->report.buffer);
@@ -1027,14 +1201,14 @@ static void syna_tcm_dispatch_report(struct syna_tcm_hcd *tcm_hcd)
 }
 
 /**
- * syna_tcm_dispatch_response() - dispatch response received from device
+ * tskit_driver_dispatch_response() - dispatch response received from device
  *
  * @tcm_hcd: handle of core module
  *
  * The response to a command is forwarded to the sender of the command.
  */
 
-static void syna_tcm_dispatch_response(struct syna_tcm_hcd *tcm_hcd)
+static void tskit_driver_dispatch_response(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 
@@ -1049,7 +1223,7 @@ static void syna_tcm_dispatch_response(struct syna_tcm_hcd *tcm_hcd)
 	}
 
 	LOCK_BUFFER(tcm_hcd->resp);
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&tcm_hcd->resp,
 			tcm_hcd->payload_length);
 	if (retval < 0) {
@@ -1086,7 +1260,7 @@ exit:
 }
 
 /**
- * syna_tcm_dispatch_message() - dispatch message received from device
+ * tskit_driver_dispatch_message() - dispatch message received from device
  *
  * @tcm_hcd: handle of core module
  *
@@ -1095,12 +1269,13 @@ exit:
  * report or a response to a command.
  */
 
-static void syna_tcm_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
+static void tskit_driver_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
 {
 	unsigned char *build_id = NULL;
 	unsigned int payload_length = 0;
 	unsigned int max_write_size = 0;
 	unsigned long count;
+	struct ts_kit_device_data *chip_data = tcm_hcd->syna_tcm_chip_data;
 
 	if (tcm_hcd->status_report_code == REPORT_IDENTIFY) {
 		payload_length = tcm_hcd->payload_length;
@@ -1125,7 +1300,13 @@ static void syna_tcm_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
 		if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 			tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_SPI);
 		}else{
-			tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_I2C);
+			if (chip_data->ts_platform_data->i2c_driver_type ==
+				I3C_MASTER_I2C_DRIVER)
+				tcm_hcd->wr_chunk_size = MIN(max_write_size,
+					WR_CHUNK_SIZE_I3C);
+			else
+				tcm_hcd->wr_chunk_size = MIN(max_write_size,
+					WR_CHUNK_SIZE_I2C);
 		}
 		if (tcm_hcd->wr_chunk_size == 0)
 			tcm_hcd->wr_chunk_size = max_write_size;
@@ -1156,28 +1337,32 @@ static void syna_tcm_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
 		}
 
 #ifdef FORCE_RUN_APPLICATION_FIRMWARE
-		if (tcm_hcd->id_info.mode != MODE_APPLICATION) {
-			if (atomic_read(&tcm_hcd->helper.task) == HELP_NONE) {
-				atomic_set(&tcm_hcd->helper.task,
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type != S3909) {
+			if (tcm_hcd->id_info.mode != MODE_APPLICATION) {
+				if (atomic_read(&tcm_hcd->helper.task) ==
+					HELP_NONE) {
+					atomic_set(&tcm_hcd->helper.task,
 						HELP_RUN_APPLICATION_FIRMWARE);
-				queue_work(tcm_hcd->helper.workqueue,
+					queue_work(tcm_hcd->helper.workqueue,
 						&tcm_hcd->helper.work);
-				return;
+					return;
+				}
 			}
 		}
 #endif
 	}
 
 	if (tcm_hcd->status_report_code >= REPORT_IDENTIFY)
-		syna_tcm_dispatch_report(tcm_hcd);
+		tskit_driver_dispatch_report(tcm_hcd);
 	else
-		syna_tcm_dispatch_response(tcm_hcd);
+		tskit_driver_dispatch_response(tcm_hcd);
 
 	return;
 }
 
 /**
- * syna_tcm_continued_read() - retrieve entire payload from device
+ * tskit_driver_continued_read() - retrieve entire payload from device
  *
  * @tcm_hcd: handle of core module
  *
@@ -1185,7 +1370,7 @@ static void syna_tcm_dispatch_message(struct syna_tcm_hcd *tcm_hcd)
  * the device and stored in the handle of the core module.
  */
 
-static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_continued_read(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char marker = 0;
@@ -1202,7 +1387,7 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
 	remaining_length = total_length - tcm_hcd->read_length;
 
 	LOCK_BUFFER(tcm_hcd->in);
-	retval = syna_tcm_realloc_mem(tcm_hcd,
+	retval = tskit_driver_realloc_mem(tcm_hcd,
 			&tcm_hcd->in,
 			total_length + 1);
 	if (retval < 0) {
@@ -1236,7 +1421,7 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
 			continue;
 		}
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->temp,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -1245,10 +1430,11 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
 			UNLOCK_BUFFER(tcm_hcd->in);
 			return retval;
 		}
-
-		retval = syna_tcm_read(tcm_hcd,
+		UNLOCK_BUFFER(tcm_hcd->temp);
+		retval = tskit_driver_read(tcm_hcd,
 				tcm_hcd->temp.buf,
 				xfer_length + 2);
+		LOCK_BUFFER(tcm_hcd->temp);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to read from device\n");
 			UNLOCK_BUFFER(tcm_hcd->temp);
@@ -1295,7 +1481,7 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
 }
 
 /**
- * syna_tcm_raw_read() - retrieve specific number of data bytes from device
+ * tskit_driver_raw_read() - retrieve specific number of data bytes from device
  *
  * @tcm_hcd: handle of core module
  * @in_buf: buffer for storing data retrieved from device
@@ -1305,7 +1491,7 @@ static int syna_tcm_continued_read(struct syna_tcm_hcd *tcm_hcd)
  * retrieved from the device and stored in in_buf.
  */
 
-int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
+int tskit_driver_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char *in_buf, unsigned int length)
 {
 	int retval = NO_ERR;
@@ -1318,7 +1504,7 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 	int remaining_length = 0;
 
 	if (length < 2) {
-		retval = syna_tcm_i2c_read_data(tcm_hcd,
+		retval = tskit_driver_i2c_read_data(tcm_hcd,
 				in_buf,
 				length);
 		if (retval < 0) {
@@ -1367,7 +1553,7 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 			continue;
 		}
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->temp,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -1377,7 +1563,7 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 			return retval;
 		}
 
-		retval = syna_tcm_i2c_read_data(tcm_hcd,
+		retval = tskit_driver_i2c_read_data(tcm_hcd,
 				tcm_hcd->temp.buf,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -1449,7 +1635,7 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
 }
 
 /**
- * syna_tcm_raw_read() - retrieve specific number of data bytes from device
+ * tskit_driver_raw_read() - retrieve specific number of data bytes from device
  *
  * @tcm_hcd: handle of core module
  * @in_buf: buffer for storing data retrieved from device
@@ -1459,7 +1645,7 @@ int syna_tcm_i2c_read(struct syna_tcm_hcd *tcm_hcd,
  * retrieved from the device and stored in in_buf.
  */
 
-static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_raw_read(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char *in_buf, unsigned int length)
 {
 	int retval = NO_ERR;
@@ -1472,7 +1658,7 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 	unsigned int remaining_length = 0;
 
 	if (TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		return syna_tcm_i2c_read(tcm_hcd, in_buf, length);
+		return tskit_driver_i2c_read(tcm_hcd, in_buf, length);
 	}
 
 	if (length < 2) {
@@ -1508,7 +1694,7 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 			continue;
 		}
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->temp,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -1517,7 +1703,7 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 			return retval;
 		}
 
-		retval = syna_tcm_read(tcm_hcd,
+		retval = tskit_driver_read(tcm_hcd,
 				tcm_hcd->temp.buf,
 				xfer_length + 2);
 		if (retval < 0) {
@@ -1576,7 +1762,7 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
 }
 
 /**
- * syna_tcm_raw_write() - write command/data to device without receiving
+ * tskit_driver_raw_write() - write command/data to device without receiving
  * response
  *
  * @tcm_hcd: handle of core module
@@ -1587,7 +1773,7 @@ static int syna_tcm_raw_read(struct syna_tcm_hcd *tcm_hcd,
  * A command and its data, if any, are sent to the device.
  */
 
-static int syna_tcm_raw_write(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_raw_write(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char command, unsigned char *data, unsigned int length)
 {
 	int retval = NO_ERR;
@@ -1616,7 +1802,7 @@ static int syna_tcm_raw_write(struct syna_tcm_hcd *tcm_hcd,
 		else
 			xfer_length = remaining_length;
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->out,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -1642,7 +1828,7 @@ static int syna_tcm_raw_write(struct syna_tcm_hcd *tcm_hcd,
 				xfer_length);
 		}
 
-		retval = syna_tcm_write(tcm_hcd,
+		retval = tskit_driver_write(tcm_hcd,
 				tcm_hcd->out.buf,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -1659,18 +1845,18 @@ static int syna_tcm_raw_write(struct syna_tcm_hcd *tcm_hcd,
 }
 
 /**
- * syna_tcm_read_message() - read message from device
+ * tskit_driver_read_message() - read message from device
  *
  * @tcm_hcd: handle of core module
  * @in_buf: buffer for storing data in raw read mode
  * @length: length of data in bytes in raw read mode
  *
- * If in_buf is not NULL, raw read mode is used and syna_tcm_raw_read() is
+ * If in_buf is not NULL, raw read mode is used and tskit_driver_raw_read() is
  * called. Otherwise, a message including its entire payload is retrieved from
  * the device and dispatched to the appropriate destination.
  */
 
-static int syna_tcm_read_message(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_read_message(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char *in_buf, unsigned int length)
 {
 	int retval = NO_ERR;
@@ -1679,14 +1865,14 @@ static int syna_tcm_read_message(struct syna_tcm_hcd *tcm_hcd,
 	struct syna_tcm_message_header *header = NULL;
 
 	if (in_buf != NULL) {
-		retval = syna_tcm_raw_read(tcm_hcd, in_buf, length);
+		retval = tskit_driver_raw_read(tcm_hcd, in_buf, length);
 		goto exit;
 	}
 
 retry:
 	LOCK_BUFFER(tcm_hcd->in);
 
-	retval = syna_tcm_read(tcm_hcd,
+	retval = tskit_driver_read(tcm_hcd,
 			tcm_hcd->in.buf,
 			tcm_hcd->read_length);
 	if (retval < 0) {
@@ -1756,7 +1942,7 @@ retry:
 
 	UNLOCK_BUFFER(tcm_hcd->in);
 
-	retval = syna_tcm_continued_read(tcm_hcd);
+	retval = tskit_driver_continued_read(tcm_hcd);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to do continued read\n");
 		goto exit;
@@ -1786,7 +1972,7 @@ check_padding:
 		tcm_hcd->read_length = total_length;
 #endif
 
-	syna_tcm_dispatch_message(tcm_hcd);
+	tskit_driver_dispatch_message(tcm_hcd);
 
 	retval = 0;
 
@@ -1802,7 +1988,7 @@ exit:
 }
 
 /**
- * syna_tcm_write_message() - write message to device and receive response
+ * tskit_driver_write_message() - write message to device and receive response
  *
  * @tcm_hcd: handle of core module
  * @command: command to send to device
@@ -1814,12 +2000,12 @@ exit:
  * @response_code: status code returned in command response
  * @polling_delay_ms: delay time after sending command before resuming polling
  *
- * If resp_buf is NULL, raw write mode is used and syna_tcm_raw_write() is
+ * If resp_buf is NULL, raw write mode is used and tskit_driver_raw_write() is
  * called. Otherwise, a command and its payload, if any, are sent to the device
  * and the response to the command generated by the device is read in.
  */
 
-static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_write_message(struct syna_tcm_hcd *tcm_hcd,
 		unsigned char command, unsigned char *payload,
 		unsigned int length, unsigned char **resp_buf,
 		unsigned int *resp_buf_size, unsigned int *resp_length,
@@ -1832,23 +2018,29 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 	unsigned int xfer_length = 0;
 	unsigned int remaining_length = 0;
 	unsigned int command_status = 0;
+	unsigned int timeout = 0;
+	unsigned int polling_ms;
 
 	if (response_code != NULL)
 		*response_code = STATUS_INVALID;
 
-	if (!tcm_hcd->do_polling && current->pid == tcm_hcd->isr_pid) {
-		TS_LOG_ERR("Invalid execution context\n");
-		return -EINVAL;
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type != S3909) {
+		if (!tcm_hcd->do_polling && current->pid == tcm_hcd->isr_pid) {
+			TS_LOG_ERR("Invalid execution context\n");
+			return -EINVAL;
+		}
 	}
 
 	if (resp_buf == NULL) {
-		retval = syna_tcm_raw_write(tcm_hcd, command, payload, length);
+		retval = tskit_driver_raw_write(tcm_hcd,
+			command, payload, length);
 		goto exit;
 	}
-
-	if (tcm_hcd->do_polling && polling_delay_ms) {
-		cancel_delayed_work_sync(&tcm_hcd->polling_work);
-		flush_workqueue(tcm_hcd->polling_workqueue);
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type != S3909) {
+		if (tcm_hcd->do_polling && polling_delay_ms) {
+			cancel_delayed_work_sync(&tcm_hcd->polling_work);
+			flush_workqueue(tcm_hcd->polling_workqueue);
+		}
 	}
 
 	atomic_set(&tcm_hcd->command_status, CMD_BUSY);
@@ -1888,7 +2080,7 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 		else
 			xfer_length = remaining_length;
 
-		retval = syna_tcm_alloc_mem(tcm_hcd,
+		retval = tskit_driver_alloc_mem(tcm_hcd,
 				&tcm_hcd->out,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -1931,7 +2123,7 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 				xfer_length);
 		}
 
-		retval = syna_tcm_write(tcm_hcd,
+		retval = tskit_driver_write(tcm_hcd,
 				tcm_hcd->out.buf,
 				xfer_length + 1);
 		if (retval < 0) {
@@ -1946,25 +2138,51 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 			usleep_range(WRITE_DELAY_US_MIN, WRITE_DELAY_US_MAX);
 	}
 	UNLOCK_BUFFER(tcm_hcd->out);
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		if (polling_delay_ms > 0)
+			polling_ms = polling_delay_ms;
+		else
+			polling_ms = 10;
 
-	if (tcm_hcd->do_polling && polling_delay_ms) {
-		queue_delayed_work(tcm_hcd->polling_workqueue,
+		do {
+			retval = wait_for_completion_timeout(&response_complete,
+				msecs_to_jiffies(polling_ms));
+			if (retval > 0) {
+				break;
+			} else if (retval == 0) {
+				timeout += polling_ms;
+				reinit_completion(&response_complete);
+			}
+			if (timeout >= RESPONSE_TIMEOUT_MS)
+				TS_LOG_ERR("Timed out waiting for response command 0x%02x\n",
+					tcm_hcd->command);
+			retval = tcm_hcd->read_message(tcm_hcd, NULL, 0);
+			if (retval < 0) {
+				TS_LOG_ERR("Failed to read in the response command 0x%02x\n",
+					tcm_hcd->command);
+				goto exit;
+			}
+		} while (timeout < RESPONSE_TIMEOUT_MS);
+	} else {
+		if (tcm_hcd->do_polling && polling_delay_ms) {
+			queue_delayed_work(tcm_hcd->polling_workqueue,
 				&tcm_hcd->polling_work,
 				msecs_to_jiffies(polling_delay_ms));
-	}
+		}
 
-	retval = wait_for_completion_timeout(&response_complete,
+		retval = wait_for_completion_timeout(&response_complete,
 			msecs_to_jiffies(RESPONSE_TIMEOUT_MS));
-	if (retval == 0) {
-		TS_LOG_ERR("Timed out waiting for response (command 0x%02x)\n",
+		if (retval == 0) {
+			TS_LOG_ERR("Timed out waiting for response command 0x%02x\n",
 				tcm_hcd->command);
-		retval = -EIO;
-		goto exit;
-	}
+			retval = -EIO;
+			goto exit;
+		}
 
+	}
 	command_status = atomic_read(&tcm_hcd->command_status);
 	if (command_status != CMD_IDLE) {
-		TS_LOG_ERR("Failed to get valid response (command 0x%02x)\n",
+		TS_LOG_ERR("Failed to get valid response command 0x%02x\n",
 				tcm_hcd->command);
 		retval = -EIO;
 		goto exit;
@@ -1973,7 +2191,7 @@ static int syna_tcm_write_message(struct syna_tcm_hcd *tcm_hcd,
 	LOCK_BUFFER(tcm_hcd->resp);
 	if (tcm_hcd->response_code != STATUS_OK) {
 		if (tcm_hcd->resp.data_length) {
-			TS_LOG_ERR("Error code = 0x%02x (command 0x%02x)\n",
+			TS_LOG_ERR("Error code = 0x%02x command 0x%02x\n",
 					tcm_hcd->resp.buf[0], tcm_hcd->command);
 		}
 		retval = -EIO;
@@ -1997,7 +2215,7 @@ exit:
 }
 
 
-static int syna_tcm_wait_hdl(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_wait_hdl(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 
@@ -2019,7 +2237,7 @@ static int syna_tcm_wait_hdl(struct syna_tcm_hcd *tcm_hcd)
 	return retval;
 }
 
-static void syna_tcm_update_watchdog(struct syna_tcm_hcd *tcm_hcd, bool en)
+static void tskit_driver_update_watchdog(struct syna_tcm_hcd *tcm_hcd, bool en)
 {
 	cancel_delayed_work_sync(&tcm_hcd->watchdog.work);
 	flush_workqueue(tcm_hcd->watchdog.workqueue);
@@ -2040,7 +2258,7 @@ static void syna_tcm_update_watchdog(struct syna_tcm_hcd *tcm_hcd, bool en)
 	return;
 }
 
-static int syna_tcm_pinctrl_init(void)
+static int tskit_driver_pinctrl_init(void)
 {
 	int ret = NO_ERR;
 
@@ -2077,7 +2295,7 @@ err_pinctrl_put:
 }
 
 
-static void syna_tcm_pinctrl_release(void)
+static void tskit_driver_pinctrl_release(void)
 {
 	if (tcm_hcd->pctrl)
 		devm_pinctrl_put(tcm_hcd->pctrl);
@@ -2087,7 +2305,7 @@ static void syna_tcm_pinctrl_release(void)
 	tcm_hcd->pins_idle= NULL;
 }
 
-static void syna_tcm_pinctrl_select_lowpower(void)
+static void tskit_driver_pinctrl_select_lowpower(void)
 {
 	int retval = NO_ERR;
 
@@ -2101,7 +2319,7 @@ static void syna_tcm_pinctrl_select_lowpower(void)
 	return;
 }
 
-static void syna_tcm_pinctrl_select_normal(void)
+static void tskit_driver_pinctrl_select_normal(void)
 {
 	int retval = NO_ERR;
 
@@ -2115,7 +2333,7 @@ static void syna_tcm_pinctrl_select_normal(void)
 	return;
 }
 
-static void syna_tcm_power_on_gpio_set(void)
+static void tskit_driver_power_on_gpio_set(void)
 {
 	int retval = NO_ERR;
 
@@ -2131,9 +2349,9 @@ static void syna_tcm_power_on_gpio_set(void)
 	return;
 }
 
-static void syna_tcm_gpio_reset(void)
+static void tskit_driver_gpio_reset(void)
 {
-	TS_LOG_INFO("synaptics_gpio_reset\n");
+	TS_LOG_INFO("gpio_reset\n");
 	if (!tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio) {
 		TS_LOG_INFO("reset_gpio is null, not supported reset\n");
 		return;
@@ -2147,7 +2365,7 @@ static void syna_tcm_gpio_reset(void)
 	return;
 }
 
-static void syna_tcm_power_off_gpio_set(void)
+static void tskit_driver_power_off_gpio_set(void)
 {
 	gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, 0);
 	mdelay(1);
@@ -2155,10 +2373,10 @@ static void syna_tcm_power_off_gpio_set(void)
 }
 
 
-static int syna_tcm_gpio_request(void)
+static int tskit_driver_gpio_request(void)
 {
 	int retval = NO_ERR;
-	TS_LOG_INFO("synaptics_gpio_request\n");
+	TS_LOG_INFO("gpio_request\n");
 
 	if ((1 == tcm_hcd->syna_tcm_chip_data->vci_gpio_type)
 	    && (1 == tcm_hcd->syna_tcm_chip_data->vddio_gpio_type)) {
@@ -2219,7 +2437,7 @@ ts_reset_out:
 
 }
 
-static int syna_tcm_get_app_info(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_get_app_info(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -2277,7 +2495,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_get_boot_info(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_get_boot_info(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -2319,7 +2537,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
+static int tskit_driver_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -2327,6 +2545,7 @@ static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 	unsigned int resp_length = 0;
 	unsigned int max_write_size = 0;
 	unsigned long count;
+	struct ts_kit_device_data *chip_data = tcm_hcd->syna_tcm_chip_data;
 
 	resp_buf = NULL;
 	resp_buf_size = 0;
@@ -2365,7 +2584,13 @@ static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_SPI);
 	}else{
-		tcm_hcd->wr_chunk_size = MIN(max_write_size, WR_CHUNK_SIZE_I2C);
+		if (chip_data->ts_platform_data->i2c_driver_type ==
+			I3C_MASTER_I2C_DRIVER)
+			tcm_hcd->wr_chunk_size = MIN(max_write_size,
+				WR_CHUNK_SIZE_I3C);
+		else
+			tcm_hcd->wr_chunk_size = MIN(max_write_size,
+				WR_CHUNK_SIZE_I2C);
 	}
 	if (tcm_hcd->wr_chunk_size == 0)
 		tcm_hcd->wr_chunk_size = max_write_size;
@@ -2373,7 +2598,7 @@ static int syna_tcm_identify(struct syna_tcm_hcd *tcm_hcd, bool id)
 get_info:
 	switch (tcm_hcd->id_info.mode) {
 	case MODE_APPLICATION:
-		retval = syna_tcm_get_app_info(tcm_hcd);
+		retval = tskit_driver_get_app_info(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to get application info\n");
 			goto exit;
@@ -2381,7 +2606,7 @@ get_info:
 		break;
 	case MODE_BOOTLOADER:
 	case MODE_TDDI_BOOTLOADER:
-		retval = syna_tcm_get_boot_info(tcm_hcd);
+		retval = tskit_driver_get_boot_info(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to get boot info\n");
 			goto exit;
@@ -2400,7 +2625,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_run_application_firmware(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_run_application_firmware(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	bool retry = true;
@@ -2453,7 +2678,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_run_bootloader_firmware(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_run_bootloader_firmware(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -2498,7 +2723,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_switch_mode(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_switch_mode(struct syna_tcm_hcd *tcm_hcd,
 		enum firmware_mode mode)
 {
 	int retval = NO_ERR;
@@ -2507,14 +2732,14 @@ static int syna_tcm_switch_mode(struct syna_tcm_hcd *tcm_hcd,
 
 	switch (mode) {
 	case FW_MODE_BOOTLOADER:
-		retval = syna_tcm_run_bootloader_firmware(tcm_hcd);
+		retval = tskit_driver_run_bootloader_firmware(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to switch to bootloader mode\n");
 			goto exit;
 		}
 		break;
 	case FW_MODE_APPLICATION:
-		retval = syna_tcm_run_application_firmware(tcm_hcd);
+		retval = tskit_driver_run_application_firmware(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to switch to application mode\n");
 			goto exit;
@@ -2534,7 +2759,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_get_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_get_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 		enum dynamic_config_id id, unsigned short *value)
 {
 	int retval = NO_ERR;
@@ -2547,7 +2772,7 @@ static int syna_tcm_get_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 	resp_buf_size = 0;
 	out_buf = (unsigned char)id;
 
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			CMD_GET_DYNAMIC_CONFIG,
 			&out_buf,
 			sizeof(out_buf),
@@ -2563,7 +2788,7 @@ static int syna_tcm_get_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 
 	while (retry) {
 		msleep(50);
-		retval = syna_tcm_read(tcm_hcd,
+		retval = tskit_driver_read(tcm_hcd,
 				resp_buf,
 				sizeof(resp_buf));
 		if (retval < 0 ||resp_buf[0] != MESSAGE_MARKER) {
@@ -2577,8 +2802,10 @@ static int syna_tcm_get_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 			break;
 		retry --;
 	}
-
-	*value = resp_buf[4] |resp_buf[5] ;
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type != S3909)
+		*value = resp_buf[4] | resp_buf[5];
+	else
+		*value = (resp_buf[4] | (resp_buf[5] << 8));
 	retval = 0;
 
 exit:
@@ -2586,7 +2813,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_set_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_set_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 		enum dynamic_config_id id, unsigned short value)
 {
 	int retval = NO_ERR;
@@ -2595,6 +2822,7 @@ static int syna_tcm_set_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
 	int retry = 5;
+	int read_retry;
 
 	resp_buf_size = 0;
 
@@ -2603,7 +2831,7 @@ static int syna_tcm_set_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 	out_buf[2] = (unsigned char)(value >> 8);
 
 	while (retry) {
-		retval = syna_tcm_write_hdl_message(tcm_hcd,
+		retval = tskit_driver_write_hdl_message(tcm_hcd,
 				CMD_SET_DYNAMIC_CONFIG,
 				out_buf,
 				sizeof(out_buf),
@@ -2616,14 +2844,30 @@ static int syna_tcm_set_dynamic_config(struct syna_tcm_hcd *tcm_hcd,
 			TS_LOG_ERR("Failed to write command %s\n", STR(CMD_SET_DYNAMIC_CONFIG));
 			goto exit;
 		}
-
-		msleep(50);
-		retval = syna_tcm_read(tcm_hcd,
+		if (tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+			read_retry = 0;
+			do {
+				mdelay(5);
+				retval = tskit_driver_read(tcm_hcd,
+					resp_buf,
+					sizeof(resp_buf));
+				if ((retval >= 0) && (resp_buf[0] == MESSAGE_MARKER))
+					break;
+			} while (++read_retry < READ_RETRY);
+		} else {
+			msleep(50);
+			retval = tskit_driver_read(tcm_hcd,
 				resp_buf,
 				sizeof(resp_buf));
+		}
 		if (retval < 0 ||resp_buf[0] != MESSAGE_MARKER) {
-				TS_LOG_ERR("Failed to read response %s\n", STR(CMD_SET_DYNAMIC_CONFIG));
-				goto exit;
+			TS_LOG_ERR("Failed to read response %s\n",
+				STR(CMD_SET_DYNAMIC_CONFIG));
+			if (tcm_hcd->bdata->support_vendor_ic_type == S3909)
+				TS_LOG_ERR("data 0x%02x 0x%02x 0x%02x 0x%02x\n",
+					resp_buf[0], resp_buf[1], resp_buf[2],
+					resp_buf[3]);
+			goto exit;
 		}
 		if (resp_buf[1] != STATUS_OK) {
 			TS_LOG_INFO("resp_buf: 0x%02x 0x%02x 0x%02x 0x%02x ", resp_buf[0],resp_buf[1],resp_buf[2],resp_buf[3]);
@@ -2639,7 +2883,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_ap_set_dynamic_cmd(struct syna_tcm_hcd *s_tcm_hcd,
+static int tskit_driver_ap_set_dynamic_cmd(struct syna_tcm_hcd *s_tcm_hcd,
 		enum dynamic_ap_config_id id, unsigned short value)
 {
 	int retval = NO_ERR;
@@ -2660,7 +2904,7 @@ static int syna_tcm_ap_set_dynamic_cmd(struct syna_tcm_hcd *s_tcm_hcd,
 		__func__, out_buf[0], out_buf[1], out_buf[2]);
 
 	while (retry) {
-		retval = syna_tcm_write_hdl_message(s_tcm_hcd,
+		retval = tskit_driver_write_hdl_message(s_tcm_hcd,
 				CMD_AP_SET_DYNAMIC_CMD, out_buf,
 				sizeof(out_buf), (unsigned char **)resp_buf,
 				&resp_buf_size, &resp_length, NULL, 0);
@@ -2671,7 +2915,8 @@ static int syna_tcm_ap_set_dynamic_cmd(struct syna_tcm_hcd *s_tcm_hcd,
 		}
 		/* sequential */
 		udelay(500);
-		retval = syna_tcm_read(s_tcm_hcd, resp_buf, sizeof(resp_buf));
+		retval = tskit_driver_read(s_tcm_hcd,
+			resp_buf, sizeof(resp_buf));
 		if ((retval < 0) || (resp_buf[0] != MESSAGE_MARKER)) {
 			TS_LOG_ERR("Failed to read response %s\n",
 				STR(CMD_AP_SET_DYNAMIC_CMD));
@@ -2692,7 +2937,7 @@ exit:
 }
 
 
-static int syna_tcm_get_data_location(struct syna_tcm_hcd *tcm_hcd,
+static int tskit_driver_get_data_location(struct syna_tcm_hcd *tcm_hcd,
 		enum flash_area area, unsigned int *addr, unsigned int *length)
 {
 	int retval = NO_ERR;
@@ -2750,11 +2995,12 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_sleep(struct syna_tcm_hcd *tcm_hcd, bool en)
+static int tskit_driver_sleep(struct syna_tcm_hcd *tcm_hcd, bool en)
 {
 	int retval = NO_ERR;
 	unsigned char command = 0;
 	unsigned char resp_buf[10] = {0};
+	unsigned char *resp_buf_p = NULL;
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
 
@@ -2762,15 +3008,14 @@ static int syna_tcm_sleep(struct syna_tcm_hcd *tcm_hcd, bool en)
 
 	command = en ? CMD_ENTER_DEEP_SLEEP : CMD_EXIT_DEEP_SLEEP;
 	resp_buf_size = 0;
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
-			command,
-			NULL,
-			0,
-			(unsigned char **)resp_buf,
-			&resp_buf_size,
-			&resp_length,
-			NULL,
-			0);
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type != S3909)
+		retval = tskit_driver_write_hdl_message(tcm_hcd, command, NULL,
+			0, (unsigned char **)resp_buf, &resp_buf_size,
+			&resp_length, NULL, 0);
+	else
+		retval = tcm_hcd->write_message(tcm_hcd, command, NULL, 0,
+			&resp_buf_p, &resp_buf_size, &resp_length, NULL, 0);
+
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to write command %s\n",
 				en ?
@@ -2785,7 +3030,8 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_reset(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd)
+static int tskit_driver_reset(
+	struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -2825,7 +3071,7 @@ static int syna_tcm_reset(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd)
 
 	if (tcm_hcd->host_download_mode) {
 		kfree(resp_buf);
-		retval = syna_tcm_wait_hdl(tcm_hcd);
+		retval = tskit_driver_wait_hdl(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to wait for completion of host download\n");
 			return retval;
@@ -2886,7 +3132,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_comm_check(void)
+static int tskit_driver_comm_check(void)
 {
 	int retval = NO_ERR;
 	unsigned char uboot[6] = {0};
@@ -2895,15 +3141,16 @@ static int syna_tcm_comm_check(void)
 	unsigned char marker = 0;
 
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		retval = syna_tcm_rmi_read(tcm_hcd, PDT_START_ADDR, uboot, 6);
-		TS_LOG_ERR("detect synaptics uboot[0] = %x.uboot[1] = %xuboot[2] = %x.uboot[3] = %xuboot[4] = %x.uboot[5] = %x\n",
+		retval = tskit_driver_rmi_read(tcm_hcd,
+			PDT_START_ADDR, uboot, 6);
+		TS_LOG_ERR("detect uboot[0] = %x.uboot[1] = %xuboot[2] = %x.uboot[3] = %xuboot[4] = %x.uboot[5] = %x\n",
 			uboot[0],uboot[1], uboot[2], uboot[3], uboot[4],uboot[5]);
 
 		if (uboot[5] == UBL_FN_NUMBER) {
 			tcm_hcd->htd = true;
 			return 0;
 		} else {
-			retval = syna_tcm_read(tcm_hcd, identify_info,
+			retval = tskit_driver_read(tcm_hcd, identify_info,
 						sizeof(identify_info));
 			if ((retval < 0) || (identify_info[0] != MESSAGE_MARKER)) {
 				TS_LOG_ERR("failed detect tcm prl device\n");
@@ -2915,7 +3162,7 @@ static int syna_tcm_comm_check(void)
 			return 0;
 		}
 	}else{
-		retval = syna_tcm_read(tcm_hcd,
+		retval = tskit_driver_read(tcm_hcd,
 			&marker,
 			1);
 		TS_LOG_ERR("check result:%d\n", retval);
@@ -2929,8 +3176,8 @@ static int syna_tcm_comm_check(void)
 	return NO_ERR;
 }
 
-static int syna_tcm_mmi_test(struct ts_rawdata_info *info,
-				 struct ts_cmd_node *out_cmd)
+static int tskit_driver_mmi_test(struct ts_rawdata_info *info,
+	struct ts_cmd_node *out_cmd)
 {
 	int retval = 0;
 
@@ -2939,23 +3186,25 @@ static int syna_tcm_mmi_test(struct ts_rawdata_info *info,
 		return -ENODEV;
 	}
 
-	TS_LOG_INFO("++++ syna_tcm_mmi_test in\n");
-	retval = syna_tcm_cap_test_init(tcm_hcd);
+	TS_LOG_INFO("mmi_test in\n");
+	retval = tskit_driver_cap_test_init(tcm_hcd);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to init test_tcm\n");
 		return retval;
 	}
 
-	retval = syna_tcm_cap_test((struct ts_rawdata_info_new *)info, out_cmd);
+	retval = tskit_driver_cap_test((struct ts_rawdata_info_new *)info,
+		out_cmd);
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to syna_tcm_testing\n");
+		TS_LOG_ERR("Failed to cap_testing\n");
 		return retval;
 	}
 
 	return NO_ERR;
 }
 
-static int syna_tcm_read_one_package(struct ts_fingers *info)
+#define SECOND_PACKAGE_HEAD_SIZE 2
+static int tskit_driver_read_one_package(struct ts_fingers *info)
 {
 	int retval = NO_ERR;
 	bool retry = true;
@@ -2963,8 +3212,11 @@ static int syna_tcm_read_one_package(struct ts_fingers *info)
 	static int error_log_count = 0;
 
 retry:
-	retval = syna_tcm_read(tcm_hcd,
-			buffer,
+	if (tcm_hcd->bdata->support_vendor_ic_type == S3909)
+		retval = tskit_driver_read(tcm_hcd, buffer,
+			MESSAGE_HEADER_SIZE);
+	else
+		retval = tskit_driver_read(tcm_hcd, buffer,
 			FIXED_READ_LENGTH);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to read from device\n");
@@ -2975,13 +3227,15 @@ retry:
 		}
 		goto exit;
 	}
-
 	header = (struct syna_tcm_message_header *)buffer;
 	if (header->marker != MESSAGE_MARKER) {
 		if(error_log_count < 5) {
 			error_log_count++;
 			TS_LOG_ERR("Incorrect header marker (0x%02x),error_log_count=%d\n", header->marker,error_log_count);
 		}
+		if (tcm_hcd->bdata->support_vendor_ic_type == S3909)
+			TS_LOG_ERR("buffer: %*ph\n", READ_BUFFER_DBG_LEN,
+				buffer);
 		retval = -ENXIO;
 		if (retry) {
 			usleep_range(READ_RETRY_US_MIN, READ_RETRY_US_MAX);
@@ -2999,7 +3253,22 @@ retry:
 
 	TS_LOG_DEBUG("Payload length = %d\n",
 			tcm_hcd->payload_length);
-
+	if (tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		if (tcm_hcd->payload_length > 0) {
+			retval = tskit_driver_read(tcm_hcd,
+				&buffer[SECOND_PACKAGE_HEAD_SIZE],
+				tcm_hcd->payload_length +
+				SECOND_PACKAGE_HEAD_SIZE + 1);
+			if (retval < 0) {
+				TS_LOG_ERR("Failed to read payload from device\n");
+				goto exit;
+			}
+		} else if (!tcm_hcd->status_report_code) {
+			retval = tskit_driver_read(tcm_hcd, buffer,
+				FIXED_READ_LENGTH);
+			TS_LOG_INFO("clear irq buf\n");
+		}
+	}
 	if (tcm_hcd->status_report_code <= STATUS_ERROR ||
 			tcm_hcd->status_report_code == STATUS_INVALID) {
 		switch (tcm_hcd->status_report_code) {
@@ -3028,8 +3297,8 @@ retry:
 		tcm_hcd->report.buffer.buf_size = tcm_hcd->payload_length;
 		tcm_hcd->report.buffer.data_length = tcm_hcd->payload_length;
 		tcm_hcd->report.id = tcm_hcd->status_report_code;
-
-		touch_report(info);
+		if (tcm_hcd->report.id == REPORT_TOUCH)
+			touch_report(info);
 		UNLOCK_BUFFER(tcm_hcd->report.buffer);
 	}
 	retval = 0;
@@ -3040,56 +3309,112 @@ exit:
 
 }
 
-static int syna_tcm_power_init(void)
+static int tskit_driver_power_init(void)
 {
 	ts_kit_power_supply_get(TS_KIT_IOVDD);
 	ts_kit_power_supply_get(TS_KIT_VCC);
 	return 0;
 }
 
-static int syna_tcm_power_release(void)
+static int tskit_driver_power_release(void)
 {
 	ts_kit_power_supply_put(TS_KIT_IOVDD);
 	ts_kit_power_supply_put(TS_KIT_VCC);
 	return 0;
 }
 
-static void syna_tcm_power_on(void)
+static void tskit_driver_power_on(void)
 {
-	TS_LOG_INFO("syna_tcm_power_on called\n");
+	TS_LOG_INFO("power_on called\n");
 	ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_ON, 5);
 	ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_ON, 5);
 
-	syna_tcm_power_on_gpio_set();
+	tskit_driver_power_on_gpio_set();
 	return;
 }
 
-static void syna_tcm_power_off(void)
+static void tskit_driver_power_off(void)
 {
-	syna_tcm_power_off_gpio_set();
+	if (tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		tskit_driver_power_off_gpio_set();
+		ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_OFF,
+			POWER_OFF_DELAY);
+		ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_OFF,
+			POWER_OFF_DELAY);
+		return;
+	}
+	tskit_driver_power_off_gpio_set();
 	ts_kit_power_supply_ctrl(TS_KIT_VCC, TS_KIT_POWER_OFF, 12);
 	ts_kit_power_supply_ctrl(TS_KIT_IOVDD, TS_KIT_POWER_OFF, 30);
 	return;
 }
 
-static int syna_tcm_suspend(void)
+#define CMD_SINGLE_TAP 0x81
+#define CMD_DOUBLE_TAP 0x03
+static int tskit_driver_suspend_for_gesture_mode(void)
+{
+	int retval;
+	unsigned char cmd = 0;
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+
+	TS_LOG_INFO("suspend for gesture mode\n");
+	tcm_hcd->in_suspend = true;
+
+	if (dev->easy_wakeup_info.aod_mode == TS_TOUCH_AOD_OPEN)
+		cmd |= CMD_SINGLE_TAP;
+	if (dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE)
+		cmd |= CMD_DOUBLE_TAP;
+	retval = tskit_driver_gesture_mode_config(true, cmd);
+	if (retval < 0) {
+		TS_LOG_ERR("set gesture mode failed\n");
+		return retval;
+	}
+
+	disable_irq(g_ts_kit_platform_data.irq_id);
+	tskit_driver_pinctrl_select_lowpower();
+	gpio_direction_output(g_ts_kit_platform_data.i2c_switch_gpio, 1);
+#ifdef CONFIG_HUAWEI_SHB_THP
+	retval = send_thp_driver_status_cmd(POWER_OFF,
+		g_ts_kit_platform_data.multi_panel_index,
+		ST_CMD_TYPE_MULTI_TP_UD_STATUS);
+	if (retval < 0) {
+		TS_LOG_ERR("send cmd to sensorhub failed\n");
+		return retval;
+	}
+#endif
+	TS_LOG_INFO("change to sensorhub i2c\n");
+	return retval;
+}
+
+static int tskit_driver_suspend(void)
 {
 	int retval = NO_ERR;
 	int tskit_pt_station_flag = 0;
 	struct lcd_kit_ops *tp_ops = lcd_kit_get_ops();
-
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+	int aod_ts_enable = 0;
 	if (tcm_hcd->in_suspend)
 			return 0;
 
-	TS_LOG_INFO("%s +\n", __func__);
-
-	if (g_ts_kit_platform_data.udfp_enable_flag) {
+	TS_LOG_INFO("suspend +\n");
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		tcm_hcd->after_resume_done = false;
+		tcm_hcd->baseline_status_flag = 0;
+	}
+	if (tcm_hcd->aod_display_no_power_off) {
+		tcm_hcd->aod_touch_enable = dev->easy_wakeup_info.aod_touch_switch_ctrl;
+		aod_ts_enable = tcm_hcd->aod_touch_enable;
+	}
+	if (dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE ||
+		dev->easy_wakeup_info.aod_mode == TS_TOUCH_AOD_OPEN)
+		return tskit_driver_suspend_for_gesture_mode();
+	if (g_ts_kit_platform_data.udfp_enable_flag || aod_ts_enable) {
 		TS_LOG_INFO("%s ud function enable loze\n", __func__);
-		retval = syna_tcm_ap_set_dynamic_cmd(tcm_hcd,
+		retval = tskit_driver_ap_set_dynamic_cmd(tcm_hcd,
 			DC_AP_SET_ENABLE_LOZE, 1);
 
 		if (retval < 0)
-			TS_LOG_ERR("%s, synaptics_set_loze_mode failed\n",
+			TS_LOG_ERR("%s, set_loze_mode failed\n",
 				__func__);
 		tcm_hcd->in_suspend = true;
 		return 0;
@@ -3103,17 +3428,17 @@ static int syna_tcm_suspend(void)
 		}
 	}
 
-	syna_tcm_pinctrl_select_lowpower();
+	tskit_driver_pinctrl_select_lowpower();
 	if (!tskit_pt_station_flag) {
 		if(tcm_hcd->syna_tcm_chip_data->ts_platform_data->cs_gpio) {
 			gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->cs_gpio, GPIO_OUTPUT_LOW);
 		}
 		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, GPIO_OUTPUT_LOW);
 		if (TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-			syna_tcm_power_off();
+			tskit_driver_power_off();
 		}
 	} else {
-		syna_tcm_sleep(tcm_hcd, true);	/*goto sleep mode*/
+		tskit_driver_sleep(tcm_hcd, true);	/*goto sleep mode*/
 	}
 
 	tcm_hcd->host_download_mode = false;
@@ -3122,16 +3447,55 @@ static int syna_tcm_suspend(void)
 	return retval;
 }
 
+static int tskit_driver_resume_for_gesture_mode(void)
+{
+	int retval = 0;
+	struct ts_kit_platform_data *pdata =
+		tcm_hcd->syna_tcm_chip_data->ts_platform_data;
+
+#ifdef CONFIG_HUAWEI_SHB_THP
+	retval = send_thp_driver_status_cmd(POWER_ON,
+		g_ts_kit_platform_data.multi_panel_index,
+		ST_CMD_TYPE_MULTI_TP_UD_STATUS);
+	if (retval < 0)
+		TS_LOG_ERR("%s: fail to send cmd to sensorhub\n", __func__);
+#endif
+	TS_LOG_INFO("change to ap i3c\n");
+	/* delay 10 ms to wait for sensorhub deal with cmd */
+	mdelay(10);
+	gpio_direction_output(g_ts_kit_platform_data.i2c_switch_gpio, 0);
+	tskit_driver_pinctrl_select_normal();
+
+	TS_LOG_INFO("%s reset\n", __func__);
+	gpio_direction_output(pdata->reset_gpio, GPIO_OUTPUT_LOW);
+	/* sequential need 5ms when reset ic */
+	mdelay(5);
+	gpio_direction_output(pdata->reset_gpio, GPIO_OUTPUT_HIGH);
+	enable_irq(g_ts_kit_platform_data.irq_id);
+	tcm_hcd->in_suspend = false;
+	mdelay(50); /* delay 50ms to communication */
+	return retval;
+}
+
 //   do not add time-costly function here.
-static int syna_tcm_resume(void)
+static int tskit_driver_resume(void)
 {
 	int retval = NO_ERR;
 	int tskit_pt_station_flag = 0;
+	int aod_ts_enable = 0;
 	struct lcd_kit_ops *tp_ops = lcd_kit_get_ops();
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
+	if (tcm_hcd->aod_display_no_power_off)
+		aod_ts_enable = tcm_hcd->aod_touch_enable;
 	if (!tcm_hcd->in_suspend)
 			return 0;
-	if (g_ts_kit_platform_data.udfp_enable_flag) {
+	TS_LOG_INFO("%s +\n", __func__);
+	if (dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE ||
+		dev->easy_wakeup_info.aod_mode == TS_TOUCH_AOD_OPEN)
+		return tskit_driver_resume_for_gesture_mode();
+
+	if (g_ts_kit_platform_data.udfp_enable_flag || aod_ts_enable) {
 		TS_LOG_INFO("%s reset\n", __func__);
 		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
 			GPIO_OUTPUT_LOW);
@@ -3150,50 +3514,87 @@ static int syna_tcm_resume(void)
 			return retval;
 		}
 	}
+	TS_LOG_INFO("%s pt_station_flag:%d\n", __func__, tskit_pt_station_flag);
 
-	syna_tcm_pinctrl_select_normal();
+	tskit_driver_pinctrl_select_normal();
 	if (!tskit_pt_station_flag) {
 		if(tcm_hcd->syna_tcm_chip_data->ts_platform_data->cs_gpio) {
 			gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->cs_gpio, GPIO_OUTPUT_HIGH);
 		}
 		if (TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-			syna_tcm_power_on();
+			tskit_driver_power_on();
+			if (tcm_hcd->bdata->support_vendor_ic_type == S3909)
+				msleep(50); /* delay 50ms to wait ic ready */
 		}
 		gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio, GPIO_OUTPUT_HIGH);
 	} else {
-	/*** do host download***/
-//		syna_tcm_sleep(tcm_hcd, false);	/*exit sleep mode*/
-//		msleep(20);
+		if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type ==
+			S3909) {
+			TS_LOG_INFO("resume pt mode reset\n");
+			gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+				GPIO_OUTPUT_LOW);
+			mdelay(5); /* sequential */
+			gpio_direction_output(tcm_hcd->syna_tcm_chip_data->ts_platform_data->reset_gpio,
+				GPIO_OUTPUT_HIGH);
+			mdelay(50);
+		}
 	}
-	if(TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		retval = syna_tcm_enable_touch(tcm_hcd, true);
-	}
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type != S3909 &&
+		tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype !=
+		TS_BUS_SPI)
+		retval = tskit_driver_enable_touch(tcm_hcd, true);
 	pre_finger_status = 0;
 	tcm_hcd->in_suspend = false;
 	return retval;
 }
 
+static int tskit_driver_update_input_reporting(void)
+{
+	if (!tcm_hcd->support_cold_patch)
+		return NO_ERR;
+	/*
+	 * if this fw's number is different from previous number,
+	 * need to update input report.
+	 */
+	if (tcm_hcd->packrat_number == tcm_hcd->packrat_number_old)
+		return NO_ERR;
+	TS_LOG_INFO("previous fw number: %u\n", tcm_hcd->packrat_number_old);
+	if (touch_set_input_reporting(false) < NO_ERR) {
+		TS_LOG_ERR("%s: set input report failed\n", __func__);
+		return -EINVAL;
+	}
+	return NO_ERR;
+}
+
 /*  do some things after power on. */
-static int syna_tcm_after_resume(void *feature_info)
+static int tskit_driver_after_resume(void *feature_info)
 {
 	int retval = NO_ERR;
 	int retry = 3;
 	/* size */
-	static unsigned char tmp_buffer[64];
+	static unsigned char tmp_buffer[64]; /* 64 :tmp buf size */
+	unsigned char read_buffer[FIXED_READ_LENGTH] = {0};
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
 
 	TS_LOG_INFO("%s +\n", __func__);
+
+	if (dev->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
+		TS_LOG_INFO("%s: gesture mode\n", __func__);
+		goto clear_irq;
+	}
 
 	if (g_ts_kit_platform_data.udfp_enable_flag) {
 		/* sequential */
 		msleep(120);
 		TS_LOG_INFO("%s delay 120ms\n", __func__);
-		retval = syna_tcm_read(tcm_hcd, tmp_buffer, sizeof(tmp_buffer));
+		retval = tskit_driver_read(tcm_hcd,
+			tmp_buffer, sizeof(tmp_buffer));
 		if (retval < 0)
 			TS_LOG_INFO("%s tcm_hcd read error\n", __func__);
 		else
 			retval = NO_ERR;
 
-		syna_tcm_status_resume();
+		tskit_driver_status_resume();
 		enable_irq(g_ts_kit_platform_data.irq_id);
 		goto exit;
 	}
@@ -3214,21 +3615,39 @@ retry:
 				}
 				goto exit;
 			} else {
-				TS_LOG_DEBUG("downloaded firmware successfully\n");
+				TS_LOG_INFO("downloaded fw successful, PR%u\n",
+					tcm_hcd->packrat_number);
 				tcm_hcd->host_download_mode = true;
 			}
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type != S3909)
+			if (tskit_driver_update_input_reporting())
+				return -EINVAL;
 	} else if(get_into_recovery_flag_adapter()) {
-		syna_tcm_fw_update_boot(tcm_hcd->fw_name);
+		tskit_driver_fw_update_boot(tcm_hcd->fw_name,
+			strlen(tcm_hcd->fw_name));
 	}
-
-	syna_tcm_status_resume();
+clear_irq:
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		retval = tskit_driver_read(tcm_hcd, read_buffer,
+			sizeof(read_buffer));
+		if (retval < 0)
+			TS_LOG_INFO("%s tcm_hcd read error\n", __func__);
+	}
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909)
+		tcm_hcd->after_resume_done = true;
+	tskit_driver_status_resume();
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		TS_LOG_INFO("%s enable_irq\n", __func__);
+		enable_irq(g_ts_kit_platform_data.irq_id);
+	}
 	if(tcm_hcd->tp_status_report_support)
 		tcm_hcd->in_suspend_charge = false;
 exit:
 	return retval;
 }
 
-static int syna_tcm_before_suspend(void)
+static int tskit_driver_before_suspend(void)
 {
 	int retval = NO_ERR;
 	int tskit_pt_station_flag = 0;
@@ -3243,12 +3662,12 @@ static int syna_tcm_before_suspend(void)
 	}
 	if(tcm_hcd->tp_status_report_support && !tskit_pt_station_flag) {
 		tcm_hcd->in_before_suspend = true;
-		syna_tcm_hdl_get_state();
-		syna_tcm_report_dmd_state_report();
+		tskit_driver_hdl_get_state();
+		tskit_driver_report_dmd_state_report();
 		tcm_hcd->in_before_suspend = false;
 		tcm_hcd->in_suspend_charge = true;
 	}
-	TS_LOG_INFO("%s +\n", __func__);
+	TS_LOG_INFO("before_suspend +\n");
 	if(g_ts_kit_platform_data.udfp_enable_flag) {
 		TS_LOG_INFO("%s + ud function,return\n", __func__);
 		return retval;
@@ -3256,19 +3675,50 @@ static int syna_tcm_before_suspend(void)
 	return retval;
 }
 
-static int syna_tcm_set_info_flag(struct ts_kit_platform_data *info)
+static void tskit_power_reset_for_esd(void)
+{
+	tskit_driver_power_off();
+	msleep(100); /* delay 100ms after power off */
+	tskit_driver_power_on();
+	msleep(50); /* delay 50ms for ic ready */
+	tskit_driver_status_resume();
+}
+
+static int tskit_driver_chip_check_status(void)
+{
+	if (tcm_hcd->support_esd_power_reset) {
+		TS_LOG_DEBUG("%s esd_action = %d\n", __func__,
+			tcm_hcd->esd_info.esd_action);
+		if (tcm_hcd->irq_storm_sum >= IRQ_STORM_MAX_SUM) {
+			TS_LOG_INFO("%s irq storm\n", __func__);
+			tskit_power_reset_for_esd();
+			tcm_hcd->irq_storm_sum = 0;
+		} else if (tcm_hcd->esd_info.esd_action == ESD_POWER_RESET) {
+			TS_LOG_INFO("%s esd power reset\n", __func__);
+			tskit_power_reset_for_esd();
+			tcm_hcd->esd_info.esd_action = ESD_NO_ACTION;
+		} else if (tcm_hcd->esd_info.esd_action == ESD_HW_RESET) {
+			TS_LOG_INFO("%s esd hardware reset\n", __func__);
+			tskit_driver_chip_reset();
+			tcm_hcd->esd_info.esd_action = ESD_NO_ACTION;
+		}
+	}
+	return NO_ERR;
+}
+
+static int tskit_driver_set_info_flag(struct ts_kit_platform_data *info)
 {
 	tcm_hcd->syna_tcm_chip_data->ts_platform_data->get_info_flag = info->get_info_flag;
 	return NO_ERR;
 }
 
-static int syna_tcm_irq_top_half(struct ts_cmd_node *cmd)
+static int tskit_driver_irq_top_half(struct ts_cmd_node *cmd)
 {
 	cmd->command = TS_INT_PROCESS;
 	return NO_ERR;
 }
 
-static int syna_tcm_get_fw_prefix(void)
+static int tskit_driver_get_fw_prefix(void)
 {
 	char joint_chr = '_';
 	char *fwname = tcm_hcd->fw_name;
@@ -3291,22 +3741,55 @@ static int syna_tcm_get_fw_prefix(void)
 
 }
 
-static int syna_tcm_fw_update_sd(void)
+static int tskit_driver_fw_update_sd(void)
 {
 	int retval = NO_ERR;
 	char *tmp_file_name = FW_IMAGE_NAME_SD;
+
 	TS_LOG_INFO("%s is called\n", __func__);
+	if ((tcm_hcd->bdata->support_vendor_ic_type == S3909) &&
+		(tcm_hcd->after_resume_done == false)) {
+		TS_LOG_ERR("%s: ic in suspend,return directly\n", __func__);
+		return 0;
+	}
+
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		syna_tcm_status_resume();
+		tskit_driver_status_resume();
 	} else {
-		syna_tcm_fw_update_boot(tmp_file_name);
+		tskit_driver_fw_update_boot(tmp_file_name, true);
 	}
 	return retval;
 }
 
-static int syna_tcm_fw_update_boot(char *file_name)
+static int generate_fw_name(bool force, char *fw_name, unsigned int len)
+{
+	int ret;
+	struct ts_kit_device_data *chip_data = NULL;
+
+	if (len == 0) {
+		TS_LOG_ERR("%s:invalid len:%d\n", __func__, len);
+		return -EINVAL;
+	}
+	if (!fw_name || !tcm_hcd || !tcm_hcd->syna_tcm_chip_data) {
+		TS_LOG_ERR("%s:have null ptr\n", __func__);
+		return -EINVAL;
+	}
+	chip_data = tcm_hcd->syna_tcm_chip_data;
+	if (force)
+		ret = snprintf(fw_name, FW_NAME_MAX_LEN - 1, "%s",
+			TS_FIRMWARE_SD);
+	else
+		ret = snprintf(fw_name, FW_NAME_MAX_LEN - 1, "ts/%s_%s.img",
+			chip_data->ts_platform_data->product_name,
+			tcm_hcd->tcm_mod_info.project_id_string);
+	return ret;
+}
+
+static int tskit_driver_fw_update_boot(char *file_name, bool force)
 {
 	int retval = NO_ERR;
+	char fw_name[FW_NAME_MAX_LEN] = {0};
+
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		int projectid_lenth = 0;
 		int retry = 3;
@@ -3317,7 +3800,7 @@ static int syna_tcm_fw_update_boot(char *file_name)
 			projectid_lenth = PROJECT_ID_FW_LEN;
 		}
 
-		TS_LOG_INFO("syna_tcm_fw_update_boot called \n");
+		TS_LOG_INFO("fw_update_boot called \n");
 		if (tcm_hcd->htd == true) {
 			retval = zeroflash_init(tcm_hcd);
 			if (retval) {
@@ -3361,14 +3844,15 @@ retry:
 			}
 			tcm_hcd->host_download_mode = true;
 			tcm_hcd->init_okay = true;
-			syna_tcm_status_resume();
+			tskit_driver_status_resume();
 			return retval;
 
 data_release:
 			zeroflash_remove(tcm_hcd);
 		} else {
 			char *reflash_file_name = REFLASH_IMAGE_NAME;
-			retval = reflash_do_reflash(reflash_file_name);
+			retval = reflash_do_reflash(reflash_file_name,
+				strlen(reflash_file_name));
 			if (retval < 0) {
 				TS_LOG_ERR("Failed to do reflash\n");
 			} else {
@@ -3382,11 +3866,21 @@ data_release:
 			}
 		}
 	} else {
-		char *tmp_file_name = FW_IMAGE_NAME_SD;
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+			retval = generate_fw_name(force, fw_name,
+				sizeof(fw_name));
+			if (retval < 0)
+				TS_LOG_ERR("Failed to generate fw name\n");
+			TS_LOG_INFO("fw name:%s\n", fw_name);
+			retval = reflash_do_reflash(fw_name, strlen(fw_name));
+		} else {
+			char *tmp_file_name = FW_IMAGE_NAME_SD;
 
-		TS_LOG_ERR("syna_tcm_fw_update_boot %s\n", file_name);
-
-		retval = reflash_do_reflash(tmp_file_name);
+			TS_LOG_ERR("fw_update_boot %s\n", file_name);
+			retval = reflash_do_reflash(tmp_file_name,
+				strlen(tmp_file_name));
+		}
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to do reflash\n");
 		} else {
@@ -3403,7 +3897,7 @@ data_release:
 	return retval;
 }
 
-static int syna_tcm_irq_bottom_half(struct ts_cmd_node *in_cmd,
+static int tskit_driver_irq_bottom_half(struct ts_cmd_node *in_cmd,
 					struct ts_cmd_node *out_cmd)
 {
 	int retval = NO_ERR;
@@ -3416,9 +3910,12 @@ static int syna_tcm_irq_bottom_half(struct ts_cmd_node *in_cmd,
 	TS_LOG_DEBUG("order: %d\n",
 			out_cmd->cmd_param.pub_params.algo_param.algo_order);
 	tcm_hcd->esd_report_status = NOT_NEED_REPORT;
-	retval = syna_tcm_read_one_package(info);
+	retval = tskit_driver_read_one_package(info);
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to syna_tcm_read_one_package, try to read F$35\n");
+		tcm_hcd->irq_storm_sum++;
+		TS_LOG_ERR("Failed to tskit_driver_read_one_package, try to read F$35\n");
+	} else {
+		tcm_hcd->irq_storm_sum = 0;
 	}
 	/* 'use_esd_report' setup in DTS; 'esd_report_status' setup in irq function */
 	if(NEED_REPORT == tcm_hcd->esd_report_status && tcm_hcd->use_esd_report) {
@@ -3426,11 +3923,15 @@ static int syna_tcm_irq_bottom_half(struct ts_cmd_node *in_cmd,
 		out_cmd->command = TS_PALM_KEY;
 		out_cmd->cmd_param.pub_params.ts_key = TS_KEY_IRON;
 	}
-
+	if (tcm_hcd->support_esd_power_reset &&
+		(tcm_hcd->device_status_check == true)) {
+		out_cmd->command = TS_INVAILD_CMD;
+		TS_LOG_INFO("ESD irq, don't report touch\n");
+	}
 	return retval;
 }
 
-static int syna_tcm_input_config(struct input_dev *input_dev)
+static int tskit_driver_input_config(struct input_dev *input_dev)
 {
 	set_bit(EV_SYN, input_dev->evbit);
 	set_bit(EV_KEY, input_dev->evbit);
@@ -3443,10 +3944,10 @@ static int syna_tcm_input_config(struct input_dev *input_dev)
 	set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	set_bit(TS_LETTER_c, input_dev->keybit);
-	set_bit(TS_LETTER_e, input_dev->keybit);
-	set_bit(TS_LETTER_m, input_dev->keybit);
-	set_bit(TS_LETTER_w, input_dev->keybit);
+	set_bit(TS_LETTER_C, input_dev->keybit);
+	set_bit(TS_LETTER_E, input_dev->keybit);
+	set_bit(TS_LETTER_M, input_dev->keybit);
+	set_bit(TS_LETTER_W, input_dev->keybit);
 	set_bit(TS_PALM_COVERED, input_dev->keybit);
 	set_bit(TS_TOUCHPLUS_KEY0, input_dev->keybit);
 	set_bit(TS_TOUCHPLUS_KEY1, input_dev->keybit);
@@ -3458,19 +3959,36 @@ static int syna_tcm_input_config(struct input_dev *input_dev)
 #ifdef INPUT_PROP_DIRECT
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
 #endif
+	if (bdata->support_vendor_ic_type == S3909) {
+		input_set_abs_params(input_dev, ABS_X, 0, bdata->x_max - 1,
+			0, 0);
+		input_set_abs_params(input_dev, ABS_Y, 0, bdata->y_max - 1,
+			0, 0);
+		input_set_abs_params(input_dev, ABS_PRESSURE, 0, 255, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_TRACKING_ID,
+			0, 15, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
+			bdata->x_max_mt - 1, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
+			bdata->y_max_mt - 1, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_TOUCH_MAJOR, 0,
+			MAX_ABS_MT_TOUCH_MAJOR, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_TOUCH_MINOR, 0,
+			MAX_ABS_MT_TOUCH_MAJOR, 0, 0);
 
-	input_set_abs_params(input_dev, ABS_X,
-				0, bdata->x_max, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y,
-				0, bdata->y_max, 0, 0);
-	input_set_abs_params(input_dev, ABS_PRESSURE, 0, 255, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0, 15, 0, 0);
-
-	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
-				bdata->x_max_mt, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
-				bdata->y_max_mt, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+	} else {
+		input_set_abs_params(input_dev, ABS_X, 0, bdata->x_max, 0, 0);
+		input_set_abs_params(input_dev, ABS_Y, 0, bdata->y_max, 0, 0);
+		input_set_abs_params(input_dev, ABS_PRESSURE, 0, 255, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_TRACKING_ID,
+			0, 15, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0,
+			bdata->x_max_mt, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0,
+			bdata->y_max_mt, 0, 0);
+		input_set_abs_params(input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+	}
 #ifdef ANTI_FALSE_TOUCH_USE_PARAM_MAJOR_MINOR
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MAJOR, 0, 100, 0, 0);
 	input_set_abs_params(input_dev, ABS_MT_WIDTH_MINOR, 0, 100, 0, 0);
@@ -3495,7 +4013,8 @@ static int syna_tcm_input_config(struct input_dev *input_dev)
 	return NO_ERR;
 }
 
-static void syna_tcm_parse_basic_dts(struct device_node *np, struct ts_kit_device_data *chip_data)
+static void tskit_driver_parse_basic_dts(
+	struct device_node *np, struct ts_kit_device_data *chip_data)
 {
 	int retval = NO_ERR;
 	u32 value = 0;
@@ -3534,7 +4053,7 @@ static void syna_tcm_parse_basic_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,byte-delay-us",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,byte-delay-us property\n");
+			TS_LOG_ERR("Unable to read,byte-delay-us property\n");
 			return;
 		} else {
 			bdata->byte_delay_us = value;
@@ -3575,10 +4094,24 @@ static void syna_tcm_parse_basic_dts(struct device_node *np, struct ts_kit_devic
 	if (retval < 0) {
 		bdata->default_project_id = NULL;
 	}
-	return;
+	if (bdata->default_project_id)
+		TS_LOG_INFO("dummy project id:%s\n", bdata->default_project_id);
+
+	retval = of_property_read_u32(np, "support_vendor_ic_type",
+		&bdata->support_vendor_ic_type);
+	if (retval) {
+		TS_LOG_ERR("get support_vendor_ic_type failed\n");
+		bdata->support_vendor_ic_type = 0;
+	}
+
+	retval = of_property_read_string(np, "chip_vendor_name",
+		&bdata->chip_vendor_name);
+	if (retval < 0)
+		bdata->chip_vendor_name = SYNA_VENDOR_NAME;
 }
 
-static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_device_data *chip_data)
+static void tskit_driver_parse_power_dts(
+	struct device_node *np, struct ts_kit_device_data *chip_data)
 {
 	int retval = NO_ERR;
 	u32 value = 0;
@@ -3597,7 +4130,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,power-on-state",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read synaptics,power-on-state property\n");
+			TS_LOG_ERR("Failed to read power-on-state property\n");
 			return;
 		} else {
 			bdata->power_on_state = value;
@@ -3612,7 +4145,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,power-delay-ms",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read synaptics,power-delay-ms property\n");
+			TS_LOG_ERR("Failed to read power-delay-ms property\n");
 			return;
 		} else {
 			bdata->power_delay_ms = value;
@@ -3626,7 +4159,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,reset-on-state",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read synaptics,reset-on-state property\n");
+			TS_LOG_ERR("Failed to read reset-on-state property\n");
 			return;
 		} else {
 			bdata->reset_on_state = value;
@@ -3640,7 +4173,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,reset-active-ms",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Failed to read synaptics,reset-active-ms property\n");
+			TS_LOG_ERR("Failed to read reset-active-ms property\n");
 			return;
 		} else {
 			bdata->reset_active_ms = value;
@@ -3654,7 +4187,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,reset-delay-ms",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,reset-delay-ms property\n");
+			TS_LOG_ERR("Unable to read reset-delay-ms property\n");
 			return;
 		} else {
 			bdata->reset_delay_ms = value;
@@ -3670,7 +4203,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,block-delay-us",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,block-delay-us property\n");
+			TS_LOG_ERR("Unable to read block-delay-us property\n");
 			return;
 		} else {
 			bdata->block_delay_us = value;
@@ -3684,7 +4217,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,spi-mode",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,spi-mode property\n");
+			TS_LOG_ERR("Unable to read spi-mode property\n");
 			return;
 		} else {
 			bdata->spi_mode = value;
@@ -3698,7 +4231,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,ubl-max-freq",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,ubl-max-freq property\n");
+			TS_LOG_ERR("Unable to read ubl-max-freq property\n");
 			return;
 		} else {
 			bdata->ubl_max_freq = value;
@@ -3712,7 +4245,7 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 		retval = of_property_read_u32(np, "synaptics,ubl-byte-delay-us",
 				&value);
 		if (retval < 0) {
-			TS_LOG_ERR("Unable to read synaptics,ubl-byte-delay-us property\n");
+			TS_LOG_ERR("Unable to read ubl-byte-delay-us property\n");
 			return;
 		} else {
 			bdata->ubl_byte_delay_us = value;
@@ -3723,12 +4256,13 @@ static void syna_tcm_parse_power_dts(struct device_node *np, struct ts_kit_devic
 	return;
 }
 
-static void syna_tcm_parse_feature_dts(struct device_node *np, struct ts_kit_device_data *chip_data)
+static void tskit_driver_parse_feature_dts(
+	struct device_node *np, struct ts_kit_device_data *chip_data)
 {
 	int retval = NO_ERR;
 
 	if (NULL == tcm_hcd) {
-		TS_LOG_ERR("%s Invalid tcm_hcd data.\n", __func__);
+		TS_LOG_ERR("%s invalid data\n", __func__);
 		return;
 	}
 
@@ -3740,32 +4274,35 @@ static void syna_tcm_parse_feature_dts(struct device_node *np, struct ts_kit_dev
 	if(tcm_hcd->tp_status_report_support) {
 		retval = of_property_read_u32_array(np, "report_priority", &syna_report_priority[0], BIT_MAX);
 		if(retval) {
-			TS_LOG_INFO("device get syna_report_priority failed, use default value.\n");
+			TS_LOG_INFO("device get report_priority failed, use default value\n");
 		} else {
 			int i = 0;
 			for(i =0; i < BIT_MAX; i++)
 			{
-				TS_LOG_INFO("syna_report_priority [%d] = %d.\n", i, syna_report_priority[i]);
+				TS_LOG_INFO("report_priority [%d] = %d\n",
+					i, syna_report_priority[i]);
 			}
-			TS_LOG_INFO("device get syna_report_priority success.\n");
+			TS_LOG_INFO("device get report_priority success\n");
 		}
 		retval = of_property_read_u32_array(np, "report_priority_limite", &syna_report_priority_limite[0], BIT_MAX);
 		if(retval) {
-			TS_LOG_INFO("device get syna_report_priority_limite failed, use default value.\n");
+			TS_LOG_INFO("device get report_priority_limite failed, use default value\n");
 		} else {
 			int i = 0;
 			for(i =0; i < BIT_MAX; i++)
 			{
-				TS_LOG_INFO("syna_report_priority_limite [%d] = %d.\n", i, syna_report_priority_limite[i]);
+				TS_LOG_INFO("report_priority_limite [%d] = %d\n",
+					i, syna_report_priority_limite[i]);
 			}
-			TS_LOG_INFO("device get syna_report_priority_limite success.\n");
+			TS_LOG_INFO("device get report_priority_limite success\n");
 		}
 	}
 	retval = of_property_read_u32(np, "aft_wxy_enable", &tcm_hcd->aft_wxy_enable);
 	if(retval) {
 		tcm_hcd->aft_wxy_enable = 0;
 	}
-	TS_LOG_INFO("use dts(retval = %d) for aft_wxy_enable = %d\n", retval, tcm_hcd->aft_wxy_enable);
+	TS_LOG_INFO("use dts retval = %d for aft_wxy_enable = %d\n",
+		retval, tcm_hcd->aft_wxy_enable);
 
 	retval = of_property_read_u32(np, "use_esd_report", &tcm_hcd->use_esd_report);
 	if(retval) {
@@ -3787,21 +4324,62 @@ static void syna_tcm_parse_feature_dts(struct device_node *np, struct ts_kit_dev
 	}
 	TS_LOG_INFO("use_dma_download_firmware = %d downmload_firmware_frequency = %d\n",
 		tcm_hcd->use_dma_download_firmware,tcm_hcd->downmload_firmware_frequency);
+
+	retval = of_property_read_u32(np, "support_cold_patch",
+			&tcm_hcd->support_cold_patch);
+	if (retval)
+		tcm_hcd->support_cold_patch = 0; /* default */
+	TS_LOG_INFO("use dts retval = %d for support_cold_patch = %d\n",
+		retval, tcm_hcd->support_cold_patch);
+
+	retval = of_property_read_u32(np, "syna_spec_delay_after_lcd",
+		&tcm_hcd->syna_spec_delay_after_lcd);
+	if (retval)
+		tcm_hcd->syna_spec_delay_after_lcd = 0; /* default */
+	TS_LOG_INFO("retval = %d, spec_delay_after_lcd = %u\n",
+		retval, tcm_hcd->syna_spec_delay_after_lcd);
+	retval = of_property_read_u32(np, "support_notice_aft_gesture_mode",
+		&(tcm_hcd->syna_tcm_chip_data->support_notice_aft_gesture_mode));
+	if (retval)
+		tcm_hcd->syna_tcm_chip_data->support_notice_aft_gesture_mode = 0;
+	TS_LOG_INFO("support_notice_aft_gesture_mode = %u\n",
+		tcm_hcd->syna_tcm_chip_data->support_notice_aft_gesture_mode);
+
+	retval = of_property_read_u32(np, "tui_special_feature_support",
+		&chip_data->tui_special_feature_support);
+	if (retval)
+		chip_data->tui_special_feature_support = 0;
+	TS_LOG_INFO("get tui_special_feature_support = %u\n",
+		chip_data->tui_special_feature_support);
+
+	retval = of_property_read_u32(np, "support_esd_power_reset",
+		&tcm_hcd->support_esd_power_reset);
+	if (retval)
+		tcm_hcd->support_esd_power_reset = 0;
+	TS_LOG_INFO("get support_esd_power_reset = %u\n",
+		tcm_hcd->support_esd_power_reset);
+	retval = of_property_read_u32(np,
+		"aod_display_no_power_off",
+		&tcm_hcd->aod_display_no_power_off);
+	if (retval)
+		tcm_hcd->aod_display_no_power_off = 0;
+	TS_LOG_INFO("get aod_display_no_power_off = %u\n",
+		tcm_hcd->aod_display_no_power_off);
 }
 
-
-static int syna_tcm_parse_dts(struct device_node *np, struct ts_kit_device_data *chip_data)
+static int tskit_driver_parse_dts(
+	struct device_node *np, struct ts_kit_device_data *chip_data)
 {
-	syna_tcm_parse_basic_dts(np,chip_data);
+	tskit_driver_parse_basic_dts(np, chip_data);
 
-	syna_tcm_parse_power_dts(np,chip_data);
+	tskit_driver_parse_power_dts(np, chip_data);
 
-	syna_tcm_parse_feature_dts(np,chip_data);
+	tskit_driver_parse_feature_dts(np, chip_data);
 
 	return 0;
 }
 
-static void syna_init_checksum_table(void)
+static void tskit_driver_init_checksum_table(void)
 {
 	unsigned int c;
 	unsigned int i;
@@ -3819,7 +4397,7 @@ static void syna_init_checksum_table(void)
 	}
 }
 
-unsigned int syna_checksum_cal(unsigned int checksum,
+unsigned int tskit_driver_checksum_cal(unsigned int checksum,
 		unsigned char const *buffer,
 		unsigned int size)
 {
@@ -3832,16 +4410,17 @@ unsigned int syna_checksum_cal(unsigned int checksum,
 	return checksum;
 }
 
-static int syna_tcm_init_chip(void)
+static int tskit_driver_init_chip(void)
 {
 	int retval = NO_ERR;
 	char buf_proj_id[CHIP_INFO_LENGTH] = {0};
 	int projectid_lenth = 0;
+	struct ts_kit_device_data *chip_data = NULL;
 
 	if (!tcm_hcd)
 		return -EINVAL;
-
-	syna_init_checksum_table();
+	chip_data = tcm_hcd->syna_tcm_chip_data->ts_platform_data->chip_data;
+	tskit_driver_init_checksum_table();
 
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		if (tcm_hcd->syna_tcm_chip_data->projectid_len) {
@@ -3853,14 +4432,14 @@ static int syna_tcm_init_chip(void)
 		strncpy(tcm_hcd->syna_tcm_chip_data->chip_name,SYNAPTICS_VENDER_NAME,
 				MIN(MAX_STR_LEN, strlen(SYNAPTICS_VENDER_NAME)+1));
 
-		retval = synaptics_tcm_get_project_id(buf_proj_id);
+		retval = tskit_driver_get_project_id(buf_proj_id);
 		if (retval) {
-			TS_LOG_ERR("%s get project id error.\n", __func__);
+			TS_LOG_ERR("%s get project id error\n", __func__);
 			return -EINVAL;
 		}
 		strncpy(tcm_hcd->syna_tcm_chip_data->module_name,buf_proj_id,projectid_lenth);
 		memcpy(tcm_hcd->tcm_mod_info.project_id_string, buf_proj_id, projectid_lenth);
-		syna_tcm_get_fw_prefix();
+		tskit_driver_get_fw_prefix();
 		if (tcm_hcd->htd == false) {
 			retval = touch_init(tcm_hcd);
 			if (retval)
@@ -3874,46 +4453,95 @@ static int syna_tcm_init_chip(void)
 		}
 		reflash_init(tcm_hcd);
 	}
-	#if defined (CONFIG_TEE_TUI)
-		strncpy(tee_tui_data.device_name, "syna_tcm", strlen("syna_tcm"));
-		tee_tui_data.device_name[strlen("syna_tcm")] = '\0';
-	#endif
+#if defined(CONFIG_TEE_TUI)
+	/* strlen device_name is 11 more than strlen syna_tcm */
+	strncpy(tee_tui_data.device_name, "syna_tcm", strlen("syna_tcm"));
+	tee_tui_data.device_name[strlen("syna_tcm")] = '\0';
+
+	tee_tui_data.tui_special_feature_support =
+		tcm_hcd->syna_tcm_chip_data->ts_platform_data->chip_data->tui_special_feature_support;
+	if ((tee_tui_data.tui_special_feature_support & TP_TUI_NEW_IRQ_MASK) ==
+		TP_TUI_NEW_IRQ_SUPPORT) {
+		tee_tui_data.tui_irq_num = chip_data->ts_platform_data->irq_gpio;
+		tee_tui_data.tui_irq_gpio =
+			chip_data->ts_platform_data->tui_another_irq_gpio_num;
+	}
+	TS_LOG_INFO("%s tui_irq_num:%u tui_irq_gpio:%u\n", __func__,
+		tee_tui_data.tui_irq_num, tee_tui_data.tui_irq_gpio);
+#endif
 	retval = debug_device_init(tcm_hcd);
-	syna_tcm_pinctrl_select_normal();
+	tskit_driver_pinctrl_select_normal();
 	return retval;
 }
 
-static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
+static int touch_driver_sub_board_connect_check(
+	struct ts_kit_platform_data *data)
+{
+	int gpio_value;
+	int retval;
+	int i;
+
+	if (data->i2c_driver_type != I3C_MASTER_I2C_DRIVER)
+		return 0;
+
+	TS_LOG_INFO("%s connect_check_gpio = %d\n", __func__,
+		data->connect_check_gpio);
+	for (i = 0; i < 3; i++) { /* 3: retry 3 times*/
+		gpio_value = gpio_get_value(data->connect_check_gpio);
+		TS_LOG_ERR("%s connect_check_gpio gpio_value:%d\n",
+			__func__, gpio_value);
+		if (gpio_value == 0)
+			break;
+		mdelay(3); /* 3: 3ms */
+	}
+	/* when gpio_value :1 disconnect sub board return -ENODEV */
+	if (gpio_value != 0) {
+		TS_LOG_ERR("%s sub board not connect gpio:%d gpio_value:%d\n",
+			__func__, data->connect_check_gpio, gpio_value);
+		retval = -ENODEV;
+	} else {
+	/* when gpio_value :0 connet sub board return 0 */
+		retval = 0;
+	}
+	return retval;
+}
+
+static int tskit_driver_chip_detect(struct ts_kit_platform_data *data)
 {
 	int retval = NO_ERR;
 	u32 tmp_spi_mode = SPI_MODE_0;
 
-	TS_LOG_INFO(" syna_tcm_chip_detect called !\n");
+	TS_LOG_INFO("chip_detect called !\n");
 	tcm_hcd->syna_tcm_chip_data->ts_platform_data = data;
 	tcm_hcd->pdev = data->ts_dev;
 	tcm_hcd->pdev->dev.of_node = tcm_hcd->syna_tcm_chip_data->cnode;
-	tcm_hcd->reset = syna_tcm_reset;
-	tcm_hcd->sleep = syna_tcm_sleep;
-	tcm_hcd->identify = syna_tcm_identify;
-	tcm_hcd->switch_mode = syna_tcm_switch_mode;
-	tcm_hcd->read_message = syna_tcm_read_message;
-	tcm_hcd->write_message = syna_tcm_write_message;
-	tcm_hcd->get_dynamic_config = syna_tcm_get_dynamic_config;
-	tcm_hcd->set_dynamic_config = syna_tcm_set_dynamic_config;
-	tcm_hcd->get_data_location = syna_tcm_get_data_location;
+	tcm_hcd->reset = tskit_driver_reset;
+	tcm_hcd->sleep = tskit_driver_sleep;
+	tcm_hcd->identify = tskit_driver_identify;
+	tcm_hcd->switch_mode = tskit_driver_switch_mode;
+	tcm_hcd->read_message = tskit_driver_read_message;
+	tcm_hcd->write_message = tskit_driver_write_message;
+	tcm_hcd->get_dynamic_config = tskit_driver_get_dynamic_config;
+	tcm_hcd->set_dynamic_config = tskit_driver_set_dynamic_config;
+	tcm_hcd->get_data_location = tskit_driver_get_data_location;
 
 	if (TS_BUS_SPI != tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
-		tcm_hcd->read = syna_tcm_i2c_read;
-		tcm_hcd->write = syna_tcm_i2c_write;
-		tcm_hcd->rmi_read = syna_tcm_i2c_rmi_read;
-		tcm_hcd->rmi_write = syna_tcm_i2c_rmi_write;
-		tcm_hcd->rd_chunk_size = RD_CHUNK_SIZE_I2C;
-		tcm_hcd->wr_chunk_size = WR_CHUNK_SIZE_I2C;
+		tcm_hcd->read = tskit_driver_i2c_read;
+		tcm_hcd->write = tskit_driver_i2c_write;
+		tcm_hcd->rmi_read = tskit_driver_i2c_rmi_read;
+		tcm_hcd->rmi_write = tskit_driver_i2c_rmi_write;
+		if (data->i2c_driver_type == I3C_MASTER_I2C_DRIVER) {
+			tcm_hcd->rd_chunk_size = RD_CHUNK_SIZE_I3C;
+			tcm_hcd->wr_chunk_size = WR_CHUNK_SIZE_I3C;
+		} else {
+			tcm_hcd->rd_chunk_size = RD_CHUNK_SIZE_I2C;
+			tcm_hcd->wr_chunk_size = WR_CHUNK_SIZE_I2C;
+		}
 	}else{
-		tcm_hcd->read = syna_tcm_spi_read;
-		tcm_hcd->write = syna_tcm_spi_write;
-		tcm_hcd->rmi_read = syna_tcm_spi_rmi_read;
-		tcm_hcd->rmi_write = syna_tcm_spi_rmi_write;
+		tcm_hcd->read = tskit_driver_spi_read;
+		tcm_hcd->write = tskit_driver_spi_write;
+		tcm_hcd->rmi_read = tskit_driver_spi_rmi_read;
+		tcm_hcd->rmi_write = tskit_driver_spi_rmi_write;
 		tcm_hcd->rd_chunk_size = RD_CHUNK_SIZE_SPI;
 		tcm_hcd->wr_chunk_size = WR_CHUNK_SIZE_SPI;
 	}
@@ -3925,7 +4553,7 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 #endif
 
 	tcm_hcd->watchdog.run = RUN_WATCHDOG;
-	tcm_hcd->update_watchdog = syna_tcm_update_watchdog;
+	tcm_hcd->update_watchdog = tskit_driver_update_watchdog;
 	tcm_hcd->spi_comnunicate_frequency = data->spi_max_frequency;
 	INIT_BUFFER(tcm_hcd->in, false);
 	INIT_BUFFER(tcm_hcd->out, false);
@@ -3935,7 +4563,7 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 	INIT_BUFFER(tcm_hcd->report.buffer, true);
 
 	LOCK_BUFFER(tcm_hcd->in);
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&tcm_hcd->in,
 			tcm_hcd->read_length + 1);
 	if (retval < 0) {
@@ -3950,28 +4578,35 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 	device_init_wakeup(&data->ts_dev->dev, 1);
 	init_waitqueue_head(&tcm_hcd->hdl_wq);
 
-	syna_tcm_parse_dts(tcm_hcd->pdev->dev.of_node, tcm_hcd->syna_tcm_chip_data);
+	tskit_driver_parse_dts(tcm_hcd->pdev->dev.of_node,
+		tcm_hcd->syna_tcm_chip_data);
 
-	retval = syna_tcm_power_init();
+	retval = tskit_driver_power_init();
 	if (retval < 0) {
-		TS_LOG_ERR("syna_tcm_get_regulator error %d \n",retval);
+		TS_LOG_ERR("tskit_driver_get_regulator error %d\n", retval);
 		goto err_alloc_mem;
 	}
 
-	retval = syna_tcm_gpio_request();
+	retval = tskit_driver_gpio_request();
 	if (retval < 0) {
-		TS_LOG_ERR("synaptics_gpio_request error %d \n",retval);
+		TS_LOG_ERR("gpio_request error %d\n", retval);
 		goto gpio_err;
 	}
-
-	retval = syna_tcm_pinctrl_init();
-	if (retval < 0) {
-		TS_LOG_ERR("%s: syna_tcm_pinctrl_init error %d \n", __func__, retval);
+	if (ts_is_factory() && data->support_connect_check_gpio == 1) {
+		if (touch_driver_sub_board_connect_check(data) < 0) {
+			TS_LOG_ERR("%s: sub_board not connect\n", __func__);
+			retval = -ENODEV;
+			goto gpio_err;
+		}
 	}
-
-	syna_tcm_power_on();
+	retval = tskit_driver_pinctrl_init();
+	if (retval < 0) {
+		TS_LOG_ERR("%s: tskit_driver_pinctrl_init error %d\n",
+			__func__, retval);
+	}
+	tskit_driver_power_on();
 	/*reset the chip */
-	syna_tcm_gpio_reset();
+	tskit_driver_gpio_reset();
 	mdelay(200);
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		tmp_spi_mode = data->spi->mode;
@@ -3981,19 +4616,24 @@ static int syna_tcm_chip_detect(struct ts_kit_platform_data* data)
 			goto check_err;
 		}
 	}
-	retval = syna_tcm_comm_check();
+	retval = tskit_driver_comm_check();
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to syna_tcm_comm_check\n");
+		TS_LOG_ERR("Failed to tskit_driver_comm_check\n");
 		goto check_err;
 	}
+	/* set feature switch status after chip reset */
+	if (tcm_hcd->bdata->support_vendor_ic_type == S3909)
+		tcm_hcd->after_resume_done = true;
 
-	tcm_hcd->syna_tcm_chip_data->vendor_name = SYNA_VENDOR_NAME;
+	tcm_hcd->syna_tcm_chip_data->vendor_name = bdata->chip_vendor_name;
+	TS_LOG_INFO("vendor_name = %s\n",
+		tcm_hcd->syna_tcm_chip_data->vendor_name);
 	return 0;
 
 check_err:
-	syna_tcm_power_off();
-	syna_tcm_power_release();
-	syna_tcm_pinctrl_release();
+	tskit_driver_power_off();
+	tskit_driver_power_release();
+	tskit_driver_pinctrl_release();
 gpio_err:
 	if (TS_BUS_SPI == tcm_hcd->syna_tcm_chip_data->ts_platform_data->bops->btype) {
 		data->spi->max_speed_hz = g_ts_kit_platform_data.spi_max_frequency;
@@ -4015,12 +4655,12 @@ err_alloc_mem:
 		kfree(tcm_hcd);
 		tcm_hcd = NULL;
 	}
-	TS_LOG_ERR("detect synaptics error\n");
+	TS_LOG_ERR("detect error\n");
 
 	return retval;
 }
 
-static int syna_tcm_roi_switch(struct ts_roi_info *info)
+static int tskit_driver_roi_switch(struct ts_roi_info *info)
 {
 	int retval = NO_ERR;
 	u16 buf = 0;
@@ -4032,7 +4672,7 @@ static int syna_tcm_roi_switch(struct ts_roi_info *info)
 	}
 
 	if (!info) {
-		TS_LOG_ERR("synaptics_roi_switch: info is Null\n");
+		TS_LOG_ERR("roi_switch: info is Null\n");
 		retval = -ENOMEM;
 		return retval;
 	}
@@ -4042,6 +4682,12 @@ static int syna_tcm_roi_switch(struct ts_roi_info *info)
 		return retval;
 	}
 
+	if ((tcm_hcd->bdata->support_vendor_ic_type == S3909) &&
+		(tcm_hcd->after_resume_done == false)) {
+		TS_LOG_ERR("%s: ic in suspend,return directly\n", __func__);
+		return 0;
+	}
+
 	switch (info->op_action) {
 	case TS_ACTION_WRITE:
 		if(0==info->roi_switch) {
@@ -4049,10 +4695,10 @@ static int syna_tcm_roi_switch(struct ts_roi_info *info)
 		} else {
 			buf = 1;
 		}
-		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+		retval = tskit_driver_set_dynamic_config(tcm_hcd,
 				info->roi_control_addr, buf);
 		if (retval < 0) {
-			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
+			TS_LOG_ERR("%s, set_roi_switch failed\n",
 				   __func__);
 		}else{
 			tcm_hcd->roi_enable_status = buf;
@@ -4066,22 +4712,23 @@ static int syna_tcm_roi_switch(struct ts_roi_info *info)
 		info->roi_switch = tcm_hcd->roi_enable_status;
 		break;
 	default:
-		TS_LOG_INFO("invalid roi switch(%d) action: %d\n",
+		TS_LOG_INFO("invalid roi switch %d action: %d\n",
 			    info->roi_switch, info->op_action);
 		retval = -EINVAL;
 		break;
 	}
 
-	TS_LOG_INFO("syna_tcm_roi_switch end info->roi_switch = %d\n",info->roi_switch);
+	TS_LOG_INFO("tskit_driver_roi_switch end info->roi_switch = %d\n",
+		info->roi_switch);
 	return retval;
 }
 
-static unsigned char *syna_tcm_roi_rawdata(void)
+static unsigned char *tskit_driver_roi_rawdata(void)
 {
 	return tcm_hcd->syna_tcm_roi_data ;
 }
 
-static int syna_tcm_charger_switch(struct ts_charger_info *info)
+static int tskit_driver_charger_switch(struct ts_charger_info *info)
 {
 	int retval = NO_ERR;
 	u16 buf = 0;
@@ -4092,14 +4739,14 @@ static int syna_tcm_charger_switch(struct ts_charger_info *info)
 	}
 
 	if (!info) {
-		TS_LOG_ERR("synaptics_charger_switch: info is Null\n");
+		TS_LOG_ERR("charger_switch: info is Null\n");
 		retval = -ENOMEM;
 		return retval;
 	}
 
 	switch (info->op_action) {
 	case TS_ACTION_READ:
-		retval = syna_tcm_get_dynamic_config(tcm_hcd,
+		retval = tskit_driver_get_dynamic_config(tcm_hcd,
 				DC_CHARGER_CONNECTED, &buf);
 		if (retval < 0) {
 			TS_LOG_ERR("get charger switch(%d), failed : %d",
@@ -4119,7 +4766,7 @@ static int syna_tcm_charger_switch(struct ts_charger_info *info)
 			retval = -EFAULT;
 			break;
 		}
-		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+		retval = tskit_driver_set_dynamic_config(tcm_hcd,
 				DC_CHARGER_CONNECTED, buf);
 		if (retval < 0) {
 			TS_LOG_ERR("set charger switch(%d), failed : %d", buf,
@@ -4140,7 +4787,7 @@ static int syna_tcm_charger_switch(struct ts_charger_info *info)
 	return retval;
 }
 
-static int syna_tcm_glove_switch(struct ts_glove_info *info)
+static int tskit_driver_glove_switch(struct ts_glove_info *info)
 {
 	int retval = NO_ERR;
 	u16 buf = 0;
@@ -4152,19 +4799,25 @@ static int syna_tcm_glove_switch(struct ts_glove_info *info)
 	}
 
 	if (!info) {
-		TS_LOG_ERR("synaptics_glove_switch: info is Null\n");
+		TS_LOG_ERR("glove_switch: info is Null\n");
 		retval = -ENOMEM;
 		return retval;
 	}
 
 	if (!info->glove_supported) {
-		TS_LOG_INFO("%s: not support glove\n", __func__);
+		TS_LOG_INFO("glove_switch: not support glove\n");
 		return NO_ERR;
+	}
+
+	if ((tcm_hcd->bdata->support_vendor_ic_type == S3909) &&
+		(tcm_hcd->after_resume_done == false)) {
+		TS_LOG_ERR("%s: ic in suspend,return directly\n", __func__);
+		return 0;
 	}
 
 	switch (info->op_action) {
 	case TS_ACTION_READ:
-		retval = syna_tcm_get_dynamic_config(tcm_hcd,
+		retval = tskit_driver_get_dynamic_config(tcm_hcd,
 				info->glove_switch_addr, &buf);
 		if (retval < 0) {
 			TS_LOG_ERR("get glove switch(%d), failed : %d",
@@ -4184,7 +4837,7 @@ static int syna_tcm_glove_switch(struct ts_glove_info *info)
 			retval = -EFAULT;
 			break;
 		}
-		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+		retval = tskit_driver_set_dynamic_config(tcm_hcd,
 				info->glove_switch_addr, buf);
 		if (retval < 0) {
 			TS_LOG_ERR("set glove switch(%d), failed : %d", buf,
@@ -4202,7 +4855,7 @@ static int syna_tcm_glove_switch(struct ts_glove_info *info)
 
 #define SYNA_SWITCH_MAX_INPUT_SEPARATE_NUM 2
 
-static int synaptics_tcm_check_scene_type(unsigned int stype)
+static int tskit_driver_check_scene_type(unsigned int stype)
 {
 	unsigned int i;
 	int error = -EINVAL;
@@ -4218,7 +4871,7 @@ static int synaptics_tcm_check_scene_type(unsigned int stype)
 	return error;
 }
 
-static void synaptics_tcm_scene_switch(unsigned char stype, unsigned char soper)
+static void tskit_driver_scene_switch(unsigned char stype, unsigned char soper)
 {
 	int retval = 0;
 	unsigned char buf = 0;
@@ -4232,22 +4885,22 @@ static void synaptics_tcm_scene_switch(unsigned char stype, unsigned char soper)
 	switch (soper) {
 	case TS_SWITCH_SCENE_ENTER:
 		buf = stype;
-		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+		retval = tskit_driver_set_dynamic_config(tcm_hcd,
 			tcm_hcd->syna_tcm_chip_data->touch_scene_reg,
 			(unsigned short)buf);
 		if (retval < 0)
-			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
+			TS_LOG_ERR("%s, set_roi_switch failed\n",
 			__func__);
 
 		TS_LOG_INFO("%s: enter scene %d\n", __func__, stype);
 		break;
 	case TS_SWITCH_SCENE_EXIT:
 		buf = 0;
-		retval = syna_tcm_set_dynamic_config(tcm_hcd,
+		retval = tskit_driver_set_dynamic_config(tcm_hcd,
 			tcm_hcd->syna_tcm_chip_data->touch_scene_reg,
 			(unsigned short)buf);
 		if (retval < 0)
-			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n",
+			TS_LOG_ERR("%s, set_roi_switch failed\n",
 				__func__);
 
 		TS_LOG_INFO("%s: enter default scene\n", __func__);
@@ -4259,22 +4912,22 @@ static void synaptics_tcm_scene_switch(unsigned char stype, unsigned char soper)
 	}
 }
 
-static void synaptics_tcm_chip_touch_powergenius(unsigned char stype,
+static void tskit_driver_chip_touch_powergenius(unsigned char stype,
 	unsigned char soper, unsigned char param)
 {
 	int error;
 
-	error = synaptics_tcm_check_scene_type(stype);
+	error = tskit_driver_check_scene_type(stype);
 	if (error) {
 		TS_LOG_INFO("touch switch type %d not supported\n", stype);
 		return;
 	}
 	if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
-		synaptics_tcm_scene_switch(stype, soper);
+		tskit_driver_scene_switch(stype, soper);
 }
 
-static int synaptics_tcm_chip_get_touch_switch_data(unsigned int *stype,
-	unsigned int *soper, unsigned int *para)
+static int tskit_driver_chip_get_touch_switch_data(
+	unsigned int *stype, unsigned int *soper, unsigned int *para)
 {
 	char in_data[MAX_STR_LEN] = {0};
 	int error = 0;
@@ -4317,7 +4970,8 @@ static int synaptics_tcm_chip_get_touch_switch_data(unsigned int *stype,
 	return error;
 }
 
-static void synaptics_tcm_chip_touch_switch(void)
+#define SYNA_TCM_TOUCH_SWITCH_REG 0xc9
+static void tskit_driver_chip_touch_switch(void)
 {
 	unsigned int stype = 0;
 	unsigned int soper = 0;
@@ -4326,11 +4980,34 @@ static void synaptics_tcm_chip_touch_switch(void)
 
 	TS_LOG_INFO("%s enter\n", __func__);
 
-	error = synaptics_tcm_chip_get_touch_switch_data(&stype, &soper, &para);
+	if ((tcm_hcd->bdata->support_vendor_ic_type == S3909) &&
+		(tcm_hcd->after_resume_done == false)) {
+		TS_LOG_ERR("%s: ic in suspend,return directly\n", __func__);
+		return;
+	}
+
+	error = tskit_driver_chip_get_touch_switch_data(&stype, &soper, &para);
 	if (error <= NO_ERR)
 		goto out;
 
 	TS_LOG_INFO("stype = %u, soper = %u, para = %u\n", stype, soper, para);
+	if (tcm_hcd->bdata && tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		if (stype == TS_SWITCH_SCENE_5) { /* game mode */
+			if (soper == TS_SWITCH_GAME_ENABLE) {
+				error = tskit_driver_set_dynamic_config(tcm_hcd,
+					SYNA_TCM_TOUCH_SWITCH_REG, 1);
+				if (error < 0)
+					TS_LOG_ERR("set_game_mode failed\n");
+				return;
+			} else if (soper == TS_SWITCH_GAME_DISABLE) {
+				error = tskit_driver_set_dynamic_config(tcm_hcd,
+					SYNA_TCM_TOUCH_SWITCH_REG, 0);
+				if (error < 0)
+					TS_LOG_ERR("set_game_mode failed\n");
+			}
+		}
+		return;
+	}
 	if (tcm_hcd->syna_tcm_chip_data->scene_type_mode ==
 		SCENE_MODE_ITOUCH) {
 		/* itouch */
@@ -4339,11 +5016,11 @@ static void synaptics_tcm_chip_touch_switch(void)
 	} else if (tcm_hcd->syna_tcm_chip_data->scene_type_mode ==
 		SCENC_MODE_POWERGENIUS) {
 		TS_LOG_INFO("powergenius called\n");
-		synaptics_tcm_chip_touch_powergenius(stype, soper, para);
+		tskit_driver_chip_touch_powergenius(stype, soper, para);
 		goto out;
 	}
 	if ((stype >= TS_SWITCH_SCENE_3) && (stype <= TS_SWITCH_SCENE_20))
-		synaptics_tcm_scene_switch(stype, soper);
+		tskit_driver_scene_switch(stype, soper);
 	else
 		TS_LOG_INFO("touch switch type %d not supported\n", stype);
 
@@ -4355,7 +5032,7 @@ static void synaptics_tcm_chip_touch_switch(void)
 out:
 	return;
 }
-static int syna_tcm_status_resume(void)
+static int tskit_driver_status_resume(void)
 {
 	int retval = 0;
 	struct ts_feature_info *info = &tcm_hcd->syna_tcm_chip_data->ts_platform_data->feature_info;
@@ -4365,15 +5042,15 @@ static int syna_tcm_status_resume(void)
 
 	if (roi_info.roi_supported) {
 		roi_info.op_action = TS_ACTION_WRITE;
-		retval = syna_tcm_roi_switch(&roi_info);
+		retval = tskit_driver_roi_switch(&roi_info);
 		if (retval < 0) {
-			TS_LOG_ERR("%s, synaptics_set_roi_switch faild\n", __func__);
+			TS_LOG_ERR("%s, set_roi_switch failed\n", __func__);
 		}
 	}
 
 	if(glove_info.glove_supported){
 		glove_info.op_action = TS_ACTION_WRITE;
-		retval = syna_tcm_glove_switch(&glove_info);
+		retval = tskit_driver_glove_switch(&glove_info);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to set glove switch(%d), err: %d\n",
 					info->glove_info.glove_switch, retval);
@@ -4382,183 +5059,197 @@ static int syna_tcm_status_resume(void)
 
 	if (charger_info.charger_supported) {
 		charger_info.op_action = TS_ACTION_WRITE;
-		retval = syna_tcm_charger_switch(&charger_info);
+		retval = tskit_driver_charger_switch(&charger_info);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to set charger switch(%d), err: %d\n",
 					info->charger_info.charger_switch, retval);
 		}
 	}
+
+	if (tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+		tskit_driver_chip_touch_switch();
+		TS_LOG_INFO("reset touch switch\n");
+	}
 	TS_LOG_INFO(" glove_switch (%d), roi_switch(%d), charger_switch(%d)\n",
 				info->glove_info.glove_switch,info->roi_info.roi_switch, info->charger_info.charger_switch);
+
+	if (info->holster_info.holster_supported &&
+		info->holster_info.holster_switch) {
+		info->holster_info.op_action = TS_ACTION_WRITE;
+		retval = touch_driver_holster_switch(&(info->holster_info));
+		if (retval < 0)
+			TS_LOG_ERR("Failed to set holster switch:%u,err: %d\n",
+				info->holster_info.holster_switch, retval);
+	}
 	return retval;
 }
 
-static int syna_tcm_chip_detect_hwlock(struct ts_kit_platform_data *data)
+static int tskit_driver_chip_detect_hwlock(struct ts_kit_platform_data *data)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_chip_detect(data);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_chip_detect(data);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_init_chip_hwlock(void)
+static int tskit_driver_init_chip_hwlock(void)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_init_chip();
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_init_chip();
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_irq_bottom_half_hwlock(struct ts_cmd_node *in_cmd,
+static int tskit_driver_irq_bottom_half_hwlock(struct ts_cmd_node *in_cmd,
 					struct ts_cmd_node *out_cmd)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_irq_bottom_half(in_cmd, out_cmd);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_irq_bottom_half(in_cmd, out_cmd);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_fw_update_boot_hwlock(char *file_name)
+static int tskit_driver_fw_update_boot_hwlock(char *file_name)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_fw_update_boot(file_name);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_fw_update_boot(file_name, false);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_fw_update_sd_hwlock(void)
+static int tskit_driver_fw_update_sd_hwlock(void)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_fw_update_sd();
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_fw_update_sd();
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_suspend_hwlock(void)
+static int tskit_driver_suspend_hwlock(void)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_suspend();
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_suspend();
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_resume_hwlock(void)
+static int tskit_driver_resume_hwlock(void)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_resume();
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_resume();
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_after_resume_hwlock(void *feature_info)
+static int tskit_driver_after_resume_hwlock(void *feature_info)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_after_resume(feature_info);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_after_resume(feature_info);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_mmi_test_hwlock(struct ts_rawdata_info *info,
+static int tskit_driver_mmi_test_hwlock(struct ts_rawdata_info *info,
 				 struct ts_cmd_node *out_cmd)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_mmi_test(info, out_cmd);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_mmi_test(info, out_cmd);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_glove_switch_hwlock(struct ts_glove_info *info)
+static int tskit_driver_glove_switch_hwlock(struct ts_glove_info *info)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_glove_switch(info);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_glove_switch(info);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_charger_switch_hwlock(struct ts_charger_info *info)
+static int tskit_driver_charger_switch_hwlock(struct ts_charger_info *info)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_charger_switch(info);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_charger_switch(info);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int syna_tcm_roi_switch_hwlock(struct ts_roi_info *info)
+static int tskit_driver_roi_switch_hwlock(struct ts_roi_info *info)
 {
 	int retval;
 
-	if (syna_tcm_get_hw_lock()) {
+	if (tskit_driver_get_hw_lock()) {
 		TS_LOG_ERR("ap i2c hw lock error\n");
 		return RESULT_ERR;
 	}
-	retval = syna_tcm_roi_switch(info);
-	syna_tcm_release_hw_lock();
+	retval = tskit_driver_roi_switch(info);
+	tskit_driver_release_hw_lock();
 	return retval;
 }
 
-static int __init syna_tcm_module_init(void)
+static int __init tskit_driver_module_init(void)
 {
 	int retval = NO_ERR;
 	bool found = false;
 	struct device_node* child = NULL;
 	struct device_node* root = NULL;
 
-	TS_LOG_INFO(" syna_tcm_ts_module_init called here\n");
+	TS_LOG_INFO("ts_module_init called here\n");
 
 	root = of_find_compatible_node(NULL, NULL, "huawei,ts_kit");
 	if (!root) {
@@ -4576,7 +5267,7 @@ static int __init syna_tcm_module_init(void)
 	}
 
 	if (!found) {
-		TS_LOG_ERR(" not found chip synaptics_tcm child node  !\n");
+		TS_LOG_ERR(" not found chip child node\n");
 		return -EINVAL;
 	}
 
@@ -4588,7 +5279,7 @@ static int __init syna_tcm_module_init(void)
 
 	tcm_hcd->syna_tcm_chip_data = kzalloc(sizeof(struct ts_kit_device_data), GFP_KERNEL);
 	if (!tcm_hcd->syna_tcm_chip_data) {
-		TS_LOG_ERR("Failed to allocate memory for tcm_hcd\n");
+		TS_LOG_ERR("Failed to allocate memory\n");
 		retval = -ENOMEM;
 		goto err_free_hcd;
 	}
@@ -4604,16 +5295,16 @@ static int __init syna_tcm_module_init(void)
 	}
 
 	tcm_hcd->bdata = bdata;
-	tcm_hcd->read = syna_tcm_spi_read;
-	tcm_hcd->write = syna_tcm_spi_write;
-	tcm_hcd->rmi_read = syna_tcm_spi_rmi_read;
-	tcm_hcd->rmi_write = syna_tcm_spi_rmi_write;
+	tcm_hcd->read = tskit_driver_spi_read;
+	tcm_hcd->write = tskit_driver_spi_write;
+	tcm_hcd->rmi_read = tskit_driver_spi_rmi_read;
+	tcm_hcd->rmi_write = tskit_driver_spi_rmi_write;
 	tcm_hcd->host_download_mode = false;
 
 	retval = huawei_ts_chip_register(tcm_hcd->syna_tcm_chip_data);
 	if(retval)
 	{
-		TS_LOG_ERR(" synaptics chip register fail !\n");
+		TS_LOG_ERR("chip register fail\n");
 		goto err_free_bdata;
 	}
 
@@ -4637,13 +5328,20 @@ err_free_hcd:
 	return retval;
 }
 
-static void __exit syna_tcm_module_exit(void)
+static void __exit tskit_driver_module_exit(void)
 {
+	int ret;
+
+	ret = tskit_driver_cap_test_remove(tcm_hcd);
+	if (ret)
+		TS_LOG_ERR("remove failed\n");
+	kfree(tcm_hcd);
+	tcm_hcd = NULL;
 	return;
 }
 
-module_init(syna_tcm_module_init);
-module_exit(syna_tcm_module_exit);
+module_init(tskit_driver_module_init);
+module_exit(tskit_driver_module_exit);
 
 MODULE_AUTHOR("Synaptics, Inc.");
 MODULE_DESCRIPTION("Synaptics TCM Touch Driver");

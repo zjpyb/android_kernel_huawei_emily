@@ -7,12 +7,16 @@
 
 #include "securecutil.h"
 
-SECUREC_INLINE void SecTrimCRLF(char *buffer, size_t len)
+/*
+ * The parameter size is buffer size in byte
+ */
+SECUREC_INLINE void SecTrimCRLF(char *buffer, size_t size)
 {
-    int i;
-    /* No need to determine whether integer overflow exists */
-    for (i = (int)(len - 1); i >= 0 && (buffer[i] == '\r' || buffer[i] == '\n'); --i) {
-        buffer[i] = '\0';
+    size_t len = strlen(buffer);
+    --len; /* Unsigned integer wrapping is accepted and is checked afterwards */
+    while (len < size && (buffer[len] == '\r' || buffer[len] == '\n')) {
+        buffer[len] = '\0';
+        --len; /* Unsigned integer wrapping is accepted and is checked next loop */
     }
 }
 
@@ -28,7 +32,7 @@ SECUREC_INLINE void SecTrimCRLF(char *buffer, size_t len)
  *
  * <INPUT PARAMETERS>
  *    buffer                         Storage location for input string.
- *    numberOfElements       The size of the buffer.
+ *    destMax                        The size of the buffer.
  *
  * <OUTPUT PARAMETERS>
  *    buffer                         is updated
@@ -37,13 +41,12 @@ SECUREC_INLINE void SecTrimCRLF(char *buffer, size_t len)
  *    buffer                         Successful operation
  *    NULL                           Improper parameter or read fail
  */
-char *gets_s(char *buffer, size_t numberOfElements)
+char *gets_s(char *buffer, size_t destMax)
 {
-    size_t len;
 #ifdef SECUREC_COMPATIBLE_WIN_FORMAT
-    size_t bufferSize = ((numberOfElements == (size_t)-1) ? SECUREC_STRING_MAX_LEN : numberOfElements);
+    size_t bufferSize = ((destMax == (size_t)(-1)) ? SECUREC_STRING_MAX_LEN : destMax);
 #else
-    size_t bufferSize = numberOfElements;
+    size_t bufferSize = destMax;
 #endif
 
     if (buffer == NULL || bufferSize == 0 || bufferSize > SECUREC_STRING_MAX_LEN) {
@@ -51,15 +54,11 @@ char *gets_s(char *buffer, size_t numberOfElements)
         return NULL;
     }
 
-    if (fgets(buffer, (int)bufferSize, SECUREC_STREAM_STDIN) == NULL) {
-        return NULL;
+    if (fgets(buffer, (int)bufferSize, SECUREC_STREAM_STDIN) != NULL) {
+        SecTrimCRLF(buffer, bufferSize);
+        return buffer;
     }
 
-    len = strlen(buffer);
-    if (len > 0 && len < bufferSize) {
-        SecTrimCRLF(buffer, len);
-    }
-
-    return buffer;
+    return NULL;
 }
 

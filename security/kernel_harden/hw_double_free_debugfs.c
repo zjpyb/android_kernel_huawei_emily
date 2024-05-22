@@ -20,6 +20,7 @@
 #include <linux/seq_file.h>
 #include <linux/err.h>
 #include <linux/mm.h>
+#include <linux/mm_types.h>
 #include <linux/kernel.h>
 #include <linux/uaccess.h>
 #include <linux/ctype.h>
@@ -27,7 +28,7 @@
 #include <linux/slab.h>
 #include <linux/slub_def.h>
 #include <linux/delay.h>
-#include <linux/mm_types.h>
+
 #include <asm/memory.h>
 #include <asm/sections.h>
 
@@ -35,9 +36,9 @@
 static struct dentry *slub_double_free_root;
 
 #define SLUB_DEBUG_ENTRY(name) \
-static int slub_##name##_open(struct inode *inode, struct file *file) \
+static int slub_##name##_open(struct inode *debug_inode, struct file *file) \
 { \
-	return single_open(file, slub_##name##_show, inode->i_private); \
+	return single_open(file, slub_##name##_show, debug_inode->i_private); \
 } \
 \
 static const struct file_operations slub_##name##_fops = { \

@@ -132,6 +132,7 @@ HWLOG_REGIST();
 
 #define ST_VENDOR                          0
 #define TI_VENDOR                          1
+#define SUPPORT_TI_HARDWARE_SET_FLAG       2
 
 #define DEFAULT_CURVE_STYLE NO_START_NO_STOP
 #define DEFAULT_DIST_CTRL_TYPE PULSE_COUNTER
@@ -205,12 +206,24 @@ enum step_gen_manner {
 };
 
 enum step_voltage_type {
-	LOW_VOLTAGE,
 	NORMAR_VOLTAGE,
 	HIGI_VOLTAGE,
+	RESERVE_VOLTAGE,
 
 	/* voltage type num, must be at end */
 	VOLTAGE_TYPE_NUM
+};
+
+enum motor_para_type {
+	MOTOR_PARA_START_SPEED = 0,
+	MOTOR_PARA_TARGET_SPEED,
+	MOTOR_PARA_SPEED_STEP,
+	MOTOR_PARA_STEP_TIME_MS,
+	MOTOR_PARA_HIGH_MM,
+	MOTOR_PARA_STEP_ANGLE,
+	MOTOR_PARA_RATION_VALUE,
+
+	MOTOR_PARA_NUM // must at end
 };
 /*
  * struct drv_data
@@ -287,6 +300,12 @@ struct drv_data {
 	struct regulator *ldo;
 	int current_voltage;
 	bool support_set_voltage;
+
+	/* motor hardware param */
+	int motor_step_angle_value;
+	int motor_gear_ratio_value;
+
+	u32 support_ti_mode_hardware_set;
 };
 
 static const struct of_device_id g_drv8846_match[] = {
@@ -294,7 +313,10 @@ static const struct of_device_id g_drv8846_match[] = {
 	{},
 };
 enum drv_step_mode g_step_work_mode;
+static u32 g_support_ti_adec_hardware_set;
 static int vout_voltage_map[VOLTAGE_TYPE_NUM] = { 2700000, 3100000, 3300000 };
+static u16 motor_normal_para[MOTOR_PARA_NUM] = { 800, 2400, 1600, 40, 88, 180, 36 };
+
 
 static void step_motor_set_vdd_voltage(struct drv_data *di,
 	unsigned int value);
@@ -532,14 +554,15 @@ static int drv8846_param_init_calc(struct drv_data *di)
 	int start_steps_count;
 	int pulse_count_per_cycle;
 
-	if (!di) {
-		hwlog_err("%s di is null\n", __func__);
+	if (di->motor_step_angle_value == 0) {
+		hwlog_err("%s motor_step_angle_value is invalid\n", __func__);
 		return FAILURE;
 	}
+	// get motor_step_angle_value form dts expand 10 times, so divide by 10
 	pulse_count_per_cycle = MOTOR_A_CIRCLE_DEGREE *
-		di->microsteps / MOTOR_STEP_ANGLE;
+		di->microsteps * 10 / di->motor_step_angle_value;
 	di->total_pulse_edge_count = di->motor_walk_distance_tenth *
-		pulse_count_per_cycle * MOTOR_GEAR_RATIO /
+		pulse_count_per_cycle * di->motor_gear_ratio_value /
 			MOTOR_WALK_DIST_PER_CYCLE_MM_TENTH;
 
 	di->cur_state = STATE_SPEED_UP;
@@ -953,6 +976,11 @@ static void drv8846_set_dir_out(int gpio_dir, int dir)
  */
 static void drv8846_adec(int gpio_decay, int val)
 {
+	// support ti hardware take death gpio_decay
+	if (g_support_ti_adec_hardware_set == 1) {
+		hwlog_info("%s : support ti hardware take death gpio_decay\n", __func__);
+		return;
+	}
 	if (gpio_direction_output(gpio_decay, val))
 		hwlog_err("set drv8846_decay:%d fail\n", val);
 }
@@ -1038,6 +1066,20 @@ static void drv8846_disable_fault_irq(int irq_fault)
 	disable_irq_nosync(irq_fault);
 }
 
+static void drv8846_st_reset(struct drv_data *di)
+{
+	int ret = 0;
+
+	ret += gpio_direction_output(di->gpio_mode1, GPIO_VAL_LOW);
+	ret += gpio_direction_output(di->gpio_decay, GPIO_VAL_LOW);
+	ret += gpio_direction_output(di->gpio_step, GPIO_VAL_LOW);
+	ret += gpio_direction_output(di->gpio_dir, GPIO_VAL_LOW);
+	if (ret != 0)
+		hwlog_err("%s, fail\n", __func__);
+	else
+		hwlog_info("%s, success\n", __func__);
+}
+
 /*
  * Set the pins of drv8846 to idle state in case waste of power.
  *
@@ -1056,8 +1098,8 @@ static void drv8846_reset_pins_state(struct drv_data *di)
 	if (pinctrl_select_state(di->pinctrl, di->pinctrl_idle) < 0)
 		hwlog_err("could not set pins to default state\n");
 
-	gpio_direction_output(di->gpio_step, GPIO_VAL_LOW);
-	hwlog_info("make step to low\n");
+	if (di->ic_vendor == ST_VENDOR)
+		drv8846_st_reset(di);
 }
 
 /*
@@ -1210,6 +1252,15 @@ static void ti_set_mode(struct drv_data *di, enum drv_step_mode step_mode)
 {
 	if (!di) {
 		hwlog_err("%s di is null\n", __func__);
+		return;
+	}
+	// support ti hardware set frequercy mode
+	if (di->support_ti_mode_hardware_set == 1) {
+		hwlog_info("%s support ti hardware set frequercy mode\n",
+			__func__);
+		// set gpio direction input
+		gpio_direction_input(di->gpio_mode1);
+		gpio_direction_input(di->gpio_st_en);
 		return;
 	}
 	switch (step_mode) {
@@ -2091,21 +2142,29 @@ static void step_mode_set_speed(struct drv_data *di, int value, int *speed)
 
 static void step_motor_set_speed_mode(struct drv_data *di, int val)
 {
+	int slow_step_speed;
+
 	hwlog_info("%s, mode=%d\n", __func__, val);
+
+	// slow speed just modify tagert speed
+	slow_step_speed = TARGET_SPEED_SLOW_STD -
+		motor_normal_para[MOTOR_PARA_START_SPEED];
 
 	spin_lock(&di->state_change_lock);
 	switch (val) {
 	case SPEED_FAST:
 	case SPEED_NORMAL:
-		step_mode_set_speed(di, TARGET_SPEED_NORMAL_STD,
+		step_mode_set_speed(di,
+			motor_normal_para[MOTOR_PARA_TARGET_SPEED],
 			&(di->target_speed_normal));
-		step_mode_set_speed(di, STARTING_SPEED_STEP_STD,
+		step_mode_set_speed(di,
+			motor_normal_para[MOTOR_PARA_SPEED_STEP],
 			&(di->speed_step));
 		break;
 	case SPEED_SLOW:
 		step_mode_set_speed(di, TARGET_SPEED_SLOW_STD,
 			&(di->target_speed_normal));
-		step_mode_set_speed(di, STARTING_SPEED_STEP_SLOW,
+		step_mode_set_speed(di, slow_step_speed,
 			&(di->speed_step));
 		break;
 	default:
@@ -2245,6 +2304,58 @@ static void parse_dt_configs(struct drv_data *di)
 	hwlog_info("set_start_stop_curve_style is :%d, tmp: %d\n", di->curve_style, tmp);
 }
 
+static void drv8846_get_motor_param_from_dts(struct drv_data *di)
+{
+	struct device_node *np = NULL;
+	u16 support_ti_hardware_set[SUPPORT_TI_HARDWARE_SET_FLAG] = {0};
+	int ret;
+
+	np = di->pdev->of_node;
+	ret = of_property_read_u16_array(np, "motor_params",
+		motor_normal_para, MOTOR_PARA_NUM);
+
+	if (ret == 0) {
+		di->start_speed =
+			motor_normal_para[MOTOR_PARA_START_SPEED] *
+			di->microsteps;
+		di->cur_speed = di->start_speed;
+		di->target_speed_normal =
+			motor_normal_para[MOTOR_PARA_TARGET_SPEED] *
+			di->microsteps;
+		di->target_speed = di->target_speed_normal;
+		di->speed_step =
+			motor_normal_para[MOTOR_PARA_SPEED_STEP] *
+			di->microsteps;
+		di->dur_per_step_ms =
+			motor_normal_para[MOTOR_PARA_STEP_TIME_MS];
+		di->motor_walk_distance_tenth =
+			motor_normal_para[MOTOR_PARA_HIGH_MM];
+		di->motor_step_angle_value =
+			motor_normal_para[MOTOR_PARA_STEP_ANGLE];
+		di->motor_gear_ratio_value =
+			motor_normal_para[MOTOR_PARA_RATION_VALUE];
+	} else {
+		hwlog_info("%s : use default motor params\n", __func__);
+	}
+
+	hwlog_info("%s motor para is %d %d %d %d %d %d %d", __func__,
+		motor_normal_para[MOTOR_PARA_START_SPEED],
+		motor_normal_para[MOTOR_PARA_TARGET_SPEED],
+		motor_normal_para[MOTOR_PARA_SPEED_STEP],
+		motor_normal_para[MOTOR_PARA_STEP_TIME_MS],
+		motor_normal_para[MOTOR_PARA_HIGH_MM],
+		motor_normal_para[MOTOR_PARA_STEP_ANGLE],
+		motor_normal_para[MOTOR_PARA_RATION_VALUE]);
+
+
+	ret = of_property_read_u16_array(np, "support_ti_hardware_set",
+		support_ti_hardware_set, SUPPORT_TI_HARDWARE_SET_FLAG);
+	if (ret == 0) {
+		di->support_ti_mode_hardware_set = support_ti_hardware_set[0];
+		g_support_ti_adec_hardware_set = support_ti_hardware_set[1];
+	}
+}
+
 static void drv8846_param_set_default_val(struct drv_data *di)
 {
 	int speed_multiplier;
@@ -2294,6 +2405,14 @@ static void drv8846_param_set_default_val(struct drv_data *di)
 		di->target_speed_normal = TARGET_SPEED_NORMAL_STD_FULLSTEP * speed_multiplier;
 		di->motor_walk_distance_tenth = DIST_STD_MM_TENTH_FULLSTEP;
 	}
+	// param expand 10 times
+	di->motor_step_angle_value = MOTOR_STEP_ANGLE * 10;
+	di->motor_gear_ratio_value = MOTOR_GEAR_RATIO;
+	// not support ti hardware take death mode
+	di->support_ti_mode_hardware_set = 0;
+	// not support ti hardware take death adec
+	g_support_ti_adec_hardware_set = 0;
+	drv8846_get_motor_param_from_dts(di);
 }
 
 static int find_vendor_by_gpio(struct drv_data *di)
@@ -2425,10 +2544,6 @@ static void step_motor_set_vdd_voltage(struct drv_data *di,
 {
 	int ret;
 
-#ifdef STEP_MOTOR_DEBUG
-	hwlog_info("factor not support change voltage\n");
-	return;
-#endif
 
 	if (di == NULL) {
 		hwlog_err("ste_motor_set_vdd_voltage invalid data\n");
@@ -2464,10 +2579,9 @@ static void step_motor_set_vdd_voltage(struct drv_data *di,
 
 	ret = regulator_set_voltage(di->ldo,
 		vout_voltage_map[value], vout_voltage_map[value]);
-	if (ret != 0) {
+	if (ret != 0)
 		hwlog_err("regulator_set_voltage fail.\n");
-		return;
-	}
+
 	di->current_voltage = vout_voltage_map[value];
 	msleep(5); // wait 5ms when disable to enable
 
@@ -2511,8 +2625,13 @@ static void step_motor_get_vdd(struct drv_data *di)
 		return;
 	}
 
+#ifdef STEP_MOTOR_DEBUG
+	ret = of_property_read_u16_array(np, "set_factory_voltage",
+		vol_temp, VOLTAGE_TYPE_NUM);
+#else
 	ret = of_property_read_u16_array(np, "vout_voltage",
 		vol_temp, VOLTAGE_TYPE_NUM);
+#endif
 	if (ret != 0) {
 		hwlog_err("read vout_voltage fail, use default value");
 	} else {
@@ -2521,23 +2640,19 @@ static void step_motor_get_vdd(struct drv_data *di)
 			vout_voltage_map[i] = (int)vol_temp[i] * 1000;
 	}
 
-	/* use low voltage */
-	di->current_voltage = vout_voltage_map[LOW_VOLTAGE];
-	hwlog_info("current voltage = %d\n", di->current_voltage);
-
+	/* use normal voltage */
+	di->current_voltage = vout_voltage_map[NORMAR_VOLTAGE];
 	ret = regulator_set_voltage(di->ldo,
 		di->current_voltage, di->current_voltage);
-	if (ret != 0) {
+	if (ret != 0)
 		hwlog_err("regulator_set_voltage fail\n");
-		return;
-	}
 
 	ret = regulator_enable(di->ldo);
 	if (ret != 0) {
 		hwlog_err("regulator_enable fail\n");
 		return;
 	}
-	hwlog_info("step motor get vdd succ.\n");
+	hwlog_info("%s succ,current voltage = %d", __func__, di->current_voltage);
 }
 
 static void step_motor_remove_vdd(struct drv_data *di)

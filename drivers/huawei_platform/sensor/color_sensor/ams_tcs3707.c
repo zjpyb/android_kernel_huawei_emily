@@ -714,7 +714,7 @@ void tcs3707_als_timer_wrk(uintptr_t data)
 		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
-	schedule_work(&chip->als_work);
+	queue_work(system_power_efficient_wq, &chip->als_work);
 }
 
 void tcs3707_flc_timer_wrk(uintptr_t data)
@@ -725,7 +725,7 @@ void tcs3707_flc_timer_wrk(uintptr_t data)
 		hwlog_err("%s: Pointer is NULL\n", __func__);
 		return;
 	}
-	schedule_work(&chip->fd_work);
+	queue_work(system_power_efficient_wq, &chip->fd_work);
 }
 
 static UINT8 get_rgb_fd_enable_status(struct i2c_client *handle)

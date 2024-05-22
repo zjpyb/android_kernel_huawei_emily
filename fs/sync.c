@@ -184,7 +184,7 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 {
 	struct inode *inode = file->f_mapping->host;
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 	int ret;
 #endif
 	if (!file->f_op->fsync)
@@ -195,7 +195,7 @@ int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 		spin_unlock(&inode->i_lock);
 		mark_inode_dirty_sync(inode);
 	}
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 	pgcache_log_path(BIT_FSYNC_SYSCALL_DUMP, &(file->f_path),
 			"fsync range start, datasync:, %d", datasync);
 	ret = file->f_op->fsync(file, start, end, datasync);

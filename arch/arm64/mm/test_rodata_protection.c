@@ -17,7 +17,7 @@
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/mm.h>
-#include <linux/hisi/hisi_hkip.h>
+#include <linux/hisi/hkip.h>
 #include <asm/kernel-pgtable.h>
 #include <asm/sections.h>
 #include <asm/sizes.h>

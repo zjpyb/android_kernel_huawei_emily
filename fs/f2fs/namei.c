@@ -508,6 +508,11 @@ static void get_real_pkg_name(char *pkgname, struct task_struct *tsk,
 	}
 	res = get_cmdline(tsk, pkgname, ACM_PKGNAME_MAX - 1);
 	pkgname[res] = '\0';
+	if (pkgname[0] == '\0') {
+		char comm[sizeof(tsk->comm)];
+		get_task_comm(comm, tsk);
+		memcpy(pkgname, comm, sizeof(comm));
+	}
 
 	/* Some package name has format like this:
 	 * real_package_name:child_package_name

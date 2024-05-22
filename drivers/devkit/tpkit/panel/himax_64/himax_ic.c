@@ -33,7 +33,19 @@ static int g_zero_event_count = 0;
 #endif
 
 #define RETRY_TIMES 200
-#define HIMAX_VENDER_NAME  "himax"
+#define HIMAX_VENDER_NAME "himax64"
+#define VENDER_NAME_LENGTH 7
+#define INFO_SECTION_NUM 2
+#define INFO_START_ADDR 0x20000
+#define INFO_PAGE_LENGTH 0x1000
+
+uint8_t *huawei_project_id;
+static uint32_t huawei_project_id_len;
+uint8_t *huawei_cg_color;
+static uint32_t huawei_cg_color_len;
+uint8_t *huawei_sensor_id;
+static uint32_t huawei_sensor_id_len;
+
 
 uint8_t *mutual_iir1 = NULL;
 uint8_t *mutual_dc1 = NULL;
@@ -86,19 +98,21 @@ extern void himax_flash_write_burst(uint8_t * reg_byte, uint8_t * write_data);
 extern void himax_burst_enable(uint8_t auto_add_4_byte);
 extern int himax_nc_write_read_reg(uint8_t *tmp_addr,uint8_t *tmp_data,uint8_t hb,uint8_t lb);
 extern void himax_register_write(uint8_t *write_addr, int write_length, uint8_t *write_data);
+static int touch_driver_read_panel_info(void);
 int himax_read_project_id(void);
 extern void hx_nc_setMutualNewBuffer(void);
 extern int16_t *hx_nc_getMutualOldBuffer(void);
 extern void hx_nc_setSelfBuffer(void);
 extern int16_t *hx_nc_getMutualNewBuffer(void);
-
+static uint32_t himax_hw_check_CRC(uint8_t *start_addr, int reload_length);
+static uint32_t touch_driver_check_crc(
+	uint8_t *start_addr, int reload_length);
+bool himax_nc_sense_off(void);
 
 int himax_rw_reg_reformat_com(int reg_addr, int reg_data, uint8_t *addr_buf, uint8_t *data_buf )
 {
-	if (NULL==addr_buf && NULL==data_buf)
-	{
+	if ((!addr_buf) || (!data_buf))
 		return HX_ERR;
-	}
 	addr_buf[3] = (uint8_t)((reg_addr >>24) & 0x000000FF);
 	addr_buf[2] = (uint8_t)((reg_addr >>16) & 0x000000FF);
 	addr_buf[1] = (uint8_t)((reg_addr >>  8) & 0x000000FF);
@@ -323,6 +337,10 @@ static int himax_get_rawdata(struct ts_rawdata_info *info, struct ts_cmd_node *o
 		return HX_ERROR;
 	}
 	TS_LOG_INFO("%s: Entering\n",__func__);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		info->hybrid_buff[DATA_0] = HX_NC_RX_NUM;
+		info->hybrid_buff[DATA_1] = HX_NC_TX_NUM;
+	}
 	retval = himax_nc_factory_start(g_himax_nc_ts_data, info);
 	TS_LOG_INFO("%s: End\n",__func__);
 
@@ -364,6 +382,9 @@ int himax_nc_input_config(struct input_dev* input_dev)//himax_input_register(str
 	set_bit(BTN_TOUCH, input_dev->keybit);
 	set_bit(TS_DOUBLE_CLICK, input_dev->keybit);
 	set_bit(INPUT_PROP_DIRECT, input_dev->propbit);
+	if (g_himax_nc_ts_data->esd_palm_iron_support) {
+		set_bit(TS_KEY_IRON, input_dev->keybit);
+	}
 	TS_LOG_INFO("input_set_abs_params: min_x %d, max_x %d, min_y %d, max_y %d\n",
 		g_himax_nc_ts_data->pdata->abs_x_min, g_himax_nc_ts_data->pdata->abs_x_max, g_himax_nc_ts_data->pdata->abs_y_min, g_himax_nc_ts_data->pdata->abs_y_max);
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,g_himax_nc_ts_data->pdata->abs_x_min, g_himax_nc_ts_data->pdata->abs_x_max, g_himax_nc_ts_data->pdata->abs_x_fuzz, 0);
@@ -390,7 +411,7 @@ static void calcDataSize(uint8_t finger_num)
 	//check if devided by zero
 	if (ts_data->raw_data_frame_size == 0)
 	{
-		TS_LOG_ERR("%s devided by zero.");
+		TS_LOG_ERR("%s divided by zero\n", __func__);
 		return;
 	}
 	ts_data->raw_data_nframes  = ((uint32_t)ts_data->x_channel * ts_data->y_channel + ts_data->x_channel + ts_data->y_channel) / ts_data->raw_data_frame_size +
@@ -419,9 +440,11 @@ static void himax_touch_information(void)
 	char data1[12] = {0};
 	int retry = 20;
 	int reload_status = 0;
+	uint32_t mod;
 
-	if(IC_NC_TYPE == HX_83102B_SERIES_PWON ||
-		IC_NC_TYPE == HX_83112A_SERIES_PWON)
+	if ((IC_NC_TYPE == HX_83102B_SERIES_PWON) ||
+		(IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+		(IC_NC_TYPE == HX_83102E_SERIES_PWON))
 	{
 		while(reload_status == 0)
 		{
@@ -451,29 +474,55 @@ static void himax_touch_information(void)
 		TS_LOG_INFO("%s : data[0]=0x%2.2X,data[1]=0x%2.2X,data[2]=0x%2.2X,data[3]=0x%2.2X\n",__func__,data[0],data[1],data[2],data[3]);
 		TS_LOG_INFO("reload_status=%d\n",reload_status);
 
-		himax_rw_reg_reformat(ADDR_TXRX_INFO, cmd);
-		himax_nc_register_read(cmd, 2*FOUR_BYTE_CMD, data);
-		HX_NC_RX_NUM	= data[2];
-		HX_NC_TX_NUM	= data[3];
-		HX_NC_MAX_PT	= data[4];
-
-
-		himax_rw_reg_reformat(ADDR_XY_RVRS, cmd);
-		himax_nc_register_read(cmd,FOUR_BYTE_CMD, data);
-
-		if((data[1] & 0x04) == 0x04)
-		{
-			HX_NC_XY_REVERSE= true;
-		}
-		else
-		{
-			HX_NC_XY_REVERSE=false;
+		if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			himax_rw_reg_reformat(ADDR_VEN_TP_INFO_HX83102E, cmd);
+			mod = ADDR_VEN_TP_INFO_HX83102E % DATA_4;
+			himax_nc_register_read(cmd, DATA_2 *
+				FOUR_BYTE_CMD, data);
+			HX_NC_RX_NUM = data[mod];
+			HX_NC_TX_NUM = data[mod + DATA_1];
+			HX_NC_MAX_PT = data[mod + DATA_2];
+		} else {
+			himax_rw_reg_reformat(ADDR_TXRX_INFO, cmd);
+			himax_nc_register_read(cmd, 2*FOUR_BYTE_CMD, data);
+			HX_NC_RX_NUM = data[2];
+			HX_NC_TX_NUM = data[3];
+			HX_NC_MAX_PT = data[4];
 		}
 
-		himax_rw_reg_reformat(ADDR_TP_RES, cmd);
-		himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
-		HX_NC_Y_RES = data[0] * 256 + data[1];
-		HX_NC_X_RES = data[2] * 256 + data[3];
+		if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			himax_rw_reg_reformat(ADDR_XY_RVRS, cmd);
+			himax_nc_register_read(cmd,
+				FOUR_BYTE_CMD * DATA_3, data);
+		} else {
+			himax_rw_reg_reformat(ADDR_XY_RVRS, cmd);
+			himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+		}
+
+		if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			mod = ADDR_XY_RVRS % DATA_4;
+			if ((data[mod] & HEX_NUM4) == HEX_NUM4)
+				HX_NC_XY_REVERSE = true;
+			else
+				HX_NC_XY_REVERSE = false;
+		} else {
+			if ((data[DATA_1] & HEX_NUM4) == HEX_NUM4)
+				HX_NC_XY_REVERSE = true;
+			else
+				HX_NC_XY_REVERSE = false;
+		}
+
+		if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			HX_NC_Y_RES = data[mod + DATA_2] *
+				SHIFT_NUM + data[mod + DATA_3];
+			HX_NC_X_RES = data[mod + DATA_4] *
+				SHIFT_NUM + data[mod + DATA_5];
+		} else {
+			himax_rw_reg_reformat(ADDR_TP_RES, cmd);
+			himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+			HX_NC_Y_RES = data[0] * 256 + data[1];
+			HX_NC_X_RES = data[2] * 256 + data[3];
+		}
 
 		if(IC_NC_TYPE == HX_83102B_SERIES_PWON){
 			if (HX_NC_RX_NUM > HX_NC_RX_ABN_NUM_40)
@@ -497,6 +546,12 @@ static void himax_touch_information(void)
 				HX_NC_Y_RES = HX83112_Y_RES;
 			if (HX_NC_X_RES > HX_NC_RES_ABN_NUM_2000)
 				HX_NC_X_RES = HX83112_X_RES;
+		} else if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			HX_NC_RX_NUM = HX83102E_RX_NUM;
+			HX_NC_TX_NUM = HX83102E_TX_NUM;
+			HX_NC_MAX_PT = HX83102E_MAX_PT;
+			HX_NC_Y_RES = HX83102E_Y_RES;
+			HX_NC_X_RES = HX83102E_X_RES;
 		}
 
 #ifdef HX_EN_MUT_BUTTON
@@ -508,6 +563,8 @@ static void himax_touch_information(void)
 			HX_NC_BT_NUM = HX83102_BT_NUM;
 		else if (IC_NC_TYPE == HX_83112A_SERIES_PWON)
 			HX_NC_BT_NUM = HX83112_BT_NUM;
+		else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+			HX_NC_BT_NUM = HX83102E_BT_NUM;
 #endif
 	}
 	else
@@ -538,6 +595,14 @@ int himax_nc_HW_reset(bool loadconfig, bool int_off)
 {
 	int retval = 0;
 	HW_NC_RESET_ACTIVATE = 1;
+#if defined(HUAWEI_CHARGER_FB)
+	struct ts_kit_device_data *ts;
+	struct ts_feature_info *info;
+
+	ts = g_himax_nc_ts_data->tskit_himax_data;
+	info = &ts->ts_platform_data->feature_info;
+#endif
+
 	if(HX_NC_UPDATE_FLAG == UPDATE_ONGOING)
 	{
 		HX_NC_RESET_COUNT++;
@@ -550,7 +615,16 @@ int himax_nc_HW_reset(bool loadconfig, bool int_off)
 	msleep(RESET_LOW_TIME);
 	himax_nc_rst_gpio_set(g_himax_nc_ts_data->rst_gpio, 1);
 	msleep(RESET_HIGH_TIME);
-
+#if defined(HUAWEI_CHARGER_FB)
+	if (info->charger_info.charger_supported) {
+		TS_LOG_INFO("%s: set charger switch:%d\n", __func__,
+			info->charger_info.charger_switch);
+		retval = himax_charger_switch(&(info->charger_info));
+		if (retval < 0)
+			TS_LOG_ERR("%s:Failed set charger switch:%d, err:%d\n",
+				__func__, info->charger_info.charger_switch, retval);
+	}
+#endif
 	if(loadconfig)
 		retval = himax_nc_loadSensorConfig();
 	if(retval < 0)
@@ -565,8 +639,7 @@ static bool himax_ic_package_check(void)
 	uint8_t tmp_addr[4] = {0};
 	uint8_t tmp_data[4] = {0};
 
-	for (i = 0; i < retry; i++)
-	{
+	for (i = 0; i < retry; i++) {
 		// Product ID
 		// Touch
 		tmp_addr[3] = (uint8_t)hx_id_addr[3];
@@ -574,56 +647,51 @@ static bool himax_ic_package_check(void)
 		tmp_addr[1] = (uint8_t)hx_id_addr[1];
 		tmp_addr[0] = (uint8_t)hx_id_addr[0];
 
-		TS_LOG_INFO("%s:tmp_addr = %X,%X,%X,%X\n", __func__, tmp_addr[0],tmp_addr[1],tmp_addr[2],tmp_addr[3]);
-
+		TS_LOG_INFO("%s:tmp_addr = %X,%X,%X,%X\n", __func__,
+			tmp_addr[DATA_0], tmp_addr[DATA_1], tmp_addr[DATA_2], tmp_addr[DATA_3]);
 		himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
-		TS_LOG_INFO("%s:Read driver IC ID = %X,%X,%X\n", __func__, tmp_data[3],tmp_data[2],tmp_data[1]);
 
-		if ((tmp_data[3] == (uint8_t)hx_id_name[0]) &&
-		    (tmp_data[2] == (uint8_t)hx_id_name[1]) &&
-		    (tmp_data[1] == (uint8_t)hx_id_name[2]))
-		{
-		  	IC_NC_CHECKSUM 	= HX_TP_BIN_CHECKSUM_CRC;
+		IC_NC_CHECKSUM = HX_TP_BIN_CHECKSUM_CRC;
 
-		  	//Himax: Set FW and CFG Flash Address
-		  	NC_FW_VER_MAJ_FLASH_ADDR   	= hx_flash_addr[0];
-		  	FW_VER_MAJ_FLASH_LENG   	= hx_flash_addr[1];
-		  	NC_FW_VER_MIN_FLASH_ADDR   	= hx_flash_addr[2];
-		  	FW_VER_MIN_FLASH_LENG  	 	= hx_flash_addr[3];
-		  	NC_CFG_VER_MAJ_FLASH_ADDR 	= hx_flash_addr[4];
-		  	CFG_VER_MAJ_FLASH_LENG 	 	= hx_flash_addr[5];
-		  	NC_CFG_VER_MIN_FLASH_ADDR 	= hx_flash_addr[6];
-		  	CFG_VER_MIN_FLASH_LENG 	 	= hx_flash_addr[7];
-			NC_CID_VER_MAJ_FLASH_ADDR	= hx_flash_addr[8];
-			CID_VER_MAJ_FLASH_LENG	 	= hx_flash_addr[9];
-			NC_CID_VER_MIN_FLASH_ADDR	= hx_flash_addr[10];
-			CID_VER_MIN_FLASH_LENG		= hx_flash_addr[11];
-			//PANEL_VERSION_ADDR			= hx_flash_addr[12];
-			//PANEL_VERSION_LENG			= hx_flash_addr[13];
+		//Himax: Set FW and CFG Flash Address
+		NC_FW_VER_MAJ_FLASH_ADDR = hx_flash_addr[0];
+		FW_VER_MAJ_FLASH_LENG = hx_flash_addr[1];
+		NC_FW_VER_MIN_FLASH_ADDR = hx_flash_addr[2];
+		FW_VER_MIN_FLASH_LENG = hx_flash_addr[3];
+		NC_CFG_VER_MAJ_FLASH_ADDR = hx_flash_addr[4];
+		CFG_VER_MAJ_FLASH_LENG = hx_flash_addr[5];
+		NC_CFG_VER_MIN_FLASH_ADDR = hx_flash_addr[6];
+		CFG_VER_MIN_FLASH_LENG = hx_flash_addr[7];
+		NC_CID_VER_MAJ_FLASH_ADDR = hx_flash_addr[8];
+		CID_VER_MAJ_FLASH_LENG = hx_flash_addr[9];
+		NC_CID_VER_MIN_FLASH_ADDR = hx_flash_addr[10];
+		CID_VER_MIN_FLASH_LENG = hx_flash_addr[11];
 
-			if((tmp_data[3] == HX_83102_ID_PART_1) &&
-				(tmp_data[2] == HX_83102_ID_PART_2) &&
-				(tmp_data[1] == HX_83102_ID_PART_3)) {
-				IC_NC_TYPE         		= HX_83102B_SERIES_PWON;
-				TS_LOG_INFO("Himax IC package HX83102 series \n");
-			}
-			else if((tmp_data[3] == HX_83112_ID_PART_1) &&
-		   	    	(tmp_data[2] == HX_83112_ID_PART_2) &&
-		   	    	(tmp_data[1] == HX_83112_ID_PART_3)){
-				IC_NC_TYPE         		= HX_83112A_SERIES_PWON;
-				TS_LOG_INFO("Himax IC package HX83112 series \n");
-			}
-			else
-				TS_LOG_ERR("%s ID match fail!\n",__func__);
+		if ((tmp_data[DATA_3] == HX_83102_ID_PART_1) &&
+			(tmp_data[DATA_2] == HX_83102_ID_PART_2) &&
+			(tmp_data[DATA_1] == HX_83102_ID_PART_3)) {
+			IC_NC_TYPE = HX_83102B_SERIES_PWON;
 			ret_data = IC_PACK_CHECK_SUCC;
-
-			break;
-		}
-		else
-		{
+			TS_LOG_INFO("Himax IC package HX67 series\n");
+		} else if ((tmp_data[DATA_3] == HX_83112_ID_PART_1) &&
+			(tmp_data[DATA_2] == HX_83112_ID_PART_2) &&
+			(tmp_data[DATA_1] == HX_83112_ID_PART_3)) {
+			IC_NC_TYPE = HX_83112A_SERIES_PWON;
+			ret_data = IC_PACK_CHECK_SUCC;
+			TS_LOG_INFO("Himax IC package HX59 series\n");
+		} else if ((tmp_data[DATA_3] == HX_83102E_ID_PART_1) &&
+			(tmp_data[DATA_2] == HX_83102E_ID_PART_2) &&
+			(tmp_data[DATA_1] == HX_83102E_ID_PART_3)) {
+			ret_data = IC_PACK_CHECK_SUCC;
+			IC_NC_TYPE = HX_83102E_SERIES_PWON;
+			TS_LOG_INFO("Himax IC pkg HX9Q series\n");
+		} else {
 			ret_data = IC_PACK_CHECK_FAIL;
-			TS_LOG_ERR("%s:Read driver ID register Fail:\n", __func__);
+			TS_LOG_ERR("%s:ID match fail!\n", __func__);
 		}
+
+		if (ret_data == IC_PACK_CHECK_SUCC)
+			break;
 	}
 
 	if(ret_data != IC_PACK_CHECK_SUCC)
@@ -669,6 +737,78 @@ void himax_nc_read_TP_info(void)
 	TS_LOG_INFO("CID_VER : %X \n",(g_himax_nc_ts_data->vendor_cid_maj_ver << 8 | g_himax_nc_ts_data->vendor_cid_min_ver));
 
 }
+
+void touch_driver_83102_read_tp_info(void)
+{
+	uint8_t cmd[DATA_4] = {0};
+	uint8_t data[DATA_SIZE] = {0};
+	int32_t retry = RETRY_TIMES;
+	uint32_t mod;
+
+	touch_driver_sense_on(SENSE_ON_0);
+	while (1) {
+		himax_rw_reg_reformat(ADDR_SWITCH_FLASH_RLD_STS, cmd);
+		himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+		himax_rw_reg_reformat(ADDR_SWITCH_FLASH_RLD, cmd);
+		himax_nc_register_read(cmd, FOUR_BYTE_CMD, data + DATA_4);
+
+		if ((data[1] == TP_INF_DATA_1 && data[0] == TP_INF_DATA_0) ||
+			(data[DATA_5] == TP_INF_DATA_5 &&
+			data[DATA_4] == TP_INF_DATA_4)) {
+			TS_LOG_INFO("reload OK!\n");
+			break;
+		} else if (retry == 0) {
+			TS_LOG_ERR("Reload 200 times failed:\n");
+			TS_LOG_ERR("Maybe NOT have FW in chipset\n");
+			TS_LOG_ERR("Maybe Wrong FW in chipset\n");
+			g_himax_nc_ts_data->vendor_panel_ver = DATA_0;
+			g_himax_nc_ts_data->vendor_fw_ver = DATA_0;
+			g_himax_nc_ts_data->vendor_config_ver = DATA_0;
+			g_himax_nc_ts_data->vendor_cid_maj_ver = DATA_0;
+			g_himax_nc_ts_data->vendor_cid_min_ver = DATA_0;
+			return;
+		}
+		retry--;
+		msleep(HX_SLEEP_10MS);
+	};
+	himax_nc_sense_off();
+
+	himax_rw_reg_reformat(ADDR_VEN_FW_VER_HX83102E, cmd);
+	mod = ADDR_VEN_FW_VER_HX83102E % DATA_4;
+	himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+	g_himax_nc_ts_data->vendor_fw_ver =
+		data[DATA_0 + mod] << LEFT_MOV_8BIT |
+		data[DATA_1 + mod];
+
+	himax_rw_reg_reformat(ADDR_READ_FW_VER, cmd);
+	mod = ADDR_READ_FW_VER % DATA_4;
+	himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+	g_himax_nc_ts_data->vendor_panel_ver = data[DATA_0 + mod];
+
+	TS_LOG_INFO("PANEL_VER:%X\n",
+		g_himax_nc_ts_data->vendor_panel_ver);
+	TS_LOG_INFO("FW_VER:%X\n", g_himax_nc_ts_data->vendor_fw_ver);
+
+	himax_rw_reg_reformat(ADDR_VEN_CFG_VER_HX83102E, cmd);
+	mod = ADDR_VEN_CFG_VER_HX83102E % DATA_4;
+	himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+	g_himax_nc_ts_data->vendor_config_ver =
+		(data[mod + DATA_0] << LEFT_MOV_8BIT) |
+		data[mod + DATA_1];
+	TS_LOG_INFO("CFG_VER:%X\n", g_himax_nc_ts_data->vendor_config_ver);
+
+	himax_rw_reg_reformat(ADDR_VEN_CID_VER_HX83102E, cmd);
+	mod = ADDR_VEN_CID_VER_HX83102E % DATA_4;
+	himax_nc_register_read(cmd, FOUR_BYTE_CMD, data);
+	g_himax_nc_ts_data->vendor_cid_maj_ver = data[mod + DATA_0];
+	g_himax_nc_ts_data->vendor_cid_min_ver = data[mod + DATA_1];
+
+	TS_LOG_INFO("CID_VER : %X\n",
+		(g_himax_nc_ts_data->vendor_cid_maj_ver << LEFT_MOV_8BIT) |
+		g_himax_nc_ts_data->vendor_cid_min_ver);
+	touch_driver_sense_on(SENSE_ON_0);
+}
+
 #ifdef HX_ESD_WORKAROUND
 static void ESD_HW_REST(void)
 {
@@ -1180,38 +1320,38 @@ static int hmx_check_key_gesture_report( struct ts_fingers *info, struct ts_easy
 		}
 		break;
 		case SPECIFIC_LETTER_C:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_c detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_c;
+				reprot_gesture_key_value = TS_LETTER_C;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_E:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_e detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_e;
+				reprot_gesture_key_value = TS_LETTER_E;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_M:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_m detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_m;
+				reprot_gesture_key_value = TS_LETTER_M;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_W:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_w detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_w;
+				reprot_gesture_key_value = TS_LETTER_W;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 		break;
@@ -1327,6 +1467,17 @@ static bool himax_read_event_stack(uint8_t *buf, uint8_t length)
 	}
 	return NO_ERR;
 }
+
+static int himax_esd_palm_iron_report(unsigned int *key, uint16_t value)
+{
+	TS_LOG_DEBUG("esd_palm_iron_report: called value = %d\n", value);
+	if (value) {
+		*key = TS_KEY_IRON;
+		return NO_ERR;
+	}
+	return HX_ERROR;
+}
+
 static int himax_irq_bottom_half(struct ts_cmd_node *in_cmd,struct ts_cmd_node *out_cmd)
 {
 	int m=0;
@@ -1342,6 +1493,10 @@ static int himax_irq_bottom_half(struct ts_cmd_node *in_cmd,struct ts_cmd_node *
 	struct algo_param *algo_p = NULL;
 	struct ts_fingers *info = NULL;
 	struct himax_touching_data hx_touching;
+	uint8_t tmp_addr[DATA_4] = {0};
+	uint8_t tmp_data[DATA_4] = {0};
+	uint16_t value;
+	unsigned int *ts_palm_key = NULL;
 
 #ifdef HX_TP_SYS_DIAG
 	uint8_t diag_cmd = 0;
@@ -1363,6 +1518,24 @@ static int himax_irq_bottom_half(struct ts_cmd_node *in_cmd,struct ts_cmd_node *
 
 	raw_cnt_max = HX_NC_MAX_PT/4;//max point / 4
 	raw_cnt_rmd = HX_NC_MAX_PT%4;
+
+	if (g_himax_nc_ts_data->esd_palm_iron_support) {
+		ts_palm_key = &out_cmd->cmd_param.pub_params.ts_key;
+		TS_LOG_DEBUG("irq_bottom_half: esd_palm_iron_support=%d",
+			g_himax_nc_ts_data->esd_palm_iron_support);
+		himax_rw_reg_reformat(ADDR_ESD_STATUS_HX83102E, tmp_addr);
+		himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+		TS_LOG_DEBUG("irq_bottom_half: tmp_data[0]=%d, tmp_data[1]=%d\n",
+			tmp_data[DATA_0], tmp_data[DATA_1]);
+		value = ((tmp_data[DATA_1] << LEFT_MOV_8BIT) |
+			tmp_data[DATA_0]);
+		retval = himax_esd_palm_iron_report(ts_palm_key, value);
+		if (!retval) {
+			TS_LOG_INFO("himax esd trigger, report key value\n");
+			out_cmd->command = TS_PALM_KEY;
+			goto err_no_reset_out;
+		}
+	}
 
 	if (raw_cnt_rmd != 0x00) //more than 4 fingers
 	{
@@ -1564,29 +1737,45 @@ static int himax_parse_specific_dts(struct himax_ts_data *ts, struct himax_i2c_p
 	struct property *prop = NULL;
 	struct device_node *dt = NULL;
 	struct ts_kit_device_data *chip_data = NULL;
+	struct ts_kit_platform_data *ts_kit_pdata = NULL;
 
 	if(NULL == ts || NULL == pdata) {
 		return HX_ERR;
 	}
 
 	chip_data = g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->chip_data;
+	ts_kit_pdata = g_himax_nc_ts_data->tskit_himax_data->ts_platform_data;
 
 	/*parse IC feature*/
 	dt = of_find_compatible_node(NULL, NULL, chip_data->chip_name);
 
 	if(ts->power_support)
 	{
-		pdata->gpio_3v3_en = of_get_named_gpio(dt, "himax,vdd_ana-supply", 0);
-		if (!gpio_is_valid(pdata->gpio_3v3_en))
-		{
-			TS_LOG_INFO("DT:gpio_3v3_en value is not valid\n");
+		retval = of_property_read_u32(dt,
+			"himax,power_type_sel", &read_val);
+		if (retval) {
+			TS_LOG_INFO("Not define power_type_sel\n");
+			read_val = 0; // default 0: no power type sel
 		}
-		pdata->gpio_1v8_en = of_get_named_gpio(dt, "himax,vcc_i2c-supply", 0);
-		if (!gpio_is_valid(pdata->gpio_1v8_en))
-		{
-			TS_LOG_INFO("DT:pdata->gpio_1v8_en is not valid\n");
+		TS_LOG_INFO("DT:power control type: %d\n", read_val);
+
+		if (read_val == 0) {
+			pdata->gpio_3v3_en = of_get_named_gpio(dt,
+				"himax,vdd_ana-supply", 0);
+			if (!gpio_is_valid(pdata->gpio_3v3_en))
+				TS_LOG_INFO("DT:gpio_3v3_en is not valid\n");
+
+			pdata->gpio_1v8_en = of_get_named_gpio(dt,
+				"himax,vcc_i2c-supply", 0);
+			if (!gpio_is_valid(pdata->gpio_1v8_en))
+				TS_LOG_INFO("DT:gpio_1v8_en is not valid\n");
+
+			TS_LOG_INFO("DT:gpio_3v3_en=%d, gpio_1v8_en=%d\n",
+				pdata->gpio_3v3_en, pdata->gpio_1v8_en);
+		} else {
+			TS_LOG_INFO("DT:regulator ctl pow is not supported\n");
+			ts->power_support = 0; // default 0:
 		}
-		TS_LOG_INFO("DT:gpio_3v3_en=%d,gpio_1v8_en=%d\n",pdata->gpio_3v3_en,pdata->gpio_1v8_en);
 	}
 	if(ts->rst_support)
 	{
@@ -1606,22 +1795,6 @@ static int himax_parse_specific_dts(struct himax_ts_data *ts, struct himax_i2c_p
 	}
 	TS_LOG_INFO("get himax irq_config = %d\n", chip_data->irq_config);
 
-	prop = of_find_property(dt, "himax,id-name", NULL);
-	if (prop) {
-		length = prop->length /((int) sizeof(uint32_t));
-		TS_LOG_DEBUG("%s:id-name length = %d", __func__, length);
-	}
-
-	if (of_property_read_u32_array(dt, "himax,id-name", hx_id_name, length) == NO_ERR) {
-		//ts->hx_id_name = hx_id_name;
-		TS_LOG_INFO("DT-%s:id-name = %2X, %2X, %2X\n", __func__, hx_id_name[0],
-				hx_id_name[1], hx_id_name[2]);
-	}
-	else
-	{
-		TS_LOG_ERR("Not define himax,id-name\n");
-		return HX_ERR;
-	}
 
 	prop = of_find_property(dt, "himax,id-addr", NULL);
 	if (prop) {
@@ -1761,6 +1934,21 @@ static int himax_parse_project_dts(struct himax_ts_data *ts, struct himax_i2c_pl
 	}
 	TS_LOG_INFO("get chip rawdata limit time = %d\n", chip_data->rawdata_get_timeout);
 
+	retval = of_property_read_u32(dt, "tx_num", &chip_data->tx_num);
+	if (retval) {
+		chip_data->tx_num = HX83102E_TX_NUM;
+		TS_LOG_INFO("Not define chip tx amount in Dts, use %d\n",
+			chip_data->tx_num);
+	}
+	TS_LOG_INFO("get chip tx_num = %d\n", chip_data->tx_num);
+
+	retval = of_property_read_u32(dt, "rx_num", &chip_data->rx_num);
+	if (retval) {
+		chip_data->rx_num = HX83102E_RX_NUM;
+		TS_LOG_INFO("Not define rx_num in Dts, use %d\n",
+			chip_data->rx_num);
+	}
+	TS_LOG_INFO("get chip rx_num = %d\n", chip_data->rx_num);
 
 	retval = of_property_read_u32(dt, "himax,trx_delta_test_support", &chip_data->trx_delta_test_support);
 	if (retval) {
@@ -1804,8 +1992,12 @@ static int himax_parse_dts(struct himax_ts_data *ts, struct ts_kit_device_data *
 	const char *chipname = NULL;
 	struct property *prop = NULL;
 	struct device_node *device = NULL;
+#if defined(HUAWEI_CHARGER_FB)
+	struct ts_charger_info *charger_info;
+#endif
 
 	device = ts->ts_dev->dev.of_node;
+	g_tskit_ic_type = DATA_2;
 
 	TS_LOG_INFO("%s: parameter init begin\n", __func__);
 	if(NULL == device||NULL == chip_data) {
@@ -1838,7 +2030,14 @@ static int himax_parse_dts(struct himax_ts_data *ts, struct ts_kit_device_data *
 		strncpy(chip_data->chip_name, chipname, CHIP_NAME_LEN);
 	}
 	TS_LOG_INFO("get himax_chipname = %s\n",chip_data->chip_name);
-
+	retval = of_property_read_u32(device, "hx_ic_rawdata_proc_printf",
+		(u32 *)&chip_data->is_ic_rawdata_proc_printf);
+	if (retval) {
+		chip_data->is_ic_rawdata_proc_printf = false;
+		TS_LOG_INFO("No chip is_ic_rawdata_proc_printf, use def\n");
+	}
+	TS_LOG_INFO("get chip is_ic_rawdata_proc_printf = %d\n",
+		chip_data->is_ic_rawdata_proc_printf);
 	retval = of_property_read_u32(device, "himax,power_support", &ts->power_support);
 	if (retval) {
 		ts->power_support= NOT_SUPPORT;
@@ -1909,7 +2108,46 @@ static int himax_parse_dts(struct himax_ts_data *ts, struct ts_kit_device_data *
 
 	TS_LOG_INFO("DT-%s:display-coords = %d, %d", __func__, ts->pdata->screenWidth,
 		ts->pdata->screenHeight);
-
+#if defined(HUAWEI_CHARGER_FB)
+	charger_info =
+		&(chip_data->ts_platform_data->feature_info.charger_info);
+	retval = of_property_read_u32(device, "charger_supported", &read_val);
+	if (retval) {
+		TS_LOG_ERR("%s: Not define charger_support in Dts\n", __func__);
+		read_val = 0;
+	}
+	charger_info->charger_supported = (uint8_t)read_val;
+	TS_LOG_INFO("%s: himax charger_support = %d\n",
+		__func__, charger_info->charger_supported);
+#endif
+	retval = of_property_read_u32(device, "esd_palm_iron_support",
+		&g_himax_nc_ts_data->esd_palm_iron_support);
+	if (retval) {
+		g_himax_nc_ts_data->esd_palm_iron_support = 0;
+		TS_LOG_INFO("parse_dts: get esd_palm_iron_support failed\n");
+	}
+	/* get tp color flag */
+	retval = of_property_read_u32(device,
+		"support_get_tp_color", &read_val);
+	if (retval) {
+		TS_LOG_INFO("%s, get support_get_tp_color failed\n",
+			__func__);
+		read_val = 0; // default 0: no need know tp color
+	}
+	ts->support_get_tp_color = (uint8_t)read_val;
+	TS_LOG_INFO("%s, support_get_tp_color = %d\n",
+		__func__, ts->support_get_tp_color);
+	/* get project id flag */
+	retval = of_property_read_u32(device,
+		"support_read_projectid", &read_val);
+	if (retval) {
+		TS_LOG_INFO("%s, get support_read_projectid failed,\n ",
+			__func__);
+		read_val = 0; // default 0: no need know tp color
+	}
+	ts->support_read_projectid = (uint8_t)read_val;
+	TS_LOG_INFO("%s, support_read_projectid = %d\n",
+		__func__, ts->support_read_projectid);
 	return NO_ERR;
 
 }
@@ -1979,9 +2217,22 @@ static int himax_chip_detect(struct ts_kit_platform_data *platform_data)
 		err = -ENOMEM;
 		goto err_ic_package_failed;
 	}
-	//msleep();
-	himax_read_project_id();
 
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		err = touch_driver_read_panel_info();
+		if (err < 0) {
+			TS_LOG_ERR("read panel info error\n");
+			goto err_ic_package_failed;
+		}
+		if (ts->support_get_tp_color ||
+			ts->support_read_projectid) {
+			touch_driver_get_projectid_color(ts);
+			TS_LOG_INFO("%s, projectid:%s, tpcolor:0x%x\n",
+				__func__, ts->project_id, ts->color_id[DATA_0]);
+		}
+	} else {
+		himax_read_project_id();
+	}
 	if (ts->ts_dev->dev.of_node) { /*DeviceTree Init Platform_data*/
 		err = himax_parse_project_dts(ts, pdata);
 		if (err < 0) {
@@ -2025,9 +2276,10 @@ static int himax_init_chip(void)
 	hx_nc_setSysOperation(0);
 	hx_nc_setFlashBuffer();
 #endif
-
-	himax_nc_read_TP_info();
-
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		touch_driver_83102_read_tp_info();
+	else
+		himax_nc_read_TP_info();
 	if (himax_nc_loadSensorConfig() < 0) {
 		TS_LOG_ERR("%s: Load Sesnsor configuration failed, unload driver.\n", __func__);
 		err = -ENOMEM;
@@ -2173,6 +2425,7 @@ static int himax_core_suspend(void)
 			g_himax_nc_ts_data->tskit_himax_data->easy_wakeup_info.off_motion_on = true;
 			mutex_unlock(&wrong_touch_lock);
 			TS_LOG_INFO("ENABLE gesture mode\n");
+			return NO_ERR;
 		}
 		else{
 			himax_set_smwp_enable(SMWP_OFF);
@@ -2183,7 +2436,12 @@ static int himax_core_suspend(void)
 			}
 		}
 	}
-
+	retval = gpio_direction_output(ts->rst_gpio, SET_OFF);
+	if (retval) {
+		TS_LOG_ERR("%s:set off rst_gpio fail, retval=%d\n",
+			__func__, retval);
+		return retval;
+	}
 	TS_LOG_INFO("%s: exit \n", __func__);
 
 	return NO_ERR;
@@ -2239,6 +2497,13 @@ static int himax_core_resume(void)
 		TS_LOG_ERR("[himax] %s: himax_exit_sleep_mode fail!\n", __func__);
 		return retval;
 	}
+	retval = gpio_direction_output(ts->rst_gpio, SET_ON);
+	if (retval) {
+		TS_LOG_ERR("%s:set on rst_gpio fail, retval=%d\n",
+			__func__, retval);
+		return retval;
+	}
+
 	TS_LOG_INFO("%s: power on. \n", __func__);
 	HW_NC_RESET_ACTIVATE = HW_RST_FLAT_ENABLE;
 	atomic_set(&ts->suspend_mode, 0);
@@ -2246,6 +2511,37 @@ static int himax_core_resume(void)
 	ts->suspended = false;
 
 	TS_LOG_INFO("%s: exit \n", __func__);
+
+	return NO_ERR;
+}
+
+static int himax_after_resume(void *feature_info)
+{
+	int retval;
+	struct ts_feature_info *info = NULL;
+
+	TS_LOG_INFO("%s: enter\n", __func__);
+	if (!feature_info) {
+		TS_LOG_ERR("%s: ts_feature_info is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+#if defined(HUAWEI_CHARGER_FB)
+	info = (struct ts_feature_info *)feature_info;
+	TS_LOG_INFO("%s: charger_supported = %d\n", __func__,
+		info->charger_info.charger_supported);
+	if (info->charger_info.charger_supported) {
+		TS_LOG_INFO("%s: set charger switch:%d\n", __func__,
+			info->charger_info.charger_switch);
+		retval = himax_charger_switch(&(info->charger_info));
+		if (retval < 0) {
+			TS_LOG_ERR("%s:Failed set charger switch:%d, err:%d\n",
+				__func__, info->charger_info.charger_switch, retval);
+			return retval;
+		}
+	}
+#endif
+	TS_LOG_INFO("%s: exit\n", __func__);
 
 	return NO_ERR;
 }
@@ -2378,20 +2674,19 @@ static int himax_chip_get_info(struct ts_chip_info_param *info)
 	if(NULL == info) {
 		return HX_ERROR;
 	}
-#if 0
-	if (himax_read_projectid() < 0) {
-			TS_LOG_ERR("%s read project id error!\n", __func__);
-		}
-#endif
-		snprintf(info->ic_vendor, HX_PROJECT_ID_LEN + 7, "himax-%s", himax_nc_project_id);
-		snprintf(info->mod_vendor, MAX_STR_LEN, g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name);
-		snprintf(info->fw_vendor, FW_VENDOR_MAX_STR_LEN, "%x.%x.%x.%x.%x",
-		         g_himax_nc_ts_data->vendor_panel_ver,
-		         g_himax_nc_ts_data->vendor_fw_ver,
-		         g_himax_nc_ts_data->vendor_config_ver,
-		         g_himax_nc_ts_data->vendor_cid_maj_ver,
-	             g_himax_nc_ts_data->vendor_cid_min_ver);
-    return retval;
+
+	snprintf(info->ic_vendor, HX_PROJECT_ID_LEN + VENDER_NAME_LENGTH, "himax-%s",
+		himax_nc_project_id);
+	snprintf(info->mod_vendor, CHIP_INFO_LENGTH, "%s",
+		g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name);
+	snprintf(info->fw_vendor, DOUBLE_CHIP_INFO_LENGTH,
+		"%x.%x.%x.%x.%x", g_himax_nc_ts_data->vendor_panel_ver,
+		g_himax_nc_ts_data->vendor_fw_ver,
+		g_himax_nc_ts_data->vendor_config_ver,
+		g_himax_nc_ts_data->vendor_cid_maj_ver,
+		g_himax_nc_ts_data->vendor_cid_min_ver);
+
+	return retval;
 }
 bool himax_nc_sense_off(void)
 {
@@ -2416,7 +2711,8 @@ DIRCT_ENTER:
 	do
 	{
 		/* change for hx83112 start*/
-		if (HX_83112A_SERIES_PWON==IC_NC_TYPE)	{
+		if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+			(IC_NC_TYPE == HX_83102E_SERIES_PWON)) {
 			//===========================================
 			//  0x31 ==> 0x27
 			//===========================================
@@ -2476,14 +2772,23 @@ DIRCT_ENTER:
 			//=====================================
 
 			himax_rw_reg_reformat_com(ADDR_RESET_TCON,DATA_INIT,tmp_addr,tmp_data);
+			if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+				himax_rw_reg_reformat(ADDR_TCON_RST_HX83102E,
+					tmp_addr);
+
 			himax_flash_write_burst(tmp_addr, tmp_data);
-			msleep(HX_SLEEP_1MS);
-			himax_rw_reg_reformat_com(ADDR_RESET_TCON,DATA_RESET_TCON,tmp_addr,tmp_data);
-			himax_flash_write_burst(tmp_addr, tmp_data);
+			if (IC_NC_TYPE != HX_83102E_SERIES_PWON) {
+				msleep(HX_SLEEP_1MS);
+				himax_rw_reg_reformat_com(ADDR_RESET_TCON,
+					DATA_RESET_TCON, tmp_addr, tmp_data);
+				himax_flash_write_burst(tmp_addr, tmp_data);
+			}
 			return true;
-		}
-		else
+		} else {
 			msleep(HX_SLEEP_10MS);
+			if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+				himax_reset_device();
+		}
 	} while (cnt++ < 15);
 
 	return false;
@@ -2535,6 +2840,62 @@ void himax_nc_sense_on(uint8_t FlashMode)
 
 }
 
+void touch_driver_sense_on(uint8_t flashmode)
+{
+	uint8_t tmp_addr[DATA_4] = {0};
+	uint8_t tmp_data[DATA_4] = {0};
+	int retry = 0;
+
+	TS_LOG_INFO("Enter %s\n", __func__);
+	himax_nc_interface_on();
+	himax_rw_reg_reformat_com(HX_FW_ADDR_CTRL_FW,
+		DATA_INIT, tmp_addr, tmp_data);
+	himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+	msleep(HX_SLEEP_10MS);
+
+	if (!flashmode) {
+		himax_reset_device();
+	} else {
+		do {
+			himax_rw_reg_reformat_com(ADDR_SENSE_ON,
+				DATA_SENSE_ON, tmp_addr, tmp_data);
+			himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+
+			tmp_addr[DATA_0] = TMP_ADDR_DEF0;
+			himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD,
+				tmp_data);
+
+			TS_LOG_INFO("%s:Read status from IC = %X, %X\n",
+				__func__, tmp_data[DATA_0], tmp_data[DATA_1]);
+
+		} while ((tmp_data[DATA_1] != HEX_NUM1 ||
+			tmp_data[DATA_0] != HEX_NUM0) && retry++ < DATA_5);
+
+		if (retry >= DATA_5) {
+			TS_LOG_ERR("%s: Fail:\n", __func__);
+			himax_reset_device();
+		} else {
+			TS_LOG_INFO("%s:OK and Read status from IC = %X %X\n",
+				__func__, tmp_data[DATA_0], tmp_data[DATA_1]);
+			/* reset code */
+			tmp_data[DATA_0] = DATA_SENSE_SWITCH_ON;
+			if (i2c_himax_nc_write(ADDR_SENSE_SWITCH_1,
+				tmp_data, ONE_BYTE_CMD, sizeof(tmp_data),
+				DEFAULT_RETRY_CNT) < DATA_0)
+				TS_LOG_ERR("%s: i2c access fail!\n", __func__);
+
+			if (i2c_himax_nc_write(ADDR_SENSE_SWITCH_2,
+				tmp_data, ONE_BYTE_CMD, sizeof(tmp_data),
+				DEFAULT_RETRY_CNT) < DATA_0)
+				TS_LOG_ERR("%s: i2c access fail!\n", __func__);
+
+			himax_rw_reg_reformat_com(ADDR_SENSE_ON,
+				DATA_INIT, tmp_addr, tmp_data);
+			himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+		}
+	}
+}
+
 int himax_read_project_id(void)
 {
 	uint8_t *flash_tmp_buffer 	= NULL;
@@ -2563,6 +2924,10 @@ int himax_read_project_id(void)
 		if ( i2c_himax_nc_write(ADDR_AHB ,tmp_data, ONE_BYTE_CMD,sizeof(tmp_data), DEFAULT_RETRY_CNT) < 0)
 		{
 			TS_LOG_ERR("%s: i2c access fail!\n", __func__);
+			if (flash_tmp_buffer) {
+				kfree(flash_tmp_buffer);
+				flash_tmp_buffer = NULL;
+			}
 			return I2C_FAIL;
 		}
 		// Check cmd
@@ -2579,15 +2944,18 @@ int himax_read_project_id(void)
 	if (cnt > 0)
 		TS_LOG_INFO("%s:Polling auto+4 mode: %d times", __func__,cnt);
 
-	for (temp_addr = project_id_addr; temp_addr <project_id_addr + flash_page_len; temp_addr = temp_addr + NOR_READ_LENTH)
+	for (temp_addr = project_id_addr; temp_addr <
+		project_id_addr + flash_page_len;
+		temp_addr = temp_addr + NOR_READ_LENGTH)
 	{
 
 		tmp_addr[0] = temp_addr % 0x100;
 		tmp_addr[1] = (temp_addr >> 8) % 0x100;
 		tmp_addr[2] = (temp_addr >> 16) % 0x100;
 		tmp_addr[3] = temp_addr / 0x1000000;
-		himax_nc_register_read(tmp_addr ,NOR_READ_LENTH,buffer);
-		memcpy(&flash_tmp_buffer[temp_addr - project_id_addr],buffer,NOR_READ_LENTH);
+		himax_nc_register_read(tmp_addr, NOR_READ_LENGTH, buffer);
+		memcpy(&flash_tmp_buffer[temp_addr - project_id_addr],
+			buffer, NOR_READ_LENGTH);
 	}
 	for(i = 8; i <= project_id_len; i++)
 		{
@@ -2603,6 +2971,10 @@ int himax_read_project_id(void)
 		tmp_data[0] = (DATA_AHB);
 		if ( i2c_himax_nc_write(ADDR_AHB ,tmp_data, ONE_BYTE_CMD,sizeof(tmp_data),  DEFAULT_RETRY_CNT) < 0) {
 			TS_LOG_ERR("%s: i2c access fail!\n", __func__);
+			if (flash_tmp_buffer) {
+				kfree(flash_tmp_buffer);
+				flash_tmp_buffer = NULL;
+			}
 			return I2C_FAIL;
 		}
 		// Check cmd
@@ -2631,10 +3003,186 @@ int himax_read_project_id(void)
 
     TS_LOG_INFO("%s:project id : %s\n", __func__, himax_nc_project_id);
 
-	if(NULL!=flash_tmp_buffer)
+	if (flash_tmp_buffer)
 	{
 		kfree(flash_tmp_buffer);
 		flash_tmp_buffer =NULL;
+	}
+	return NO_ERR;
+}
+
+static int touch_driver_projectid_read(uint8_t *buffer)
+{
+	uint32_t len;
+	uint8_t type;
+	int j;
+
+	if (!buffer) {
+		TS_LOG_ERR("%s:buffer null!\n", __func__);
+		return -EINVAL;
+	}
+
+	len = (buffer[DATA_3] << LEFT_MOV_24BIT) |
+		(buffer[DATA_2] << LEFT_MOV_16BIT) |
+		(buffer[DATA_1] << LEFT_MOV_8BIT) |
+		buffer[DATA_0];
+	type = buffer[DATA_7];
+
+	/* project id */
+	if (type == DATA_0)
+		huawei_project_id = kzalloc((len + DATA_1) *
+			sizeof(uint8_t), GFP_KERNEL);
+	else if (type == DATA_1)
+		huawei_project_id = kzalloc(len *
+			sizeof(uint8_t), GFP_KERNEL);
+	else
+		TS_LOG_ERR("%s: project id UNKNOWN type %d\n",
+			__func__, type);
+
+	if (huawei_project_id != NULL) {
+		memcpy(huawei_project_id, buffer + DATA_8, len);
+		huawei_project_id_len = len;
+		TS_LOG_INFO("%s: project id: ", __func__);
+		if (type == DATA_0) {
+			huawei_project_id[len] = '\0';
+			TS_LOG_INFO("%s", huawei_project_id);
+		} else {
+			for (j = 0; j < len; j++)
+				TS_LOG_INFO("0x%02X",
+					*(huawei_project_id + j));
+		}
+		TS_LOG_INFO("\n");
+	}
+	return NO_ERR;
+}
+
+static int touch_driver_tpcolor_read(uint8_t *buffer)
+{
+	uint32_t len;
+	uint8_t type;
+	int j;
+
+	if (!buffer) {
+		TS_LOG_ERR("%s:buffer null!\n", __func__);
+		return -EINVAL;
+	}
+	len = (buffer[DATA_3] << LEFT_MOV_24BIT) |
+		(buffer[DATA_2] << LEFT_MOV_16BIT) |
+		(buffer[DATA_1] << LEFT_MOV_8BIT) |
+		buffer[DATA_0];
+	type = buffer[DATA_7];
+	/* CG color */
+	if (type == DATA_0)
+		huawei_cg_color = kzalloc((len + DATA_1) *
+			 sizeof(uint8_t), GFP_KERNEL);
+	else if (type == DATA_1)
+		huawei_cg_color = kzalloc(len *
+			sizeof(uint8_t), GFP_KERNEL);
+	else
+		TS_LOG_ERR("%s: CG color UNKNOWN type %d\n",
+			__func__, type);
+
+	if (huawei_cg_color != NULL) {
+		memcpy(huawei_cg_color, buffer + DATA_8, len);
+		huawei_cg_color_len = len;
+		TS_LOG_INFO("%s: cg_color: ", __func__);
+		if (type == DATA_0) {
+			huawei_cg_color[len] = '\0';
+			TS_LOG_INFO("%s", huawei_cg_color);
+		} else {
+			for (j = 0; j < len; j++)
+				TS_LOG_INFO("0x%02X",
+					*(huawei_cg_color + j));
+		}
+		TS_LOG_INFO("\n");
+	}
+	return NO_ERR;
+}
+
+int touch_driver_read_panel_info(void)
+{
+	uint8_t *buffer = NULL;
+	uint8_t tmp_addr[DATA_4] = {0};
+	uint8_t tmp_buf[NOR_READ_LENGTH] = {0};
+	uint32_t temp_addr;
+	int i;
+	uint32_t saddr;
+	uint8_t title[DATA_3] = {0};
+
+	buffer = kzalloc(INFO_PAGE_LENGTH * sizeof(uint8_t),
+		GFP_KERNEL);
+	if (!buffer) {
+		TS_LOG_ERR("%s: Memory allocate FAIL!\n", __func__);
+		return -ENOMEM;
+	}
+
+	himax_nc_sense_off();
+	himax_burst_enable(DATA_0);
+	for (i = 0; i < INFO_SECTION_NUM; i++) {
+		saddr = INFO_START_ADDR + i * INFO_PAGE_LENGTH;
+		tmp_addr[DATA_0] = saddr % HEX_ONE_HUNDRED;
+		tmp_addr[DATA_1] = (saddr >> RIGHT_MOV_8BIT) % HEX_ONE_HUNDRED;
+		tmp_addr[DATA_2] = (saddr >> RIGHT_MOV_16BIT) % HEX_ONE_HUNDRED;
+		tmp_addr[DATA_3] = saddr / HEX_ONE_MILLION;
+		if (touch_driver_check_crc(tmp_addr,
+			INFO_PAGE_LENGTH) != 0) {
+			TS_LOG_ERR("%s: panel info section %d CRC FAIL\n",
+				__func__, i);
+			return -EINVAL;
+		}
+
+		for (temp_addr = saddr; temp_addr < saddr +
+			INFO_PAGE_LENGTH; temp_addr += NOR_READ_LENGTH) {
+			tmp_addr[DATA_0] = temp_addr % HEX_ONE_HUNDRED;
+			tmp_addr[DATA_1] = (temp_addr >> RIGHT_MOV_8BIT) %
+				HEX_ONE_HUNDRED;
+			tmp_addr[DATA_2] = (temp_addr >> RIGHT_MOV_16BIT) %
+				HEX_ONE_HUNDRED;
+			tmp_addr[DATA_3] = temp_addr / HEX_ONE_MILLION;
+			himax_nc_register_read(tmp_addr,
+				NOR_READ_LENGTH, tmp_buf);
+			memcpy(&buffer[temp_addr - saddr],
+				tmp_buf, NOR_READ_LENGTH);
+		}
+		title[DATA_0] = buffer[DATA_4];
+		title[DATA_1] = buffer[DATA_5];
+		title[DATA_2] = buffer[DATA_6];
+		if (title[DATA_0] == DATA_0 &&
+			title[DATA_1] == DATA_1 && title[DATA_2] == DATA_0) {
+			touch_driver_projectid_read(buffer);
+		} else if (title[DATA_0] == DATA_0 &&
+			title[DATA_1] == DATA_0 && title[DATA_2] == DATA_1) {
+			touch_driver_tpcolor_read(buffer);
+		} else {
+			TS_LOG_ERR("%s: UNKNOWN title %X%X%X\n",
+				__func__, title[DATA_0],
+				title[DATA_1], title[DATA_2]);
+		}
+	}
+	if (buffer != NULL)
+		kfree(buffer);
+	touch_driver_sense_on(SENSE_ON_1);
+	return NO_ERR;
+}
+
+static int touch_driver_get_projectid_color(struct himax_ts_data *ts)
+{
+	memcpy(ts->color_id, huawei_cg_color,
+		sizeof(ts->color_id));
+	if (ts->support_get_tp_color) {
+		cypress_ts_kit_color[DATA_0] = ts->color_id[DATA_0];
+		TS_LOG_INFO("support_get_tp_color, tp color:0x%x\n",
+			cypress_ts_kit_color[DATA_0]); /* 1th tpcolor */
+	}
+	if (ts->support_read_projectid) {
+		memcpy(ts->project_id, huawei_project_id,
+			HIMAX_ACTUAL_PROJECTID_LEN);
+		ts->project_id[HIMAX_ACTUAL_PROJECTID_LEN] = '\0';
+		memcpy(himax_nc_project_id, huawei_project_id,
+			HIMAX_ACTUAL_PROJECTID_LEN);
+		himax_nc_project_id[HIMAX_ACTUAL_PROJECTID_LEN] = '\0';
+		TS_LOG_INFO("support_read_projectid, projectid:%s\n",
+			ts->project_id);
 	}
 	return NO_ERR;
 }
@@ -2977,14 +3525,75 @@ static uint32_t himax_hw_check_CRC(uint8_t *start_addr, int reload_length)
 	else
 		return FWU_FW_CRC_ERROR;
 }
+
+static uint32_t touch_driver_check_crc(uint8_t *start_addr,
+		int reload_length)
+{
+	uint32_t result;
+	uint8_t tmp_addr[DATA_4] = {0};
+	uint8_t tmp_data[DATA_4] = {0};
+	uint32_t mod;
+	int cnt;
+	unsigned int length = reload_length / DATA_4;
+
+	himax_rw_reg_reformat(CRC_ADDR, tmp_addr);
+	himax_register_write(tmp_addr, FOUR_BYTE_CMD, start_addr);
+	tmp_data[DATA_3] = TMP_DATA0;
+	tmp_data[DATA_2] = TMP_DATA1;
+	tmp_data[DATA_1] = length >> RIGHT_MOV_8BIT;
+	tmp_data[DATA_0] = length;
+	himax_rw_reg_reformat(ADDR_CRC_DATAMAXLEN_SET, tmp_addr);
+	himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+	cnt = DATA_0;
+	himax_rw_reg_reformat(ADDR_CRC_STATUS_SET, tmp_addr);
+	do {
+		mod = ADDR_CRC_STATUS_SET % DATA_4;
+		himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+		TS_LOG_INFO("%s:tmp_data[3]=%X, tmp_data[2]=%X\n",
+			__func__, tmp_data[DATA_3], tmp_data[DATA_2]);
+		TS_LOG_INFO("%s:tmp_data[1]=%X, tmp_data[0]=%X\n",
+			__func__, tmp_data[DATA_1], tmp_data[DATA_0]);
+		if ((tmp_data[DATA_0 + mod] & HEX_NUM1) != HEX_NUM1) {
+			himax_rw_reg_reformat(ADDR_CRC_RESULT, tmp_addr);
+			himax_nc_register_read(tmp_addr,
+				FOUR_BYTE_CMD, tmp_data);
+			TS_LOG_INFO("%s: tmp_data[3]=%X, tmp_data[2]=%X\n",
+				 __func__, tmp_data[DATA_3], tmp_data[DATA_2]);
+			TS_LOG_INFO("%s: tmp_data[1]=%X, tmp_data[0]=%X\n",
+				__func__, tmp_data[DATA_1], tmp_data[DATA_0]);
+			result = ((tmp_data[DATA_3] << LEFT_MOV_24BIT) +
+				(tmp_data[DATA_2] << LEFT_MOV_16BIT) +
+				(tmp_data[DATA_1] << LEFT_MOV_8BIT) +
+				tmp_data[DATA_0]);
+			break;
+		}
+		TS_LOG_INFO("wait for HW ready!\n");
+		msleep(HX_SLEEP_10MS);
+	} while (cnt++ < CNT);
+
+	if (cnt < CNT)
+		return result;
+	else
+		return FWU_FW_CRC_ERROR;
+}
+
+
 uint8_t himax_nc_calculateChecksum(bool change_iref)
 {
 	uint8_t CRC_result = 0;
 	uint8_t tmp_data[4] = {0};
 
-	himax_rw_reg_reformat(DATA_INIT, tmp_data);
-
-	CRC_result = himax_hw_check_CRC(tmp_data, FW_SIZE_64k);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		himax_nc_sense_off();
+		himax_rw_reg_reformat(DATA_INIT, tmp_data);
+		CRC_result = touch_driver_check_crc(tmp_data,
+			FW_SIZE_128k);
+		msleep(HX_SLEEP_50MS);
+		touch_driver_sense_on(SENSE_ON_0);
+	} else {
+		himax_rw_reg_reformat(DATA_INIT, tmp_data);
+		CRC_result = himax_hw_check_CRC(tmp_data, FW_SIZE_64k);
+	}
 
 	return !CRC_result;
 }
@@ -3005,19 +3614,28 @@ int hx_nc_fts_ctpm_fw_upgrade_with_fs(unsigned char *fw, int len, bool change_ir
 
 	himax_nc_sense_off();
 	//himax_chip_erase();
-	himax_block_erase(ADDR_FLASH_BURNED,FW_SIZE_64k);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		himax_block_erase(ADDR_FLASH_BURNED, len);
+		himax_flash_programming(fw, len);
+		himax_rw_reg_reformat(DATA_INIT, tmp_data);
+		if (touch_driver_check_crc(tmp_data, len) == DATA_0)
+			fw_update_ststus = UPDATE_PASS;
+		else
+			fw_update_ststus = UPDATE_FAIL;
+			himax_rw_reg_reformat_com(ADDR_DIAG_REG_SET_HX83102E,
+				DATA_INIT, tmp_addr, tmp_data);
+	} else {
+		himax_block_erase(ADDR_FLASH_BURNED, FW_SIZE_64k);
 
-	himax_flash_programming(fw, FW_SIZE_64k);
+		himax_flash_programming(fw, FW_SIZE_64k);
 
-	himax_rw_reg_reformat(DATA_INIT,tmp_data);
-	if(himax_hw_check_CRC(tmp_data, FW_SIZE_64k) == 0)
-	{
-		fw_update_ststus = UPDATE_PASS;
+		himax_rw_reg_reformat(DATA_INIT, tmp_data);
+		if (himax_hw_check_CRC(tmp_data, FW_SIZE_64k) == 0)
+			fw_update_ststus = UPDATE_PASS;
+		else
+			fw_update_ststus = UPDATE_FAIL;
 	}
-	else
-	{
-		fw_update_ststus = UPDATE_FAIL;
-	}
+
 	//System reset
 	himax_rw_reg_reformat_com(ADDR_AHBI2C_SYSRST,DATA_AHBI2C_SYSRST,tmp_addr,tmp_data);
 	himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
@@ -3086,20 +3704,25 @@ void himax_nc_flash_dump_func(uint8_t local_flash_command, int Flash_Size, uint8
 		//==================================
 		// Read 128 bytes two times
 		//==================================
-		i2c_himax_nc_read(DUMMY_REGISTER ,in_buffer, NOR_READ_LENTH, sizeof(in_buffer), DEFAULT_RETRY_CNT);
+		i2c_himax_nc_read(DUMMY_REGISTER, in_buffer,
+			NOR_READ_LENGTH, sizeof(in_buffer), DEFAULT_RETRY_CNT);
 		for (i = 0; i < 128; i++)
 			flash_buffer[i + page_prog_start] = in_buffer[i];
 
-		i2c_himax_nc_read(DUMMY_REGISTER ,in_buffer, NOR_READ_LENTH, sizeof(in_buffer), DEFAULT_RETRY_CNT);
-		for (i = 0; i < NOR_READ_LENTH; i++)
-			flash_buffer[(i + NOR_READ_LENTH) + page_prog_start] = in_buffer[i];
+		i2c_himax_nc_read(DUMMY_REGISTER, in_buffer,
+			NOR_READ_LENGTH, sizeof(in_buffer), DEFAULT_RETRY_CNT);
+		for (i = 0; i < NOR_READ_LENGTH; i++)
+			flash_buffer[(i + NOR_READ_LENGTH) +
+				page_prog_start] = in_buffer[i];
 
 		TS_LOG_INFO("%s:Verify Progress: %x\n", __func__, page_prog_start);
 	}
 
 	TS_LOG_INFO("%s:Dump Flash End\n", __func__);
-
-	himax_nc_sense_on(0x01);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		touch_driver_sense_on(SENSE_ON_1);
+	else
+		himax_nc_sense_on(0x01);
 }
 
 void himax_nc_get_DSRAM_data(uint8_t *info_data)
@@ -3120,15 +3743,24 @@ void himax_nc_get_DSRAM_data(uint8_t *info_data)
 	uint16_t check_sum_cal = 0;
 	uint8_t temp_info_data_hx102b[(MUTUL_NUM_HX83102+ SELF_NUM_HX83102) *2 + 4 + 8] = {0}; //max mkey size = 8
 	uint8_t temp_info_data_hx112a[(MUTUL_NUM_HX83112+ SELF_NUM_HX83112) *2 + 4 + 8] = {0};
-	/*1. Read number of MKey R100070E8H to determin data size*/
+	uint8_t *temp_info_data = NULL;
 
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		temp_info_data = kcalloc(total_size,
+			sizeof(uint8_t), GFP_KERNEL);
+		if (!temp_info_data) {
+			TS_LOG_ERR("%s: Memory allocate FAIL!\n",
+				__func__);
+			return -ENOMEM;
+		}
+	}
+	/*1. Read number of MKey R100070E8H to determin data size*/
 	himax_rw_reg_reformat(ADDR_MKEY,tmp_addr);
 	himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD,tmp_data);
 	m_key_num = tmp_data[0] & 0x03;
 	total_size += m_key_num*2;
 
 	/* 2. Start DSRAM Rawdata and Wait Data Ready */
-
 	himax_rw_reg_reformat_com(ADDR_DSRAM_START,DATA_DSRAM_START,tmp_addr,tmp_data);
 	fw_run_flag = himax_nc_write_read_reg(tmp_addr,tmp_data,0xA5,0x5A);
 
@@ -3160,6 +3792,10 @@ void himax_nc_get_DSRAM_data(uint8_t *info_data)
 				himax_nc_register_read(tmp_addr, max_i2c_size, &temp_info_data_hx102b[i*max_i2c_size]);
 			else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 				himax_nc_register_read(tmp_addr, max_i2c_size, &temp_info_data_hx112a[i*max_i2c_size]);
+			else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+				himax_nc_register_read(tmp_addr, max_i2c_size,
+					&temp_info_data[i * max_i2c_size]);
+
 			total_size_temp = total_size_temp - max_i2c_size;
 		}
 		else
@@ -3169,6 +3805,10 @@ void himax_nc_get_DSRAM_data(uint8_t *info_data)
 				himax_nc_register_read(tmp_addr, total_size_temp % max_i2c_size, &temp_info_data_hx102b[i*max_i2c_size]);
 			else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 				himax_nc_register_read(tmp_addr, total_size_temp % max_i2c_size, &temp_info_data_hx112a[i*max_i2c_size]);
+			else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+				himax_nc_register_read(tmp_addr,
+					total_size_temp % max_i2c_size,
+					&temp_info_data[i * max_i2c_size]);
 		}
 
 		address = ((i+1)*max_i2c_size);
@@ -3198,11 +3838,22 @@ void himax_nc_get_DSRAM_data(uint8_t *info_data)
 			check_sum_cal += (temp_info_data_hx102b[i+1]*256 + temp_info_data_hx102b[i]);
 		else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 			check_sum_cal += (temp_info_data_hx112a[i+1]*256 + temp_info_data_hx112a[i]);
+		else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+			check_sum_cal += (temp_info_data[i + DATA_1] *
+				SHIFT_NUM + temp_info_data[i]);
 	}
 
 	if (check_sum_cal % 0x10000 != 0)
 	{
 		TS_LOG_INFO("%s check_sum_cal fail=%2X \n", __func__, check_sum_cal);
+		if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			if (g_himax_nc_ts_data->debug_log_level & BIT(DATA_5)) {
+				TS_LOG_DEBUG("%s skip checksum fail\n",
+					__func__);
+				memcpy(info_data, &temp_info_data[DATA_4],
+					mutual_data_size * sizeof(uint8_t));
+			}
+		}
 		return;
 	}
 	else
@@ -3211,20 +3862,35 @@ void himax_nc_get_DSRAM_data(uint8_t *info_data)
 			memcpy(info_data, &temp_info_data_hx102b[4], mutual_data_size * sizeof(uint8_t));
 		else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 			memcpy(info_data, &temp_info_data_hx112a[4], mutual_data_size * sizeof(uint8_t));
+		else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+			memcpy(info_data, &temp_info_data[DATA_4],
+				mutual_data_size * sizeof(uint8_t));
+
 		TS_LOG_DEBUG("%s checksum PASS \n", __func__);
 	}
-
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		kfree(temp_info_data);
+		return;
+	}
 }
 void himax_nc_diag_register_set(uint8_t diag_command)
 {
 	uint8_t tmp_addr[4] = {0};
 	uint8_t tmp_data[4] = {0};
+	uint32_t diag_reg_addr;
 
 	TS_LOG_INFO("diag_command = %d\n", diag_command );
 
 	himax_nc_interface_on();
 
-	himax_rw_reg_reformat_com(ADDR_DIAG_REG_SET,(int)diag_command,tmp_addr,tmp_data);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		diag_reg_addr = ADDR_DIAG_REG_SET_HX83102E;
+		himax_rw_reg_reformat_com(diag_reg_addr,
+			(int)diag_command, tmp_addr, tmp_data);
+	} else {
+		himax_rw_reg_reformat_com(ADDR_DIAG_REG_SET,
+			(int)diag_command, tmp_addr, tmp_data);
+	}
 	himax_flash_write_burst(tmp_addr, tmp_data);
 
 	himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
@@ -3292,7 +3958,8 @@ int himax_nc_switch_mode(int mode)
 
 	if(mode == 0) /*normal mode*/
 	{
-		if (HX_83112A_SERIES_PWON==IC_NC_TYPE)
+		if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+			(IC_NC_TYPE == HX_83102E_SERIES_PWON))
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83112,DATA_NOR_MODE,tmp_addr,tmp_data);
 		else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83102,DATA_NOR_MODE,tmp_addr,tmp_data);
@@ -3302,7 +3969,8 @@ int himax_nc_switch_mode(int mode)
 	}
 	else	/*sorting mode*/
 	{
-		if (HX_83112A_SERIES_PWON==IC_NC_TYPE)
+		if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+			(IC_NC_TYPE == HX_83102E_SERIES_PWON))
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83112,DATA_SORT_MODE,tmp_addr,tmp_data);
 		else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83102,DATA_SORT_MODE,tmp_addr,tmp_data);
@@ -3317,7 +3985,8 @@ int himax_nc_switch_mode(int mode)
 	// To stable the sorting
 	if(mode)
 	{
-		if (HX_83112A_SERIES_PWON==IC_NC_TYPE)
+		if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+			(IC_NC_TYPE == HX_83102E_SERIES_PWON))
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83112,DATA_SORT_MODE_NFRAME,tmp_addr,tmp_data);
 		else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)
 			himax_rw_reg_reformat_com(ADDR_MODE_SWITCH_HX83102,DATA_SORT_MODE_NFRAME,tmp_addr,tmp_data);
@@ -3333,12 +4002,16 @@ int himax_nc_switch_mode(int mode)
 		himax_nc_reload_disable(ON);
 	}
 
-	himax_nc_sense_on(0x01);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		touch_driver_sense_on(SENSE_ON_1);
+	else
+		himax_nc_sense_on(0x01);
 	TS_LOG_INFO("mode_wirte_cmd(0)=0x%2.2X,mode_wirte_cmd(1)=0x%2.2X\n",tmp_data[0],tmp_data[1]);
 	while(retry!=0)
 	{
 		TS_LOG_INFO("[%d]Read 100007FC!\n",retry);
-		if (HX_83112A_SERIES_PWON==IC_NC_TYPE)
+		if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+			(IC_NC_TYPE == HX_83102E_SERIES_PWON))
 			himax_rw_reg_reformat(ADDR_MODE_SWITCH_HX83112,tmp_addr);
 		else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)
 			himax_rw_reg_reformat(ADDR_MODE_SWITCH_HX83102,tmp_addr);
@@ -3396,6 +4069,96 @@ void himax_nc_return_event_stack(void)
 
 }
 
+static int touch_driver_rawdata_proc_printf(
+	struct seq_file *m, struct ts_rawdata_info *info,
+	int range_size, int row_size)
+{
+	int index;
+	int index1;
+	int rx_num = info->hybrid_buff[DATA_0];
+	int tx_num = info->hybrid_buff[DATA_1];
+
+	if ((range_size == DATA_0) || (row_size == DATA_0)) {
+		TS_LOG_ERR("%s: range_size OR row_size is 0\n", __func__);
+		return -EINVAL;
+	}
+	if (rx_num <= DATA_0 || rx_num > RAWDATA_NUM_OF_TRX_MAX ||
+		tx_num <= DATA_0 || tx_num > RAWDATA_NUM_OF_TRX_MAX) {
+		TS_LOG_ERR("%s: rx_num or tx_num is wrong value\n", __func__);
+		return -EINVAL;
+	}
+	for (index = 0; row_size * index + DATA_2 < info->used_size;
+		index++) {
+		if (index == DATA_0) {
+			seq_puts(m, "rawdata begin\n");
+		} else if (index == range_size) {
+			seq_puts(m, "rawdata end\n");
+			seq_puts(m, "noise begin\n");
+		} else if (index == range_size * DATA_2) {
+			seq_puts(m, "noise end\n");
+			seq_puts(m, "open begin\n");
+		} else if (index == range_size * DATA_3) {
+			seq_puts(m, "open end\n");
+			seq_puts(m, "short begin\n");
+		}
+		for (index1 = 0; index1 < row_size; index1++)
+			seq_printf(m, "%4d,",
+				info->buff[DATA_2 + row_size * index + index1]);
+		seq_puts(m, "\n ");
+	}
+	if (g_ts_kit_platform_data.chip_data->trx_delta_test_support) {
+		seq_puts(m, "tx_delta_buf\n");
+		for (index = 0; index < range_size - DATA_1; index++) {
+			for (index1 = 0; index1 < row_size; index1++)
+				seq_printf(m, "%4d,",
+					info->tx_delta_buf[index *
+					row_size + index1]);
+			seq_puts(m, "\n");
+		}
+		seq_puts(m, "rx_delta_buf\n");
+		for (index = 0; index < range_size; index++) {
+			for (index1 = 0; index1 < row_size - DATA_1; index1++)
+				seq_printf(m, "%4d,",
+					info->rx_delta_buf[index *
+					(row_size - DATA_1) + index1]);
+			seq_puts(m, "\n");
+		}
+			seq_printf(m, "%llX\n", (uint64_t)info->tx_delta_buf);
+			seq_printf(m, "%llX\n", (uint64_t)info->rx_delta_buf);
+	}
+	return NO_ERR;
+}
+
+#if defined(HUAWEI_CHARGER_FB)
+static int himax_charger_switch(struct ts_charger_info *info)
+{
+	uint8_t tmp_addr[DATA_4] = {0};
+	uint8_t tmp_data[DATA_4] = {0};
+
+	TS_LOG_INFO("%s: called\n", __func__);
+	if (info == NULL) {
+		TS_LOG_ERR("%s:pointer info is NULL\n", __func__);
+		return -ENOMEM;
+	}
+	if (info->charger_switch == USB_PIUG_OUT) { /* usb plug out */
+		TS_LOG_INFO("%s: usb plug out DETECTED\n", __func__);
+		himax_rw_reg_reformat_com(ADDR_AC_SWITCH_HX83102,
+			DATA_SET_AC_OFF, tmp_addr, tmp_data);
+		himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+	} else if (info->charger_switch == USB_PIUG_IN) { /* usb plug in */
+		TS_LOG_INFO("%s: usb plug in DETECTED\n", __func__);
+		himax_rw_reg_reformat_com(ADDR_AC_SWITCH_HX83102,
+			DATA_SET_AC_ON, tmp_addr, tmp_data);
+		himax_register_write(tmp_addr, FOUR_BYTE_CMD, tmp_data);
+	} else {
+		TS_LOG_INFO("%s: unknown USB status, info->charger_switch = %d\n",
+			__func__, info->charger_switch);
+	}
+
+	return NO_ERR;
+}
+#endif
+
 struct ts_device_ops ts_kit_himax_nc_ops = {
 	.chip_parse_config =  himax_parse_dts,
 	.chip_detect = himax_chip_detect,
@@ -3406,6 +4169,7 @@ struct ts_device_ops ts_kit_himax_nc_ops = {
 	.chip_irq_bottom_half =  himax_irq_bottom_half,
 	.chip_suspend = himax_core_suspend,
 	.chip_resume = himax_core_resume,
+	.chip_after_resume = himax_after_resume,
 	.chip_reset= himax_reset_device,
 	.chip_fw_update_boot = himax_nc_fw_update_boot,
 	.chip_fw_update_sd = himax_nc_fw_update_sd,
@@ -3421,6 +4185,10 @@ struct ts_device_ops ts_kit_himax_nc_ops = {
 	.chip_roi_rawdata = himax_roi_rawdata,
 	.chip_roi_switch = himax_roi_switch,
 #endif
+#if defined(HUAWEI_CHARGER_FB)
+	.chip_charger_switch = himax_charger_switch,
+#endif
+	.chip_special_rawdata_proc_printf = touch_driver_rawdata_proc_printf,
  };
 static int himax_palm_switch(struct ts_palm_info *info)
 {

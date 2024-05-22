@@ -1,3 +1,21 @@
+/*
+ * hisi_cpufreq_req.h
+ *
+ * CPU frequency request event trace
+ *
+ * Copyright (c) 2018-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM hisi_cpufreq_req
 
@@ -6,17 +24,17 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(cpufreq_req_notify,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_req_notify, /* [false alarm]: kernel native macro */
 	TP_PROTO(int cpu, void *req, unsigned int freq,
 		 unsigned int min, unsigned int max),
 	TP_ARGS(cpu, req, freq, min, max),
 
 	TP_STRUCT__entry(
-		__field(int,		cpu	)
-		__field(void *,		req	)
-		__field(unsigned int,	freq	)
-		__field(unsigned int,	min	)
-		__field(unsigned int,	max	)
+		__field(int, cpu)
+		__field(void *, req)
+		__field(unsigned int, freq)
+		__field(unsigned int, min)
+		__field(unsigned int, max)
 	),
 
 	TP_fast_assign(
@@ -32,14 +50,14 @@ TRACE_EVENT(cpufreq_req_notify,/* [false alarm]:原生宏定义 */
 		  __entry->min, __entry->max)
 );
 
-TRACE_EVENT(cpufreq_req_update,/* [false alarm]:原生宏定义 */
+TRACE_EVENT(cpufreq_req_update, /* [false alarm]: kernel native macro */
 	TP_PROTO(int cpu, void *req, unsigned int freq),
 	TP_ARGS(cpu, req, freq),
 
 	TP_STRUCT__entry(
-		__field(int,		cpu	)
-		__field(void *,		req	)
-		__field(unsigned int,	freq	)
+		__field(int, cpu)
+		__field(void *, req)
+		__field(unsigned int, freq)
 	),
 
 	TP_fast_assign(

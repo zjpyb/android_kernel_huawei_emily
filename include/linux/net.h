@@ -121,6 +121,7 @@ struct socket {
 	const struct proto_ops	*ops;
 #if defined(CONFIG_HUAWEI_KSTATE) || defined(CONFIG_MPTCP)
 	pid_t		pid;
+	pid_t		tpid;
 #endif
 
 #ifdef CONFIG_MPTCP

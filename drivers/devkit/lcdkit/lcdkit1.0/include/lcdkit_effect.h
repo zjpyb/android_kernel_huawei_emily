@@ -8,6 +8,14 @@
 #define _LCDKIT_EFFECT__H_
 
 
+#include "udp_lg_td4322_udp.h"
+
+#include "udp_sharp_nt36870_udp_3.h"
+
+#include "udp_jdi_2lane_nt36860c_udp.h"
+
+#include "udp_lgd_nt36870_udp.h"
+
 #include "alps_tugl_jdi_nt36860_5p88.h"
 
 #include "alps_tugl_sharp_nt36870_5p88.h"
@@ -236,6 +244,10 @@
 /* static panel selection variable                                           */
 /*---------------------------------------------------------------------------*/
 enum {
+UDP_LG_TD4322_UDP_PANEL,
+UDP_SHARP_NT36870_UDP_3_PANEL,
+UDP_JDI_2LANE_NT36860C_UDP_PANEL,
+UDP_LGD_NT36870_UDP_PANEL,
 ALPS_TUGL_JDI_NT36860_5P88_PANEL,
 ALPS_TUGL_SHARP_NT36870_5P88_PANEL,
 ALPS_TUGL_JDI_NT36860_TEMP_PANEL,
@@ -362,6 +374,10 @@ struct lcdkit_board_map {
 };
 
 static struct lcdkit_board_map lcdkit_map[] = {
+    {UDP_LG_TD4322_UDP_PANEL, "lg-td4322-udp", 10},
+    {UDP_SHARP_NT36870_UDP_3_PANEL, "sharp_nt36870_udp_3", 10},
+    {UDP_JDI_2LANE_NT36860C_UDP_PANEL, "jdi_2lane_nt36860C_udp", 10},
+    {UDP_LGD_NT36870_UDP_PANEL, "lgd_nt36870_udp", 10},
     {ALPS_TUGL_JDI_NT36860_5P88_PANEL, "jdi_nt36860_5p88_1440P_cmd", 1000},
     {ALPS_TUGL_SHARP_NT36870_5P88_PANEL, "sharp_nt36870_5p88_1440P_cmd", 1000},
     {ALPS_TUGL_JDI_NT36860_TEMP_PANEL, "jdi_nt36860_temp_5p88_1440P_cmd", 1000},
@@ -479,6 +495,218 @@ static struct lcdkit_board_map lcdkit_map[] = {
 static void lcdkit_effect_get_data(uint8_t panel_id, struct hisi_panel_info* pinfo)
 {
     switch (panel_id) {
+    case UDP_LG_TD4322_UDP_PANEL:
+        if (pinfo->acm_support == 1)
+        {
+            pinfo->acm_lut_hue_table = udp_lg_td4322_udp_acm_lut_hue_table;
+            pinfo->acm_lut_hue_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_hue_table);
+            pinfo->acm_lut_sata_table = udp_lg_td4322_udp_acm_lut_sata_table;
+            pinfo->acm_lut_sata_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_sata_table);
+            pinfo->acm_lut_satr_table = udp_lg_td4322_udp_acm_lut_satr_table;
+            pinfo->acm_lut_satr_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr_table);
+            pinfo->acm_lut_satr0_table = udp_lg_td4322_udp_acm_lut_satr0_table;
+            pinfo->acm_lut_satr0_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr0_table);
+            pinfo->acm_lut_satr1_table = udp_lg_td4322_udp_acm_lut_satr1_table;
+            pinfo->acm_lut_satr1_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr1_table);
+            pinfo->acm_lut_satr2_table = udp_lg_td4322_udp_acm_lut_satr2_table;
+            pinfo->acm_lut_satr2_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr2_table);
+            pinfo->acm_lut_satr3_table = udp_lg_td4322_udp_acm_lut_satr3_table;
+            pinfo->acm_lut_satr3_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr3_table);
+            pinfo->acm_lut_satr4_table = udp_lg_td4322_udp_acm_lut_satr4_table;
+            pinfo->acm_lut_satr4_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr4_table);
+            pinfo->acm_lut_satr5_table = udp_lg_td4322_udp_acm_lut_satr5_table;
+            pinfo->acm_lut_satr5_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr5_table);
+            pinfo->acm_lut_satr6_table = udp_lg_td4322_udp_acm_lut_satr6_table;
+            pinfo->acm_lut_satr6_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr6_table);
+            pinfo->acm_lut_satr7_table = udp_lg_td4322_udp_acm_lut_satr7_table;
+            pinfo->acm_lut_satr7_table_len = ARRAY_SIZE(udp_lg_td4322_udp_acm_lut_satr7_table);
+            pinfo->video_acm_lut_hue_table = udp_lg_td4322_udp_video_acm_lut_hue_table;
+            pinfo->video_acm_lut_sata_table = udp_lg_td4322_udp_video_acm_lut_sata_table;
+            pinfo->video_acm_lut_satr0_table = udp_lg_td4322_udp_video_acm_lut_satr0_table;
+            pinfo->video_acm_lut_satr1_table = udp_lg_td4322_udp_video_acm_lut_satr1_table;
+            pinfo->video_acm_lut_satr2_table = udp_lg_td4322_udp_video_acm_lut_satr2_table;
+            pinfo->video_acm_lut_satr3_table = udp_lg_td4322_udp_video_acm_lut_satr3_table;
+            pinfo->video_acm_lut_satr4_table = udp_lg_td4322_udp_video_acm_lut_satr4_table;
+            pinfo->video_acm_lut_satr5_table = udp_lg_td4322_udp_video_acm_lut_satr5_table;
+            pinfo->video_acm_lut_satr6_table = udp_lg_td4322_udp_video_acm_lut_satr6_table;
+            pinfo->video_acm_lut_satr7_table = udp_lg_td4322_udp_video_acm_lut_satr7_table;
+        }
+        if (pinfo->gamma_support == 1)
+        {
+            pinfo->gamma_lut_table_R = udp_lg_td4322_udp_gamma_lut_table_R;
+            pinfo->gamma_lut_table_G = udp_lg_td4322_udp_gamma_lut_table_G;
+            pinfo->gamma_lut_table_B = udp_lg_td4322_udp_gamma_lut_table_B;
+            pinfo->gamma_lut_table_len = ARRAY_SIZE(udp_lg_td4322_udp_gamma_lut_table_R);
+            pinfo->igm_lut_table_R = udp_lg_td4322_udp_igm_lut_table_R;
+            pinfo->igm_lut_table_G = udp_lg_td4322_udp_igm_lut_table_G;
+            pinfo->igm_lut_table_B = udp_lg_td4322_udp_igm_lut_table_B;
+            pinfo->igm_lut_table_len = ARRAY_SIZE(udp_lg_td4322_udp_igm_lut_table_R);
+            pinfo->gmp_lut_table_low32bit = &udp_lg_td4322_udp_gmp_lut_table_low32bit[0][0][0];
+            pinfo->gmp_lut_table_high4bit = &udp_lg_td4322_udp_gmp_lut_table_high4bit[0][0][0];
+            pinfo->gmp_lut_table_len = ARRAY_SIZE(udp_lg_td4322_udp_gmp_lut_table_low32bit);
+            pinfo->xcc_table = udp_lg_td4322_udp_xcc_table;
+            pinfo->xcc_table_len = ARRAY_SIZE(udp_lg_td4322_udp_xcc_table);
+        }
+        break;
+    case UDP_SHARP_NT36870_UDP_3_PANEL:
+        if (pinfo->acm_support == 1)
+        {
+            pinfo->acm_lut_hue_table = udp_sharp_nt36870_udp_3_acm_lut_hue_table;
+            pinfo->acm_lut_hue_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_hue_table);
+            pinfo->acm_lut_sata_table = udp_sharp_nt36870_udp_3_acm_lut_sata_table;
+            pinfo->acm_lut_sata_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_sata_table);
+            pinfo->acm_lut_satr_table = udp_sharp_nt36870_udp_3_acm_lut_satr_table;
+            pinfo->acm_lut_satr_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr_table);
+            pinfo->acm_lut_satr0_table = udp_sharp_nt36870_udp_3_acm_lut_satr0_table;
+            pinfo->acm_lut_satr0_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr0_table);
+            pinfo->acm_lut_satr1_table = udp_sharp_nt36870_udp_3_acm_lut_satr1_table;
+            pinfo->acm_lut_satr1_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr1_table);
+            pinfo->acm_lut_satr2_table = udp_sharp_nt36870_udp_3_acm_lut_satr2_table;
+            pinfo->acm_lut_satr2_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr2_table);
+            pinfo->acm_lut_satr3_table = udp_sharp_nt36870_udp_3_acm_lut_satr3_table;
+            pinfo->acm_lut_satr3_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr3_table);
+            pinfo->acm_lut_satr4_table = udp_sharp_nt36870_udp_3_acm_lut_satr4_table;
+            pinfo->acm_lut_satr4_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr4_table);
+            pinfo->acm_lut_satr5_table = udp_sharp_nt36870_udp_3_acm_lut_satr5_table;
+            pinfo->acm_lut_satr5_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr5_table);
+            pinfo->acm_lut_satr6_table = udp_sharp_nt36870_udp_3_acm_lut_satr6_table;
+            pinfo->acm_lut_satr6_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr6_table);
+            pinfo->acm_lut_satr7_table = udp_sharp_nt36870_udp_3_acm_lut_satr7_table;
+            pinfo->acm_lut_satr7_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_acm_lut_satr7_table);
+            pinfo->video_acm_lut_hue_table = udp_sharp_nt36870_udp_3_video_acm_lut_hue_table;
+            pinfo->video_acm_lut_sata_table = udp_sharp_nt36870_udp_3_video_acm_lut_sata_table;
+            pinfo->video_acm_lut_satr0_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr0_table;
+            pinfo->video_acm_lut_satr1_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr1_table;
+            pinfo->video_acm_lut_satr2_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr2_table;
+            pinfo->video_acm_lut_satr3_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr3_table;
+            pinfo->video_acm_lut_satr4_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr4_table;
+            pinfo->video_acm_lut_satr5_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr5_table;
+            pinfo->video_acm_lut_satr6_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr6_table;
+            pinfo->video_acm_lut_satr7_table = udp_sharp_nt36870_udp_3_video_acm_lut_satr7_table;
+        }
+        if (pinfo->gamma_support == 1)
+        {
+            pinfo->gamma_lut_table_R = udp_sharp_nt36870_udp_3_gamma_lut_table_R;
+            pinfo->gamma_lut_table_G = udp_sharp_nt36870_udp_3_gamma_lut_table_G;
+            pinfo->gamma_lut_table_B = udp_sharp_nt36870_udp_3_gamma_lut_table_B;
+            pinfo->gamma_lut_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_gamma_lut_table_R);
+            pinfo->igm_lut_table_R = udp_sharp_nt36870_udp_3_igm_lut_table_R;
+            pinfo->igm_lut_table_G = udp_sharp_nt36870_udp_3_igm_lut_table_G;
+            pinfo->igm_lut_table_B = udp_sharp_nt36870_udp_3_igm_lut_table_B;
+            pinfo->igm_lut_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_igm_lut_table_R);
+            pinfo->gmp_lut_table_low32bit = &udp_sharp_nt36870_udp_3_gmp_lut_table_low32bit[0][0][0];
+            pinfo->gmp_lut_table_high4bit = &udp_sharp_nt36870_udp_3_gmp_lut_table_high4bit[0][0][0];
+            pinfo->gmp_lut_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_gmp_lut_table_low32bit);
+            pinfo->xcc_table = udp_sharp_nt36870_udp_3_xcc_table;
+            pinfo->xcc_table_len = ARRAY_SIZE(udp_sharp_nt36870_udp_3_xcc_table);
+        }
+        break;
+    case UDP_JDI_2LANE_NT36860C_UDP_PANEL:
+        if (pinfo->acm_support == 1)
+        {
+            pinfo->acm_lut_hue_table = udp_jdi_2lane_nt36860c_udp_acm_lut_hue_table;
+            pinfo->acm_lut_hue_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_hue_table);
+            pinfo->acm_lut_sata_table = udp_jdi_2lane_nt36860c_udp_acm_lut_sata_table;
+            pinfo->acm_lut_sata_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_sata_table);
+            pinfo->acm_lut_satr_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr_table;
+            pinfo->acm_lut_satr_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr_table);
+            pinfo->acm_lut_satr0_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr0_table;
+            pinfo->acm_lut_satr0_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr0_table);
+            pinfo->acm_lut_satr1_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr1_table;
+            pinfo->acm_lut_satr1_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr1_table);
+            pinfo->acm_lut_satr2_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr2_table;
+            pinfo->acm_lut_satr2_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr2_table);
+            pinfo->acm_lut_satr3_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr3_table;
+            pinfo->acm_lut_satr3_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr3_table);
+            pinfo->acm_lut_satr4_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr4_table;
+            pinfo->acm_lut_satr4_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr4_table);
+            pinfo->acm_lut_satr5_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr5_table;
+            pinfo->acm_lut_satr5_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr5_table);
+            pinfo->acm_lut_satr6_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr6_table;
+            pinfo->acm_lut_satr6_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr6_table);
+            pinfo->acm_lut_satr7_table = udp_jdi_2lane_nt36860c_udp_acm_lut_satr7_table;
+            pinfo->acm_lut_satr7_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_acm_lut_satr7_table);
+            pinfo->video_acm_lut_hue_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_hue_table;
+            pinfo->video_acm_lut_sata_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_sata_table;
+            pinfo->video_acm_lut_satr0_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr0_table;
+            pinfo->video_acm_lut_satr1_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr1_table;
+            pinfo->video_acm_lut_satr2_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr2_table;
+            pinfo->video_acm_lut_satr3_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr3_table;
+            pinfo->video_acm_lut_satr4_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr4_table;
+            pinfo->video_acm_lut_satr5_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr5_table;
+            pinfo->video_acm_lut_satr6_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr6_table;
+            pinfo->video_acm_lut_satr7_table = udp_jdi_2lane_nt36860c_udp_video_acm_lut_satr7_table;
+        }
+        if (pinfo->gamma_support == 1)
+        {
+            pinfo->gamma_lut_table_R = udp_jdi_2lane_nt36860c_udp_gamma_lut_table_R;
+            pinfo->gamma_lut_table_G = udp_jdi_2lane_nt36860c_udp_gamma_lut_table_G;
+            pinfo->gamma_lut_table_B = udp_jdi_2lane_nt36860c_udp_gamma_lut_table_B;
+            pinfo->gamma_lut_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_gamma_lut_table_R);
+            pinfo->igm_lut_table_R = udp_jdi_2lane_nt36860c_udp_igm_lut_table_R;
+            pinfo->igm_lut_table_G = udp_jdi_2lane_nt36860c_udp_igm_lut_table_G;
+            pinfo->igm_lut_table_B = udp_jdi_2lane_nt36860c_udp_igm_lut_table_B;
+            pinfo->igm_lut_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_igm_lut_table_R);
+            pinfo->gmp_lut_table_low32bit = &udp_jdi_2lane_nt36860c_udp_gmp_lut_table_low32bit[0][0][0];
+            pinfo->gmp_lut_table_high4bit = &udp_jdi_2lane_nt36860c_udp_gmp_lut_table_high4bit[0][0][0];
+            pinfo->gmp_lut_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_gmp_lut_table_low32bit);
+            pinfo->xcc_table = udp_jdi_2lane_nt36860c_udp_xcc_table;
+            pinfo->xcc_table_len = ARRAY_SIZE(udp_jdi_2lane_nt36860c_udp_xcc_table);
+        }
+        break;
+    case UDP_LGD_NT36870_UDP_PANEL:
+        if (pinfo->acm_support == 1)
+        {
+            pinfo->acm_lut_hue_table = udp_lgd_nt36870_udp_acm_lut_hue_table;
+            pinfo->acm_lut_hue_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_hue_table);
+            pinfo->acm_lut_sata_table = udp_lgd_nt36870_udp_acm_lut_sata_table;
+            pinfo->acm_lut_sata_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_sata_table);
+            pinfo->acm_lut_satr_table = udp_lgd_nt36870_udp_acm_lut_satr_table;
+            pinfo->acm_lut_satr_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr_table);
+            pinfo->acm_lut_satr0_table = udp_lgd_nt36870_udp_acm_lut_satr0_table;
+            pinfo->acm_lut_satr0_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr0_table);
+            pinfo->acm_lut_satr1_table = udp_lgd_nt36870_udp_acm_lut_satr1_table;
+            pinfo->acm_lut_satr1_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr1_table);
+            pinfo->acm_lut_satr2_table = udp_lgd_nt36870_udp_acm_lut_satr2_table;
+            pinfo->acm_lut_satr2_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr2_table);
+            pinfo->acm_lut_satr3_table = udp_lgd_nt36870_udp_acm_lut_satr3_table;
+            pinfo->acm_lut_satr3_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr3_table);
+            pinfo->acm_lut_satr4_table = udp_lgd_nt36870_udp_acm_lut_satr4_table;
+            pinfo->acm_lut_satr4_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr4_table);
+            pinfo->acm_lut_satr5_table = udp_lgd_nt36870_udp_acm_lut_satr5_table;
+            pinfo->acm_lut_satr5_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr5_table);
+            pinfo->acm_lut_satr6_table = udp_lgd_nt36870_udp_acm_lut_satr6_table;
+            pinfo->acm_lut_satr6_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr6_table);
+            pinfo->acm_lut_satr7_table = udp_lgd_nt36870_udp_acm_lut_satr7_table;
+            pinfo->acm_lut_satr7_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_acm_lut_satr7_table);
+            pinfo->video_acm_lut_hue_table = udp_lgd_nt36870_udp_video_acm_lut_hue_table;
+            pinfo->video_acm_lut_sata_table = udp_lgd_nt36870_udp_video_acm_lut_sata_table;
+            pinfo->video_acm_lut_satr0_table = udp_lgd_nt36870_udp_video_acm_lut_satr0_table;
+            pinfo->video_acm_lut_satr1_table = udp_lgd_nt36870_udp_video_acm_lut_satr1_table;
+            pinfo->video_acm_lut_satr2_table = udp_lgd_nt36870_udp_video_acm_lut_satr2_table;
+            pinfo->video_acm_lut_satr3_table = udp_lgd_nt36870_udp_video_acm_lut_satr3_table;
+            pinfo->video_acm_lut_satr4_table = udp_lgd_nt36870_udp_video_acm_lut_satr4_table;
+            pinfo->video_acm_lut_satr5_table = udp_lgd_nt36870_udp_video_acm_lut_satr5_table;
+            pinfo->video_acm_lut_satr6_table = udp_lgd_nt36870_udp_video_acm_lut_satr6_table;
+            pinfo->video_acm_lut_satr7_table = udp_lgd_nt36870_udp_video_acm_lut_satr7_table;
+        }
+        if (pinfo->gamma_support == 1)
+        {
+            pinfo->gamma_lut_table_R = udp_lgd_nt36870_udp_gamma_lut_table_R;
+            pinfo->gamma_lut_table_G = udp_lgd_nt36870_udp_gamma_lut_table_G;
+            pinfo->gamma_lut_table_B = udp_lgd_nt36870_udp_gamma_lut_table_B;
+            pinfo->gamma_lut_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_gamma_lut_table_R);
+            pinfo->igm_lut_table_R = udp_lgd_nt36870_udp_igm_lut_table_R;
+            pinfo->igm_lut_table_G = udp_lgd_nt36870_udp_igm_lut_table_G;
+            pinfo->igm_lut_table_B = udp_lgd_nt36870_udp_igm_lut_table_B;
+            pinfo->igm_lut_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_igm_lut_table_R);
+            pinfo->gmp_lut_table_low32bit = &udp_lgd_nt36870_udp_gmp_lut_table_low32bit[0][0][0];
+            pinfo->gmp_lut_table_high4bit = &udp_lgd_nt36870_udp_gmp_lut_table_high4bit[0][0][0];
+            pinfo->gmp_lut_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_gmp_lut_table_low32bit);
+            pinfo->xcc_table = udp_lgd_nt36870_udp_xcc_table;
+            pinfo->xcc_table_len = ARRAY_SIZE(udp_lgd_nt36870_udp_xcc_table);
+        }
+        break;
     case ALPS_TUGL_JDI_NT36860_5P88_PANEL:
         if (pinfo->acm_support == 1)
         {

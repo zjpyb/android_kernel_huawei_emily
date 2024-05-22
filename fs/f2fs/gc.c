@@ -25,6 +25,7 @@
 
 #ifdef CONFIG_F2FS_TURBO_ZONE
 #include "turbo_zone.h"
+#define MIGRATE_FILE_MAX_SCHEDULE 5000
 #endif
 
 static struct kmem_cache *victim_entry_slab;
@@ -35,6 +36,7 @@ static struct kmem_cache *victim_entry_slab;
 #define DEF_GC_FRAG_MIN_SLEEP_TIME     1000    /* milliseconds */
 #define GC_URGENT_DISABLE_BLKS	       (32<<18)        /* 32G */
 #define GC_URGENT_SPACE			       (10<<18)        /* 10G */
+#define GC_THRESHOLD 30  /* gc threshold 30% percents */
 
 extern int find_next_free_extent(const unsigned long *addr,
 			 unsigned long size, unsigned long *offset);
@@ -163,7 +165,7 @@ static int gc_thread_func(void *data)
 			free_segments(sbi) < 3 * overprovision_segments(sbi) &&
 			is_reclaimable_dirty_blocks_enough(sbi))
 			gc_th->gc_preference = GC_FRAG;
-		else if (100 * written_block_count(sbi) / sbi->user_block_count > 90)
+		else if (100ULL * written_block_count(sbi) / sbi->user_block_count > 90)
 			gc_th->gc_preference = GC_LIFETIME;
 		else if (gc_perf_ratio(sbi) < 10 && free_segments(sbi) <
 						3 * overprovision_segments(sbi))
@@ -273,12 +275,18 @@ static int gc_thread_func(void *data)
 		}
 
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		if (!gc_th->block_idle && !is_gc_test_set(sbi, GC_TEST_DISABLE_IO_AWARE)) {
 #else
 		if (!is_idle(sbi, GC_TIME) && !is_gc_test_set(sbi, GC_TEST_DISABLE_IO_AWARE)) {
 #endif
-			increase_sleep_time(gc_th, &wait_ms);
+			if (wait_ms >= gc_th->max_sleep_time)
+				wait_ms = IDLE_WT;
+			else if (wait_ms == IDLE_WT)
+				wait_ms = gc_th->max_sleep_time;
+			else
+				increase_sleep_time(gc_th, &wait_ms);
+
 			if (is_gc_test_set(sbi, GC_TEST_ENABLE_GC_STAT))
 				stat_io_skip_bggc_count(sbi);
 			mutex_unlock(&sbi->gc_mutex);
@@ -335,7 +343,7 @@ next:
 	return 0;
 }
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 static void set_block_idle(unsigned long data)
 {
 	struct f2fs_sb_info *sbi = (struct f2fs_sb_info *)data;
@@ -343,10 +351,10 @@ static void set_block_idle(unsigned long data)
 	gc_th->block_idle = true;
 }
 
-static enum blk_busy_idle_callback_return gc_io_busy_idle_notify_handler(struct blk_busy_idle_event_node *event_node,
+static enum blk_busyidle_callback_ret gc_io_busy_idle_notify_handler(struct blk_busyidle_event_node *event_node,
 										       enum blk_idle_notify_state state)
 {
-	enum blk_busy_idle_callback_return ret = BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+	enum blk_busyidle_callback_ret ret = BUSYIDLE_NO_IO;
 	struct f2fs_sb_info *sbi = (struct f2fs_sb_info *)event_node->param_data;
 	struct f2fs_gc_kthread *gc_th = &sbi->gc_thread;
 
@@ -356,12 +364,14 @@ static enum blk_busy_idle_callback_return gc_io_busy_idle_notify_handler(struct 
 
 	case BLK_IDLE_NOTIFY:
 		mod_timer(&gc_th->nb_timer, jiffies + msecs_to_jiffies(IDLE_WT));
-		ret = BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+		ret = BUSYIDLE_NO_IO;
 		break;
 	case BLK_BUSY_NOTIFY:
 		del_timer_sync(&gc_th->nb_timer);
 		gc_th->block_idle = false;
-		ret = BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+		ret = BUSYIDLE_NO_IO;
+		break;
+	default:
 		break;
 	}
 
@@ -386,13 +396,13 @@ int f2fs_start_gc_thread(struct f2fs_sb_info *sbi)
 	gc_th->gc_wake= 0;
 	gc_th->gc_preference = GC_BALANCE;
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	setup_timer(&gc_th->nb_timer, set_block_idle, (unsigned long)sbi);
 	gc_th->block_idle = false;
-	strncpy(gc_th->gc_event_node.subscriber_name, "f2fs_gc", SUBSCRIBER_NAME_LEN);
-	gc_th->gc_event_node.blk_busy_idle_notifier_callback = gc_io_busy_idle_notify_handler;
+	strncpy(gc_th->gc_event_node.subscriber, "f2fs_gc", SUBSCRIBER_NAME_LEN);
+	gc_th->gc_event_node.busyidle_callback = gc_io_busy_idle_notify_handler;
 	gc_th->gc_event_node.param_data = sbi;
-	err = blk_busy_idle_event_subscriber(sbi->sb->s_bdev, &gc_th->gc_event_node);
+	err = blk_busyidle_event_subscribe(sbi->sb->s_bdev, &gc_th->gc_event_node);
 #endif
 
 	gc_th->root = RB_ROOT;
@@ -422,18 +432,16 @@ void f2fs_stop_gc_thread(struct f2fs_sb_info *sbi)
 		kthread_stop(gc_th->f2fs_gc_task);
 		ACCESS_ONCE(gc_th->f2fs_gc_task) = NULL;
 		wake_up_all(&gc_th->fg_gc_wait);
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		del_timer_sync(&gc_th->nb_timer);
 retry:
-		if (blk_busy_idle_event_unsubscriber(&gc_th->gc_event_node))
+		if (blk_busyidle_event_unsubscribe(&gc_th->gc_event_node))
 			goto retry;
 #endif
 	}
 }
 
 #ifdef CONFIG_F2FS_TURBO_ZONE
-static void recovery_turbo_init(struct f2fs_sb_info *sbi);
-
 /* Copied from gc_thread_func() */
 static int gc_thread_turbo_func(void *data)
 {
@@ -451,12 +459,6 @@ static int gc_thread_turbo_func(void *data)
 	set_freezable();
 
 	do {
-		if (!tz_info->enabled) {
-			f2fs_msg(sbi->sb, KERN_WARNING,
-					"f2fs-gc-turbo: turbo gc stopped\n");
-			break;
-		}
-
 		if (!sb_start_write_trylock(sbi->sb))
 			continue;
 
@@ -469,20 +471,20 @@ static int gc_thread_turbo_func(void *data)
 		if (!ret) {
 			if (sbi->sb->s_writers.frozen >= SB_FREEZE_WRITE) {
 				increase_sleep_time(gc_th, &wait_ms);
-				continue;
+				goto next;
 			}
 
 			if (!mutex_trylock(&sbi->gc_mutex))
-				continue;
+				goto next;
 
 		} else if (try_to_freeze()) {
-			continue;
+			goto next;
 		} else if (kthread_should_stop()) {
 			sb_end_write(sbi->sb);
 			break;
 		} else if (ret < 0) {
 			pr_err("f2fs-gc-turbo: some signals received\n");
-			continue;
+			goto next;
 		} else {
 			ssr_gc_count = atomic_read(&sbi->need_ssr_gc);
 			if (ssr_gc_count) {
@@ -492,7 +494,7 @@ static int gc_thread_turbo_func(void *data)
 			}
 			if (!has_not_enough_free_secs(sbi, 0, 0)) {
 				wake_up_all(&gc_th->fg_gc_wait);
-				continue;
+				goto next;
 			}
 
 			/* run into FG_GC
@@ -502,7 +504,7 @@ static int gc_thread_turbo_func(void *data)
 
 			f2fs_gc(sbi, false, false, true, NULL_SEGNO);
 			wake_up_all(&gc_th->fg_gc_wait);
-			continue;
+			goto next;
 		}
 
 		if (gc_th->gc_urgent) {
@@ -510,10 +512,10 @@ static int gc_thread_turbo_func(void *data)
 			goto do_gc;
 		}
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		if (!gc_th->block_idle) {
 #else
-		if (!is_idle(sbi)) {
+		if (!is_idle(sbi, GC_TIME)) {
 #endif
 			increase_sleep_time(gc_th, &wait_ms);
 			mutex_unlock(&sbi->gc_mutex);
@@ -540,20 +542,17 @@ do_gc:
 		/* balancing f2fs's metadata periodically */
 		f2fs_balance_fs_bg(sbi);
 
-		recovery_turbo_init(sbi);
+		recovery_turbo_init(sbi, true);
 next:
 		sb_end_write(sbi->sb);
 
 		/*lint -restore*/
 	} while (!kthread_should_stop());
 
-	while (!kthread_should_stop())
-		cond_resched();
-
 	return 0;
 }
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 static void set_block_idle_turbo(unsigned long data)
 {
 	struct f2fs_sb_info *sbi = (struct f2fs_sb_info *)data;
@@ -562,12 +561,11 @@ static void set_block_idle_turbo(unsigned long data)
 	gc_th->block_idle = true;
 }
 
-static enum blk_busy_idle_callback_return
-gc_io_busy_idle_notify_handler_turbo(struct blk_busy_idle_event_node *nb,
+static enum blk_busyidle_callback_ret
+gc_io_busy_idle_notify_handler_turbo(struct blk_busyidle_event_node *nb,
 					enum blk_idle_notify_state state)
 {
-	enum blk_busy_idle_callback_return ret =
-				BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+	enum blk_busyidle_callback_ret ret = BUSYIDLE_NO_IO;
 	struct f2fs_sb_info *sbi = (struct f2fs_sb_info *)nb->param_data;
 	struct f2fs_gc_kthread *gc_th = &sbi->gc_turbo_thread;
 
@@ -578,12 +576,14 @@ gc_io_busy_idle_notify_handler_turbo(struct blk_busy_idle_event_node *nb,
 	case BLK_IDLE_NOTIFY:
 		mod_timer(&gc_th->nb_timer,
 				jiffies + msecs_to_jiffies(IDLE_WT));
-		ret = BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+		ret = BUSYIDLE_NO_IO;
 		break;
 	case BLK_BUSY_NOTIFY:
 		del_timer_sync(&gc_th->nb_timer);
 		gc_th->block_idle = false;
-		ret = BLK_BUSY_IDLE_HANDLE_NO_IO_TRIGGER;
+		ret = BUSYIDLE_NO_IO;
+		break;
+	default:
 		break;
 	}
 
@@ -600,7 +600,7 @@ int f2fs_start_gc_turbo_thread(struct f2fs_sb_info *sbi)
 
 	WRITE_ONCE(gc_th->f2fs_gc_task, NULL);
 
-	if (!sbi->tz_info.enabled)
+	if (is_tz_closed(&sbi->tz_info))
 		return 0;
 	gc_th->urgent_sleep_time = DEF_GC_THREAD_URGENT_SLEEP_TIME;
 	gc_th->min_sleep_time = DEF_GC_THREAD_MIN_SLEEP_TIME;
@@ -610,14 +610,14 @@ int f2fs_start_gc_turbo_thread(struct f2fs_sb_info *sbi)
 	gc_th->gc_wake = 0;
 	gc_th->gc_preference = GC_BALANCE;
 
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 	gc_th->block_idle = false;
 	setup_timer(&gc_th->nb_timer, set_block_idle_turbo, (unsigned long)sbi);
-	strncpy(gc_th->gc_event_node.subscriber_name, "f2fs_gc_turbo", SUBSCRIBER_NAME_LEN);
-	gc_th->gc_event_node.blk_busy_idle_notifier_callback =
+	strncpy(gc_th->gc_event_node.subscriber, "f2fs_gc_turbo", SUBSCRIBER_NAME_LEN);
+	gc_th->gc_event_node.busyidle_callback =
 				gc_io_busy_idle_notify_handler_turbo;
 	gc_th->gc_event_node.param_data = sbi;
-	err = blk_busy_idle_event_subscriber(sbi->sb->s_bdev, &gc_th->gc_event_node);
+	err = blk_busyidle_event_subscribe(sbi->sb->s_bdev, &gc_th->gc_event_node);
 #endif
 
 	/* disable atgc for turbo gc */
@@ -647,14 +647,20 @@ void f2fs_stop_gc_turbo_thread(struct f2fs_sb_info *sbi)
 	struct f2fs_gc_kthread *gc_th = &sbi->gc_turbo_thread;
 
 	if (gc_th->f2fs_gc_task != NULL) {
+#ifdef CONFIG_MAS_BLK
+		unsigned int retry_cnt = 3;
+#endif
 		kthread_stop(gc_th->f2fs_gc_task);
 		WRITE_ONCE(gc_th->f2fs_gc_task, NULL);
 		wake_up_all(&gc_th->fg_gc_wait);
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		del_timer_sync(&gc_th->nb_timer);
 retry:
-		if (blk_busy_idle_event_unsubscriber(&gc_th->gc_event_node))
+		if (blk_busyidle_event_unsubscribe(&gc_th->gc_event_node) &&
+			retry_cnt > 0) {
+			retry_cnt--;
 			goto retry;
+		}
 #endif
 	}
 }
@@ -662,7 +668,15 @@ retry:
 
 static int select_gc_type(struct f2fs_sb_info *sbi, int gc_type)
 {
-	int gc_mode = gc_type == BG_GC? GC_AT:GC_GREEDY;
+	int gc_mode;
+	if (gc_type == BG_GC) {
+		if (sbi->gc_thread.atgc_enabled)
+			gc_mode = GC_AT;
+		else
+			gc_mode = GC_CB;
+	} else {
+		gc_mode = GC_GREEDY;
+	}
 
 	switch (sbi->gc_mode) {
 	case GC_IDLE_CB:
@@ -813,7 +827,7 @@ static unsigned int get_cb_cost(struct f2fs_sb_info *sbi, unsigned int segno)
 static inline unsigned int get_gc_cost(struct f2fs_sb_info *sbi,
 			unsigned int segno, struct victim_sel_policy *p)
 {
-	if (p->alloc_mode == SSR)
+	if (p->alloc_mode == SSR || p->alloc_mode == ASSR)
 		return get_seg_entry(sbi, segno)->ckpt_valid_blocks;
 
 	/* alloc_mode == LFS */
@@ -1141,6 +1155,10 @@ static void get_victim_area(struct f2fs_sb_info *sbi, int type,
 	if (!is_tz_existed(sbi) ||
 		(!sbi->tz_info.enabled && sbi->tz_info.switchable))
 		return;
+	/* switchable configure force turn off for factory version */
+	if (is_tz_existed(sbi) &&
+		!sbi->tz_info.enabled && !sbi->tz_info.switchable)
+		return;
 
 	get_nz_area(sbi, start, end);
 }
@@ -1399,6 +1417,12 @@ static int gc_node_segment(struct f2fs_sb_info *sbi,
 	int phase = 0, gc_cnt = 0;
 	bool fggc = (gc_type == FG_GC);
 	int submitted = 0;
+#ifdef CONFIG_F2FS_TURBO_ZONE
+	bool in_turbo_zone = false;
+
+	if (sbi->tz_info.enabled && is_in_turbo_zone(sbi, segno))
+		in_turbo_zone = true;
+#endif
 
 	start_addr = START_BLOCK(sbi, segno);
 
@@ -1465,6 +1489,10 @@ next_step:
 		if (!err)
 			gc_cnt++;
 		stat_inc_node_blk_count(sbi, 1, gc_type);
+#ifdef CONFIG_F2FS_TURBO_ZONE
+		if (in_turbo_zone && gc_type == BG_GC)
+			stat_inc_turbo_bg_gc_tot_blk_count(F2FS_STAT(sbi), 1);
+#endif
 	}
 
 	if (++phase < 3)
@@ -1530,6 +1558,7 @@ static bool is_alive(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 				"%s: valid data with mismatched node version.",
 				__func__);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 	}
 
 	*nofs = ofs_of_node(node_page);
@@ -1620,7 +1649,11 @@ put_page:
  * This can be used to move blocks, aka LBAs, directly on disk.
  */
 static int move_data_block(struct inode *inode, block_t bidx,
-				int gc_type, unsigned int segno, int off)
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+			int gc_type, unsigned int segno, int off, bool key_flag)
+#else
+			int gc_type, unsigned int segno, int off)
+#endif
 {
 	struct f2fs_io_info fio = {
 		.sbi = F2FS_I_SB(inode),
@@ -1633,6 +1666,9 @@ static int move_data_block(struct inode *inode, block_t bidx,
 		.in_list = false,
 		.retry = false,
 		.mem_control = 0,
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+		.flags = key_flag ? F2FS_IO_KEY_FLAG : 0,
+#endif
 	};
 	struct dnode_of_data dn;
 	struct f2fs_summary sum;
@@ -1645,9 +1681,16 @@ static int move_data_block(struct inode *inode, block_t bidx,
 			CURSEG_FRAGMENT_DATA : CURSEG_COLD_DATA;
 
 #ifdef CONFIG_F2FS_TURBO_ZONE
-	if (is_tz_flag_set(inode, FI_TZ_KEY_FILE))
+	if ((fio.sbi->tz_info.enabled) && is_tz_flag_set(inode, FI_TZ_KEY_FILE))
 		type = CURSEG_TURBO_DATA;
 #endif
+
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+	if (f2fs_is_enabled_tz_v2(fio.sbi) &&
+		is_tz_flag_set(inode, FI_TZ_KEY_FILE))
+		type = CURSEG_COLD_DATA;
+#endif
+
 	/* do not read out */
 	page = f2fs_grab_cache_page(inode->i_mapping, bidx, false);
 	if (!page) {
@@ -1758,8 +1801,8 @@ static int move_data_block(struct inode *inode, block_t bidx,
 	}
 
 write_page:
-	set_page_dirty(fio.encrypted_page);
 	f2fs_wait_on_page_writeback(fio.encrypted_page, DATA, true);
+	set_page_dirty(fio.encrypted_page);
 	if (clear_page_dirty_for_io(fio.encrypted_page))
 		dec_page_count(fio.sbi, F2FS_DIRTY_META);
 
@@ -1802,7 +1845,11 @@ out:
 }
 
 static int move_data_page(struct inode *inode, block_t bidx, int gc_type,
-							unsigned int segno, int off)
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+				unsigned int segno, int off, bool key_flag)
+#else
+				unsigned int segno, int off)
+#endif
 {
 	struct page *page;
 	int err = 0;
@@ -1855,13 +1902,17 @@ static int move_data_page(struct inode *inode, block_t bidx, int gc_type,
 			.encrypted_page = NULL,
 			.need_lock = LOCK_REQ,
 			.io_type = FS_GC_DATA_IO,
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+			.flags = key_flag ? F2FS_IO_KEY_FLAG : 0,
+#endif
 		};
 		bool is_dirty = PageDirty(page);
 		unsigned long cnt = 0;
 
 retry:
-		set_page_dirty(page);
 		f2fs_wait_on_page_writeback(page, DATA, true);
+
+		set_page_dirty(page);
 		if (clear_page_dirty_for_io(page)) {
 			inode_dec_dirty_pages(inode);
 			f2fs_remove_dirty_inode(inode);
@@ -1906,6 +1957,12 @@ static int gc_data_segment(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	int off;
 	int phase = 0, gc_cnt = 0;
 	int submitted = 0;
+#ifdef CONFIG_F2FS_TURBO_ZONE
+	bool in_turbo_zone = false;
+
+	if (sbi->tz_info.enabled && is_in_turbo_zone(sbi, segno))
+		in_turbo_zone = true;
+#endif
 
 	start_addr = START_BLOCK(sbi, segno);
 
@@ -2028,10 +2085,20 @@ next_step:
 								+ ofs_in_node;
 			if (f2fs_post_read_required(inode))
 				err = move_data_block(inode, start_bidx,
-							gc_type, segno, off);
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+						gc_type, segno, off,
+						f2fs_is_tz_key_io(sbi, inode));
+#else
+						gc_type, segno, off);
+#endif
 			else
 				err = move_data_page(inode, start_bidx, gc_type,
-								segno, off);
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+						segno, off,
+						f2fs_is_tz_key_io(sbi, inode));
+#else
+						segno, off);
+#endif
 
 			if (!err && (gc_type == FG_GC ||
 					f2fs_post_read_required(inode)))
@@ -2043,6 +2110,11 @@ next_step:
 			}
 
 			stat_inc_data_blk_count(sbi, 1, gc_type);
+#ifdef CONFIG_F2FS_TURBO_ZONE
+			if (in_turbo_zone && gc_type == BG_GC)
+				stat_inc_turbo_bg_gc_tot_blk_count(
+							F2FS_STAT(sbi), 1);
+#endif
 			if (!err)
 				gc_cnt++;
 	       } else
@@ -2146,6 +2218,7 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi,
 				"type [%d, %d] in SSA and SIT",
 				segno, type, GET_SUM_TYPE((&sum->footer)));
 			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			f2fs_set_need_fsck_report();
 			goto next;
 		}
 
@@ -2262,6 +2335,17 @@ gc_more:
 		ret = -EINVAL;
 		goto stop;
 	}
+
+#ifdef CONFIG_F2FS_JOURNAL_APPEND
+	if (write_opt && (gc_type == BG_GC)
+			&& (100 * get_max_reclaimable_segments(sbi) /
+					free_segments(sbi)) < GC_THRESHOLD) {
+		stat_dec_bggc_count(sbi);
+		ret = -EINVAL;
+		goto stop;
+	}
+#endif
+
 #ifdef CONFIG_F2FS_TURBO_ZONE
 	if (!__get_victim(sbi, &segno, gc_type, turbo)) {
 #else
@@ -2381,6 +2465,13 @@ stop:
 		inc_bd_array_val(sbi, gc_cnt, gc_type, 1);
 		if (ret)
 			inc_bd_array_val(sbi, gc_fail_cnt, gc_type, 1);
+#ifdef CONFIG_F2FS_TURBO_ZONE
+		if (turbo && gc_type == BG_GC) {
+			inc_bd_val(sbi, tz_bg_gc_cnt, 1);
+			if (ret)
+				inc_bd_val(sbi, tz_bg_gc_fail_cnt, 1);
+		}
+#endif
 		bd_mutex_unlock(&sbi->bd_mutex);
 	}
 
@@ -2552,17 +2643,24 @@ int f2fs_resize_fs(struct f2fs_sb_info *sbi, size_t resize_len)
 		goto out;
 	}
 
+	mutex_lock(&sbi->cp_mutex);
 	update_fs_metadata(sbi, -secs);
 	clear_sbi_flag(sbi, SBI_IS_RESIZEFS);
+	set_sbi_flag(sbi, SBI_IS_DIRTY);
+	mutex_unlock(&sbi->cp_mutex);
+
 	err = f2fs_sync_fs(sbi->sb, 1);
 	if (err) {
+		mutex_lock(&sbi->cp_mutex);
 		update_fs_metadata(sbi, secs);
+		mutex_unlock(&sbi->cp_mutex);
 		update_sb_metadata(sbi, secs);
 		f2fs_commit_super(sbi, false);
 	}
 out:
 	if (err) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_ERR,
 				"resize_fs failed, should run fsck to repair!");
 
@@ -2586,16 +2684,22 @@ static int check_data_blocks_in_tz(struct inode *inode, bool turbo,
 	block_t file_blocks = F2FS_BLK_ALIGN(i_size_read(inode));
 	int submitted = 0, err = 0;
 	unsigned int segno;
+	struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_TURBO_DATA);
+
+	f2fs_msg(sbi->sb, KERN_INFO,
+		"%s:file_blocks %lu, turbo %d, do_move %d",
+		TZ_LOG_TAG, file_blocks, turbo ? 1 : 0, do_move ? 1 : 0);
 
 	while (map.m_lblk < file_blocks) {
 		map.m_len = file_blocks - map.m_lblk;
 		err = f2fs_map_blocks(inode, &map, 0, F2FS_GET_BLOCK_FIEMAP);
-		f2fs_msg(sbi->sb, KERN_INFO,
-			"migrate: map_blocks err %d: lblk %u, pblk %u, len %u",
-				err, map.m_lblk, map.m_pblk, map.m_len);
-
-		if (err)
+		if (err) {
+			f2fs_msg(sbi->sb, KERN_WARNING,
+				"%s%s:map err %d lblk %u, pblk %u, len %u",
+				TZ_LOG_TAG, __func__, err, map.m_lblk,
+				map.m_pblk, map.m_len);
 			return err;
+		}
 
 		if (!is_valid_data_blkaddr(sbi, map.m_pblk))
 			goto skip;
@@ -2611,16 +2715,48 @@ static int check_data_blocks_in_tz(struct inode *inode, bool turbo,
 			if (!do_move)
 				return -EAGAIN;
 
+			/* every 5000 offset should be resched except 0 */
+			if ((off + 1) % MIGRATE_FILE_MAX_SCHEDULE == 0)
+				cond_resched();
+
+			if (turbo && !curseg->inited) {
+				recovery_turbo_init(sbi, true);
+				if (!curseg->inited) {
+					f2fs_msg(sbi->sb, KERN_WARNING,
+						"Turbo zone space is full, stop migrate\n");
+					return do_move ? submitted : 0;
+				}
+			}
+
+			if (!turbo && sbi->tz_info.enabled == false) {
+				f2fs_msg(sbi->sb, KERN_WARNING,
+						"Normal zone space is full, stop migrate\n");
+				return do_move ? submitted : 0;
+			}
+
+			mutex_lock(&sbi->gc_mutex);
+
 			if (f2fs_encrypted_file(inode))
 				err = move_data_block(inode, map.m_lblk + off,
-							FG_GC, segno, segoff);
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+						FG_GC, segno, segoff, false);
+#else
+						FG_GC, segno, segoff);
+#endif
 			else
 				err = move_data_page(inode, map.m_lblk + off,
-							FG_GC, segno, segoff);
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+						FG_GC, segno, segoff, false);
+#else
+						FG_GC, segno, segoff);
+#endif
+			mutex_unlock(&sbi->gc_mutex);
+
 			if (err) {
 				f2fs_msg(sbi->sb, KERN_WARNING,
-						"migrate: move bidx %u, err %d",
-						map.m_lblk + off, err);
+					"%s:migrate move bidx %u, err %d",
+					TZ_LOG_TAG, map.m_lblk + off, err);
+				inc_bd_ioctl_migrate_block(sbi, turbo, submitted);
 				return err;
 			}
 
@@ -2628,26 +2764,34 @@ static int check_data_blocks_in_tz(struct inode *inode, bool turbo,
 
 			if (fatal_signal_pending(current)) {
 				f2fs_msg(sbi->sb, KERN_WARNING,
-						"migrate: signal received when move bidx %u, submitted %d",
-						map.m_lblk + off, err);
-				return do_move ? submitted : 0;
+					"%s:migrate: signal received when move bidx %u, submitted %d",
+					TZ_LOG_TAG, map.m_lblk + off, submitted);
+				goto out;
 			}
 		}
 skip:
 		map.m_lblk += (map.m_len ? map.m_len : 1);
 	}
+out:
+	if (do_move)
+		inc_bd_ioctl_migrate_block(sbi, turbo, submitted);
 	return do_move ? submitted : 0;
 }
 
-static void recovery_turbo_init(struct f2fs_sb_info *sbi)
-{
-	struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_TURBO_DATA);
-
-	if (!curseg->inited) {
-		if (f2fs_sync_fs(sbi->sb, 1))
-			return;
-		init_turbo_curseg(sbi);
+static bool need_sync(struct f2fs_sb_info *sbi) {
+	//we define dirty_sentries_threshold 1 / 8 of main segment count
+	int dirty_sentries_threshold = F2FS_RAW_SUPER(sbi)->segment_count_main >> 3;
+	int free_sec_remain = FREE_SEC_REMAIN;
+	if (sbi->tz_info.enabled) {
+		int unavailable_segs = FDEV(F2FS_TURBO_DEV).total_segments -
+			sbi->tz_info.total_segs;
+		free_sec_remain =  unavailable_segs / sbi->segs_per_sec + FREE_SEC_REMAIN;
 	}
+	if (has_not_enough_free_secs(sbi, 0, free_sec_remain) &&
+		(SIT_I(sbi)->dirty_sentries > dirty_sentries_threshold ||
+		prefree_segments(sbi) > PREFREE_THRESHOLD))
+		return true;
+	return false;
 }
 
 int f2fs_migrate_file(struct inode *inode, bool turbo, bool sync)
@@ -2678,7 +2822,8 @@ int f2fs_migrate_file(struct inode *inode, bool turbo, bool sync)
 
 	up_write(&fi->i_gc_rwsem[WRITE]);
 	up_write(&fi->i_gc_rwsem[READ]);
-
+	if (need_sync(sbi))
+		f2fs_sync_fs(sbi->sb, true);
 	if (ret < 0)
 		return ret;
 
@@ -2688,15 +2833,217 @@ int f2fs_migrate_file(struct inode *inode, bool turbo, bool sync)
 	if (sync) {
 		ret = filemap_write_and_wait_range(inode->i_mapping,
 						0, i_size_read(inode));
-		if (ret < 0)
+		if (ret < 0) {
+			f2fs_msg(sbi->sb, KERN_ERR,
+				"%s%s:sync filemap write err, turbo %d, ret %d",
+				TZ_LOG_TAG, __func__, turbo ? 1 : 0, ret);
 			return ret;
+		}
+
 		ret = check_data_blocks_in_tz(inode, turbo, false);
 		if (ret < 0)
 			return ret;
 	}
 
-	recovery_turbo_init(sbi);
+	recovery_turbo_init(sbi, true);
 
 	return 0;
+}
+
+#endif
+
+#ifdef CONFIG_F2FS_TURBO_ZONE_V2
+#define TZ_BLK_BUF_SIZE 256
+#define TZ_BLK_INVALID_LBA 0xFF
+static int f2fs_do_move_data(struct inode *inode,
+				const struct f2fs_map_blocks *map,
+				block_t offset, bool turbo)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	block_t blkaddr, segoff;
+	unsigned int segno;
+	int err;
+
+	blkaddr = map->m_pblk + offset;
+	segno = GET_SEGNO(sbi, blkaddr);
+	segoff = blkaddr - START_BLOCK(sbi, segno);
+
+	mutex_lock(&sbi->gc_mutex);
+	if (f2fs_encrypted_file(inode))
+		err = move_data_block(inode, map->m_lblk + offset,
+				FG_GC, segno, segoff, turbo);
+	else
+		err = move_data_page(inode, map->m_lblk + offset,
+				FG_GC, segno, segoff, turbo);
+	mutex_unlock(&sbi->gc_mutex);
+
+	if (err)
+		f2fs_msg(sbi->sb, KERN_WARNING,
+				"%s:migrate move bidx %u, err %d",
+				TZ_LOG_TAG, map->m_lblk + offset, err);
+
+	return err;
+}
+
+static int f2fs_do_migrate(struct inode *inode,
+				const struct f2fs_map_blocks *map,
+				struct tz_blk_info *blk_info,
+				unsigned int *submitted,
+				bool turbo)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	block_t off;
+	unsigned int loop, i, j;
+	unsigned short len;
+	int err = 0;
+
+	loop = (map->m_len - 1) / TZ_BLK_BUF_SIZE + 1;
+	for (i = 1; i <= loop; i++) {
+		if (i == loop) {
+			len = map->m_len % TZ_BLK_BUF_SIZE;
+			if (len == 0)
+				len = TZ_BLK_BUF_SIZE;
+		} else {
+			len = TZ_BLK_BUF_SIZE;
+		}
+
+		off = (i - 1) * TZ_BLK_BUF_SIZE;
+		err = f2fs_query_tz_blks(sbi, blk_info, map->m_pblk + off, len);
+		if (err)
+			goto out;
+		for (j = 0; j < len; j++) {
+			block_t offset = off + j;
+
+			if (blk_info->flags[j] == turbo) {
+				continue;
+			} else if (blk_info->flags[j] == TZ_BLK_INVALID_LBA) {
+				f2fs_msg(sbi->sb, KERN_WARNING,
+					"%s:send invalid qry blocks bidx %u, pblk %u",
+					TZ_LOG_TAG, map->m_lblk + offset,
+					map->m_lblk + offset);
+				err = -EAGAIN;
+				goto out;
+			}
+
+			err = f2fs_do_move_data(inode, map, offset, turbo);
+			if (err)
+				goto out;
+
+			(*submitted)++;
+			if (fatal_signal_pending(current)) {
+				f2fs_msg(sbi->sb, KERN_WARNING,
+					"%s:migrate: signal received when move bidx %u, submitted %d",
+					TZ_LOG_TAG, map->m_lblk + offset,
+					*submitted);
+				err = -EINTR;
+				goto out;
+			}
+		}
+	}
+out:
+	return err;
+}
+
+static int f2fs_do_migrate_file(struct inode *inode, bool turbo,
+				unsigned int *submitted)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_map_blocks map = { 0 };
+	block_t file_blocks = F2FS_BLK_ALIGN(i_size_read(inode));
+	int err = 0;
+	struct tz_blk_info blk_info;
+
+	blk_info.flags = kzalloc(TZ_BLK_BUF_SIZE, GFP_F2FS_ZERO);
+	if (!blk_info.flags)
+		return -ENOMEM;
+
+	/*
+	 * hisi scsi use 4 byte blk_info's buf to fill lun id,
+	 * so we should make sure buf is greater than 4 bytes.
+	 */
+	blk_info.buf_len = TZ_BLK_BUF_SIZE;
+	f2fs_msg(sbi->sb, KERN_INFO,
+		"%s:file_blocks %lu, turbo %d",
+		TZ_LOG_TAG, file_blocks, turbo ? 1 : 0);
+
+	while (map.m_lblk < file_blocks) {
+		map.m_len = file_blocks - map.m_lblk;
+		err = f2fs_map_blocks(inode, &map, 0, F2FS_GET_BLOCK_FIEMAP);
+		if (err) {
+			f2fs_msg(sbi->sb, KERN_WARNING,
+				"%s%s:map err %d lblk %u, pblk %u, len %u",
+				TZ_LOG_TAG, __func__, err, map.m_lblk,
+				map.m_pblk, map.m_len);
+			goto out;
+		}
+
+		if (!is_valid_data_blkaddr(sbi, map.m_pblk) || !map.m_len)
+			goto skip;
+		err = f2fs_do_migrate(inode, &map, &blk_info, submitted, turbo);
+		if (err)
+			goto out;
+		cond_resched();
+skip:
+		map.m_lblk += (map.m_len ? map.m_len : 1);
+	}
+
+out:
+	kfree(blk_info.flags);
+	inc_bd_ioctl_migrate_block(sbi, turbo, *submitted);
+	return err ? err : *submitted;
+}
+
+int f2fs_migrate_file_v2(struct inode *inode, bool turbo, bool sync)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	unsigned int submitted = 0;
+	int ret;
+
+	if (f2fs_has_inline_data(inode))
+		return -EINVAL;
+
+	if (turbo) {
+		set_inode_flag(inode, FI_TZ_KEY_FILE);
+		fi->i_flags |= F2FS_TZ_KEY_FL;
+		f2fs_set_inode_flags(inode);
+		f2fs_mark_inode_dirty_sync(inode, true);
+	}
+
+	down_write(&fi->i_gc_rwsem[READ]);
+	down_write(&fi->i_gc_rwsem[WRITE]);
+	inode_dio_wait(inode);
+
+	ret = f2fs_do_migrate_file(inode, turbo, &submitted);
+
+	up_write(&fi->i_gc_rwsem[WRITE]);
+	up_write(&fi->i_gc_rwsem[READ]);
+	if (need_sync(sbi))
+		f2fs_sync_fs(sbi->sb, true);
+	if (ret < 0)
+		return ret;
+
+	if (ret > 0)
+		f2fs_submit_merged_write(sbi, DATA);
+
+	if (sync) {
+		ret = filemap_write_and_wait_range(inode->i_mapping,
+						0, i_size_read(inode));
+		if (ret < 0) {
+			f2fs_msg(sbi->sb, KERN_ERR,
+				"%s%s:sync filemap write err, turbo %d, ret %d",
+				TZ_LOG_TAG, __func__, turbo ? 1 : 0, ret);
+			goto out;
+		}
+	}
+
+	if (!turbo) {
+		clear_inode_flag(inode, FI_TZ_KEY_FILE);
+		fi->i_flags &= ~F2FS_TZ_KEY_FL;
+		f2fs_set_inode_flags(inode);
+		f2fs_mark_inode_dirty_sync(inode, true);
+	}
+out:
+	return ret < 0 ? ret : submitted;
 }
 #endif

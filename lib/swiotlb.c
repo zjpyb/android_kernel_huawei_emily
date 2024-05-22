@@ -768,7 +768,7 @@ swiotlb_alloc_coherent(struct device *hwdev, size_t size,
 
 err_warn:
 	if (warn && printk_ratelimit()) {
-		pr_warn("swiotlb: coherent allocation failed for device %s size=%zu\n",
+		pr_warn("coherent allocation failed for device %s size=%zu\n",
 			dev_name(hwdev), size);
 		dump_stack();
 	}

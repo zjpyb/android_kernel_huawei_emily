@@ -2,6 +2,7 @@ ifeq ($(CONFIG_KRETPROBES), y)
 KERNEL_DIR := $(srctree)
 ccflags-y += -Ifs/
 ccflags-y += -I$(KERNEL_DIR)/
+ccflags-y += -Idrivers/hwmemcheck/
 ccflags-y += -fno-pic
 
 obj-m := rfile.o
@@ -31,15 +32,15 @@ rxcollie-objs := rxcollie/rasxcollie.o rasbase/rasbase.o rasbase/rasprobe.o rasb
 endif
 
 ifeq ($(CONFIG_ARCH_HISI), y)
+ifeq ($(CONFIG_CHIP_HONGHU), y)
+else
 obj-m += rFb.o
 rFb-objs := rfb/rasfb.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
+endif
 endif
 
 obj-m += rProcess.o
 rProcess-objs := rprocess/rasprocess.o rasbase/rasbase.o  rasbase/rasproc.o
-
-obj-m += rThermal.o
-rThermal-objs := rthermal/rasthermal.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
 
 obj-m += rScsi.o
 rScsi-objs := rscsi/rasscsi.o rasbase/rasbase.o  rasbase/rasproc.o
@@ -47,7 +48,21 @@ rScsi-objs := rscsi/rasscsi.o rasbase/rasbase.o  rasbase/rasproc.o
 obj-m += rBattery.o
 rBattery-objs := rbattery/rasbattery.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
 ifeq ($(CONFIG_ARCH_HISI), y)
+ifeq ($(CONFIG_CHIP_HONGHU), y)
+else
 obj-m += rGPU.o
 rGPU-objs := rgpu/rasgpu.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
 endif
+endif
+
+ifdef CONFIG_MTK_PLATFORM
+obj-m += rGPU.o
+rGPU-objs := rgpu/rasgpu.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
+endif
+
+ifeq ($(CONFIG_HW_MEMCHECK), y)
+obj-m += rMemleak.o
+rMemleak-objs := rmemleak/rmemleak.o rasbase/rasbase.o rasbase/rasprobe.o rasbase/rasproc.o
+endif
+
 endif

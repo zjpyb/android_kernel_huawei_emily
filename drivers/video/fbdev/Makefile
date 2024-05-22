@@ -148,14 +148,19 @@ obj-$(CONFIG_FB_MXS)		  += mxsfb.o
 obj-$(CONFIG_FB_SSD1307)	  += ssd1307fb.o
 obj-$(CONFIG_FB_SIMPLE)           += simplefb.o
 obj-$(CONFIG_HISI_FB_V600)        += hisi/dss/
+obj-$(CONFIG_HISI_FB_V360)        += hisi/dss/
 obj-$(CONFIG_HISI_FB_V510)        += hisi/dss/
-obj-$(CONFIG_HISI_FB_V510)        += hisi/aod/
-obj-$(CONFIG_HISI_FB_V501)        += hisi/aod/
 obj-$(CONFIG_HISI_FB_V501)        += hisi/dss/
 obj-$(CONFIG_HISI_FB_V320)        += hisi/dss/
+obj-$(CONFIG_HISI_FB_V330)        += hisi/dss/
 obj-$(CONFIG_HISI_FB_V350)        += hisi/dss/
-obj-$(CONFIG_HISI_FB_970)         += hisi/aod/
+obj-$(CONFIG_HISI_FB_V345)        += hisi/dss/
 obj-$(CONFIG_HISI_FB_970)         += hisi/dss/
+obj-$(CONFIG_HISI_FB_V346)        += hisi/dss/
+obj-$(CONFIG_HISI_DPU_DISP)       += hisi/dpu/
+obj-$(CONFIG_HISI_FB_AOD)    += hisi/aod/
+obj-$(CONFIG_DKMD_ENABLE)    += dkmd/
 
+obj-$(CONFIG_HISI_MDFX)           += hisi/mdfx/
 # the test framebuffer is last
 obj-$(CONFIG_FB_VIRTUAL)          += vfb.o

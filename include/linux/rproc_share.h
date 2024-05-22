@@ -8,12 +8,11 @@
  * published by the Free Software Foundation.
  */
 
-
 #ifndef _INCLUDE_LINUX_RPROC_SHARE_H
 #define _INCLUDE_LINUX_RPROC_SHARE_H
 
 #include <linux/platform_device.h>
-#include <linux/platform_data/remoteproc-hisi.h>
+#include <linux/platform_data/remoteproc_hisp.h>
 
 enum rdr_enable_mask
 {
@@ -47,20 +46,20 @@ enum rdr_enable_mask
 #define ISPCPU_RDR_RESERVE_13        (1 << 13)
 #define ISPCPU_RDR_RESERVE_12        (1 << 12)
 #define ISPCPU_RDR_RESERVE_11        (1 << 11)
-#define ISPCPU_RDR_RESERVE_10               (1 << 10)
-#define ISPCPU_RDR_RESERVE_9                 (1 << 9)
-#define ISPCPU_RDR_RESERVE_8                 (1 << 8)
-#define ISPCPU_RDR_RESERVE_7                 (1 << 7)
-#define ISPCPU_RDR_LEVEL_CPUP                 (1 << 6)
-#define ISPCPU_RDR_LEVEL_TASK                (1 << 5)
-#define ISPCPU_RDR_LEVEL_IRQ                  (1 << 4)
-#define ISPCPU_RDR_LEVEL_CVDR                (1 << 3)
-#define ISPCPU_RDR_LEVEL_ALGO                (1 << 2)
-#define ISPCPU_RDR_LEVEL_LAST_WORD     (1 << 1)
-#define ISPCPU_RDR_LEVEL_TRACE              (1 << 0)
-#define ISPCPU_RDR_LEVEL_MASK                 (0x7FFFFFFF)
-#define RDR_CHOOSE_TYPE                         (RDR_LOG_TRACE | RDR_LOG_LAST_WORD)
-#define ISPCPU_DEFAULT_RDR_LEVEL             RDR_CHOOSE_TYPE
+#define ISPCPU_RDR_RESERVE_10        (1 << 10)
+#define ISPCPU_RDR_RESERVE_9         (1 << 9)
+#define ISPCPU_RDR_RESERVE_8         (1 << 8)
+#define ISPCPU_RDR_RESERVE_7         (1 << 7)
+#define ISPCPU_RDR_LEVEL_CPUP        (1 << 6)
+#define ISPCPU_RDR_LEVEL_TASK        (1 << 5)
+#define ISPCPU_RDR_LEVEL_IRQ         (1 << 4)
+#define ISPCPU_RDR_LEVEL_CVDR        (1 << 3)
+#define ISPCPU_RDR_LEVEL_ALGO        (1 << 2)
+#define ISPCPU_RDR_LEVEL_LAST_WORD   (1 << 1)
+#define ISPCPU_RDR_LEVEL_TRACE       (1 << 0)
+#define ISPCPU_RDR_LEVEL_MASK        (0x7FFFFFFF)
+#define RDR_CHOOSE_TYPE              (RDR_LOG_TRACE | RDR_LOG_LAST_WORD)
+#define ISPCPU_DEFAULT_RDR_LEVEL     RDR_CHOOSE_TYPE
 
 #define ISPCPU_LOG_USE_APCTRL        (1UL << 31)
 #define ISPCPU_LOG_TIMESTAMP_FPGAMOD (1 << 30)
@@ -83,7 +82,7 @@ enum rdr_enable_mask
 #define ISPCPU_LOG_RESERVE_13        (1 << 13)
 #define ISPCPU_LOG_RESERVE_12        (1 << 12)
 #define ISPCPU_LOG_RESERVE_11        (1 << 11)
-#define ISPCPU_LOG_RESERVE_10        (1 << 10)
+#define ISPCPU_LOG_LEVEL_BETA        (1 << 10)
 #define ISPCPU_LOG_RESERVE_09        (1 << 9)
 #define ISPCPU_LOG_RESERVE_08        (1 << 8)
 #define ISPCPU_LOG_LEVEL_DEBUG_ALGO  (1 << 7)
@@ -135,16 +134,6 @@ enum rdr_enable_mask
 #define IRQ_NUM             (64)
 
 #define MONITOR_CHAN_NUM    4
-#define CSI_NUM_MAX			3
-/*
- * struct rproc_shared_para - shared parameters for debug
- * @rdr_enable: the rdr function status
- */
-struct isp_plat_cfg {
-	unsigned int platform_id;
-	unsigned int isp_local_timer;
-	unsigned int perf_power;
-};
 
 struct bw_boot_status {
 	unsigned int entry:1;
@@ -181,14 +170,12 @@ struct rproc_shared_para {
 	u32 coredump_addr;
 	u32 exc_flag;/*bit 0:exc cur ;bit 1:ion flag ; bit 2:rtos dump over  bit3:handle over*/
 	u64 mdc_pa_addr;
-	u64 sec_smmuerr_addr;
 	unsigned int monitor_addr[MONITOR_CHAN_NUM];
 	unsigned int monitor_ctrl;
 	unsigned int monitor_pa_va;
 	unsigned int monitor_hit_flag;
 	unsigned int clk_value[ISP_CLK_MAX];
 	unsigned char isp_efuse;
-	unsigned int csi_ctrl[CSI_NUM_MAX + 1];
 };
 
 extern struct rproc_shared_para *isp_share_para;
@@ -197,5 +184,6 @@ extern int rproc_set_shared_para(void);
 extern void rproc_set_shared_clk_value(int type,unsigned int value);
 extern void hisp_lock_sharedbuf(void);
 extern void hisp_unlock_sharedbuf(void);
+extern int hisp_use_logb(void);
 
 #endif /* _INCLUDE_LINUX_RPROC_SHARE_H */

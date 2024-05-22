@@ -36,7 +36,7 @@
 #define HWLOG_TAG dp_factory
 HWLOG_REGIST();
 
-#ifndef DP_FACTORY_MODE_ENABLE	// not defined
+#ifndef DP_FACTORY_MODE_ENABLE // not defined
 bool dp_factory_mode_is_enable(void)
 {
 	return false;
@@ -305,7 +305,6 @@ void dp_factory_set_link_event_no(uint32_t event_no, bool cablein,
 	if (event != NULL) {
 		int len = strlen(event);
 		int offset = strlen("MANUFACTURE_DP_LINK_EVENT=");
-
 		if ((event_no > DP_LINK_STATE_CABLE_OUT) && (len > offset)) {
 			if (strlen(priv->link_event) == 0) {
 				strcpy(priv->link_event, event + offset);

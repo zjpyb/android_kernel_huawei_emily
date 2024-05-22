@@ -11,23 +11,24 @@
 #include <linux/of_platform.h>
 #include <linux/hisi/usb/hisi_usb_interface.h>
 #include <linux/hisi/usb/dwc3_usb_interface.h>
+#include <linux/hisi/usb/hisi_usb_helper.h>
 #include <linux/jiffies.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include <huawei_platform/power/huawei_charger.h>
 #include <huawei_platform/dp_aux_switch/dp_aux_switch.h>
 #ifdef CONFIG_CONTEXTHUB_PD
-#include <linux/hisi/contexthub/tca.h>
+#include <linux/hisi/usb/tca.h>
 #endif
 
 #include "hisi_usb3_misctrl.h"
 #include "hisi_usb3_31phy.h"
 #include "hisi_usb_bc12.h"
 #include "combophy_regcfg.h"
-#include "hisi_usb_helper.h"
+#include "combophy.h"
+#include <chipset_common/hwusb/hw_usb.h>
 
-/*lint -e750 -esym(750,*)*/
-struct plat_hisi_usb_phy {
-	struct hisi_usb_phy phy;
+struct plat_chip_usb_phy {
+	struct chip_usb_phy phy;
 
 	void __iomem *pericfg_reg_base;
 	void __iomem *sctrl_reg_base;
@@ -40,14 +41,14 @@ struct plat_hisi_usb_phy {
 	struct clk *gt_clk_usb2phy_ref;
 };
 
-struct plat_hisi_usb_phy *_hisi_usb_phy;
+struct plat_chip_usb_phy *_chip_usb_phy;
 
 #define SCTRL_SCDEEPSLEEPED				0x08
 #define USB_REFCLK_ISO_EN               (1 << 25)
 #define SC_CLK_USB3PHY_3MUX1_SEL        (1 << 25)
 
 #define SC_SEL_ABB_BACKUP               (1 << 8)
-#define CLKDIV_MASK_START               (16)
+#define CLKDIV_MASK_START               16
 
 #define PERI_CRG_CLKDIV21               0xFC
 
@@ -55,7 +56,7 @@ struct plat_hisi_usb_phy *_hisi_usb_phy;
 #define PERI_CRG_CLK_DIS5               0x54
 
 #define PMC_PPLL3CTRL0                  0x048
-#define PPLL3_FBDIV_START               (8)
+#define PPLL3_FBDIV_START               8
 #define PPLL3_EN                        (1 << 0)
 #define PPLL3_BP                        (1 << 1)
 #define PPLL3_LOCK                      (1 << 26)
@@ -77,8 +78,8 @@ struct plat_hisi_usb_phy *_hisi_usb_phy;
 #define IP_RST_USB3OTG_32K		(1 << 6)
 #define IP_RST_USB3OTG_MISC		(1 << 7)
 
-#define PCTRL_PERI_CTRL24		(0x64)
-#define PERI_CRG_ISODIS			(0x148)
+#define PCTRL_PERI_CTRL24		0x64
+#define PERI_CRG_ISODIS			0x148
 
 /* clk freq usb default usb3.0 228M usb2.0 60M */
 static uint32_t USB3OTG_ACLK_FREQ = 229000000;
@@ -90,19 +91,19 @@ int usb3_open_misc_ctrl_clk(void)
 {
 	int ret;
 
-	if (!_hisi_usb_phy) {
+	if (!_chip_usb_phy) {
 		usb_err("usb driver not setup!\n");
 		return -EINVAL;
 	}
 
 	/* open hclk gate */
-	ret = clk_prepare_enable(_hisi_usb_phy->gt_hclk_usb3otg);
+	ret = clk_prepare_enable(_chip_usb_phy->gt_hclk_usb3otg);
 	if (ret) {
 		usb_err("clk_enable gt_hclk_usb3otg failed\n");
 		return ret;
 	}
 
-	if (__clk_is_enabled(_hisi_usb_phy->gt_hclk_usb3otg) == false) {
+	if (__clk_is_enabled(_chip_usb_phy->gt_hclk_usb3otg) == false) {
 		usb_err("gt_hclk_usb3otg  enable err\n");
 		return -EFAULT;
 	}
@@ -112,13 +113,13 @@ int usb3_open_misc_ctrl_clk(void)
 
 void usb3_close_misc_ctrl_clk(void)
 {
-	if (!_hisi_usb_phy) {
+	if (!_chip_usb_phy) {
 		usb_err("usb driver not setup!\n");
 		return;
 	}
 
 	/* disable usb3otg hclk */
-	clk_disable_unprepare(_hisi_usb_phy->gt_hclk_usb3otg);
+	clk_disable_unprepare(_chip_usb_phy->gt_hclk_usb3otg);
 }
 
 static int dwc3_combophy_sw_sysc(TCPC_MUX_CTRL_TYPE new_mode)
@@ -126,7 +127,7 @@ static int dwc3_combophy_sw_sysc(TCPC_MUX_CTRL_TYPE new_mode)
 	int ret;
 
 	ret = combophy_sw_sysc(TCPC_USB31_CONNECTED,
-			(TYPEC_PLUG_ORIEN_E)hisi_usb_otg_get_typec_orien(),
+			(TYPEC_PLUG_ORIEN_E)chip_usb_otg_get_typec_orien(),
 			!get_hifi_usb_retry_count());
 	if (ret)
 		usb_err("combophy_sw_sysc failed(%d)\n",ret);
@@ -191,11 +192,10 @@ static uint32_t is_abb_clk_selected(void __iomem *sctrl_base)
 	return 0;
 }
 
-static int set_combophy_clk(struct plat_hisi_usb_phy *usb_phy)
+static int set_combophy_clk(struct plat_chip_usb_phy *usb_phy)
 {
-/*lint -save -e550 */
-	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;/*lint !e438 */
-	void __iomem *pctrl_base = usb_phy->pctrl_reg_base;/*lint !e438 */
+	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;
+	void __iomem *pctrl_base = usb_phy->pctrl_reg_base;
 	void __iomem *sctrl_base = usb_phy->sctrl_reg_base;
 #define USB_CLK_TYPE_ABB (0xabb)
 #define USB_CLK_TYPE_PAD (0x10ad)
@@ -244,7 +244,6 @@ static int set_combophy_clk(struct plat_hisi_usb_phy *usb_phy)
 
 	usb_dbg("usb clk type:%x\n", clk_type);
 	return ret;
-/*lint -restore */
 }
 
 int usb3_clk_is_open(void)
@@ -257,10 +256,10 @@ int usb3_clk_is_open(void)
 int dwc3_set_combophy_clk(void)
 {
 	int ret = 0;
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENODEV;
 
-	ret = set_combophy_clk(_hisi_usb_phy);
+	ret = set_combophy_clk(_chip_usb_phy);
 	if (ret)
 		usb_err("[CLK.ERR] combophy clk set error!\n");
 
@@ -285,7 +284,7 @@ static int dwc3_phy_release(void)
 	return ret;
 }
 
-static void close_combophy_clk(struct plat_hisi_usb_phy *usb_phy)
+static void close_combophy_clk(struct plat_chip_usb_phy *usb_phy)
 {
 	void __iomem *sctrl_base = usb_phy->sctrl_reg_base;
 
@@ -300,27 +299,27 @@ static void close_combophy_clk(struct plat_hisi_usb_phy *usb_phy)
 
 void dwc3_close_combophy_clk(void)
 {
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return;
 
-	close_combophy_clk(_hisi_usb_phy);
+	close_combophy_clk(_chip_usb_phy);
 }
 
-static void dwc3_phy_reset(struct plat_hisi_usb_phy *usb_phy)
+static void dwc3_phy_reset(struct plat_chip_usb_phy *usb_phy)
 {
 	if (combophy_regcfg_is_misc_ctrl_unreset() && usb3_clk_is_open()) {
 		/* reset phy */
-		usb3_misc_reg_clrvalue(~(SET_NBITS_MASK(0, 1)), 0xa0ul); /*lint !e835 */
+		usb3_misc_reg_clrvalue(~(SET_NBITS_MASK(0, 1)), 0xa0ul);
 		usb_dbg("reset phy\n");
 
 		close_combophy_clk(usb_phy);
 	}
 }
 
-int dwc3_open_controller_clk(struct plat_hisi_usb_phy *usb_phy)
+int dwc3_open_controller_clk(struct plat_chip_usb_phy *usb_phy)
 {
 	int ret = 0;
-	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;/*lint !e529 */
+	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;
 	volatile int temp;
 	/* open misc clk gate */
 	ret = clk_prepare_enable(usb_phy->gt_aclk_usb3otg);
@@ -371,16 +370,14 @@ static int dwc3_set_highspeed_only(void)
 	/* disable usb3 SS port */
 	usb3_misc_reg_setbit(1, 0x4);
 
-/*lint -e648 -esym(648,*)*/
 	usb3_misc_reg_clrvalue((u32)(~GENMASK(7, 4)), 0x7c);
-/*lint -e648 +esym(648,*)*/
 
 	udelay(100);
 
 	return 0;
 }
 
-static int dwc3_release(struct plat_hisi_usb_phy *usb_phy, unsigned int support_dp)
+static int dwc3_release(struct plat_chip_usb_phy *usb_phy, unsigned int support_dp)
 {
 	int ret = 0;
 
@@ -402,7 +399,7 @@ static int dwc3_release(struct plat_hisi_usb_phy *usb_phy, unsigned int support_
 		dwc3_set_highspeed_only();
 	}
 
-	if (hisi_dwc3_get_dt_host_maxspeed() < USB_SPEED_SUPER_PLUS) {
+	if (chip_dwc3_get_dt_host_maxspeed() < USB_SPEED_SUPER_PLUS) {
 		usb_dbg("[USB.LINK] usb host super-speed only!\n");
 		usb3_misc_reg_setbit(30, 0x7c);
 	}
@@ -428,7 +425,7 @@ static void feb_notify_speed(unsigned int speed)
 
 	usb_dbg("+device speed is %d\n", speed);
 
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return;
 
 #ifdef CONFIG_TCPC_CLASS
@@ -439,13 +436,13 @@ static void feb_notify_speed(unsigned int speed)
 	if (((speed < USB_SPEED_WIRELESS) && (speed > USB_SPEED_UNKNOWN))
 		|| (speed == USB_CONNECT_DCP)) {
 		usb_dbg("set USB2OTG_ACLK_FREQ\n");
-		ret = clk_set_rate(_hisi_usb_phy->gt_aclk_usb3otg, USB2OTG_ACLK_FREQ);
+		ret = clk_set_rate(_chip_usb_phy->gt_aclk_usb3otg, USB2OTG_ACLK_FREQ);
 		if (ret) {
 			usb_err("Can't aclk rate set\n");
 		}
-	} else if ((speed == USB_CONNECT_HOST) && (!hisi_dwc3_is_powerdown())) {
+	} else if ((speed == USB_CONNECT_HOST) && (!chip_dwc3_is_powerdown())) {
 		usb_dbg("set USB3OTG_ACLK_FREQ\n");
-		ret = clk_set_rate(_hisi_usb_phy->gt_aclk_usb3otg, USB3OTG_ACLK_FREQ);
+		ret = clk_set_rate(_chip_usb_phy->gt_aclk_usb3otg, USB3OTG_ACLK_FREQ);
 		if (ret) {
 			usb_err("Can't aclk rate set\n");
 		}
@@ -455,11 +452,8 @@ static void feb_notify_speed(unsigned int speed)
 }
 
 
-static void dwc3_reset(struct plat_hisi_usb_phy *usb_phy)
+static void dwc3_reset(struct plat_chip_usb_phy *usb_phy)
 {
-/*lint -e438 -esym(438,*)*/
-/*lint -e529 -esym(529,*)*/
-
 	usb_dbg("+\n");
 	if (combophy_regcfg_is_misc_ctrl_unreset() && usb3_clk_is_open()) {
 		/* set vbus valid */
@@ -477,7 +471,7 @@ static void dwc3_reset(struct plat_hisi_usb_phy *usb_phy)
 	usb_dbg("close usb success\n");
 }
 
-static int usb3_clk_set_rate(struct plat_hisi_usb_phy *usb_phy)
+static int usb3_clk_set_rate(struct plat_chip_usb_phy *usb_phy)
 {
 	int ret;
 
@@ -490,12 +484,12 @@ static int usb3_clk_set_rate(struct plat_hisi_usb_phy *usb_phy)
 	return ret;
 }
 
-static void set_usb2_eye_diagram_param(struct plat_hisi_usb_phy *usb_phy,
+static void set_usb2_eye_diagram_param(struct plat_chip_usb_phy *usb_phy,
 		unsigned int eye_diagram_param)
 {
 	void __iomem *otg_bc_base = usb_phy->phy.otg_bc_reg_base;
 
-	if (hisi_dwc3_is_fpga())
+	if (chip_dwc3_is_fpga())
 		return;
 
 	/* set high speed phy parameter */
@@ -530,14 +524,12 @@ void set_vboost_for_usb3(uint32_t usb3_phy_tx_vboost_lvl)
 	usb_dbg("[0x%x]usb31 cr param:%x\n", TX_VBOOST_LVL_REG, temp);
 }
 
-/*lint -e438 +esym(438,*)*/
-/*lint -e529 +esym(529,*)*/
-static int feb_usb31_core_enable_u3(struct plat_hisi_usb_phy *usb_phy)
+static int feb_usb31_core_enable_u3(struct plat_chip_usb_phy *usb_phy)
 {
 	volatile u32 temp;
 	int ret = 0;
 	int power_down_flag;
-	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;/*lint !e529 */
+	void __iomem *pericfg_base = usb_phy->pericfg_reg_base;
 
 	usb_dbg("+\n");
 
@@ -552,8 +544,8 @@ static int feb_usb31_core_enable_u3(struct plat_hisi_usb_phy *usb_phy)
 		return -ENOTBLK;
 	}
 
-	power_down_flag = get_hisi_dwc3_power_flag();
-	if (hisi_dwc3_is_powerdown()) {
+	power_down_flag = get_chip_dwc3_power_flag();
+	if (chip_dwc3_is_powerdown()) {
 		/* open usb phy clk gate */
 		ret = dwc3_open_controller_clk(usb_phy);
 		if (ret) {
@@ -579,18 +571,18 @@ static int feb_usb31_core_enable_u3(struct plat_hisi_usb_phy *usb_phy)
 		/* unreset controller */
 		usb3_misc_reg_setvalue(SET_NBITS_MASK(8, 9), 0xa0);
 		udelay(100);
-		set_hisi_dwc3_power_flag(USB_POWER_ON);
+		set_chip_dwc3_power_flag(USB_POWER_ON);
 	}
 
 	ret = dwc3_core_enable_u3();
-	if (get_hisi_dwc3_power_flag() != power_down_flag) {
-		set_hisi_dwc3_power_flag(power_down_flag);
+	if (get_chip_dwc3_power_flag() != power_down_flag) {
+		set_chip_dwc3_power_flag(power_down_flag);
 	}
 	usb_dbg("-\n");
 	return ret;
 }
 
-static int feb_usb31_core_disable_u3(struct plat_hisi_usb_phy *usb_phy)
+static int feb_usb31_core_disable_u3(struct plat_chip_usb_phy *usb_phy)
 {
 	usb_dbg("+\n");
 
@@ -604,7 +596,7 @@ static int feb_usb31_core_disable_u3(struct plat_hisi_usb_phy *usb_phy)
 		return -ENOTBLK;
 	}
 
-	if (hisi_dwc3_is_powerdown()) {
+	if (chip_dwc3_is_powerdown()) {
 		/* need reset controller */
 		usb3_misc_reg_clrvalue(~(SET_NBITS_MASK(8, 9)), 0xa0ul);
 
@@ -620,27 +612,27 @@ static int feb_usb31_core_disable_u3(struct plat_hisi_usb_phy *usb_phy)
 	return 0;
 }
 
-int hisi_usb_combophy_notify(enum phy_change_type type)
+int chip_usb_combophy_notify(enum phy_change_type type)
 {
 	int ret = 0;
 
 	usb_dbg("+\n");
-	if (!_hisi_usb_phy) {
-		usb_err("_hisi_usb_phy is NULL, dwc3-hisi have some problem!\n");
+	if (!_chip_usb_phy) {
+		usb_err("_chip_usb_phy is NULL, dwc3-usb have some problem!\n");
 		return -ENOMEM;
 	}
 
 	/*
 	 * check if usb controller is busy.
 	 */
-	if (!hisi_dwc3_is_powerdown()) {
+	if (!chip_dwc3_is_powerdown()) {
 		usb_err("usb core is busy! maybe !\n");
 	}
 
 	if (PHY_MODE_CHANGE_BEGIN == type) {
-		ret = feb_usb31_core_enable_u3(_hisi_usb_phy);
+		ret = feb_usb31_core_enable_u3(_chip_usb_phy);
 	} else if (PHY_MODE_CHANGE_END == type) {
-		feb_usb31_core_disable_u3(_hisi_usb_phy);
+		feb_usb31_core_disable_u3(_chip_usb_phy);
 	} else {
 		usb_err("Bad param!\n");
 		ret = -EINVAL;
@@ -670,26 +662,26 @@ static int feb_usb3phy_shutdown(unsigned int support_dp)
 {
 	static int flag = 0;
 	usb_dbg("+\n");
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENODEV;
 
-	if (hisi_dwc3_is_powerdown()) {
+	if (chip_dwc3_is_powerdown()) {
 		usb_dbg("already shutdown, just return!\n");
 		return 0;
 	}
 
-	set_hisi_dwc3_power_flag(USB_POWER_HOLD);
+	set_chip_dwc3_power_flag(USB_POWER_HOLD);
 
 	if (!support_dp || !flag) {
-		dwc3_phy_reset(_hisi_usb_phy);
+		dwc3_phy_reset(_chip_usb_phy);
 		flag = 1;
 	}
 
-	dwc3_reset(_hisi_usb_phy);
+	dwc3_reset(_chip_usb_phy);
 
 	dwc3_misc_ctrl_put(MICS_CTRL_USB);
 
-	set_hisi_dwc3_power_flag(USB_POWER_OFF);
+	set_chip_dwc3_power_flag(USB_POWER_OFF);
 
 	usb_dbg(":HW_USB_LDO_CTRL_USB disable\n");
 	hw_usb_ldo_supply_disable(HW_USB_LDO_CTRL_USB);
@@ -699,7 +691,7 @@ static int feb_usb3phy_shutdown(unsigned int support_dp)
 	return 0;
 }
 
-static int feb_get_clk_resource(struct device *dev, struct plat_hisi_usb_phy *usb_phy)
+static int feb_get_clk_resource(struct device *dev, struct plat_chip_usb_phy *usb_phy)
 {
 	/* get abb clk handler */
 	usb_phy->clk = devm_clk_get(dev, "clk_usb3phy_ref");
@@ -738,7 +730,7 @@ static int feb_get_clk_resource(struct device *dev, struct plat_hisi_usb_phy *us
 	return 0;
 }
 
-static int feb_get_dts_resource(struct device *dev, struct plat_hisi_usb_phy *usb_phy)
+static int feb_get_dts_resource(struct device *dev, struct plat_chip_usb_phy *usb_phy)
 {
 	void __iomem *regs;
 
@@ -811,7 +803,7 @@ static int feb_shared_phy_init(unsigned int support_dp, unsigned int eye_diagram
 	usb_dbg(":HW_USB_LDO_CTRL_HIFIUSB enable\n");
 	hw_usb_ldo_supply_enable(HW_USB_LDO_CTRL_HIFIUSB);
 
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENODEV;
 
 #ifdef CONFIG_CONTEXTHUB_PD
@@ -827,7 +819,7 @@ static int feb_shared_phy_init(unsigned int support_dp, unsigned int eye_diagram
 	udelay(100);
 
 	/* enable 2.0 phy refclk */
-	ret = clk_prepare_enable(_hisi_usb_phy->gt_clk_usb2phy_ref);
+	ret = clk_prepare_enable(_chip_usb_phy->gt_clk_usb2phy_ref);
 	if (ret) {
 		usb_err("clk_prepare_enable gt_clk_usb2phy_ref failed\n");
 		goto err_misc_clk_usb2phy;
@@ -858,7 +850,7 @@ static int feb_shared_phy_init(unsigned int support_dp, unsigned int eye_diagram
 	usb3_misc_reg_setbit(0, 0xa0ul);
 	udelay(100);
 
-	set_usb2_eye_diagram_param(_hisi_usb_phy, eye_diagram_param);
+	set_usb2_eye_diagram_param(_chip_usb_phy, eye_diagram_param);
 
 	usb_dbg("-\n");
 	return 0;
@@ -890,12 +882,12 @@ static int feb_shared_phy_shutdown(unsigned int support_dp,
 
 	usb_dbg("+\n");
 
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENODEV;
 
 	usb_dbg("combophy_flag %u, keep_power %u\n", combophy_flag, keep_power);
 
-	pericfg_base = _hisi_usb_phy->pericfg_reg_base;
+	pericfg_base = _chip_usb_phy->pericfg_reg_base;
 
 	/* reset 2.0 phy */
 	usb3_misc_reg_clrbit(0, 0xa0);
@@ -919,7 +911,7 @@ static int feb_shared_phy_shutdown(unsigned int support_dp,
 	usb3_misc_reg_setbit(0u, 0x14ul);
 
 	/* disable 2.0 phy refclk */
-	clk_disable_unprepare(_hisi_usb_phy->gt_clk_usb2phy_ref);
+	clk_disable_unprepare(_chip_usb_phy->gt_clk_usb2phy_ref);
 
 	dwc3_misc_ctrl_put(MICS_CTRL_USB);
 
@@ -941,10 +933,10 @@ static int feb_shared_phy_shutdown(unsigned int support_dp,
 
 static void __iomem *feb_get_bc_ctrl_reg(void)
 {
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return NULL;
 
-	return _hisi_usb_phy->phy.otg_bc_reg_base + BC_CTRL2;
+	return _chip_usb_phy->phy.otg_bc_reg_base + BC_CTRL2;
 }
 
 static void feb_set_hi_impedance(void)
@@ -966,21 +958,21 @@ static int feb_usb3phy_init(unsigned int support_dp,
 	void __iomem *pericfg_base;
 	usb_dbg("+\n");
 
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENODEV;
 
 	usb_dbg(":HW_USB_LDO_CTRL_USB enable\n");
 	hw_usb_ldo_supply_enable(HW_USB_LDO_CTRL_USB);
 
-	pericfg_base = _hisi_usb_phy->pericfg_reg_base;/*lint !e529 */
+	pericfg_base = _chip_usb_phy->pericfg_reg_base;
 
-	if (!hisi_dwc3_is_powerdown()) {
+	if (!chip_dwc3_is_powerdown()) {
 		usb_dbg("already release, just return!\n");
 		return 0;
 	}
 
 
-	ret = usb3_clk_set_rate(_hisi_usb_phy);
+	ret = usb3_clk_set_rate(_chip_usb_phy);
 	if (ret)
 		goto out;
 
@@ -1003,7 +995,7 @@ static int feb_usb3phy_init(unsigned int support_dp,
 		goto out_phy_reset;
 	}
 
-	ret = dwc3_release(_hisi_usb_phy, support_dp);
+	ret = dwc3_release(_chip_usb_phy, support_dp);
 	if (ret) {
 		usb_err("[RELEASE.ERR] release error, need check clk!\n");
 		goto out_phy_reset;
@@ -1011,23 +1003,23 @@ static int feb_usb3phy_init(unsigned int support_dp,
 
 	if (combophy_is_highspeed_only()) {
 		usb_dbg("set USB2OTG_ACLK_FREQ\n");
-		ret = clk_set_rate(_hisi_usb_phy->gt_aclk_usb3otg, USB2OTG_ACLK_FREQ);
+		ret = clk_set_rate(_chip_usb_phy->gt_aclk_usb3otg, USB2OTG_ACLK_FREQ);
 		if (ret) {
 			usb_err("Can't aclk rate set\n");
 		}
 	} else {
 		/* need reset clk freq */
-		ret = usb3_clk_set_rate(_hisi_usb_phy);
+		ret = usb3_clk_set_rate(_chip_usb_phy);
 		if (ret) {
 			usb_err("usb reset clk rate fail!\n");
 			goto out_phy_reset;
 		}
 	}
 
-	set_usb2_eye_diagram_param(_hisi_usb_phy, eye_diagram_param);
+	set_usb2_eye_diagram_param(_chip_usb_phy, eye_diagram_param);
 	set_vboost_for_usb3(usb3_phy_tx_vboost_lvl);
 
-	set_hisi_dwc3_power_flag(USB_POWER_ON);
+	set_chip_dwc3_power_flag(USB_POWER_ON);
 	flag = 1;
 
 	usb_dbg("-\n");
@@ -1035,7 +1027,7 @@ static int feb_usb3phy_init(unsigned int support_dp,
 
 out_phy_reset:
 	if (!support_dp || !flag)
-		dwc3_phy_reset(_hisi_usb_phy);
+		dwc3_phy_reset(_chip_usb_phy);
 out_misc_put:
 	dwc3_misc_ctrl_put(MICS_CTRL_USB);
 out:
@@ -1049,35 +1041,35 @@ static int dwc3_feb_probe(struct platform_device *pdev)
 {
 	int ret;
 
-	_hisi_usb_phy = devm_kzalloc(&pdev->dev, sizeof(*_hisi_usb_phy),
+	_chip_usb_phy = devm_kzalloc(&pdev->dev, sizeof(*_chip_usb_phy),
 			GFP_KERNEL);
-	if (!_hisi_usb_phy)
+	if (!_chip_usb_phy)
 		return -ENOMEM;
 
-	ret = feb_get_dts_resource(&pdev->dev, _hisi_usb_phy);
+	ret = feb_get_dts_resource(&pdev->dev, _chip_usb_phy);
 	if (ret) {
 		usb_err("get_dts_resource failed\n");
 		goto err_out;
 	}
 
-	_hisi_usb_phy->phy.init = feb_usb3phy_init;
-	_hisi_usb_phy->phy.shutdown = feb_usb3phy_shutdown;
-	_hisi_usb_phy->phy.shared_phy_init = feb_shared_phy_init;
-	_hisi_usb_phy->phy.shared_phy_shutdown = feb_shared_phy_shutdown;
-	_hisi_usb_phy->phy.set_hi_impedance = feb_set_hi_impedance;
-	_hisi_usb_phy->phy.notify_speed = feb_notify_speed;
-	_hisi_usb_phy->phy.tcpc_is_usb_only = feb_tcpc_is_usb_only;
-	_hisi_usb_phy->phy.get_bc_ctrl_reg = feb_get_bc_ctrl_reg;
+	_chip_usb_phy->phy.init = feb_usb3phy_init;
+	_chip_usb_phy->phy.shutdown = feb_usb3phy_shutdown;
+	_chip_usb_phy->phy.shared_phy_init = feb_shared_phy_init;
+	_chip_usb_phy->phy.shared_phy_shutdown = feb_shared_phy_shutdown;
+	_chip_usb_phy->phy.set_hi_impedance = feb_set_hi_impedance;
+	_chip_usb_phy->phy.notify_speed = feb_notify_speed;
+	_chip_usb_phy->phy.tcpc_is_usb_only = feb_tcpc_is_usb_only;
+	_chip_usb_phy->phy.get_bc_ctrl_reg = feb_get_bc_ctrl_reg;
 
-	ret = hisi_usb_dwc3_register_phy(&_hisi_usb_phy->phy);
+	ret = chip_usb_dwc3_register_phy(&_chip_usb_phy->phy);
 	if (ret) {
-		usb_err("hisi_usb_dwc3_register_phy failed\n");
+		usb_err("chip_usb_dwc3_register_phy failed\n");
 		goto err_out;
 	}
 
 	return 0;
 err_out:
-	_hisi_usb_phy = NULL;
+	_chip_usb_phy = NULL;
 	return ret;
 }
 
@@ -1085,8 +1077,8 @@ static int dwc3_feb_remove(struct platform_device *pdev)
 {
 	int ret;
 
-	ret = hisi_usb_dwc3_unregister_phy(&_hisi_usb_phy->phy);
-	_hisi_usb_phy = NULL;
+	ret = chip_usb_dwc3_unregister_phy(&_chip_usb_phy->phy);
+	_chip_usb_phy = NULL;
 
 	return ret;
 }
@@ -1108,12 +1100,5 @@ static struct platform_driver dwc3_feb_driver = {
 		.of_match_table = of_match_ptr(dwc3_feb_match),
 	},
 };
-/*lint +e715 +e716 +e717 +e835 +e838 +e845 +e533 +e835 +e778 +e774 +e747 +e785 +e438 +e529*/
-/*lint -e64 -esym(64,*)*/
-/*lint -e528 -esym(528,*)*/
 module_platform_driver(dwc3_feb_driver);
-/*lint -e528 +esym(528,*)*/
-/*lint -e753 -esym(753,*)*/
 MODULE_LICENSE("GPL");
-/*lint -e753 +esym(753,*)*/
-/*lint -e64 +esym(64,*)*/

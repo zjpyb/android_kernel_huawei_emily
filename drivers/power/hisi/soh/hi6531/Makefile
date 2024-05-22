@@ -1,1 +1,1 @@
-obj-$(CONFIG_HISI_SOH_HI6531) += hi6531_soh.o
+obj-$(CONFIG_BATT_SOH_HI6531) += hi6531_soh.o

@@ -61,11 +61,21 @@ D_h	.req	x14
 ENTRY(__memmove)
 ENTRY_NOTAG(memmove)
 	cmp	dstin, src
+#ifdef CONFIG_ARM64_HKRR
+	b.hs	4f
+	b	__memcpy
+4:
+	add	tmp1, src, count
+	cmp	dstin, tmp1
+	b.lo	5f
+	b	__memcpy		/* No overlap.  */
+5:
+#else
 	b.lo	__memcpy
 	add	tmp1, src, count
 	cmp	dstin, tmp1
 	b.hs	__memcpy		/* No overlap.  */
-
+#endif
 	add	dst, dstin, count
 	add	src, src, count
 	cmp	count, #16

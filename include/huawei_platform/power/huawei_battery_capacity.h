@@ -3,7 +3,7 @@
  *
  * huawei battery capacity interface
  *
- * Copyright (c) 2019-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,7 +20,7 @@
 #define _HUAWEI_BATTERY_CAPACITY_H_
 
 #include <linux/err.h>
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
+#include <linux/power/hisi/coul/coul_drv.h>
 
 #define HUAWEI_BATTERY "huawei-battery"
 
@@ -30,28 +30,13 @@ int huawei_battery_health(void);
 #else
 static inline int huawei_battery_capacity(void)
 {
-	return hisi_battery_capacity();
+	return coul_drv_battery_capacity();
 }
 
 static inline int huawei_battery_health(void)
 {
-	return hisi_battery_health();
+	return coul_drv_battery_health();
 }
 #endif /* CONFIG_HUAWEI_BATTERY_CAPACITY */
-
-#ifdef CONFIG_HUAWEI_SERIES_BATT_CAP
-int sercap_log_head(char *chargelog_head, int size);
-int sercap_log(char *chargelog, int size);
-#else
-static inline int sercap_log_head(char *chargelog_head, int size)
-{
-	return 0;
-}
-
-static inline int sercap_log(char *chargelog, int size)
-{
-	return 0;
-}
-#endif /* CONFIG_HUAWEI_SERIES_BATT_CAP */
 
 #endif /* _HUAWEI_BATTERY_CAPACITY_H_ */

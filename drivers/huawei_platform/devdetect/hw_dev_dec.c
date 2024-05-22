@@ -23,6 +23,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <securec.h>
 #include <huawei_platform/log/hw_log.h>
 
 #define HWLOG_TAG                  dev_detect
@@ -75,14 +76,14 @@ static char mmi2_detect_flag[DEV_DETECT_NUMS + 1] = DEV_DETECT_DEFAULT;
 int set_hw_dev_flag(int dev_id)
 {
 	if (dev_id < 0 || dev_id >= (int)DEV_I2C_MAX) {
-		hwlog_err("%s: dev_id = %d is invalid\n", __func__, dev_id);
+		hwlog_err("%s: dev_id = %d is invalid!\n", __func__, dev_id);
 		return false;
 	}
 
 	mutex_lock(&devdetect_lock);
 	dev_detect_result[dev_id] = FLAG_SET;
 	mutex_unlock(&devdetect_lock);
-	hwlog_info("%s: set dev_id = %d successful\n", __func__, dev_id);
+	hwlog_info("%s: set dev_id = %d success!\n", __func__, dev_id);
 	return true;
 }
 EXPORT_SYMBOL(set_hw_dev_flag);
@@ -90,54 +91,70 @@ EXPORT_SYMBOL(set_hw_dev_flag);
 static ssize_t dev_detect_result_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("%s: detect result is:%s\n", __func__, dev_detect_result);
-	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", dev_detect_result);
+	hwlog_info("%s: detect result:%s\n", __func__, dev_detect_result);
+	return snprintf_s((char *)buf, PRINT_MAX_LEN, PRINT_MAX_LEN - 1,
+		"%s\n", dev_detect_result);
 }
 
 static ssize_t dbc_detect_flag_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("%s: dbc_detect_flag is:%s\n", __func__, dbc_detect_flag);
-	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", dbc_detect_flag);
+	hwlog_info("%s: dbc_detect_flag=%s\n", __func__, dbc_detect_flag);
+	return snprintf_s((char *)buf, PRINT_MAX_LEN, PRINT_MAX_LEN - 1,
+		"%s\n", dbc_detect_flag);
 }
 
 static ssize_t rt_detect_flag_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("%s: rt_detect_flag is:%s\n", __func__, rt_detect_flag);
-	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", rt_detect_flag);
+	hwlog_info("%s: rt_detect_flag=%s\n", __func__, rt_detect_flag);
+	return snprintf_s((char *)buf, PRINT_MAX_LEN, PRINT_MAX_LEN - 1,
+		"%s\n", rt_detect_flag);
 }
 
 static ssize_t mmi1_detect_flag_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("%s: mmi1_detect_flag is:%s\n", __func__, mmi1_detect_flag);
-	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", mmi1_detect_flag);
+	hwlog_info("%s: mmi1_detect_flag=%s\n", __func__, mmi1_detect_flag);
+	return snprintf_s((char *)buf, PRINT_MAX_LEN, PRINT_MAX_LEN - 1,
+		"%s\n", mmi1_detect_flag);
 }
 
 static ssize_t mmi2_detect_flag_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	hwlog_info("%s: mmi2_detect_flag is:%s\n", __func__, mmi2_detect_flag);
-	return snprintf((char *)buf, PRINT_MAX_LEN, "%s\n", mmi2_detect_flag);
+	hwlog_info("%s: mmi2_detect_flag=%s\n", __func__, mmi2_detect_flag);
+	return snprintf_s((char *)buf, PRINT_MAX_LEN, PRINT_MAX_LEN - 1,
+		"%s\n", mmi2_detect_flag);
 }
 
 static struct detect_flag_device dev_list[] = {
-	{ .name = "dev_detect_result_flag", .index = 0,
-	.attr = __ATTR(dev_detect_result_flag, 0444,
-			dev_detect_result_show, NULL) },
-	{ .name = "dev_detect_dbc_flag", .index = 0,
-	.attr = __ATTR(dev_detect_dbc_flag, 0444,
-			dbc_detect_flag_show, NULL) },
-	{ .name = "dev_detect_rt_flag", .index = 0,
-	.attr = __ATTR(dev_detect_rt_flag, 0444,
-			rt_detect_flag_show, NULL) },
-	{ .name = "dev_detect_mmi1_flag", .index = 0,
-	.attr = __ATTR(dev_detect_mmi1_flag, 0444,
-			mmi1_detect_flag_show, NULL) },
-	{ .name = "dev_detect_mmi2_flag", .index = 0,
-	.attr = __ATTR(dev_detect_mmi2_flag, 0444,
-			mmi2_detect_flag_show, NULL) },
+	{
+		.name = "dev_detect_result_flag",
+		.index = 0,
+		.attr = __ATTR(dev_detect_result_flag, 0444,
+			dev_detect_result_show, NULL)
+	}, {
+		.name = "dev_detect_dbc_flag",
+		.index = 0,
+		.attr = __ATTR(dev_detect_dbc_flag, 0444,
+			dbc_detect_flag_show, NULL)
+	}, {
+		.name = "dev_detect_rt_flag",
+		.index = 0,
+		.attr = __ATTR(dev_detect_rt_flag, 0444,
+			rt_detect_flag_show, NULL)
+	}, {
+		.name = "dev_detect_mmi1_flag",
+		.index = 0,
+		.attr = __ATTR(dev_detect_mmi1_flag, 0444,
+			mmi1_detect_flag_show, NULL)
+	}, {
+		.name = "dev_detect_mmi2_flag",
+		.index = 0,
+		.attr = __ATTR(dev_detect_mmi2_flag, 0444,
+			mmi2_detect_flag_show, NULL)
+	},
 };
 
 static int create_dev_detect_sysfs(struct class *myclass)
@@ -153,7 +170,7 @@ static int create_dev_detect_sysfs(struct class *myclass)
 			MKDEV(0, dev_list[dev_index].index),
 			NULL, dev_list[dev_index].name);
 		if (dev_list[dev_index].dev == NULL) {
-			hwlog_err("%s: failed to create %s device\n",
+			hwlog_err("%s: failed to create %s device!\n",
 				__func__, dev_list[dev_index].name);
 			return -1;
 		}
@@ -162,14 +179,14 @@ static int create_dev_detect_sysfs(struct class *myclass)
 		ret = device_create_file(dev_list[dev_index].dev,
 					&dev_list[dev_index].attr);
 		if (ret < 0) {
-			hwlog_err("%s: failed to create %s file\n",
+			hwlog_err("%s: failed to create %s file!\n",
 				__func__, dev_list[dev_index].name);
 			return -1;
 		}
 		(void)test_and_set_bit(dev_index, &dev_file_create_flag);
 	}
 
-	hwlog_info("%s: dev_index:%zu, node_flag:%zu, file_flag:%zu", __func__,
+	hwlog_info("%s: dev_index=%zu, node_flag=%zu, file_flag=%zu", __func__,
 		dev_index, dev_node_create_flag, dev_file_create_flag);
 	return 0;
 }
@@ -190,16 +207,16 @@ static void remove_dev_detect_sysfs(struct class *myclass)
 	dev_node_create_flag = 0;
 	dev_file_create_flag = 0;
 	class_destroy(myclass);
-	hwlog_info("%s: remove dev detect sysfs end\n", __func__);
+	hwlog_info("%s: remove dev detect sysfs end!\n", __func__);
 }
 
-static void get_dev_detect_dts_config(struct device_node *np)
+static void get_dev_detect_dts_config(const struct device_node *np)
 {
 	size_t i;
 	int result;
 	unsigned int type;
 
-	hwlog_info("%s: function begin\n", __func__);
+	hwlog_info("%s: function begin!\n", __func__);
 	for (i = 0; i < ARRAY_SIZE(dev_detect_table); i++) {
 		result = of_property_read_u32(np,
 			dev_detect_table[i].device_name, &type);
@@ -221,12 +238,12 @@ static void get_dev_detect_dts_config(struct device_node *np)
 			rt_detect_flag[i] = FLAG_NOT_SET;
 			mmi1_detect_flag[i] = FLAG_NOT_SET;
 			mmi2_detect_flag[i] = FLAG_NOT_SET;
-			hwlog_err("get devid:%zu device name:%s value fail\n",
+			hwlog_err("get devid=%zu device name=%s value fail!\n",
 				i, dev_detect_table[i].device_name);
 		}
 	}
 
-	hwlog_info("%s: function end\n", __func__);
+	hwlog_info("%s: function end!\n", __func__);
 }
 
 static int dev_detect_probe(struct platform_device *pdev)
@@ -236,35 +253,35 @@ static int dev_detect_probe(struct platform_device *pdev)
 	struct class *myclass = NULL;
 
 	if (dev_detect_probe_flag) {
-		hwlog_err("%s: dev_detect_probe is done\n", __func__);
+		hwlog_err("%s: dev_detect_probe done\n", __func__);
 		return 0;
 	}
 
-	hwlog_info("%s: function begin\n", __func__);
+	hwlog_info("%s: function begin!\n", __func__);
 	if (!pdev) {
-		hwlog_err("%s: none device\n", __func__);
+		hwlog_err("%s: none device!\n", __func__);
 		return -ENODEV;
 	}
 
 	np = pdev->dev.of_node;
 	if (!np) {
-		hwlog_err("%s: unable to find device node\n", __func__);
+		hwlog_err("%s: device node is not found!\n", __func__);
 		return -ENODEV;
 	}
 
 	myclass = class_create(THIS_MODULE, "dev_detect");
 	if (IS_ERR(myclass)) {
-		hwlog_err("%s: failed to create dev_detect class\n", __func__);
+		hwlog_err("%s: failed to create dev_detect class!\n", __func__);
 		return -1;
 	}
 
 	if (create_dev_detect_sysfs(myclass) < 0) {
-		hwlog_err("%s: create dev detect sysfs failed\n", __func__);
+		hwlog_err("%s: create dev detect sysfs failed!\n", __func__);
 		ret = -1;
 		goto free_dev_and_file;
 	}
 
-	get_dev_detect_dts_config(np);
+	get_dev_detect_dts_config((const struct device_node *)np);
 
 	dev_detect_probe_flag = DEV_DETECT_PROBE_SUCCESS;
 	hwlog_info("%s: function end!\n", __func__);

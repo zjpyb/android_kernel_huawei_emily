@@ -23,8 +23,8 @@
  */
 
 
-#ifndef __HW_ALAN_KERNEL_HWCAM_SENSOR_CFG_H__
-#define __HW_ALAN_KERNEL_HWCAM_SENSOR_CFG_H__
+#ifndef __HW_ALAN_KERNEL_CAM_SENSOR_CFG_H__
+#define __HW_ALAN_KERNEL_CAM_SENSOR_CFG_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -72,18 +72,23 @@ enum
 
 typedef enum _tag_hwsensor_position_kind
 {
-    HWSENSOR_POSITION_INVALID                      =    -1,
-    HWSENSOR_POSITION_REAR                      =    0,
-    HWSENSOR_POSITION_FORE                      =    1,
-    HWSENSOR_POSITION_SUBREAR                   =    2,
-    HWSENSOR_POSITION_SUBFORE                   =    3,//legacy
-    HWSENSOR_POSITION_REAR_THIRD                =    4,
-    HWSENSOR_POSITION_REAR_SECOND               =    5,
-    HWSENSOR_POSITION_REAR_FORTH                =    6,
-    HWSENSOR_POSITION_FORE_SECOND               =    7,
-    HWSENSOR_POSITION_FORE_THIRD                =    8,
-    HWSENSOR_POSITION_IR4STRUCTURELIGHT = 10,
-    HWSENSOR_POSITION_GAZE                      =    12,
+	HWSENSOR_POSITION_INVALID            =    -1,
+	HWSENSOR_POSITION_REAR               =    0,
+	HWSENSOR_POSITION_FORE               =    1,
+	HWSENSOR_POSITION_SUBREAR            =    2,
+	HWSENSOR_POSITION_SUBFORE            =    3, /* legacy */
+	HWSENSOR_POSITION_REAR_THIRD         =    4,
+	HWSENSOR_POSITION_REAR_SECOND        =    5,
+	HWSENSOR_POSITION_REAR_FORTH         =    6,
+	HWSENSOR_POSITION_FORE_SECOND        =    7,
+	HWSENSOR_POSITION_FORE_THIRD         =    8,
+	HWSENSOR_POSITION_REAR_FIFTH         =    9,
+	HWSENSOR_POSITION_IR4STRUCTURELIGHT  =    10,
+	HWSENSOR_POSITION_GAZE               =    12,
+	HWSENSOR_POSITION_SWING              =    20,
+	HWSENSOR_POSITION_SWING_TOF          =    21,
+	HWSENSOR_POSITION_SENSORHUB          =    30,
+	HWSENSOR_POSITION_MAX,
 } hwsensor_position_kind_t;
 
 typedef enum _tag_hwsensor_flash_pos_type_kind
@@ -94,25 +99,28 @@ typedef enum _tag_hwsensor_flash_pos_type_kind
 
 typedef struct _tag_hwsensor_info
 {
-    uint32_t                                    dev_id;
+	uint32_t                                    dev_id;
 
-    char                                        name[DEVICE_NAME_SIZE];
-    char                                        vcm_name[DEVICE_NAME_SIZE];
-    char                                        extend_name[DEVICE_NAME_SIZE];
-    int                                         vcm_enable;
-    hwsensor_position_kind_t                    mount_position;
-    uint32_t                                    mount_angle;
-    int                                         extisp_type;
-    int                                         csi_id[CSI_NUM];
-    int                                         i2c_id[I2C_NUM];
-    int                                         module_type;
-    int                                         valid;
-    hwsensor_flash_pos_type_kind_t              flash_pos_type;
-    int                                         irTopologyType;
-    int                                         phyinfo_count;
-    phy_info_t                                  phyinfo;
+	char                                        name[DEVICE_NAME_SIZE];
+	char                                        vcm_name[DEVICE_NAME_SIZE];
+	char                                        extend_name[DEVICE_NAME_SIZE];
+	int                                         vcm_enable;
+	hwsensor_position_kind_t                    mount_position;
+	uint32_t                                    mount_angle;
+	int                                         extisp_type;
+	int                                         csi_id[CSI_NUM];
+	int                                         i2c_id[I2C_NUM];
+	int                                         module_type;
+	int                                         valid;
+	hwsensor_flash_pos_type_kind_t              flash_pos_type;
+	int                                         irTopologyType;
+	int                                         phyinfo_count;
+	phy_info_t                                  phyinfo;
 	char                                    bustype[DEVICE_BUS_TYPE_SIZE];
 	int                                     ao_i2c_index;
+	char                                    sensor_spec[DEVICE_NAME_SIZE];
+	int                                      i2c_pad_type;
+	int                                      matchid_fail_retry_flag;
 } hwsensor_info_t;
 
 /********************* cfg data define ************************************/
@@ -132,6 +140,8 @@ enum sensor_config_type
 	SEN_CONFIG_RESET_RELEASE,
 	SEN_CONFIG_MIPI_SWITCH,
 	SEN_CONFIG_FPC_CHECK,
+	SEN_CONFIG_BTB_CHECK,
+	SEN_CONFIG_RPC_STATE,
 	SEN_CONFIG_MAX_INDEX
 };
 
@@ -197,10 +207,14 @@ typedef struct _sensor_thermal_data{
     int data;  // thermal value
 }sensor_thermal_data;
 
+typedef enum {
+	SENSOR_RPC_OFF = 0,
+	SENSOR_RPC_ON = 1,
+} sensor_rpc_state_t;
 #define HWSENSOR_IOCTL_GET_INFO                         _IOR('S',  BASE_VIDIOC_PRIVATE + 1, hwsensor_info_t)
 #define HWSENSOR_IOCTL_SENSOR_CFG 		        _IOWR('V', BASE_VIDIOC_PRIVATE + 2, struct sensor_cfg_data)
 #define HWSENSOR_IOCTL_OTP_CFG                          _IOWR('O', BASE_VIDIOC_PRIVATE + 3, hwsensor_config_otp_t)
 #define HWSENSOR_IOCTL_GET_THERMAL                      _IOR('S', BASE_VIDIOC_PRIVATE + 2, sensor_thermal_data)
 
-#endif // __HW_ALAN_KERNEL_HWCAM_SENSOR_CFG_H__
+#endif // __HW_ALAN_KERNEL_CAM_SENSOR_CFG_H__
 

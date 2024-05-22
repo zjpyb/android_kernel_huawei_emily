@@ -1,16 +1,34 @@
+/*
+ * hostcomm.h
+ *
+ * hostcomm driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifdef FSC_DEBUG
 
-#ifndef __FSC_HOSTCOMM_H_
-#define __FSC_HOSTCOMM_H_
+#ifndef _HOSTCOMM_H_
+#define _HOSTCOMM_H_
 
-// ##### Packet Structure ##### //
+/* Packet Structure */
 #define PKTOUT_REQUEST                  0x00
 #define PKTOUT_VERSION                  0x01
 #define PKTIN_REQUEST                   0x00
 #define PKTIN_STATUS                    0x01
 #define PKTIN_ERRORCODE                 0x03
 
-// ##### Command definitions ##### //
+/* Command definitions */
 #define CMD_GETDEVICEINFO               0x00
 #define CMD_USBPD_BUFFER_READ           0xA0
 #define CMD_USBPD_STATUS                0xA2
@@ -27,7 +45,7 @@
 #define CMD_DISABLE_TYPEC_SM            0xAD
 #define CMD_SEND_HARD_RESET             0xAE
 
-#define CMD_DEVICE_LOCAL_REGISTER_READ  0xB0    // xBX designation used for automated testing
+#define CMD_DEVICE_LOCAL_REGISTER_READ  0xB0
 #define CMD_SET_STATE                   0xB1
 #define CMD_READ_STATE_LOG              0xB2
 #define CMD_READ_PD_STATE_LOG           0xB3
@@ -38,168 +56,45 @@
 #define CMD_SET_VBUS5V                  0xC5
 #define CMD_GET_INTN                    0xC6
 
-#ifdef FSC_DEBUG
 #define CMD_GET_TIMER_TICKS             0xF0
 #define CMD_GET_SM_TICKS                0xF1
 #define CMD_GET_GPIO_SM_TOGGLE          0xF2
 #define CMD_SET_GPIO_SM_TOGGLE          0xF3
-#endif  // FSC_DEBUG
 
-#define TEST_FIRMWARE                   0X01    // For GUI identification of firmware
+/* For GUI identification of firmware */
+#define TEST_FIRMWARE                   0x01
 
 /* Device Info */
-
 /* MCU Identification */
-typedef enum
-{
-    mcuUnknown = 0,
-    mcuPIC18F14K50 = 1,
-    mcuPIC32MX795F512L = 2,
-    mcuPIC32MX250F128B = 3,
-    mcuGENERIC_LINUX = 4,             // Linux driver
-} mcu_t;
+enum mcu_type {
+	MCU_UNKNOWN = 0,
+	MCU_PIC18F14K50 = 1,
+	MCU_PIC32MX795F512L = 2,
+	MCU_PIC32MX250F128B = 3,
+	MCU_GENERIC_LINUX = 4, /* Linux driver */
+};
 
 /* Device Type Identification */
-typedef enum
-{
-    dtUnknown = -1,
-    dtUSBI2CStandard = 0,
-    dtUSBI2CPDTypeC = 1
-} dt_t;
+enum dt_type {
+	DT_UNKNOWN = -1,
+	DT_USBI2C_STANDARD = 0,
+	DT_USBI2CPD_TYPEC = 1,
+};
 
 /* Board Configuration */
-typedef enum
-{
-    bcUnknown = -1,
-    bcStandardI2CConfig = 0,
-    bcFUSB300Eval = 0x100,
-    bcFUSB302FPGA = 0x200,
-    bcFM14014 = 0x300
-} bc_t;
+enum bc_type {
+	BC_UNKNOWN = -1,
+	BC_STANDARD_I2C_CONFIG = 0,
+	BC_FUSB300_EVAL = 0x100,
+	BC_FUSB302_FPGA = 0x200,
+	BC_FM14014 = 0x300,
+};
 
-#define MY_MCU          mcuGENERIC_LINUX
-#define MY_DEV_TYPE     dtUSBI2CPDTypeC
-#define MY_BC           bcStandardI2CConfig
+#define MY_MCU          MCU_GENERIC_LINUX
+#define MY_DEV_TYPE     DT_USBI2CPD_TYPEC
+#define MY_BC           BC_STANDARD_I2C_CONFIG
 
+void fusb_process_msg(u8 *in_msg_buffer, u8 *out_msg_buffer);
 
-
-/*******************************************************************************
-* Function:        fusb_ProcessMsg
-* Input:           inMsgBuffer: Input array to process
-*                  outMsgBuffer: Result is stored here
-* Return:          none
-* Description:     Processes the input array as a command with optional data.
-*                  Provides a debugging interface to the caller.
-********************************************************************************/
-void fusb_ProcessMsg(FSC_U8* inMsgBuffer, FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_Handle_I2CRead
-* Input:           inBuf: Input buffer to parse. inBuf[0]: Addr, other bytes ignored
-*                  outBuf: I2C read result stored in outBuf[0]
-* Return:          none
-* Description:     Read an unsigned byte from the I2C peripheral
-********************************************************************************/
-void fusb_hc_Handle_I2CRead(FSC_U8* inBuf, FSC_U8* outBuf);
-
-/*******************************************************************************
-* Function:        fusb_hc_Handle_I2CWrite
-* Input:           inBuf: Input buffer to parse.
-*                       inBuf[1]: Start of address range to write to
-*                       inBuf[2]: Num bytes to write
-*                       inBuf[3.. inBuf[1]]: Data to write
-*                  outBuf: Output buffer populated with result:
-*                       Success: outBuf[0] = 1
-*                       Failure: outBuf[0] = 0
-* Return:          none
-* Description:     Write an unsigned byte to the I2C peripheral
-********************************************************************************/
-void fusb_hc_Handle_I2CWrite(FSC_U8* inBuf, FSC_U8* outBuf);
-
-/*******************************************************************************
-* Function:        fusb_hc_GetVBus5V
-* Input:           none
-*                  outBuf: Output buffer populated with result:
-*                       Success:    outBuf[0] = 1
-*                                   outBuf[1] = value
-*                       Failure:    outBuf[0] = 0
-* Return:          none
-* Description:     Get the value of VBus 5V
-********************************************************************************/
-void fusb_hc_GetVBus5V(FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_SetVBus5V
-* Input:           inMsgBuffer:     inMsgBuffer[1] = [1 || 0], value to write
-*                  outBuf: Output buffer populated with result:
-*                       Success:    outBuf[0] = 1
-*                                   outBuf[1] = value that was set
-*                       Failure:    outBuf[0] = 0
-* Return:          none
-* Description:     Set the value of VBus 5V
-********************************************************************************/
-void fusb_hc_SetVBus5V(FSC_U8* inMsgBuffer, FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_GetIntN
-* Input:           none
-*                  outBuf: Output buffer populated with result:
-*                       Success:    outBuf[0] = 1
-*                                   outBuf[1] = value
-*                       Failure:    outBuf[0] = 0
-* Return:          none
-* Description:     Get the value of Int_N
-********************************************************************************/
-void fusb_hc_GetIntN(FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_GetTimerTicks
-* Input:           none
-*                  outBuf: Output buffer populated with result:
-*                       outBuf[0]: 1 on success, 0 on failure
-*                       outBuf[1]: Number of timer ticks passed
-*                       outBuf[2]: Number of times the timer tick ticker rolled over
-* Return:          none
-* Description:     FSC_DEBUG: Get the number of timer ticks that have passed
-********************************************************************************/
-void fusb_hc_GetTimerTicks(FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_GetSMTicks
-* Input:           none
-*                  outBuf: Output buffer populated with result:
-*                       outBuf[0]: 1 on success, 0 on failure
-*                       outBuf[1]: Number of SM ticks passed
-*                       outBuf[2]: Number of times the SM tick ticker rolled over
-* Return:          none
-* Description:     FSC_DEBUG: Get the number of SM ticks that have passed
-********************************************************************************/
-void fusb_hc_GetSMTicks(FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_GetGPIO_SM_Toggle
-* Input:           none
-*                  outBuf: Output buffer populated with result:
-*                       Success:    outBuf[0] = 1
-*                                   outBuf[1] = value
-*                       Failure:    outBuf[0] = 0
-* Return:          none
-* Description:     Get the value of the SM toggle GPIO
-********************************************************************************/
-void fusb_hc_GetGPIO_SM_Toggle(FSC_U8* outMsgBuffer);
-
-/*******************************************************************************
-* Function:        fusb_hc_SetGPIO_SM_Toggle
-* Input:           inMsgBuffer:     inMsgBuffer[1] = [1 || 0], value to write
-*                  outBuf: Output buffer populated with result:
-*                       Success:    outBuf[0] = 1
-*                                   outBuf[1] = value that was set
-*                       Failure:    outBuf[0] = 0
-* Return:          none
-* Description:     Set the value of the SM toggle GPIO
-********************************************************************************/
-void fusb_hc_SetGPIO_SM_Toggle(FSC_U8* inMsgBuffer, FSC_U8* outMsgBuffer);
-
-#endif  // __FSC_HOSTCOMM_H_
-
-#endif  // FSC_DEBUG
+#endif /* _HOSTCOMM_H_ */
+#endif /* FSC_DEBUG */

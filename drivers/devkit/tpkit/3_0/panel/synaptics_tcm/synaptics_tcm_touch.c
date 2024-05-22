@@ -40,6 +40,8 @@
 #define APP_STATUS_POLL_TIMEOUT_MS 1000
 #define APP_STATUS_POLL_MS 100
 #define SYNA_FW_SUPPORT_ESD		true
+#define STATUS_GLOVE_MODE 6
+#define STATUS_FINGER_MODE 1
 
 enum touch_status {
 	LIFT = 0,
@@ -75,12 +77,14 @@ enum touch_report_code {
 	TOUCH_NSM_STATE,
 	TOUCH_NUM_OF_ACTIVE_OBJECTS,
 	TOUCH_NUM_OF_CPU_CYCLES_USED_SINCE_LAST_FRAME,
+	TOUCH_BASELINE_STATE = 0x1B,
 	TOUCH_TUNING_GAUSSIAN_WIDTHS = 0x80,
 	TOUCH_TUNING_SMALL_OBJECT_PARAMS,
 	TOUCH_TUNING_0D_BUTTONS_VARIANCE,
 	TOUCH_ROI_DATA = 0xCA,
 	TOUCH_GRIP_DATA = 0xCB,
 	TOUCH_ESD_DETECT = 0xCC,
+	TOUCH_ESD_ACTION_REQUEST = 0xCD,
 };
 
 struct object_data {
@@ -198,6 +202,43 @@ static void touch_report_roi_data(unsigned char *data, unsigned int size)
 	}
 }
 
+/*
+ * When the baseline is abnormal, print the baseline flag
+ * and test information
+ */
+void baseline_status_info(unsigned int offset,
+	unsigned int bits, unsigned int *data)
+{
+	unsigned int i_dbg = 0;
+	unsigned int left_bits_dbg = bits;
+	unsigned int offset_dbg = offset;
+	unsigned int bits_dbg = 0;
+	unsigned int curr_touch_data[GESTURE_DATA_SIZE_32BITS] = {0};
+	int retval = NO_ERR;
+	struct syna_tcm_hcd *tcm_hcd = touch_hcd->tcm_hcd;
+
+	while ((left_bits_dbg > 0) && (i_dbg < GESTURE_DATA_SIZE_32BITS)) {
+		bits_dbg = (left_bits_dbg > LEFT_BITS_DBG_MAX) ?
+			LEFT_BITS_DBG_MAX : left_bits_dbg;
+		retval = touch_get_report_data(offset_dbg, bits_dbg, data);
+		if (retval < 0)
+			TS_LOG_ERR("Failed to get gesture data\n");
+		curr_touch_data[i_dbg] = *data;
+		offset_dbg += bits_dbg;
+		left_bits_dbg -= bits_dbg;
+		i_dbg++;
+	}
+	if (tcm_hcd->baseline_status_flag !=
+		(curr_touch_data[0] & BASELINE_DATA_MASK)) {
+		TS_LOG_INFO("lbp_info: 0x%04x, 0x%04x, 0x%04x\n",
+			curr_touch_data[0] & BASELINE_DATA_MASK,
+			(curr_touch_data[0]>>16) & BASELINE_DATA_MASK,
+			curr_touch_data[1] & BASELINE_DATA_MASK);
+		tcm_hcd->baseline_status_flag =
+			curr_touch_data[0] & BASELINE_DATA_MASK;
+	}
+}
+
 /**
  * touch_parse_report() - Parse touch report
  *
@@ -229,8 +270,8 @@ static int touch_parse_report(void)
 	unsigned char bits_m = 0;
 	unsigned char bits_l = 0;
 	unsigned char *touch_report = tcm_hcd->report.buffer.buf;
-	tcm_hcd->device_status_check = false;
 
+	tcm_hcd->device_status_check = false;
 	touch_data = &touch_hcd->touch_data;
 	object_data = touch_hcd->touch_data.object_data;
 	config_data = tcm_hcd->config.buf;
@@ -467,6 +508,11 @@ static int touch_parse_report(void)
 			touch_data->nsm_state = data;
 			offset += bits;
 			break;
+		case TOUCH_BASELINE_STATE:
+			bits = config_data[idx++];
+			baseline_status_info(offset, bits, &data);
+			offset += bits;
+			break;
 		case TOUCH_NUM_OF_ACTIVE_OBJECTS:
 			bits = config_data[idx++];
 			retval = touch_get_report_data(offset, bits, &data);
@@ -534,6 +580,39 @@ static int touch_parse_report(void)
 			}
 			tcm_hcd->device_status= data;
 			TS_LOG_DEBUG("device_status = 0%2x\n", tcm_hcd->device_status);
+			offset += bits;
+			break;
+		case TOUCH_ESD_ACTION_REQUEST:
+			bits = config_data[idx++];
+			if (tcm_hcd->support_esd_power_reset) {
+				retval = touch_get_report_data(offset, bits, &data);
+				if (retval < 0) {
+					TS_LOG_INFO("Failed to get ESD Request\n");
+					return retval;
+				}
+				/*
+				 * data include esd information, the lower 3-bits
+				 * is esd_action, and use mask 0x07 to get that.
+				 * the higer 5-bits is esd_reason, we right shift
+				 * 3-bits and use mask 0x1F to get that.
+				 */
+				tcm_hcd->esd_info.esd_action =
+					(unsigned char)(data & 0x07);
+				tcm_hcd->esd_info.esd_reason =
+					(unsigned char)((data >> 3) & 0x1F);
+				if (data)
+					TS_LOG_INFO("ESD Action Request = 0x%02x, action = 0x%02x, reason = 0x%02x\n",
+						data, tcm_hcd->esd_info.esd_action,
+						tcm_hcd->esd_info.esd_reason);
+				if (tcm_hcd->esd_info.esd_action == ESD_POWER_RESET ||
+					tcm_hcd->esd_info.esd_action == ESD_HW_RESET) {
+					TS_LOG_INFO("ESD irq, esd action: %u\n",
+						tcm_hcd->esd_info.esd_action);
+					tcm_hcd->device_status = 0; /* don't report touch */
+					tcm_hcd->device_status_check =
+						SYNA_FW_SUPPORT_ESD;
+				}
+			}
 			offset += bits;
 			break;
 		default:
@@ -639,7 +718,17 @@ void touch_report(struct ts_fingers *info)
 					x = touch_hcd->tcm_hcd->bdata->x_max_mt - x;
 				if (bdata->y_flip)
 					y = touch_hcd->tcm_hcd->bdata->y_max_mt - y;
-				info->fingers[idx].status = 1 << 6;
+				if (tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+					if (status == GLOVED_FINGER)
+						info->fingers[idx].status =
+							STATUS_GLOVE_MODE;
+					else
+						info->fingers[idx].status =
+							STATUS_FINGER_MODE;
+				} else {
+					/* 6: finger flag bit */
+					info->fingers[idx].status = 1 << 6;
+				}
 				info->fingers[idx].x = x;
 				info->fingers[idx].y = y;
 				if (tcm_hcd->aft_wxy_enable) {
@@ -713,7 +802,7 @@ static int touch_get_input_params(void)
 	}
 
 	LOCK_BUFFER(tcm_hcd->config);
-	retval = syna_tcm_alloc_mem(tcm_hcd,
+	retval = tskit_driver_alloc_mem(tcm_hcd,
 			&tcm_hcd->config,
 			TOUCH_REPORT_CONFIG_SIZE);
 	if (retval < 0) {
@@ -722,7 +811,7 @@ static int touch_get_input_params(void)
 		return retval;
 	}
 
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			CMD_GET_TOUCH_REPORT_CONFIG,
 			NULL,
 			0,
@@ -739,7 +828,7 @@ static int touch_get_input_params(void)
 		return retval;
 	}
 	udelay(1000);
-	retval = syna_tcm_read(tcm_hcd,
+	retval = tskit_driver_read(tcm_hcd,
 			report_config,
 			TOUCH_REPORT_CONFIG_SIZE + 4);
 	if (retval < 0) {
@@ -798,7 +887,7 @@ static int touch_check_input_params(void)
 	return 0;
 }
 
-static int syna_tcm_get_app_info(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_get_app_info(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -812,7 +901,7 @@ static int syna_tcm_get_app_info(struct syna_tcm_hcd *tcm_hcd)
 
 get_app_info:
 	msleep(APP_STATUS_POLL_MS);
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			CMD_GET_APPLICATION_INFO,
 			NULL,
 			0,
@@ -832,7 +921,7 @@ get_app_info:
 	}else{
 		msleep(50);
 	}
-	retval = syna_tcm_read(tcm_hcd,
+	retval = tskit_driver_read(tcm_hcd,
 			app_info,
 			sizeof(app_info));
 	if (retval < 0) {
@@ -865,7 +954,7 @@ exit:
 	return retval;
 }
 
-static int syna_tcm_get_id_info(struct syna_tcm_hcd *tcm_hcd)
+static int tskit_driver_get_id_info(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = NO_ERR;
 	unsigned char *resp_buf = NULL;
@@ -876,7 +965,7 @@ static int syna_tcm_get_id_info(struct syna_tcm_hcd *tcm_hcd)
 	resp_buf = NULL;
 	resp_buf_size = 0;
 
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			CMD_IDENTIFY,
 			NULL,
 			0,
@@ -897,7 +986,7 @@ static int syna_tcm_get_id_info(struct syna_tcm_hcd *tcm_hcd)
 	}else{
 		msleep(50);
 	}
-	retval = syna_tcm_read(tcm_hcd,
+	retval = tskit_driver_read(tcm_hcd,
 			id_report,
 			sizeof(id_report));
 	if (retval < 0) {
@@ -925,7 +1014,7 @@ static int syna_tcm_get_id_info(struct syna_tcm_hcd *tcm_hcd)
 	switch (tcm_hcd->id_info.mode) {
 	case MODE_APPLICATION:
 		msleep(300);
-		retval = syna_tcm_get_app_info(tcm_hcd);
+		retval = tskit_driver_get_app_info(tcm_hcd);
 		if (retval < 0) {
 			TS_LOG_ERR("Failed to get application info\n");
 			goto exit;
@@ -943,16 +1032,19 @@ exit:
 	return retval;
 }
 
-int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
+int tskit_driver_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
 {
 	int retval = NO_ERR;
 	unsigned char response_buf[4] = { 0 };
+	unsigned char response_temp_buf[1024] = { 0 };
 	unsigned char *resp_buf = NULL;
 	unsigned int resp_buf_size = 0;
 	unsigned int resp_length = 0;
 	unsigned char cmd = 0;
 	unsigned char payload = (unsigned char) REPORT_TOUCH;
 	unsigned char retry = 3;
+	unsigned int total_length;
+	unsigned int payload_length;
 
 	resp_buf = kzalloc(FIXED_READ_LENGTH, GFP_KERNEL);
 	if (NULL == resp_buf) {
@@ -968,10 +1060,10 @@ int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
 
 	//read out identify report firstly
 	if (tcm_hcd->htd == false) {
-                while(retry) {
-                        retval = syna_tcm_read(tcm_hcd,
-                                                resp_buf,
-                                                FIXED_READ_LENGTH - 4);
+		while (retry) {
+			retval = tskit_driver_read(tcm_hcd,
+				resp_buf,
+				FIXED_READ_LENGTH - 4);
                         if (retval < 0 || resp_buf[0] != MESSAGE_MARKER) {
                                 TS_LOG_ERR("Failed to read out some message\n");
                                 goto exit;
@@ -981,7 +1073,7 @@ int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
                 }
                 retry = 3;
 	}
-	retval = syna_tcm_write_hdl_message(tcm_hcd,
+	retval = tskit_driver_write_hdl_message(tcm_hcd,
 			cmd,
 			&payload,
 			1,
@@ -1000,26 +1092,45 @@ int syna_tcm_enable_touch(struct syna_tcm_hcd *tcm_hcd, bool en)
 		msleep(100);
 
 		/* read out the response*/
-		retval = syna_tcm_read(tcm_hcd,
+		retval = tskit_driver_read(tcm_hcd,
 				response_buf,
 				sizeof(response_buf));
 		if (retval < 0 ||response_buf[0] != MESSAGE_MARKER) {
 			TS_LOG_ERR("Failed to res_buf data\n");
 			goto exit;
 		}
-
-		if(response_buf[1] != STATUS_OK) {
-			TS_LOG_INFO("CMD_ENABLE_REPORT status = 0x%02x\n", response_buf[1]);
-		}else{
-			break;
+		if (tcm_hcd->bdata &&
+			tcm_hcd->bdata->support_vendor_ic_type == S3909) {
+			if (response_buf[1] == REPORT_TOUCH) {
+				TS_LOG_INFO("CMD_ENABLE_REPORT Got = 0x%02x\n",
+					response_buf[1]);
+				payload_length = response_buf[2] |
+					response_buf[3] << 8;
+				total_length = MESSAGE_HEADER_SIZE +
+					payload_length + 1;
+				retval = tskit_driver_read(tcm_hcd,
+					response_temp_buf, total_length);
+				if ((retval < 0) ||
+					(response_buf[0] != MESSAGE_MARKER)) {
+					TS_LOG_ERR("Failed to response_temp_buf data\n");
+					goto exit;
+				}
+				continue;
+			}
 		}
+		if (response_buf[1] != STATUS_OK)
+			TS_LOG_INFO("CMD_ENABLE_REPORT status = 0x%02x\n",
+				response_buf[1]);
+		else
+			break;
+
 		retry--;
 	}
 
 	retry = 3;
 	while(retry) {
 		udelay(1000);
-		retval = syna_tcm_read(tcm_hcd,
+		retval = tskit_driver_read(tcm_hcd,
 				resp_buf,
 				FIXED_READ_LENGTH);
 		if (retval < 0) {
@@ -1051,25 +1162,26 @@ exit:
  * device if any of the input parameters has changed after the device reset.
  */
 
-static int touch_set_input_reporting(void)
+int touch_set_input_reporting(bool get_id_info_flag)
 {
 	int retval = NO_ERR;
 	struct syna_tcm_hcd *tcm_hcd = touch_hcd->tcm_hcd;
 
 	touch_hcd->report_touch = false;
 
-	syna_tcm_enable_touch(tcm_hcd, false);
+	tskit_driver_enable_touch(tcm_hcd, false);
 
-	retval = syna_tcm_get_id_info(tcm_hcd);
-	if (retval < 0) {
-		TS_LOG_ERR("%s: failed to write msg\n", __func__);
-		return retval;
-	}
+	if (get_id_info_flag) {
+		if (tskit_driver_get_id_info(tcm_hcd) < NO_ERR) {
+			TS_LOG_ERR("%s: failed to write msg\n", __func__);
+			return -EINVAL;
+		}
 
-	if (tcm_hcd->id_info.mode != MODE_APPLICATION ||
+		if (tcm_hcd->id_info.mode != MODE_APPLICATION ||
 			tcm_hcd->app_status != APP_STATUS_OK) {
-		TS_LOG_INFO("Application firmware not running\n");
-		return -EIO;
+			TS_LOG_INFO("Application firmware not running\n");
+			return -EIO;
+		}
 	}
 
 	retval = touch_get_input_params();
@@ -1089,7 +1201,7 @@ static int touch_set_input_reporting(void)
 
 exit:
 	if (retval >= 0) {
-		syna_tcm_enable_touch(tcm_hcd, true);
+		tskit_driver_enable_touch(tcm_hcd, true);
 	}
 
 	touch_hcd->report_touch = retval < 0 ? false : true;
@@ -1113,7 +1225,7 @@ int touch_init(struct syna_tcm_hcd *tcm_hcd)
 	INIT_BUFFER(touch_hcd->out, false);
 	INIT_BUFFER(touch_hcd->resp, false);
 
-	retval = touch_set_input_reporting();
+	retval = touch_set_input_reporting(true);
 	if (retval < 0) {
 		TS_LOG_ERR("Failed to set up input reporting\n");
 		goto err_set_input_reporting;

@@ -1,1 +1,1 @@
-obj-$(CONFIG_HISI_SOH_CHARGER) += hisi_scharger_soh.o
+obj-$(CONFIG_BATT_SOH_CHARGER) += hisi_scharger_soh.o

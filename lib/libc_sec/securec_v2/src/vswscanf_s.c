@@ -5,7 +5,10 @@
  * Create: 2014-02-25
  */
 
-#define SECUREC_INLINE_INIT_FILE_STREAM_STR 1
+#ifndef SECUREC_FOR_WCHAR
+#define SECUREC_FOR_WCHAR
+#endif
+
 #include "secinput.h"
 
 SECUREC_INLINE size_t SecWcslen(const wchar_t *s)
@@ -58,7 +61,7 @@ int vswscanf_s(const wchar_t *buffer, const wchar_t *format, va_list argList)
         SECUREC_ERROR_INVALID_PARAMTER("vswscanf_s");
         return SECUREC_SCANF_EINVAL;
     }
-    SecInitFileStreamFromString(&fStr, (const char *)buffer, (int)count * ((int)sizeof(wchar_t)));
+    SECUREC_FILE_STREAM_FROM_STRING(&fStr, (const char *)buffer, count * sizeof(wchar_t));
     retVal = SecInputSW(&fStr, format, argList);
     if (retVal < 0) {
         SECUREC_ERROR_INVALID_PARAMTER("vswscanf_s");
@@ -66,5 +69,4 @@ int vswscanf_s(const wchar_t *buffer, const wchar_t *format, va_list argList)
     }
     return retVal;
 }
-
 

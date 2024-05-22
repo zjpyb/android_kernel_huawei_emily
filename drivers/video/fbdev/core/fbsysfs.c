@@ -141,6 +141,15 @@ static ssize_t store_mode(struct device *device, struct device_attribute *attr,
 
 	memset(&var, 0, sizeof(var));
 
+	if (fb_info == NULL)
+		return -EINVAL;
+
+	console_lock();
+	if (!lock_fb_info(fb_info)) {
+		console_unlock();
+		return -ENODEV;
+	}
+
 	list_for_each(pos, &fb_info->modelist) {
 		modelist = list_entry(pos, struct fb_modelist, list);
 		mode = &modelist->mode;
@@ -149,12 +158,22 @@ static ssize_t store_mode(struct device *device, struct device_attribute *attr,
 
 			var = fb_info->var;
 			fb_videomode_to_var(&var, mode);
-			if ((err = activate(fb_info, &var)))
+			if ((err = activate(fb_info, &var))) {
+				unlock_fb_info(fb_info);
+				console_unlock();
 				return err;
+			}
 			fb_info->mode = mode;
+
+			unlock_fb_info(fb_info);
+			console_unlock();
+
 			return count;
 		}
 	}
+	unlock_fb_info(fb_info);
+	console_unlock();
+
 	return -EINVAL;
 }
 

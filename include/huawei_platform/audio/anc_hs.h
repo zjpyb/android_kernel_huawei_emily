@@ -25,11 +25,6 @@
 #define ANC_HS_ENABLE_5VOLTATE  1
 #define ANC_HS_DISABLE_5VOLTATE 0
 
-/* IO controls for user */
-#define IOCTL_ANC_HS_CHARGE_ENABLE_CMD          _IO('A', 0x01)
-#define IOCTL_ANC_HS_CHARGE_DISABLE_CMD         _IO('A', 0x02)
-#define IOCTL_ANC_HS_GET_CHARGE_STATUS_CMD      _IOR('A', 0xFF, __u32)
-#define IOCTL_ANC_HS_GET_HEADSET_CMD            _IOR('A', 0xFE, __u32)
 #define MLIB_PARA_LENGTH_MAX                    200
 #define ERROR_RET                               1
 #define OK_RET                                  0

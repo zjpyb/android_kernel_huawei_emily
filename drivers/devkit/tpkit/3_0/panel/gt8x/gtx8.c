@@ -1,6 +1,7 @@
 #include "gtx8.h"
 #include "gtx8_dts.h"
-#include "../../tpkit_platform_adapter.h"
+#include "tpkit_platform_adapter.h"
+#include "huawei_ts_kit_misc.h"
 
 #if defined (CONFIG_TEE_TUI)
 #include "tui.h"
@@ -22,6 +23,36 @@ static u16 cur_index = 0;
 #if defined (CONFIG_TEE_TUI)
 extern struct ts_tui_data tee_tui_data;
 #endif
+
+static void gtx8_touch_switch(void);
+int stylus3_connect_state(unsigned int stylus3_status);
+void gtx8_pen_respons_mode_change(int soper);
+
+/* stylus type information */
+static int stylus3_type_info_handle(u32 stylus3_type_info);
+struct styus3_type_info_table_entry {
+	u8 vendor;
+	u8 checksum;
+	u8 info[GT73X_STYLUS3_TYPE_DATA_LEN];
+};
+static const struct styus3_type_info_table_entry stylus3_type_info_table[] = {
+	{
+		.vendor = GT73X_STYLUS3_TYPE1,
+		.checksum = GT73X_STYLUS3_TYPE1_CHECK_DATA,
+		.info = { GT73X_STYLU3_TYPE_DATA0,
+			GT73X_STYLU3_TYPE1_DATA1, GT73X_STYLU3_TYPE1_DATA2 }
+	}, {
+		.vendor = GT73X_STYLUS3_TYPE2,
+		.checksum = GT73X_STYLUS3_TYPE2_CHECK_DATA,
+		.info = { GT73X_STYLU3_TYPE_DATA0,
+			GT73X_STYLU3_TYPE2_DATA1, GT73X_STYLU3_TYPE2_DATA2 }
+	}, {
+		.vendor = GT73X_STYLUS3_TYPE3,
+		.checksum = GT73X_STYLUS3_TYPE3_CHECK_DATA,
+		.info = { GT73X_STYLU3_TYPE_DATA0,
+			GT73X_STYLU3_TYPE3_DATA1, GT73X_STYLU3_TYPE3_DATA2 }
+	}
+};
 
 u32 getUint(u8 *buffer, int len)
 {
@@ -366,7 +397,7 @@ static int gtx8_send_large_config(struct gtx8_ts_config *config)
 	int read_try_times;
 
 	if (gtx8_ts->ic_type == IC_TYPE_7382)
-		read_try_times = GTX8_RETRY_NUM_20;
+		read_try_times = GTX8_RETRY_NUM_30;
 	else
 		read_try_times = GTX8_RETRY_NUM_10;
 	/*1. Inquire command_reg until it's free*/
@@ -375,7 +406,7 @@ static int gtx8_send_large_config(struct gtx8_ts_config *config)
 			break;
 		usleep_range(10000, 11000);
 	}
-	if (try_times >= GTX8_RETRY_NUM_10) {
+	if (try_times >= read_try_times) {
 		TS_LOG_ERR("Send large cfg FAILED, before send, reg:0x%04x is not 0xff\n", command_reg);
 		ret = -EINVAL;
 		goto exit;
@@ -387,8 +418,10 @@ static int gtx8_send_large_config(struct gtx8_ts_config *config)
 		ret = -EINVAL;
 		goto exit;
 	}
-	if (gtx8_ts->ic_type == IC_TYPE_7382)
+	if (gtx8_ts->ic_type == IC_TYPE_7382) {
 		usleep_range(3000, 3100); /* ic need delay */
+		read_try_times = GTX8_RETRY_NUM_20;
+	}
 	/*3. wait ic set command_reg to 0x82*/
 	for (try_times = 0; try_times < read_try_times; try_times++) {
 		if (!gtx8_i2c_read(command_reg, &buf, 1) && buf == 0x82)
@@ -398,7 +431,7 @@ static int gtx8_send_large_config(struct gtx8_ts_config *config)
 		else
 			usleep_range(10000, 11000);
 	}
-	if (try_times >= GTX8_RETRY_NUM_10) {
+	if (try_times >= read_try_times) {
 		TS_LOG_ERR("Send large cfg FAILED, reg:0x%04x is not 0x82\n", command_reg);
 		ret = -EINVAL;
 		goto exit;
@@ -624,6 +657,7 @@ static int gtx8_read_cfg(u8 *config_data, u32 config_len)
 	int i = 0;
 	int send_cmd_ret;
 	u16 cfg_reg = gtx8_ts->reg.command + 16; /* reg offset */
+	int try_times;
 
 	if (!config_data || config_len > GTX8_CFG_MAX_LEN) {
 		TS_LOG_ERR("Illegal params\n");
@@ -647,9 +681,12 @@ static int gtx8_read_cfg(u8 *config_data, u32 config_len)
 		TS_LOG_ERR("%s: failed disabled doze mode\n", __func__);
 		goto exit;
 	}
-
+	if (gtx8_ts->ic_type == IC_TYPE_7382)
+		try_times = GTX8_RETRY_NUM_30;
+	else
+		try_times = GTX8_RETRY_NUM_20;
 	/* wait for IC in IDLE state */
-	for (i = 0; i < GTX8_RETRY_NUM_20; i++) {
+	for (i = 0; i < try_times; i++) {
 		cmd_flag = 0;
 		ret = gtx8_i2c_read(cmd_reg, &cmd_flag, 1);
 		if (ret < 0 || cmd_flag == GTX8_CMD_COMPLETED)
@@ -876,7 +913,7 @@ static int gtx8_pinctrl_init(void)
 		/* Ignore this error to support no pinctrl platform*/
 		return NO_ERR;
 	}
-
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	ts->pins_default = pinctrl_lookup_state(ts->pinctrl, "default");
 	if (IS_ERR_OR_NULL(ts->pins_default)) {
 		TS_LOG_ERR("%s: Pin state[default] not found\n", __func__);
@@ -892,14 +929,78 @@ static int gtx8_pinctrl_init(void)
 		/* permit undefine idle state */
 		ret = NO_ERR;
 	}
+#else
+	ts->pinctrl_state_reset_high = pinctrl_lookup_state(ts->pinctrl,
+		"state_rst_output1");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_reset_high)) {
+		TS_LOG_ERR("%s: Pin state_rst_output1 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_reset_high);
+		goto exit_put;
+	}
 
+	ts->pinctrl_state_reset_low = pinctrl_lookup_state(ts->pinctrl,
+		"state_rst_output0");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_reset_low)) {
+		TS_LOG_ERR("%s: Pin state_rst_output0 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_reset_low);
+		goto exit_put;
+	}
+
+	ts->pinctrl_state_as_int = pinctrl_lookup_state(ts->pinctrl,
+		"state_eint_as_int");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_as_int)) {
+		TS_LOG_ERR("%s: Pin state_eint_as_int not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_as_int);
+		goto exit_put;
+	}
+
+	ts->pinctrl_state_int_high = pinctrl_lookup_state(ts->pinctrl,
+		"state_eint_output1");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_int_high)) {
+		TS_LOG_ERR("%s: Pin state_eint_output1 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_int_high);
+		goto exit_put;
+	}
+
+	ts->pinctrl_state_int_low = pinctrl_lookup_state(ts->pinctrl,
+		"state_eint_output0");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_int_low)) {
+		TS_LOG_ERR("%s: Pin state_eint_output0 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_int_low);
+		goto exit_put;
+	}
+
+	ts->pinctrl_state_iovdd_low = pinctrl_lookup_state(ts->pinctrl,
+		"state_iovdd_output0");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_iovdd_low)) {
+		TS_LOG_ERR("%s: Pin state_iovdd_output0 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_iovdd_low);
+		goto exit_put;
+	}
+
+	ts->pinctrl_state_iovdd_high = pinctrl_lookup_state(ts->pinctrl,
+		"state_iovdd_output1");
+	if (IS_ERR_OR_NULL(ts->pinctrl_state_iovdd_high)) {
+		TS_LOG_ERR("%s: Pin state_iovdd_output1 not found\n", __func__);
+		ret = PTR_ERR(ts->pinctrl_state_iovdd_high);
+		goto exit_put;
+	}
+#endif
 	return ret;
 exit_put:
 	devm_pinctrl_put(ts->pinctrl);
 	ts->pinctrl = NULL;
 	ts->pins_suspend = NULL;
 	ts->pins_default = NULL;
-
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	ts->pinctrl_state_reset_high = NULL;
+	ts->pinctrl_state_int_high = NULL;
+	ts->pinctrl_state_int_low = NULL;
+	ts->pinctrl_state_reset_low = NULL;
+	ts->pinctrl_state_as_int = NULL;
+	ts->pinctrl_state_iovdd_low = NULL;
+	ts->pinctrl_state_iovdd_high = NULL;
+#endif
 	return ret;
 }
 
@@ -914,6 +1015,15 @@ static void gtx8_pinctrl_release(void)
 	ts->pins_gesture = NULL;
 	ts->pins_suspend = NULL;
 	ts->pins_default = NULL;
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	ts->pinctrl_state_reset_high = NULL;
+	ts->pinctrl_state_int_high = NULL;
+	ts->pinctrl_state_int_low = NULL;
+	ts->pinctrl_state_reset_low = NULL;
+	ts->pinctrl_state_as_int = NULL;
+	ts->pinctrl_state_iovdd_low = NULL;
+	ts->pinctrl_state_iovdd_high = NULL;
+#endif
 }
 
 /**
@@ -922,6 +1032,7 @@ static void gtx8_pinctrl_release(void)
  */
 static void gtx8_pinctrl_select_normal(void)
 {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int ret = 0;
 	struct gtx8_ts_data *ts = gtx8_ts;
 
@@ -930,7 +1041,7 @@ static void gtx8_pinctrl_select_normal(void)
 		if (ret < 0)
 			TS_LOG_ERR("%s:Set normal pin state error:%d\n", __func__, ret);
 	}
-
+#endif
 	return;
 }
 
@@ -940,6 +1051,7 @@ static void gtx8_pinctrl_select_normal(void)
  */
 static void gtx8_pinctrl_select_suspend(void)
 {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int ret = 0;
 	struct gtx8_ts_data *ts = gtx8_ts;
 
@@ -948,6 +1060,7 @@ static void gtx8_pinctrl_select_suspend(void)
 		if (ret < 0)
 			TS_LOG_ERR("%s:Set suspend pin state error:%d\n", __func__, ret);
 	}
+#endif
 	return;
 }
 
@@ -974,8 +1087,13 @@ static void gtx8_power_on_gpio_set(void)
 	struct gtx8_ts_data *ts = gtx8_ts;
 	unsigned int ret = 0;
 	gtx8_pinctrl_select_normal();
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	ret = gpio_direction_input(ts->dev_data->ts_platform_data->irq_gpio);
 	ret |= gpio_direction_output(ts->dev_data->ts_platform_data->reset_gpio, 1);
+#else
+	ret = pinctrl_select_state(ts->pinctrl, ts->pinctrl_state_as_int);
+	ret |= pinctrl_select_state(ts->pinctrl, ts->pinctrl_state_reset_high);
+#endif
 	if(ret)
 		TS_LOG_INFO("%s:error\n",__func__);
 }
@@ -985,8 +1103,14 @@ static void gtx8_power_off_gpio_set(void)
 	struct gtx8_ts_data *ts = gtx8_ts;
 	unsigned int ret = 0;
 	gtx8_pinctrl_select_suspend();
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	ret = gpio_direction_input(ts->dev_data->ts_platform_data->irq_gpio);
 	ret |= gpio_direction_output(ts->dev_data->ts_platform_data->reset_gpio, 0);
+#else
+	ret = pinctrl_select_state(ts->pinctrl, ts->pinctrl_state_as_int);
+	ret |= pinctrl_select_state(ts->pinctrl, ts->pinctrl_state_reset_low);
+	ret |= pinctrl_select_state(ts->pinctrl, ts->pinctrl_state_iovdd_low);
+#endif
 	if(ret)
 		TS_LOG_INFO("%s:error\n",__func__);
 }
@@ -1047,12 +1171,21 @@ static int  gtx8_power_off(void)
 }
 static int gtx8_power_switch(int on)
 {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int reset_gpio = 0;
+#endif
 	int ret = 0;
 	struct gtx8_ts_data *ts = gtx8_ts;
 
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	reset_gpio = ts->dev_data->ts_platform_data->reset_gpio;
 	ret = gpio_direction_output(reset_gpio, 0);
+#else
+	ret = pinctrl_select_state(ts->pinctrl,
+		ts->pinctrl_state_iovdd_high);
+	ret |= pinctrl_select_state(ts->pinctrl,
+		ts->pinctrl_state_reset_low);
+#endif
 	if(ret)
 		TS_LOG_INFO("%s:error./\n",__func__);
 	udelay(100);
@@ -1282,7 +1415,10 @@ int gtx8_ts_esd_init(struct gtx8_ts_data *ts)
 			TS_LOG_ERR("dynamic ESD init ERROR, i2c write failed\n");
 	}
 skip_dynamic_esd_init:
-	return NO_ERR;
+	if (ts->ic_type == IC_TYPE_7382)
+		return ret;
+	else
+		return NO_ERR;
 }
 
 static void gtx8_parse_ic_type(void)
@@ -1406,6 +1542,14 @@ static int gtx8_parse_dts(void)
 	}
 	ts->gtx8_roi_data_add = value;
 	TS_LOG_INFO("%s:roi_data address used is: [%x]\n", __func__, ts->gtx8_roi_data_add);
+
+	ret = of_property_read_u32(device, GTP_ROI_FW_SUPPORTED, &value);
+	if (ret) {
+		TS_LOG_INFO("%s: gtx8_roi_fw_supported use default value\n",
+			__func__);
+		value = GTX8_NOT_EXIST;
+	}
+	ts->gtx8_roi_fw_supported = value;
 
 	ret = of_property_read_u32(device, GTP_EASY_WAKE_SUPPORTED, &value);
 	if (ret) {
@@ -1562,6 +1706,22 @@ static int gtx8_parse_dts(void)
 	ts->support_read_gesture_without_checksum = value;
 	TS_LOG_INFO("%s, support_read_gesture_without_checksum=%d\n", __func__,
 		ts->support_read_gesture_without_checksum);
+	ret = of_property_read_u32(device, GTX8_SUPPORT_PEN_USE_MAX_RESOLUTION,
+		&value);
+	if (ret) {
+		value = 0;
+		TS_LOG_ERR("%s: support_pen_use_max_resolution use default value\n",
+			__func__);
+	}
+	ts->support_pen_use_max_resolution = (u32)value;
+	TS_LOG_INFO("%s: support_pen_use_max_resolution=%d\n", __func__,
+		ts->support_pen_use_max_resolution);
+	ret = of_property_read_u32(device, GTX8_SUPPORT_RETRY_READ_GESTURE,
+		&ts->support_retry_read_gesture);
+	if (ret)
+		ts->support_retry_read_gesture = 0;
+	TS_LOG_INFO("%s: support_retry_read_gesture=%d\n", __func__,
+		ts->support_retry_read_gesture);
 	TS_LOG_INFO("%s: irq_config=%d,algo_id=%d,project_id=%s,config_flag=%d,roi_supported=%d,"
 		"holster_supported=%d,glove_supported=%d, easy_wakeup_supported=%d ,"
 		"tools_support=%d,ic_type=%d,chip_name=%s\n" , __func__,
@@ -1570,7 +1730,8 @@ static int gtx8_parse_dts(void)
 		chip_data->ts_platform_data->feature_info.holster_info.holster_supported,
 		chip_data->ts_platform_data->feature_info.glove_info.glove_supported,
 		ts->easy_wakeup_supported,  ts->tools_support, ts->ic_type, ts->chip_name);
-	if (ts->support_ic_use_max_resolution)
+	if ((ts->support_ic_use_max_resolution) ||
+		(ts->support_pen_use_max_resolution))
 		gtx8_ts_parse_recovery_res(device);
 
 	TS_LOG_INFO("%s: gtx8_parse_dts end\n", __func__);
@@ -1987,6 +2148,8 @@ static int gtx8_chip_detect(struct ts_kit_platform_data *pdata)
 	}
 	strncpy(gtx8_ts->dev_data->chip_name, GOODIX_VENDER_NAME, MAX_STR_LEN -1);
 
+	if (gtx8_ts->ic_type == IC_TYPE_7382)
+		gtx8_ts->dev_data->fold_fingers_supported = 1; /* use 20 fingers */
 	return ret;
 err_power_on:
 	gtx8_power_switch(SWITCH_OFF);
@@ -2211,10 +2374,10 @@ static int gtx8_input_config(struct input_dev *input_dev)
 	__set_bit(TS_SLIDE_T2B, input_dev->keybit);
 	__set_bit(TS_SLIDE_B2T, input_dev->keybit);
 	__set_bit(TS_CIRCLE_SLIDE, input_dev->keybit);
-	__set_bit(TS_LETTER_c, input_dev->keybit);
-	__set_bit(TS_LETTER_e, input_dev->keybit);
-	__set_bit(TS_LETTER_m, input_dev->keybit);
-	__set_bit(TS_LETTER_w, input_dev->keybit);
+	__set_bit(TS_LETTER_C, input_dev->keybit);
+	__set_bit(TS_LETTER_E, input_dev->keybit);
+	__set_bit(TS_LETTER_M, input_dev->keybit);
+	__set_bit(TS_LETTER_W, input_dev->keybit);
 	__set_bit(TS_PALM_COVERED, input_dev->keybit);
 	__set_bit(TS_STYLUS_WAKEUP_TO_MEMO, input_dev->keybit);
 	__set_bit(TS_STYLUS_WAKEUP_SCREEN_ON, input_dev->keybit);
@@ -2313,7 +2476,93 @@ static int gtx8_get_standard_matrix(struct roi_matrix *src_mat, struct roi_matri
 	return NO_ERR;
 }
 
-/**
+/*
+ * gtx8_cache_roidata_fw - caching roi data
+ * @roi: roi data structure
+ * status[0]: roi state flag
+ */
+static int gtx8_cache_roidata_fw(struct gtx8_ts_roi *roi)
+{
+	unsigned int roi_bytes;
+	u8 status[ROI_HEAD_LEN + 1] = {0};
+	u16 checksum = 0;
+	int i;
+	unsigned int j;
+	int ret;
+	struct gtx8_ts_data *ts = gtx8_ts;
+
+	if (!ts->dev_data->ts_platform_data->feature_info.roi_info.roi_supported
+			|| !roi || !roi->enabled) {
+		TS_LOG_ERR("%s:roi is not support or invalid parameter\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	ret = gtx8_i2c_read((u16)ts->gtx8_roi_data_add, status, ROI_HEAD_LEN);
+	if (unlikely(ret < 0))
+		return ret;
+
+	for (i = 0; i < ROI_HEAD_LEN; i++)
+		checksum += status[i];
+
+	TS_LOG_INFO("ROI head{%02x %02x %02x %02x}\n",
+		status[0], status[1], status[2], status[3]);
+
+	if (unlikely((u8)checksum != 0)) { /* cast to 8bit checksum */
+		TS_LOG_ERR("%s:roi status checksum error\n", __func__);
+		return -EINVAL;
+	}
+
+	if (likely(status[0] & ROI_READY_MASK)) { /* roi data ready */
+		roi->track_id = status[0] & ROI_TRACKID_MASK;
+	} else {
+		TS_LOG_ERR("%s:not read\n", __func__);
+		return -EINVAL; /* not ready */
+	}
+
+	mutex_lock(&roi->mutex);
+	roi->data_ready = false;
+	/*
+	 * The data read from the IC is 16-bit.
+	 * One piece of data occupies two bytes.
+	 */
+	roi_bytes = (roi->roi_rows * roi->roi_cols + 1) * ROI_DATA_BYTES;
+
+	ret = gtx8_i2c_read((u16)ts->gtx8_roi_data_add + ROI_HEAD_LEN,
+				(u8 *)(roi->rawdata) + ROI_HEAD_LEN, roi_bytes);
+	if (unlikely(ret < 0)) {
+		mutex_unlock(&roi->mutex);
+		TS_LOG_ERR("%s:i2c_read failed!\n", __func__);
+		return ret;
+	}
+
+	/*
+	 * The two adjacent bytes of the read data are combined into a complete
+	 * data 16-bit, because the I2C can read only eight bits at a time.
+	 */
+	for (j = 0, checksum = 0; j < roi_bytes / ROI_DATA_BYTES ; j++) {
+		roi->rawdata[j + ROI_HEAD_LEN / ROI_DATA_BYTES] =
+			le16_to_cpu(roi->rawdata[j + ROI_HEAD_LEN /
+				ROI_DATA_BYTES]);
+		checksum += roi->rawdata[j + ROI_HEAD_LEN / ROI_DATA_BYTES];
+	}
+
+	memcpy(&roi->rawdata[0], &status[0], ROI_HEAD_LEN);
+
+	if (unlikely(checksum != 0))
+		TS_LOG_ERR("%s:roi data checksum error\n", __func__);
+	else
+		roi->data_ready = true;
+
+	mutex_unlock(&roi->mutex);
+
+	status[0] = 0x00;
+	ret = gtx8_i2c_write(ts->gtx8_roi_data_add, status, 1);
+
+	return ret;
+}
+
+/*
  * gtx8_cache_roidata_device - caching roi data
  * @roi: roi data structure
  * return 0 ok, < 0 fail
@@ -2523,10 +2772,11 @@ static void goodix_report_finger_gt7382(struct gtx8_ts_data  *ts,
 	unsigned int wx;
 	unsigned int wy;
 	unsigned int rect_data_size = 0;
+	unsigned int revoke_flag;
+	cur_index = 0;
 
 	if (touch_num == 0)
 		goto exit;
-	cur_index = 0;
 	if (ts->dev_data->ts_platform_data->aft_param.aft_enable_flag
 		&& touch_num) {
 		rect_data_size = touch_num * GTX8_SINGLE_RECT_DATA_SIZE >
@@ -2572,10 +2822,12 @@ static void goodix_report_finger_gt7382(struct gtx8_ts_data  *ts,
 		ts_fingers->fingers[id].x = x;
 		ts_fingers->fingers[id].y = y;
 		ts_fingers->fingers[id].pressure = w;
-		if (w != 0)
+		if (w != 0) { /* pressure is 0 when no touch. */
 			ts_fingers->fingers[id].status = TP_FINGER;
-		else
+			cur_index |= 1 << id;
+		} else {
 			ts_fingers->fingers[id].status = TP_NONE_FINGER;
+		}
 		if (ts->dev_data->ts_platform_data->aft_param.aft_enable_flag) {
 			ts_fingers->fingers[id].wx = wx;
 			ts_fingers->fingers[id].wy = wy;
@@ -2586,7 +2838,16 @@ static void goodix_report_finger_gt7382(struct gtx8_ts_data  *ts,
 			TS_LOG_DEBUG("%s:[%d] wx %d, wy %d, ewx %d, ewy %d, xer %d, yer %d\n",
 				__func__, id, wx, wy, ewx, ewy, xer, yer);
 		}
-		cur_index |= 1 << id;
+		if (g_ts_kit_platform_data.fp_tp_enable) {
+			/* 0x824E+i*8+6 revoke flag reg */
+			revoke_flag = coor_data[i * BYTES_PER_COORD + 6];
+			/* bit29 fwk revoke flag */
+			ts_fingers->fingers[id].major =
+				((revoke_flag & (1 << 0)) << 29);
+			ts_fingers->fingers[id].minor = 0;
+			TS_LOG_DEBUG("id=%d revoke flag:%d\n", id,
+				revoke_flag);
+		}
 		TS_LOG_DEBUG("%s:x= %d, y= %d, id = [%d] , w %d\n", __func__,
 			x, y, id, w);
 	}
@@ -2678,11 +2939,291 @@ static void goodix_report_pen(struct gtx8_ts_data  *ts, struct ts_pens *ts_pens,
 	}
 }
 
+static void gtx8_pen_palm_suppression(int soper)
+{
+	int ret;
+	u8 *buff = NULL;
+
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	u8 palm_suppression_in[TS_SWITCH_PEN_CMD_LEN] = {
+		GTX8_CMD_STYLUS_RESPONSE_MODE,
+		TS_PEN_PALM_SUPPRESSION_CMD,
+		TS_PEN_PALM_SUPPRESSION_IN_CHECK
+	};
+	u8 palm_suppression_out[TS_SWITCH_PEN_CMD_LEN] = {
+		GTX8_CMD_PEN_NORMAL_MODE_7382,
+		TS_PEN_PALM_SUPPRESSION_CMD,
+		TS_PEN_PALM_SUPPRESSION_OUT_CHECK
+	};
+
+	if (gtx8_ts->ic_type != IC_TYPE_7382)
+		return;
+	if (!pdata->chip_data->support_stylus3_plam_suppression) {
+		TS_LOG_ERR("unsupported stylus3 plam suppression\n");
+		return;
+	}
+	if (soper)
+		buff = palm_suppression_in;
+	else
+		buff = palm_suppression_out;
+	ret = gtx8_i2c_write(GTP_REG_CMD_GT7382, buff, TS_SWITCH_PEN_CMD_LEN);
+	if (ret) {
+		TS_LOG_ERR("send palm suppression fail\n");
+		return;
+	}
+	msleep(50); /* ic need 50ms delay */
+	TS_LOG_INFO("pen_palm_suppression_mode:%d\n", soper);
+}
+
+static void send_suppression_cmd_to_fw(unsigned int suppression_status)
+{
+	int state;
+	struct ts_easy_wakeup_info *easy_wakeup_info =
+		&g_ts_kit_platform_data.chip_data->easy_wakeup_info;
+
+	TS_LOG_INFO("%s:enter\n", __func__);
+	if (gtx8_ts->ic_type != IC_TYPE_7382) {
+		TS_LOG_ERR("%s:ic type not match\n", __func__);
+		return;
+	}
+	if ((easy_wakeup_info->sleep_mode == TS_POWER_OFF_MODE) &&
+		(atomic_read(&g_ts_kit_platform_data.state) != TS_WORK)) {
+		TS_LOG_DEBUG("power off mode, no need to respond cmd\n");
+		return;
+	}
+	if (suppression_status == STYLUS3_PLAM_SUPPRESSION_ON)
+		state = GLOBAL_PALM_SUPPRESSION_ON;
+	else
+		state = GLOBAL_PALM_SUPPRESSION_OFF;
+	gtx8_pen_palm_suppression(state);
+	TS_LOG_INFO("%s:over\n", __func__);
+}
+
+static int send_stylus3_typeinfo_to_fw(u8 *stylus3_type_info_buf,
+	u32 len, u8 check_sum)
+{
+	int i;
+	int ret = NO_ERR;
+	u8 check_data_value = GT73X_STYLUS3_TYPE_DEF_CHECK_DATA;
+
+	if (gtx8_ts->ic_type != IC_TYPE_7382) {
+		TS_LOG_ERR("%s:ic type not match\n", __func__);
+		return -EINVAL;
+	}
+	if ((!stylus3_type_info_buf) || (len > GT73X_STYLUS3_TYPE_DATA_LEN)) {
+		TS_LOG_ERR("%s: stylus3_type_buf addr or buf_len is invalid\n",
+			__func__);
+		return -EINVAL;
+	}
+	for (i = 0; i < GT73X_STYLUS3_TYPE_RETRY; i++) {
+		ret = gtx8_i2c_write(GTP_REG_CMD_GT7382,
+			stylus3_type_info_buf, len);
+		if (ret) {
+			TS_LOG_ERR("time %d send stylus type to ic failed\n",
+				i);
+			continue;
+		}
+		msleep(SYTULS_DELAY);
+		ret = gtx8_i2c_read(GT73X_STYLUS3_TYPE_CHECK_REG_ADDR,
+			&check_data_value, GT73X_STYLUS3_TYPE_CHECK_DATA_LEN);
+		if (ret) {
+			TS_LOG_ERR("time %d read check data value frome ic failed\n", i);
+			continue;
+		}
+		if ((check_data_value == check_sum) &&
+			(check_data_value != GT73X_STYLUS3_TYPE_DEF_CHECK_DATA))
+			break;
+	}
+	if (i == GT73X_STYLUS3_TYPE_RETRY) {
+		TS_LOG_ERR("%s: send stylus type info to ic failed\n",
+			__func__);
+		return ret;
+	}
+
+	TS_LOG_INFO("%s: send stylus type info to ic succ: %u\n",
+		__func__, check_data_value);
+	return ret;
+}
+
+static int stylus3_type_info_handle(u32 stylus3_type_info)
+{
+	int ret = NO_ERR;
+	int list;
+	u8 check_data;
+	u8 stylus3_type;
+	u8 stylus3_type_info_buf[GT73X_STYLUS3_TYPE_DATA_LEN] = { 0 };
+
+	if (gtx8_ts->ic_type != IC_TYPE_7382) {
+		TS_LOG_ERR("%s:ic type not match\n", __func__);
+		return -EINVAL;
+	}
+	stylus3_type = (u8)((stylus3_type_info >> MOVE_8_BIT) & GET_8BIT_DATA);
+	TS_LOG_INFO("stylus3_type_info = 0x%x, stylus3_type = %u\n",
+		stylus3_type_info, stylus3_type);
+	for (list = 0; list < ARRAY_SIZE(stylus3_type_info_table); list++) {
+		if (stylus3_type == stylus3_type_info_table[list].vendor) {
+			memcpy(stylus3_type_info_buf,
+				stylus3_type_info_table[list].info,
+				GT73X_STYLUS3_TYPE_DATA_LEN);
+			check_data = stylus3_type_info_table[list].checksum;
+			break;
+		}
+	}
+	if (list == ARRAY_SIZE(stylus3_type_info_table)) {
+		TS_LOG_ERR("%s:no type matched,use default stylus param\n",
+			__func__);
+		/* default cd54 stylus */
+		memcpy(stylus3_type_info_buf, stylus3_type_info_table[2].info,
+			GT73X_STYLUS3_TYPE_DATA_LEN);
+		check_data = stylus3_type_info_table[2].checksum;
+	}
+	ret = send_stylus3_typeinfo_to_fw(stylus3_type_info_buf,
+		GT73X_STYLUS3_TYPE_DATA_LEN, check_data);
+	if (ret) {
+		TS_LOG_ERR("%s:failed\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int stylus3_command(u8 buffer[], u32 len)
+{
+	int ret_i2c;
+
+	ret_i2c = gtx8_i2c_write(GTP_REG_CMD_GT7382,
+		&buffer[0], len);
+	if (ret_i2c) {
+		TS_LOG_ERR("i2c_write command fail\n");
+		return ret_i2c;
+	}
+	mdelay(SYTULS_DELAY);
+
+	ret_i2c = gtx8_i2c_read(GTP_REG_CMD_GT7382,
+		&buffer[0], len);
+	if (ret_i2c) {
+		TS_LOG_ERR("i2c_read command fail\n");
+		return ret_i2c;
+	}
+
+	TS_LOG_INFO("%s,buffer[0] :%x\n", __func__, buffer[0]);
+
+	return ret_i2c;
+}
+
+int stylus3_connect_state(unsigned int stylus3_status)
+{
+	int ret = NO_ERR;
+
+	u8 stylus3_on_buffer[SYTULS_CONNECT_BUFFER_LEN] = {
+		SYTULS_CONNECT_ON_COMMAND, SYTULS_CONNECT_ON_VALUE,
+		SYTULS_CONNECT_ON_CHECKSUM };
+	u8 stylus3_off_buffer[SYTULS_CONNECT_BUFFER_LEN] = {
+		SYTULS_CONNECT_OFF_COMMAND, SYTULS_CONNECT_OFF_VALUE,
+		SYTULS_CONNECT_OFF_CHECKSUM };
+	if (stylus3_status == SYTULS_CONNECT_STATUS) {
+		ret = stylus3_command(stylus3_on_buffer,
+			SYTULS_CONNECT_BUFFER_LEN);
+		if (ret) {
+			TS_LOG_ERR("stylus connect command sent fail\n");
+			ret = -EINVAL;
+		}
+	}
+	if (stylus3_status == SYTULS_DISCONNECT_STATUS) {
+		ret = stylus3_command(stylus3_off_buffer,
+			SYTULS_CONNECT_BUFFER_LEN);
+		if (ret) {
+			TS_LOG_ERR("stylus disconnected command sent fail\n");
+			ret = -EINVAL;
+		}
+	}
+	return ret;
+}
+
+static void supend_stylus_command_sent(void)
+{
+	unsigned int stylus3_status;
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+
+	if ((gtx8_ts->ic_type == IC_TYPE_7382) && (dev->send_bt_status_to_fw)) {
+		stylus3_status = atomic_read(&(g_ts_kit_platform_data.current_stylus3_status));
+		stylus3_status = (stylus3_status & SYTULS_VALUE);
+		TS_LOG_INFO("%s stylus3_status: %u\n", __func__, stylus3_status);
+		if (stylus3_status == SYTULS_DISCONNECT_STATUS)
+			stylus3_connect_state(stylus3_status);
+	}
+}
+static void gtx8_stylus_shift_freq_gt7382(const u8 *coor_data)
+{
+	u8 shift_freq_flag = 0;
+	int ret;
+	unsigned int stylus3_status;
+	static struct shift_freq_info shift_freq_info_tmp;
+
+	ret = gtx8_i2c_read_trans(GTP_REG_STYLUS3_SHIF_FREQ,
+		&shift_freq_flag, 1);
+	if (ret) {
+		TS_LOG_ERR("%s: read stylus3 shif freq flag fail\n",
+			__func__);
+		return;
+	}
+	TS_LOG_DEBUG("%s: 0xFF22=%x\n", __func__, shift_freq_flag);
+	if (shift_freq_flag == GTP_SHIFT_FREQ_IDLE) { /* idle */
+		shift_freq_info_tmp.f1 = *(coor_data + GTP_REG_FREQ_TX1_GT7382);
+		shift_freq_info_tmp.f2 = *(coor_data + GTP_REG_FREQ_TX2_GT7382);
+		TS_LOG_DEBUG("idle mode f1=%d, f2=%d\n",
+			shift_freq_info_tmp.f1, shift_freq_info_tmp.f2);
+	} else if (shift_freq_flag == GTP_SHIFT_FREQ_ACTIVE) {
+		shift_freq_info_tmp.next_f1 =
+			*(coor_data + GTP_REG_FREQ_TX1_GT7382);
+		shift_freq_info_tmp.next_f2 =
+			*(coor_data + GTP_REG_FREQ_TX2_GT7382);
+		TS_LOG_INFO("need shift freq f1=%d, f2=%d, next_f1=%d, next_f2=%d\n",
+			shift_freq_info_tmp.f1, shift_freq_info_tmp.f2,
+			shift_freq_info_tmp.next_f1,
+			shift_freq_info_tmp.next_f2);
+		stylus3_status = STYLUS3_FREQ_SHIFT_REQUEST;
+		ts_update_stylu3_shif_freq_flag(stylus3_status, true);
+		copy_stylus3_shift_freq_to_aft_daemon(&shift_freq_info_tmp);
+		TS_LOG_INFO("%s, send shift freq to daemon\n", __func__);
+	} else {
+		TS_LOG_ERR("invalid status\n");
+	}
+}
+
+static int gtx8_write_hop_ack_gt7382(void)
+{
+	u8 write_data;
+	int ret;
+	int retry_count = GTX8_RETRY_NUM_3;
+
+	if (gtx8_ts->ic_type != IC_TYPE_7382)
+		return 0;
+	write_data = GTP_SHIFT_FREQ_CONFIRM;
+	while (retry_count) {
+		ret = gtx8_i2c_write_trans(GTP_REG_STYLUS3_SHIF_FREQ,
+			&write_data, 1);
+		if (ret) {
+			TS_LOG_ERR("%s, write stylus3 shift freq reg err, retry=%d\n",
+				__func__, retry_count);
+		} else {
+			TS_LOG_INFO("%s, write stylus3 shift freq reg ok\n",
+				__func__);
+			break;
+		}
+		retry_count--;
+	}
+	if (!ret)
+		ts_update_stylu3_shif_freq_flag(STYLUS3_FREQ_SHIFT_REQUEST,
+			false);
+	return ret;
+}
+
 static void goodix_report_pen_gt7382(struct gtx8_ts_data  *ts,
 	struct ts_pens *ts_pens, u8 *touch_data, int touch_num)
 {
-	int x;
-	int y;
+	static int x;
+	static int y;
 	int w;
 	u8 *coor_data = NULL;
 	bool have_pen = false;
@@ -2746,7 +3287,12 @@ static void goodix_report_pen_gt7382(struct gtx8_ts_data  *ts,
 		TS_LOG_DEBUG("gtx8 : touch_data[1]:%02X, key_value = %02X\n",
 			touch_data[1],
 			touch_data[BYTES_PER_COORD * touch_num + 2]);
+		gtx8_stylus_shift_freq_gt7382(coor_data);
 		memcpy(&pre_ts_pens, ts_pens, sizeof(struct ts_pens));
+	} else {
+		ts_pens->tool.x = x;
+		ts_pens->tool.y = y;
+		ts_pens->tool.tool_type = BTN_TOOL_PEN;
 	}
 }
 
@@ -2812,6 +3358,7 @@ static int gtx8_gesture_evt_handler(struct gtx8_ts_data *ts,
 	int ret = 0;
 	unsigned char ts_state = 0;
 	unsigned int cmd_reg;
+	int retry;
 
 	ts_state = atomic_read(&ts->dev_data->ts_platform_data->state);
 	TS_LOG_DEBUG("%s: TS_WORK_STATUS :%d\n", __func__, ts_state);
@@ -2829,10 +3376,27 @@ static int gtx8_gesture_evt_handler(struct gtx8_ts_data *ts,
 		*  buf[2]: event type(0x80 represent pen wakeup event)
 		*  buf[4]: checksum
 		*/
-	ret = gtx8_i2c_read_trans(ts->reg.gesture, buf, GTX8_GESTURE_PACKAGE_LEN);
-	if (ret < 0){
-		TS_LOG_ERR("%s: get_reg_wakeup_gesture faile\n", __func__);
-		goto clear_flag;
+	if (gtx8_ts->support_retry_read_gesture) {
+		for (retry = 0; retry < GTX8_RETRY_NUM_3; retry++) {
+			ret = gtx8_i2c_read_trans(ts->reg.gesture, buf,
+				GTX8_GESTURE_PACKAGE_LEN);
+			if (ret < 0) {
+				TS_LOG_ERR("%s: get_reg_wakeup_gesture fail,retry:%d\n", __func__, retry);
+				mdelay(10); /* delay 10ms */
+			} else {
+				break;
+			}
+		}
+		if (retry == GTX8_RETRY_NUM_3)
+			goto clear_flag;
+	} else {
+		ret = gtx8_i2c_read_trans(ts->reg.gesture, buf,
+			GTX8_GESTURE_PACKAGE_LEN);
+		if (ret < 0) {
+			TS_LOG_ERR("%s: get_reg_wakeup_gesture faile\n",
+				__func__);
+			goto clear_flag;
+		}
 	}
 
 	if (!(buf[0] & 0x20)) {
@@ -2852,20 +3416,30 @@ skip_check:
 		buf[0], buf[1], buf[2], buf[3]);
 
 	switch (buf[2]) {
-		case GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE: //pen wakeup event
-			gtx8_set_gesture_key(info, out_cmd, TS_STYLUS_WAKEUP_TO_MEMO);
-			break;
-		case GTX8_PEN_WAKEUP_ONLI_SCREEN_ON_EVENT_TYPE:
-			gtx8_set_gesture_key(info, out_cmd, TS_STYLUS_WAKEUP_SCREEN_ON);
-			break;
-		case GTX8_PEN_CLICK_EVENT_TYPE:
-			gtx8_set_gesture_key(info, out_cmd, TS_DOUBLE_CLICK);
-			gtx8_switch_workmode(GESTURE_EXIT_MODE);
-			break;
-		default:
-			TS_LOG_ERR("%s: Warning : unsupport wakeup_event class !!\n", __func__);
+	case GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE: //pen wakeup event
+		gtx8_set_gesture_key(info, out_cmd, TS_STYLUS_WAKEUP_TO_MEMO);
+		break;
+	case GTX8_PEN_WAKEUP_ONLI_SCREEN_ON_EVENT_TYPE:
+		gtx8_set_gesture_key(info, out_cmd, TS_STYLUS_WAKEUP_SCREEN_ON);
+		break;
+	case GTX8_FINGER_DOUBLE_CLICK_EVENT_TYPE:
+		if (ts->ic_type == IC_TYPE_7382)
+			gtx8_set_gesture_key(info, out_cmd,
+				TS_DOUBLE_CLICK);
+		else
 			gtx8_switch_workmode(GESTURE_MODE);
-			break;
+		break;
+	case GTX8_PEN_WAKEUP_ENTER_MEMO_EVENT_TYPE_GT7382H:
+		if (ts->ic_type == IC_TYPE_7382)
+			gtx8_set_gesture_key(info, out_cmd,
+				TS_STYLUS_WAKEUP_TO_MEMO);
+		else
+			gtx8_switch_workmode(GESTURE_MODE);
+		break;
+	default:
+		TS_LOG_ERR("%s: Warning : unsupport wakeup_event class !!\n", __func__);
+		gtx8_switch_workmode(GESTURE_MODE);
+		break;
 	}
 
 clear_flag:
@@ -2885,13 +3459,9 @@ static int gtx8_remap_trace_id_gt7382(
 		0xff, 0xff, 0xff, 0xff, 0xff };
 	int i;
 	int j;
-	int k;
 	int offset;
 	bool need_leave = false;
 	bool need_add = false;
-	u8 temp_buf[BYTES_PER_COORD] = {0x00};
-	u8 *small = NULL;
-	bool need_swap = false;
 	int max_touch_num = GTP_MAX_TOUCH;
 
 	if (touch_num > GTP_MAX_TOUCH) {
@@ -2912,6 +3482,25 @@ static int gtx8_remap_trace_id_gt7382(
 		for (i = 0; i < sizeof(remap_array); i++)
 			remap_array[i] = 0xff;
 		return 0;
+	}
+
+	/* scan remap_array, find and remove leave point */
+	for (i = 0; i < sizeof(remap_array); i++) {
+		if (remap_array[i] == 0xff) {
+			continue;
+		} else {
+			need_leave = true;
+			offset = 0;
+			for (j = 0; j < touch_num; j++) {
+				if (remap_array[i] == coor_buf[offset]) {
+					need_leave = false;
+					break;
+				}
+				offset += BYTES_PER_COORD;
+			}
+			if (need_leave == true)
+				remap_array[i] = 0xff;
+		}
 	}
 
 	/* find and add new point */
@@ -2935,25 +3524,6 @@ static int gtx8_remap_trace_id_gt7382(
 		offset += BYTES_PER_COORD;
 	}
 
-	/* scan remap_array, find and remove leave point */
-	for (i = 0; i < sizeof(remap_array); i++) {
-		if (remap_array[i] == 0xff) {
-			continue;
-		} else {
-			need_leave = true;
-			offset = 0;
-			for (j = 0; j < touch_num; j++) {
-				if (remap_array[i] == coor_buf[offset]) {
-					need_leave = false;
-					break;
-				}
-				offset += BYTES_PER_COORD;
-			}
-			if (need_leave == true)
-				remap_array[i] = 0xff;
-		}
-	}
-
 	/* remap trace id */
 	offset = 0;
 	for (i = 0; i < touch_num; i++) {
@@ -2975,26 +3545,6 @@ static int gtx8_remap_trace_id_gt7382(
 					(int)sizeof(remap_array), remap_array);
 			}
 			offset += BYTES_PER_COORD;
-		}
-	}
-
-	/* realign coor data by new trace ID */
-	for (i = 0; i < touch_num - 1; i++) {
-		small = &coor_buf[BYTES_PER_COORD * i];
-		need_swap = false;
-		for (j = i + 1; j < touch_num; j++) {
-			if (coor_buf[BYTES_PER_COORD * j] < *small) {
-				need_swap = true;
-				small = &coor_buf[BYTES_PER_COORD * j];
-			}
-		}
-		/* swap */
-		if (need_swap) {
-			for (k = 0; k < BYTES_PER_COORD; k++) {
-				temp_buf[k] = small[k];
-				small[k] = coor_buf[BYTES_PER_COORD * i + k];
-				coor_buf[BYTES_PER_COORD * i + k] = temp_buf[k];
-			}
 		}
 	}
 
@@ -3071,6 +3621,10 @@ static int gtx8_touch_evt_handler_gt7382(struct gtx8_ts_data  *ts,
 	} else if (unlikely(touch_num > 1)) {
 		if (have_pen) {
 			/* TS_REG_COORDS_BASE */
+			if (touch_num >= GTP_MAX_TOUCH) {
+				TS_LOG_ERR("touch num is too large\n");
+				touch_num = GTP_MAX_TOUCH - 1;
+			}
 			ret = gtx8_i2c_read_trans(ts->reg.coor +
 				extra_data + BYTES_PEN_COORD,
 				&buffer[extra_data + BYTES_PEN_COORD],
@@ -3113,7 +3667,8 @@ static int gtx8_touch_evt_handler_gt7382(struct gtx8_ts_data  *ts,
 	if (have_pen && (touch_num == 1)) { /* only pen event */
 		pre_pen_num = 1;
 		goodix_report_pen_gt7382(ts, &temp_ts_pens, buffer, touch_num);
-		out_cmd->command = TS_REPORT_PEN;
+		out_cmd->command = TS_ALGO_FINGER_PEN;
+		out_cmd->cmd_param.pub_params.report_touch_info.finger_pen_flag = TS_ONLY_PEN;
 	} else if (have_pen && (touch_num > 1)) { /* has finger & pen event */
 		goodix_report_finger_gt7382(ts, &temp_ts_fingers,
 			buffer, touch_num - 1);
@@ -3122,43 +3677,35 @@ static int gtx8_touch_evt_handler_gt7382(struct gtx8_ts_data  *ts,
 		goodix_report_pen_gt7382(ts, &temp_ts_pens,
 			&buffer[(touch_num - 1) * BYTES_PER_COORD], 1);
 		pre_pen_num = 1;
-		out_cmd->command = TS_REPORT_FINGERS_PEN;
-	} else if ((!have_pen) && (touch_num > 0)) { /* only finger event */
+		out_cmd->command = TS_ALGO_FINGER_PEN;
+		out_cmd->cmd_param.pub_params.report_touch_info.finger_pen_flag = TS_FINGER_PEN;
+	} else if ((!have_pen) && touch_num > 0) { /* only finger event */
 		goodix_report_finger_gt7382(ts, &temp_ts_fingers,
 			buffer, touch_num);
-		out_cmd->command = TS_INPUT_ALGO;
 		/* if last event has pen, need report pen up */
-		if (pre_pen_num != 0) {
+		if (pre_pen_num != 0)
 			goodix_report_pen_gt7382(ts, &temp_ts_pens,
 				&buffer[(touch_num - 1) * BYTES_PER_COORD], 0);
-			out_cmd->command = TS_REPORT_FINGERS_PEN;
-		}
+		out_cmd->command = TS_ALGO_FINGER_PEN;
+		out_cmd->cmd_param.pub_params.report_touch_info.finger_pen_flag = TS_ONLY_FINGER;
 		pre_pen_num = 0;
 		pre_finger_num = touch_num;
 	} else { /* if last event has pen, need report pen up */
 		if (pre_pen_num != 0) {
 			goodix_report_pen_gt7382(ts, &temp_ts_pens,
 				&buffer[(touch_num - 1) * BYTES_PER_COORD], 0);
-			out_cmd->command = TS_REPORT_PEN;
+			out_cmd->command = TS_ALGO_FINGER_PEN;
 		}
+		out_cmd->cmd_param.pub_params.report_touch_info.finger_pen_flag = TS_ONLY_PEN;
 		pre_pen_num = 0;
 		pre_finger_num = 0;
 	}
+	memcpy(&(ts_finger_pen->report_pen_info),
+		&temp_ts_pens, sizeof(ts_finger_pen->report_pen_info));
+	memcpy(&(ts_finger_pen->report_finger_info),
+		&temp_ts_fingers, sizeof(ts_finger_pen->report_finger_info));
+	ts_finger_pen->algo_order = ts->dev_data->algo_id;
 
-	if (out_cmd->command == TS_REPORT_PEN) { /* report pen */
-		memcpy(ts_pens, &temp_ts_pens, sizeof(struct ts_pens));
-	} else if (out_cmd->command == TS_INPUT_ALGO) { /* report finger */
-		out_cmd->cmd_param.pub_params.report_touch_info.algo_order =
-			ts->dev_data->algo_id;
-		memcpy(ts_fingers, &temp_ts_fingers, sizeof(struct ts_fingers));
-	} else if (out_cmd->command == TS_REPORT_FINGERS_PEN) {
-		/* report finger and pen together */
-		memcpy(&(ts_finger_pen->report_pen_info),
-			&temp_ts_pens, sizeof(struct ts_pens));
-		memcpy(&(ts_finger_pen->report_finger_info),
-			&temp_ts_fingers, sizeof(struct ts_fingers));
-		ts_finger_pen->algo_order = ts->dev_data->algo_id;
-	}
 	if (ts->dev_data->ts_platform_data->feature_info.roi_info.roi_supported) {
 		if ((pre_index != cur_index) &&
 			((cur_index & pre_index) != cur_index))
@@ -3289,8 +3836,13 @@ static int gtx8_input_pen_config(struct input_dev *input_dev)
 	__set_bit(BTN_TOOL_PEN, input->keybit);
 	__set_bit(INPUT_PROP_DIRECT, input->propbit);
 	__set_bit(TS_STYLUS_WAKEUP_SCREEN_ON, input->keybit);
-	input_set_abs_params(input, ABS_X, 0, ts->max_x, 0, 0);
-	input_set_abs_params(input, ABS_Y, 0, ts->max_y, 0, 0);
+	if (ts->support_pen_use_max_resolution) {
+		input_set_abs_params(input, ABS_X, 0, ts->x_max_rc, 0, 0);
+		input_set_abs_params(input, ABS_Y, 0, ts->y_max_rc, 0, 0);
+	} else {
+		input_set_abs_params(input, ABS_X, 0, ts->max_x, 0, 0);
+		input_set_abs_params(input, ABS_Y, 0, ts->max_y, 0, 0);
+	}
 	input_set_abs_params(input, ABS_PRESSURE, 0, GTX8_MAX_PEN_PRESSURE, 0, 0);
 	input_set_abs_params(input, ABS_TILT_X,
 		-1 * GTX8_MAX_PEN_TILT, GTX8_MAX_PEN_TILT, 0, 0);
@@ -3344,15 +3896,30 @@ static int gtx8_irq_bottom_half(struct ts_cmd_node *in_cmd,
  */
 static void gtx8_resume_chip_reset(void)
 {
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int reset_gpio = 0;
 
 	reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
+#endif
 	TS_LOG_INFO("%s: Chip reset\n", __func__);
 
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_low);
+#else
 	gpio_direction_output(reset_gpio, 0);
+#endif
 	//udelay(GTX8_RESET_PIN_D_U_TIME);
-	udelay(2000);
+	if (gtx8_ts->ic_type == IC_TYPE_7382)
+		mdelay(10); /* ic need */
+	else
+		udelay(2000); /* ic need */
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_high);
+#else
 	gpio_direction_output(reset_gpio, 1);
+#endif
 }
 
 /**
@@ -3360,12 +3927,28 @@ static void gtx8_resume_chip_reset(void)
  */
 int gtx8_chip_reset(void)
 {
+	u32 stylus3_type_info;
+	u32 stylus3_status;
+#ifndef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 	int reset_gpio = gtx8_ts->dev_data->ts_platform_data->reset_gpio;
-
+#endif
 	TS_LOG_INFO("%s: Chip reset\n", __func__);
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_low);
+#else
 	gpio_direction_output(reset_gpio, 0);
-	udelay(2000);
+#endif
+	if (gtx8_ts->ic_type == IC_TYPE_7382)
+		mdelay(10); /* ic need */
+	else
+		udelay(2000); /* ic need */
+#ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
+	pinctrl_select_state(gtx8_ts->pinctrl,
+		gtx8_ts->pinctrl_state_reset_high);
+#else
 	gpio_direction_output(reset_gpio, 1);
+#endif
 	if (gtx8_ts->ic_type == IC_TYPE_7382) {
 		if (gtx8_ts->poweron_flag == true) {
 			msleep(GT73X_AFTER_REST_DELAY);
@@ -3373,11 +3956,19 @@ int gtx8_chip_reset(void)
 		} else {
 			msleep(GT73X_AFTER_REST_DELAY_440);
 		}
-		msleep(GT73X_AFTER_REST_DELAY);
 	} else {
 		msleep(GTX8_AFTER_REST_DELAY);
 	}
 	gtx8_ts_esd_init(gtx8_ts);
+	if ((gtx8_ts->ic_type == IC_TYPE_7382) &&
+		gtx8_ts->dev_data->send_stylus_type_to_fw) {
+		stylus3_type_info =
+			gtx8_ts->dev_data->ts_platform_data->current_stylus3_type_info;
+		stylus3_status = atomic_read(&(g_ts_kit_platform_data.current_stylus3_status));
+		stylus3_status &= SYTULS_VALUE;
+		if (stylus3_status)
+			stylus3_type_info_handle(stylus3_type_info);
+	}
 	return 0;
 }
 
@@ -3503,6 +4094,7 @@ static int gtx8_chip_suspend(void)
 			gtx8_pinctrl_select_suspend();
 			gtx8_switch_workmode(SLEEP_MODE);
 		}else{
+			supend_stylus_command_sent();
 			TS_LOG_INFO("%s: enter gesture mode\n", __func__);
 			gtx8_pinctrl_select_gesture();
 			gtx8_switch_workmode(GESTURE_MODE);
@@ -3540,13 +4132,20 @@ static int gtx8_chip_resume(void)
 		gtx8_pinctrl_select_normal();
 		if (!tskit_pt_station_flag)
 			gtx8_power_switch(SWITCH_ON);
+		gtx8_resume_chip_reset();
 		break;
+	/* gesture mode need set pinctrl, needn't break */
 	case TS_GESTURE_MODE:
+		if (gtx8_ts->ic_type == IC_TYPE_7382) {
+			gtx8_pinctrl_select_normal();
+			gtx8_resume_chip_reset();
+			break;
+		}
 	default:
 		gtx8_pinctrl_select_normal();
+		gtx8_resume_chip_reset();
 		break;
 	}
-	gtx8_resume_chip_reset();
 
 	TS_LOG_INFO(" %s:exit\n", __func__);
 	return NO_ERR;
@@ -3554,11 +4153,31 @@ static int gtx8_chip_resume(void)
 
 static int gtx8_chip_after_resume(void *feature_info)
 {
+	struct lcd_kit_ops *tp_ops = lcd_kit_get_ops();
+	int tskit_pt_station_flag = 0;
+	int retval;
+	unsigned int stylus3_status;
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+	u32 stylus3_type_info;
+
 	TS_LOG_INFO("%s: enter\n", __func__);
 
 	//msleep(GTX8_RESET_SLEEP_TIME);
 	if (gtx8_ts->ic_type == IC_TYPE_7382) {
-		msleep(GT73X_AFTER_REST_DELAY);
+		if ((tp_ops) && (tp_ops->get_status_by_type)) {
+			retval = tp_ops->get_status_by_type(PT_STATION_TYPE,
+				&tskit_pt_station_flag);
+			if (retval < 0) {
+				TS_LOG_ERR("%s: get tskit_pt_station_flag fail\n",
+					__func__);
+				return retval;
+			}
+		}
+		if ((gtx8_ts->dev_data->easy_wakeup_info.sleep_mode == TS_POWER_OFF_MODE) &&
+			(!tskit_pt_station_flag))
+			msleep(GT73X_AFTER_REST_DELAY);
+		else
+			msleep(GT73X_AFTER_REST_DELAY_GESTURE_MODE);
 	} else {
 		msleep(GTX8_AFTER_REST_DELAY);
 	}
@@ -3567,6 +4186,28 @@ static int gtx8_chip_after_resume(void *feature_info)
 	gtx8_feature_resume(gtx8_ts);
 	TS_LOG_INFO("%s bin_normal_cfg-%d \n", __func__, gtx8_ts->normal_cfg.data[0]);
 
+	if ((gtx8_ts->ic_type == IC_TYPE_7382) && (dev->send_bt_status_to_fw)) {
+		stylus3_status = atomic_read(&(g_ts_kit_platform_data.current_stylus3_status));
+		stylus3_status = (stylus3_status & SYTULS_VALUE);
+		TS_LOG_INFO("%s resume_get_stylus3_status: %u\n", __func__, stylus3_status);
+		if (stylus3_status == SYTULS_DISCONNECT_STATUS)
+			stylus3_connect_state(stylus3_status);
+
+		mdelay(SYTULS_DELAY);
+	}
+	if ((gtx8_ts->ic_type == IC_TYPE_7382) &&
+		dev->send_stylus_type_to_fw) {
+		stylus3_status = atomic_read(&(g_ts_kit_platform_data.current_stylus3_status));
+		stylus3_type_info =
+			dev->ts_platform_data->current_stylus3_type_info;
+		stylus3_status &= SYTULS_VALUE;
+		if (stylus3_status)
+			stylus3_type_info_handle(stylus3_type_info);
+	}
+	if ((gtx8_ts->ic_type == IC_TYPE_7382) &&
+		(gtx8_ts->dev_data->easy_wakeup_info.sleep_mode ==
+		TS_GESTURE_MODE))
+		gtx8_touch_switch();
 	return NO_ERR;
 }
 
@@ -3626,16 +4267,34 @@ void gtx8_pen_respons_mode_change(int soper)
 			ret = gtx8_send_cmd(GTX8_CMD_STYLUS_RESPONSE_MODE,\
 								TS_SWITCH_PEN_RESPON_FAST_CMD_DATA,\
 								GTX8_NOT_NEED_SLEEP);
-			if (ret < 0 )
+			if (gtx8_ts->ic_type == IC_TYPE_7382) {
+				ts_update_stylu3_shif_freq_flag(STYLUS3_APP_SWITCH,
+					true);
+				TS_LOG_INFO("%s pen get in app mode\n",
+					__func__);
+			}
+			if (ret < 0)
 				TS_LOG_ERR("pen respon fast mode error \n");
 			else
 				TS_LOG_INFO("[%s] pen respon fast mode sucess\n",__func__);
 			break;
 		case TS_SWITCH_PEN_RESPON_NORMAL:
-			ret = gtx8_send_cmd(GTX8_CMD_STYLUS_RESPONSE_MODE,\
-								TS_SWITCH_PEN_RESPON_NORMAL_CMD_DATA,\
-								GTX8_NOT_NEED_SLEEP);
-			if (ret < 0 )
+			if (gtx8_ts->ic_type == IC_TYPE_7382) {
+				ret = gtx8_send_cmd(
+					GTX8_CMD_PEN_NORMAL_MODE_7382,
+					TS_SWITCH_PEN_NORMAL_CMD_DATA_7382,
+					GTX8_NOT_NEED_SLEEP);
+				ts_update_stylu3_shif_freq_flag(STYLUS3_APP_SWITCH,
+					false);
+				TS_LOG_INFO("%s pen get out app mode\n",
+					__func__);
+			} else {
+				ret = gtx8_send_cmd(
+					GTX8_CMD_STYLUS_RESPONSE_MODE,
+					TS_SWITCH_PEN_RESPON_NORMAL_CMD_DATA,
+					GTX8_NOT_NEED_SLEEP);
+			}
+			if (ret < 0)
 				TS_LOG_ERR("pen respon normal mode	error \n");
 			else
 				TS_LOG_INFO("[%s] pen respon normal mode sucess\n",__func__);
@@ -3718,9 +4377,9 @@ static void gtx8_touch_switch(void)
 		goto out;
 	}
 	*ptr_end = 0;
-	error = strict_strtoul(ptr_begin, 0, &get_value);
+	error = kstrtoul(ptr_begin, 0, &get_value);
 	if (error) {
-		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
+		TS_LOG_ERR("kstrtoul return invaild :%d\n", error);
 		goto out;
 	}else{
 		stype = (unsigned char)get_value;
@@ -3744,9 +4403,9 @@ static void gtx8_touch_switch(void)
 		goto out;
 	}
 	*ptr_end = 0;
-	error = strict_strtoul(ptr_begin, 0, &get_value);
+	error = kstrtoul(ptr_begin, 0, &get_value);
 	if (error) {
-		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
+		TS_LOG_ERR("kstrtoul return invaild :%d\n", error);
 		goto out;
 	}else{
 		soper = (unsigned char)get_value;
@@ -3759,9 +4418,9 @@ static void gtx8_touch_switch(void)
 		TS_LOG_ERR("%s get soper fail\n", __func__);
 		goto out;
 	}
-	error = strict_strtoul(ptr_begin, 0, &get_value);
+	error = kstrtoul(ptr_begin, 0, &get_value);
 	if (error) {
-		TS_LOG_ERR("strict_strtoul return invaild :%d\n", error);
+		TS_LOG_ERR("kstrtoul return invaild :%d\n", error);
 		goto out;
 	}else{
 		param = (unsigned char)get_value;
@@ -3942,7 +4601,7 @@ skip_dynamic_esd_check:
 			if (ret < 0)
 				TS_LOG_ERR("Read Reg status ERR!\n");
 		} else {
-			read_reg_ret = gtx8_i2c_read_trans(GTP_REG_STATUS,
+			read_reg_ret = gtx8_i2c_read_trans(read_debug_msg_reg,
 				tmp_reg_buf + (tri_cnt - 1) * read_debug_reg_len,
 				read_debug_reg_len);
 			if (read_reg_ret < 0)
@@ -4413,14 +5072,67 @@ static void gtx8_work_after_input_kit(void)
 		reinit_completion(&roi_data_done);
 		TS_LOG_DEBUG("%s: pre[%d]  cur[%d]  (cur_index & pre_index):[%d] .\n",
 				__func__, pre_index, cur_index, (cur_index & pre_index));
-		if ((pre_index != cur_index) && ((cur_index & pre_index) != cur_index)) {//finger num id diff ,and must be finger done
-			gtx8_cache_roidata_device(&gtx8_ts->roi);//depend on driver to format data
+		/* finger num id diff ,and must be finger done */
+		if ((pre_index != cur_index) &&
+			((cur_index & pre_index) != cur_index)) {
+			if (gtx8_ts->gtx8_roi_fw_supported)
+				/* fw has formatted the data */
+				gtx8_cache_roidata_fw(&gtx8_ts->roi);
+			else
+				/* depend on driver to format data */
+				gtx8_cache_roidata_device(&gtx8_ts->roi);
 		}
 		pre_index = cur_index;
 		complete_all(&roi_data_done);  /* If anyone has been blocked by us, wake it up. */
 	}
 	return;
 }
+
+static int gtx8_charger_command_gt7382(u8 buffer[], u32 len)
+{
+	int ret_i2c;
+
+	ret_i2c = gtx8_i2c_write(GTP_REG_CMD_GT7382,
+		&buffer[0], len);
+	if (ret_i2c) {
+		TS_LOG_ERR("i2c_write command fail\n");
+		return ret_i2c;
+	}
+	mdelay(GTX8_CHARGE_MODE_DELAY_TIME);
+
+	ret_i2c = gtx8_i2c_read(GTP_REG_CMD_GT7382,
+		&buffer[0], len);
+	if (ret_i2c) {
+		TS_LOG_ERR("i2c_read command fail\n");
+		return ret_i2c;
+	}
+	if (buffer[0] != GTX8_CHARGE_REG_VALUE)
+		TS_LOG_ERR("Charging command sent faile");
+
+	return ret_i2c;
+}
+
+static int gtx8_charger_mode_gt7382(u8 charger_switch)
+{
+	int ret;
+	u8 charge_on_buffer[GTX8_CHARGE_BUFEER_LEN] = { GTX8_CHARGE_ON_VALUE_0,
+		GTX8_CHARGE_ON_VALUE_1, GTX8_CHARGE_ON_VALUE_2 };
+	u8 charge_off_buffer[GTX8_CHARGE_BUFEER_LEN] = { GTX8_CHARGE_OFF_VALUE_0,
+		GTX8_CHARGE_OFF_VALUE_1, GTX8_CHARGE_OFF_VALUE_2 };
+	if (charger_switch) {
+		ret = gtx8_charger_command_gt7382(charge_on_buffer,
+			GTX8_CHARGE_BUFEER_LEN);
+		if (ret)
+			TS_LOG_ERR("charger on failed!\n");
+	} else {
+		ret = gtx8_charger_command_gt7382(charge_off_buffer,
+			GTX8_CHARGE_BUFEER_LEN);
+		if (ret)
+			TS_LOG_ERR("charger off failed!\n");
+	}
+	return ret;
+}
+
 static int gtx8_charger_switch(struct ts_charger_info *info)
 {
 	int ret = NO_ERR;
@@ -4440,6 +5152,8 @@ static int gtx8_charger_switch(struct ts_charger_info *info)
 		if((!feature_info->holster_info.holster_switch) && \
 			(!feature_info->glove_info.glove_switch) && \
 			(!gtx8_ts->game_switch)){
+			if (gtx8_ts->ic_type == IC_TYPE_7382)
+				return gtx8_charger_mode_gt7382(info->charger_switch);
 			if (info->charger_switch){
 				ret = gtx8_feature_switch(gtx8_ts,TS_FEATURE_CHARGER, SWITCH_ON);
 				cmd = GTX8_CMD_CHARGER_ON;//switch on cmd
@@ -4538,6 +5252,10 @@ struct ts_device_ops ts_gtx8_ops = {
 	.chip_charger_switch = gtx8_charger_switch,
 	.chip_wakeup_gesture_enable_switch =
 		gtx8_wakeup_gesture_enable_switch,
+	.chip_write_hop_ack = gtx8_write_hop_ack_gt7382,
+	.chip_stylus3_connect_state = stylus3_connect_state,
+	.chip_stylus3_type_info_handle = stylus3_type_info_handle,
+	.chip_send_supression_cmd_to_fw = send_suppression_cmd_to_fw,
 };
 
 static int __init gtx8_ts_module_init(void)

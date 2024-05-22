@@ -3,7 +3,7 @@
  *
  * onewire head file for all physic controller
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -38,7 +38,7 @@
 #include <asm/arch_timer.h>
 #include <generated/uapi/linux/version.h>
 
-#include <hisi_gpio.h>
+#include <gpio/hisi_gpio.h>
 #include <huawei_platform/log/hw_log.h>
 
 /* PL061 */
@@ -83,8 +83,11 @@ struct ow_treq {
 	unsigned int write_residual_cycles;
 	unsigned int read_init_low_ns;
 	unsigned int read_init_low_cycles;
+	unsigned int read_wait_slave_ns;
+	unsigned int read_wait_slave_cycles;
 	unsigned int read_residual_ns;
 	unsigned int read_residual_cycles;
+	unsigned int transport_bit_order;
 };
 
 struct ow_treq_v2 {
@@ -114,6 +117,7 @@ typedef unsigned char (*ow_read_byte)(void);
 struct ow_phy_ops {
 	ow_reset reset;
 	ow_read_byte read_byte;
+	void (*reset_write_byte)(const unsigned char val);
 	void (*write_byte)(const unsigned char val);
 	void (*set_time_request)(struct ow_treq *trq);
 	void (*wait_for_ic)(unsigned int ms);
@@ -186,15 +190,20 @@ struct ow_phy_list {
 
 #define FIND_IC_RETRY_NUM                       1
 
+enum onewire_bit_order {
+	ONEWIRE_BIT_ORDER_LSB = 0,
+	ONEWIRE_BIT_ORDER_MSB = 1,
+};
+
 /*
- *This macro is arch related. Transform ns to timer cycles.
- *X should not larger than 10^6.
- *0x10c7 is round up of 2^32 / 10^6.
- *0x5 is round up of 2^32 / 10^9.
- *1 << 31 is round up for cycles.
- *Using this macro you should also calculate the
- *cycles by yourself if the result is same as you hoped.
- *For kirin970 loops_per_jiffy * HZ is 1920000.
+ * This macro is arch related. Transform ns to timer cycles.
+ * X should not larger than 10^6.
+ * 0x10c7 is round up of 2^32 / 10^6.
+ * 0x5 is round up of 2^32 / 10^9.
+ * 1 << 31 is round up for cycles.
+ * Using this macro you should also calculate the
+ * cycles by yourself if the result is same as you hoped.
+ * For kirin970 loops_per_jiffy * HZ is 1920000.
  */
 #define ns2cycles(X)                                                      \
 (((((X) / 1000 * 0x10C7UL + (X) % 1000 * 0x5UL) * loops_per_jiffy * HZ) + \

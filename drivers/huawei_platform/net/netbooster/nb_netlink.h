@@ -1,11 +1,17 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2020. All rights reserved.
+ * Description: Netlink head file.
+ * Author: linlixin2@huawei.com
+ * Create: 2017-11-16
+ */
+
 #ifndef _NB_NETLINK_H
 #define _NB_NETLINK_H
 
 #define MAX_RTT_LIST_LEN 32
 
-enum nb_cmd_type
-{
-	NBMSG_REG = 0x10,  /* NLMSG_MIN_TYPE */
+enum nb_cmd_type {
+	NBMSG_REG = 0x10, /* NLMSG_MIN_TYPE */
 	NBMSG_UNREG,
 	NBMSG_VOD_REQ,
 	NBMSG_KSI_REQ,
@@ -17,15 +23,13 @@ enum nb_cmd_type
 	NBMSG_REQ_BUTT,
 };
 
-enum app_qoe_cmd_type
-{
-	APP_QOE_MSG_UID_REQ = 3,/*DATA_SEND_TO_KERNEL_APP_QOE_UID  3*/
-	APP_QOE_MSG_RSRP_REQ = 4,/*DATA_SEND_TO_KERNEL_APP_QOE_RSRP 4*/
+enum app_qoe_cmd_type {
+	APP_QOE_MSG_UID_REQ = 3, /* DATA_SEND_TO_KERNEL_APP_QOE_UID 3 */
+	APP_QOE_MSG_RSRP_REQ = 4, /* DATA_SEND_TO_KERNEL_APP_QOE_RSRP 4 */
 	APP_QOE_MSG_BUTT,
 };
 
-enum nb_evt_type
-{
+enum nb_evt_type {
 	NBMSG_EVT_INVALID = 0,
 	NBMSG_VOD_EVT,
 	NBMSG_KSI_EVT,
@@ -33,35 +37,34 @@ enum nb_evt_type
 	NBMSG_EVT_BUTT,
 };
 
-enum setting_params_req_type
-{
+enum setting_params_req_type {
 	REQ_TYPE_CLOSE_SOCKET = 1,
 	REQ_TYPE_SET_SLOW_THRESHOLD = 2,
 	REQ_TYPE_DEL_UID_NETID_ENTRY = 3,
 	REQ_TYPE_SET_ALPHA_FILTER_ALG_PARAMS = 4,
-	REQ_TYPE_SET_FILTER_ALG_CHANGE_THRESHOLD = 5,
+	REQ_TYPE_SET_FILTER_ALG_CHG_THRESHOLD = 5,
 	REQ_TYPE_SET_PCIE_POWER_LEVEL = 6,
 	REQ_TYPE_BUTT,
 };
 
 struct vod_event {
-	uint8_t videoSegState;
-	uint8_t videoProtocol;
-	uint8_t videoRemainingPlayTime;
-	uint8_t videoStatus;
-	uint16_t aveCodeRate;
-	uint16_t segSize;
-	uint32_t videoIP;
-	uint16_t videoPort;
-	uint8_t segDuration;
-	uint8_t segIndex;
+	uint8_t video_seg_state;
+	uint8_t video_protocol;
+	uint8_t video_remaining_playtime;
+	uint8_t video_status;
+	uint16_t ave_code_rate;
+	uint16_t seg_size;
+	uint32_t video_ip;
+	uint16_t video_port;
+	uint8_t seg_duration;
+	uint8_t seg_index;
 };
 
 struct ksi_event {
-	uint8_t slowType;
-	uint8_t avgAmp;
+	uint8_t slow_type;
+	uint8_t avg_amp;
 	uint8_t duration;
-	uint8_t timeStart;
+	uint8_t time_start;
 };
 
 struct native_event {
@@ -101,13 +104,14 @@ struct native_requst {
 	int8_t rcv;
 };
 
-void nb_notify_event(enum nb_evt_type event_type, void *data, int size);
+void nb_notify_event(enum nb_evt_type event_type, const void *data, int size);
 extern int get_rtt_list(struct native_event *rtt_event, unsigned int list_len);
 #ifdef CONFIG_HW_DPIMARK_MODULE
 extern void mplk_del_nw_bind(uid_t uid);
 extern void mplk_add_nw_bind(uid_t uid, uint32_t netid);
 extern void mplk_close_socket_by_uid(uint32_t strategy, uid_t uid);
 #endif
-extern void set_slow_proba_threshold(int threshold_normal, int threshold_slow, int threshold_init);
+extern void set_slow_proba_threshold(int threshold_normal,
+	int threshold_slow, int threshold_init);
 extern void config_pcie_power_level(int power_level, int timeout);
-#endif /*_NB_NETLINK_H*/
+#endif /* _NB_NETLINK_H */

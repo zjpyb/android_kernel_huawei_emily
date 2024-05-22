@@ -1,4 +1,19 @@
-
+/*
+ * etb.h
+ *
+ * Power-on and power-off backup and restoration of core A
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 #include <linux/mtd/hisi_nve_number.h>
 
 #define ETB_NVE_NUMBER NVE_ETB_NUM
@@ -7,20 +22,20 @@
 #define TIMEOUT (100000)
 #define ALWAYS_TRUE (0x6F)
 
-#define SOC_Modem_A9_ROM_TABLE_BASE_ADDR	(0xF6600000)
-#define SOC_ACPU_ROM_TABLE_BASE_ADDR	(0xF6500000) 
+#define SOC_MODEM_A9_ROM_TABLE_BASE_ADDR	(0xF6600000)
+#define SOC_ACPU_ROM_TABLE_BASE_ADDR	(0xF6500000)
 #define SOC_SC_ON_BASE_ADDR		(0xF7410000)
-/*Ê±ÖÓ·ÖÆµ¼Ä´æÆ÷ATB DAP TPIU*/
+/* Clock divider register ATB DAP TPIU */
 #define SC_CLKCFG8BIT9 (0xF711ACC8)
 
-/****cpu_base****/
-#define CCPU_BASE SOC_Modem_A9_ROM_TABLE_BASE_ADDR
+/*   cpu_base   */
+#define CCPU_BASE SOC_MODEM_A9_ROM_TABLE_BASE_ADDR
 #define ACPU_BASE SOC_ACPU_ROM_TABLE_BASE_ADDR
 
-/*******ETM_base*********/
+/*      ETM_base      */
 #define	ETM_BASE (0x1C000)
 
-/*******main control register**************/
+/*       main control register        */
 #define ETM_ETMCR(base) ( (base)  +  (0x000))
 #define ETM_ETMSR(base) ( (base)+  (0x010))
 #define ETM_ETMTRIGGER(base) ((base) + (0x008))
@@ -30,12 +45,12 @@
 
 #define ETM_ETMPDCR(base) ((base) + (0x310))
 
-/******TraceEnable Configuration*******/
+/*      TraceEnable Configuration      */
 #define	ETM_ETMTSSCR(base)	((base) + (0x018))
 #define	ETM_ETMTEEVR(base)	((base) + (0x020))
 #define	ETM_ETMTECR1(base)	((base) + (0x024))
 
-/******COUNTER************/
+/*         COUNTER          */
 #define COUNTER_VALUE1 (0x1F4)
 
 #define ETM_ETMCNTRLDVR1(base)	((base) + (0x140))
@@ -49,19 +64,16 @@
 #define ETM_ETMCNTRELDEVR2(base)	((base) + (0x164))
 #define ETM_ETMCNTVR2(base)	((base) + (0x174))
 
-/******lock**********/
+/*        lock        */
 #define ETM_ETMLAR(base)	((base) + (0xFB0))
 #define ETM_ETMLSR(base)	((base) + (0xFB4))
-/******Timestamp Event Register*****/
+/*      Timestamp Event Register      */
 #define ETM_ETMTSEVR(base)	((base) + (0x1F8))
 
-/********484***********/
-//#define SOC_AO_SCTRL_SC_ALWAYSON_SYS_CTRL1_ADDR(base) ((base) + (0x484)) 
+/*          484          */
 #define ETM_SOC_AO_SCTRL_SC_ALWAYSON_SYS_CTRL1_ADDR \
 	SOC_AO_SCTRL_SC_ALWAYSON_SYS_CTRL1_ADDR(SOC_SC_ON_BASE_ADDR)
 
-
-/*************************/
 #define BIT(nr) (1UL << (nr))
 
 #define REG_SET_BIT(reg, bit)	do{writel((readl(reg) |BIT(bit)),reg);}while(0)
@@ -79,10 +91,9 @@
 
 struct etb_platform_data
 {
-	phys_addr_t iobase;     /*etm register physical address*/
-	size_t size;            /*etm register space size*/
+	phys_addr_t iobase;     /* etm register physical address */
+	size_t size;            /* etm register space size */
 };
 
 void  enable_etm_reset(void);
-
 

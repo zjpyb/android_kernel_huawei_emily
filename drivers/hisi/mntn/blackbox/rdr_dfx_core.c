@@ -1,123 +1,145 @@
 /*
+ * rdr_dfx_core.c
+ *
  * blackbox. (kernel run data recorder.)
  *
- * Copyright (c) 2013 Huawei Technologies CO., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
 #include <linux/fs.h>
 #include <linux/io.h>
 #include <linux/syscalls.h>
 #include <linux/slab.h>
 #include <linux/of.h>
-#include <securec.h>
 
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/rdr_dfx_core.h>
-#include <linux/hisi/kirin_partition.h>
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BLACKBOX_TAG
+#include <linux/hisi/partition_ap_kernel.h>
+#include <pr_log.h>
 
-#include <hisi_partition.h>
+#include <securec.h>
+#include <partition_macro.h>
 #include "rdr_print.h"
 #include "rdr_inner.h"
+
+#define PR_LOG_TAG BLACKBOX_TAG
 
 int dfx_open(void)
 {
 	void *buf = NULL;
-	char p_name[BDEVNAME_SIZE + 12];
-	int ret, fd_dfx;
+	char p_name[RDR_PNAME_SIZE];
+	int ret;
+	int fd_dfx;
 
 	BB_PRINT_START();
 
 	buf = kzalloc(SZ_4K, GFP_KERNEL);
-	if (!buf) {
+	if (buf == NULL) {
 		BB_PRINT_ERR("[%s:%d] kzalloc buf1 fail\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 	ret = flash_find_ptn_s(PART_DFX, buf, SZ_4K);
-	if (0 != ret) {
+	if (ret != 0) {
 		BB_PRINT_ERR("[%s:%d] flash_find_ptn_s fail\n", __func__, __LINE__);
 		kfree(buf);
 		return ret;
 	}
 
-	if (EOK != memset_s(p_name, sizeof(p_name), 0, sizeof(p_name))) {
-		BB_PRINT_ERR("[%s:%d] memset_s err\n", __func__, __LINE__);
-	}
+	(void)memset_s(p_name, RDR_PNAME_SIZE, 0, RDR_PNAME_SIZE);
 
-	if (EOK != strncpy_s(p_name, (sizeof(p_name) - 1), buf, (sizeof(p_name) - 1))) {
+	ret = strncpy_s(p_name, RDR_PNAME_SIZE, buf, (RDR_PNAME_SIZE - 1));
+	if (ret != EOK) {
 		BB_PRINT_ERR("[%s:%d] strncpy_s err\n", __func__, __LINE__);
+		kfree(buf);
+		return ret;
 	}
-	p_name[BDEVNAME_SIZE + 11] = '\0';
+	p_name[RDR_PNAME_SIZE - 1] = '\0';
 	kfree(buf);
 
-	fd_dfx = sys_open(p_name, O_RDWR, FILE_LIMIT);
+	fd_dfx = SYS_OPEN(p_name, O_RDWR, FILE_LIMIT);
 
 	return fd_dfx;
 }
 
 int dfx_read(u32 module, void *buffer, u32 size)
 {
-	int ret, fd_dfx, cnt=0;
-	mm_segment_t old_fs = get_fs(); //lint !e501
+	int ret;
+	int fd_dfx;
+	int cnt = 0;
+	u32 addr;
 
-	if (dfx_size_tbl[module] < size || !dfx_size_tbl[module])
+	mm_segment_t old_fs = get_fs();
+
+	if (get_dfx_size(module) < size || !get_dfx_size(module))
 		return cnt;
-	if (!buffer)
+	if (buffer == NULL)
 		return cnt;
-	/*lint -e501 -esym(501,*)*/
 	set_fs(KERNEL_DS);
-	/*lint -e501 +esym(501,*)*/
 
 	fd_dfx = dfx_open();
-	ret = sys_lseek(fd_dfx, dfx_addr_tbl[module], SEEK_SET);
+	addr = get_dfx_addr(module);
+	if (addr == 0)
+		goto close;
+	ret = SYS_LSEEK(fd_dfx, addr, SEEK_SET);
 	if (ret < 0) {
 		BB_PRINT_ERR("%s():%d:lseek fail[%d]\n", __func__, __LINE__, ret);
 		goto close;
 	}
-	cnt = sys_read(fd_dfx, buffer, size);
+	cnt = SYS_READ(fd_dfx, buffer, size);
 	if (cnt < 0) {
 		BB_PRINT_ERR("%s():%d:read fail[%d]\n", __func__, __LINE__, cnt);
 		goto close;
 	}
 close:
-	sys_close(fd_dfx);
+	SYS_CLOSE(fd_dfx);
 	set_fs(old_fs);
 	return cnt;
 }
 
-int dfx_write(u32 module,const void *buffer, u32 size)
+int dfx_write(u32 module, const void *buffer, u32 size)
 {
-	int ret, fd_dfx, cnt=0;
+	int ret;
+	int fd_dfx;
+	int cnt = 0;
+	u32 addr;
+
 	mm_segment_t old_fs = get_fs();
 
-	if (dfx_size_tbl[module] < size || !dfx_size_tbl[module])
+	if (get_dfx_size(module) < size || !get_dfx_size(module))
 		return cnt;
-	if (!buffer)
+	if (buffer == NULL)
 		return cnt;
-	/*lint -e501 -esym(501,*)*/
 	set_fs(KERNEL_DS);
-	/*lint -e501 +esym(501,*)*/
 
 	fd_dfx = dfx_open();
-	ret = sys_lseek(fd_dfx, dfx_addr_tbl[module], SEEK_SET);
+	addr = get_dfx_addr(module);
+	if (addr == 0)
+		goto close;
+	ret = SYS_LSEEK(fd_dfx, addr, SEEK_SET);
 	if (ret < 0) {
 		BB_PRINT_ERR("%s():%d:lseek fail[%d]\n", __func__, __LINE__, ret);
 		goto close;
 	}
-	cnt = sys_write(fd_dfx, buffer, size);
+	cnt = SYS_WRITE(fd_dfx, buffer, size);
 	if (cnt < 0) {
-		BB_PRINT_ERR("%s():%d:read fail[%d]\n", __func__, __LINE__, cnt);
+		BB_PRINT_ERR("%s():%d:write fail[%d]\n", __func__, __LINE__, cnt);
 		goto close;
 	}
 close:
-	sys_close(fd_dfx);
+	SYS_CLOSE(fd_dfx);
 	set_fs(old_fs);
 	return cnt;
 }

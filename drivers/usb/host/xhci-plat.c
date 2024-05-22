@@ -20,12 +20,16 @@
 #include <linux/usb/phy.h>
 #include <linux/slab.h>
 #include <linux/acpi.h>
+#include <linux/hisi/usb/chip_usb_log.h>
+#include <linux/hisi/usb/chip_usb_debug_framework.h>
 
 #include "xhci.h"
 #include "xhci-plat.h"
 #include "xhci-mvebu.h"
 #include "xhci-rcar.h"
 #include "xhci-debugfs.h"
+#include "xhci-debug-event.h"
+
 static struct hc_driver __read_mostly xhci_plat_hc_driver;
 
 static int xhci_plat_setup(struct usb_hcd *hcd);
@@ -188,6 +192,8 @@ static int xhci_plat_probe(struct platform_device *pdev)
 	int			hcd_local_mem = 0;
 #endif
 
+	unsigned long 		irqflags;
+
 	if (usb_disabled())
 		return -ENODEV;
 
@@ -256,7 +262,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		goto disable_runtime;
 	}
 
-#ifdef CONFIG_HISI_USB_SKIP_RESUME
+#ifdef CONFIG_USB_SKIP_RESUME
 	hcd_to_bus(hcd)->skip_resume = true;
 #endif
 
@@ -305,7 +311,7 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto disable_clk;
 	}
-#ifdef CONFIG_HISI_USB_SKIP_RESUME
+#ifdef CONFIG_USB_SKIP_RESUME
 	hcd_to_bus(xhci->shared_hcd)->skip_resume = true;
 #endif
 
@@ -344,7 +350,9 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		if (device_property_read_bool(parent,
 				"snps,xhci-delay-ctrl-data-stage"))
 			xhci->quirks |= XHCI_DELAY_CTRL_DATA_STAGE;
-
+		if (device_property_read_bool(parent,
+				"snps,xhci-support-s3-wakeup"))
+			xhci->quirks |= XHCI_SUPPORT_S3_WAKEUP;
 	} else
 		dev_err(&pdev->dev, "no parent or not match \"snps,dwc3\"\n");
 
@@ -363,14 +371,21 @@ static int xhci_plat_probe(struct platform_device *pdev)
 			goto put_usb3_hcd;
 	}
 
-	ret = usb_add_hcd(hcd, irq, IRQF_SHARED);
+	if (xhci->quirks & XHCI_SUPPORT_S3_WAKEUP) {
+		irqflags = IRQF_SHARED | IRQF_NO_SUSPEND;
+		dev_info(&pdev->dev, "support s3 wakeup, irqflags = 0x%lx.\n", irqflags);
+	}
+	else {
+		irqflags = IRQF_SHARED;
+	}
+	ret = usb_add_hcd(hcd, irq, irqflags);
 	if (ret)
 		goto disable_usb_phy;
 
 	if (HCC_MAX_PSA(xhci->hcc_params) >= 4)
 		xhci->shared_hcd->can_do_streams = 1;
 
-	ret = usb_add_hcd(xhci->shared_hcd, irq, IRQF_SHARED);
+	ret = usb_add_hcd(xhci->shared_hcd, irq, irqflags);
 	if (ret)
 		goto dealloc_usb2_hcd;
 
@@ -388,6 +403,10 @@ static int xhci_plat_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to initialize debugfs\n");
 		goto dealloc_usb3_hcd;
 	}
+
+	ret = xhci_host_register_eventnb(xhci);
+	if (ret)
+		dev_err(&pdev->dev, "host debug event register failed\n");
 
 	return 0;
 
@@ -427,6 +446,7 @@ static int xhci_plat_remove(struct platform_device *dev)
 
 	/* add for xhci debug */
 	xhci_remove_debug_file(xhci);
+	xhci_host_unregister_eventnb(xhci);
 
 	usb_remove_hcd(xhci->shared_hcd);
 	usb_phy_shutdown(hcd->usb_phy);
@@ -465,6 +485,10 @@ static int __maybe_unused xhci_plat_suspend(struct device *dev)
 	 * reconsider this when xhci_plat_suspend enlarges its scope, e.g.,
 	 * also applies to runtime suspend.
 	 */
+	if (xhci->quirks & XHCI_SUPPORT_S3_WAKEUP) {
+		dev_info(dev, "no need to suspend.\n");
+		return 0;
+	}
 	return xhci_suspend(xhci, device_may_wakeup(dev));
 }
 
@@ -515,6 +539,7 @@ MODULE_DEVICE_TABLE(acpi, usb_xhci_acpi_match);
 static struct platform_driver usb_xhci_driver = {
 	.probe	= xhci_plat_probe,
 	.remove	= xhci_plat_remove,
+	.shutdown = usb_hcd_platform_shutdown,
 	.driver	= {
 		.name = "xhci-hcd",
 		.pm = &xhci_plat_pm_ops,

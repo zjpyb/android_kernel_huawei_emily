@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
  * Description: the kcode.h for kernel code integrity checking
  * Author: likun <quentin.lee@huawei.com>
  *         likan <likan82@huawei.com>
@@ -9,7 +9,7 @@
 #ifndef _KCODE_H_
 #define _KCODE_H_
 
-#include <asm-generic/sections.h>
+#include <asm/sections.h>
 #include <asm/syscall.h>
 #include <linux/crypto.h>
 #include <linux/kernel.h>
@@ -21,9 +21,9 @@
 #include <crypto/hash_info.h>
 #include "./include/hw_rscan_utils.h"
 
-int kcode_scan(uint8_t *hash);
+int kcode_scan(uint8_t *hash, size_t hash_len);
 size_t kcode_get_size(void);
-int kcode_syscall_scan(uint8_t *hash);
+int kcode_syscall_scan(uint8_t *hash, size_t hash_len);
 
 #endif
 

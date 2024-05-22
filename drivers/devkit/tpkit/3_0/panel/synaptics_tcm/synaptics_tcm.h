@@ -44,6 +44,7 @@ struct syna_tcm_board_data {
 	int x_max_mt;
 	int y_max_mt;
 	int max_finger_objects;
+	int support_vendor_ic_type;
 	bool swap_axes;
 	int irq_gpio;
 	int irq_on_state;
@@ -64,6 +65,7 @@ struct syna_tcm_board_data {
 	const char *pwr_reg_name;
 	const char *bus_reg_name;
 	const char *default_project_id;
+	const char *chip_vendor_name;
 };
 
 #endif

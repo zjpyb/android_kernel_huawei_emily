@@ -83,6 +83,7 @@ obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= macintosh/
 obj-$(CONFIG_IDE)		+= ide/
+obj-$(CONFIG_HUAWEI_DSM)	+= dsm/
 obj-y				+= i2c/
 obj-y				+= i3c/
 obj-$(CONFIG_SCSI)		+= scsi/
@@ -137,7 +138,7 @@ obj-$(CONFIG_EDAC)		+= edac/
 obj-$(CONFIG_EISA)		+= eisa/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
-obj-y				+= mmc/
+obj-$(CONFIG_MMC)		+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-$(CONFIG_SWITCH)        += switch/
 obj-$(CONFIG_NEW_LEDS)		+= leds/
@@ -200,10 +201,10 @@ obj-$(CONFIG_MULTIPLEXER)	+= mux/
 obj-$(CONFIG_HW_WIFI)       += hwnet/
 obj-y += devkit/tpkit/
 obj-$(CONFIG_HISILICON_PLATFORM)+= hisi/
-obj-$(CONFIG_HUAWEI_DSM)	+= dsm/
 obj-$(CONFIG_HUAWEI_DSM_IOMT_HOST)	+= iomt_host/
 obj-$(CONFIG_LOGGER_EXTEND)	+= log/
-obj-$(CONFIG_HUAWEI_BFM) += hwbfm/
+obj-$(CONFIG_BOOT_DETECTOR) += hwbootfail/
+obj-$(CONFIG_HUAWEI_HITRACE) += hitrace/
 obj-$(CONFIG_HW_ZEROHUNG) += hwzerohung/
 obj-$(CONFIG_HW_MEMCHECK) += hwmemcheck/
 obj-$(CONFIG_AUDIOKIT) += devkit/audiokit/
@@ -212,8 +213,11 @@ obj-y += contexthub/
 obj-y += cfi/
 obj-$(CONFIG_HUAWEI_DUBAI) += dubai/
 obj-$(CONFIG_HUAWEI_PLATFORM) += huawei_platform/
+obj-$(CONFIG_HUAWEI_ARMPC_PLATFORM) += huawei_armpc_platform/
 obj-$(CONFIG_HW_FDLEAK) += hwfdleak/
 obj-$(CONFIG_HW_GADGET) += hwusb/
+obj-y += hwpower/
+obj-y += hwsensors/
 obj-$(CONFIG_CONNECTIVITY_HI110X) += connectivity/
 obj-$(CONFIG_HUAWEI_STORAGE_ROFA) += storage_rofa/
 obj-$(CONFIG_HW_ERECOVERY) += hwerecovery/
@@ -221,3 +225,21 @@ obj-$(CONFIG_HW_CPULOAD_NOTI) += cpuload/
 obj-$(CONFIG_HW_MEMORY_MONITOR) += mmonitor/
 obj-$(CONFIG_HW_MEMORY_MONITOR) += allocpages_delayacct/
 obj-$(CONFIG_HW_XCOLLIE) += hwxcollie/
+obj-$(CONFIG_HUAWEI_ECHUB) += echub/
+
+# memory reclaim delay accounting
+obj-$(CONFIG_HW_RECLAIM_ACCT) += reclaim_acct/
+
+# memory stats for every task
+obj-$(CONFIG_HW_TASK_MEM_STAT) += task_mem_stat/
+
+# socp mem config
+obj-y += socp/
+
+# swapfile module
+obj-$(CONFIG_HUAWEI_SWAPFILE) += swapfile/
+
+obj-$(CONFIG_ICS_DRIVER) += ics_drivers/
+
+obj-y += hisi_sim_adapt/
+obj-$(CONFIG_HUAWEI_EMCOM) += emcom/

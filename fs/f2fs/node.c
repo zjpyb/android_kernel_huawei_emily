@@ -34,6 +34,7 @@ int f2fs_check_nid_range(struct f2fs_sb_info *sbi, nid_t nid)
 {
 	if (unlikely(nid < F2FS_ROOT_INO(sbi) || nid >= NM_I(sbi)->max_nid)) {
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_set_need_fsck_report();
 		f2fs_msg(sbi->sb, KERN_WARNING,
 				"%s: out-of-range nid=%x, run fsck to fix.",
 				__func__, nid);
@@ -237,8 +238,13 @@ static void __set_nat_cache_dirty(struct f2fs_nm_info *nm_i,
 	struct nat_entry_set *head;
 	bool new_ne = nat_get_blkaddr(ne) == NEW_ADDR;
 
-	if (!new_ne)
+	if (!new_ne) {
 		head = __grab_nat_entry_set(nm_i, ne);
+#ifdef CONFIG_F2FS_JOURNAL_APPEND
+		if (write_opt)
+			head->mtime = jiffies;
+#endif
+	}
 
 	/*
 	 * update entry_cnt in below condition:
@@ -860,6 +866,7 @@ static int truncate_node(struct dnode_of_data *dn)
 	struct f2fs_sb_info *sbi = F2FS_I_SB(dn->inode);
 	struct node_info ni;
 	int err;
+	pgoff_t index;
 
 	err = f2fs_get_node_info(sbi, dn->nid, &ni);
 	if (err)
@@ -879,10 +886,11 @@ static int truncate_node(struct dnode_of_data *dn)
 	clear_node_page_dirty(dn->node_page);
 	set_sbi_flag(sbi, SBI_IS_DIRTY);
 
+	index = dn->node_page->index;
 	f2fs_put_page(dn->node_page, 1);
 
 	invalidate_mapping_pages(NODE_MAPPING(sbi),
-			dn->node_page->index, dn->node_page->index);
+			index, index);
 
 	dn->node_page = NULL;
 	trace_f2fs_truncate_node(dn->inode, dn->nid, ni.blk_addr);
@@ -1680,10 +1688,12 @@ int f2fs_move_node_page(struct page *node_page, int gc_type)
 			.for_reclaim = 0,
 		};
 
-		set_page_dirty(node_page);
 		f2fs_wait_on_page_writeback(node_page, NODE, true);
 
 		f2fs_bug_on(F2FS_P_SB(node_page), PageWriteback(node_page));
+
+		set_page_dirty(node_page);
+
 		if (!clear_page_dirty_for_io(node_page)) {
 			f2fs_gc_loop_debug(sbi);
 			err = -EAGAIN;
@@ -1732,6 +1742,10 @@ int f2fs_fsync_node_pages(struct f2fs_sb_info *sbi, struct inode *inode,
 	nid_t ino = inode->i_ino;
 	int nr_pages;
 	int nwritten = 0;
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+	bool f2fs_ff_enable = blk_dev_write_order_preserved(sbi->sb->s_bdev) &&
+				!blk_mq_get_io_in_list_count(sbi->sb->s_bdev);
+#endif
 
 	if (atomic) {
 		last_page = last_fsync_dnode(sbi, ino);
@@ -1801,7 +1815,11 @@ continue_unlock:
 			if (!clear_page_dirty_for_io(page))
 				goto continue_unlock;
 
+#ifdef CONFIG_MAS_ORDER_PRESERVE
+			ret = __write_node_page(page, (!f2fs_ff_enable) && atomic &&
+#else
 			ret = __write_node_page(page, atomic &&
+#endif
 						page == last_page,
 						&submitted, wbc, true,
 						FS_NODE_IO, seq_id);
@@ -2052,7 +2070,7 @@ static int f2fs_set_node_page_dirty(struct page *page)
 	if (!PageDirty(page)) {
 		__set_page_dirty_nobuffers(page);
 		inc_page_count(F2FS_P_SB(page), F2FS_DIRTY_NODES);
-		SetPagePrivate(page);
+		f2fs_set_page_private(page, 0);
 		f2fs_trace_pid(page);
 		return 1;
 	}
@@ -2765,6 +2783,9 @@ static void remove_nats_in_journal(struct f2fs_sb_info *sbi)
 		struct f2fs_nat_entry raw_ne;
 		nid_t nid = le32_to_cpu(nid_in_journal(journal, i));
 
+		if (f2fs_check_nid_range(sbi, nid))
+			continue;
+
 		raw_ne = nat_in_journal(journal, i);
 
 		ne = __lookup_nat_cache(nm_i, nid);
@@ -2849,6 +2870,8 @@ static void reorder_nat_entry_set(struct f2fs_sb_info *sbi,
 	struct nat_entry_set *set, *tmp;
 	unsigned int prev_entry_cnt, entry_cnt;
 	bool moved = false;
+	LIST_HEAD(sets_tmp);
+	unsigned long mtime;
 
 	if (over_journal == 0)
 		return;
@@ -2896,8 +2919,17 @@ reorder:
 		entry_cnt = 0;
 	}
 
-	if (prev_entry_cnt >= over_journal || !moved)
+	if (prev_entry_cnt >= over_journal || !moved) {
+		if (write_opt) {
+			list_for_each_entry_safe(set, tmp, sets, set_list) {
+			mtime = set->mtime + AGE_THRESHOLD;
+			if (time_after(jiffies, mtime))
+				list_move_tail(&set->set_list, &sets_tmp);
+			}
+			list_splice_tail(&sets_tmp, sets);
+		}
 		return;
+	}
 
 	over_journal -= prev_entry_cnt;
 	goto reorder;
@@ -3031,6 +3063,7 @@ int f2fs_flush_nat_entries(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	unsigned int found;
 #ifdef CONFIG_F2FS_JOURNAL_APPEND
 	unsigned int over_journal = 0;
+	unsigned long mtime;
 #endif
 	nid_t set_idx = 0;
 	LIST_HEAD(sets);
@@ -3080,7 +3113,9 @@ int f2fs_flush_nat_entries(struct f2fs_sb_info *sbi, struct cp_control *cpc)
        if (write_opt && over_journal) {
 	       /* first, flush the set that only one entry modified */
 	       list_for_each_entry_safe(set, tmp, &sets, set_list) {
-		       if (set->entry_cnt > 1 || set->can_merge)
+			mtime = set->mtime + AGE_THRESHOLD;
+			if (set->entry_cnt > 1 || set->can_merge ||
+			(write_opt && (time_after(jiffies, mtime))))
 			       continue;
 		       list_del(&set->set_list);
 		       __flush_nat_entry_set(sbi, set, cpc);
@@ -3254,8 +3289,8 @@ static int init_free_nid_cache(struct f2fs_sb_info *sbi)
 	unsigned int bitmap_size;
 	int i;
 
-	nm_i->free_nid_bitmap = kzalloc(nm_i->nat_blocks *
-					NAT_ENTRY_BITMAP_SIZE, GFP_KERNEL);
+	nm_i->free_nid_bitmap = f2fs_kzalloc(sbi,
+		array_size(sizeof(unsigned char *), nm_i->nat_blocks), GFP_KERNEL);
 	if (!nm_i->free_nid_bitmap)
 		return -ENOMEM;
 

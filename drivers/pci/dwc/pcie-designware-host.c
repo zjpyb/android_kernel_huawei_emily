@@ -18,6 +18,7 @@
 #include <linux/platform_device.h>
 
 #include "pcie-designware.h"
+#include "pcie-kport-idle.h"
 
 static struct pci_ops dw_pcie_ops;
 
@@ -274,11 +275,11 @@ static const struct irq_domain_ops msi_domain_ops = {
 	.map = dw_pcie_msi_map,
 };
 
-#ifdef CONFIG_PCIE_KIRIN
+#ifdef CONFIG_PCIE_KPORT
 int plat_pcie_host_init(struct pcie_port *pp, struct device *dev,
 			struct list_head *resources)
 {
-	struct resource_entry *win;
+	struct resource_entry *win = NULL;
 	int ret = 0;
 
 	if (pp->ops->host_init)
@@ -423,7 +424,7 @@ int dw_pcie_host_init(struct pcie_port *pp)
 		}
 	}
 
-#ifdef CONFIG_PCIE_KIRIN
+#ifdef CONFIG_PCIE_KPORT
 	ret = plat_pcie_host_init(pp, &pdev->dev, &bridge->windows);
 	if (ret)
 		goto error;
@@ -498,6 +499,7 @@ static int dw_pcie_rd_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 		va_cfg_base = pp->va_cfg1_base;
 	}
 
+	pcie_refclk_host_vote(pp, 1);
 	dw_pcie_prog_outbound_atu(pci, PCIE_ATU_REGION_INDEX1,
 				  type, cpu_addr,
 				  busdev, cfg_size);
@@ -506,6 +508,7 @@ static int dw_pcie_rd_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 		dw_pcie_prog_outbound_atu(pci, PCIE_ATU_REGION_INDEX1,
 					  PCIE_ATU_TYPE_IO, pp->io_base,
 					  pp->io_bus_addr, pp->io_size);
+	pcie_refclk_host_vote(pp, 0);
 
 	return ret;
 }
@@ -537,6 +540,7 @@ static int dw_pcie_wr_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 		va_cfg_base = pp->va_cfg1_base;
 	}
 
+	pcie_refclk_host_vote(pp, 1);
 	dw_pcie_prog_outbound_atu(pci, PCIE_ATU_REGION_INDEX1,
 				  type, cpu_addr,
 				  busdev, cfg_size);
@@ -545,6 +549,7 @@ static int dw_pcie_wr_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 		dw_pcie_prog_outbound_atu(pci, PCIE_ATU_REGION_INDEX1,
 					  PCIE_ATU_TYPE_IO, pp->io_base,
 					  pp->io_bus_addr, pp->io_size);
+	pcie_refclk_host_vote(pp, 0);
 
 	return ret;
 }

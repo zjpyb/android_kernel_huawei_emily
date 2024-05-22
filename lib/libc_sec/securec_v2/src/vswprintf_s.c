@@ -5,8 +5,11 @@
  * Create: 2014-02-25
  */
 
-#include "secureprintoutput.h"
+#ifndef SECUREC_FOR_WCHAR
+#define SECUREC_FOR_WCHAR
+#endif
 
+#include "secureprintoutput.h"
 
 /*
  * <FUNCTION DESCRIPTION>
@@ -37,9 +40,8 @@ int vswprintf_s(wchar_t *strDest, size_t destMax, const wchar_t *format, va_list
     }
 
     retVal = SecVswprintfImpl(strDest, destMax, format, argList);
-
     if (retVal < 0) {
-        strDest[0] = '\0';
+        strDest[0] = L'\0';
         if (retVal == SECUREC_PRINTF_TRUNCATE) {
             /* Buffer too small */
             SECUREC_ERROR_INVALID_RANGE("vswprintf_s");
@@ -50,5 +52,4 @@ int vswprintf_s(wchar_t *strDest, size_t destMax, const wchar_t *format, va_list
 
     return retVal;
 }
-
 

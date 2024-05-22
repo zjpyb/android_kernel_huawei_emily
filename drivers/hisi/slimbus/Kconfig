@@ -1,6 +1,6 @@
-menu "hisilicon slimbus driver"
+menu "slimbus driver"
 
-config HISILICON_PLATFORM_SLIMBUS
+config PLATFORM_SLIMBUS
      bool "slimbus device support"
      default n
      help

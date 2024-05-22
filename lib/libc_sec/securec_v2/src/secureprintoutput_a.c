@@ -15,29 +15,28 @@
 #include "secureprintoutput.h"
 #if SECUREC_WARP_OUTPUT
 #define SECUREC_FORMAT_FLAG_TABLE_SIZE 128
-static const unsigned char g_flagTable[SECUREC_FORMAT_FLAG_TABLE_SIZE] = {
-    /*
-     * Known flag is  "0123456789 +-#hlLwZzjqt*I"
-     */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00,
-    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00,
-    0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
 SECUREC_INLINE const char *SecSkipKnownFlags(const char *format)
 {
+    static const unsigned char flagTable[SECUREC_FORMAT_FLAG_TABLE_SIZE] = {
+        /*
+         * Known flag is  "0123456789 +-#hlLwZzjqt*I$"
+         */
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00,
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
     const char *fmt = format;
     while (*fmt != '\0') {
         char fmtChar = *fmt;
         if ((unsigned char)fmtChar > 0x7f) { /* 0x7f is upper limit of format char value */
             break;
         }
-        if (g_flagTable[(unsigned char)fmtChar] == 0) {
+        if (flagTable[(unsigned char)fmtChar] == 0) {
             break;
         }
         ++fmt;
@@ -73,7 +72,7 @@ SECUREC_INLINE int SecFormatContainN(const char *format)
 int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list argList)
 {
     int retVal;
-    if (SecFormatContainN(format)) {
+    if (SecFormatContainN(format) != 0) {
         string[0] = '\0';
         return -1;
     }
@@ -82,7 +81,8 @@ int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list arg
         /* The buffer was too small; we return truncation */
         string[count - 1] = '\0';
         return SECUREC_PRINTF_TRUNCATE;
-    } else if (retVal < 0) {
+    }
+    if (retVal < 0) {
         string[0] = '\0'; /* Empty the dest strDest */
         return -1;
     }
@@ -93,16 +93,9 @@ int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list arg
 #include <linux/ctype.h>
 #endif
 
-#define SECUREC_CHAR(x) x
-#define SECUREC_WRITE_MULTI_CHAR  SecWriteMultiChar
-#define SECUREC_WRITE_STRING      SecWriteString
-
 #ifndef EOF
 #define EOF (-1)
 #endif
-
-SECUREC_INLINE void SecWriteMultiChar(char ch, int num, SecPrintfStream *f, int *pnumwritten);
-SECUREC_INLINE void SecWriteString(const char *string, int len, SecPrintfStream *f, int *pnumwritten);
 
 #include "output.inl"
 
@@ -118,14 +111,17 @@ int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list arg
     str.cur = string;
 
     retVal = SecOutputS(&str, format, argList);
-    if (retVal >= 0 && SecPutZeroChar(&str) == 0) {
-        return retVal;
-    } else if (str.count < 0) {
-        /* The buffer was too small; we return truncation */
+    if (retVal >= 0) {
+        if (SecPutZeroChar(&str) == 0) {
+            return retVal;
+        }
+    }
+    if (str.count < 0) {
+        /* The buffer was too small, then truncate */
         string[count - 1] = '\0';
         return SECUREC_PRINTF_TRUNCATE;
     }
-    string[0] = '\0'; /* Empty the dest strDest */
+    string[0] = '\0'; /* Empty the dest string */
     return -1;
 }
 
@@ -134,14 +130,16 @@ int SecVsnprintfImpl(char *string, size_t count, const char *format, va_list arg
  */
 SECUREC_INLINE void SecWriteMultiChar(char ch, int num, SecPrintfStream *f, int *pnumwritten)
 {
-    int count = num;
-    while (count-- > 0 && --(f->count) >= 0) {
+    int count;
+    for (count = num; count > 0; --count) {
+        --f->count; /* f -> count may be negative,indicating insufficient space */
+        if (f->count < 0) {
+            *pnumwritten = -1;
+            return;
+        }
         *(f->cur) = ch;
-        ++(f->cur);
+        ++f->cur;
         *pnumwritten = *pnumwritten + 1;
-    }
-    if (f->count < 0) {
-        *pnumwritten = -1;
     }
 }
 
@@ -151,16 +149,18 @@ SECUREC_INLINE void SecWriteMultiChar(char ch, int num, SecPrintfStream *f, int 
 SECUREC_INLINE void SecWriteString(const char *string, int len, SecPrintfStream *f, int *pnumwritten)
 {
     const char *str = string;
-    int count = len;
-    while (count-- > 0 && --(f->count) >= 0) {
+    int count;
+    for (count = len; count > 0; --count) {
+        --f->count; /* f -> count may be negative,indicating insufficient space */
+        if (f->count < 0) {
+            *pnumwritten = -1;
+            return;
+        }
         *(f->cur) = *str;
-        ++(f->cur);
+        ++f->cur;
         ++str;
     }
     *pnumwritten = *pnumwritten + (int)(size_t)(str - string);
-    if (f->count < 0) {
-        *pnumwritten = -1;
-    }
 }
 #endif
 

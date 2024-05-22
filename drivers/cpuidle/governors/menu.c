@@ -916,6 +916,10 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	struct hrtimer *hrtmr = &per_cpu(menu_hrtimer, cpu);
 #endif
 	int resume_latency = dev_pm_qos_raw_read_value(device);
+#ifdef CONFIG_HISI_CPUIDLE_SKIP_ALL_CORE_DOWN
+	struct cpumask cluster_idle_cpu_mask;
+#endif
+
 	ktime_t delta_next;
 
 	if (data->needs_update) {
@@ -953,7 +957,11 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	data->predicted_us = DIV_ROUND_CLOSEST_ULL((uint64_t)data->next_timer_us *
 					 data->correction_factor[data->bucket],
 					 RESOLUTION * DECAY);
-
+#ifdef CONFIG_HISI_CPUIDLE_LITTLE_SKIP_CORRECTION
+	if (test_slow_cpu(cpu) && !nr_iowaiters &&
+	    data->predicted_us > drv->states[1].target_residency)
+		data->predicted_us = data->next_timer_us;
+#endif
 	data->repeat = 0;
 	expected_interval = get_typical_interval(data);
 	expected_interval = min(expected_interval, data->next_timer_us);
@@ -1023,7 +1031,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 
 		if (s->disabled || su->disable)
 			continue;
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 		if (cpu_isolated(cpu)) {
 #ifdef CONFIG_HISI_CPUIDLE_SKIP_DEEP_CSTATE
 			pre_idx = idx;
@@ -1056,7 +1064,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 
 #ifdef CONFIG_HISI_CPUIDLE_SKIP_DEEP_CSTATE
 	if (idx + 1 == drv->state_count &&
-		!hisi_test_slow_cpu(cpu) &&
+		!test_slow_cpu(cpu) &&
 		data->deep_state_num > SKIP_DEEP_CSTATE_THD_NUM &&
 		data->last_max_interval_us < SKIP_DEEP_CSTATE_MAX_INTERVAL_US) {
 		data->resel_deep_state = 1;
@@ -1069,7 +1077,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	if (idx == -1)
 		idx = 0; /* No states enabled. Must use 0. */
 
-#ifdef CONFIG_HISI_CPU_ISOLATION
+#ifdef CONFIG_CPU_ISOLATION_OPT
 	if (cpu_isolated(cpu)) {
 		data->last_state_idx = idx;
 		return data->last_state_idx;
@@ -1111,6 +1119,21 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 #ifdef CONFIG_HISI_CPUIDLE_MENU_GOV_HIST
 	menu_hist_reselect(drv, dev, latency_req);
 
+#ifdef CONFIG_HISI_CPUIDLE_SKIP_ALL_CORE_DOWN
+	if (test_slow_cpu(cpu) && data->last_state_idx > 0) {
+		spin_lock(&g_idle_spin_lock);
+		if (num_core_idle_cpus() + num_idle_cpus() ==
+			num_online_cpus() -1) {
+			cpumask_and(&cluster_idle_cpu_mask, drv->cpumask,
+				    &g_idle_cpus_mask);
+			if (data->last_state_idx < drv->state_count -1 ||
+				cpumask_weight(&cluster_idle_cpu_mask) <
+				cpumask_weight(drv->cpumask) -1)
+				data->last_state_idx = 0;
+		}
+		spin_unlock(&g_idle_spin_lock);
+	}
+#endif
 	menu_sel_hrtimer_start(drv, dev);
 
 	trace_menu_select(dev->cpu,

@@ -22,7 +22,8 @@
 #include <linux/err.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
-#include <linux/hisi/contexthub/tca.h>
+#include <linux/hisi/usb/tca.h>
+#include <chipset_common/hwusb/hw_usb.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/dp_aux_switch/dp_aux_switch.h>
@@ -39,8 +40,6 @@ extern void dp_aux_uart_switch_enable(void);
 extern int pd_dpm_handle_combphy_event(struct pd_dpm_combphy_event event);
 extern void pd_dpm_set_last_hpd_status(bool hpd_status);
 #endif
-void pd_dpm_send_event(enum pd_dpm_cable_event_type event);
-
 
 #define MODE_DP_SNK 0x1
 #define MODE_DP_SRC 0x2
@@ -468,7 +467,7 @@ void FUSB3601_informStatus(struct Port *port, DisplayPortStatus_t stat)
 		else {
 			event.dev_type = TCA_DP_IN;
 			ret = pd_dpm_handle_combphy_event(event);
-			pd_dpm_send_event(DP_CABLE_IN_EVENT);
+			hw_usb_send_event(DP_CABLE_IN_EVENT);
 			pd_dpm_set_last_hpd_status(true);
 		}
 		if(stat.IrqHpd) {

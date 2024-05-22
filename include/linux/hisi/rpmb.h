@@ -1,4 +1,9 @@
-
+/*
+ * Copyright (c) Hisilicon Technologies Co., Ltd. 2012-2019. All rights reserved.
+ * Description: RPMB head file for external
+ * Create: 2012-05-01
+ * History: 2019-03-18 structure optimization
+ */
 
 #ifndef __RPMB_H__
 #define __RPMB_H__
@@ -63,18 +68,19 @@ struct ufs_blk_ioc_rpmb_data {
 
 extern u64 g_rpmb_ufs_start_time;
 extern struct mutex rpmb_counter_lock;
-extern void hisi_rpmb_active(void);
+extern void vendor_rpmb_active(void);
 extern int rpmb_get_dev_ver(enum rpmb_version *ver);
 extern int get_rpmb_key_status(void);
 extern u32 get_rpmb_support_key_num(void);
-extern int wait_hisee_rpmb_request_is_finished(void);
-extern int check_hisee_rpmb_request_is_cleaned(void);
-extern int32_t hisee_exception_to_reset_rpmb(void);
+extern int wait_mspc_rpmb_request_is_finished(void);
+extern int check_mspc_rpmb_request_is_cleaned(void);
+extern int32_t mspc_exception_to_reset_rpmb(void);
+void mspc_report_rpmb(void);
 
-#ifdef CONFIG_HISI_RPMB_UFS
-int rpmb_ufs_init(void);
+#ifdef CONFIG_RPMB_UFS
+int rpmb_ufs_init(int is_emulator);
 #endif
-#ifdef CONFIG_HISI_RPMB_MMC
+#ifdef CONFIG_RPMB_MMC
 int rpmb_mmc_init(void);
 int mmc_blk_ioctl_rpmb_cmd(enum func_id id, struct block_device *bdev,
 			   struct mmc_blk_ioc_rpmb_data *idata);

@@ -15,7 +15,7 @@
 
 
 #include "ftsSoftware.h"
-#include "../../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define LIMITS_FILE							"stm_fts_production_limits.csv"
 

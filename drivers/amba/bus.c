@@ -27,11 +27,18 @@
 #define to_amba_driver(d)	container_of(d, struct amba_driver, drv)
 
 #define HISI_SECURE_GPIO_READ_REG   0xc5010004
-static unsigned int amba_secure_readl(int offset)
+#define PID_CID_REG_NUM 4
+#define PID_CID_MASK 255
+#define PID_CID_OFFSET 8
+#define PID_CID_REG_STEP 4
+#define PID_REG_START 0x20
+#define CID_REG_START 0x10
+
+static unsigned int amba_secure_readl(int offset, u32 base_addr)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(HISI_SECURE_GPIO_READ_REG, offset, &res);//lint !e1514
+	arm_smccc_1_1_smc(HISI_SECURE_GPIO_READ_REG, offset, base_addr, &res);
 	return (u32)res.a1;
 }
 
@@ -412,22 +419,28 @@ static int amba_device_try_add(struct amba_device *dev, struct resource *parent)
 		 * Read pid and cid based on size of resource
 		 * they are located at end of region
 		 */
-		for (pid = 0, i = 0; i < 4; i++) {
+		for (pid = 0, i = 0; i < PID_CID_REG_NUM; i++) {
 			if (dev->secure_mode) {
-				pid |= (amba_secure_readl(size - 0x20 + 4 * i)& 255) <<
-					(i * 8);
+				pid |= (amba_secure_readl
+					((size - PID_REG_START + PID_CID_REG_STEP * i),
+						dev->res.start) & PID_CID_MASK) <<
+						(i * PID_CID_OFFSET);
 			} else {
-				pid |= (readl(tmp + size - 0x20 + 4 * i) & 255) <<
-					(i * 8);
+				pid |= (readl
+					(tmp + size - PID_REG_START + PID_CID_REG_STEP * i) &
+					PID_CID_MASK) << (i * PID_CID_OFFSET);
 			}
 		}
-		for (cid = 0, i = 0; i < 4; i++) {
+		for (cid = 0, i = 0; i < PID_CID_REG_NUM; i++) {
 			if (dev->secure_mode) {
-				cid |= (amba_secure_readl(size - 0x10 + 4 * i) & 255) <<
-					(i * 8);
+				cid |= (amba_secure_readl
+					((size - CID_REG_START + PID_CID_REG_STEP * i),
+						dev->res.start) & PID_CID_MASK) <<
+						(i * PID_CID_OFFSET);
 			} else {
-				cid |= (readl(tmp + size - 0x10 + 4 * i) & 255) <<
-					(i * 8);
+				cid |= (readl
+					(tmp + size - CID_REG_START + PID_CID_REG_STEP * i) &
+					PID_CID_MASK) << (i * PID_CID_OFFSET);
 			}
 		}
 		amba_put_disable_pclk(dev);

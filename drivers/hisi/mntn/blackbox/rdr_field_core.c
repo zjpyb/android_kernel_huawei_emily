@@ -1,40 +1,51 @@
 /*
+ * rdr_field_core.c
+ *
  * blackbox. (kernel run data recorder.)
  *
- * Copyright (c) 2013 Huawei Technologies CO., Ltd.
+ * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
-#include <linux/spinlock.h>
-#include <linux/slab.h>
-#include <linux/time.h>
 #include <linux/io.h>
-#include <linux/string.h>
-#include <linux/vmalloc.h>
 #include <linux/of.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/string.h>
+#include <linux/time.h>
+#include <linux/vmalloc.h>
 
 #include <linux/hisi/rdr_pub.h>
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BLACKBOX_TAG
-#include "rdr_inner.h"
-#include "rdr_print.h"
-#include "rdr_field.h"
+#include <pr_log.h>
+
 #include <securec.h>
 
-static struct rdr_struct_s *pbb;
-static struct rdr_struct_s *tmp_pbb;
+#include "rdr_field.h"
+#include "rdr_inner.h"
+#include "rdr_print.h"
+
+#define PR_LOG_TAG BLACKBOX_TAG
+
+static struct rdr_struct_s *g_pbb = NULL;
+static struct rdr_struct_s *g_tmp_pbb = NULL;
 
 u64 rdr_area_mem_addr[RDR_AREA_MAXIMUM + 1];
 u32 rdr_area_mem_size[RDR_AREA_MAXIMUM] = {
-	0,			/* 6, 有多少个核可以分配到内存 */
-	0,			/* 0x180000, CP */
-	0,			/* 0x20000, TEE */
-	0,			/* 0x20000, HIFI */
-	0,			/* 0x20000, LPM3 */
-	0,			/* 0x20000, IOM3 */
+	0, /* 6, the num of core to allocate memory */
+	0, /* 0x180000, CP */
+	0, /* 0x20000, TEE */
+	0, /* 0x20000, HIFI */
+	0, /* 0x20000, LPM3 */
+	0, /* 0x20000, IOM3 */
 };
 
 void rdr_set_area_info(int index, u32 size)
@@ -44,19 +55,19 @@ void rdr_set_area_info(int index, u32 size)
 
 struct rdr_struct_s *rdr_get_pbb(void)
 {
-	return pbb;
+	return g_pbb;
 }
 
 struct rdr_struct_s *rdr_get_tmppbb(void)
 {
-	return tmp_pbb;
+	return g_tmp_pbb;
 }
 
 void rdr_clear_tmppbb(void)
 {
-	if (tmp_pbb) {
-		vfree(tmp_pbb);
-		tmp_pbb = NULL;
+	if (g_tmp_pbb != NULL) {
+		vfree(g_tmp_pbb);
+		g_tmp_pbb = NULL;
 	}
 }
 
@@ -66,197 +77,204 @@ u64 rdr_get_pbb_size(void)
 }
 
 int rdr_get_areainfo(enum RDR_AREA_LIST area,
-		     struct rdr_register_module_result *retinfo)
+				struct rdr_register_module_result *retinfo)
 {
-	if (area >= RDR_AREA_MAXIMUM) {
+	if ((area >= RDR_AREA_MAXIMUM) || (retinfo == NULL))
 		return -1;
-	}
 
-	retinfo->log_addr = pbb->area_info[area].offset;
-	retinfo->log_len = pbb->area_info[area].length;
+	retinfo->log_addr = g_pbb->area_info[area].offset;
+	retinfo->log_len = g_pbb->area_info[area].length;
 
 	return 0;
 }
 
-void rdr_field_baseinfo_init(void)
+static void rdr_field_baseinfo_init(void)
 {
 	BB_PRINT_START();
-	pbb->base_info.modid = 0;
-	pbb->base_info.arg1 = 0;
-	pbb->base_info.arg2 = 0;
-	pbb->base_info.e_core = 0;
-	pbb->base_info.e_type = 0;
-	pbb->base_info.e_subtype = 0;
-	pbb->base_info.start_flag = 0;
-	pbb->base_info.savefile_flag = 0;
-	pbb->base_info.reboot_flag = 0;
-	if (EOK != memset_s(pbb->base_info.e_module,MODULE_NAME_LEN, 0, MODULE_NAME_LEN))
-	{
-		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
-	}
-	memset(pbb->base_info.e_desc, 0, STR_EXCEPTIONDESC_MAXLEN);
-	memset(pbb->base_info.datetime, 0, DATATIME_MAXLEN);
+	g_pbb->base_info.modid = 0;
+	g_pbb->base_info.arg1 = 0;
+	g_pbb->base_info.arg2 = 0;
+	g_pbb->base_info.e_core = 0;
+	g_pbb->base_info.e_type = 0;
+	g_pbb->base_info.e_subtype = 0;
+	g_pbb->base_info.start_flag = 0;
+	g_pbb->base_info.savefile_flag = 0;
+	g_pbb->base_info.reboot_flag = 0;
+	(void)memset_s(g_pbb->base_info.e_module, MODULE_NAME_LEN, 0, MODULE_NAME_LEN);
 
-	pbb->cleartext_info.savefile_flag = 0;
+	memset(g_pbb->base_info.e_desc, 0, STR_EXCEPTIONDESC_MAXLEN);
+	memset(g_pbb->base_info.datetime, 0, DATATIME_MAXLEN);
+
+	g_pbb->cleartext_info.savefile_flag = 0;
 
 	BB_PRINT_END();
-	return;
 }
 
 void rdr_field_baseinfo_reinit(void)
 {
 	BB_PRINT_START();
-	pbb->base_info.modid = 0;
-	pbb->base_info.arg1 = 0;
-	pbb->base_info.arg2 = 0;
-	pbb->base_info.e_core = 0;
-	pbb->base_info.e_type = 0;
-	pbb->base_info.e_subtype = 0;
-	pbb->base_info.start_flag = RDR_PROC_EXEC_START;
-	pbb->base_info.savefile_flag = RDR_DUMP_LOG_START;
+	g_pbb->base_info.modid = 0;
+	g_pbb->base_info.arg1 = 0;
+	g_pbb->base_info.arg2 = 0;
+	g_pbb->base_info.e_core = 0;
+	g_pbb->base_info.e_type = 0;
+	g_pbb->base_info.e_subtype = 0;
+	g_pbb->base_info.start_flag = RDR_PROC_EXEC_START;
+	g_pbb->base_info.savefile_flag = RDR_DUMP_LOG_START;
 
-	if (EOK != memset_s(pbb->base_info.datetime,DATATIME_MAXLEN, 0, DATATIME_MAXLEN))
-	{
-		BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
-	}
+	(void)memset_s(g_pbb->base_info.datetime, DATATIME_MAXLEN, 0, DATATIME_MAXLEN);
 
-	pbb->cleartext_info.savefile_flag = 0;
+	g_pbb->cleartext_info.savefile_flag = 0;
 
 	BB_PRINT_END();
-	return;
 }
 
-void rdr_field_areainfo_init(void)
+static void rdr_field_areainfo_init(void)
 {
 	int index;
+
 	for (index = 0; index < RDR_AREA_MAXIMUM; index++) {
-		pbb->area_info[index].offset = rdr_area_mem_addr[index];
-		pbb->area_info[index].length = rdr_area_mem_size[index];
+		g_pbb->area_info[index].offset = rdr_area_mem_addr[index];
+		g_pbb->area_info[index].length = rdr_area_mem_size[index];
 	}
 }
 
 char *rdr_field_get_datetime(void)
 {
-	return (char *)(pbb->base_info.datetime);
+	return (char *)(g_pbb->base_info.datetime);
 }
 
 void rdr_cleartext_dumplog_done(void)
 {
-	pbb->cleartext_info.savefile_flag = 1;
+	g_pbb->cleartext_info.savefile_flag = 1;
 }
 
 void rdr_field_dumplog_done(void)
 {
-	pbb->base_info.savefile_flag = RDR_DUMP_LOG_DONE;
+	g_pbb->base_info.savefile_flag = RDR_DUMP_LOG_DONE;
 }
 
 void rdr_field_procexec_done(void)
 {
-	pbb->base_info.start_flag = RDR_PROC_EXEC_DONE;
+	g_pbb->base_info.start_flag = RDR_PROC_EXEC_DONE;
 }
 
 void rdr_field_reboot_done(void)
 {
-	pbb->base_info.reboot_flag = RDR_REBOOT_DONE;
+	g_pbb->base_info.reboot_flag = RDR_REBOOT_DONE;
 }
 
-void rdr_field_top_init(void)
+static void rdr_field_top_init(void)
 {
+	int length;
+
 	BB_PRINT_START();
 
-	pbb->top_head.magic = FILE_MAGIC;
-	pbb->top_head.version = RDR_VERSION;
-	pbb->top_head.area_number = RDR_AREA_MAXIMUM;
+	g_pbb->top_head.magic = FILE_MAGIC;
+	g_pbb->top_head.version = RDR_VERSION;
+	g_pbb->top_head.area_number = RDR_AREA_MAXIMUM;
 
-	rdr_get_builddatetime(pbb->top_head.build_time, RDR_BUILD_DATE_TIME_LEN);
-	if (EOK != memcpy_s(pbb->top_head.product_name,strlen(RDR_PRODUCT) > 16 ? 16 : strlen(RDR_PRODUCT) ,RDR_PRODUCT,
-	       strlen(RDR_PRODUCT) > 16 ? 16 : strlen(RDR_PRODUCT)))
-	{
+	rdr_get_builddatetime(g_pbb->top_head.build_time, RDR_BUILD_DATE_TIME_LEN);
+	length = strlen(RDR_PRODUCT) > RDR_PRODUCT_MAXLEN ? RDR_PRODUCT_MAXLEN : strlen(RDR_PRODUCT);
+	if (memcpy_s(g_pbb->top_head.product_name, RDR_PRODUCT_MAXLEN, RDR_PRODUCT, length) != EOK) {
 		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		BB_PRINT_END();
+		return;
 	}
-	memcpy(pbb->top_head.product_version, RDR_PRODUCT_VERSION,
-	       strlen(RDR_PRODUCT_VERSION) >
-	       16 ? 16 : strlen(RDR_PRODUCT_VERSION));
+
+	length = strlen(RDR_PRODUCT_VERSION) >
+		RDR_PRODUCT_MAXLEN ? RDR_PRODUCT_MAXLEN : strlen(RDR_PRODUCT_VERSION);
+	if (memcpy_s(g_pbb->top_head.product_version, RDR_PRODUCT_MAXLEN,
+		RDR_PRODUCT_VERSION, length) != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		BB_PRINT_END();
+		return;
+	}
 
 	BB_PRINT_END();
-	return;
 }
 
 int rdr_field_init(void)
 {
-	int ret = 0;
+	int ret;
 	int index;
-	u32 last = 0;
+	u32 last;
 	unsigned int fpga_flag = 0;
 	struct device_node *np = NULL;
 
 	BB_PRINT_START();
 
-	pbb = hisi_bbox_map(rdr_reserved_phymem_addr(),
-			  rdr_reserved_phymem_size());
-	if (NULL == pbb) {
-		BB_PRINT_ERR("hisi_bbox_map pbb faild.");
+	g_pbb = hisi_bbox_map(rdr_reserved_phymem_addr(),
+			rdr_reserved_phymem_size());
+	if (g_pbb == NULL) {
+		BB_PRINT_ERR("hisi_bbox_map g_pbb faild\n");
 		ret = -1;
 		goto out;
 	}
 
-	tmp_pbb = vmalloc(rdr_reserved_phymem_size());
-	if (NULL == tmp_pbb) {
-		BB_PRINT_ERR("vmalloc tmp_pbb faild.");
+	g_tmp_pbb = vmalloc(rdr_reserved_phymem_size());
+	if (g_tmp_pbb == NULL) {
+		BB_PRINT_ERR("vmalloc g_tmp_pbb faild\n");
 		ret = -1;
-		hisi_bbox_unmap(pbb);
-		pbb = NULL;
+		hisi_bbox_unmap(g_pbb);
+		g_pbb = NULL;
 		goto out;
 	}
 
-	rdr_show_base_info(1);	/* show pbb */
-	if (EOK != memcpy_s(tmp_pbb,rdr_reserved_phymem_size() ,pbb, rdr_reserved_phymem_size()))
-	{
+	rdr_show_base_info(1); /* show g_pbb */
+	if (memcpy_s(g_tmp_pbb, rdr_reserved_phymem_size(), g_pbb, rdr_reserved_phymem_size()) != EOK) {
 		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		ret = -1;
+		goto free_pbb;
 	}
-	rdr_show_base_info(0);	/* show tmpbb */
+
+	rdr_show_base_info(0); /* show g_tmp_pbb */
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,hisifb");
-	if (!np) {
+	if (np == NULL) {
 		BB_PRINT_ERR("NOT FOUND device node 'hisilicon,hisifb'!\n");
-		return -ENXIO;
+		ret = -ENXIO;
+		goto free_pbb;
 	}
 	ret = of_property_read_u32(np, "fpga_flag", &fpga_flag);
 	if (ret) {
-		BB_PRINT_ERR("failed to get fpga_flag resource.\n");
-		return -ENXIO;
+		BB_PRINT_ERR("failed to get fpga_flag resource\n");
+		ret = -ENXIO;
+		goto free_pbb;
 	}
-	/* if the power_up of phone is the first time,
+	/*
+	 * if the power_up of phone is the first time,
 	 * need clear bbox memory.
 	 */
-	if ((AP_S_COLDBOOT == rdr_get_reboot_type()) && (1 != fpga_flag)) {
-		if (EOK != memset_s(pbb,rdr_reserved_phymem_size() ,0, rdr_reserved_phymem_size()))
-		{
+	if ((rdr_get_reboot_type() == AP_S_COLDBOOT) && (fpga_flag != 1)) {
+		if (memset_s(g_pbb, rdr_reserved_phymem_size(), 0, rdr_reserved_phymem_size()) != EOK) {
 			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
+			ret = -1;
+			goto free_pbb;
 		}
 	} else {
-		if (EOK != memset_s(pbb,RDR_BASEINFO_SIZE ,0, RDR_BASEINFO_SIZE))
-		{
-			BB_PRINT_ERR("%s():%d:memset_s fail!\n", __func__, __LINE__);
-		}
+		(void)memset_s(g_pbb, RDR_BASEINFO_SIZE, 0, RDR_BASEINFO_SIZE);
 	}
 
 	last = rdr_area_mem_size[0];
-	rdr_area_mem_addr[last] = rdr_reserved_phymem_addr()
-	    + rdr_reserved_phymem_size();
-	for (index = last - 1; index > 0; index--) {
-		rdr_area_mem_addr[index] = rdr_area_mem_addr[index + 1] /*lint !e679*/
-		    - rdr_area_mem_size[index];
-	}
+	rdr_area_mem_addr[last] = rdr_reserved_phymem_addr() + rdr_reserved_phymem_size();
+	for (index = last - 1; index > 0; index--)
+		rdr_area_mem_addr[index] = rdr_area_mem_addr[index + 1] - rdr_area_mem_size[index];
+
 	rdr_area_mem_addr[0] = rdr_reserved_phymem_addr() + RDR_BASEINFO_SIZE;
-	rdr_area_mem_size[0] = rdr_area_mem_addr[1] - RDR_BASEINFO_SIZE -
-		rdr_reserved_phymem_addr();
+	rdr_area_mem_size[0] = rdr_area_mem_addr[1] - RDR_BASEINFO_SIZE - rdr_reserved_phymem_addr();
 
 	rdr_field_top_init();
 	rdr_field_baseinfo_init();
 	rdr_field_areainfo_init();
 	BB_PRINT_END();
 out:
+	return ret;
+free_pbb:
+	hisi_bbox_unmap(g_pbb);
+	g_pbb = NULL;
+	vfree(g_tmp_pbb);
+	g_tmp_pbb = NULL;
 	return ret;
 }
 
@@ -267,27 +285,32 @@ void rdr_field_exit(void)
 void rdr_save_args(u32 modid, u32 arg1, u32 arg2)
 {
 	BB_PRINT_START();
-	pbb->base_info.modid = modid;
-	pbb->base_info.arg1 = arg1;
-	pbb->base_info.arg2 = arg2;
+	g_pbb->base_info.modid = modid;
+	g_pbb->base_info.arg1 = arg1;
+	g_pbb->base_info.arg2 = arg2;
 
-	/*pbb->base_info.savefile_flag = 0;
-	   pbb->base_info.start_flag = 0; */
 	BB_PRINT_END();
 }
 
-void rdr_fill_edata(struct rdr_exception_info_s *e,const char *date)
+void rdr_fill_edata(struct rdr_exception_info_s *e, const char *date)
 {
 	BB_PRINT_START();
-	pbb->base_info.e_core = e->e_from_core;
-	pbb->base_info.e_type = e->e_exce_type;
-	pbb->base_info.e_subtype = e->e_exce_subtype;
-	if (EOK != memcpy_s(pbb->base_info.datetime,DATATIME_MAXLEN ,date, DATATIME_MAXLEN))
-	{
-		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+	if ((e == NULL) || (date == NULL)) {
+		BB_PRINT_ERR("%s():%d:invalid  parameter!\n", __func__, __LINE__);
+		BB_PRINT_END();
+		return;
 	}
-	memcpy(pbb->base_info.e_module, e->e_from_module, MODULE_NAME_LEN);
-	memcpy(pbb->base_info.e_desc, e->e_desc, STR_EXCEPTIONDESC_MAXLEN);
+
+	g_pbb->base_info.e_core = e->e_from_core;
+	g_pbb->base_info.e_type = e->e_exce_type;
+	g_pbb->base_info.e_subtype = e->e_exce_subtype;
+	if (memcpy_s(g_pbb->base_info.datetime, DATATIME_MAXLEN, date, DATATIME_MAXLEN) != EOK) {
+		BB_PRINT_ERR("%s():%d:memcpy_s fail!\n", __func__, __LINE__);
+		return;
+	}
+
+	memcpy(g_pbb->base_info.e_module, e->e_from_module, MODULE_NAME_LEN);
+	memcpy(g_pbb->base_info.e_desc, e->e_desc, STR_EXCEPTIONDESC_MAXLEN);
 	BB_PRINT_END();
 }
 
@@ -296,19 +319,17 @@ void rdr_show_base_info(int flag)
 	struct rdr_struct_s *p = NULL;
 	int index;
 
-	if (1 == flag) {
+	if (flag == 1)
 		p = rdr_get_pbb();
-	} else {
+	else
 		p = rdr_get_tmppbb();
-	}
 
-	if (NULL == p) {
+	if (p == NULL)
 		return;
-	}
 
 	if (p->top_head.magic != FILE_MAGIC) {
 		BB_PRINT_PN("[%s]: rdr_struct_s information is not initialized, no need to print it's content!\n",
-		     __func__);
+			__func__);
 		return;
 	}
 
@@ -327,8 +348,8 @@ void rdr_show_base_info(int flag)
 	BB_PRINT_PN("e data       :[%s]\n", p->base_info.datetime);
 	BB_PRINT_PN("e module     :[%s]\n", p->base_info.e_module);
 	BB_PRINT_PN("e desc       :[%s]\n", p->base_info.e_desc);
-	BB_PRINT_PN("e start_flag :[%d]\n", p->base_info.start_flag);
-	BB_PRINT_PN("e save_flag  :[%d]\n", p->base_info.savefile_flag);
+	BB_PRINT_PN("e start_flag :[%u]\n", p->base_info.start_flag);
+	BB_PRINT_PN("e save_flag  :[%u]\n", p->base_info.savefile_flag);
 	BB_PRINT_PN("========= print baseinfo e n d =========\n");
 
 	BB_PRINT_PN("========= print top head start =========\n");
@@ -336,15 +357,14 @@ void rdr_show_base_info(int flag)
 	BB_PRINT_PN("version      :[0x%x]\n", p->top_head.version);
 	BB_PRINT_PN("area num     :[0x%x]\n", p->top_head.area_number);
 	BB_PRINT_PN("reserve      :[0x%x]\n", p->top_head.reserve);
-	BB_PRINT_PN("buildtime    :[%s]\n",   p->top_head.build_time);
+	BB_PRINT_PN("buildtime    :[%s]\n", p->top_head.build_time);
 	BB_PRINT_PN("========= print top head e n d =========\n");
 
 	BB_PRINT_PN("========= print areainfo start =========\n");
-	for (index = 0; index < RDR_AREA_MAXIMUM; index++) {
+	for (index = 0; index < RDR_AREA_MAXIMUM; index++)
 		BB_PRINT_PN("area[%d] addr[0x%llx] size[0x%x]\n",
-			index, pbb->area_info[index].offset,
-			pbb->area_info[index].length);
-	}
+			index, g_pbb->area_info[index].offset, g_pbb->area_info[index].length);
+
 	BB_PRINT_PN("========= print areainfo e n d =========\n");
 
 	BB_PRINT_PN("========= print clear text start =========\n");

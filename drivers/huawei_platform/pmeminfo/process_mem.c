@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/fdtable.h>
+#include <linux/slab.h>
 
 #define MAX_LENGTH 64
 #define TOPN_DEFAULT 3
@@ -27,8 +28,8 @@ struct proc_meminfo {
 static unsigned int top_n = TOPN_DEFAULT;
 static struct kmem_cache *process_cache;
 
-static int process_mem_write(const struct file *file, const char __user *buffer,
-			unsigned long count, void *data)
+static ssize_t process_mem_write(struct file *file, const char __user *buffer,
+	size_t count, loff_t *data)
 {
 	int rv;
 
@@ -36,15 +37,15 @@ static int process_mem_write(const struct file *file, const char __user *buffer,
 	if (rv < 0)
 		return rv;
 
-	return count;
+	return (ssize_t)count;
 }
 
-int process_get_ion_size(const struct task_struct *task)
+static int process_get_ion_size(const struct task_struct *task)
 {
 	int n = 0;
 	size_t ion_size = 0;
-	struct files_struct *files;
-	struct fdtable *fdt;
+	struct files_struct *files = NULL;
+	struct fdtable *fdt = NULL;
 
 	if (task->flags & PF_KTHREAD)
 		return ion_size;
@@ -55,7 +56,7 @@ int process_get_ion_size(const struct task_struct *task)
 
 	spin_lock(&files->file_lock);
 	for (fdt = files_fdtable(files); n < fdt->max_fds; n++) {
-		struct dma_buf *dbuf;
+		struct dma_buf *dbuf = NULL;
 		struct file *f = rcu_dereference_check_fdtable(files,
 					fdt->fd[n]);
 
@@ -76,12 +77,13 @@ int process_get_ion_size(const struct task_struct *task)
 	return (int)(ion_size / TUNIT_SIZE);
 }
 
-struct proc_meminfo *process_info_add(const struct task_struct *task, int tsize)
+static struct proc_meminfo *process_info_add(const struct task_struct *task,
+			int tsize)
 {
-	struct proc_meminfo *dump_info;
+	struct proc_meminfo *dump_info = NULL;
 
 	dump_info = kmem_cache_zalloc(process_cache, GFP_ATOMIC);
-	if (dump_info) {
+	if (dump_info && task) {
 		strcpy(dump_info->task_name, task->comm);
 		dump_info->task_size = tsize;
 	}
@@ -90,18 +92,20 @@ struct proc_meminfo *process_info_add(const struct task_struct *task, int tsize)
 
 static int process_mem_show(struct seq_file *m, void *v)
 {
-	struct task_struct *p;
-	struct task_struct *task;
+	struct task_struct *p = NULL;
+	struct task_struct *task = NULL;
 	int count;
-	int tasksize;
-	struct proc_meminfo *dump_info;
-	struct proc_meminfo *temp_info;
-	struct list_head dumpclass;
+	int task_size;
+	struct proc_meminfo *dump_info = NULL;
+	struct proc_meminfo *temp_info = NULL;
+	struct list_head dump_class;
 
 	rcu_read_lock();
-	INIT_LIST_HEAD(&dumpclass);
+	INIT_LIST_HEAD(&dump_class);
 
 	for_each_process(p) {
+		if (!p)
+			continue;
 		task = find_lock_task_mm(p);
 		/*
 		 * This is a kthread or all of p's threads have already
@@ -111,33 +115,33 @@ static int process_mem_show(struct seq_file *m, void *v)
 		if (!task)
 			continue;
 
-		tasksize = get_mm_rss(task->mm) +
+		task_size = get_mm_rss(task->mm) +
 					get_mm_counter(task->mm, MM_SWAPENTS);
-		tasksize *= (int)(PAGE_SIZE / TUNIT_SIZE);
-		tasksize += process_get_ion_size(task);
+		task_size *= (int)(PAGE_SIZE / TUNIT_SIZE);
+		task_size += process_get_ion_size(task);
 
-		if (list_empty(&dumpclass)) {
-			dump_info = process_info_add(task, tasksize);
+		if (list_empty(&dump_class)) {
+			dump_info = process_info_add(task, task_size);
 			if (dump_info)
-				list_add(&dump_info->node_task, &dumpclass);
+				list_add(&dump_info->node_task, &dump_class);
 			goto t_unlock;
 		}
 
 		count = 0;
-		list_for_each_entry(temp_info, &dumpclass, node_task) {
+		list_for_each_entry(temp_info, &dump_class, node_task) {
 			count++;
 			if (count >= top_n)
 				break;
-			if (tasksize > temp_info->task_size) {
-				dump_info = process_info_add(task, tasksize);
+			if (task_size > temp_info->task_size) {
+				dump_info = process_info_add(task, task_size);
 				if (dump_info)
 					list_add_tail(&dump_info->node_task,
 							&temp_info->node_task);
 				break;
 
 			} else if (list_is_last(&temp_info->node_task,
-						&dumpclass)) {
-				dump_info = process_info_add(task, tasksize);
+						&dump_class)) {
+				dump_info = process_info_add(task, task_size);
 				if (dump_info)
 					list_add(&dump_info->node_task,
 							&temp_info->node_task);
@@ -149,12 +153,15 @@ t_unlock:
 	}
 	count = 0;
 	seq_printf(m, "%u\n", top_n);
-	list_for_each_entry(temp_info, &dumpclass, node_task) {
+	list_for_each_entry_safe(temp_info, dump_info, &dump_class, node_task) {
+		if (!temp_info)
+			continue;
 		if (count++ < top_n) {
 			seq_printf(m, "%s ", temp_info->task_name);
 			seq_printf(m, "%dKB\n", temp_info->task_size);
 		}
 		kmem_cache_free(process_cache, temp_info);
+		temp_info = NULL;
 	}
 	rcu_read_unlock();
 

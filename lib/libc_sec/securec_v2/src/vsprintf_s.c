@@ -42,7 +42,6 @@ int vsprintf_s(char *strDest, size_t destMax, const char *format, va_list argLis
     }
 
     retVal = SecVsnprintfImpl(strDest, destMax, format, argList);
-
     if (retVal < 0) {
         strDest[0] = '\0';
         if (retVal == SECUREC_PRINTF_TRUNCATE) {
@@ -58,5 +57,4 @@ int vsprintf_s(char *strDest, size_t destMax, const char *format, va_list argLis
 #if SECUREC_IN_KERNEL
 EXPORT_SYMBOL(vsprintf_s);
 #endif
-
 

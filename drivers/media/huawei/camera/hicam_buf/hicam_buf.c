@@ -1,11 +1,8 @@
 /*
- * Hisilicon Kirin camera driver source file
- *
- * Copyright (C) Huawei Technology Co., Ltd.
- *
- * Author:	wenjianyue
- * Email:	wenjianyue@huawei.com
- * Date:	2018-11-28
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+ * Description: Implement of hicamera buffer.
+ * Author: wenjianyue
+ * Create: 2018-11-28
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,12 +11,8 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/of.h>
@@ -30,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/dma-mapping.h>
+#include <securec.h>
 
 #include <hicam_buf.h>
 #include <cam_log.h>
@@ -37,9 +31,9 @@
 
 int hisp_sec_ta_enable(void);
 int hisp_sec_ta_disable(void);
-unsigned int hisp_sec_mem_set(int sharefd, unsigned int type, unsigned int size, unsigned int prot);
-int hisp_sec_mem_release(int sharefd, unsigned int type, unsigned int size, unsigned int da);
+int hisp_secboot_info_set(unsigned int type, int sharefd);
 
+extern struct iommu_domain *iommu_get_domain_for_dev(struct device *dev);
 
 struct hicam_buf_device {
 	struct miscdevice dev;
@@ -48,112 +42,139 @@ struct hicam_buf_device {
 	void *private;
 };
 
-static struct hicam_buf_device *hicam_buf_dev = NULL;
-static int hicam_secmem_type = 0;
-static atomic_t hicam_secta_open = ATOMIC_INIT(0);;
+static struct hicam_buf_device *g_hicam_buf_dev = NULL;
+static int g_hicam_secmem_type = 0;
 
-void* hicam_buf_map_kernel(int fd)
+void *hicam_buf_map_kernel(int fd)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
 		return NULL;
 	}
 
 	if (fd < 0) {
-		cam_err("%s: fd invalid.", __func__);
+		cam_err("%s: fd invalid", __FUNCTION__);
 		return NULL;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	return hicam_internal_map_kernel(dev, fd);
 }
 
 void hicam_buf_unmap_kernel(int fd)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
-		return ;
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
+		return;
 	}
 
 	if (fd < 0) {
-		cam_err("%s: fd invalid.", __func__);
-		return ;
+		cam_err("%s: fd invalid", __FUNCTION__);
+		return;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	hicam_internal_unmap_kernel(dev, fd);
 }
 
 int hicam_buf_map_iommu(int fd, struct iommu_format *fmt)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: check g_hicam_buf_dev is error or null", __FUNCTION__);
 		return -ENODEV;
 	}
 
 	if (fd < 0 || !fmt) {
-		cam_err("%s: fd or fmt invalid.", __func__);
+		cam_err("%s: fd or fmt invalid", __FUNCTION__);
 		return -EINVAL;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	return hicam_internal_map_iommu(dev, fd, fmt);
 }
 
 void hicam_buf_unmap_iommu(int fd, struct iommu_format *fmt)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
-		return ;
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
+		return;
 	}
 
 	if (fd < 0 || !fmt) {
-		cam_err("%s: fd or fmt invalid.", __func__);
-		return ;
+		cam_err("%s: fd or fmt invalid", __FUNCTION__);
+		return;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	hicam_internal_unmap_iommu(dev, fd, fmt);
+}
+
+void hicam_buf_sc_available_size(struct systemcache_format *fmt)
+{
+	if (!fmt) {
+		cam_err("%s: fmt is null", __FUNCTION__);
+		return;
+	}
+	hicam_internal_sc_available_size(fmt);
+}
+
+int hicam_buf_sc_wakeup(struct systemcache_format *fmt)
+{
+	if (!fmt) {
+		cam_err("%s: fmt is null", __FUNCTION__);
+		return -ENODEV;
+	}
+
+	if (fmt->pid <= 0) {
+		cam_err("%s: fmt pid invalid", __FUNCTION__);
+		return -ENODEV;
+	}
+
+	if (fmt->prio > 1) {
+		cam_err("%s: fmt prio invalid", __FUNCTION__);
+		return -ENODEV;
+	}
+	return hicam_internal_sc_wakeup(fmt);
 }
 
 int hicam_buf_get_phys(int fd, struct phys_format *fmt)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
 		return -ENODEV;
 	}
 
 	if (fd < 0 || !fmt) {
-		cam_err("%s: fd or fmt invalid.", __func__);
+		cam_err("%s: fd or fmt invalid", __FUNCTION__);
 		return -EINVAL;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	return hicam_internal_get_phys(dev, fd, fmt);
 }
 
-// return 0 if pgd_base get failed, caller check please
+/* return 0 if pgd_base get failed, caller check please */
 phys_addr_t hicam_buf_get_pgd_base(void)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
 		return 0;
 	}
 
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	return hicam_internal_get_pgd_base(dev);
 }
 
 int hicam_buf_sync(int fd, struct sync_format *fmt)
 {
 	if (fd < 0 || !fmt) {
-		cam_err("%s: fd or fmt invalid.", __func__);
+		cam_err("%s: fd or fmt invalid", __FUNCTION__);
 		return -EINVAL;
 	}
 
@@ -163,98 +184,105 @@ int hicam_buf_sync(int fd, struct sync_format *fmt)
 int hicam_buf_local_sync(int fd, struct local_sync_format *fmt)
 {
 	if (fd < 0 || !fmt) {
-		cam_err("%s: fd or fmt invalid.", __func__);
+		cam_err("%s: fd or fmt invalid", __FUNCTION__);
 		return -EINVAL;
 	}
 
 	return hicam_internal_local_sync(fd, fmt);
 }
 
-// CARE: get sg_table will hold the related buffer,
-// please save ret ptr, and call put with it.
-struct sg_table* hicam_buf_get_sgtable(int fd)
+/* CARE: get sg_table will hold the related buffer,
+ * please save ret ptr, and call put with it.
+ */
+struct sg_table *hicam_buf_get_sgtable(int fd)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is null.", __func__);
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is null", __FUNCTION__);
 		return ERR_PTR(-ENODEV);
 	}
 
 	if (fd < 0) {
-		cam_err("%s: fd invalid.", __func__);
+		cam_err("%s: fd invalid", __FUNCTION__);
 		return ERR_PTR(-EINVAL);
 	}
-	dev = &hicam_buf_dev->pdev->dev;
+
+	dev = &g_hicam_buf_dev->pdev->dev;
 	return hicam_internal_get_sgtable(dev, fd);
 }
 
 void hicam_buf_put_sgtable(struct sg_table *sgt)
 {
 	struct device *dev = NULL;
-	if (IS_ERR_OR_NULL(hicam_buf_dev)) {
-		cam_err("%s: hicam_buf_dev is invalid.", __func__);
-		return ;
+	if (IS_ERR_OR_NULL(g_hicam_buf_dev)) {
+		cam_err("%s: g_hicam_buf_dev is invalid", __FUNCTION__);
+		return;
 	}
 
 	if (IS_ERR_OR_NULL(sgt)) {
-		cam_err("%s: sgt is invalid.", __func__);
-		return ;
+		cam_err("%s: sgt is invalid", __FUNCTION__);
+		return;
 	}
-	dev = &hicam_buf_dev->pdev->dev;
+	dev = &g_hicam_buf_dev->pdev->dev;
 	hicam_internal_put_sgtable(dev, sgt);
 }
 
 int hicam_buf_open_security_ta(void)
 {
-	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) != 0)) {
-		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+	if (g_hicam_secmem_type != 1) {
+		cam_err("%s: sec_mem_type = %d", __FUNCTION__,
+			g_hicam_secmem_type);
 		return -EINVAL;
 	}
 
-	atomic_set(&hicam_secta_open, 1);
 	return hisp_sec_ta_enable();
 }
 
 int hicam_buf_close_security_ta(void)
 {
-	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
-		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+	if (g_hicam_secmem_type != 1) {
+		cam_err("%s: sec_mem_type = %d", __FUNCTION__,
+			g_hicam_secmem_type);
 		return -EINVAL;
 	}
 
-	atomic_set(&hicam_secta_open, 0);
 	return hisp_sec_ta_disable();
 }
 
-int hicam_buf_set_memory_security(struct hicam_buf_cfg *cfg)
+int hicam_buf_set_secboot(struct hicam_buf_cfg *cfg)
 {
-	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
-		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
+	if (g_hicam_secmem_type != 1) {
+		cam_err("%s: sec_mem_type = %d", __FUNCTION__,
+			g_hicam_secmem_type);
 		return -EINVAL;
 	}
 
-	cfg->iommu_format.iova = hisp_sec_mem_set(cfg->fd, cfg->sec_mem_format.type, cfg->sec_mem_format.size, cfg->sec_mem_format.prot);
-	if (cfg->iommu_format.iova == 0) {
+	return hisp_secboot_info_set(cfg->sec_mem_format.type, cfg->fd);
+}
+
+int hicam_buf_release_secboot(struct hicam_buf_cfg *cfg)
+{
+	if (g_hicam_secmem_type != 1) {
+		cam_err("%s: sec_mem_type = %d", __FUNCTION__,
+			g_hicam_secmem_type);
 		return -EINVAL;
 	}
 
 	return 0;
 }
 
-int hicam_buf_reset_memory_security(struct hicam_buf_cfg *cfg)
-{
-	if ((hicam_secmem_type != 1) || (atomic_read(&hicam_secta_open) == 0)) {
-		cam_err("%s: sec_mem_type = %d.", __func__, hicam_secmem_type);
-		return -EINVAL;
-	}
-
-	return hisp_sec_mem_release(cfg->fd, cfg->sec_mem_format.type, cfg->sec_mem_format.size, cfg->sec_mem_format.iova);
-}
-
 void hicam_buf_get_secmem_type(struct hicam_buf_cfg *cfg)
 {
-	cfg->secmemtype = hicam_secmem_type;
+	cfg->secmemtype = g_hicam_secmem_type;
 }
+
+struct iommu_domain *hicam_buf_get_domain_for_dev(void)
+{
+	struct device *dev = NULL;
+	dev = &g_hicam_buf_dev->pdev->dev;
+	return iommu_get_domain_for_dev(dev);
+}
+EXPORT_SYMBOL(hicam_buf_get_domain_for_dev);
 
 static long hicam_config(struct hicam_buf_cfg *cfg)
 {
@@ -273,40 +301,57 @@ static long hicam_config(struct hicam_buf_cfg *cfg)
 		ret = hicam_buf_local_sync(cfg->fd, &cfg->local_sync_format);
 		break;
 	case HICAM_BUF_GET_PHYS:
+#if defined(HISP300_CAMERA) && !defined(DEBUG_HISI_CAMERA)
+		cam_info("%s: should not get phy addr", __FUNCTION__, cfg->type);
+		ret = -EINVAL;
+#else
 		ret = hicam_buf_get_phys(cfg->fd, &cfg->phys_format);
+#endif
 		break;
 	case HICAM_BUF_OPEN_SECURITY_TA:
-		ret =hicam_buf_open_security_ta();
+		ret = hicam_buf_open_security_ta();
 		break;
 	case HICAM_BUF_CLOSE_SECURITY_TA:
-		ret =hicam_buf_close_security_ta();
+		ret = hicam_buf_close_security_ta();
 		break;
-	case HICAM_BUF_SET_SECURITY:
-		ret =hicam_buf_set_memory_security(cfg);
+	case HICAM_BUF_SET_SECBOOT:
+		ret = hicam_buf_set_secboot(cfg);
 		break;
-	case HICAM_BUF_RESET_SECURITY:
-		ret =hicam_buf_reset_memory_security(cfg);
+	case HICAM_BUF_RELEASE_SECBOOT:
+		ret = hicam_buf_release_secboot(cfg);
 		break;
 	case HICAM_BUF_GET_SECMEMTYPE:
 		hicam_buf_get_secmem_type(cfg);
+		break;
+	case HICAM_BUF_SC_AVAILABLE_SIZE:
+		hicam_buf_sc_available_size(&cfg->systemcache_format);
+		break;
+	case HICAM_BUF_SC_WAKEUP:
+		hicam_buf_sc_wakeup(&cfg->systemcache_format);
+		break;
+	default:
+		cam_info("%s: invalid command type %d",
+			__FUNCTION__, cfg->type);
 		break;
 	}
 
 	return ret;
 }
 
-static long hicam_buf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long hicam_buf_ioctl(struct file *filp, unsigned int cmd,
+	unsigned long arg)
 {
 	long ret = 0;
 	struct hicam_buf_cfg data;
 
+	(void)filp;
 	if (_IOC_SIZE(cmd) > sizeof(data)) {
-		cam_err("%s: cmd size too large!\n", __func__);
+		cam_err("%s: cmd size too large", __FUNCTION__);
 		return -EINVAL;
 	}
 
-	if (copy_from_user(&data, (void __user *)arg, _IOC_SIZE(cmd))){
-		cam_err("%s: copy in arg failed!\n", __func__);
+	if (copy_from_user(&data, (void __user *)arg, _IOC_SIZE(cmd))) {
+		cam_err("%s: copy in arg failed", __FUNCTION__);
 		return -EFAULT;
 	}
 
@@ -315,12 +360,12 @@ static long hicam_buf_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		ret = hicam_config(&data);
 		break;
 	default:
-		cam_info("%s: invalid command %d.", __func__, cmd);
+		cam_info("%s: invalid command %d", __FUNCTION__, cmd);
 		return -EINVAL;
 	}
 
-	if (copy_to_user((void __user *)arg, &data, _IOC_SIZE(cmd))){
-		cam_err("%s: copy back arg failed!\n", __func__);
+	if (copy_to_user((void __user *)arg, &data, _IOC_SIZE(cmd))) {
+		cam_err("%s: copy back arg failed", __FUNCTION__);
 		return -EFAULT;
 	}
 
@@ -330,29 +375,51 @@ static long hicam_buf_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 static int hicam_buf_release(struct inode *inode, struct file *file)
 {
 	int ref_count;
-	struct hicam_buf_device *idev = file->private_data;
-	struct miscdevice *mdev = &idev->dev;
+	struct hicam_buf_device *idev = NULL;
+	struct miscdevice *mdev = NULL;
 
-	ref_count = atomic_dec_return(&idev->ref_count);
-	cam_info("%s: %s device closed, ref:%d.",
-			__func__, mdev->name, ref_count);
+	(void)inode;
+	if (!file) {
+		cam_info("%s: file is NULL", __FUNCTION__);
+		return 0;
+	}
+
+	idev = file->private_data;
+	if (idev) {
+		ref_count = atomic_dec_return(&idev->ref_count);
+		mdev = &idev->dev;
+		cam_info("%s: %s device closed, ref:%d",
+			__FUNCTION__, mdev->name, ref_count);
+	}
+
 	return 0;
 }
 
 static int hicam_buf_open(struct inode *inode, struct file *file)
 {
 	int ref_count;
-	struct miscdevice *mdev = file->private_data;
-	struct hicam_buf_device *idev = container_of(mdev, struct hicam_buf_device, dev);
-	file->private_data = idev;
+	struct miscdevice *mdev = NULL;
+	struct hicam_buf_device *idev = NULL;
 
-	ref_count = atomic_inc_return(&idev->ref_count);
-	cam_info("%s: %s device opened, ref:%d.",
-			__func__, mdev->name, ref_count);
+	(void)inode;
+	if (!file) {
+		cam_info("%s: file is NULL", __FUNCTION__);
+		return -EFAULT;
+	}
+
+	mdev = file->private_data;
+	if (mdev) {
+		idev = container_of(mdev, struct hicam_buf_device, dev);
+		file->private_data = idev;
+
+		ref_count = atomic_inc_return(&idev->ref_count);
+		cam_info("%s: %s device opened, ref:%d", __FUNCTION__,
+			mdev->name, ref_count);
+	}
 	return 0;
 }
 
-static const struct file_operations hicam_buf_fops = {
+static const struct file_operations g_hicam_buf_fops = {
 	.owner = THIS_MODULE,
 	.open = hicam_buf_open,
 	.release = hicam_buf_release,
@@ -365,9 +432,8 @@ static const struct file_operations hicam_buf_fops = {
 static int hicam_buf_parse_of_node(struct hicam_buf_device *idev)
 {
 	struct device_node *np = idev->pdev->dev.of_node;
-	if (!np) {
+	if (!np)
 		return -ENODEV;
-	}
 
 	return 0;
 }
@@ -385,18 +451,18 @@ struct hicam_buf_device *hicam_buf_device_create(struct platform_device *pdev)
 	idev->pdev = pdev;
 
 	ret = hicam_buf_parse_of_node(idev);
-	if (ret) {
-		cam_err("%s: failed to parse device of_node.", __func__);
+	if (ret != 0) {
+		cam_err("%s: failed to parse device of_node", __FUNCTION__);
 		goto err_out;
 	}
 
 	idev->dev.minor = MISC_DYNAMIC_MINOR;
 	idev->dev.name = "hicam_buf"; /* dev name under /dev */
-	idev->dev.fops = &hicam_buf_fops;
+	idev->dev.fops = &g_hicam_buf_fops;
 	idev->dev.parent = NULL;
 	ret = misc_register(&idev->dev);
-	if (ret) {
-		cam_err("%s: failed to register misc device.", __func__);
+	if (ret != 0) {
+		cam_err("%s: failed to register misc device", __FUNCTION__);
 		goto err_out;
 	}
 
@@ -414,113 +480,115 @@ void hicam_buf_device_destroy(struct hicam_buf_device *idev)
 
 #ifdef CONFIG_HISI_DEBUG_FS
 ssize_t hicam_buf_info_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
+	struct device_attribute *attr, char *buf)
 {
 	hicam_internal_dump_debug_info(dev);
-	return snprintf(buf, PAGE_SIZE, "info dumpped to kmsg...");
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE, "info dumpped to kmsg...");
 }
 DEVICE_ATTR_RO(hicam_buf_info);
 #endif /* CONFIG_HISI_DEBUG_FS */
 
-static int hicam_buf_get_dts(struct platform_device* pDev)
+static int hicam_buf_get_dts(struct platform_device *p_dev)
 {
-	int ret = 0;
+	int ret;
 	struct device *pdev = NULL;
 	struct device_node *np = NULL;
 	int tmp = 0;
 
-	if (NULL == pDev) {
-		cam_err("%s: pDev NULL.", __func__);
+	if (!p_dev) {
+		cam_err("%s: pDev NULL", __FUNCTION__);
 		return -1;
 	}
 
-	pdev = &(pDev->dev);
+	pdev = &(p_dev->dev);
 
 	np = pdev->of_node;
 
-	if (NULL == np) {
-		cam_err("%s: of node NULL.", __func__);
+	if (!np) {
+		cam_err("%s: of node NULL", __FUNCTION__);
 		return -1;
 	}
 
-	// get hicam_secmem_type
+	/* get g_hicam_secmem_type */
 	ret = of_property_read_u32(np, "secmemtype", &tmp);
-	if (ret == 0) {
-		hicam_secmem_type = tmp;
-	}
+	if (ret == 0)
+		g_hicam_secmem_type = tmp;
 
 	return 0;
 }
 
-static int32_t hicam_buf_probe(struct platform_device* pdev)
+static int32_t hicam_buf_probe(struct platform_device *pdev)
 {
-	int rc = 0;
-
+	int rc;
+	int ret = 0;
 	if (!pdev) {
-		cam_err("%s: null pdev.", __func__);
+		cam_err("%s: null pdev", __FUNCTION__);
 		return -ENODEV;
 	}
 
-	dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)); /*lint !e598 !e648 */
-	hicam_buf_dev = hicam_buf_device_create(pdev);
-	if (IS_ERR(hicam_buf_dev)) {
-		cam_err("%s: fail to create hicam ion device.", __func__);
-		rc = PTR_ERR(hicam_buf_dev);
+	/* 64:size */
+	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)); /*lint !e598 !e648*/
+	if (ret < 0)
+		cam_err("dma set mask and coherent failed\n");
+	g_hicam_buf_dev = hicam_buf_device_create(pdev);
+	if (IS_ERR(g_hicam_buf_dev)) {
+		cam_err("%s: fail to create hicam ion device", __FUNCTION__);
+		rc = PTR_ERR(g_hicam_buf_dev);
 		goto err_create_device;
 	}
 
 	rc = hicam_buf_get_dts(pdev);
 	if (rc < 0) {
-		cam_err("[%s] Failed: hicam_buf_get_dts.%d\n", __func__, rc);
+		cam_err("[%s] Failed: hicam_buf_get_dts.%d", __FUNCTION__, rc);
 		return rc;
 	}
 
-	rc = hicam_internal_init(&hicam_buf_dev->pdev->dev);
-	if (rc) {
-		cam_err("%s: fail to init internal data.", __func__);
+	rc = hicam_internal_init(&g_hicam_buf_dev->pdev->dev);
+	if (rc != 0) {
+		cam_err("%s: fail to init internal data", __FUNCTION__);
 		goto err_init_internal;
 	}
 
 #ifdef CONFIG_HISI_DEBUG_FS
 	rc = device_create_file(&pdev->dev, &dev_attr_hicam_buf_info);
-	if (rc < 0) {
-		// just log it, it's not fatal.
-		cam_err("%s: fail to create hicam_buf_info file.", __func__);
-	}
+	if (rc < 0)
+		/* just log it, it's not fatal. */
+		cam_err("%s: fail to create hicam_buf_info file",
+			__FUNCTION__);
 #endif /* CONFIG_HISI_DEBUG_FS */
 	return 0;
 err_init_internal:
-	hicam_buf_device_destroy(hicam_buf_dev);
+	hicam_buf_device_destroy(g_hicam_buf_dev);
 err_create_device:
-	hicam_buf_dev = NULL;
+	g_hicam_buf_dev = NULL;
 	return rc;
 }
 
-static int32_t hicam_buf_remove(struct platform_device* pdev)
+static int32_t hicam_buf_remove(struct platform_device *pdev)
 {
-	if (!hicam_buf_dev) {
-		cam_err("%s: hicam_buf_dev is not inited.", __func__);
+	if (!g_hicam_buf_dev) {
+		cam_err("%s: g_hicam_buf_dev is not inited", __FUNCTION__);
 		return -EINVAL;
 	}
-	hicam_internal_deinit(&hicam_buf_dev->pdev->dev);
-	hicam_buf_device_destroy(hicam_buf_dev);
+	hicam_internal_deinit(&g_hicam_buf_dev->pdev->dev);
+	hicam_buf_device_destroy(g_hicam_buf_dev);
 #ifdef CONFIG_HISI_DEBUG_FS
 	device_remove_file(&pdev->dev, &dev_attr_hicam_buf_info);
 #endif /* CONFIG_HISI_DEBUG_FS */
 	return 0;
 }
 
-static const struct of_device_id hicam_buf_dt_match[] = {
+static const struct of_device_id g_hicam_buf_dt_match[] = {
 	{ .compatible = "huawei,hicam_buf", },
-	{ },
+	{},
 };
-MODULE_DEVICE_TABLE(of, hicam_buf_dt_match);
+MODULE_DEVICE_TABLE(of, g_hicam_buf_dt_match);
 
-static struct platform_driver hicam_buf_platform_driver = {
+static struct platform_driver g_hicam_buf_platform_driver = {
 	.driver = {
 		.name = "huawei,hicam_buf",
 		.owner = THIS_MODULE,
-		.of_match_table = hicam_buf_dt_match,
+		.of_match_table = g_hicam_buf_dt_match,
 	},
 
 	.probe = hicam_buf_probe,
@@ -529,16 +597,21 @@ static struct platform_driver hicam_buf_platform_driver = {
 
 static int __init hicam_buf_init_module(void)
 {
-	cam_info("enter %s", __func__);
-	return platform_driver_register(&hicam_buf_platform_driver);
+	cam_info("enter %s", __FUNCTION__);
+	return platform_driver_register(&g_hicam_buf_platform_driver);
 }
 
 static void __exit hicam_buf_exit_module(void)
 {
-	platform_driver_unregister(&hicam_buf_platform_driver);
+	platform_driver_unregister(&g_hicam_buf_platform_driver);
 }
 
+#ifdef CONFIG_ARM_SMMU_V3
+rootfs_initcall(hicam_buf_init_module);
+#else
 subsys_initcall_sync(hicam_buf_init_module);
+#endif
+
 module_exit(hicam_buf_exit_module);
 
 MODULE_DESCRIPTION("hicam_buf");

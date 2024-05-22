@@ -116,6 +116,7 @@ struct f2fs_super_block {
 /*
  * For checkpoint
  */
+#define CP_RESIZEFS_FLAG		0x00008000
 #define CP_DISABLED_FLAG		0x00004000
 #define CP_LARGE_NAT_BITMAP_FLAG	0x00002000
 #define CP_QUOTA_NEED_FSCK_FLAG		0x00001000

@@ -1,36 +1,21 @@
-/****************************************************************************
- * Company:         Fairchild Semiconductor
- *
- * Author           Date          Comment
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- * G. Noblesmith
- *
- *
- *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *
- * Software License Agreement:
- *
- * The software supplied herewith by Fairchild Semiconductor (the “Company”)
- * is supplied to you, the Company's customer, for exclusive use with its
- * USB Type C / USB PD products.  The software is owned by the Company and/or
- * its supplier, and is protected under applicable copyright laws.
- * All rights are reserved. Any use in violation of the foregoing restrictions
- * may subject the user to criminal sanctions under applicable laws, as well
- * as to civil liability for the breach of the terms and conditions of this
- * license.
- *
- * THIS SOFTWARE IS PROVIDED IN AN “AS IS” CONDITION. NO WARRANTIES,
- * WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT NOT LIMITED
- * TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
- * PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. THE COMPANY SHALL NOT,
- * IN ANY CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL OR
- * CONSEQUENTIAL DAMAGES, FOR ANY REASON WHATSOEVER.
- *
- *****************************************************************************/
-
 /*
- * This file contains various object definitions for VDM.
+ * vdm_types.h
+ *
+ * vdm_types driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
+
 #ifdef FSC_HAVE_VDM
 
 #ifndef __VDM_TYPES_H__
@@ -53,10 +38,10 @@ typedef enum {
 
 // All VDMs are either structured or unstructured -
 // capture that with this enumeration
-typedef enum {
+enum pd_vdm_type {
 	UNSTRUCTURED_VDM	= 0b0,
 	STRUCTURED_VDM		= 0b1,
-} VdmType;
+};
 
 // Structured VDM Versions
 typedef enum {
@@ -97,21 +82,21 @@ typedef enum {
 } Command;
 
 // internal form factor of an Unstructured VDM Header
-typedef struct {
+struct pd_unstructured_vdm_header {
 	Svid		svid		: 16;
-	VdmType		vdm_type	: 1;
+	enum pd_vdm_type vdm_type : 1;
 	FSC_U16		info		: 15;
-} UnstructuredVdmHeader;
+};
 
 // internal form factor of a Structured VDM Header
-typedef struct {
+struct pd_structured_vdm_header {
 	Svid		svid			: 16;
-	VdmType		vdm_type		: 1;
+	enum pd_vdm_type vdm_type : 1;
 	SvdmVersion svdm_version	: 2;
 	ObjPos		obj_pos			: 3;
 	CmdType		cmd_type		: 2;
 	Command		command			: 5;
-} StructuredVdmHeader;
+};
 
 // Product Type field in ID Header
 typedef enum {
@@ -124,24 +109,24 @@ typedef enum {
 } ProductType;
 
 // internal form factor of an ID Header
-typedef struct {
+struct pd_id_header {
 	FSC_BOOL		usb_host_data_capable	: 1;
 	FSC_BOOL		usb_device_data_capable	: 1;
 	ProductType	product_type			: 3;
 	FSC_BOOL		modal_op_supported		: 1;
 	FSC_U16		usb_vid					: 16;
-} IdHeader;
+};
 
 // internal form factor for Cert Stat VDO
-typedef struct {
+struct pd_cert_stat_vdo {
 	FSC_U32	test_id	: 32;
-} CertStatVdo;
+};
 
 // internal form factor for Product VDO
-typedef struct {
+struct pd_product_vdo {
 	FSC_U16	usb_product_id	: 16;
 	FSC_U16		bcd_device		: 16;
-} ProductVdo;
+};
 
 // enumeration of what I'm calling 'Cable To Letter Type'
 // ie. Type-C to Type-A/B/C
@@ -213,7 +198,7 @@ typedef enum {
 } UsbSsSupport;
 
 // internal form factor for Cable VDO
-typedef struct {
+struct pd_cable_vdo {
 	FSC_U8							cable_hw_version			: 4;
 	FSC_U8							cable_fw_version			: 4;
 	CableToType					cable_to_type				: 2;
@@ -228,7 +213,7 @@ typedef struct {
 	VbusThruCable					vbus_thru_cable				: 1;
 	Sop2Presence					sop2_presence				: 1;
 	UsbSsSupport					usb_ss_supp					: 3;
-} CableVdo;
+};
 
 // enumeration for power needed by adapter for full functionality
 typedef enum {
@@ -263,7 +248,7 @@ typedef enum {
 } AmaUsbSsSupport;
 
 // internal form factor for Alternate Mode Adapter VDO
-typedef struct {
+struct pd_ama_vdo {
     AmaUsbSsSupport                 usb_ss_supp         : 3;
     VBusRequirement                 vbus_requirement    : 1;
     VConnRequirement                vconn_requirement   : 1;
@@ -272,7 +257,7 @@ typedef struct {
     FSC_U8                          vdo_version         : 3;
     FSC_U8                          cable_fw_version    : 4;
     FSC_U8                          cable_hw_version    : 4;
-} AmaVdo;
+};
 
 // internal form factor for an SVID VDO
 typedef struct {
@@ -285,17 +270,17 @@ typedef struct {
 	FSC_BOOL	nack;	// set to true to nack a Discover Identity
 						// TODO: also put BUSY answer in here
 
-	IdHeader	id_header;
-	CertStatVdo	cert_stat_vdo;
+	struct pd_id_header id_header;
+	struct pd_cert_stat_vdo cert_stat_vdo;
 
 	FSC_BOOL	has_product_vdo;
-	ProductVdo	product_vdo;
+	struct pd_product_vdo product_vdo;
 
 	FSC_BOOL	has_cable_vdo;
-	CableVdo	cable_vdo;
+	struct pd_cable_vdo cable_vdo;
 
 	FSC_BOOL	has_ama_vdo;
-	AmaVdo		ama_vdo;
+	struct pd_ama_vdo ama_vdo;
 } Identity;
 
 // SVID Info object - give the system an easy struct to pass info to us through a callback

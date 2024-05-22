@@ -1,12 +1,10 @@
-/* Copyright (c) Hisilicon Technologies Co., Ltd. 2001-2019. All rights reserved.
- * FileName: unmovable_isolate.c
- * Description: This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation;
- * either version 2 of the License,
- * or (at your option) any later version.
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017. All rights reserved.
+ *
+ * MIGRATE_UNMOVABLE_ISOLATE function
  */
 
+#include <linux/version.h>
 #include <linux/mmzone.h>
 #include <linux/mm.h>
 #include <linux/vmstat.h>
@@ -19,7 +17,7 @@
  * /proc/sys/vm/unmovable_isolate_disabled
  * Once set as 1, the value will not be changed.
  */
-int unmovable_isolate_disabled = 0;
+int unmovable_isolate_disabled;
 
 /*
  * The follow functions are parsing the ui or reserve size
@@ -40,8 +38,8 @@ enum {
  * unmovable-isolate size for each ddr-size (2G,3G,4G+ ).
  * the type is same as memparse function.
  */
-static long long size_cmdline_ui1[MEMSIZE_INDEX_COUNT] = {-1,-1,-1};
-static long long size_cmdline_ui2[MEMSIZE_INDEX_COUNT] = {-1,-1,-1};
+static long long size_cmdline_ui1[MEMSIZE_INDEX_COUNT] = {-1, -1, -1};
+static long long size_cmdline_ui2[MEMSIZE_INDEX_COUNT] = {-1, -1, -1};
 
 /*
  * check if the ddrsize is valid for unmovable_isolate area
@@ -61,7 +59,7 @@ static int valid_ddr_size_for_ui(long long size)
  * 1. size[KMG]
  * 2. ddr_size1:size1[KMG][,ddr_size2:size2[KMG],...]
  */
-int __init parse_unmovable_isolate_size(long long * size_cmdline, char *ui_cmdline)
+int __init parse_unmovable_isolate_size(long long *size_cmdline, char *ui_cmdline)
 {
 	char *first_colon = NULL;
 	long long ui_size = -1;
@@ -108,7 +106,7 @@ int __init parse_unmovable_isolate_size(long long * size_cmdline, char *ui_cmdli
 		} while (*cur++ == ',');
 	} else {
 		ui_size = memparse(ui_cmdline, &ui_cmdline);
-		for (i=0; i < MEMSIZE_INDEX_COUNT; i++)
+		for (i = 0; i < MEMSIZE_INDEX_COUNT; i++)
 			size_cmdline[i] = ui_size;
 	}
 
@@ -133,21 +131,8 @@ static int __init early_unmovable_isolate2(char *p)
 
 early_param("unmovable_isolate2", early_unmovable_isolate2);
 
-#ifdef CONFIG_HUAWEI_ENHANCED_RESERVE
-/* enhanced_reserve size for each ddr-size (2G,3G,4G+ ) */
-static long long size_cmdline_reserve[MEMSIZE_INDEX_COUNT] = {-1,-1,-1};
-
-static int __init early_enhanced_reserve(char *p)
-{
-	pr_debug("%s(%s)\n", __func__, p);
-	parse_unmovable_isolate_size(size_cmdline_reserve, p);
-	return 0;
-}
-early_param("enhanced_reserve", early_enhanced_reserve);
-#endif
-
 /* get the ddrsize from cmdline */
-static long long ddr_size_cmdline = 0;
+static long long ddr_size_cmdline;
 static int __init early_ddr_size(char *p)
 {
 	char *tmp = NULL;
@@ -164,15 +149,26 @@ early_param("androidboot.ddrsize", early_ddr_size);
  */
 
 /*
- * check if the zone is DMA.
+ * check if the zone is vaild for unmovable isolate function.
  */
-int is_DMA_zone(struct zone* zone)
+
+#ifdef CONFIG_ARM
+#define ZONE_VALID ZONE_NORMAL
+int valid_zone_for_ui(struct zone *zone)
 {
-	if (zone != NULL && zone_idx(zone) == ZONE_DMA)
+	/* lint -e115 */
+	if (zone != NULL && zone_idx(zone) == ZONE_VALID)
 		return 1;
 	else
 		return 0;
 }
+#else
+int valid_zone_for_ui(struct zone *zone)
+{
+	/* lint -e115 */
+	return 1;
+}
+#endif
 
 /*
  * check if the order is valid for unmovable_isolate area.
@@ -184,14 +180,9 @@ int valid_order_for_ui(int order, int migratetype)
 	    order <= UNMOVABLE_ISOLATE1_MAX_ORDER))
 		return 1;
 	else if (is_unmovable_isolate2(migratetype) &&
-	        (order >= UNMOVABLE_ISOLATE2_MIN_ORDER &&
-	         order <= UNMOVABLE_ISOLATE2_MAX_ORDER))
+	    (order >= UNMOVABLE_ISOLATE2_MIN_ORDER &&
+	    order <= UNMOVABLE_ISOLATE2_MAX_ORDER))
 		return 1;
-#ifdef CONFIG_HUAWEI_ENHANCED_RESERVE
-	else if ((migratetype == MIGRATE_RESERVE) &&
-	        (order >= RESERVE_MIN_ORDER && order <= RESERVE_MAX_ORDER))
-		return 1;
-#endif
 	return 0;
 }
 
@@ -199,9 +190,9 @@ int valid_order_for_ui(int order, int migratetype)
  * check if the unmovable_isolate_enabled is enabled.
  * We only enable ui function in DMA zone and unmovable_isolate_disabled is 0.
  */
-int unmovable_isolate_enabled (struct zone* zone)
+int unmovable_isolate_enabled (struct zone *zone)
 {
-	if (!unmovable_isolate_disabled && is_DMA_zone(zone))
+	if (!unmovable_isolate_disabled && valid_zone_for_ui(zone))
 		return 1;
 	else
 		return 0;
@@ -210,7 +201,7 @@ int unmovable_isolate_enabled (struct zone* zone)
 /*
  * check if the pageblock is UNMOVABLE_ISOLATE.
  */
-int unmovable_isolate_pageblock(struct zone* zone, struct page* page)
+int unmovable_isolate_pageblock(struct zone *zone, struct page *page)
 {
 	int migratetype;
 	migratetype = get_pageblock_migratetype(page);
@@ -221,8 +212,25 @@ int unmovable_isolate_pageblock(struct zone* zone, struct page* page)
 		return 0;
 }
 
-#define MEMSIZE_2G_in_MB 2048
-#define MEMSIZE_3G_in_MB 3072
+#define MEMSIZE_2G_IN_MB 2048
+#define MEMSIZE_3G_IN_MB 3072
+
+/*
+ * get total managed pages
+ */
+unsigned long get_total_managed_pages(void)
+{
+	unsigned long total_managed_pages = 0;
+	struct zone *zone = NULL;
+
+	/* use spend_pages instead of managed_pages to get the ddr size */
+	for_each_zone(zone) {
+		if (!is_highmem(zone))
+			total_managed_pages += zone->managed_pages;
+	}
+
+	return total_managed_pages;
+}
 
 /*
  * get the device DDR size
@@ -230,61 +238,63 @@ int unmovable_isolate_pageblock(struct zone* zone, struct page* page)
 int get_ddr_size(void)
 {
 	int ret;
+	unsigned long total_present_pages = 0;
+	unsigned long total_present_mbytes;
+	struct zone *zone = NULL;
 
-	if (ddr_size_cmdline > 0 && ddr_size_cmdline < INT_MAX)
-		/* we set the same ui area size when ddr_size above MEMSIZE_INDEX_MAX */
-		ret = min((long long)(MEMSIZE_INDEX_MAX + MEMSIZE_INDEX_OFFSET), ddr_size_cmdline);
+	/* use present_pages instead of managed_pages to get the ddr size */
+	for_each_zone(zone)
+		total_present_pages += zone->present_pages;
+	total_present_mbytes = total_present_pages * PAGE_SIZE / SZ_1M;
+
+	if (total_present_mbytes <= MEMSIZE_2G_IN_MB)
+		ret = 2;
+	else if (total_present_mbytes <= MEMSIZE_3G_IN_MB)
+		ret = 3;
 	else
-		ret = 0;
-	pr_debug("%s:ddrsize is %d\n", __func__, ret);
+		ret = 4; /* we set the same ui area size when ddr_size above 4G */
+
 	return ret;
 }
-
-#ifdef CONFIG_HUAWEI_ENHANCED_RESERVE
-/*
- * get the enhanced_reserve size
- */
-int get_enhanced_reserve_size(void)
-{
-	int enhanced_reserve_size, ddr_size;
-
-	ddr_size = get_ddr_size();
-
-	if (ddr_size!= 0 && size_cmdline_reserve[ddr_size - MEMSIZE_INDEX_OFFSET] > 0)
-		enhanced_reserve_size =
-		    (unsigned long long)size_cmdline_reserve[ddr_size - MEMSIZE_INDEX_OFFSET] / PAGE_SIZE / pageblock_nr_pages;
-	else
-		enhanced_reserve_size = ENHANCED_RESERVE_SIZE_BLOCKS;
-
-	return enhanced_reserve_size;
-}
-#endif
 
 /*
  * get the related unmovable-isolate size
  */
-static long long get_unmovable_isolate_blocks (int unmovable_isolate_type)
+static long long get_unmovable_isolate_blocks (struct zone *zone, int unmovable_isolate_type)
 {
 	int ddr_size;
+	unsigned long total_managed_pages = 0;
 	long long ui_blocks = 0;
+	long long ui_counts = 0;
 
 	ddr_size = get_ddr_size();
+	total_managed_pages = get_total_managed_pages();
 
 	if (is_unmovable_isolate1(unmovable_isolate_type)) {
-		if (ddr_size!= 0 && size_cmdline_ui1[ddr_size - MEMSIZE_INDEX_OFFSET] > 0)
+		if (ddr_size != 0 && size_cmdline_ui1[ddr_size - MEMSIZE_INDEX_OFFSET] > 0)
 			ui_blocks =
 			    (unsigned long long)size_cmdline_ui1[ddr_size - MEMSIZE_INDEX_OFFSET] / PAGE_SIZE / pageblock_nr_pages;
 		else
 			ui_blocks = UNMOVABLE_ISOLATE1_SIZE_BLOCKS;
 	} else if (is_unmovable_isolate2(unmovable_isolate_type)) {
-		if (ddr_size!= 0 && size_cmdline_ui2[ddr_size - MEMSIZE_INDEX_OFFSET] > 0)
+		if (ddr_size != 0 && size_cmdline_ui2[ddr_size - MEMSIZE_INDEX_OFFSET] > 0)
 			ui_blocks =
 			    (unsigned long long)size_cmdline_ui2[ddr_size - MEMSIZE_INDEX_OFFSET] / PAGE_SIZE / pageblock_nr_pages;
 		else
 			ui_blocks = UNMOVABLE_ISOLATE2_SIZE_BLOCKS;
 	}
 
-	return ui_blocks;
+#ifdef CONFIG_SLUB_DEBUG_ON
+	/*
+	 * Slub debug function will use 200M+ memory in normal zone on 32bit,
+	 * we should decrease the isolate size.
+	 */
+	ui_blocks = ui_blocks / 2;
+#endif
+	if (total_managed_pages != 0)
+		ui_counts = ui_blocks * zone->managed_pages / total_managed_pages;
+
+	return ui_counts;
 }
 
 /*
@@ -305,10 +315,10 @@ static int pageblock_is_reserved_for_ui(unsigned long start_pfn, unsigned long e
  * Check if should setup unmovable_isolate area
  */
 static int should_setup_unmovable_isolate(struct zone *zone, long long ui_block,
-           int disable)
+			int disable)
 {
 	/* only set UNMOVABLE_ISOLATE in DMA zone */
-	if (!is_DMA_zone(zone) || min_wmark_pages(zone) == 0)
+	if (!valid_zone_for_ui(zone) || min_wmark_pages(zone) == 0)
 		return 0;
 	/* just setup the unmovable-isolate once when enable */
 	else if (ui_block != 0 && !disable)
@@ -345,52 +355,20 @@ static void __flush_zone_page_state(struct zone *zone, enum zone_stat_item item)
 }
 #endif
 /*
- * Mark a number of pageblocks as MIGRATE_UNMOVABLE_ISOLATE.
+ * Get the start pfn, end pfn and the number of blocks to unmovable_isolate
+ * We have to be careful to be aligned to pageblock_nr_pages to
+ * make sure that we always check pfn_valid for the first page in
+ * the block.
  */
-void setup_zone_migrate_unmovable_isolate(struct zone *zone,
-     int unmovable_isolate_type, int disable)
+static void get_unmovable_isolate_mes(struct zone *zone,
+	int unmovable_isolate_type, long long unmovable_isolate_count,
+	enum zone_stat_item ui_stat_item, long long old_size)
 {
 	unsigned long start_pfn, pfn, end_pfn, block_end_pfn;
-	struct page *page = NULL;;
+	struct page *page = NULL;
 	int block_migratetype;
-	long long * zone_ui_block = NULL;;
-	long long unmovable_isolate_count, old_size;
-	enum zone_stat_item ui_stat_item;
 	int pages_moved = 0;
 
-	/* init the different unmovable-isolate type */
-	if (is_unmovable_isolate1(unmovable_isolate_type)) {
-		zone_ui_block = &(zone->nr_migrate_unmovable_isolate1_block);
-		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE1_PAGES;
-	} else if (is_unmovable_isolate2(unmovable_isolate_type)) {
-		zone_ui_block = &(zone->nr_migrate_unmovable_isolate2_block);
-		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE2_PAGES;
-	} else {
-		pr_err("unknown unmovable isolate type!\n");
-		return;
-	}
-
-	/* just setup the unmovable-isolate once when enable */
-	if(!should_setup_unmovable_isolate(zone, *zone_ui_block, disable))
-		return;
-
-	if(!disable)
-		unmovable_isolate_count = get_unmovable_isolate_blocks(unmovable_isolate_type);
-	else
-		unmovable_isolate_count = 0;
-
-	old_size = *zone_ui_block;
-	if (unmovable_isolate_count == old_size)
-		return;
-
-	*zone_ui_block = unmovable_isolate_count;
-
-	/*
-	 * Get the start pfn, end pfn and the number of blocks to unmovable_isolate
-	 * We have to be careful to be aligned to pageblock_nr_pages to
-	 * make sure that we always check pfn_valid for the first page in
-	 * the block.
-	 */
 	start_pfn = zone->zone_start_pfn;
 	end_pfn = zone_end_pfn(zone);
 	start_pfn = roundup(start_pfn, pageblock_nr_pages);
@@ -424,10 +402,13 @@ void setup_zone_migrate_unmovable_isolate(struct zone *zone,
 
 			/* Suitable for UNMOVABLE_ISOLATE if this block is movable */
 			if (block_migratetype == MIGRATE_MOVABLE) {
-				set_pageblock_migratetype(page,
-							unmovable_isolate_type);
+				set_pageblock_migratetype(page, unmovable_isolate_type);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
+				pages_moved = move_freepages_block(zone, page, unmovable_isolate_type);
+#else
 				pages_moved = move_freepages_block(zone, page,
-							unmovable_isolate_type);
+							unmovable_isolate_type, NULL);
+#endif
 				__mod_zone_page_state(zone, ui_stat_item, pages_moved);
 				unmovable_isolate_count--;
 				continue;
@@ -446,9 +427,52 @@ void setup_zone_migrate_unmovable_isolate(struct zone *zone,
 		 */
 		if (block_migratetype == unmovable_isolate_type) {
 			set_pageblock_migratetype(page, MIGRATE_MOVABLE);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0))
 			pages_moved = move_freepages_block(zone, page, MIGRATE_MOVABLE);
+#else
+			pages_moved = move_freepages_block(zone, page, MIGRATE_MOVABLE, NULL);
+#endif
 			__mod_zone_page_state(zone, ui_stat_item, -pages_moved);
 		}
 	}
+}
+/*
+ * Mark a number of pageblocks as MIGRATE_UNMOVABLE_ISOLATE.
+ */
+void setup_zone_migrate_unmovable_isolate(struct zone *zone,
+	int unmovable_isolate_type, int disable)
+{
+	long long *zone_ui_block = NULL;
+	long long unmovable_isolate_count, old_size;
+	enum zone_stat_item ui_stat_item;
+
+	/* init the different unmovable-isolate type */
+	if (is_unmovable_isolate1(unmovable_isolate_type)) {
+		zone_ui_block = &(zone->nr_migrate_unmovable_isolate1_block);
+		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE1_PAGES;
+	} else if (is_unmovable_isolate2(unmovable_isolate_type)) {
+		zone_ui_block = &(zone->nr_migrate_unmovable_isolate2_block);
+		ui_stat_item = NR_FREE_UNMOVABLE_ISOLATE2_PAGES;
+	} else {
+		pr_err("unknown unmovable isolate type!\n");
+		return;
+	}
+
+	/* just setup the unmovable-isolate once when enable */
+	if (!should_setup_unmovable_isolate(zone, *zone_ui_block, disable))
+		return;
+
+	if (!disable)
+		unmovable_isolate_count = get_unmovable_isolate_blocks(zone, unmovable_isolate_type);
+	else
+		unmovable_isolate_count = 0;
+
+	old_size = *zone_ui_block;
+	if (unmovable_isolate_count == old_size)
+		return;
+
+	*zone_ui_block = unmovable_isolate_count;
+	get_unmovable_isolate_mes(zone, unmovable_isolate_type,
+		unmovable_isolate_count, ui_stat_item, old_size);
 	__flush_zone_page_state(zone, ui_stat_item);
 }

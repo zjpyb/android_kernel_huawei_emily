@@ -686,13 +686,13 @@ bool anc_hs_charge_detect(int saradc_value, int headset_type)
 	 * revert 4-pole headset still need 5vboost on
 	 * to support second recognition
 	 */
-	if (headset_type == ANC_HS_NORMAL_4POLE) {
+	if (headset_type == ANA_HS_NORMAL_4POLE) {
 		/* 4-pole headset maybe an anc headset */
 		hwlog_debug("%s : start anc hs charge judge\n", __func__);
 		return anc_hs_charge_judge();
 	}
 
-	if (headset_type == ANC_HS_NORMAL_3POLE) {
+	if (headset_type == ANA_HS_NORMAL_3POLE) {
 		hwlog_info("%s : no disable 5vboost for 3-pole headset\n",
 			__func__);
 		/* 3-pole also support second-detect */
@@ -847,9 +847,9 @@ static irqreturn_t anc_hs_btn_handler(int irq, void *data)
 
 static long anc_hs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	int ret;
+	int ret = 0;
 	int charge_mode;
-	unsigned int __user *p_user = (unsigned int __user *)arg;
+	unsigned int __user *p_user = (unsigned int __user *)(uintptr_t)arg;
 
 	if (!p_user)
 		return -EBUSY;
@@ -858,7 +858,7 @@ static long anc_hs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return -EBUSY;
 
 	switch (cmd) {
-	case IOCTL_ANC_HS_CHARGE_ENABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_ENABLE_CMD:
 		if (anc_pdata->force_charge_ctl == ANC_HS_ENABLE_CHARGE)
 			break;
 		/* resume anc headset charge */
@@ -867,7 +867,7 @@ static long anc_hs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			anc_pdata->force_charge_ctl);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_CHARGE_DISABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_DISABLE_CMD:
 		if (anc_pdata->force_charge_ctl == ANC_HS_DISABLE_CHARGE)
 			break;
 		/* force stop anc headset charge */
@@ -876,7 +876,7 @@ static long anc_hs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			anc_pdata->force_charge_ctl);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_CMD:
 		charge_mode = anc_pdata->anc_hs_mode;
 		if (charge_mode == ANC_HS_CHARGE_ON) {
 			if (!anc_hs_need_charge()) {
@@ -888,11 +888,11 @@ static long anc_hs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 		}
 		if (charge_mode == ANC_HS_CHARGE_ON)
-			ret = put_user((__u32)(ANC_HS_HEADSET), p_user);
+			ret = put_user((__u32)(ANA_HS_HEADSET), p_user);
 		else
-			ret = put_user((__u32)(ANC_HS_NORMAL_4POLE), p_user);
+			ret = put_user((__u32)(ANA_HS_NORMAL_4POLE), p_user);
 		break;
-	case IOCTL_ANC_HS_GET_CHARGE_STATUS_CMD:
+	case IOCTL_ANA_HS_GET_CHARGE_STATUS_CMD:
 		ret = put_user((__u32)(anc_pdata->anc_hs_mode), p_user);
 		break;
 	default:
@@ -1073,7 +1073,7 @@ static const struct file_operations anc_hs_fops = {
 
 static struct miscdevice anc_hs_device = {
 	.minor  = MISC_DYNAMIC_MINOR,
-	.name   = "anc_hs",
+	.name   = "ana_hs",
 	.fops   = &anc_hs_fops,
 };
 
@@ -1297,7 +1297,7 @@ static int anc_hs_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *node = dev->of_node;
-	int ret;
+	int ret = 0;
 
 	anc_pdata = devm_kzalloc(dev, sizeof(*anc_pdata), GFP_KERNEL);
 	if (!anc_pdata)
@@ -1335,7 +1335,6 @@ static int anc_hs_probe(struct platform_device *pdev)
 	ret = request_threaded_irq(anc_pdata->mic_irq, NULL, anc_hs_btn_handler,
 		IRQF_ONESHOT | IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
 		IRQF_NO_SUSPEND, "anc_hs_btn", NULL);
-
 	if (ret < 0)
 		goto anc_hs_btn_err;
 	/* disable btn irq by default */
@@ -1369,8 +1368,6 @@ anc_hs_btn_wq_err:
 	gpio_free(anc_pdata->gpio_mic_sw);
 gpio_mic_sw_err:
 	wakeup_source_trash(&anc_pdata->wake_lock);
-	kfree(anc_pdata);
-	anc_pdata = NULL;
 #endif
 	return ret;
 }
@@ -1394,8 +1391,6 @@ static int anc_hs_remove(struct platform_device *pdev)
 	}
 	gpio_free(anc_pdata->gpio_mic_sw);
 	gpio_free(anc_pdata->mic_irq_gpio);
-	kfree(anc_pdata);
-	anc_pdata = NULL;
 
 	return 0;
 }

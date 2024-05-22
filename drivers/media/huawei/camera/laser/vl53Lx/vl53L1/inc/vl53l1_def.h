@@ -1,8 +1,9 @@
 /*
 * Copyright (c) 2017, STMicroelectronics - All Rights Reserved
 *
-* This file is part of VL53L1 Core and is dual licensed, either
-* 'STMicroelectronics Proprietary license'
+* This file is part of VL53L1 Core and is dual licensed,
+* either 'STMicroelectronics
+* Proprietary license'
 * or 'BSD 3-clause "New" or "Revised" License' , at your option.
 *
 ********************************************************************************
@@ -12,7 +13,7 @@
 ********************************************************************************
 *
 * License terms: STMicroelectronics Proprietary in accordance with licensing
-* terms at www.st.com/sla0044
+* terms at www.st.com/sla0081
 *
 * STMicroelectronics confidential
 * Reproduction and Communication of this document is strictly prohibited unless
@@ -23,8 +24,7 @@
 *
 * Alternatively, VL53L1 Core may be distributed under the terms of
 * 'BSD 3-clause "New" or "Revised" License', in which case the following
-* provisions apply instead of the ones
-* mentioned above :
+* provisions apply instead of the ones mentioned above :
 *
 ********************************************************************************
 *
@@ -88,9 +88,9 @@ extern "C" {
 /** VL53L1 IMPLEMENTATION minor version */
 #define VL53L1_IMPLEMENTATION_VER_MINOR       1
 /** VL53L1 IMPLEMENTATION sub version */
-#define VL53L1_IMPLEMENTATION_VER_SUB         1
+#define VL53L1_IMPLEMENTATION_VER_SUB         9
 /** VL53L1 IMPLEMENTATION sub version */
-#define VL53L1_IMPLEMENTATION_VER_REVISION  1803
+#define VL53L1_IMPLEMENTATION_VER_REVISION    1944
 
 /****************************************
  * PRIVATE define do not edit
@@ -98,19 +98,19 @@ extern "C" {
 
 /** @brief Defines the parameters of the Get Version Functions
  */
-typedef struct {
+struct VL53L1_Version_t {
 	uint32_t     revision; /*!< revision number */
 	uint8_t      major;    /*!< major number */
 	uint8_t      minor;    /*!< minor number */
 	uint8_t      build;    /*!< build number */
-} VL53L1_Version_t;
+};
 
 
 #define VL53L1_DEVINFO_STRLEN 32
 
 /** @brief Defines the parameters of the Get Device Info Functions
  */
-typedef struct {
+struct VL53L1_DeviceInfo_t {
 	char Name[VL53L1_DEVINFO_STRLEN];
 		/*!< Name of the Device e.g. Left_Distance */
 	char Type[VL53L1_DEVINFO_STRLEN];
@@ -125,7 +125,7 @@ typedef struct {
 		/*!< Product revision major */
 	uint8_t ProductRevisionMinor;
 		/*!< Product revision minor */
-} VL53L1_DeviceInfo_t;
+};
 
 
 
@@ -181,6 +181,9 @@ typedef uint8_t VL53L1_XtalkCalibrationModes;
 #define VL53L1_XTALKCALIBRATIONMODE_SINGLE_TARGET \
 	((VL53L1_OffsetCalibrationModes)  1)
 /*!< To perform Xtalk calibration with one target */
+#define VL53L1_XTALKCALIBRATIONMODE_FULL_ROI \
+	((VL53L1_OffsetCalibrationModes)  2)
+/*!< To perform Xtalk calibration based on histogram with full ROI */
 
 /** @} VL53L1_define_XtalkCal_group */
 
@@ -275,19 +278,19 @@ typedef uint8_t VL53L1_ThresholdMode;
 
 /** @brief Defines parameters for Distance detection Thresholds configuration
  */
-typedef struct {
+struct VL53L1_DistanceThreshold_t {
 	VL53L1_ThresholdMode CrossMode;
 	uint16_t High; /*!< Distance threshold high limit in mm */
 	uint16_t Low;  /*!< Distance threshold low limit  in mm */
-} VL53L1_DistanceThreshold_t;
+};
 
 /** @brief Defines parameters for Signal rate detection Thresholds configuration
  */
-typedef struct {
+struct VL53L1_RateThreshold_t{
 	VL53L1_ThresholdMode CrossMode;
 	FixPoint1616_t High; /*!< Signal rate threshold high limit */
 	FixPoint1616_t Low;  /*!< Signal rate threshold low limit */
-} VL53L1_RateThreshold_t;
+};
 
 /** @defgroup VL53L1_DetectionMode_group Gpio Functionality
  *  @brief Defines conditions leading to device's IT on GPIO
@@ -319,31 +322,23 @@ typedef uint8_t VL53L1_DetectionMode;
 
 /** @brief Defines parameters for User/object Detection configuration
  */
-typedef struct {
+struct VL53L1_DetectionConfig_t {
 	VL53L1_DetectionMode DetectionMode;	/*!< See #VL53L1_DetectionMode*/
 	uint8_t IntrNoTarget; /*!< 1 to trigger IT in case of no target found */
-	VL53L1_DistanceThreshold_t Distance; /*!< limits in mm */
-	VL53L1_RateThreshold_t Rate;/*!< limits in FixPoint1616_t */
-} VL53L1_DetectionConfig_t;
+	struct VL53L1_DistanceThreshold_t Distance; /*!< limits in mm */
+	struct VL53L1_RateThreshold_t Rate;/*!< limits in FixPoint1616_t */
+};
 
 
 /** @brief Defines all parameters for the device
  */
-typedef struct {
+struct VL53L1_DeviceParameters_t {
 	VL53L1_PresetModes PresetMode;
 	/*!< Defines the operating mode to be used for the next measure */
 	VL53L1_OutputModes OutputMode;
 	/*!< Defines the Output mode to be used for the next measure */
 	VL53L1_DistanceModes DistanceMode;
 	/*!< Defines the operating mode to be used for the next measure */
-	VL53L1_DistanceModes InternalDistanceMode;
-	/*!< Defines the internal operating mode to be used for the next
-	 * measure
-	 */
-	VL53L1_DistanceModes NewDistanceMode;
-	/*!< Defines the new operating mode to be programmed for the next
-	 * measure
-	 */
 	uint32_t MeasurementTimingBudgetMicroSeconds;
 	/*!< Defines the allowed total time for a single measurement */
 	uint8_t LimitChecksEnable[VL53L1_CHECKENABLE_NUMBER_OF_CHECKS];
@@ -358,7 +353,7 @@ typedef struct {
 	/*!< This Array stores all the Limit Check current value from latest
 	 * ranging
 	 */
-} VL53L1_DeviceParameters_t;
+};
 
 
 /** @defgroup VL53L1_define_State_group Defines the current status of the device
@@ -412,7 +407,7 @@ typedef uint8_t VL53L1_SmudgeCorrectionModes;
  * @struct VL53L1_RangingMeasurementData_t
  * @brief Single Range measurement data.
  */
-typedef struct {
+struct VL53L1_RangingMeasurementData_t {
 	uint32_t TimeStamp;
 		/*!< 32-bit time stamp.
 		 * @warning Not yet implemented
@@ -461,13 +456,13 @@ typedef struct {
 		/*!< Range Status for the current measurement. This is device
 		 *  dependent. Value = 0 means value is valid.
 		 */
-} VL53L1_RangingMeasurementData_t;
+};
 
 /**
  * @struct VL53L1_TargetRangeData_t
  * @brief One Range measurement data for each target.
  */
-typedef struct {
+struct VL53L1_TargetRangeData_t {
 	uint8_t RangeQualityLevel;
 		/*!< indicate a quality level in percentage from 0 to 100
 		 * @warning Not yet implemented
@@ -515,13 +510,13 @@ typedef struct {
 		/*!< Range Status for the current measurement. This is device
 		 *  dependent. Value = 0 means value is valid.
 		 */
-} VL53L1_TargetRangeData_t;
+};
 /**
  * @struct  VL53L1_MultiRangingData_t
  * @brief   Structure for storing the set of range results for a single ROI
  *
  */
-typedef struct {
+struct VL53L1_MultiRangingData_t {
 	uint32_t TimeStamp;
 		/*!< 32-bit time stamp.
 		 * @warning Not yet implemented
@@ -542,7 +537,7 @@ typedef struct {
 		/*!< Indicate if the data read is valid or not or if this is
 		 * the last valid data in the ROI.
 		 */
-	VL53L1_TargetRangeData_t RangeData[VL53L1_MAX_RANGE_RESULTS];
+	struct VL53L1_TargetRangeData_t RangeData[VL53L1_MAX_RANGE_RESULTS];
 		/*!< Range data each target distance */
 	uint8_t HasXtalkValueChanged;
 		/*!< set to 1 if a new Xtalk value has been computed whilst
@@ -562,20 +557,20 @@ typedef struct {
 		/*!< suggestion for a better distance mode choice to improve
 		 *  range accuracy.
 		 */
-} VL53L1_MultiRangingData_t;
+};
 
 
 /** @brief Defines User Zone(ROI) parameters
  *
  */
-typedef struct {
+struct VL53L1_UserRoi_t {
 
 	uint8_t   TopLeftX;   /*!< Top Left x coordinate:  0-15 range */
 	uint8_t   TopLeftY;   /*!< Top Left y coordinate:  0-15 range */
 	uint8_t   BotRightX;  /*!< Bot Right x coordinate: 0-15 range */
 	uint8_t   BotRightY;  /*!< Bot Right y coordinate: 0-15 range */
 
-} VL53L1_UserRoi_t;
+};
 
 
 /** @brief Defines ROI configuration parameters
@@ -583,21 +578,21 @@ typedef struct {
  *  Support up a max of 16 zones, Each Zone has the same size
  *
  */
-typedef struct {
+struct VL53L1_RoiConfig_t {
 
-	uint8_t             NumberOfRoi;   /*!< Number of Rois defined*/
+	uint8_t NumberOfRoi;   /*!< Number of Rois defined*/
 
-	VL53L1_UserRoi_t    UserRois[VL53L1_MAX_USER_ZONES];
+	struct VL53L1_UserRoi_t UserRois[VL53L1_MAX_USER_ZONES];
 		/*!< List of Rois */
 
-} VL53L1_RoiConfig_t;
+};
 
 /**
  * @struct VL53L1_CustomerNvmManaged_t
  *
  */
 
-typedef struct {
+struct VL53L1_CustomerNvmManaged_t {
 	uint8_t   global_config__spad_enables_ref_0;
 	uint8_t   global_config__spad_enables_ref_1;
 	uint8_t   global_config__spad_enables_ref_2;
@@ -614,7 +609,7 @@ typedef struct {
 	int16_t   algo__part_to_part_range_offset_mm;
 	int16_t   mm_config__inner_offset_mm;
 	int16_t   mm_config__outer_offset_mm;
-} VL53L1_CustomerNvmManaged_t;
+};
 
 /**
  * @struct  VL53L1_CalibrationData_t
@@ -622,19 +617,19 @@ typedef struct {
  *
  */
 
-typedef struct {
+struct VL53L1_CalibrationData_t {
 
-	uint32_t                             struct_version;
-	VL53L1_CustomerNvmManaged_t          customer;
-	VL53L1_dmax_calibration_data_t       fmt_dmax_cal;
-	VL53L1_dmax_calibration_data_t       cust_dmax_cal;
-	VL53L1_additional_offset_cal_data_t  add_off_cal_data;
-	VL53L1_optical_centre_t              optical_centre;
-	VL53L1_xtalk_histogram_data_t        xtalkhisto;
-	VL53L1_gain_calibration_data_t       gain_cal;
-	VL53L1_cal_peak_rate_map_t           cal_peak_rate_map;
+	uint32_t                                    struct_version;
+	struct VL53L1_CustomerNvmManaged_t          customer;
+	struct VL53L1_dmax_calibration_data_t       fmt_dmax_cal;
+	struct VL53L1_dmax_calibration_data_t       cust_dmax_cal;
+	struct VL53L1_additional_offset_cal_data_t  add_off_cal_data;
+	struct VL53L1_optical_centre_t              optical_centre;
+	struct VL53L1_xtalk_histogram_data_t        xtalkhisto;
+	struct VL53L1_gain_calibration_data_t       gain_cal;
+	struct VL53L1_cal_peak_rate_map_t           cal_peak_rate_map;
 
-} VL53L1_CalibrationData_t;
+};
 
 #define VL53L1_ADDITIONAL_CALIBRATION_DATA_STRUCT_VERSION  0x10
 /** VL53L1 additional Calibration Data struct version final struct version
@@ -651,14 +646,14 @@ typedef struct {
  * @brief   Structure for storing the Additional Data
  *
  */
-typedef VL53L1_additional_data_t VL53L1_AdditionalData_t;
+typedef struct VL53L1_additional_data_t VL53L1_AdditionalData_t;
 
 /**
  * @struct  VL53L1_ZoneCalibrationData_t
  * @brief   Structure for storing the Zone Calibration Data
  *
  */
-typedef VL53L1_zone_calibration_results_t VL53L1_ZoneCalibrationData_t;
+typedef struct VL53L1_zone_calibration_results_t VL53L1_ZoneCalibrationData_t;
 
 /** @defgroup VL53L1_define_SequenceStepId_group Defines the SequenceStep
  *	Defines the the sequence steps performed during ranging..
@@ -732,18 +727,18 @@ typedef uint8_t VL53L1_SequenceStepId;
 /** @brief  Contains the Internal data of the Bare Driver
  */
 
-typedef struct {
-	VL53L1_LLDriverData_t   LLData;
+struct VL53L1_DevData_t {
+	struct VL53L1_LLDriverData_t LLData;
 	/*!< Low Level Driver data structure */
 
-	VL53L1_LLDriverResults_t llresults;
+	struct VL53L1_LLDriverResults_t llresults;
 	/*!< Low Level Driver data structure */
 
-	VL53L1_State      PalState; /* Store the pal state */
-	VL53L1_DeviceParameters_t CurrentParameters;
+	VL53L1_State PalState; /* Store the pal state */
+	struct VL53L1_DeviceParameters_t CurrentParameters;
 	/*!< Current Device Parameter */
 
-} VL53L1_DevData_t;
+};
 
 
 /* MACRO Definitions */
@@ -754,80 +749,80 @@ typedef struct {
 
 /* Defines */
 #define VL53L1_SETPARAMETERFIELD(Dev, field, value) \
-	(PALDevDataSet(Dev, CurrentParameters.field, value))
+	(VL53L1DevDataSet(Dev, CurrentParameters.field, value))
 
 #define VL53L1_GETPARAMETERFIELD(Dev, field, variable) \
-	(variable = PALDevDataGet(Dev, CurrentParameters).field)
+	(variable = VL53L1DevDataGet(Dev, CurrentParameters).field)
 
 
 #define VL53L1_SETARRAYPARAMETERFIELD(Dev, field, index, value) \
-	(PALDevDataSet(Dev, CurrentParameters.field[index], value))
+	(VL53L1DevDataSet(Dev, CurrentParameters.field[index], value))
 
 #define VL53L1_GETARRAYPARAMETERFIELD(Dev, field, index, variable) \
-	(variable = PALDevDataGet(Dev, CurrentParameters).field[index])
+	(variable = VL53L1DevDataGet(Dev, CurrentParameters).field[index])
 
 
 #define VL53L1_SETDEVICESPECIFICPARAMETER(Dev, field, value) \
-	(PALDevDataSet(Dev, DeviceSpecificParameters.field, value))
+	(VL53L1DevDataSet(Dev, DeviceSpecificParameters.field, value))
 
 #define VL53L1_GETDEVICESPECIFICPARAMETER(Dev, field) \
-	(PALDevDataGet(Dev, DeviceSpecificParameters).field)
+	(VL53L1DevDataGet(Dev, DeviceSpecificParameters).field)
 
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT44(Value) \
 	(uint16_t)((Value>>12)&0xFFFF)
 #define VL53L1_FIXPOINT44TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<12)
+	(FixPoint1616_t)((uint32_t)Value<<12)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT72(Value) \
 	(uint16_t)((Value>>14)&0xFFFF)
 #define VL53L1_FIXPOINT72TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<14)
+	(FixPoint1616_t)((uint32_t)Value<<14)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT97(Value) \
 	(uint16_t)((Value>>9)&0xFFFF)
 #define VL53L1_FIXPOINT97TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<9)
+	(FixPoint1616_t)((uint32_t)Value<<9)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT88(Value) \
 	(uint16_t)((Value>>8)&0xFFFF)
 #define VL53L1_FIXPOINT88TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<8)
+	(FixPoint1616_t)((uint32_t)Value<<8)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT412(Value) \
 	(uint16_t)((Value>>4)&0xFFFF)
 #define VL53L1_FIXPOINT412TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<4)
+	(FixPoint1616_t)((uint32_t)Value<<4)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT313(Value) \
 	(uint16_t)((Value>>3)&0xFFFF)
 #define VL53L1_FIXPOINT313TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<3)
+	(FixPoint1616_t)((uint32_t)Value<<3)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT08(Value) \
 	(uint8_t)((Value>>8)&0x00FF)
 #define VL53L1_FIXPOINT08TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<8)
+	(FixPoint1616_t)((uint32_t)Value<<8)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT53(Value) \
 	(uint8_t)((Value>>13)&0x00FF)
 #define VL53L1_FIXPOINT53TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<13)
+	(FixPoint1616_t)((uint32_t)Value<<13)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT102(Value) \
 	(uint16_t)((Value>>14)&0x0FFF)
 #define VL53L1_FIXPOINT102TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<14)
+	(FixPoint1616_t)((uint32_t)Value<<14)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT142(Value) \
 	(uint16_t)((Value>>14)&0xFFFF)
 #define VL53L1_FIXPOINT142TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<14)
+	(FixPoint1616_t)((uint32_t)Value<<14)
 
 #define VL53L1_FIXPOINT1616TOFIXPOINT160(Value) \
 	(uint16_t)((Value>>16)&0xFFFF)
 #define VL53L1_FIXPOINT160TOFIXPOINT1616(Value) \
-	(FixPoint1616_t)(Value<<16)
+	(FixPoint1616_t)((uint32_t)Value<<16)
 
 #define VL53L1_MAKEUINT16(lsb, msb) (uint16_t)((((uint16_t)msb)<<8) + \
 		(uint16_t)lsb)

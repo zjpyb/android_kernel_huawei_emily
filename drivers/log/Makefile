@@ -7,3 +7,4 @@ obj-$(CONFIG_LOG_EXCEPTION)	+= log_usertype.o
 obj-$(CONFIG_LOG_EXCEPTION)	+= imonitor_events.o
 obj-$(CONFIG_HWLOG_KERNEL)	+= hwlog_kernel.o
 obj-$(CONFIG_HIVIEW_SELINUX)	+= hiview_selinux.o
+obj-$(CONFIG_LOG_EXCEPTION)	+= hiview_hievent.o

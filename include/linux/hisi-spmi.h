@@ -1,4 +1,7 @@
-/* Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ *
+ * spmi.h
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,7 +22,7 @@
 
 /* Maximum slave identifier */
 #define SPMI_MAX_SLAVE_ID		16
-#define HISI_SPMI_FN_MAIN_ID          0xc500eee0u
+#define SPMI_FN_MAIN_ID          0xc500eee0u
 #define SPMI_READ                     0x00
 #define SPMI_WRITE                    0x01
 

@@ -1,16 +1,20 @@
 /*
- * process_reclaim_info.c : Process reclaim information
+ * process_reclaim_info.c
  *
- * Copyright (c) 2016 Huawei.
+ * Process reclaim information
  *
- * Authors:
- * Wanglai Yao <yaowanglai@huawei.com>
+ * Copyright (c) 2016-2020 Huawei Technologies Co., Ltd
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
-
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -20,6 +24,7 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/time64.h>
 #include "internal.h"
 
 #if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
@@ -51,12 +56,12 @@ void process_reclaim_result_cache_free(struct reclaim_result *result)
 }
 
 int process_reclaim_result_read(struct seq_file *m, struct pid_namespace *ns,
-				struct pid *pid, struct task_struct *tsk)
+	struct pid *pid, struct task_struct *tsk)
 {
-	struct reclaim_result *result;
+	struct reclaim_result *result = NULL;
 	unsigned int nr_reclaimed = 0;
 	unsigned int nr_writedblock = 0;
-	s64 elapsed_centisecs64 = 0;
+	s64 elapsed = 0;
 
 	if (tsk) {
 		task_lock(tsk);
@@ -64,7 +69,7 @@ int process_reclaim_result_read(struct seq_file *m, struct pid_namespace *ns,
 		if (result) {
 			nr_reclaimed = result->nr_reclaimed;
 			nr_writedblock = result->nr_writedblock;
-			elapsed_centisecs64 = result->elapsed_centisecs64;
+			elapsed = result->elapsed_centisecs64;
 			tsk->proc_reclaimed_result = NULL;
 			task_unlock(tsk);
 			process_reclaim_result_cache_free(result);
@@ -74,13 +79,13 @@ int process_reclaim_result_read(struct seq_file *m, struct pid_namespace *ns,
 	}
 #if KERNEL_VERSION(4, 3, 0) <= LINUX_VERSION_CODE
 	seq_printf(m,
-			"nr_reclaimed=%u, nr_writedblock=%u, elapsed=%lld\n",
-			nr_reclaimed, nr_writedblock, elapsed_centisecs64);
+		"nr_reclaimed=%u, nr_writedblock=%u, elapsed=%lld\n",
+		nr_reclaimed, nr_writedblock, elapsed);
 	return 0;
 #else
 	return seq_printf(m,
-			"nr_reclaimed=%u, nr_writedblock=%u, elapsed=%lld\n",
-			nr_reclaimed, nr_writedblock, elapsed_centisecs64);
+		"nr_reclaimed=%u, nr_writedblock=%u, elapsed=%lld\n",
+		nr_reclaimed, nr_writedblock, elapsed);
 #endif
 }
 
@@ -94,8 +99,7 @@ void exit_proc_reclaim(struct task_struct *tsk)
 
 			tsk->proc_reclaimed_result = NULL;
 			task_unlock(tsk);
-			process_reclaim_result_cache_free
-			(result);
+			process_reclaim_result_cache_free(result);
 		} else {
 			task_unlock(tsk);
 		}
@@ -103,8 +107,7 @@ void exit_proc_reclaim(struct task_struct *tsk)
 }
 
 void process_reclaim_result_write(struct task_struct *task,
-		unsigned int nr_reclaimed, unsigned int nr_writedblock,
-		s64 elapsed_centisecs64)
+	unsigned int nr_reclaimed, unsigned int nr_writedblock, s64 elapsed)
 {
 	struct reclaim_result *result = NULL;
 
@@ -112,14 +115,11 @@ void process_reclaim_result_write(struct task_struct *task,
 	if (!task->proc_reclaimed_result) {
 		task_unlock(task);
 #if KERNEL_VERSION(4, 3, 0) <= LINUX_VERSION_CODE
-		result  =
-		process_reclaim_result_cache_alloc(__GFP_NOWARN
-						   | __GFP_NORETRY
-						   | __GFP_KSWAPD_RECLAIM);
+		result  = process_reclaim_result_cache_alloc(__GFP_NOWARN |
+			__GFP_NORETRY | __GFP_KSWAPD_RECLAIM);
 #else
-		result  =
-		process_reclaim_result_cache_alloc(__GFP_NOWARN
-						   | __GFP_NORETRY);
+		result  = process_reclaim_result_cache_alloc(__GFP_NOWARN |
+			__GFP_NORETRY);
 #endif
 
 		task_lock(task);
@@ -129,9 +129,8 @@ void process_reclaim_result_write(struct task_struct *task,
 		}
 	}
 	if (task->proc_reclaimed_result) {
-		/*ns->>us*/
 		task->proc_reclaimed_result->elapsed_centisecs64 =
-		elapsed_centisecs64 / 1000;
+			elapsed / NSEC_PER_USEC;
 		task->proc_reclaimed_result->nr_writedblock = nr_writedblock;
 		task->proc_reclaimed_result->nr_reclaimed = nr_reclaimed;
 	}
@@ -142,10 +141,11 @@ void process_reclaim_result_write(struct task_struct *task,
 
 bool process_reclaim_need_abort(struct mm_walk *walk)
 {
-	struct mm_struct *mm;
+	struct mm_struct *mm = NULL;
+
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-	if (!walk || !walk->private
-		|| !((struct reclaim_param *)walk->private)->hiber)
+	if (!walk || !walk->private ||
+		!((struct reclaim_param *)walk->private)->hiber)
 		return false;
 #else
 	if (!walk || !walk->hiber)
@@ -153,13 +153,13 @@ bool process_reclaim_need_abort(struct mm_walk *walk)
 #endif
 
 	if (reclaim_sigusr_pending(current)) {
-		pr_info("Reclaim abort!case is signal.\n");
+		pr_info("Reclaim abort! case is signal\n");
 		return true;
 	}
 
 	mm = walk->mm;
 	if (mm && !list_empty(&mm->mmap_sem.wait_list)) {
-		pr_info("Reclaim abort!case is lock race.\n");
+		pr_info("Reclaim abort! case is lock race\n");
 		return true;
 	}
 
@@ -177,7 +177,3 @@ static int __init process_reclaim_info_init(void)
 	return ret;
 }
 late_initcall(process_reclaim_info_init);
-
-MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Wanglai Yao <yaowanglai@huawei.com>");
-MODULE_DESCRIPTION("Process reclaim information");

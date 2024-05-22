@@ -23,8 +23,8 @@
  */
 
 
-#ifndef __HW_KERNEL_HWCAM_VCM_CFG_H__
-#define __HW_KERNEL_HWCAM_VCM_CFG_H__
+#ifndef __HW_KERNEL_CAM_VCM_CFG_H__
+#define __HW_KERNEL_CAM_VCM_CFG_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>

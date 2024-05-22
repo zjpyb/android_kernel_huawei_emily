@@ -18,8 +18,10 @@
 #endif
 #include <linux/version.h>
 #include <linux/platform_device.h>
+#include <linux/io.h>
+
 #ifdef CONFIG_MMC_SDHCI_OF_ARASAN
-/*fix the soc bug that the qbr task can't be cleared*/
+/* fix the soc bug that the qbr task can't be cleared */
 #define CMDQ_FIX_CLEAR_QBRTASK
 #endif
 
@@ -74,7 +76,7 @@
 #define CQIS_TERR	(1 << 4)
 
 #define CQ_INT_EN	(0x3 << 14)
-//#define CQ_INT_ALL	0xF
+/* #define CQ_INT_ALL	0xF */
 #define CQ_INT_ALL	0x1F
 #define CQIC_DEFAULT_ICCTH 31
 #define CQIC_DEFAULT_ICTOVAL 1
@@ -113,7 +115,7 @@
 #define CQTERRI_RES_TASK(x)	((x >> 8) & 0x1F)
 #define CQTERRI_RES_CMD(x)	(x & 0x3F)
 
-/* response type*/
+/* response type */
 #define RES_TYPE_NO_RES  (0)
 #define RES_TYPE_R145    (2)
 #define RES_TYPE_R1B     (3)
@@ -181,9 +183,9 @@ struct cmdq_host {
 	struct workqueue_struct* wq_resend;
 	struct work_struct      work_resend;
 	struct timer_list *timer;      /* Timer for timeouts */
-	unsigned long     *timeout;    /* timeout value for timer unit:jiffies*/
+	unsigned long     *timeout;    /* timeout value for timer unit:jiffies */
 #ifdef CONFIG_EMMC_FAULT_INJECT
-	struct cmdq_inject_para *inject_para;/*inject fault*/
+	struct cmdq_inject_para *inject_para;/* inject fault */
 #endif
 
 	void *private;

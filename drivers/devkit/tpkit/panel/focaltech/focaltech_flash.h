@@ -96,6 +96,18 @@
 
 #define FTS_ROMBOOT_CMD_GET_STA			0xF2
 #define PROJECT_ID_ADDR					0x007812
+#define FTS_FT8756_PRAM_OFFSET 0x100
+#define FTS_PRAM_SADDR 0x000000
+#define FTS_DRAM_SADDR 0xD00000
+#define FTS_FLASH_PACKET_LENGTH_SPI ((32 * 1024) - 16)
+#define FTS_ROMBOOT_CMD_SET_PRAM_ADDR 0xAD
+#define FTS_ROMBOOT_CMD_SET_PRAM_ADDR_LEN 4
+#define FTS_ROMBOOT_CMD_WRITE 0xAE
+#define ECCMAX_LEN 32766
+#define FTS_FACTORY_MODE_VALUE 0x40
+#define FTS_COLOR_ID_ADDR 0xCB
+#define SLEEP_ONE_MS 1
+#define DATA_0 0
 
 struct focal_delay_time {
 	int hard_reset_delay;
@@ -138,5 +150,8 @@ int focal_read_vendor_id(struct focal_platform_data *focal_pdata, u8 *vendor_id)
 int focal_flash_upgrade_with_bin_file(struct focal_platform_data *focal_pdata,
 	char *fw_name);
 int focal_software_reset_to_bootloader(struct focal_platform_data *focal_pdata);
+int touch_driver_get_tpcolor_from_reg(void);
+
+extern int hostprocessing_get_project_id(char *out);
 #endif
 

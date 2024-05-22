@@ -602,7 +602,11 @@ static DEVICE_ATTR(async, 0644, async_show, async_store);
 static ssize_t time_in_state_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
-	return hisi_time_in_state_show(dev->id, buf);
+	/* cpu type */
+	if (get_cpu_device(dev->id) == dev)
+		return hisi_time_in_state_show(dev->id, buf);
+
+	return -EINVAL;
 }
 
 static DEVICE_ATTR(time_in_state, 0440, time_in_state_show, NULL);
@@ -703,6 +707,10 @@ int dpm_sysfs_add(struct device *dev)
 {
 	int rc;
 
+	/* No need to create PM sysfs if explicitly disabled. */
+	if (device_pm_not_required(dev))
+		return 0;
+
 	rc = sysfs_create_group(&dev->kobj, &pm_attr_group);
 	if (rc)
 		return rc;
@@ -792,6 +800,8 @@ void rpm_sysfs_remove(struct device *dev)
 
 void dpm_sysfs_remove(struct device *dev)
 {
+	if (device_pm_not_required(dev))
+		return;
 #ifdef CONFIG_HISI_FREQ_STATS_COUNTING_IDLE
 	sysfs_unmerge_group(&dev->kobj, &time_in_state_attr_group);
 #endif

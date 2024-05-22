@@ -47,6 +47,7 @@ config HISI_IOMMU_IOVA_DEBUG
 
 config HISI_SVM
 	tristate "HISI SVM driver"
+	depends on !ARM_SMMU_V3
 	select MMU_NOTIFIER
 	---help---
 	  This option enables support for the hisi svm features base on the ARM
@@ -59,3 +60,32 @@ config HISI_SMMUV310
 	default n
 	help
 	  HISI SMMUV310 Support
+
+config HISI_SMMUV320
+	bool "HISI SMMUV320 Support"
+	depends on HISI_SVM
+	default n
+	help
+	  HISI SMMUV320 Support
+
+config HISI_IOMMU_LAST_PAGE
+	bool "HISI IOMMU Last Page Support"
+	depends on HISI_IOMMU
+	select IOMMU_API
+	help
+	  Hisilicon IOMMU Last Page Support
+
+config HISI_IOMMU_DMA
+	bool "HISI IOMMU DMA Support"
+	depends on HISI_IOMMU
+	default n
+	help
+		HISI IOMMU DMA Support
+
+config HISI_IOMMU_DMD_REPORT
+        tristate "IOMMU dmd report support"
+        depends on ARM_SMMU_V3
+        ---help---
+          This option enables support for dmd report,
+	  only used for B platform npu tcu noc
+

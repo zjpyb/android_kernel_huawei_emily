@@ -43,7 +43,7 @@
 #include <linux/profile.h>
 #include <linux/notifier.h>
 #include <linux/atomic.h>
-#include <hisi/hisi_lmk/lowmem_killer.h>
+#include <linux/hisi/lowmem_killer.h>
 #include <log/log_usertype.h>
 
 #define CREATE_TRACE_POINTS
@@ -83,7 +83,7 @@ static int lowmem_minfree_size = 4;
 static int jank_buffer_size = 255;
 static bool is_first_read_total_memory = true;
 static bool is_killed_log_enable;
-static int base_size = 5000000; // ~5G
+static int base_size = 3000000; /* 3G */
 static ulong lowmem_kill_count;
 static ulong lowmem_free_mem;
 #endif
@@ -158,7 +158,7 @@ static void upload_to_jank(struct task_struct *tsk, short oom_adj)
 
 static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
-	struct task_struct *tsk;
+	struct task_struct *tsk = NULL;
 	struct task_struct *selected = NULL;
 	unsigned long rem = 0;
 	int tasksize;
@@ -168,12 +168,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	int selected_tasksize = 0;
 	short selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
-	int other_free = global_zone_page_state(NR_FREE_PAGES) - totalreserve_pages;
+	int other_free =
+		global_zone_page_state(NR_FREE_PAGES) - totalreserve_pages;
 	int other_file = global_node_page_state(NR_FILE_PAGES) -
 				global_node_page_state(NR_SHMEM) -
 				global_node_page_state(NR_UNEVICTABLE) -
 				total_swapcache_pages();
 	int ret_tune;
+	int d_state_count = 0;
 
 #ifdef CONFIG_HISI_MULTI_KILL
 	int count = 0;
@@ -201,14 +203,14 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	if (min_score_adj == OOM_SCORE_ADJ_MAX + 1) {
 		lowmem_print(5, "lowmem_scan %lu, %x, return 0\n",
 			     sc->nr_to_scan, sc->gfp_mask);
-		return 0;
+		return SHRINK_STOP;
 	}
 
 	selected_oom_score_adj = min_score_adj;
 
 	if (atomic_inc_return(&atomic_lmk) > 1) {
 		atomic_dec(&atomic_lmk);
-		return 0;
+		return SHRINK_STOP;
 	}
 
 	rcu_read_lock();
@@ -226,13 +228,29 @@ kill_selected:
 		if (!p)
 			continue;
 
+		oom_score_adj = p->signal->oom_score_adj;
+		if (oom_score_adj < min_score_adj) {
+			task_unlock(p);
+			continue;
+		}
+
+		/* Bypass D-state process */
+		if (p->state & TASK_UNINTERRUPTIBLE) {
+			lowmem_print(2,
+				     "lowmem_scan filter D state process: %d (%s) state:0x%lx\n",
+				     p->pid, p->comm, p->state);
+			task_unlock(p);
+			d_state_count++;
+			continue;
+		}
+
 		if (task_lmk_waiting(p)) {
 			if (time_before_eq(jiffies,
-					lowmem_deathpending_timeout)) {
+						lowmem_deathpending_timeout)) {
 				task_unlock(p);
 				rcu_read_unlock();
 				atomic_dec(&atomic_lmk);
-				return 0;
+				return SHRINK_STOP;
 			} else {
 				hisi_lowmem_dbg_timeout(tsk, p);
 #ifdef CONFIG_HISI_MULTI_KILL
@@ -244,11 +262,6 @@ kill_selected:
 			}
 		}
 
-		oom_score_adj = p->signal->oom_score_adj;
-		if (oom_score_adj < min_score_adj) {
-			task_unlock(p);
-			continue;
-		}
 		tasksize = get_mm_rss(p->mm);
 		task_unlock(p);
 		if (tasksize <= 0)
@@ -306,11 +319,13 @@ kill_selected:
 #ifdef CONFIG_HISI_MULTI_KILL
 		if (count  == 0)
 #endif
-			lmkwp_report(selected, sc, cache_size, cache_limit, selected_oom_score_adj, free);
+			lmkwp_report(selected, sc, cache_size, cache_limit,
+					selected_oom_score_adj, free);
 #endif
 
 #ifdef CONFIG_HISI_MULTI_KILL
-		lowmem_deathpending_timeout = jiffies + lmk_timeout_inter * HZ;/*lint !e647*/
+		/*lint !e647*/
+		lowmem_deathpending_timeout = jiffies + lmk_timeout_inter * HZ;
 #else
 		lowmem_deathpending_timeout = jiffies + HZ;
 #endif
@@ -322,6 +337,14 @@ kill_selected:
 #endif
 
 		rem += selected_tasksize;
+	} else {
+		if (d_state_count) {
+			lowmem_print(1,
+				     "No selected (Scanned [%d] D-state processes at %d)\n",
+				     d_state_count, (int)min_score_adj);
+			/* Set param > 0, so that hisi_lowmem_dbg() won't print too often */
+			hisi_lowmem_dbg(1);
+		}
 	}
 
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
@@ -330,10 +353,10 @@ kill_selected:
 #ifdef CONFIG_HISI_MULTI_KILL
 	if (selected && lmk_multi_kill) {
 		count++;
-		if (!((count >= lmk_multi_fcount) ||
-			(selected_oom_score_adj < lmk_multi_sadj) ||
-			((selected_oom_score_adj < lmk_multi_fadj) &&
-				(count >= lmk_multi_scount)))) {
+		if (!(count >= lmk_multi_fcount ||
+			selected_oom_score_adj < lmk_multi_sadj ||
+			(selected_oom_score_adj < lmk_multi_fadj &&
+				count >= lmk_multi_scount))) {
 			selected = NULL;
 			goto kill_selected;
 		}
@@ -342,6 +365,10 @@ kill_selected:
 
 	rcu_read_unlock();
 	atomic_dec(&atomic_lmk);
+
+	if (!rem)
+		rem = SHRINK_STOP;
+
 	return rem;
 }
 
@@ -455,16 +482,15 @@ module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
 			 0644);
 module_param_named(debug_level, lowmem_debug_level, uint, 0644);
 #if defined CONFIG_LOG_JANK
-module_param_named(kill_count, lowmem_kill_count, ulong, S_IRUGO | S_IWUSR);
-module_param_named(free_mem, lowmem_free_mem, ulong, S_IRUGO | S_IWUSR);
+module_param_named(kill_count, lowmem_kill_count, ulong, 0644);
+module_param_named(free_mem, lowmem_free_mem, ulong, 0644);
 #endif
 #ifdef CONFIG_HISI_MULTI_KILL
-module_param_named(lmk_multi_kill, lmk_multi_kill, int, S_IRUGO | S_IWUSR);
-module_param_named(lmk_multi_fadj, lmk_multi_fadj, int, S_IRUGO | S_IWUSR);
-module_param_named(lmk_multi_fcount, lmk_multi_fcount, int, S_IRUGO | S_IWUSR);
-module_param_named(lmk_multi_sadj, lmk_multi_sadj, int, S_IRUGO | S_IWUSR);
-module_param_named(lmk_multi_scount, lmk_multi_scount, int, S_IRUGO | S_IWUSR);
-module_param_named(lmk_timeout_inter, lmk_timeout_inter, int,
-			S_IRUGO | S_IWUSR);
+module_param_named(lmk_multi_kill, lmk_multi_kill, int, 0644);
+module_param_named(lmk_multi_fadj, lmk_multi_fadj, int, 0644);
+module_param_named(lmk_multi_fcount, lmk_multi_fcount, int, 0644);
+module_param_named(lmk_multi_sadj, lmk_multi_sadj, int, 0644);
+module_param_named(lmk_multi_scount, lmk_multi_scount, int, 0644);
+module_param_named(lmk_timeout_inter, lmk_timeout_inter, int, 0644);
 #endif
 

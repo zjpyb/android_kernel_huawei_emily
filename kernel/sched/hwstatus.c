@@ -8,61 +8,26 @@
  * published by the Free Software Foundation.
  */
 
+#include <asm/barrier.h>
+#include <asm/irq.h>
+#include <asm/stacktrace.h>
+#include <linux/delayacct.h>
+#include <linux/kallsyms.h>
+#include <linux/mempolicy.h>
 #include <linux/proc_fs.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
-#include <linux/kallsyms.h>
+#include <linux/types.h>
 #include <linux/utsname.h>
-#include <linux/mempolicy.h>
 #include <linux/version.h>
-#include <linux/delayacct.h>
 #include <log/log_usertype.h>
-
-#include <asm/barrier.h>
-#include <asm/stacktrace.h>
-#include <asm/irq.h>
-#include "securec.h"
-
-#include "sched.h"
 
 #ifdef CONFIG_HW_QOS_THREAD
 #include <chipset_common/hwqos/hwqos_common.h>
 #endif
 
-/*
- * Ease the printing of nsec fields:
- */
-static long long nsec_high(unsigned long long nsec)
-{
-	if ((long long)nsec < 0) {
-		nsec = -nsec;
-		do_div(nsec, 1000000);
-		return -nsec;
-	}
-	do_div(nsec, 1000000);
-
-	return nsec;
-}
-
-static unsigned long nsec_low(unsigned long long nsec)
-{
-	if ((long long)nsec < 0)
-		nsec = -nsec;
-
-	return do_div(nsec, 1000000);
-}
-
-#define SEQ_printf(m, x...)			\
-do {						\
-	if (m)					\
-		seq_printf(m, x);		\
-	else					\
-		printk(x);			\
-} while (0)
-
-#define PN(F) \
-	SEQ_printf(m, "  .%-30s: %lld.%06ld\n", #F,		\
-	nsec_high((long long)F), nsec_low((long long)F))
+#include "sched.h"
+#include "securec.h"
 
 #define FGTASK_MAX 4
 #define M_IODELAY_VALUE  (300*1000*1000)
@@ -70,14 +35,14 @@ do {						\
 #define M_DSDELAY_VALUE  (200*1000*1000)
 #define STACK_DUMP_SIZE  1024
 
-enum{
+enum {
 	FG_UI = 0,
 	FG_RENDER,
 	PREV_UI,
 	PREV_RENDER
 };
 
-enum{
+enum {
 	VERSION_V1 = 1,
 	VERSION_V2 = 2,
 	VERSION_V3,
@@ -116,19 +81,19 @@ struct sched_hwstatus_rstbody {
 	sched_hwstatus hwstatus;
 };
 
-struct sched_hwstatus_rst_V1 {
+struct sched_hwstatus_rst_v1 {
 	struct sched_hwstatus_rsthead head;
 	struct sched_hwstatus_rstbody body[FGTASK_MAX];
 };
 
-struct sched_hwstatus_rst_V2 {
+struct sched_hwstatus_rst_v2 {
 	struct sched_hwstatus_rsthead head;
 	struct sched_hwstatus_rstbody body[FGTASK_MAX];
 	struct hwstatus_mem           mem[FGTASK_MAX];
 	struct hwstatus_caller        caller;
 };
 
-struct sched_hwstatus_rst_V3 {
+struct sched_hwstatus_rst_v3 {
 	struct sched_hwstatus_rsthead head;
 	struct sched_hwstatus_rstbody body[FGTASK_MAX];
 	struct hwstatus_mem           mem[FGTASK_MAX];
@@ -175,14 +140,14 @@ struct sched_buffer {
 	void *data[0];
 };
 
-static const u64 SCHED_BUFFER_DATA_COUNT = 4096;
-static const int HW_SCHED_NOT_BETA_USER;
-static const int HW_SCHED_INVALID_COUNT = -1;
-static const int HW_SCHED_INVALID_TASK_STRUCT = -2;
-static const int HW_SCHED_COPY_FROM_USER_FAILED = -3;
-static const int HW_SCHED_BUFFER_DISABLE = -4;
-static const int HW_SCHED_BUFFER_CREATE_FAILED = -5;
-static const int HW_SCHED_NOT_TIME_YET = -6;
+#define SCHED_BUFFER_DATA_COUNT  4096
+#define HW_SCHED_INVALID_COUNT -1
+#define HW_SCHED_INVALID_TASK_STRUCT -2
+#define HW_SCHED_COPY_FROM_USER_FAILED -3
+#define HW_SCHED_BUFFER_DISABLE -4
+#define HW_SCHED_BUFFER_CREATE_FAILED -5
+#define HW_SCHED_NOT_TIME_YET -6
+#define HW_SCHED_NOT_BETA_USER -7
 
 static struct sched_buffer *g_buffer;
 static u64 g_buffer_size;
@@ -197,7 +162,7 @@ static struct hwstatus_caller caller = {0};
 static struct hwstatus_stack stack_dump = { {0} };
 static u64 delta_max;
 
-static inline void record_hwstatus(struct sched_hwstatus *hwstatus,
+static void record_hwstatus(struct sched_hwstatus *hwstatus,
 	struct sched_statistics *ssp)
 {
 	hwstatus->last_jiffies  = jiffies - ssp->hwstatus.last_jiffies;
@@ -221,7 +186,7 @@ static inline void record_hwstatus(struct sched_hwstatus *hwstatus,
 	hwstatus->dstate_block_count = ssp->hwstatus.dstate_block_count;
 }
 
-static inline void record_mem(struct hwstatus_mem *mem,
+static void record_mem(struct hwstatus_mem *mem,
 	struct task_struct *taskp)
 {
 #ifdef CONFIG_HW_MEMORY_MONITOR
@@ -245,7 +210,7 @@ static inline void record_mem(struct hwstatus_mem *mem,
 #endif
 }
 
-static inline void record_caller(struct hwstatus_caller *hw_caller,
+static void record_caller(struct hwstatus_caller *hw_caller,
 	struct hwstatus_stack *hw_stack, struct task_struct *taskp, int version)
 {
 	if (caller.ktime_iodelay < ktime_last) {
@@ -263,14 +228,14 @@ static inline void record_caller(struct hwstatus_caller *hw_caller,
 			stack_dump.stack, STACK_DUMP_SIZE - 1);
 }
 
-static inline void record_task_info(struct sched_data *data,
+static void record_task_info(struct sched_data *data,
 	struct task_struct *taskp)
 {
 	memcpy_s(data->task_info.comm, sizeof(data->task_info.comm),
 		taskp->comm, TASK_COMM_LEN);
 	data->task_info.pid = taskp->pid;
 	data->task_info.tgid = taskp->tgid;
-	data->task_info.target_cpu = (int) task_cpu(taskp);
+	data->task_info.target_cpu = (int)task_cpu(taskp);
 
 #if ((defined(CONFIG_HW_VIP_THREAD)) || (defined(CONFIG_HW_QOS_THREAD)))
 	data->task_info.static_vip = taskp->static_vip;
@@ -352,7 +317,7 @@ static bool sched_buffer_create(void)
 
 static void sched_buffer_put(struct sched_data *data)
 {
-	struct sched_data *write_ptr;
+	struct sched_data *write_ptr = NULL;
 
 	if (g_buffer == NULL)
 		return;
@@ -379,7 +344,7 @@ static void sched_buffer_put(struct sched_data *data)
 static void sched_buffer_put_vip_data(void)
 {
 	struct sched_data data;
-	struct task_struct *taskp;
+	struct task_struct *taskp = NULL;
 	int i;
 
 	for (i = 0; i < FGTASK_MAX; i++) {
@@ -418,7 +383,7 @@ static ssize_t sched_buffer_read(struct file *file, char __user *buf,
 	return ret;
 }
 
-static inline bool is_beta_user(void)
+static bool is_beta_user(void)
 {
 	static unsigned int user_type;
 
@@ -428,7 +393,7 @@ static inline bool is_beta_user(void)
 	return user_type == BETA_USER;
 }
 
-static inline bool is_buffer_init(void)
+static bool is_buffer_init(void)
 {
 	if (g_is_buffer_init_success)
 		return true;
@@ -461,11 +426,11 @@ static void simple_record_stack(struct task_struct *tsk, char *buf, int max)
 		return;
 
 	if (tsk == current) {
-		frame.fp = (unsigned long)__builtin_frame_address(0);
+		frame.fp = (unsigned long)((uintptr_t)__builtin_frame_address(0));
 #if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 		frame.sp = current_stack_pointer;
 #endif
-		frame.pc = (unsigned long)simple_record_stack;
+		frame.pc = (unsigned long)((uintptr_t)simple_record_stack);
 	} else {
 		frame.fp = thread_saved_fp(tsk);
 #if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
@@ -475,16 +440,18 @@ static void simple_record_stack(struct task_struct *tsk, char *buf, int max)
 	}
 
 	while (1) {
-		unsigned long where = frame.pc;
+		uintptr_t where = (uintptr_t)frame.pc;
 		int ret;
 
 		if (max <= pos)
 			break;
 		len = snprintf_s(buf + pos, max - pos, max - pos - 1, "%pS\n",
-			(void *) where);
-		if ((len <= 0) || (len >= (max-pos)))
+			(void *)where);
+		if ((len <= 0) || (len >= (max - pos)))
 			break;
 		pos += len;
+		if (frame.fp == 0)
+			break;
 		ret = unwind_frame(tsk, &frame);
 		if (ret < 0)
 			break;
@@ -495,11 +462,10 @@ static void simple_record_stack(struct task_struct *tsk, char *buf, int max)
 	barrier();
 }
 
-static inline void clear_hwstatus(struct task_struct *taskp)
+static void clear_hwstatus(struct task_struct *taskp)
 {
-	struct sched_statistics *ssp;
+	struct sched_statistics *ssp = &(taskp->se.statistics);
 
-	ssp = &(taskp->se.statistics);
 	ssp->hwstatus.last_jiffies = jiffies;
 
 	ssp->hwstatus.sum_exec_runtime_big = 0;
@@ -521,7 +487,7 @@ static inline void clear_hwstatus(struct task_struct *taskp)
 	ssp->hwstatus.dstate_block_count = 0;
 }
 
-static inline void clear_delays(struct task_struct *taskp)
+static void clear_delays(struct task_struct *taskp)
 {
 #ifdef CONFIG_HW_MEMORY_MONITOR
 	unsigned long flags;
@@ -540,23 +506,19 @@ static inline void clear_delays(struct task_struct *taskp)
 
 static void clear_task(struct task_struct *taskp)
 {
-	get_task_struct(taskp);
-
 	clear_hwstatus(taskp);
 	clear_delays(taskp);
-
-	put_task_struct(taskp);
 }
 
 static void clear_pid(pid_t pid)
 {
-	struct task_struct *taskp;
+	struct task_struct *taskp = NULL;
 
+	rcu_read_lock();
 	taskp = find_task_by_vpid(pid);
-	if (!taskp)
-		return;
-
-	clear_task(taskp);
+	if (taskp != NULL)
+		clear_task(taskp);
+	rcu_read_unlock();
 }
 
 static void sched_hwstatus_clear(pid_t pid)
@@ -571,10 +533,14 @@ static void sched_hwstatus_clear(pid_t pid)
 
 void sched_hwstatus_iodelay_caller(struct task_struct *tsk, u64 delta)
 {
-	void *__caller;
+	uintptr_t __caller;
 	u64 delaymax;
+	int ret = 0;
 
 	if (!is_beta_user())
+		return;
+
+	if (tsk == NULL)
 		return;
 
 	if (tsk->in_iowait)
@@ -585,7 +551,7 @@ void sched_hwstatus_iodelay_caller(struct task_struct *tsk, u64 delta)
 	if (delta < delaymax)
 		return;
 
-	if ((tsk) && (tsk->static_vip)) {
+	if (tsk->static_vip) {
 		if (tsk->pid != tsk->tgid) {
 			if ((tsk->comm[0] != 'R') || (tsk->comm[1] != 'e'))
 				return;
@@ -596,14 +562,16 @@ void sched_hwstatus_iodelay_caller(struct task_struct *tsk, u64 delta)
 		else
 			return;
 
-		__caller = (void *)get_wchan(tsk);
+		__caller = (uintptr_t)get_wchan(tsk);
 		caller.ktime_iodelay = ktime_get_ns();
-		snprintf_s(caller.caller_iodelay, CALLER_NAME_LEN,
+		ret = snprintf_s(caller.caller_iodelay, CALLER_NAME_LEN,
 			CALLER_NAME_LEN - 1,
 			"[%d,%d]%s W:%d P:[%d,%d] N:%s T:%llu %pS\n",
 			current->pid, current->tgid, current->comm,
 			tsk->in_iowait, tsk->pid, tsk->tgid, tsk->comm,
-			delta_max, __caller);
+			delta_max, (void *)__caller);
+		if (ret < 0)
+			return;
 		simple_record_stack(tsk, stack_dump.stack, STACK_DUMP_SIZE);
 	}
 }
@@ -672,89 +640,25 @@ static ssize_t sched_hwstatus_read_sched_buffer(struct file *file,
 	return ret;
 }
 
-static int sched_hwstatus_show(struct seq_file *m, void *v)
-{
-	int i;
-
-	if (!is_beta_user())
-		return 0;
-
-	for (i = 0; i < FGTASK_MAX; i++) {
-		struct task_struct *taskp;
-		sched_hwstatus *statusp;
-		u64 wait_sum;
-		u64 sum_sleep_runtime;
-		u64 iowait_sum;
-		u64 wait_count;
-		u64 iowait_count;
-
-		taskp = find_task_by_vpid(fgtasks[i]);
-		if (!taskp) {
-			SEQ_printf(m, "### %s find_task_by_vpid err!\n",
-				__func__);
-			return 0;
-		}
-
-		get_task_struct(taskp);
-		statusp = &(taskp->se.statistics.hwstatus);
-		SEQ_printf(m, "pid:%d,jiffies:%llu\n", fgtasks[i], jiffies -
-			statusp->last_jiffies);
-		wait_sum = taskp->se.statistics.wait_sum - statusp->wait_sum;
-		sum_sleep_runtime = taskp->se.statistics.sum_sleep_runtime -
-			statusp->sum_sleep_runtime;
-		iowait_sum = taskp->se.statistics.iowait_sum -
-			statusp->iowait_sum;
-		PN(statusp->sum_exec_runtime_big);
-		PN(statusp->sum_exec_runtime_mid);
-		PN(statusp->sum_exec_runtime_ltt);
-		PN(wait_sum);
-		PN(sum_sleep_runtime);
-		PN(iowait_sum);
-		PN(statusp->iowait_max);
-
-		PN(statusp->dstate_block_max);
-		PN(statusp->dstate_block_sum);
-
-		PN(statusp->dstate_block_count);
-		wait_count = taskp->se.statistics.wait_count -
-			statusp->wait_count;
-		iowait_count = taskp->se.statistics.iowait_count -
-			statusp->iowait_count;
-		PN(wait_count);
-		PN(iowait_count);
-		PN(statusp->sleep_count);
-#ifdef CONFIG_HW_MEMORY_MONITOR
-		if (taskp->delays) {
-			PN(taskp->delays->allocuser_delay);
-			PN(taskp->delays->allocuser_count);
-			PN(taskp->delays->allocuser_delay_max);
-			PN(taskp->delays->allocuser_delay_max_order);
-		}
-#endif
-		put_task_struct(taskp);
-	}
-
-	if (caller.ktime_iodelay >= ktime_last)
-		SEQ_printf(m, "### blockinfo:%s\n", caller.caller_iodelay);
-	return 0;
-}
-
 static ssize_t sched_hwstatus_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	int i;
+	unsigned int i;
 	static unsigned long last_jiffies;
-	struct sched_hwstatus_rst_V3 hwstatus_rst;
+	struct sched_hwstatus_rst_v3 hwstatus_rst;
 	int version;
+	struct task_struct *taskp = NULL;
+	struct sched_statistics *ssp = NULL;
+	struct sched_hwstatus_rstbody *rstp = NULL;
 
 	switch (count) {
-	case sizeof(struct sched_hwstatus_rst_V3):
+	case sizeof(struct sched_hwstatus_rst_v3):
 		version = VERSION_V3;
 		break;
-	case sizeof(struct sched_hwstatus_rst_V2):
+	case sizeof(struct sched_hwstatus_rst_v2):
 		version = VERSION_V2;
 		break;
-	case sizeof(struct sched_hwstatus_rst_V1):
+	case sizeof(struct sched_hwstatus_rst_v1):
 		version = VERSION_V1;
 		break;
 	default:
@@ -767,10 +671,6 @@ static ssize_t sched_hwstatus_read(struct file *file, char __user *buf,
 	last_jiffies = jiffies;
 
 	for (i = 0; i < FGTASK_MAX; i++) {
-		struct task_struct *taskp;
-		struct sched_statistics *ssp;
-		struct sched_hwstatus_rstbody *rstp;
-
 		taskp = find_task_by_vpid(fgtasks[i]);
 		if (!taskp)
 			return HW_SCHED_INVALID_TASK_STRUCT;
@@ -800,7 +700,7 @@ static ssize_t sched_hwstatus_read(struct file *file, char __user *buf,
 static ssize_t sched_hwstatus_read_for_iocollector(struct file *file,
 	char __user *buf, size_t count, loff_t *ppos)
 {
-	int i = 0;
+	unsigned int i = 0;
 	struct sched_hwstatus_rst_iocollector hwstatus_rst;
 	struct task_struct *taskp = NULL;
 	struct sched_statistics *ssp = NULL;
@@ -883,10 +783,8 @@ static ssize_t sched_hwstatus_write(struct file *file, const char __user *buf,
 	if (rv < 0)
 		return rv;
 
-	if (pid == 0) {
-		sched_hwstatus_show(NULL, NULL);
+	if (pid == 0)
 		return count;
-	}
 
 	sched_hwstatus_clear(0);
 	ktime_last = ktime_get_ns();
@@ -902,9 +800,9 @@ static const struct file_operations sched_hwstatus_fops = {
 
 static int __init init_sched_hwstatus_procfs(void)
 {
-	struct proc_dir_entry *pe;
+	struct proc_dir_entry *pe = proc_create("sched_hw", 0660, NULL,
+		&sched_hwstatus_fops);
 
-	pe = proc_create("sched_hw", 0660, NULL, &sched_hwstatus_fops);
 	if (!pe)
 		return -ENOMEM;
 

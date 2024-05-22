@@ -1,60 +1,60 @@
 /*
- * contexthub_pm.c
- *
- * functions for sensorhub pm
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: contexthub pm source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/types.h>
-#include <linux/of.h>
-#include <linux/rtc.h>
-#include <linux/regulator/consumer.h>
-#include <linux/of_device.h>
-#include <linux/suspend.h>
+#include "contexthub_pm.h"
+
 #include <linux/fb.h>
+#include <linux/gpio.h>
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
+#include <linux/of_gpio.h>
 #include <linux/pm_wakeup.h>
+#include <linux/regulator/consumer.h>
+#include <linux/rtc.h>
+#include <linux/suspend.h>
+#include <linux/types.h>
+
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
+#include <securec.h>
+
+#include "contexthub_boot.h"
+#include "contexthub_debug.h"
+#include "contexthub_recovery.h"
 #include "contexthub_route.h"
 #include "protocol.h"
 #include "sensor_config.h"
-#include "contexthub_recovery.h"
-#include "contexthub_debug.h"
 #include "sensor_detect.h"
 #include "sensor_feima.h"
-#include "contexthub_pm.h"
 
 uint32_t need_reset_io_power;
 uint32_t need_set_3v_io_power;
+uint32_t need_set_3_1v_io_power;
 uint32_t need_set_3_2v_io_power;
+static unsigned long sensor_jiffies;
 uint32_t vdd_set_io_power;
+uint32_t use_ldo34_flag;
 uint32_t use_ldo12_flag;
-uint32_t no_need_sensor_ldo24;
+static uint32_t no_need_sensor_ldo24;
 int g_sensorhub_wdt_irq = -1;
 sys_status_t iom3_sr_status = ST_WAKEUP;
-int key_state;
+static int key_state;
 int iom3_power_state = ST_POWERON;
 struct completion iom3_resume_mini;
 struct completion iom3_resume_all;
-struct ipc_debug ipc_debug_info;
+static struct ipc_debug ipc_debug_info;
 
 static struct sensor_status sensor_status_backup;
 static DEFINE_MUTEX(mutex_pstatus);
+struct regulator *sensorhub_ldo34_vddio;
 struct regulator *sensorhub_ldo12_vddio;
 
 static char *sys_status_t_str[] = {
@@ -64,18 +64,43 @@ static char *sys_status_t_str[] = {
 	[ST_WAKEUP] = "ST_WAKEUP",
 };
 
+sys_status_t get_iom3_sr_status(void)
+{
+	return iom3_sr_status;
+}
+
 int get_iomcu_power_state(void)
 {
 	return iom3_power_state;
 }
 EXPORT_SYMBOL(get_iomcu_power_state);
 
+struct ipc_debug *get_ipc_debug_info(void)
+{
+	return &ipc_debug_info;
+}
+
+unsigned long get_sensor_jiffies(void)
+{
+	return sensor_jiffies;
+}
+
+uint32_t get_no_need_sensor_ldo24(void)
+{
+	return no_need_sensor_ldo24;
+}
+
+int get_key_state(void)
+{
+	return key_state;
+}
+
 static inline void clean_ipc_debug_info(void)
 {
 	memset(&ipc_debug_info, 0, sizeof(ipc_debug_info));
 }
 
-static inline void print_ipc_debug_info(void)
+static void print_ipc_debug_info(void)
 {
 	int i;
 
@@ -90,8 +115,8 @@ static inline void print_ipc_debug_info(void)
 
 int tell_ap_status_to_mcu(int ap_st)
 {
-	read_info_t pkg_mcu;
-	write_info_t winfo;
+	struct read_info pkg_mcu;
+	struct write_info winfo;
 
 	if ((ap_st >= ST_BEGIN) && (ap_st < ST_END)) {
 		pkt_sys_statuschange_req_t pkt;
@@ -120,31 +145,34 @@ int tell_ap_status_to_mcu(int ap_st)
 
 void update_current_app_status(uint8_t tag, uint8_t cmd)
 {
+	iomcu_power_status *status = get_global_iomcu_power_status();
+
 	mutex_lock(&mutex_pstatus);
 	if ((cmd == CMD_CMN_OPEN_REQ) || (cmd == CMD_CMN_INTERVAL_REQ))
-		i_power_status.app_status[tag] = 1;
+		status->app_status[tag] = 1;
 	else if (cmd == CMD_CMN_CLOSE_REQ)
-		i_power_status.app_status[tag] = 0;
+		status->app_status[tag] = 0;
 	mutex_unlock(&mutex_pstatus);
 }
 
 static void check_current_app(void)
 {
-	int i = 0;
+	int i;
 	int flag = 0;
+	iomcu_power_status *status = get_global_iomcu_power_status();
 
 	mutex_lock(&mutex_pstatus);
 	for (i = 0; i < TAG_END; i++) {
-		if (i_power_status.app_status[i])
+		if (status->app_status[i])
 			flag++;
 	}
 	if (flag > 0) {
 		hwlog_info("total %d app running after ap suspend\n", flag);
-		i_power_status.power_status = SUB_POWER_ON;
+		status->power_status = SUB_POWER_ON;
 		flag = 0;
 	} else {
 		hwlog_info("iomcu will power off after ap suspend\n");
-		i_power_status.power_status = SUB_POWER_OFF;
+		status->power_status = SUB_POWER_OFF;
 	}
 	mutex_unlock(&mutex_pstatus);
 }
@@ -166,11 +194,12 @@ static int sensorhub_pm_suspend(struct device *dev)
 
 static int sensorhub_pm_resume(struct device *dev)
 {
-	int ret = 0;
+	int ret;
+	int *flag = get_resume_skip_flag();
 
 	hwlog_info("%s+\n", __func__);
 	print_ipc_debug_info();
-	resume_skip_flag = RESUME_INIT;
+	*flag = RESUME_INIT;
 
 	reinit_completion(&iom3_reboot);
 	reinit_completion(&iom3_resume_mini);
@@ -183,14 +212,15 @@ static int sensorhub_pm_resume(struct device *dev)
 		msecs_to_jiffies(1000))) {
 		hwlog_err("RESUME :wait for MINI timeout\n");
 		goto resume_err;
-	} else if (resume_skip_flag != RESUME_SKIP) {
+	} else if (*flag != RESUME_SKIP) {
 		ret = send_fileid_to_mcu();
 		if (ret) {
 			hwlog_err("RESUME get sensors cfg data from dts fail,ret=%d, use default config data!\n",
 				ret);
 			goto resume_err;
-		} else
+		} else {
 			hwlog_info("RESUME get sensors cfg data from dts success!\n");
+		}
 	} else {
 		hwlog_err("RESUME skip MINI\n");
 	}
@@ -200,7 +230,7 @@ static int sensorhub_pm_resume(struct device *dev)
 		msecs_to_jiffies(1000))) {
 		hwlog_err("RESUME :wait for ALL timeout\n");
 		goto resume_err;
-	} else if (resume_skip_flag != RESUME_SKIP) {
+	} else if (*flag != RESUME_SKIP) {
 		hwlog_info("RESUME mcu all ready!\n");
 		ret = sensor_set_cfg_data();
 		if (ret < 0) {
@@ -218,41 +248,42 @@ static int sensorhub_pm_resume(struct device *dev)
 		goto resume_err;
 	}
 
-	if (pConfigOnDDr->WrongWakeupMsg.flag) {
-		pConfigOnDDr->WrongWakeupMsg.flag = 0;
+	if (g_config_on_ddr->wrong_wakeup_msg.flag) {
+		g_config_on_ddr->wrong_wakeup_msg.flag = 0;
 		hwlog_err("************ sensorhub has wrong wakeup mesg\n");
-		hwlog_err("time %llu\n", pConfigOnDDr->WrongWakeupMsg.time);
+		hwlog_err("time %llu\n", g_config_on_ddr->wrong_wakeup_msg.time);
 		hwlog_err("irqs [%x] [%x]\n",
-			pConfigOnDDr->WrongWakeupMsg.irq0,
-			pConfigOnDDr->WrongWakeupMsg.irq1);
+			g_config_on_ddr->wrong_wakeup_msg.irq0,
+			g_config_on_ddr->wrong_wakeup_msg.irq1);
 		hwlog_err("recvfromapmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[3]);
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromapmsg[0],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromapmsg[1],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromapmsg[2],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromapmsg[3]);
 		hwlog_err("recvfromlpmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[3]);
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromlpmsg[0],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromlpmsg[1],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromlpmsg[2],
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromlpmsg[3]);
 		hwlog_err("sendtoapmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[3]);
+			  g_config_on_ddr->wrong_wakeup_msg.sendtoapmsg[0],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtoapmsg[1],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtoapmsg[2],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtoapmsg[3]);
 		hwlog_err("sendtolpmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[3]);
+			  g_config_on_ddr->wrong_wakeup_msg.sendtolpmsg[0],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtolpmsg[1],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtolpmsg[2],
+			  g_config_on_ddr->wrong_wakeup_msg.sendtolpmsg[3]);
 		hwlog_err("ap lpm3 tap tlpm3 %x %x %x %x\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsgmode);
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromapmsgmode,
+			  g_config_on_ddr->wrong_wakeup_msg.recvfromlpmsgmode,
+			  g_config_on_ddr->wrong_wakeup_msg.sendtoapmsgmode,
+			  g_config_on_ddr->wrong_wakeup_msg.sendtolpmsgmode);
 		hwlog_err("************ sensorhub has wrong wakeup mesg end\n");
-		memset(&(pConfigOnDDr->WrongWakeupMsg), 0,
-			sizeof(wrong_wakeup_msg_t));
+		if (memset_s(&(g_config_on_ddr->wrong_wakeup_msg), sizeof(wrong_wakeup_msg_t),
+			0, sizeof(wrong_wakeup_msg_t)) != EOK)
+			hwlog_err("%s, memset_s fail\n", __func__);
 	}
 	goto done;
 resume_err:
@@ -269,9 +300,26 @@ const static struct of_device_id sensorhub_io_supply_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, sensorhub_io_supply_ids);
 
+static void sensorhub_xsensor_poweron(int gpio)
+{
+	int ret;
+
+	ret = gpio_request(gpio, "sensorhub_1v8");
+	if (ret == 0) {
+		ret = gpio_direction_output(gpio, 1);
+		if (ret != 0)
+			hwlog_err("%s gpio_direction_output faild, gpio is %d.\n", __func__, gpio);
+		else
+			hwlog_info("%s gpio_direction_output succ, gpio is %d.\n", __func__, gpio);
+	} else {
+		hwlog_err("%s gpio_request faild, gpio is %d.\n", __func__, gpio);
+	}
+}
+
 static int sensorhub_io_driver_probe(struct platform_device *pdev)
 {
-	int ret = 0;
+	int ret;
+	int tmp_gpio;
 	uint32_t val = 0;
 	struct device_node *power_node = NULL;
 
@@ -308,12 +356,12 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 				__func__, val);
 		}
 		val = 0;
-		if (of_property_read_u32(power_node, "set-3v", &val)) {
-			hwlog_err("%s failed to find property set-3v.\n",
+		if (of_property_read_u32(power_node, "set-3_1v", &val)) {
+			hwlog_err("%s failed to find property set-3_1v.\n",
 				__func__);
 		} else {
-			need_set_3v_io_power = val;
-			hwlog_info("%s property set-3v is %d.\n",
+			need_set_3_1v_io_power = val;
+			hwlog_info("%s property set-3_1v is %d.\n",
 				__func__, val);
 		}
 		if (of_property_read_u32(power_node, "set-3_2v", &val)) {
@@ -330,6 +378,26 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 		} else {
 			vdd_set_io_power = val;
 			hwlog_info("%s property vdd-set is %d.\n",
+				__func__, val);
+		}
+		tmp_gpio = of_get_named_gpio(power_node, "sensorhub_gpio_1v8", 0);
+		if (tmp_gpio < 0)
+			hwlog_info("%s sensorhub_gpio_1v8 not found.\n", __func__);
+		else
+			sensorhub_xsensor_poweron(tmp_gpio);
+		tmp_gpio = of_get_named_gpio(power_node, "sensorhub_gpio_ag_1v8", 0);
+		if (tmp_gpio < 0)
+			hwlog_info("%s sensorhub_gpio_ag_1v8 not found.\n", __func__);
+		else
+			sensorhub_xsensor_poweron(tmp_gpio);
+
+		val = 0;
+		if (of_property_read_u32(power_node, "use_ldo34", &val)) {
+			hwlog_info("%s failed to find property use_ldo34.\n",
+				__func__);
+		} else {
+			use_ldo34_flag = val;
+			hwlog_info("%s property use_ldo34 is %d.\n",
 				__func__, val);
 		}
 
@@ -366,6 +434,11 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 				SENSOR_VOLTAGE_3V, SENSOR_VOLTAGE_3V);
 			if (ret < 0)
 				hwlog_err("failed to set sensorhub_vddio voltage to 3V\n");
+		} else if (need_set_3_1v_io_power) {
+			ret = regulator_set_voltage(sensorhub_vddio,
+				SENSOR_VOLTAGE_3_1V, SENSOR_VOLTAGE_3_1V);
+			if (ret < 0)
+				hwlog_err("failed to set sensorhub_vddio voltage to 3_1V\n");
 		} else if (need_set_3_2v_io_power) {
 			ret = regulator_set_voltage(sensorhub_vddio,
 				SENSOR_VOLTAGE_3_2V, SENSOR_VOLTAGE_3_2V);
@@ -382,6 +455,23 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 		ret = regulator_enable(sensorhub_vddio);
 		if (ret < 0)
 			hwlog_err("failed to enable regulator sensorhub_vddio\n");
+	}
+
+	if (use_ldo34_flag == 1) {
+		sensorhub_ldo34_vddio =
+			regulator_get(&pdev->dev, SENSOR_VBUS_LDO34);
+		if (IS_ERR(sensorhub_ldo34_vddio)) {
+			hwlog_err("%s: ldo34 regulator_get fail!\n", __func__);
+		} else {
+			ret = regulator_set_voltage(sensorhub_ldo34_vddio,
+				SENSOR_VOLTAGE_3_3V, SENSOR_VOLTAGE_3_3V);
+			if (ret < 0)
+				hwlog_err("failed to set ldo34 sensorhub_vddio voltage to 3.3V\n");
+
+			ret = regulator_enable(sensorhub_ldo34_vddio);
+			if (ret < 0)
+				hwlog_err("failed to enable ldo34 regulator sensorhub_vddio\n");
+		}
 	}
 
 	if (use_ldo12_flag == 1) {
@@ -403,7 +493,7 @@ static int sensorhub_io_driver_probe(struct platform_device *pdev)
 
 	if (!no_need_sensor_ldo24) {
 		if (need_reset_io_power &&
-			(sensorhub_reboot_reason_flag ==
+			(get_sensorhub_reboot_reason_flag() ==
 			SENSOR_POWER_DO_RESET)) {
 			hwlog_info("%s : disable vddio\n", __func__);
 			ret = regulator_disable(sensorhub_vddio);
@@ -453,7 +543,7 @@ void disable_sensors_when_suspend(void)
 	for (tag = TAG_SENSOR_BEGIN; tag < TAG_SENSOR_END; ++tag) {
 		if ((sensor_status_backup.status[tag] ||
 			sensor_status_backup.opened[tag]) &&
-			!(hifi_supported == 1 &&
+			!(get_hifi_supported() == 1 &&
 			(sensor_status.batch_cnt[tag] > 1))) {
 			if (should_be_processed_when_sr(tag))
 				inputhub_sensor_enable(tag, false);
@@ -474,7 +564,7 @@ void enable_sensors_when_resume(void)
 		tag < TAG_SENSOR_END; ++tag) {
 		if ((sensor_status_backup.status[tag] ||
 			sensor_status_backup.opened[tag]) &&
-			!(hifi_supported == 1 &&
+			!(get_hifi_supported() == 1 &&
 			(sensor_status.batch_cnt[tag] > 1))) {
 			if (should_be_processed_when_sr(tag)) {
 				if (sensor_status_backup.opened[tag] &&
@@ -491,9 +581,9 @@ void enable_sensors_when_resume(void)
 						sensor_status_backup.batch_cnt[tag];
 					inputhub_sensor_setdelay(tag, &delay_param);
 				} else if ((sensor_status_backup.status[tag] == 0) &&
-					(tag == TAG_ALS) &&
+					(tag == TAG_ALS || tag == TAG_ALS1 || tag == TAG_ALS2) &&
 					sensor_status_backup.opened[tag]) {
-					hwlog_info("ALS set delay when bachup_status =0 && bachup_opened = 1\n");
+					hwlog_info("ALS set delay when backup_status =0 && backup_opened = 1\n");
 					delay_param.period = 0;
 					delay_param.batch_count = 1;
 					inputhub_sensor_setdelay(tag, &delay_param);
@@ -509,7 +599,7 @@ static void key_fb_notifier_action(int enable)
 	interval_param_t param;
 
 	hwlog_info("key_fb_notifier_action fb :%d\n", enable);
-	if (strlen(sensor_chip_info[KEY]) == 0) {
+	if (strlen(get_sensor_chip_info_address(KEY)) == 0) {
 		hwlog_info("no key.\n");
 		return;
 	}

@@ -11,6 +11,9 @@
 #include <linux/completion.h>
 #include <linux/types.h>
 #include <linux/fs.h>
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+#include <linux/iomt_host/dsm_iomt_host.h>
+#endif
 
 struct mmc_data;
 struct mmc_request;
@@ -150,6 +153,7 @@ struct mmc_data {
 };
 
 struct mmc_host;
+struct mmc_ctx;
 struct mmc_request {
 	struct mmc_command	*sbc;		/* SET_BLOCK_COUNT for multiblock */
 	struct mmc_command	*cmd;
@@ -169,7 +173,7 @@ struct mmc_request {
 	struct mmc_host		*host;
 
 #ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
-	unsigned long io_start_ticks;
+	struct iomt_timestamp iomt_start_time;
 #endif
 
 	/* Allow other commands during this ongoing data transfer or busy wait */
@@ -183,7 +187,7 @@ struct mmc_request {
 struct mmc_card;
 struct mmc_cmdq_req;
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 extern void mmc_wait_cmdq_empty(struct mmc_card *);
 extern int mmc_cmdq_start_req(struct mmc_host *host,
 			      struct mmc_cmdq_req *cmdq_req);
@@ -200,7 +204,7 @@ int mmc_wait_for_cmd(struct mmc_host *host, struct mmc_command *cmd,
 		int retries);
 
 extern int mmc_switch(struct mmc_card *, u8, u8, u8, unsigned int);
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 extern int __mmc_switch_cmdq_mode(struct mmc_command *cmd, u8 set, u8 index,
 					u8 value, unsigned int timeout_ms,
 					bool use_busy_signal, bool ignore_timeout);
@@ -216,10 +220,10 @@ extern unsigned int mmc_erase_timeout(struct mmc_card *card,
 int mmc_cmdq_hw_reset(struct mmc_host *host);
 #endif
 int mmc_hw_reset(struct mmc_host *host);
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 extern int mmc_sd_reset(struct mmc_host *host);
 
-extern int __mmc_claim_host(struct mmc_host *host, atomic_t *abort);
+extern int __mmc_claim_host(struct mmc_host *host, struct mmc_ctx *ctx, atomic_t *abort);
 extern void mmc_release_host(struct mmc_host *host);
 extern int mmc_try_claim_host(struct mmc_host *host);
 
@@ -231,9 +235,8 @@ extern void mmc_blk_cmdq_restore(struct mmc_card *card);
 extern int mmc_retuning(struct mmc_host *host);
 #endif
 
-#ifdef CONFIG_HISI_MMC
-extern int mmc_switch_irq_safe(struct mmc_card *card, u8 set, u8 index, u8 value);
-extern int mmc_get_card_hisi(struct mmc_card *card, bool use_irq);
+#ifdef CONFIG_ZODIAC_MMC
+extern int mmc_get_card_zodiac(struct mmc_card *card, bool use_irq);
 extern int mmc_flush_cache_direct(struct mmc_card *card);
 extern void mmc_put_card_irq_safe(struct mmc_card *card);
 #endif
@@ -262,7 +265,7 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card);
  */
 static inline void mmc_claim_host(struct mmc_host *host)
 {
-	__mmc_claim_host(host, NULL);
+	__mmc_claim_host(host, NULL, NULL);
 }
 
 #endif /* LINUX_MMC_CORE_H */

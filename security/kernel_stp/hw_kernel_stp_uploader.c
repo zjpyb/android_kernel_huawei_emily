@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2018-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
  * Description: the hw_kernel_stp_uploader.c for kernel data uploading through uevent
  * Author: sunhongqing <sunhongqing@huawei.com>
  * Create: 2018-03-31
@@ -12,6 +12,11 @@ static const char *TAG = "kernel_stp_uploader";
 static struct kobject *g_kernel_stp_kobj;
 static struct kset *g_kernel_stp_kset;
 static DEFINE_MUTEX(upload_mutex);
+
+const struct stp_item_fun g_funcs[] = {
+	{KERNEL_STP_UPLOAD, kernel_stp_upload_parse},
+	{KERNEL_STP_KSHIELD_UPLOAD, kernel_stp_kshield_upload_parse},
+};
 
 const struct stp_item_info item_info[] = {
 	[KCODE]        = { STP_ID_KCODE, STP_NAME_KCODE },
@@ -29,15 +34,15 @@ const struct stp_item_info item_info[] = {
 	[HKIP]         = { STP_ID_HKIP, STP_NAME_HKIP },
 	[ITRUSTEE]     = { STP_ID_ITRUSTEE, STP_NAME_ITRUSTEE },
 	[DOUBLE_FREE]  = { STP_ID_DOUBLE_FREE, STP_NAME_DOUBLE_FREE },
+	[KSHIELD]      = { STP_ID_KSHIELD, STP_NAME_KSHIELD },
 };
 
 const struct stp_item_info *get_item_info_by_idx(int idx)
 {
-	if (idx < STP_ITEM_MAX) {
+	if (idx < STP_ITEM_MAX)
 		return &item_info[idx];
-	} else {
+	else
 		return NULL;
-	}
 };
 
 int kernel_stp_uploader_init(void)
@@ -104,15 +109,29 @@ int kernel_stp_upload_parse(struct stp_item result, const char *addition_info,
 		KSTPLogError(TAG, "input arguments invalid");
 		return -EINVAL;
 	}
-	if (addition_info == NULL) {
+	if (addition_info == NULL)
 		snprintf(upload_info, STP_INFO_MAXLEN, "stpinfo=%u:%u:%u:%u:%s",
 			result.id, result.status, result.credible,
 			result.version, result.name);
-	} else {
+	else
 		snprintf(upload_info, STP_INFO_MAXLEN, "stpinfo=%u:%u:%u:%u:%s:%s",
 			result.id, result.status, result.credible,
 			result.version, result.name, addition_info);
+	return 0;
+}
+
+int kernel_stp_kshield_upload_parse(struct stp_item result, const char *addition_info,
+			char *upload_info)
+{
+	(void)result;
+	if (upload_info == NULL) {
+		KSTPLogError(TAG, "input arguments invalid");
+		return -EINVAL;
 	}
+	/* kshield has a diffrent tag and info, so deal with it separately */
+	if (addition_info == NULL)
+		return -EINVAL;
+	snprintf(upload_info, STP_INFO_MAXLEN, "kshieldinfo=%s", addition_info);
 	return 0;
 }
 
@@ -135,7 +154,20 @@ static int kernel_stp_data_adapter(char **uevent_envp, char *result)
 	return 0;
 }
 
-int kernel_stp_upload(struct stp_item result, const char *addition_info)
+static int kernel_stp_upload_parse_cmd(struct stp_item result, const char *addition_info,
+			char *upload_info, enum stp_item_fun_type cmd)
+{
+	int i;
+
+	for (i = 0; i < KERNEL_STP_UPLOAD_MAX; i++) {
+		if (g_funcs[i].type == cmd)
+			return g_funcs[i].FUNC(result, addition_info, upload_info);
+	}
+	return -EINVAL;
+}
+
+static int kernel_stp_upload_cmd(struct stp_item result, const char *addition_info,
+			enum stp_item_fun_type cmd)
 {
 	int ret;
 	char *upload_info = NULL;
@@ -153,7 +185,7 @@ int kernel_stp_upload(struct stp_item result, const char *addition_info)
 			return -EINVAL;
 		}
 
-		ret = kernel_stp_upload_parse(result, addition_info, upload_info);
+		ret = kernel_stp_upload_parse_cmd(result, addition_info, upload_info, cmd);
 		if (ret != 0) {
 			KSTPLogError(TAG, "data parse failed, ret is %d", ret);
 			break;
@@ -180,3 +212,14 @@ int kernel_stp_upload(struct stp_item result, const char *addition_info)
 
 	return ret;
 }
+
+int kernel_stp_upload(struct stp_item result, const char *addition_info)
+{
+	return kernel_stp_upload_cmd(result, addition_info, KERNEL_STP_UPLOAD);
+}
+
+int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info)
+{
+	return kernel_stp_upload_cmd(result, addition_info, KERNEL_STP_KSHIELD_UPLOAD);
+}
+

@@ -3,6 +3,6 @@
 #
 config MEM_INSPECT
         tristate "rmeminspect driver"
-        default y
+        default n
         help
         Say yes here to support for dram inspection driver.

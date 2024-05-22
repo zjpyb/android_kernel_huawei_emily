@@ -11,6 +11,7 @@ ccflags-y += -DFSC_HAVE_DRP
 ccflags-y += -DFSC_HAVE_ACC
 ccflags-y += -DFSC_HAVE_VDM
 ccflags-y += -DFSC_HAVE_DP
+ccflags-y += -Idrivers/devkit/audiokit/
 
 obj-y += fusb3601_whole.o
 fusb3601_whole-objs := \

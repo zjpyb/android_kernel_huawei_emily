@@ -38,7 +38,7 @@
 #define HX_RAW_DUMP_FILE "/data/hx_fac_dump.txt"
 
 static void himax_free_Rawmem(void);
-static int himax_ctoi(char *buf, uint32_t count);
+static int himax_ctoi(const char *buf, uint32_t count);
 static int himax_parse_threshold_file(void);
 static int himax_get_one_value(const char *buf, uint32_t *offset);
 static int himax_parse_threshold_file_method(const char *buf, uint32_t file_size);
@@ -386,7 +386,8 @@ int himax_wirte_golden_data(void)
 	int retval = -1;
 	int i=0, j=0;
 	int num_data = 0;
-	int addr_start = 0x0160;//write golden value to flash start addr
+	/* write golden value to flash start addr */
+	unsigned int addr_start = 0x0160;
 	int remain_data_num = 0;
 	uint8_t write_times = 0;
 	uint8_t cmdbuf[4]  = {0};
@@ -937,6 +938,10 @@ void himax_print_rawdata(int mode)
 	mutual_buff = kzalloc(HX_MAX_X_CHAN * HX_MAX_Y_CHAN, GFP_KERNEL);
 	if (self_buff == NULL || mutual_buff == NULL) {
 		TS_LOG_ERR("%s: memeory is not enough!!\n", __func__);
+		kfree(self_buff);
+		self_buff = NULL;
+		kfree(mutual_buff);
+		mutual_buff = NULL;
 		return;
 	}
 
@@ -2585,7 +2590,7 @@ static int himax_get_one_value(const char *buf, uint32_t *offset)
 	return value;
 }
 
-static int himax_ctoi(char *buf, uint32_t count)
+static int himax_ctoi(const char *buf, uint32_t count)
 {
 	int value = 0;
 	uint32_t index = 0;

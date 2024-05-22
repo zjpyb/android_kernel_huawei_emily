@@ -1,56 +1,46 @@
 /*
- * drivers/inputhub/vibrator_channel.c
- *
- * Vibrator Channel driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: vibrator channel source file
+ * Author: linjianpeng <linjianpeng1@huawei.com>
+ * Create: 2020-05-25
  */
 
-#include <linux/version.h>
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
+#include "vibrator_channel.h"
+
+#include <linux/cdev.h>
+#include <linux/delay.h>
+#include <linux/device.h>
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/leds.h>
 #include <linux/miscdevice.h>
-#include <linux/uaccess.h>
+#include <linux/module.h>
+#include <linux/mtd/hisi_nve_interface.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
-#include <linux/interrupt.h>
 #include <linux/pm_wakeup.h>
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
-#include "protocol.h"
-#include <linux/cdev.h>
-#include<linux/leds.h>
-#include <linux/device.h>
-#include "sensor_config.h"
-#include "sensor_feima.h"
-#include "sensor_sysfs.h"
-#include "sensor_detect.h"
-#include <linux/mtd/hisi_nve_interface.h>
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>
+#endif
+#include <linux/slab.h>
 #include <linux/switch.h>
 #include <linux/timer.h>
-#include <linux/delay.h>
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
-#endif
-#include "vibrator_channel.h"
+#include <linux/types.h>
+#include <linux/version.h>
+#include <linux/uaccess.h>
+
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
+#include <securec.h>
+
+#include "contexthub_boot.h"
+#include "contexthub_pm.h"
+#include "contexthub_route.h"
+#include "sensor_sysfs.h"
 
 static struct wakeup_source vib_wl;
 
@@ -97,20 +87,20 @@ enum vib_abnormity_index {
 	VIB_ABNORMITY_INDEX_COUNT_MAX
 };
 
-#define vib_abnormity_to_bit(x) (0x1 << x)
+#define vib_abnormity_to_bit(x) (0x1 << (x))
 
-static struct drv2605_data *data;
+static struct drv2605_data *g_drv2605_data;
 static int vib_calib_result = 0;
 static uint32_t reg_add;
 static uint32_t reg_value;
 volatile static bool vibrator_in_irq_work;
-extern struct vibrator_paltform_data vibrator_data;
 static int vib_time = 0;
 #if defined(CONFIG_HISI_VIBRATOR)
 extern volatile int vibrator_shake;
 #else
 volatile int vibrator_shake;
 #endif
+extern uint32_t spa_manufacture;
 static char rtp_strength = 0x7F;
 #define VIB_REG_WRITE 0
 #define VIB_REG_READ 1
@@ -140,7 +130,7 @@ static char rtp_strength = 0x7F;
 #define SW_STATE_RTP_PLAYBACK			0x04
 #define YES 1
 #define NO  0
-#define MAX_TIMEOUT 10000	/* 10s */
+#define MAX_TIMEOUT 10000 /* 10s */
 #define MIN_REDUCE_TIMEOUT 10   /* 10ms */
 #define MAX_REDUCE_TIMEOUT 50   /* 50ms */
 #define VIB_OFF 0
@@ -167,6 +157,8 @@ static char rtp_strength = 0x7F;
 #define TFA9874_INT_TDMER           0x40
 #define TFA9874_INT_NOCLK           0x80
 
+#define LOWER_BOUND_MUSIC_TONE      1000
+
 #ifdef CONFIG_HUAWEI_DSM
 struct vib_dmd_param {
 	int32_t error_no;
@@ -190,7 +182,7 @@ enum VIB_TEST_TYPE {
 	VIB_HAPTIC_TEST = 3,
 };
 
-#ifdef CONFIG_HISI_COUL
+#ifdef CONFIG_COUL_DRV
 #define VIB_COLD_CHECK_SHORT_DELAY    2
 #define VIB_COLD_CHECK_LONG_DELAY     5
 
@@ -293,7 +285,7 @@ struct {
 	{ 72, 104, 30 },
 	{ 73, 105, 30 },
 	{ 74, 106, 30 },
-	{ 75, 107, 30 },
+	{ 75, 107, 1515 },
 	/* tone */
 	{ 77, 108, 40 },
 	{ 78, 109, 45 },
@@ -315,6 +307,14 @@ struct {
 	{ 94, 125, 125 },
 	{ 95, 126, 130 },
 	{ 96, 127, 135 },
+	{ 97, 128, 1515 },
+	{ 98, 129, 1515 },
+	{ 99, 130, 1515 },
+	{ 100, 131, 1515 },
+	{ 101, 132, 1515 },
+	{ 102, 133, 1515 },
+	{ 103, 134, 1515 },
+	{ 104, 135, 1515 },
 };
 
 #ifdef CONFIG_HUAWEI_DSM
@@ -352,13 +352,14 @@ static void vibrator_dmd_freq(uint32_t freq)
 	uint32_t dmd_bit;
 	struct dsm_client *client = NULL;
 	char *chip_str = NULL;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
 	client = inputhub_get_shb_dclient();
 	if (!client) {
 		hwlog_err("%s: there is no shb_dclient\n", __func__);
 		return;
 	}
-	if (vibrator_data.chip_type == VIBRATOR_CHIP_TFA9874)
+	if (data->chip_type == VIBRATOR_CHIP_TFA9874)
 		chip_str = "TFA9874";
 	else
 		chip_str = "unknown";
@@ -379,7 +380,7 @@ static void vibrator_dmd_freq(uint32_t freq)
 static void vibrator_dmd_abnormity(uint32_t abnormity, char *chip_str)
 {
 	struct dsm_client *client = NULL;
-	int32_t i;
+	uint32_t i;
 	int32_t error_no;
 	uint32_t dmd_bit;
 	uint32_t record_count;
@@ -431,6 +432,7 @@ static void vibrator_irq_abnormity(
 	uint32_t read_value;
 	uint32_t abnormity;
 	char *chip_str = NULL;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
 	if (is_reset && !reset_ok) /* reset failed */
 		hwlog_err("%s error reset\n", __func__);
@@ -448,7 +450,7 @@ static void vibrator_irq_abnormity(
 	}
 
 	abnormity = 0;
-	if (vibrator_data.chip_type == VIBRATOR_CHIP_TFA9874) {
+	if (data->chip_type == VIBRATOR_CHIP_TFA9874) {
 		chip_str = "TFA9874";
 		if (calc_bits & TFA9874_INT_VDDS)
 			abnormity |= vib_abnormity_to_bit(VIB_ABNORMITY_INDEX_VDDS);
@@ -513,20 +515,22 @@ static void sync_mcu_status(void)
 static void vibrator_irq_work(struct work_struct *work)
 {
 	int32_t ret;
-	int32_t gpio_value;
 	uint32_t enable_reg_addr, out_reg_addr, clear_reg_addr;
-	uint32_t irq_out_bits, irq_calc_bits;
-	uint32_t enable_bits;
-	bool i2c_ok, is_reset, reset_ok, is_high_default;
+	uint32_t enable_bits, irq_out_bits, irq_calc_bits;
+	bool i2c_ok = false;
+	bool is_reset = false;
+	bool reset_ok = false;
+	bool is_high_default = false;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
-	if (vibrator_data.chip_type == VIBRATOR_CHIP_TFA9874) {
+	if (data->chip_type == VIBRATOR_CHIP_TFA9874) {
 		out_reg_addr = TFA9874_INT_OUT_REG1;
 		clear_reg_addr = TFA9874_INT_IN_REG1;
 		enable_reg_addr = TFA9874_INT_ENABLE_REG1;
 		is_high_default = true; /* gpio_irq level high default */
 	} else {
 		hwlog_err("%s chip_type=%x\n",
-			__func__, vibrator_data.chip_type);
+			__func__, data->chip_type);
 		return;
 	}
 
@@ -542,31 +546,31 @@ static void vibrator_irq_work(struct work_struct *work)
 	enable_bits = 0;
 	irq_out_bits = 0;
 	irq_calc_bits = 0;
-	i2c_ok = false;
-	is_reset = false;
-	reset_ok = false;
 	ret = vibrator_reg_read(enable_reg_addr, &enable_bits);
-	ret |= vibrator_reg_read(out_reg_addr, &irq_out_bits);
+	ret = vibrator_reg_read(out_reg_addr, &irq_out_bits) || ret;
 	if (ret == 0) {
 		i2c_ok = true;
 		irq_calc_bits = irq_out_bits & enable_bits;
 	}
 	if ((!i2c_ok) || irq_calc_bits) {
+		int32_t gpio_value;
+
 		is_reset = true;
 		vibrator_set_time(0);
 		if (i2c_ok)
 			vibrator_reg_write(clear_reg_addr, irq_out_bits);
 		vibrator_hardware_reset();
 		resend_vibrator_parameters_to_mcu();
-		gpio_value = gpio_get_value(vibrator_data.gpio_irq);
+		gpio_value = gpio_get_value(data->gpio_irq);
 		if (((!is_high_default) && (!gpio_value)) ||
 			(is_high_default && gpio_value))
 			reset_ok = true;
 	}
-	if (data) {
-		data->irq_count++;
+	if (g_drv2605_data) {
+		g_drv2605_data->irq_count++;
 		hwlog_info("%s chip_type=%x irq_count=%u irq_calc_bits=%x is_reset=%d reset_ok=%d i2c_ok=%d\n",
-			__func__, vibrator_data.chip_type, data->irq_count, irq_calc_bits,
+			__func__, data->chip_type,
+			g_drv2605_data->irq_count, irq_calc_bits,
 			(int32_t)is_reset, (int32_t)reset_ok, (int32_t)i2c_ok);
 	}
 	vibrator_irq_abnormity(is_reset, reset_ok, i2c_ok, irq_calc_bits,
@@ -579,48 +583,51 @@ static void vibrator_irq_work(struct work_struct *work)
 
 static void vibrator_irq_set_enable(uint32_t user_bits, bool enable)
 {
-	if (!data || !data->irq_requested)
+	if (!g_drv2605_data || !g_drv2605_data->irq_requested)
 		return;
 
 	if (enable) {
-		data->irq_user_bits |= user_bits;
-		if (!data->irq_enabled) {
-			data->irq_enabled = true;
-			enable_irq(data->irq_int);
+		g_drv2605_data->irq_user_bits |= user_bits;
+		if (!g_drv2605_data->irq_enabled) {
+			g_drv2605_data->irq_enabled = true;
+			enable_irq(g_drv2605_data->irq_int);
 			hwlog_info("%s enable user_bits=%x irq_user_bits=%x\n",
-				__func__, user_bits, data->irq_user_bits);
+				__func__, user_bits,
+				g_drv2605_data->irq_user_bits);
 			return;
 		}
 		hwlog_info("%s already enable user_bits=%x irq_user_bits=%x\n",
-			__func__, user_bits, data->irq_user_bits);
+			__func__, user_bits, g_drv2605_data->irq_user_bits);
 	} else {
-		data->irq_user_bits &= (~user_bits);
-		if (data->irq_user_bits != 0) {
+		g_drv2605_data->irq_user_bits &= (~user_bits);
+		if (g_drv2605_data->irq_user_bits != 0) {
 			hwlog_info("%s no need disable user_bits=%x irq_user_bits=%x\n",
-				__func__, user_bits, data->irq_user_bits);
+				__func__, user_bits,
+				g_drv2605_data->irq_user_bits);
 			return;
 		}
-		if (data->irq_enabled) {
-			disable_irq(data->irq_int);
-			data->irq_enabled = false;
+		if (g_drv2605_data->irq_enabled) {
+			disable_irq(g_drv2605_data->irq_int);
+			g_drv2605_data->irq_enabled = false;
 			hwlog_info("%s disable user_bits=%x irq_user_bits=%x\n",
-				__func__, user_bits, data->irq_user_bits);
+				__func__, user_bits,
+				g_drv2605_data->irq_user_bits);
 			return;
 		}
 		hwlog_info("%s already disable user_bits=%x irq_user_bits=%x\n",
-			__func__, user_bits, data->irq_user_bits);
+			__func__, user_bits, g_drv2605_data->irq_user_bits);
 	}
 }
 
 static irqreturn_t vibrator_irq_handler(int irq, void *dev_id)
 {
-	if (!data || !data->irq_requested)
+	if (!g_drv2605_data || !g_drv2605_data->irq_requested)
 		return IRQ_HANDLED;
 
-	disable_irq_nosync(data->irq_int);
-	data->irq_enabled = false;
+	disable_irq_nosync(g_drv2605_data->irq_int);
+	g_drv2605_data->irq_enabled = false;
 
-	schedule_work(&data->irq_work);
+	schedule_work(&g_drv2605_data->irq_work);
 	return IRQ_HANDLED;
 }
 
@@ -628,17 +635,18 @@ static void vibrator_irq_request(struct drv2605_data *data)
 {
 	int ret;
 	unsigned long trigger;
+	struct vibrator_paltform_data *vib_data = get_vibrator_data();
 
-	if (vibrator_data.chip_type == VIBRATOR_CHIP_TFA9874) {
+	if (vib_data->chip_type == VIBRATOR_CHIP_TFA9874) {
 		trigger = IRQF_TRIGGER_LOW;
 	} else {
 		hwlog_err("%s chip_type=%x\n",
-			__func__, vibrator_data.chip_type);
+			__func__, vib_data->chip_type);
 		return;
 	}
 
-	gpio_direction_input(vibrator_data.gpio_irq);
-	data->irq_int = gpio_to_irq(vibrator_data.gpio_irq);
+	gpio_direction_input(vib_data->gpio_irq);
+	data->irq_int = gpio_to_irq(vib_data->gpio_irq);
 	if (data->irq_int < 0) {
 		hwlog_err("%s gpio_to_irq error\n", __func__);
 		return;
@@ -656,61 +664,61 @@ static void vibrator_irq_request(struct drv2605_data *data)
 	data->irq_enabled = false;
 	data->irq_requested = true;
 	hwlog_info("%s chip_type=%x trigger=%x\n",
-		__func__, vibrator_data.chip_type,
+		__func__, vib_data->chip_type,
 		trigger);
 }
 
 static int vibrator_hardware_reset(void)
 {
-	gpio_direction_output(vibrator_data.gpio_reset,
-		(~vibrator_data.rst_value) & 0x1);
+	struct vibrator_paltform_data *data = get_vibrator_data();
+
+	gpio_direction_output(data->gpio_reset,
+		(~data->rst_value) & 0x1);
 	msleep(VIB_RESET_GPIO_DELAY);
-	gpio_set_value(vibrator_data.gpio_reset, vibrator_data.rst_value);
+	gpio_set_value(data->gpio_reset, data->rst_value);
 	msleep(VIB_RESET_GPIO_DELAY);
-	if (data) {
-		data->reset_count++;
+	if (g_drv2605_data) {
+		g_drv2605_data->reset_count++;
 		hwlog_info("%s chip_type=%x reset_count=%u\n",
-		__func__, vibrator_data.chip_type, data->reset_count);
+		__func__, data->chip_type,
+		g_drv2605_data->reset_count);
 	}
 	return 0;
 }
 
 static int vibrator_operate_reg_ex(struct reg_operate_param *param)
 {
-	uint8_t bus_num, i2c_address, i, param_invalid;
-	int ret = 0;
+	uint8_t bus_num, i2c_address, i;
+	int ret;
 	uint8_t *ptemp = NULL;
 	uint8_t buf[VIB_I2C_BUF_MAX] = { 0 };
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
-	param_invalid = 0;
-	param_invalid |= (param->addr_bytes == 0);
-	param_invalid |= (param->addr_bytes > sizeof(uint32_t));
-	param_invalid |= (param->value_bytes == 0);
-	param_invalid |= (param->value_bytes > sizeof(uint32_t));
-	param_invalid |=
-		((param->addr_bytes + param->value_bytes) > VIB_I2C_BUF_MAX);
-	if (param_invalid) {
+	if ((param->addr_bytes == 0) ||
+		(param->addr_bytes > sizeof(uint32_t)) ||
+		(param->value_bytes == 0) ||
+		(param->value_bytes > sizeof(uint32_t)) ||
+		((param->addr_bytes + param->value_bytes) > VIB_I2C_BUF_MAX)) {
 		hwlog_err("%s param_invalid addr_bytes=%d value_bytes=%d\n",
 			__func__, param->addr_bytes, param->value_bytes);
 		return -1;
 	}
 
-	bus_num = vibrator_data.cfg.bus_num;
-	i2c_address = vibrator_data.cfg.i2c_address;
+	bus_num = data->cfg.bus_num;
+	i2c_address = data->cfg.i2c_address;
 	ptemp = (uint8_t *)&param->reg_addr;
-	ptemp += (param->addr_bytes - 1);
 	for (i = 0; i < param->addr_bytes; i++)
-		buf[i] = *ptemp--;
+		buf[i] = *(ptemp + (param->addr_bytes - 1 - i));
 	if (param->is_read) {
-		ret = mcu_i2c_rw(bus_num, i2c_address,
+		ret = mcu_i2c_rw(TAG_I2C, bus_num, i2c_address,
 			buf, param->addr_bytes,
 			&buf[param->addr_bytes], param->value_bytes);
 	} else {
 		ptemp = (uint8_t *)&param->write_value;
-		ptemp += (param->value_bytes - 1);
 		for (i = 0; i < param->value_bytes; i++)
-			buf[param->addr_bytes + i] = *ptemp--;
-		ret = mcu_i2c_rw(bus_num, i2c_address,
+			buf[param->addr_bytes + i] =
+				*(ptemp + (param->value_bytes - 1 - i));
+		ret = mcu_i2c_rw(TAG_I2C, bus_num, i2c_address,
 			buf, param->addr_bytes + param->value_bytes,
 			NULL, 0);
 	}
@@ -722,9 +730,9 @@ static int vibrator_operate_reg_ex(struct reg_operate_param *param)
 	if (param->is_read) {
 		param->read_value = 0;
 		ptemp = (uint8_t *)&param->read_value;
-		ptemp += (param->value_bytes - 1);
 		for (i = 0; i < param->value_bytes; i++)
-			*ptemp-- = buf[param->addr_bytes + i];
+			*(ptemp + (param->value_bytes - 1 - i)) =
+				buf[param->addr_bytes + i];
 		hwlog_info("%s reg_addr=%x read_value=%x\n",
 			__func__, param->reg_addr, param->read_value);
 	} else {
@@ -738,9 +746,10 @@ static int vibrator_reg_read(uint32_t reg_addr, uint32_t *read_value)
 {
 	struct reg_operate_param param = { 0 };
 	int ret;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
-	param.addr_bytes = vibrator_data.reg_addr_bytes;
-	param.value_bytes = vibrator_data.reg_value_bytes;
+	param.addr_bytes = data->reg_addr_bytes;
+	param.value_bytes = data->reg_value_bytes;
 	param.reg_addr = reg_addr;
 	param.is_read = 1;
 	ret = vibrator_operate_reg_ex(&param);
@@ -753,9 +762,10 @@ static int vibrator_reg_write(uint32_t reg_addr, uint32_t write_value)
 {
 	struct reg_operate_param param = { 0 };
 	int ret;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
-	param.addr_bytes = vibrator_data.reg_addr_bytes;
-	param.value_bytes = vibrator_data.reg_value_bytes;
+	param.addr_bytes = data->reg_addr_bytes;
+	param.value_bytes = data->reg_value_bytes;
 	param.reg_addr = reg_addr;
 	param.write_value = write_value;
 	ret = vibrator_operate_reg_ex(&param);
@@ -763,7 +773,8 @@ static int vibrator_reg_write(uint32_t reg_addr, uint32_t write_value)
 }
 int write_vibrator_calib_value_to_nv(const char *temp, uint16_t length)
 {
-	int ret = 0;
+	int ret;
+	int i;
 	struct hisi_nve_info_user user_info;
 
 	if (!temp) {
@@ -782,29 +793,38 @@ int write_vibrator_calib_value_to_nv(const char *temp, uint16_t length)
 	user_info.valid_size = VIB_CALIDATA_NV_SIZE;
 	strncpy(user_info.nv_name, "VIBCAL", sizeof(user_info.nv_name));
 	user_info.nv_name[sizeof(user_info.nv_name) - 1] = '\0';
-	user_info.nv_data[0] = temp[0];
-	user_info.nv_data[1] = temp[1];
-	user_info.nv_data[2] = temp[2];
+	/* f0 re change the nv position to ensure save the f0 for the old version */
+	user_info.nv_data[0] = temp[3];
+	user_info.nv_data[1] = temp[4];
+	user_info.nv_data[2] = temp[5];
+	user_info.nv_data[3] = temp[0];
+	user_info.nv_data[4] = temp[1];
+	user_info.nv_data[5] = temp[2];
+	for (i = 6; i < VIB_CALIDATA_NV_SIZE; i++)
+		user_info.nv_data[i] = temp[i];
+
 	ret = hisi_nve_direct_access(&user_info);
 	if (ret != 0) {
 		hwlog_err("vibrator nve_direct_access write error %d\n", ret);
 		return -1;
 	}
-	hwlog_info("vibrator nve_direct_access write nv_data 0x%x 0x%x 0x%x\n",
-		 user_info.nv_data[0], user_info.nv_data[1],
-		 user_info.nv_data[2]);
+	hwlog_info("vibrator nve_direct_access write nv_data 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n",
+		 user_info.nv_data[0], user_info.nv_data[1], user_info.nv_data[2],
+		 user_info.nv_data[3], user_info.nv_data[4], user_info.nv_data[5],
+		 user_info.nv_data[6], user_info.nv_data[7], user_info.nv_data[8],
+		 user_info.nv_data[9], user_info.nv_data[10], user_info.nv_data[11]);
 
 	return ret;
 }
 
-static read_info_t vibrator_send_cali_test_cmd(const char* cmd, int len,
-	RET_TYPE *rtype)
+static struct read_info vibrator_send_cali_test_cmd(const char* cmd, int len,
+	enum ret_type *rtype)
 {
-	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	int ret;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -830,14 +850,14 @@ static read_info_t vibrator_send_cali_test_cmd(const char* cmd, int len,
 	return pkg_mcu;
 }
 
-static read_info_t vibrator_send_cfg_cmd(unsigned int sub_cmd, char *cmd_para,
-		unsigned int len, RET_TYPE *rtype)
+static struct read_info vibrator_send_cfg_cmd(unsigned int sub_cmd, char *cmd_para,
+		unsigned int len, enum ret_type *rtype)
 {
 	int ret;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
 	if ((sub_cmd > SUB_CMD_MAX) || (!cmd_para)) {
@@ -906,7 +926,7 @@ __weak void switch_dev_unregister(struct switch_dev *sdev)
 	return;
 }
 
-#ifdef CONFIG_HISI_COUL
+#ifdef CONFIG_COUL_DRV
 static void vibrator_agent_cold_level_proc(void)
 {
 	struct timespec ts;
@@ -914,7 +934,8 @@ static void vibrator_agent_cold_level_proc(void)
 	int capacity;
 	int i;
 	int cold_level = EN_VIB_BAT_COLD_LEVEL_0;
-	int cold_cnt = vibrator_data.cold_level_count;
+	struct vibrator_paltform_data *data = get_vibrator_data();
+	int cold_cnt = data->cold_level_count;
 
 	if (cold_cnt <= 0)
 		return;
@@ -928,22 +949,22 @@ static void vibrator_agent_cold_level_proc(void)
 	}
 
 	vib_cold_check_timestamp = ts.tv_sec;
-	temp = hisi_battery_temperature();
-	capacity = hisi_battery_capacity();
+	temp = coul_drv_battery_temperature();
+	capacity = coul_drv_battery_capacity();
 	for (i = cold_cnt - 1; i >= 0; i--) {
-		if (temp > vibrator_data.cold_level[i]) {
+		if (temp > data->cold_level[i]) {
 			cold_level = EN_VIB_BAT_COLD_LEVEL_0 + cold_cnt - 1 - i;
 			break;
 		}
 	}
-	if (temp <= vibrator_data.cold_level[0])
+	if (temp <= data->cold_level[0])
 		cold_level = EN_VIB_BAT_COLD_LEVEL_0 + cold_cnt;
 	if (cold_level == EN_VIB_BAT_COLD_LEVEL_0) {
 		vib_cold_level = EN_VIB_BAT_LEVEL_0;
 		vib_cold_check_delay = VIB_COLD_CHECK_LONG_DELAY;
 	} else {
 		vib_cold_check_delay = VIB_COLD_CHECK_SHORT_DELAY;
-		if (capacity <= vibrator_data.battery_level[cold_cnt - cold_level])
+		if (capacity <= data->battery_level[cold_cnt - cold_level])
 			vib_cold_level = EN_VIB_BAT_LEVEL_1;
 	}
 	hwlog_info("vibrator_agent_cold_level_proc: %d, %d, %d, %d\n",
@@ -953,18 +974,18 @@ static void vibrator_agent_cold_level_proc(void)
 
 static void haptics_play_effect(struct work_struct *work)
 {
-	RET_TYPE vib_return_calibration = RET_INIT;
-	read_info_t read_pkg;
+	enum ret_type vib_return_calibration = RET_INIT;
+	struct read_info read_pkg;
 	struct vib_cmd_t vib_data;
 
 	__pm_stay_awake(&vib_wl);
 	sync_mcu_status();
 	vibrator_shake = 1;
-	switch_set_state(&data->sw_dev, SW_STATE_SEQUENCE_PLAYBACK);
+	switch_set_state(&g_drv2605_data->sw_dev, SW_STATE_SEQUENCE_PLAYBACK);
 	vibrator_irq_set_enable(VIB_IRQ_USER_BIT_EFFECT, true);
 	memset(&read_pkg, 0, sizeof(read_pkg));
-	vib_data.cmd = data->vib_cmd;
-#ifdef CONFIG_HISI_COUL
+	vib_data.cmd = g_drv2605_data->vib_cmd;
+#ifdef CONFIG_COUL_DRV
 	vibrator_agent_cold_level_proc();
 #endif
 	vib_data.level = vib_cold_level;
@@ -977,11 +998,11 @@ static void haptics_play_effect(struct work_struct *work)
 	else if (read_pkg.errno == 0)
 		hwlog_info("%s: commu succ\n", __func__);
 
-	if (data->play_effect_time > 0)
-		msleep(data->play_effect_time);
+	if (g_drv2605_data->play_effect_time > 0)
+		msleep(g_drv2605_data->play_effect_time);
 
 	vibrator_irq_set_enable(VIB_IRQ_USER_BIT_EFFECT, false);
-	switch_set_state(&data->sw_dev, SW_STATE_IDLE);
+	switch_set_state(&g_drv2605_data->sw_dev, SW_STATE_IDLE);
 	vibrator_shake = 0;
 	__pm_relax(&vib_wl);
 	return;
@@ -992,9 +1013,9 @@ static ssize_t vibrator_dbc_test_store(struct device *dev,
 				       const char *buf, size_t count)
 {
 	uint64_t value = 0;
-	char test_case = 0;
-	RET_TYPE vib_return_calibration = RET_INIT;
-	read_info_t read_pkg;
+	char test_case;
+	enum ret_type vib_return_calibration = RET_INIT;
+	struct read_info read_pkg;
 	char test_cmd[VIB_TEST_CMD_LEN] = { 0 };
 
 	hwlog_info("%s\n", __func__);
@@ -1028,12 +1049,11 @@ static ssize_t vibrator_calib_store(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t count)
 {
-	read_info_t read_pkg;
-	char status = 0;
-	RET_TYPE vib_return_calibration = RET_INIT;
+	struct read_info read_pkg;
+	enum ret_type vib_return_calibration = RET_INIT;
 	char calib_value[VIB_CALIDATA_NV_SIZE] = { 0 };
-	int i = 0;
-	int ret = 0;
+	int i;
+	int ret;
 	char test_case[VIB_TEST_CMD_LEN] = { 0 };
 	unsigned int calib_val = 0;
 
@@ -1050,21 +1070,19 @@ static ssize_t vibrator_calib_store(struct device *dev,
 	} else if (read_pkg.errno == 0) {
 		hwlog_info("%s: commu succ\n", __func__);
 	}
-	hwlog_info("calib result= 0x%x, 0x%x, 0x%x, 0x%x\n", read_pkg.data[0],
-		read_pkg.data[1], read_pkg.data[2], read_pkg.data[3]);
-	status = VIB_CA_DIAG_RST & read_pkg.data[0];
-	if (status != 0) {
-		vib_calib_result = 0;
-		hwlog_err("drv2605 vibrator calibration fail!\n");
-		return count;
-	} else {
-		hwlog_info("drv2605 vibrator calibration success!\n");
-		vib_calib_result = 1;
-		calib_val = (read_pkg.data[0] << 24) +
-					(read_pkg.data[1] << 16) +
-					(read_pkg.data[2] << 8) +
-					read_pkg.data[3];
-	}
+	hwlog_info("calib result= 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x\n",
+		read_pkg.data[0], read_pkg.data[1], read_pkg.data[2],
+		read_pkg.data[3], read_pkg.data[4], read_pkg.data[5],
+		read_pkg.data[6], read_pkg.data[7], read_pkg.data[8],
+		read_pkg.data[9], read_pkg.data[10], read_pkg.data[11]);
+
+	hwlog_info("drv2605 vibrator calibration success!\n");
+	vib_calib_result = 1;
+	/* f0 calib_val */
+	calib_val = (read_pkg.data[3] << 16) +
+				(read_pkg.data[4] << 8) +
+				read_pkg.data[5];
+
 	/* F0=F0/8192, should be in [158,182] */
 	if ((calib_val < (F0_COEF * F0_LOWER_LIMIT)) ||
 				(calib_val > (F0_COEF * F0_UPPER_LIMIT))) {
@@ -1075,7 +1093,7 @@ static ssize_t vibrator_calib_store(struct device *dev,
 #endif
 	}
 	for(i = 0; i < VIB_CALIDATA_NV_SIZE; i++)
-		calib_value[i] = read_pkg.data[i + 1];
+		calib_value[i] = read_pkg.data[i];
 
 	ret = write_vibrator_calib_value_to_nv(calib_value, VIB_CALIDATA_NV_SIZE);
 	if (ret) {
@@ -1089,20 +1107,21 @@ static ssize_t vibrator_calib_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
 	int val = vib_calib_result;
-	RET_TYPE vib_return_calibration = RET_INIT;
-	read_info_t read_pkg;
+	enum ret_type vib_return_calibration = RET_INIT;
+	struct read_info read_pkg;
 
 	memset(&read_pkg, 0, sizeof(read_pkg));
 	read_pkg = vibrator_send_cfg_cmd(SUB_CMD_CALIBRATE_DATA_REQ,
-			(char *)&data->vib_cmd, sizeof(unsigned int), &vib_return_calibration);
+		(char *)&g_drv2605_data->vib_cmd, sizeof(unsigned int),
+		&vib_return_calibration);
 	if ((vib_return_calibration == COMMU_FAIL) ||
 			(vib_return_calibration == EXEC_FAIL))
 		hwlog_err("%s: commu fail\n", __func__);
 	else if (read_pkg.errno == 0)
 		hwlog_info("%s: commu succ\n", __func__);
 
-	hwlog_info("vibrator f0 result = 0x%x, 0x%x, 0x%x, 0x%x\n", read_pkg.data[0],
-		read_pkg.data[1], read_pkg.data[2], read_pkg.data[3]);
+	hwlog_info("vibrator f0 result = 0x%x, 0x%x, 0x%x\n", read_pkg.data[3],
+		read_pkg.data[4], read_pkg.data[5]);
 	return snprintf(buf, PAGE_SIZE, "%d", val);
 }
 
@@ -1159,7 +1178,7 @@ static ssize_t vibrator_set_reg_value_store(struct device *dev,
 					    struct device_attribute *attr,
 					    const char *buf, size_t count)
 {
-	uint32_t val = 0;
+	uint32_t val;
 	uint64_t value = 0;
 
 	if (!buf){
@@ -1210,8 +1229,8 @@ static ssize_t haptic_test_store(struct device *dev,
 		j++;
 	}
 	vibrator_off();
-	memcpy(&data->vib_cmd, haptic_value, sizeof(unsigned int));
-	data->play_effect_time = 0;
+	memcpy(&g_drv2605_data->vib_cmd, haptic_value, sizeof(unsigned int));
+	g_drv2605_data->play_effect_time = 0;
 	haptics_play_effect(NULL);
 	hwlog_info("%s\n", __func__);
 	return count;
@@ -1250,7 +1269,7 @@ static ssize_t vibrator_reg_value_show(struct device *dev,
 static ssize_t vibrator_reg_value_store(struct device *dev,
 			struct device_attribute *attr, const char *buf, size_t count)
 {
-	uint32_t val = 0;
+	uint32_t val;
 	uint64_t value = 0;
 
 	if (!buf) {
@@ -1271,25 +1290,34 @@ out:
 static ssize_t set_amplitude_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	char val = 0;
-	uint64_t value = 0;
-	int ret = 0;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	uint32_t val = 0;
+	int64_t value = 0;
+	int ret;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	if (!buf) {
 		hwlog_err("drv2605 set_amplitude_store error buf\n");
 		goto out;
 	}
 
-	if (strict_strtoull(buf, CONVERT_TO_10, &value)) {
+	if (kstrtoll(buf, CONVERT_TO_10, &value)) {
 		hwlog_err("drv2605 set_amplitude_store read value error\n");
 		goto out;
 	}
 
-	val = (char)value;
+	switch (value) {
+	case 0:
+		val = 0;
+		break;
+	case -1:
+		val = 1;
+		break;
+	default:
+		hwlog_err("drv2605 set_amplitude_store input value error\n");
+	}
 	hwlog_info("drv2605 set_amplitude_store: reg_values = 0x%x\n", val);
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -1309,7 +1337,6 @@ static ssize_t set_amplitude_store(struct device *dev,
 		hwlog_err("drv2605 set_amplitude_store fail, %d\n", pkg_mcu.errno);
 	else
 		hwlog_info("drv2605 set_amplitude_store  success\n");
-
 out:
 	return (ssize_t)count;
 }
@@ -1317,8 +1344,16 @@ out:
 static ssize_t support_amplitude_control_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
+	struct vibrator_paltform_data *data = get_vibrator_data();
+
 	return snprintf(buf, PAGE_SIZE, "%d\n",
-		vibrator_data.support_amplitude_control); /* not support */
+		data->support_amplitude_control); /* not support */
+}
+
+static ssize_t vibrator_spa_manu_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%d\n", spa_manufacture);
 }
 
 static DEVICE_ATTR(vibrator_dbc_test, S_IRUSR | S_IWUSR, NULL,
@@ -1336,10 +1371,11 @@ static DEVICE_ATTR(vibrator_set_rtp_value, S_IRUSR|S_IWUSR, NULL,
 		   vibrator_set_rtp_value_store);
 static DEVICE_ATTR(vibrator_reg_value, S_IRUSR|S_IWUSR, vibrator_reg_value_show,
 		   vibrator_reg_value_store);
-static DEVICE_ATTR(set_amplitude, S_IRUSR|S_IWUSR, NULL,
-		   set_amplitude_store);
+static DEVICE_ATTR(set_amplitude, S_IRUSR|S_IWUSR, NULL, set_amplitude_store);
 static DEVICE_ATTR(support_amplitude_control, S_IRUSR|S_IWUSR,
 		   support_amplitude_control_show, NULL);
+static DEVICE_ATTR(spa_manu, S_IRUSR | S_IWUSR, vibrator_spa_manu_show,
+		   NULL);
 
 static struct attribute *vb_attributes[] = {
 	&dev_attr_vibrator_dbc_test.attr,
@@ -1352,6 +1388,7 @@ static struct attribute *vb_attributes[] = {
 	&dev_attr_vibrator_reg_value.attr,
 	&dev_attr_set_amplitude.attr,
 	&dev_attr_support_amplitude_control.attr,
+	&dev_attr_spa_manu.attr,
 	NULL
 };
 
@@ -1360,13 +1397,13 @@ static const struct attribute_group vb_attr_group = {
 };
 
 static void vibrator_set_time(int val){
-	int ret = 0;
+	int ret;
 	int64_t time_start;
 	int64_t time_end;
-	write_info_t pkg_ap;
-	read_info_t pkg_mcu;
+	struct write_info pkg_ap;
+	struct read_info pkg_mcu;
 	pkt_parameter_req_t spkt;
-	pkt_header_t *shd = (pkt_header_t *)&spkt;
+	struct pkt_header *shd = (struct pkt_header *)&spkt;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 	memset(&pkg_mcu, 0, sizeof(pkg_mcu));
@@ -1392,31 +1429,32 @@ static void vibrator_set_time(int val){
 static void vibrator_enable(struct led_classdev *cdev, enum led_brightness value)
 {
 	int val = value;
+	struct vibrator_paltform_data *data = get_vibrator_data();
 
 	hwlog_info("%s time=%d\n", __func__, val);
 	if (val > 0) {
 		vibrator_shake = 1;
-		if (vibrator_data.reduce_timeout_ms) {
+		if (data->reduce_timeout_ms) {
 			if ((val > MIN_REDUCE_TIMEOUT) &&
 			    (val <= MAX_REDUCE_TIMEOUT))
-				val = vibrator_data.reduce_timeout_ms;
+				val = data->reduce_timeout_ms;
 		}
-		if (val > vibrator_data.max_timeout_ms)
-			val = vibrator_data.max_timeout_ms;
+		if (val > data->max_timeout_ms)
+			val = data->max_timeout_ms;
 		vib_time = val;
 	} else {
 		vib_time = 0;
 		vibrator_shake = 0;
 	}
-	schedule_work(&data->work);
+	schedule_work(&g_drv2605_data->work);
 }
 
-static int haptics_open(struct inode * i_node, struct file * filp)
+static int haptics_open(struct inode *i_node, struct file *filp)
 {
-	if (!data)
+	if (!g_drv2605_data)
 		return -ENODEV;
 	hwlog_info("haptics_open");
-	filp->private_data = data;
+	filp->private_data = g_drv2605_data;
 	return 0;
 }
 
@@ -1444,8 +1482,8 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 		goto out;
 	}
 	/* haptics basic ID is 32 */
-	if ((type < 32) || (type - 32) >= ARRAY_SIZE(haptics_table_hub)) {
-		hwlog_err("[haptics_write] type is out of range: %d\n", type);
+	if ((type < 32) || ((type - 32) >= ARRAY_SIZE(haptics_table_hub) && (type < LOWER_BOUND_MUSIC_TONE))) {
+		hwlog_err("[haptics_write] type is out of range: %llu\n", type);
 		goto out;
 	}
 
@@ -1455,7 +1493,10 @@ static ssize_t haptics_write(struct file* filp, const char* buff, size_t len, lo
 			data->vib_cmd);
 
 	/* base id is 32(0x20) */
-	data->play_effect_time = haptics_table_hub[type - 32].time;
+	if (type > LOWER_BOUND_MUSIC_TONE)
+		data->play_effect_time = (type / 100) + 15;
+	else
+		data->play_effect_time = haptics_table_hub[type - 32].time;
 	schedule_work(&data->work_play_eff);
 out:
 	mutex_unlock(&data->lock);
@@ -1483,7 +1524,7 @@ out:
 	return count;
 }
 
-static struct file_operations fops = {
+static struct file_operations g_haptics_fops = {
 	.open = haptics_open,
 	.write = haptics_write,
 	.read = haptics_read,
@@ -1491,7 +1532,7 @@ static struct file_operations fops = {
 
 static int haptics_probe(struct drv2605_data *data)
 {
-	int ret = -ENOMEM;
+	int ret;
 
 	data->version = MKDEV(0, 0);
 	ret = alloc_chrdev_region(&data->version, 0, 1, CDEVIE_NAME);
@@ -1513,9 +1554,9 @@ static int haptics_probe(struct drv2605_data *data)
 		goto destory_class;
 	}
 
-	cdev_init(&data->cdev, &fops);
+	cdev_init(&data->cdev, &g_haptics_fops);
 	data->cdev.owner = THIS_MODULE;
-	data->cdev.ops = &fops;
+	data->cdev.ops = &g_haptics_fops;
 	ret = cdev_add(&data->cdev, data->version, 1);
 	if (ret) {
 		hwlog_info("drv2605: fail to add cdev\n");
@@ -1549,7 +1590,7 @@ static int support_vibratorhub(void)
 	char *sensor_ty = NULL;
 	char *sensor_st = NULL;
 	const char *st = "ok";
-	int ret = -1;
+	int ret;
 
 	for_each_node_with_property(dn, "sensor_type") {
 		/* sensor type */
@@ -1599,42 +1640,43 @@ static int __init vibratorhub_init(void)
 	if (support_vibratorhub()) {
 		return - 1;
 	}
-	data = kzalloc(sizeof(struct drv2605_data), GFP_KERNEL);
-	if (!data) {
+	g_drv2605_data = kzalloc(sizeof(struct drv2605_data), GFP_KERNEL);
+	if (!g_drv2605_data) {
 		hwlog_err("unable to allocate memory\n");
 		return -ENOMEM;
 	}
-	mutex_init(&data->lock);
-	data->cclassdev.name = vb_name;
-	data->cclassdev.flags = 0;
-	data->cclassdev.brightness_set = vibrator_enable;
-	data->cclassdev.default_trigger = "transient";
-	rc = led_classdev_register(NULL, &data->cclassdev);
+	mutex_init(&g_drv2605_data->lock);
+	g_drv2605_data->cclassdev.name = vb_name;
+	g_drv2605_data->cclassdev.flags = 0;
+	g_drv2605_data->cclassdev.brightness_set = vibrator_enable;
+	g_drv2605_data->cclassdev.default_trigger = "transient";
+	rc = led_classdev_register(NULL, &g_drv2605_data->cclassdev);
 	if (rc) {
 		hwlog_err("%s, unable to register with timed_output\n", __func__);
-		kfree(data);
-		data = NULL;
+		kfree(g_drv2605_data);
+		g_drv2605_data = NULL;
 		return -ENOMEM;
 	}
-	ret = sysfs_create_group(&data->cclassdev.dev->kobj, &vb_attr_group);
+	ret = sysfs_create_group(&g_drv2605_data->cclassdev.dev->kobj,
+		&vb_attr_group);
 	if (ret) {
 		hwlog_err("%s, unable create vibrator's sysfs,DBC check IC fail\n",
 			__func__);
-		led_classdev_unregister(&data->cclassdev);
-		kfree(data);
-		data = NULL;
+		led_classdev_unregister(&g_drv2605_data->cclassdev);
+		kfree(g_drv2605_data);
+		g_drv2605_data = NULL;
 		return -ENOMEM;
 	}
 
-	INIT_WORK(&data->work_play_eff, haptics_play_effect);
-	INIT_WORK(&data->work, vibra_set_work);
-	INIT_WORK(&data->irq_work, vibrator_irq_work);
+	INIT_WORK(&g_drv2605_data->work_play_eff, haptics_play_effect);
+	INIT_WORK(&g_drv2605_data->work, vibra_set_work);
+	INIT_WORK(&g_drv2605_data->irq_work, vibrator_irq_work);
 
-	haptics_probe(data);
+	haptics_probe(g_drv2605_data);
 
 	get_monotonic_boottime(&ts);
 	vib_cold_check_timestamp = ts.tv_sec;
-#ifdef CONFIG_HISI_COUL
+#ifdef CONFIG_COUL_DRV
 	vibrator_agent_cold_level_proc();
 #endif
 
@@ -1642,7 +1684,6 @@ static int __init vibratorhub_init(void)
 		vib_cold_level, vib_cold_check_delay);
 	hwlog_info("%s success!", __func__);
 	return rc;
-
 }
 
 /*
@@ -1656,24 +1697,25 @@ static int __init vibratorhub_init(void)
  */
 static void __exit vibratorhub_exit(void)
 {
-	if (!data)
+	if (!g_drv2605_data)
 		return;
-	if (data->irq_requested) {
-		if (data->irq_enabled) {
-			disable_irq(data->irq_int);
-			data->irq_enabled = false;
+	if (g_drv2605_data->irq_requested) {
+		if (g_drv2605_data->irq_enabled) {
+			disable_irq(g_drv2605_data->irq_int);
+			g_drv2605_data->irq_enabled = false;
 		}
-		free_irq(data->irq_int, NULL);
-		data->irq_requested = false;
+		free_irq(g_drv2605_data->irq_int, NULL);
+		g_drv2605_data->irq_requested = false;
 	}
-	mutex_destroy(&data->lock);
-	sysfs_remove_group(&data->cclassdev.dev->kobj, &vb_attr_group);
-	led_classdev_unregister(&data->cclassdev);
-	cancel_work_sync(&data->work_play_eff);
-	cancel_work_sync(&data->work);
-	cancel_work_sync(&data->irq_work);
-	kfree(data);
-	data = NULL;
+	mutex_destroy(&g_drv2605_data->lock);
+	sysfs_remove_group(&g_drv2605_data->cclassdev.dev->kobj,
+		&vb_attr_group);
+	led_classdev_unregister(&g_drv2605_data->cclassdev);
+	cancel_work_sync(&g_drv2605_data->work_play_eff);
+	cancel_work_sync(&g_drv2605_data->work);
+	cancel_work_sync(&g_drv2605_data->irq_work);
+	kfree(g_drv2605_data);
+	g_drv2605_data = NULL;
 	hwlog_info("exit %s\n", __func__);
 }
 

@@ -33,8 +33,8 @@
 #include <linux/version.h>
 
 #include <linux/stringify.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit_algo.h"
+#include "huawei_ts_kit.h"
 
 #define PARADE_DRV_VER_MAJOR 1
 #define PARADE_DRV_VER_MINOR 1

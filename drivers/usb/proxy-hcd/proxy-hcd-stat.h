@@ -1,3 +1,21 @@
+/*
+ * proxy-hcd-stat.h
+ *
+ * utilityies for operating proxy-hcd status
+ *
+ * Copyright (c) 2017-2019 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #ifndef _PROXY_HCD_STAT_H_
 #define _PROXY_HCD_STAT_H_
 
@@ -63,18 +81,6 @@ static inline void urb_complete_fail_add_stat(struct proxy_hcd_urb_stat *stat)
 	stat->stat_urb_complete_fail++;
 }
 
-static inline void reset_urb_stat(struct proxy_hcd_urb_stat *stat)
-{
-	stat->stat_urb_enqueue = 0;
-	stat->stat_urb_dequeue = 0;
-	stat->stat_urb_enqueue_fail = 0;
-	stat->stat_urb_dequeue_fail = 0;
-	stat->stat_urb_dequeue_giveback = 0;
-	stat->stat_urb_giveback = 0;
-	stat->stat_urb_complete = 0;
-	stat->stat_urb_complete_fail = 0;
-}
-
 struct proxy_hcd_stat {
 	unsigned int stat_alloc_dev;
 	unsigned int stat_free_dev;
@@ -99,23 +105,6 @@ static inline void free_dev_add_stat(struct proxy_hcd_stat *stat)
 	stat->stat_free_dev++;
 }
 
-static inline void hub_control_add_stat(struct proxy_hcd_stat *stat)
-{
-	struct timespec uptime;
-	stat->stat_hub_control++;
-	get_monotonic_boottime(&uptime);
-	stat->last_hub_control_time = (unsigned long)uptime.tv_sec;
-}
-
-static inline void hub_status_data_add_stat(struct proxy_hcd_stat *stat)
-{
-	struct timespec uptime;
-
-	stat->stat_hub_status_data++;
-	get_monotonic_boottime(&uptime);
-	stat->last_hub_status_data_time = (unsigned long)uptime.tv_sec;
-}
-
 static inline void bus_suspend_add_stat(struct proxy_hcd_stat *stat)
 {
 	stat->stat_bus_suspend++;
@@ -124,18 +113,6 @@ static inline void bus_suspend_add_stat(struct proxy_hcd_stat *stat)
 static inline void bus_resume_add_stat(struct proxy_hcd_stat *stat)
 {
 	stat->stat_bus_resume++;
-}
-
-static inline void reset_proxy_hcd_stat(struct proxy_hcd_stat *stat)
-{
-	stat->stat_alloc_dev = 0;
-	stat->stat_free_dev = 0;
-	stat->stat_hub_control = 0;
-	stat->stat_hub_status_data = 0;
-	stat->last_hub_control_time = 0;
-	stat->last_hub_status_data_time = 0;
-	stat->stat_bus_suspend = 0;
-	stat->stat_bus_resume = 0;
 }
 
 #endif /* _PROXY_HCD_STAT_H_ */

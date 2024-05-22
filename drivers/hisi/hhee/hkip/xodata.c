@@ -1,7 +1,6 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2019. All rights reserved.
- * Description: Hisi XO interface
- * Creator : security-ap
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2021. All rights reserved.
+ * Description: HKIP XO interface
  * Create : 2019/9/2
  */
 
@@ -10,7 +9,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/hisi/hisi_hkip.h>
+#include <linux/hisi/hkip.h>
 
 int hkip_register_xo(const uintptr_t base, size_t size)
 {
@@ -22,6 +21,5 @@ int hkip_register_xo(const uintptr_t base, size_t size)
 	return 0;
 }
 
-MODULE_DESCRIPTION("Huawei kernel xom protection");
-MODULE_AUTHOR("wang.kui1@huawei.com");
+MODULE_DESCRIPTION("HKIP kernel xom protection");
 MODULE_LICENSE("GPL");

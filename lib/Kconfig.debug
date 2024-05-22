@@ -136,7 +136,7 @@ config DYNAMIC_DEBUG
 config HISI_TIME
 	bool "Use Hisi time in printk"
 	default n
-	depends on PRINTK && HISI_AMBA_PL011
+	depends on PRINTK && (HISI_AMBA_PL011 || SERIAL_UART_V500)
 
 config HISI_PRINTK_EXTENSION
 	bool "Use Hisi extension in printk"
@@ -585,7 +585,7 @@ config DEBUG_KMEMLEAK_EARLY_LOG_SIZE
 	int "Maximum kmemleak early log entries"
 	depends on DEBUG_KMEMLEAK
 	range 200 40000
-	default 400
+	default 16000
 	help
 	  Kmemleak must track all the memory allocations to avoid
 	  reporting false positives. Since memory may be allocated or
@@ -752,9 +752,9 @@ endmenu # "Memory Debugging"
 config ARCH_HAS_KCOV
 	bool
 	help
-	  KCOV does not have any arch-specific code, but currently it is enabled
-	  only for x86_64. KCOV requires testing on other archs, and most likely
-	  disabling of instrumentation for some early boot code.
+	  An architecture should select this when it can successfully
+	  build and run with CONFIG_KCOV. This typically requires
+	  disabling instrumentation for some early boot code.
 
 config KCOV
 	bool "Code coverage for fuzzing"
@@ -933,6 +933,21 @@ config DEFAULT_HUNG_TASK_TIMEOUT
 
 	  A timeout of 0 disables the check.  The default is two minutes.
 	  Keeping the default should be fine in most cases.
+
+config DETECT_HUAWEI_MMAP_SEM
+	bool "Check Mmap Sem"
+	help
+	  Say Y here to enable the kernel to check mmap_sem on "hung tasks".
+	  This function tries to find out whether the "hung task" is waiting
+	  for mmap_sem, and if so, tries to find out which task may hold the
+	  mmap_sem.
+
+config DETECT_HUAWEI_MMAP_SEM_DBG
+	bool "Debug On Check Mmap Sem"
+	help
+	  Say Y here to enable the kernel to hold the mmap_sem and causing
+	  hungtask panic. Then we can test whether the system can find out
+	  which process is holding the mmap_sem.
 
 config BOOTPARAM_HUNG_TASK_PANIC
 	bool "Panic (Reboot) On Hung Tasks"

@@ -44,4 +44,3 @@ int fscanf_s(FILE *stream, const char *format, ...)
     return ret;
 }
 
-

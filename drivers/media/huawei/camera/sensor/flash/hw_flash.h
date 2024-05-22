@@ -1,4 +1,7 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/*
+ * hw_flash.h
+ *
+ * Copyright (c) 2011-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -9,7 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 
 #ifndef _HW_FLASH_H_
 #define _HW_FLASH_H_
@@ -33,85 +35,84 @@
 #include "cam_log.h"
 #include <dsm/dsm_pub.h>
 #include <securec.h>
-//lint -save -e607
-//lint -esym(607,*)
-#define CAMERA_FLASH_MAX	2
-#define CAMERA_FLASH_ARRAY_SIZE	10
 
-#define DEFINE_HISI_FLASH_MUTEX(name) \
+#define CAMERA_FLASH_MAX 2
+#define CAMERA_FLASH_ARRAY_SIZE 10
+
+#define define_hisi_flash_mutex(name) \
 	static struct mutex flash_mut_##name = __MUTEX_INITIALIZER(flash_mut_##name)
 
-#define MAX_ATTRIBUTE_BUFFER_SIZE       128
+#define MAX_ATTRIBUTE_BUFFER_SIZE 128
 
-#define LOW                             0
-#define HIGH                            1
-#define FLASH_ALONE                     0
-#define FLASH_MIX                       1
+#define LOW 0
+#define HIGH 1
+#define FLASH_ALONE  0
+#define FLASH_MIX 1
 
-#define FLASH_LED_THERMAL_PROTECT_ENABLE		(1<<0)
-#define FLASH_LED_LOWPOWER_PROTECT_ENABLE		(1<<1)
+#define FLASH_LED_THERMAL_PROTECT_ENABLE (1 << 0)
+#define FLASH_LED_LOWPOWER_PROTECT_ENABLE (1 << 1)
 
 #define loge_if_ret(x) \
 {\
-      int ret = (x); \
-      if (ret) \
-      {\
-          cam_err("'%s' failed, ret = 0x%x", #x, ret); \
-          return -1; \
-      } \
+	int ret = (x); \
+	if (ret) { \
+		cam_err("'%s' failed, ret = 0x%x", #x, ret); \
+		return -1; \
+	} \
 }
 
 #define loge_if(x) \
 {\
-      int ret = (x); \
-      if (ret) \
-      {\
-          cam_err("'%s' failed, ret = 0x%x", #x, ret); \
-      } \
+	int ret = (x); \
+	if (ret) { \
+		cam_err("'%s' failed, ret = 0x%x", #x, ret); \
+	} \
 }
 
 #ifdef CONFIG_LLT_TEST
 
-struct UT_TEST_HW_FLASH
-{
-    ssize_t (*hw_flash_thermal_protect_show)(struct device *dev, struct device_attribute *attr,char *buf);
+struct ut_test_hw_flash {
+	ssize_t (*hw_flash_thermal_protect_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
 
-    ssize_t (*hw_flash_thermal_protect_store)(struct device *dev,struct device_attribute *attr, const char *buf, size_t count);
+	ssize_t (*hw_flash_thermal_protect_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
 
-    ssize_t (*hw_flash_led_fault_show)(struct device *dev, struct device_attribute *attr, char *buf);
+	ssize_t (*hw_flash_led_fault_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
 
-    ssize_t (*hw_flash_lowpower_protect_show)(struct device *dev,struct device_attribute *attr,char *buf);
+	ssize_t (*hw_flash_lowpower_protect_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
 
-    ssize_t (*hw_flash_lowpower_protect_store)(struct device *dev,struct device_attribute *attr, const char *buf, size_t count);
+	ssize_t (*hw_flash_lowpower_protect_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
 
-    int (*hw_flash_register_attribute)(struct hw_flash_ctrl_t *flash_ctrl, struct device *dev);
+	int (*hw_flash_register_attribute)(struct hw_flash_ctrl_t *flash_ctrl,
+		struct device *dev);
 
-    long (*hw_flash_subdev_ioctl)(struct v4l2_subdev *sd,unsigned int cmd, void *arg);
+	long (*hw_flash_subdev_ioctl)(struct v4l2_subdev *sd, unsigned int cmd,
+		void *arg);
 };
 
-extern struct UT_TEST_HW_FLASH UT_hw_flash;
+extern struct ut_test_hw_flash g_ut_hw_flash;
 
 extern unsigned int hw_flash_led_state_read(void);
 
 extern void hw_flash_led_state_write(unsigned int x);
 
 #endif /* CONFIG_LLT_TEST */
-/********************** flash base data struct define **********************/
-
-
-/********************** flash controler struct define **********************/
 
 /* check flash led open or short */
-typedef enum {
+enum flash_fault_t {
 	FLASH_LED_NORMAL = 0,
 	FLASH_LED_FAULT,
 	FLASH_LED_UNSUPPORTED,
 	FLASH_LED_ERROR
-} flash_fault_t;
+};
 
 struct hw_flash_info {
 	const char *name;
-	flash_type type;
+	flash_type classtype;
 	int index;
 	unsigned int slave_address;
 };
@@ -125,16 +126,17 @@ struct hw_flash_ctrl_t;
 
 struct hw_flash_fn_t {
 	/* flash function table */
-	int (*flash_config) (struct hw_flash_ctrl_t *, void *);
-	int (*flash_on) (struct hw_flash_ctrl_t *, void *);
-	int (*flash_off) (struct hw_flash_ctrl_t *);
-	int (*flash_init) (struct hw_flash_ctrl_t *);
-	int (*flash_exit) (struct hw_flash_ctrl_t *);
-	int (*flash_match) (struct hw_flash_ctrl_t *);
-	int (*flash_get_dt_data) (struct hw_flash_ctrl_t *);
-	/* add check flash short & open*/
-	int (*flash_check) (struct hw_flash_ctrl_t *);
-	int (*flash_register_attribute)(struct hw_flash_ctrl_t *, struct device *);
+	int (*flash_config)(struct hw_flash_ctrl_t *, void *);
+	int (*flash_on)(struct hw_flash_ctrl_t *, void *);
+	int (*flash_off)(struct hw_flash_ctrl_t *);
+	int (*flash_init)(struct hw_flash_ctrl_t *);
+	int (*flash_exit)(struct hw_flash_ctrl_t *);
+	int (*flash_match)(struct hw_flash_ctrl_t *);
+	int (*flash_get_dt_data)(struct hw_flash_ctrl_t *);
+	/* add check flash short & open */
+	int (*flash_check)(struct hw_flash_ctrl_t *);
+	int (*flash_register_attribute)(struct hw_flash_ctrl_t *,
+		struct device *);
 };
 
 struct hw_flash_i2c_client {
@@ -143,14 +145,14 @@ struct hw_flash_i2c_client {
 };
 
 struct hw_flash_i2c_msgs_t {
-    u8 reg;
-    u8 data;
+	u8 reg;
+	u8 data;
 };
 
 struct hw_flash_i2c_fn_t {
-	int (*i2c_read) (struct hw_flash_i2c_client *, u8, u8 *);
-	int (*i2c_write) (struct hw_flash_i2c_client *, u8, u8);
-    int (*i2c_write_block) (struct hw_flash_i2c_client *, u8, u8 *, int);
+	int (*i2c_read)(struct hw_flash_i2c_client *, u8, u8 *);
+	int (*i2c_write)(struct hw_flash_i2c_client *, u8, u8);
+	int (*i2c_write_block)(struct hw_flash_i2c_client *, u8, u8 *, int);
 };
 
 struct hw_flash_ctrl_t {
@@ -167,17 +169,13 @@ struct hw_flash_ctrl_t {
 	bool flash_mask_enable;
 	struct led_classdev cdev_flash;
 	struct led_classdev cdev_torch;
-	int flash_type;//add for mix flash:0-alone;1:mix
-	struct led_classdev cdev_torch1;//add for mix flash
-	flash_position_t mix_pos; //add for mix flash
+	int flash_type; // add for mix flash:0-alone;1:mix
+	struct led_classdev cdev_torch1; // add for mix flash
+	flash_position_t mix_pos; // add for mix flash
 	void *pdata;
 };
 
-
-
-
-
-/***************extern function declare******************/
+/* extern function declare */
 int32_t hw_flash_platform_probe(struct platform_device *pdev, void *data);
 int32_t hw_flash_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id);
@@ -188,4 +186,3 @@ void hw_flash_enable_thermal_protect(void);
 void hw_flash_disable_thermal_protect(void);
 
 #endif
-//lint -restore

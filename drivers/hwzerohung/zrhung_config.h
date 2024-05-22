@@ -28,6 +28,5 @@ int hcfgk_get_cfg_flag(struct file *file, void *arg);
 int hcfgk_set_feature(struct file *file, const void *arg);
 
 int xcollie_get_stack(struct file *file, void *arg);
-int xcollie_save_stack(struct task_struct *task, char *out);
 
 #endif /* __ZRHUNG_CONFIG_H_ */

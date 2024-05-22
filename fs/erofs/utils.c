@@ -304,6 +304,13 @@ static unsigned long erofs_shrink_scan(struct shrinker *shrink,
 	unsigned int run_no;
 	unsigned long freed = 0;
 
+	/*
+	 * NOTE! NOTE! This is a workaround for unexpected total_scan
+	 * (964802, about 2x of freeable, 477669) in do_shrink_slab().
+	 */
+	if (unlikely(!atomic_long_read(&erofs_global_shrink_cnt)))
+		return SHRINK_STOP;
+
 	spin_lock(&erofs_sb_list_lock);
 	do
 		run_no = ++shrinker_run_no;
@@ -330,7 +337,7 @@ static unsigned long erofs_shrink_scan(struct shrinker *shrink,
 		sbi->shrinker_run_no = run_no;
 
 #ifdef CONFIG_EROFS_FS_ZIP
-		freed += erofs_shrink_workstation(sbi, nr, false);
+		freed += erofs_shrink_workstation(sbi, nr - freed, false);
 #endif
 
 		spin_lock(&erofs_sb_list_lock);

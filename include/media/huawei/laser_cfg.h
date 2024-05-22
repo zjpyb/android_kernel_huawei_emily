@@ -23,8 +23,8 @@
  */
 
 
-#ifndef __HW_ALAN_KERNEL_HWCAM_LASER_CFG_H__
-#define __HW_ALAN_KERNEL_HWCAM_LASER_CFG_H__
+#ifndef __HW_ALAN_KERNEL_CAM_LASER_CFG_H__
+#define __HW_ALAN_KERNEL_CAM_LASER_CFG_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -34,14 +34,14 @@
 
 typedef enum _tag_hwlaser_config_type
 {
-    HWCAM_LASER_POWERON,
-    HWCAM_LASER_POWEROFF,
-    HWCAM_LASER_POWERON_EXT,
-    HWCAM_LASER_POWEROFF_EXT,
-    HWCAM_LASER_LOADFW,
-    HWCAM_LASER_CMD,
-    HWCAM_LASER_MATCHID,
-    HWCAM_LASER_SET_FLAG,
+    CAM_LASER_POWERON,
+    CAM_LASER_POWEROFF,
+    CAM_LASER_POWERON_EXT,
+    CAM_LASER_POWEROFF_EXT,
+    CAM_LASER_LOADFW,
+    CAM_LASER_CMD,
+    CAM_LASER_MATCHID,
+    CAM_LASER_SET_FLAG,
 
 } hwlaser_config_type_t;
 
@@ -118,6 +118,7 @@ enum
     HWLASER_DEFAULT_VERSION = 0,
     HWLASER_L0_VERSION,
     HWLASER_L1_VERSION,
+    HWLASER_VI_I0_VERSION,
     HWLASER_SHARP_L0_VERSION = 1<<4,
     HWLASER_MAX_VERSION,
 };
@@ -326,6 +327,21 @@ typedef struct _tag_hwlaser_calibration_data_L0 {
     uint8_t phascal;
 } hwlaser_calibration_data_L0;
 
+typedef struct _tag_hwlaser_calibration_xtalk {
+	int8_t xtalk_cal;
+	uint16_t xtalk_peak;
+	int16_t xtalk_tof;
+} hwlaser_calibration_xtalk;
+
+typedef struct _tag_hwlaser_calibration_offset {
+	int16_t offset_cal;
+} hwlaser_calibration_offset;
+
+typedef struct _tag_hwlaser_calibration_data_L2 { /* vi5300 */
+	hwlaser_calibration_xtalk VI5300_XTALK_Calib_Data;
+	hwlaser_calibration_offset VI5300_OFFSET_Calib_Data;
+} hwlaser_calibration_data_L2;
+
 typedef enum {
 	HW_CALIB_OFFSET = 1,
 	HW_CALIB_XTALK = 2,
@@ -336,8 +352,9 @@ typedef struct __tag_hwlaser_calibration_data {
     int32_t is_read;
     hw_cal_mode_e mode;
     union laser_calibration_data{
-        hwlaser_calibration_data_L0  dataL0;
+        hwlaser_calibration_data_L0  dataL0; /* vl53xx */
         hwlaser_calibration_data_L1  dataL1;
+        hwlaser_calibration_data_L2  dataL2; /* vi53xx */
     }u;
 } hwlaser_calibration_data_t;
 
@@ -419,6 +436,8 @@ typedef struct _hwlaser_parameter {
     int32_t value;        /*!< [in/out] value in int32_t to set /get */
     int32_t value2;     /*!< [in/out] optional 2nd value int int32_t*/
     int32_t status;     /*!< [out]status of the operation */
+    uint8_t xtalk_config; /* vi53xx */
+    uint16_t offset_config; /* vi53xx */
 } hwlaser_parameter_t;
 
 #define HWLASER_MAX_USER_ZONES                169
@@ -567,6 +586,12 @@ typedef struct _tag_hwlaser_multi_ranging_data{
          */
 } hwlaser_multiRangingData_t;
 
+typedef struct VI5300_Measurement_Data {
+	int16_t milimeter;
+	uint32_t confidence;
+	uint8_t status;
+} vi5300_measurement_data_t;
+
 typedef struct _tag_hwlaser_ranging_data_L0{
 	uint32_t TimeStamp;			  /*!< 32-bit time stamp. */
 	uint32_t MeasurementTimeUsec;
@@ -595,6 +620,7 @@ typedef struct _tag_hwlaser_ranging_data
     {
         hwlaser_RangingData_Ext_L0_t dataExtL0;
     }v;
+    vi5300_measurement_data_t v_data;
 }hwlaser_RangingData_t;
 
 typedef struct _tag_hwlaser_legacy_ranging_data_L0 {
@@ -726,5 +752,5 @@ extern long stmvl53l0_laser_ioctl(void *hw_data, unsigned int cmd, void  *p);
 #define HWLASER_IOCTL_MZ_DATA                  _IOWR('K', BASE_VIDIOC_PRIVATE + 12, hwlaser_RangingData_t)
 #define HWLASER_IOCTL_PERFORM_CALIBRATION      _IOWR('L', BASE_VIDIOC_PRIVATE + 13, hwlaser_ioctl_perform_calibration_t)
 
-#endif // __HW_ALAN_KERNEL_HWCAM_LASER_CFG_H__
+#endif // __HW_ALAN_KERNEL_CAM_LASER_CFG_H__
 

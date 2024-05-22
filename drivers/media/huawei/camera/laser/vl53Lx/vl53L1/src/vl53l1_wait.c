@@ -125,7 +125,7 @@ VL53L1_Error VL53L1_wait_for_boot_completion(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t      fw_ready  = 0;
 
@@ -177,7 +177,7 @@ VL53L1_Error VL53L1_wait_for_firmware_ready(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t      fw_ready  = 0;
 	uint8_t      mode_start  = 0;
@@ -246,7 +246,7 @@ VL53L1_Error VL53L1_wait_for_range_completion(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t      data_ready  = 0;
 
@@ -296,7 +296,7 @@ VL53L1_Error VL53L1_wait_for_test_completion(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t      data_ready  = 0;
 
@@ -396,7 +396,7 @@ VL53L1_Error VL53L1_is_firmware_ready(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	LOG_FUNCTION_START("");
 
@@ -424,7 +424,7 @@ VL53L1_Error VL53L1_is_new_data_ready(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  gpio__mux_active_high_hv = 0;
 	uint8_t  gpio__tio_hv_status      = 0;
@@ -520,7 +520,7 @@ VL53L1_Error VL53L1_poll_for_firmware_ready(
 
 
 	VL53L1_Error status          = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint32_t     start_time_ms   = 0;
 	uint32_t     current_time_ms = 0;
@@ -587,7 +587,7 @@ VL53L1_Error VL53L1_poll_for_range_completion(
 
 
 	VL53L1_Error status = VL53L1_ERROR_NONE;
-	VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
+	struct VL53L1_LLDriverData_t *pdev = VL53L1DevStructGetLLDriverHandle(Dev);
 
 	uint8_t  gpio__mux_active_high_hv = 0;
 	uint8_t  interrupt_ready          = 0;

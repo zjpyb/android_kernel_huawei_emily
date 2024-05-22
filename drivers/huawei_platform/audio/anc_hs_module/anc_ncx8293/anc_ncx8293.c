@@ -251,7 +251,6 @@ static int anc_ncx8293_regmap_read(int reg, int *value)
 	int ret;
 
 	ret = regmap_read(anc_priv->l_regmap, reg, value);
-
 	if (ret < 0) {
 		anc_dsm_i2c_reg_fail_report();
 		hwlog_err("anc_ncx8293 regmap read error,%d\n", ret);
@@ -421,7 +420,7 @@ static void anc_hs_invert_ctl_work(struct work_struct *work)
 	__pm_stay_awake(&anc_priv->wake_lock);
 	mutex_lock(&anc_priv->invert_hs_lock);
 
-	if (anc_priv->hs_type == ANC_HS_REVERT_4POLE) {
+	if (anc_priv->hs_type == ANA_HS_REVERT_4POLE) {
 		anc_ncx8293_regmap_write(ANC_NCX8293_R001_DEVICE_SETUP,
 			ANC_NCX8293_CTRL_OUTPUT_HIGH_BIT);
 		hwlog_info("ncx8293: invert headset plugin, connect MIC & GND");
@@ -534,7 +533,6 @@ static int anc_ncx8293_get_btn_value(void)
 
 	hwlog_err("ncx8293 btn delta not in range delta : %d\n", delta);
 	return NO_BUTTON_PRESS;
-
 }
 
 static bool anc_ncx8293_btn_press(void)
@@ -867,13 +865,13 @@ bool anc_ncx8293_charge_detect(int saradc_value, int headset_type)
 	anc_priv->hs_type = headset_type;
 
 	/* revert 4-pole headset need 5vboost on for second recognition */
-	if (headset_type == ANC_HS_NORMAL_4POLE) {
+	if (headset_type == ANA_HS_NORMAL_4POLE) {
 		/* 4-pole headset maybe an anc headset */
 		hwlog_debug("%s : start anc hs charge judge\n", __func__);
 		return anc_ncx8293_charge_judge();
 	}
 
-	if (headset_type == ANC_HS_NORMAL_3POLE) {
+	if (headset_type == ANA_HS_NORMAL_3POLE) {
 		hwlog_info("%s : no disable 5vboost for 3-pole headset\n",
 			__func__);
 		/* 3-pole also support second-detect */
@@ -894,7 +892,7 @@ void anc_ncx8293_stop_charge(void)
 	idle_mode();
 	anc_ncx8293_gpio_set_value(anc_priv->gpio_pwr_en, 0);
 	anc_priv->anc_charge = ANC_HS_CHARGE_OFF;
-	anc_priv->hs_type = ANC_HS_NONE;
+	anc_priv->hs_type = ANA_HS_NONE;
 	anc_priv->button_pressed = 0;
 
 	if (anc_hs_send_hifi_msg(ANC_HS_CHARGE_OFF) == ERROR_RET)
@@ -1087,7 +1085,7 @@ static long anc_ncx8293_ioctl(struct file *file, unsigned int cmd,
 		return -EBUSY;
 
 	switch (cmd) {
-	case IOCTL_ANC_HS_CHARGE_ENABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_ENABLE_CMD:
 		if (anc_priv->force_charge == ANC_HS_ENABLE_CHARGE)
 			break;
 
@@ -1097,7 +1095,7 @@ static long anc_ncx8293_ioctl(struct file *file, unsigned int cmd,
 			anc_priv->force_charge);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_CHARGE_DISABLE_CMD:
+	case IOCTL_ANA_HS_CHARGE_DISABLE_CMD:
 		if (anc_priv->force_charge == ANC_HS_DISABLE_CHARGE)
 			break;
 
@@ -1107,7 +1105,7 @@ static long anc_ncx8293_ioctl(struct file *file, unsigned int cmd,
 			anc_priv->force_charge);
 		update_charge_status();
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_CMD:
 		charge_mode = anc_priv->anc_charge;
 		if (charge_mode == ANC_HS_CHARGE_ON) {
 			if (!anc_ncx8293_need_charge()) {
@@ -1119,29 +1117,29 @@ static long anc_ncx8293_ioctl(struct file *file, unsigned int cmd,
 			}
 		}
 		if (charge_mode == ANC_HS_CHARGE_ON)
-			anc_priv->hs_type = ANC_HS_HEADSET;
+			anc_priv->hs_type = ANA_HS_HEADSET;
 
 		ret = put_user((__u32)(anc_priv->hs_type),
 			p_user);
 		break;
-	case IOCTL_ANC_HS_GET_CHARGE_STATUS_CMD:
+	case IOCTL_ANA_HS_GET_CHARGE_STATUS_CMD:
 		ret = put_user((__u32)(anc_priv->anc_charge),
 			p_user);
 		break;
-	case IOCTL_ANC_HS_GET_VBST_5VOLTAGE_CMD:
+	case IOCTL_ANA_HS_GET_VBST_5VOLTAGE_CMD:
 		mic_bias_mode();
 		anc_ncx8293_gpio_set_value(anc_priv->gpio_pwr_en, 1);
 		voltage = compute_final_voltage();
 		anc_ncx8293_gpio_set_value(anc_priv->gpio_pwr_en, 0);
 		ret = put_user((__u32)voltage, p_user);
 		break;
-	case IOCTL_ANC_HS_GET_VDD_BUCK_VOLTAGE_CMD:
+	case IOCTL_ANA_HS_GET_VDD_BUCK_VOLTAGE_CMD:
 		mic_bias_mode();
 		anc_ncx8293_gpio_set_value(anc_priv->gpio_pwr_en, 0);
 		voltage = compute_final_voltage();
 		ret = put_user((__u32)voltage, p_user);
 		break;
-	case IOCTL_ANC_HS_GET_HEADSET_RESISTANCE_CMD:
+	case IOCTL_ANA_HS_GET_HEADSET_RESISTANCE_CMD:
 		ret = put_user((__u32)resistance_type, p_user);
 		break;
 	default:
@@ -1236,7 +1234,7 @@ static const struct file_operations anc_ncx8293_fops = {
 
 static struct miscdevice anc_ncx8293_device = {
 	.minor  = MISC_DYNAMIC_MINOR,
-	.name   = "anc_hs",
+	.name   = "ana_hs",
 	.fops   = &anc_ncx8293_fops,
 };
 
@@ -1585,7 +1583,6 @@ static int chip_init(struct i2c_client *client, struct anc_ncx8293_priv *di,
 	flag |= IRQF_TRIGGER_FALLING;
 	ret = request_threaded_irq(di->anc_ncx8293_irq, NULL,
 		anc_ncx8293_irq_handler, flag, "anc_ncx8293_irq", NULL);
-
 	if (ret < 0) {
 		hwlog_err("anc_ncx8293_irq request fail: ret = %d\n", ret);
 		goto err_out_gpio;
@@ -1675,7 +1672,7 @@ static void para_init(void)
 	anc_priv->force_charge = ANC_HS_ENABLE_CHARGE;
 	anc_priv->boost_status = false;
 	anc_priv->registered = false;
-	anc_priv->hs_type = ANC_HS_NONE;
+	anc_priv->hs_type = ANA_HS_NONE;
 }
 
 static int dev_pinctrl(struct device_node *np)

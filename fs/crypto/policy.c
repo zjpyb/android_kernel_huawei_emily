@@ -16,10 +16,13 @@
 #include <linux/mount.h>
 #include "fscrypt_private.h"
 
-#ifdef CONFIG_HWAA
+#ifdef CONFIG_HWDPS
 #include <linux/security.h>
-#include <huawei_platform/hwaa/hwaa_fs_hooks.h>
+#include <huawei_platform/hwdps/hwdps_fs_hooks.h>
 #endif
+
+#include <linux/fscrypt_common.h>
+
 
 /*
  * check whether an encryption policy is consistent with an encryption context
@@ -66,7 +69,9 @@ static int create_encryption_context_from_policy(struct inode *inode,
 	BUILD_BUG_ON(sizeof(ctx.nonce) != FS_KEY_DERIVATION_CIPHER_SIZE);
 
 	/* get nonce and iv */
-	get_random_bytes(nonce, FS_KEY_DERIVATION_NONCE_SIZE);
+	if (fscrypt_generate_metadata_nonce(nonce,
+			inode, FS_KEY_DERIVATION_NONCE_SIZE))
+		get_random_bytes(nonce, FS_KEY_DERIVATION_NONCE_SIZE);
 	get_random_bytes(ctx.iv, FS_KEY_DERIVATION_IV_SIZE);
 	memcpy(plain_text, nonce, FS_KEY_DERIVATION_NONCE_SIZE);
 
@@ -167,6 +172,8 @@ int fscrypt_ioctl_set_policy(struct file *filp, const void __user *arg)
 	if (ret == -ENODATA) {
 		if (!S_ISDIR(inode->i_mode))
 			ret = -ENOTDIR;
+		else if (IS_DEADDIR(inode))
+			ret = -ENOENT;
 		else if (!inode->i_sb->s_cop->empty_dir(inode))
 			ret = -ENOTEMPTY;
 		else
@@ -360,7 +367,10 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 	       FS_KEY_DESCRIPTOR_SIZE);
 
 	/* get nonce and iv */
-	get_random_bytes(nonce, FS_KEY_DERIVATION_NONCE_SIZE);
+	if (fscrypt_generate_metadata_nonce(nonce,
+			child, FS_KEY_DERIVATION_NONCE_SIZE))
+		get_random_bytes(nonce, FS_KEY_DERIVATION_NONCE_SIZE);
+
 	get_random_bytes(ctx.iv, FS_KEY_DERIVATION_IV_SIZE);
 	memcpy(plain_text, nonce, FS_KEY_DERIVATION_NONCE_SIZE);
 
@@ -372,95 +382,6 @@ int fscrypt_inherit_context(struct inode *parent, struct inode *child,
 						sizeof(ctx), fs_data);
 	if (res)
 		return res;
-	return preload ? fscrypt_get_encryption_info(child): 0;
+	return preload ? fscrypt_get_encryption_info(child) : 0;
 }
 EXPORT_SYMBOL(fscrypt_inherit_context);
-
-#ifdef CONFIG_HWAA
-static int f2fs_set_hwaa_enable_flags(struct inode *inode, void *fs_data)
-{
-	u32 flags = 0;
-	int res;
-
-	res = inode->i_sb->s_cop->get_hwaa_flags(inode, fs_data, &flags);
-	if (res) {
-		printk_once(KERN_ERR "%s:get inode (%lu) hwaa flags err (%d).\n",
-			__func__, inode->i_ino, res);
-		return -EINVAL;
-	}
-	flags |= HWAA_XATTR_ENABLE_FLAG;
-	res = inode->i_sb->s_cop->set_hwaa_flags(inode, fs_data, &flags);
-	if(res) {
-		printk_once(KERN_ERR "%s:set inode (%lu) hwaa flags err (%d).\n",
-			__func__, inode->i_ino, res);
-		return -EINVAL;
-	}
-
-	return res;
-}
-
-/*
- * Code is mainly copied from fscrypt_inherit_context
- *
- * funcs except hwaa_create_fek must not return EAGAIN
- *
- * Return:
- *  o 0: SUCC
- *  o other errno: the file is not supported by policy
- */
-int hwaa_inherit_context(struct inode *parent, struct inode *inode,
-	struct dentry *dentry, void *fs_data, bool preload)
-{
-	uint8_t *encoded_wfek = NULL;
-	uint8_t *fek = NULL;
-	uint32_t encoded_len = 0;
-	uint32_t fek_len = 0;
-	int err;
-	/*
-	 * called by __recover_do_dentries or
-	 * f2fs_add_inline_entries or recover_dentry?
-	 */
-	if (!dentry)
-		return -EAGAIN;
-	if (!S_ISREG(inode->i_mode))
-		return 0;
-	/* create fek from hwaa */
-	err = hwaa_create_fek(inode, dentry, &encoded_wfek, &encoded_len,
-		&fek, &fek_len, GFP_NOFS);
-	if (err == -HWAA_ERR_NOT_SUPPORTED) {
-		pr_info_once("hwaa ino %lu not protected\n", inode->i_ino);
-		err = 0;
-		goto free_buf;
-	} else if (err) {
-		pr_err("hwaa ino %lu create fek err %d\n", inode->i_ino, err);
-		goto free_buf;
-	}
-	if (parent->i_sb->s_cop->set_hwaa_attr) {
-		err = parent->i_sb->s_cop->set_hwaa_attr(inode, encoded_wfek,
-			encoded_len, fs_data);
-	} else {
-		pr_info_once("hwaa ino %lu no setxattr\n", inode->i_ino);
-		err = 0;
-		goto free_hwaa;
-	}
-	if (err) {
-		pr_err("hwaa ino %lu setxattr err %d\n", inode->i_ino, err);
-		goto free_hwaa;
-	}
-	/* set new user type xattr and flags for HWAA */
-	err = f2fs_set_hwaa_enable_flags(inode, fs_data);
-	if (err) {
-		pr_err_once("hwaa ino %lu set hwaa enable flags err %d\n",
-			inode->i_ino, err);
-		goto free_hwaa;
-	}
-	if (preload)
-		err = hwaa_get_context(inode);
-free_hwaa:
-	kfree(encoded_wfek);
-free_buf:
-	kzfree(fek);
-	return err;
-}
-EXPORT_SYMBOL(hwaa_inherit_context);
-#endif

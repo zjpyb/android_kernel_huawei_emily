@@ -17,7 +17,11 @@
 #include <linux/string.h>
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-#include "hisi-clk-debug.h"
+#ifndef CONFIG_ARCH_HISI_CLK_EXTREME
+#include "hisi/debug/clk-debug.h"
+#else
+#include "hisi_extreme/debug/clk-debug.h"
+#endif
 #include <securec.h>
 #endif
 
@@ -117,7 +121,7 @@ int clk_gate_is_enabled(struct clk_hw *hw)
 EXPORT_SYMBOL_GPL(clk_gate_is_enabled);
 
 #ifdef CONFIG_HISI_CLK_DEBUG
-static int hi3xxx_dumpgt(struct clk_hw *hw, char* buf, struct seq_file *s)
+static int hi3xxx_dumpgt(struct clk_hw *hw, char* buf, int buf_length, struct seq_file *s)
 {
 	u32 reg;
 	long unsigned int clk_base_addr = 0;
@@ -125,9 +129,9 @@ static int hi3xxx_dumpgt(struct clk_hw *hw, char* buf, struct seq_file *s)
 	int ret = 0;
 	struct clk_gate *gate = to_clk_gate(hw);
 
-	if (gate->reg && buf && !s) {
+	if (gate->reg && buf && !s && (buf_length > 0)) {
 		reg = clk_readl(gate->reg);
-		ret = snprintf_s(buf, DUMP_CLKBUFF_MAX_SIZE, DUMP_CLKBUFF_MAX_SIZE - 1, "[%s] : regAddress = 0x%pK, regval = 0x%x\n",  \
+		ret = snprintf_s(buf, buf_length, buf_length - 1, "[%s] : regAddress = 0x%pK, regval = 0x%x\n",  \
 			__clk_get_name(hw->clk), gate->reg, reg);
 		if(ret == -1)
 			pr_err("%s snprintf_s failed!\n", __func__);

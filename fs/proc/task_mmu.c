@@ -1779,6 +1779,30 @@ static int swapin_pte_range(pmd_t *pmd, unsigned long addr,
 	return 0;
 }
 
+static bool reclaim_check_page(struct reclaim_param *rp,
+				struct page *page)
+{
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+	/*
+	 * don't reclaim page in protected.
+	 */
+	if (PageProtect(page))
+		return true;
+#endif
+
+	/*
+	 * we don't reclaim page in active lru list
+	 */
+	if (rp->inactive_lru && (PageActive(page) ||
+	    PageUnevictable(page)))
+		return true;
+
+	if (!page_evictable(page) && PageUnevictable(page))
+		return true;
+
+	return false;
+}
+
 static int reclaim_pte_range(pmd_t *pmd, unsigned long addr,
 				unsigned long end, struct mm_walk *walk)
 {
@@ -1813,15 +1837,7 @@ cont:
 		if (!page)
 			continue;
 
-#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
-		// don't reclaim page in protected.
-		if (PageProtect(page))
-			continue;
-#endif
-
-		/*we don't reclaim page in active lru list*/
-		if (rp->inactive_lru && (PageActive(page) ||
-		    PageUnevictable(page)))
+		if (reclaim_check_page(rp, page))
 			continue;
 
 		if (isolate_lru_page(page))
@@ -2028,12 +2044,14 @@ static ssize_t reclaim_write(struct file *file, const char __user *buf,
 	if (!mm)
 		goto out;
 
+#ifdef CONFIG_HISI_SMART_RECLAIM
 	/*here we add a soft shrinker for reclaim*/
 	if (type == RECLAIM_SOFT) {
 		smart_soft_shrink(mm);
 		mmput(mm);
 		goto out;
 	}
+#endif
 
 	if (type == RECLAIM_INACTIVE)
 		rp.inactive_lru = true;

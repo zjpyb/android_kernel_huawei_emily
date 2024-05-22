@@ -1,32 +1,39 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
- * Register config for USB
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: Register config for USB
  *
- * Authors: Yu Chen <chenyu56@huawei.com>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2  of
+ * the License as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include "hisi_usb_reg_cfg.h"
+#include <linux/hisi/usb/hisi_usb_reg_cfg.h>
 #include "dwc3-hisi.h"
 
 struct combophy_regcfg {
-	struct hisi_usb_reg_cfg *misc_ctrl_reset_cfg;
-	struct hisi_usb_reg_cfg *misc_ctrl_unreset_cfg;
-	struct hisi_usb_reg_cfg *misc_ctrl_is_unreset_cfg;
-	struct hisi_usb_reg_cfg *misc_ctrl_is_clk_en_cfg;
-	struct hisi_usb_reg_cfg *phy_reset_cfg;
-	struct hisi_usb_reg_cfg *phy_unreset_cfg;
-	struct hisi_usb_reg_cfg *phy_isodis_cfg;
-	struct hisi_usb_reg_cfg *exit_testpowerdown_cfg;
-	struct hisi_usb_reg_cfg *power_stable_cfg;
-	struct hisi_usb_reg_cfg *enter_testpowerdown_cfg;
-	struct hisi_usb_reg_cfg *is_controller_ref_clk_en_cfg;
-	struct hisi_usb_reg_cfg *is_controller_bus_clk_en_cfg;
+	struct chip_usb_reg_cfg *misc_ctrl_reset_cfg;
+	struct chip_usb_reg_cfg *misc_ctrl_unreset_cfg;
+	struct chip_usb_reg_cfg *misc_ctrl_is_unreset_cfg;
+	struct chip_usb_reg_cfg *misc_ctrl_is_clk_en_cfg;
+	struct chip_usb_reg_cfg *phy_reset_cfg;
+	struct chip_usb_reg_cfg *phy_unreset_cfg;
+	struct chip_usb_reg_cfg *phy_isodis_cfg;
+	struct chip_usb_reg_cfg *exit_testpowerdown_cfg;
+	struct chip_usb_reg_cfg *power_stable_cfg;
+	struct chip_usb_reg_cfg *enter_testpowerdown_cfg;
+	struct chip_usb_reg_cfg *is_controller_ref_clk_en_cfg;
+	struct chip_usb_reg_cfg *is_controller_bus_clk_en_cfg;
 };
 
-struct combophy_regcfg *_combophy_regcfg;
+static struct combophy_regcfg *_combophy_regcfg;
 
 void combophy_regcfg_reset_misc(void)
 {
@@ -35,7 +42,7 @@ void combophy_regcfg_reset_misc(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->misc_ctrl_reset_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->misc_ctrl_reset_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->misc_ctrl_reset_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -47,7 +54,7 @@ void combophy_regcfg_unreset_misc(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->misc_ctrl_unreset_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->misc_ctrl_unreset_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->misc_ctrl_unreset_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -59,7 +66,7 @@ bool combophy_regcfg_is_misc_ctrl_unreset(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->misc_ctrl_is_unreset_cfg)
 		return false;
 
-	ret = hisi_usb_reg_test_cfg(_combophy_regcfg->misc_ctrl_is_unreset_cfg);
+	ret = chip_usb_reg_test_cfg(_combophy_regcfg->misc_ctrl_is_unreset_cfg);
 	if (ret < 0)
 		usb_err("config failed\n");
 
@@ -73,7 +80,7 @@ bool combophy_regcfg_is_misc_ctrl_clk_en(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->misc_ctrl_is_clk_en_cfg)
 		return false;
 
-	ret = hisi_usb_reg_test_cfg(_combophy_regcfg->misc_ctrl_is_clk_en_cfg);
+	ret = chip_usb_reg_test_cfg(_combophy_regcfg->misc_ctrl_is_clk_en_cfg);
 	if (ret < 0)
 		usb_err("config failed\n");
 
@@ -87,7 +94,7 @@ void combophy_regcfg_phyreset(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->phy_reset_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->phy_reset_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->phy_reset_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -99,7 +106,7 @@ void combophy_regcfg_phyunreset(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->phy_unreset_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->phy_unreset_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->phy_unreset_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -111,7 +118,7 @@ void combophy_regcfg_isodis(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->phy_isodis_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->phy_isodis_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->phy_isodis_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -123,7 +130,7 @@ void combophy_regcfg_exit_testpowerdown(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->exit_testpowerdown_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->exit_testpowerdown_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->exit_testpowerdown_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -135,7 +142,7 @@ void combophy_regcfg_power_stable(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->power_stable_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->power_stable_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->power_stable_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -147,7 +154,7 @@ void combophy_regcfg_enter_testpowerdown(void)
 	if (!_combophy_regcfg || !_combophy_regcfg->enter_testpowerdown_cfg)
 		return;
 
-	ret = hisi_usb_reg_write(_combophy_regcfg->enter_testpowerdown_cfg);
+	ret = chip_usb_reg_write(_combophy_regcfg->enter_testpowerdown_cfg);
 	if (ret)
 		usb_err("config failed\n");
 }
@@ -160,7 +167,7 @@ bool combophy_regcfg_is_controller_ref_clk_en(void)
 			!_combophy_regcfg->is_controller_ref_clk_en_cfg)
 		return false;
 
-	ret = hisi_usb_reg_test_cfg(
+	ret = chip_usb_reg_test_cfg(
 			_combophy_regcfg->is_controller_ref_clk_en_cfg);
 	if (ret < 0)
 		usb_err("config failed\n");
@@ -176,7 +183,7 @@ bool combophy_regcfg_is_controller_bus_clk_en(void)
 			!_combophy_regcfg->is_controller_bus_clk_en_cfg)
 		return false;
 
-	ret = hisi_usb_reg_test_cfg(
+	ret = chip_usb_reg_test_cfg(
 			_combophy_regcfg->is_controller_bus_clk_en_cfg);
 	if (ret < 0)
 		usb_err("config failed\n");
@@ -185,7 +192,7 @@ bool combophy_regcfg_is_controller_bus_clk_en(void)
 }
 
 #define combophy_get_reg_cfg(np, name) (_combophy_regcfg->name = \
-		of_get_hisi_usb_reg_cfg_by_name(np, #name))
+		of_get_chip_usb_reg_cfg(np, #name))
 
 static int combophy_regcfg_probe(struct platform_device *pdev)
 {
@@ -226,19 +233,19 @@ static int combophy_regcfg_probe(struct platform_device *pdev)
 
 static int combophy_regcfg_remove(struct platform_device *pdev)
 {
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->misc_ctrl_reset_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->misc_ctrl_unreset_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->misc_ctrl_is_unreset_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->misc_ctrl_is_clk_en_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->phy_reset_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->phy_unreset_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->phy_isodis_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->exit_testpowerdown_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->power_stable_cfg);
-	of_remove_hisi_usb_reg_cfg(_combophy_regcfg->enter_testpowerdown_cfg);
-	of_remove_hisi_usb_reg_cfg(
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->misc_ctrl_reset_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->misc_ctrl_unreset_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->misc_ctrl_is_unreset_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->misc_ctrl_is_clk_en_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->phy_reset_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->phy_unreset_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->phy_isodis_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->exit_testpowerdown_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->power_stable_cfg);
+	of_remove_chip_usb_reg_cfg(_combophy_regcfg->enter_testpowerdown_cfg);
+	of_remove_chip_usb_reg_cfg(
 			_combophy_regcfg->is_controller_ref_clk_en_cfg);
-	of_remove_hisi_usb_reg_cfg(
+	of_remove_chip_usb_reg_cfg(
 			_combophy_regcfg->is_controller_bus_clk_en_cfg);
 	_combophy_regcfg = NULL;
 

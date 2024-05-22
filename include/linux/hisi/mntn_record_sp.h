@@ -1,6 +1,6 @@
 /*
-* mntn_log.h   --  log print format of mntn
-*/
+ * mntn_log.h  --  log print format of mntn
+ */
 
 #ifndef _MNTN_RECORD_SP_H
 #define _MNTN_RECORD_SP_H

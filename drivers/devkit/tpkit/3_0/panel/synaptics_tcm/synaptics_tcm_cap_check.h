@@ -32,25 +32,34 @@
 
 #ifndef _SYNAPTICS_TCM_TESTING_H_
 #define _SYNAPTICS_TCM_TESTING_H_
+/* CAP_RAW_DATA is raw date threshold tag */
+#define CSV_CAP_RAW_DATA_MIN_ARRAY "threshold,cap_raw_data_min_array"
+#define CSV_CAP_RAW_DATA_MAX_ARRAY "threshold,cap_raw_data_max_array"
+/* RAW_DATA is full_raw date threshold tag */
+#define CSV_RAW_DATA_MIN_ARRAY "threshold,raw_data_min_array"
+#define CSV_RAW_DATA_MAX_ARRAY "threshold,raw_data_max_array"
+#define CSV_OPEN_SHORT_MIN_ARRAY "threshold,open_short_min_array"
+#define CSV_OPEN_SHORT_MAX_ARRAY "threshold,open_short_max_array"
+#define CSV_LCD_NOISE_ARRAY "threshold,lcd_noise_max_array"
+#define CSV_RAW_DATA_TRX_DELTA_MAX_ARRAY "threshold,raw_data_Trx_delta_max_array"
+#define CSV_RAW_DATA_COL_MIN_ARRAY "threshold,raw_data_col_min_array"
+#define CSV_RAW_DATA_COL_MAX_ARRAY "threshold,raw_data_col_max_array"
+#define CSV_RAW_DATA_ROW_MIN_ARRAY "threshold,raw_data_row_min_array"
+#define CSV_RAW_DATA_ROW_MAX_ARRAY "threshold,raw_data_row_max_array"
+#define CSV_ABS_NOISE_ROW_MAX_ARRAY "threshold,abs_noise_row_max_array"
+#define CSV_ABS_NOISE_COL_MAX_ARRAY "threshold,abs_noise_col_max_array"
 
-#define CSV_RAW_DATA_MIN_ARRAY		"threshold,raw_data_min_array"
-#define CSV_RAW_DATA_MAX_ARRAY		"threshold,raw_data_max_array"
-#define CSV_OPEN_SHORT_MIN_ARRAY	"threshold,open_short_min_array"
-#define CSV_OPEN_SHORT_MAX_ARRAY	"threshold,open_short_max_array"
-#define CSV_LCD_NOISE_ARRAY			"threshold,lcd_noise_max_array"
-#define CSV_RAW_DATA_TRX_DELTA_MAX_ARRAY	"threshold,raw_data_Trx_delta_max_array"
-#define CSV_RAW_DATA_COL_MIN_ARRAY		"threshold,raw_data_col_min_array"
-#define CSV_RAW_DATA_COL_MAX_ARRAY		"threshold,raw_data_col_max_array"
-#define CSV_RAW_DATA_ROW_MIN_ARRAY		"threshold,raw_data_row_min_array"
-#define CSV_RAW_DATA_ROW_MAX_ARRAY		"threshold,raw_data_row_max_array"
-
-#define TX_NUM_MAX			40
-#define RX_NUM_MAX			40
+#define TX_NUM_MAX 40
+#define RX_NUM_MAX 40
 
 #define CAP_TEST_FAIL_CHAR 'F'
 #define CAP_TEST_PASS_CHAR 'P'
 
 struct syna_tcm_test_threshold {
+	/* cap_raw_data saved raw date threshold */
+	int32_t cap_raw_data_min_limits[TX_NUM_MAX * RX_NUM_MAX];
+	int32_t cap_raw_data_max_limits[TX_NUM_MAX * RX_NUM_MAX];
+	/* raw_data saved full_raw date threshold */
 	int32_t raw_data_min_limits[TX_NUM_MAX*RX_NUM_MAX];
 	int32_t raw_data_max_limits[TX_NUM_MAX*RX_NUM_MAX];
 	int32_t open_short_min_limits[TX_NUM_MAX*RX_NUM_MAX];
@@ -61,6 +70,8 @@ struct syna_tcm_test_threshold {
 	int32_t raw_data_col_max_limits[TX_NUM_MAX];
 	int32_t raw_data_row_min_limits[TX_NUM_MAX];
 	int32_t raw_data_row_max_limits[TX_NUM_MAX];
+	int32_t abs_noise_row_max_limits[TX_NUM_MAX + RX_NUM_MAX];
+	int32_t abs_noise_col_max_limits[TX_NUM_MAX + RX_NUM_MAX];
 };
 
 struct syna_tcm_test_params {

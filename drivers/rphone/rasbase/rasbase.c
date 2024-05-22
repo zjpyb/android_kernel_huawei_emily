@@ -884,4 +884,16 @@ int ras_check(void)
 		return -1;
 	return 0;
 }
+void ras_delay(unsigned long long ms)
+{
+	while (ms) {
+		if (ms >= 2) { /* 2ms: udelay must less then 2ms */
+			udelay(2000); /* 2000: udelay must less then 2ms */
+			ms -= 2; /* 2ms: udelay must less then 2ms */
+		} else {
+			udelay(ms * 1000); /* 1000: 1ms unit */
+			ms = 0;
+		}
+	}
+}
 

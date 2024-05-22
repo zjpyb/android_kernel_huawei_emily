@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2018. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2016-2021. All rights reserved.
  * Description: the kcode.c for kernel code integrity checking
  * Author: Yongzheng Wu <Wu.Yongzheng@huawei.com>
  *         likun <quentin.lee@huawei.com>
@@ -10,9 +10,9 @@
 #include "./include/kcode.h"
 
 #ifdef CONFIG_HW_ROOT_SCAN_ENG_DEBUG
-#define MAX_CODE_SIZE (50000000)
+#define MAX_CODE_SIZE 50000000
 #else
-#define MAX_CODE_SIZE (30000000)
+#define MAX_CODE_SIZE 30000000
 #endif
 
 static const char *TAG = "kcode";
@@ -70,18 +70,32 @@ static int kcode_verify_ranges(void)
 	return 0;
 }
 
-int kcode_scan(uint8_t *hash)
+int kcode_scan(uint8_t *hash, size_t hash_len)
 {
 	int i;
 	int err;
 	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
-
+	bool xom_enable = get_xom_enable();
 	SHASH_DESC_ON_STACK(shash, tfm);
 
 	if (IS_ERR(tfm)) {
-		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
-			PTR_ERR(tfm));
-		return -ENOMEM;
+		if (xom_enable == true) {
+			RSLogDebug(TAG, "kcode can not read when xom enable");
+			return 0;
+		} else {
+			RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",
+				PTR_ERR(tfm));
+			return -ENOMEM;
+		}
+	}
+
+	if (xom_enable == true) {
+		if (memset_s(hash, hash_len, 0, hash_len) != EOK) {
+			RSLogError(TAG, "memset_s fail\n");
+			return -ENOMEM;
+		}
+		crypto_free_shash(tfm);
+		return 0;
 	}
 
 	if (g_memrange_size == 0) {
@@ -101,10 +115,9 @@ int kcode_scan(uint8_t *hash)
 		return err;
 	}
 
-	for (i = 0; ranges[i].start != NULL; i++) {
+	for (i = 0; ranges[i].start != NULL; i++)
 		crypto_shash_update(shash, (char *)ranges[i].start,
 			(unsigned int)(ranges[i].end - ranges[i].start));
-	}
 
 	err = crypto_shash_final(shash, (u8 *)hash);
 	RSLogDebug(TAG, "kscan result %d", err);
@@ -117,7 +130,7 @@ size_t kcode_get_size(void)
 	return (size_t)(_etext - _stext);
 }
 
-int kcode_syscall_scan(uint8_t *hash)
+int kcode_syscall_scan(uint8_t *hash, size_t hash_len)
 {
 	size_t size;
 	void *ptr = (void *)sys_call_table;
@@ -125,6 +138,7 @@ int kcode_syscall_scan(uint8_t *hash)
 	struct crypto_shash *tfm = crypto_alloc_shash("sha256", 0, 0);
 
 	SHASH_DESC_ON_STACK(shash, tfm);
+	var_not_used(hash_len);
 
 	if (IS_ERR(tfm)) {
 		RSLogError(TAG, "crypto_alloc_hash(sha256) error %ld",

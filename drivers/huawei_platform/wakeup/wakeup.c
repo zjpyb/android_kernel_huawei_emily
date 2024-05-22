@@ -51,12 +51,10 @@ static const struct of_device_id g_wakeup_of_match[] = {
     { },
 };
 
-/* lint -save -e */
 MODULE_DEVICE_TABLE(of, g_wakeup_of_match);
-/* lint -restore */
 
 static int wakeup_notifier_call(unsigned long event, char *str);
-char g_envp_hal[ENVP_LENTH] = {0};
+char g_envp_hal[ENVP_LENTH + 1] = {0};
 
 static long wakeup_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -75,7 +73,7 @@ static long wakeup_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             ret = wakeup_notifier_call(1, "wakeup_report=true");
             break;
         case WAKEUP_INFO_EVENT:
-            wakeInfo = (char *)arg;
+            wakeInfo = (char *)(uintptr_t)arg;
             copy_from_user(g_envp_hal, wakeInfo, ENVP_LENTH);
             printk("%s: wakeup info event(%s)\n", __func__, g_envp_hal);
             ret = wakeup_notifier_call(1, g_envp_hal);
@@ -123,7 +121,6 @@ static int wakeup_notifier_call(unsigned long event, char *str)
     return 0;
 }
 
-/* lint -save -e* */
 static int wakeup_probe(struct platform_device *pdev)
 {
     struct device *dev = &pdev->dev;
@@ -153,12 +150,10 @@ err_out:
 
     return ret;
 }
-/* lint -restore */
 
 static int wakeup_remove(struct platform_device *pdev)
 {
-
-    if (g_wakeup_pdata) {
+    if (g_wakeup_pdata != NULL) {
         printk("%s: wakeup free\n", __func__);
         devm_kfree(&pdev->dev, g_wakeup_pdata);
         g_wakeup_pdata = NULL;
@@ -185,7 +180,7 @@ static int __init wakeup_init(void)
 {
     int ret;
     ret = platform_driver_register(&g_wakeup_driver);
-    if (ret) {
+    if (ret > 0) {
         printk("%s: wakeup driver register failed\n", __func__);
         return ret;
     }
@@ -198,10 +193,8 @@ static void __exit wakeup_exit(void)
     platform_driver_unregister(&g_wakeup_driver);
 }
 
-/* lint -save -e* */
 module_init(wakeup_init);
 module_exit(wakeup_exit);
-/* lint -restore */
 
 MODULE_DESCRIPTION("wakeup control driver");
 MODULE_LICENSE("GPL v2");

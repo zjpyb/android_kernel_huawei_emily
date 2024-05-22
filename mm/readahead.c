@@ -227,6 +227,17 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_FSCK_BOOST
+int force_page_cache_readahead_abs(struct address_space *mapping,
+	pgoff_t offset, unsigned long nr_to_read)
+{
+	if (unlikely(!mapping->a_ops->readpage && !mapping->a_ops->readpages))
+		return -EINVAL;
+
+	return __do_page_cache_readahead(mapping, NULL, offset, nr_to_read, 0);
+}
+#endif
+
 /*
  * Chunk the readahead into 2 megabyte units, so that we don't pin too much
  * memory at once.
@@ -409,6 +420,12 @@ ondemand_readahead(struct address_space *mapping,
 	unsigned long max_pages = ra->ra_pages;
 	unsigned long add_pages;
 	pgoff_t prev_offset;
+#ifdef CONFIG_HISI_BUFFERED_READAHEAD
+	unsigned long ra_pages_cr = inode_to_bdi(mapping->host)->ra_pages_cr;
+
+	if ((!task_in_pagefault(current)) && ra_pages_cr)
+		max_pages = ra_pages_cr;
+#endif
 
 	/*
 	 * If the request exceeds the readahead window, allow the read to
@@ -591,7 +608,7 @@ page_cache_async_readahead(struct address_space *mapping,
 	if (inode_read_congested(mapping->host))
 		return;
 
-#ifdef CONFIG_HISI_PAGECACHE_DEBUG
+#ifdef CONFIG_MM_PAGECACHE_DEBUG
 	filp->f_path.dentry->mapping_stat.async_read_times++;
 #endif
 	pgcache_log_path(BIT_PAGECACHE_ASYNC_READAHEAD_DUMP, &(filp->f_path),

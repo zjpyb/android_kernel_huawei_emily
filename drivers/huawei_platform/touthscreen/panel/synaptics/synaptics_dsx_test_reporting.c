@@ -27,7 +27,6 @@
 #include <linux/ctype.h>
 #include <linux/hrtimer.h>
 #include "synaptics.h"
-#include <../../huawei_touchscreen_chips.h>
 #include <linux/gpio.h>
 #include <linux/regulator/consumer.h>
 
@@ -2101,7 +2100,7 @@ static void set_report_size(void)
 							  data));
 			mutex_unlock(&f54->control_mutex);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to read control reg_41\n",
 				     __func__);
 				f54->report_size = 0;
@@ -2143,7 +2142,7 @@ static int do_preparation(void)
 					    &value,
 					    sizeof(f54->control.reg_7->data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to disable CBC\n", __func__);
+			ts_log_err("%s: Failed to disable CBC\n", __func__);
 			mutex_unlock(&f54->control_mutex);
 			return retval;
 		}
@@ -2153,7 +2152,7 @@ static int do_preparation(void)
 					   f54->control.reg_88->data,
 					   sizeof(f54->control.reg_88->data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to disable CBC (read ctrl88)\n",
+			ts_log_err("%s: Failed to disable CBC (read ctrl88)\n",
 				   __func__);
 			mutex_unlock(&f54->control_mutex);
 			return retval;
@@ -2165,7 +2164,7 @@ static int do_preparation(void)
 					    f54->control.reg_88->data,
 					    sizeof(f54->control.reg_88->data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to disable CBC (write ctrl88)\n",
+			ts_log_err("%s: Failed to disable CBC (write ctrl88)\n",
 				   __func__);
 			mutex_unlock(&f54->control_mutex);
 			return retval;
@@ -2179,7 +2178,7 @@ static int do_preparation(void)
 					    &value,
 					    sizeof(f54->control.reg_57->data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to disable 0D CBC\n", __func__);
+			ts_log_err("%s: Failed to disable 0D CBC\n", __func__);
 			mutex_unlock(&f54->control_mutex);
 			return retval;
 		}
@@ -2192,7 +2191,7 @@ static int do_preparation(void)
 					    &value,
 					    sizeof(f54->control.reg_41->data));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to disable signal clarity\n",
+			ts_log_err("%s: Failed to disable signal clarity\n",
 				   __func__);
 			mutex_unlock(&f54->control_mutex);
 			return retval;
@@ -2207,7 +2206,7 @@ static int do_preparation(void)
 				    f54->command_base_addr,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write force update command\n",
+		ts_log_err("%s: Failed to write force update command\n",
 			   __func__);
 		return retval;
 	}
@@ -2218,7 +2217,7 @@ static int do_preparation(void)
 					   f54->command_base_addr,
 					   &value, sizeof(value));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read command register\n",
+			ts_log_err("%s: Failed to read command register\n",
 				   __func__);
 			return retval;
 		}
@@ -2231,7 +2230,7 @@ static int do_preparation(void)
 	} while (timeout_count < FORCE_TIMEOUT_100MS);
 
 	if (timeout_count == FORCE_TIMEOUT_100MS) {
-		TS_LOG_ERR("%s: Timed out waiting for force update\n",
+		ts_log_err("%s: Timed out waiting for force update\n",
 			   __func__);
 		return -ETIMEDOUT;
 	}
@@ -2242,7 +2241,7 @@ static int do_preparation(void)
 				    f54->command_base_addr,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write force cal command\n", __func__);
+		ts_log_err("%s: Failed to write force cal command\n", __func__);
 		return retval;
 	}
 
@@ -2252,7 +2251,7 @@ static int do_preparation(void)
 					   f54->command_base_addr,
 					   &value, sizeof(value));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read command register\n",
+			ts_log_err("%s: Failed to read command register\n",
 				   __func__);
 			return retval;
 		}
@@ -2265,7 +2264,7 @@ static int do_preparation(void)
 	} while (timeout_count < FORCE_TIMEOUT_100MS);
 
 	if (timeout_count == FORCE_TIMEOUT_100MS) {
-		TS_LOG_ERR("%s: Timed out waiting for force cal\n", __func__);
+		ts_log_err("%s: Timed out waiting for force cal\n", __func__);
 		return -ETIMEDOUT;
 	}
 
@@ -2279,7 +2278,7 @@ static void timeout_set_status(struct work_struct *work)
 	unsigned char command;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
-	TS_LOG_INFO("watchdog timeout f54->status is %d\n", f54->status);
+	ts_log_info("watchdog timeout f54->status is %d\n", f54->status);
 
 	mutex_lock(&f54->status_mutex);
 	if (f54->status == STATUS_BUSY) {
@@ -2287,10 +2286,10 @@ static void timeout_set_status(struct work_struct *work)
 					   f54->command_base_addr,
 					   &command, sizeof(command));
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read command register\n",
+			ts_log_err("%s: Failed to read command register\n",
 				   __func__);
 		} else if (command & COMMAND_GET_REPORT) {
-			TS_LOG_ERR("%s: Report type not supported by FW\n",
+			ts_log_err("%s: Report type not supported by FW\n",
 				   __func__);
 		} else {
 			queue_delayed_work(f54->status_workqueue,
@@ -2309,7 +2308,7 @@ static void timeout_set_status(struct work_struct *work)
 
 static enum hrtimer_restart get_report_timeout(struct hrtimer *timer)
 {
-	TS_LOG_DEBUG("%s:in!\n", __func__);
+	ts_log_debug("%s:in!\n", __func__);
 	schedule_work(&(f54->timeout_work));
 
 	return HRTIMER_NORESTART;
@@ -2492,7 +2491,7 @@ static ssize_t synaptics_rmi4_f54_no_auto_cal_store(struct device *dev,
 	retval = f54->fn_ptr->read(rmi4_data,
 				   f54->control_base_addr, &data, sizeof(data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control register\n", __func__);
+		ts_log_err("%s: Failed to read control register\n", __func__);
 		return retval;
 	}
 
@@ -2505,7 +2504,7 @@ static ssize_t synaptics_rmi4_f54_no_auto_cal_store(struct device *dev,
 				    f54->control_base_addr,
 				    &data, sizeof(data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write control register\n", __func__);
+		ts_log_err("%s: Failed to write control register\n", __func__);
 		return retval;
 	}
 
@@ -2530,7 +2529,7 @@ static int synaptics_rmi4_f54_report_type_set(char setting)
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
 	if (!is_report_type_valid((enum f54_report_types)setting)) {
-		TS_LOG_ERR("%s: Report type not supported by driver\n",
+		ts_log_err("%s: Report type not supported by driver\n",
 			   __func__);
 		return -EINVAL;
 	}
@@ -2545,13 +2544,13 @@ static int synaptics_rmi4_f54_report_type_set(char setting)
 					    &data, sizeof(data));
 		mutex_unlock(&f54->status_mutex);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to write data register\n",
+			ts_log_err("%s: Failed to write data register\n",
 				   __func__);
 			return retval;
 		}
 		return 0;
 	} else {
-		TS_LOG_ERR("%s: Previous get report still ongoing\n", __func__);
+		ts_log_err("%s: Previous get report still ongoing\n", __func__);
 		mutex_unlock(&f54->status_mutex);
 		return -EINVAL;
 	}
@@ -2573,7 +2572,7 @@ static ssize_t synaptics_rmi4_f54_report_type_store(struct device *dev,
 		return retval;
 
 	if (!is_report_type_valid((enum f54_report_types)setting)) {
-		TS_LOG_ERR("%s: Report type not supported by driver\n",
+		ts_log_err("%s: Report type not supported by driver\n",
 			   __func__);
 		return -EINVAL;
 	}
@@ -2588,13 +2587,13 @@ static ssize_t synaptics_rmi4_f54_report_type_store(struct device *dev,
 					    &data, sizeof(data));
 		mutex_unlock(&f54->status_mutex);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to write data register\n",
+			ts_log_err("%s: Failed to write data register\n",
 				   __func__);
 			return retval;
 		}
 		return count;
 	} else {
-		TS_LOG_ERR("%s: Previous get report still ongoing\n", __func__);
+		ts_log_err("%s: Previous get report still ongoing\n", __func__);
 		mutex_unlock(&f54->status_mutex);
 		return -EINVAL;
 	}
@@ -2613,7 +2612,7 @@ static ssize_t synaptics_rmi4_f54_fifoindex_show(struct device *dev,
 				   DATA_REPORT_INDEX_OFFSET, data,
 				   sizeof(data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read data registers\n", __func__);
+		ts_log_err("%s: Failed to read data registers\n", __func__);
 		return retval;
 	}
 
@@ -2644,7 +2643,7 @@ static ssize_t synaptics_rmi4_f54_fifoindex_store(struct device *dev,
 				    DATA_REPORT_INDEX_OFFSET, data,
 				    sizeof(data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write data registers\n", __func__);
+		ts_log_err("%s: Failed to write data registers\n", __func__);
 		return retval;
 	}
 
@@ -2662,10 +2661,10 @@ static int synaptics_rmi4_f54_do_preparation_set(void)
 
 	if (f54->status != STATUS_IDLE) {
 		if (f54->status != STATUS_BUSY) {
-			TS_LOG_ERR("%s: Invalid status (%d)\n", __func__,
+			ts_log_err("%s: Invalid status (%d)\n", __func__,
 				   f54->status);
 		} else {
-			TS_LOG_ERR("%s: Previous get report still ongoing\n",
+			ts_log_err("%s: Previous get report still ongoing\n",
 				   __func__);
 		}
 		mutex_unlock(&f54->status_mutex);
@@ -2676,7 +2675,7 @@ static int synaptics_rmi4_f54_do_preparation_set(void)
 
 	retval = do_preparation();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to do preparation\n", __func__);
+		ts_log_err("%s: Failed to do preparation\n", __func__);
 		return retval;
 	}
 	return 0;
@@ -2703,10 +2702,10 @@ static ssize_t synaptics_rmi4_f54_do_preparation_store(struct device *dev,
 
 	if (f54->status != STATUS_IDLE) {
 		if (f54->status != STATUS_BUSY) {
-			TS_LOG_ERR("%s: Invalid status (%d)\n", __func__,
+			ts_log_err("%s: Invalid status (%d)\n", __func__,
 				   f54->status);
 		} else {
-			TS_LOG_ERR("%s: Previous get report still ongoing\n",
+			ts_log_err("%s: Previous get report still ongoing\n",
 				   __func__);
 		}
 		mutex_unlock(&f54->status_mutex);
@@ -2717,7 +2716,7 @@ static ssize_t synaptics_rmi4_f54_do_preparation_store(struct device *dev,
 
 	retval = do_preparation();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to do preparation\n", __func__);
+		ts_log_err("%s: Failed to do preparation\n", __func__);
 		return retval;
 	}
 
@@ -2738,7 +2737,7 @@ static ssize_t synaptics_rmi4_f54_get_report_set(char setting)
 	command = (unsigned char)COMMAND_GET_REPORT;
 
 	if (!is_report_type_valid(f54->report_type)) {
-		TS_LOG_ERR("%s: Invalid report type\n", __func__);
+		ts_log_err("%s: Invalid report type\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2746,16 +2745,16 @@ static ssize_t synaptics_rmi4_f54_get_report_set(char setting)
 
 	if (f54->status != STATUS_IDLE) {
 		if (f54->status != STATUS_BUSY) {
-			TS_LOG_ERR("%s: Invalid status (%d)\n", __func__,
+			ts_log_err("%s: Invalid status (%d)\n", __func__,
 				   f54->status);
 		} else {
-			TS_LOG_ERR("%s: Previous get report still ongoing\n",
+			ts_log_err("%s: Previous get report still ongoing\n",
 				   __func__);
 		}
 		mutex_unlock(&f54->status_mutex);
 		return -EBUSY;
 	}
-	/*TS_LOG_ERR("to set interrupt\n");*/
+	/*ts_log_err("to set interrupt\n");*/
 	/*set_interrupt(true);*/
 
 	f54->status = STATUS_BUSY;
@@ -2765,7 +2764,7 @@ static ssize_t synaptics_rmi4_f54_get_report_set(char setting)
 				    &command, sizeof(command));
 	mutex_unlock(&f54->status_mutex);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write get report command\n",
+		ts_log_err("%s: Failed to write get report command\n",
 			   __func__);
 		return retval;
 	}
@@ -2798,7 +2797,7 @@ static ssize_t synaptics_rmi4_f54_get_report_store(struct device *dev,
 	command = (unsigned char)COMMAND_GET_REPORT;
 
 	if (!is_report_type_valid(f54->report_type)) {
-		TS_LOG_ERR("%s: Invalid report type\n", __func__);
+		ts_log_err("%s: Invalid report type\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2806,10 +2805,10 @@ static ssize_t synaptics_rmi4_f54_get_report_store(struct device *dev,
 
 	if (f54->status != STATUS_IDLE) {
 		if (f54->status != STATUS_BUSY) {
-			TS_LOG_ERR("%s: Invalid status (%d)\n", __func__,
+			ts_log_err("%s: Invalid status (%d)\n", __func__,
 				   f54->status);
 		} else {
-			TS_LOG_ERR("%s: Previous get report still ongoing\n",
+			ts_log_err("%s: Previous get report still ongoing\n",
 				   __func__);
 		}
 		mutex_unlock(&f54->status_mutex);
@@ -2824,7 +2823,7 @@ static ssize_t synaptics_rmi4_f54_get_report_store(struct device *dev,
 				    &command, sizeof(command));
 	mutex_unlock(&f54->status_mutex);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write get report command\n",
+		ts_log_err("%s: Failed to write get report command\n",
 			   __func__);
 		return retval;
 	}
@@ -2861,7 +2860,7 @@ static ssize_t synaptics_rmi4_f54_force_cal_store(struct device *dev,
 				    f54->command_base_addr,
 				    &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write force cal command\n", __func__);
+		ts_log_err("%s: Failed to write force cal command\n", __func__);
 		return retval;
 	}
 
@@ -2878,13 +2877,13 @@ static struct kobject *tp_get_touch_screen_obj(void)
 		touch_screen_kobject_ts =
 		    kobject_create_and_add("touch_screen", NULL);
 		if (!touch_screen_kobject_ts) {
-			TS_LOG_ERR("create touch_screen kobjetct error!\n");
+			ts_log_err("create touch_screen kobjetct error!\n");
 			return NULL;
 		} else {
-			TS_LOG_INFO(" create sys/touch_screen successful!\n");
+			ts_log_info(" create sys/touch_screen successful!\n");
 		}
 	} else {
-		TS_LOG_INFO("sys/touch_screen already exist!\n");
+		ts_log_info("sys/touch_screen already exist!\n");
 	}
 
 	return touch_screen_kobject_ts;
@@ -2903,7 +2902,7 @@ static void mmi_rawimage_report(unsigned char *buffer)
 	sprintf(g_mmi_buf_f54raw_data, "RawImageData:\n");
 	DataArray = (short *)kmalloc(sizeof(short) * tx * rx, GFP_KERNEL);
 	if (DataArray == NULL) {
-		TS_LOG_ERR("%s:kmalloc failed\n",__func__);
+		ts_log_err("%s:kmalloc failed\n",__func__);
 		return;
 	}
 
@@ -2927,7 +2926,7 @@ static void mmi_rawimage_report(unsigned char *buffer)
 			    || (DataArray[i * rx + j] <
 				FullRawCapLowerLimit[i * rx + j])) {
 				TestResult = TEST_FAILED;
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: TEST_FAILED:1F-, RawCap(%d,%d) = %d \n",
 				     __func__, i, j, DataArray[i * rx + j]);
 			}
@@ -3007,14 +3006,14 @@ static int RxtoRx2ShortTest(unsigned char *buffer)
 				    && (ImageArray >= DiagonalLowerLimit))
 					count++;
 				else
-					TS_LOG_ERR
+					ts_log_err
 					    ("%s: Failed,ImageArray(%d,%d) = %d\n",
 					     __func__, i, j, ImageArray);
 			} else {
 				if (ImageArray <= OthersUpperLimit)
 					count++;
 				else
-					TS_LOG_ERR
+					ts_log_err
 					    ("%s: Failed,ImageArray(%d,%d) = %d\n",
 					     __func__, i, j, ImageArray);
 			}
@@ -3042,7 +3041,7 @@ static void mmi_RxtoRxshort1_report(unsigned char *buffer)
 	} else {
 		/*TestResult = TEST_FAILED;*/
 		/*strcat(g_mmi_buf_f54test_result,"4F-");*/
-		TS_LOG_ERR("%s:test failed,count = %d LINE = %d\n", __func__,
+		ts_log_err("%s:test failed,count = %d LINE = %d\n", __func__,
 			   count, __LINE__);
 	}
 
@@ -3086,7 +3085,7 @@ static void mmi_txtotx_short_report(unsigned char *buffer)
 			if (numberOfBytes < tx) {
 				if (val != TxTxReportLimit) {
 					TestResult = TEST_FAILED;
-					TS_LOG_ERR("%s: Failed,val(%d,%d) = %d",
+					ts_log_err("%s: Failed,val(%d,%d) = %d",
 						   __func__, i, j, val);
 				}
 			}
@@ -3124,7 +3123,7 @@ static void mmi_txtoground_short_report(unsigned char *buffer,
 		/*TestResult = TEST_PASS;*/
 		strcat(g_mmi_buf_f54test_result, "3P-");
 	} else {
-		TS_LOG_ERR("%s: Failed in txtoground, result = %d\n", __func__,
+		ts_log_err("%s: Failed in txtoground, result = %d\n", __func__,
 			   result);
 		/*TestResult = TEST_FAILED;*/
 		strcat(g_mmi_buf_f54test_result, "3F-");
@@ -3187,7 +3186,7 @@ static void mmi_highresistance_report(unsigned char *buffer)
 		    (HighResistanceResult[i] < HighResistanceLowerLimit[i])) {
 
 			TestResult = TEST_FAILED;
-			TS_LOG_ERR
+			ts_log_err
 			    ("%s: TEST_FAILED: 6F ,highresistance[%d] = %d \n",
 			     __func__, i, HighResistanceResult[i]);
 		}
@@ -3214,7 +3213,7 @@ static void mmi_delta_report(unsigned char *buffer)
 	short temp = 0;
 	size_t len = 0;
 	char buf[DATA_TEMP_BUFF_SIZE] = { 0 };
-	TS_LOG_INFO("mmi_delta_report\n");
+	ts_log_info("mmi_delta_report\n");
 	memset(g_buf_debug_data, 0,
 	       (rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
 		F54_MAX_CAP_TITLE_SIZE));
@@ -3223,7 +3222,7 @@ static void mmi_delta_report(unsigned char *buffer)
 		F54_MAX_CAP_TITLE_SIZE - strlen(g_buf_debug_data) -1;
 	DataArray = (short *)kmalloc(sizeof(short) * tx * rx, GFP_KERNEL);
 	if (DataArray == NULL) {
-		TS_LOG_ERR("%s:kmalloc failed\n",__func__);
+		ts_log_err("%s:kmalloc failed\n",__func__);
 		return;
 	}
 	for (i = 0; i < tx; i++) {
@@ -3251,7 +3250,7 @@ static int mmi_runtest(int report_type)
 	unsigned char command;
 	/*struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;*/
 
-	/*TS_LOG_INFO("mmi test report type is %d",report_type);*/
+	/*ts_log_info("mmi test report type is %d",report_type);*/
 
 	retval = synaptics_rmi4_f54_report_type_set(report_type);
 	if (retval)
@@ -3259,7 +3258,7 @@ static int mmi_runtest(int report_type)
 	mdelay(5);
 	retval = synaptics_rmi4_f54_get_report_set(1);
 	if (retval) {
-		TS_LOG_ERR
+		ts_log_err
 		    ("synaptics_rmi4_f54_get_report_set failed  retval=%d",
 		     retval);
 		goto test_exit;
@@ -3270,10 +3269,10 @@ static int mmi_runtest(int report_type)
 					   f54->command_base_addr,
 					   &command, sizeof(command));
 		if (retval) {
-			TS_LOG_ERR("read command failed  retval=%d", retval);
+			ts_log_err("read command failed  retval=%d", retval);
 			continue;
 		}
-		TS_LOG_DEBUG("command=%d", command);
+		ts_log_debug("command=%d", command);
 		if (0 == (command & 0x01)) {
 			break;
 		}
@@ -3281,14 +3280,14 @@ static int mmi_runtest(int report_type)
 	}
 	retval = synaptics_rmi4_f54_attention();
 	if (retval) {
-		TS_LOG_ERR("synaptics_rmi4_f54_attention failed  retval=%d",
+		ts_log_err("synaptics_rmi4_f54_attention failed  retval=%d",
 			   retval);
 		goto test_exit;
 	}
 
 	report_size = f54->report_size;
 
-	TS_LOG_INFO
+	ts_log_info
 	    ("mmi test report type is %d,report_size is %d,patience=%d, status=%d\n",
 	     report_type, report_size, patience, f54->status);
 
@@ -3296,7 +3295,7 @@ static int mmi_runtest(int report_type)
 		goto test_exit;
 	buffer = kmalloc(report_size, GFP_KERNEL);
 	if (!buffer) {
-		TS_LOG_ERR("%s: Faild to kzalloc %d buffer\n", __func__,
+		ts_log_err("%s: Faild to kzalloc %d buffer\n", __func__,
 			   report_size);
 		goto test_exit;
 	}
@@ -3365,7 +3364,7 @@ static int mmi_runtest(int report_type)
 	return 0;
 
 test_exit:
-	TS_LOG_ERR("%s: Faild to run test\n", __func__);
+	ts_log_err("%s: Faild to run test\n", __func__);
 	if (buffer){
 		kfree(buffer);
 		buffer = NULL;
@@ -3382,12 +3381,12 @@ static int synaptics_rmi4_irq_enable(bool enable)
 	unsigned char reg_data;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
-	TS_LOG_INFO("%s;enable =%d\n", __func__, enable);
+	ts_log_info("%s;enable =%d\n", __func__, enable);
 	retval = f54->fn_ptr->read(rmi4_data,
 				   reg_addr, &reg_data, sizeof(reg_data));
 
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to read reg, error = %d\n", retval);
+		ts_log_err("Failed to read reg, error = %d\n", retval);
 		return retval;
 	}
 
@@ -3401,7 +3400,7 @@ static int synaptics_rmi4_irq_enable(bool enable)
 				    reg_addr, &reg_data, sizeof(reg_data));
 
 	if (retval < 0) {
-		TS_LOG_ERR("Failed to write reg, error = %d\n", retval);
+		ts_log_err("Failed to write reg, error = %d\n", retval);
 	}
 	return retval;
 }
@@ -3412,7 +3411,7 @@ static ssize_t synaptics_rmi4_f54_mmi_test_show(struct device *dev,
 {
 	int retval = 0;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
-	TS_LOG_ERR("begin mmi test.\n");
+	ts_log_err("begin mmi test.\n");
 
 	atomic_set(&g_ts_data.state, TS_MMI_CAP_TEST);
 	if (!g_mmi_buf_f54test_result)
@@ -3425,7 +3424,7 @@ static ssize_t synaptics_rmi4_f54_mmi_test_show(struct device *dev,
 	retval = synaptics_rmi4_irq_enable(IRQ_OFF);
 	retval = synaptics_rmi4_f54_do_preparation_set();
 	if (retval) {
-		TS_LOG_ERR("fail to do preparation set\n");
+		ts_log_err("fail to do preparation set\n");
 		goto exit;
 	}
 	sprintf(g_mmi_buf_f54test_result, "0P-");
@@ -3488,7 +3487,7 @@ static ssize_t synaptics_rmi4_f54_mmi_test_show(struct device *dev,
 			strlen("-synaptics_4300"));
 		break;
 	default:
-		TS_LOG_ERR("failed to recognize ic_ver\n");
+		ts_log_err("failed to recognize ic_ver\n");
 		break;
 	}
 
@@ -3504,7 +3503,7 @@ exit:
 	if (g_mmi_buf_f54test_result) {
 		strcat(g_mmi_buf_f54test_result, "0F-software_reason");
 	}
-	TS_LOG_ERR("%s: Failed to run mmi test\n", __func__);
+	ts_log_err("%s: Failed to run mmi test\n", __func__);
 	atomic_set(&g_ts_data.state, TS_WORK);
 	return 0;
 }
@@ -3515,14 +3514,14 @@ static int read_debug_reg_status(unsigned char *buffer)
 	unsigned char command;
 	char buf[6];
 	size_t len = 0;
-	TS_LOG_ERR("read_debug_reg_status_begin\n");
+	ts_log_err("read_debug_reg_status_begin\n");
 	retval = f54->fn_ptr->read(f54->rmi4_data,
 				   0x0051, &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control 0x0051 \n", __func__);
+		ts_log_err("%s: Failed to read control 0x0051 \n", __func__);
 		strcat(g_buf_debug_data, "Failed to read control 0x0051");
 	} else {
-		TS_LOG_INFO("Device Control1=0x%x\n", command);
+		ts_log_info("Device Control1=0x%x\n", command);
 		strcat(g_buf_debug_data, "Device Control1:");
 		sprintf(buf, "0x%x ", command);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3532,10 +3531,10 @@ static int read_debug_reg_status(unsigned char *buffer)
 	retval = f54->fn_ptr->read(f54->rmi4_data,
 				   0x0052, &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control 0x0052 \n", __func__);
+		ts_log_err("%s: Failed to read control 0x0052 \n", __func__);
 		strcat(g_buf_debug_data, "Failed to read control 0x0052");
 	} else {
-		TS_LOG_INFO("Interrupt Enable=0x%x\n", command);
+		ts_log_info("Interrupt Enable=0x%x\n", command);
 		strcat(g_buf_debug_data, "Interrupt Enable:");
 		sprintf(buf, "0x%x ", command);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3546,10 +3545,10 @@ static int read_debug_reg_status(unsigned char *buffer)
 	retval = f54->fn_ptr->read(f54->rmi4_data,
 				   0x0013, &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control 0x0013 \n", __func__);
+		ts_log_err("%s: Failed to read control 0x0013 \n", __func__);
 		strcat(g_buf_debug_data, "Failed to read control 0x0013");
 	} else {
-		TS_LOG_INFO("Device Status=0x%x\n", command);
+		ts_log_info("Device Status=0x%x\n", command);
 		strcat(g_buf_debug_data, "Device Status:");
 		sprintf(buf, "0x%x ", command);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3560,10 +3559,10 @@ static int read_debug_reg_status(unsigned char *buffer)
 	retval = f54->fn_ptr->read(f54->rmi4_data,
 				   0x0014, &command, sizeof(command));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control 0x0014 \n", __func__);
+		ts_log_err("%s: Failed to read control 0x0014 \n", __func__);
 		strcat(g_buf_debug_data, "Failed to read control 0x0014");
 	} else {
-		TS_LOG_INFO("Interrupt Status=0x%x\n", command);
+		ts_log_info("Interrupt Status=0x%x\n", command);
 		strcat(g_buf_debug_data, "Interrupt Status:");
 		sprintf(buf, "0x%x ", command);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3583,10 +3582,10 @@ static int read_debug_power_pin_status(unsigned char *buffer)
 	retval =
 	    gpio_get_value(f54->rmi4_data->synaptics_chip_data->reset_gpio);
 	if (retval < 0) {
-		TS_LOG_ERR("failed to get reset_gpio %d\n", retval);
+		ts_log_err("failed to get reset_gpio %d\n", retval);
 		strcat(g_buf_debug_data, "failed to get reset_gpio");
 	} else {
-		TS_LOG_INFO("reset_gpio=%d\n", retval);
+		ts_log_info("reset_gpio=%d\n", retval);
 		strcat(g_buf_debug_data, "reset_gpio value is:");
 		sprintf(buf, "0x%x ", retval);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3595,10 +3594,10 @@ static int read_debug_power_pin_status(unsigned char *buffer)
 	}
 	retval = gpio_get_value(f54->rmi4_data->synaptics_chip_data->irq_gpio);
 	if (retval < 0) {
-		TS_LOG_ERR("failed to get irq_gpio %d\n", retval);
+		ts_log_err("failed to get irq_gpio %d\n", retval);
 		strcat(g_buf_debug_data, "failed to get irq_gpio");
 	} else {
-		TS_LOG_INFO("irq_gpio=%d\n", retval);
+		ts_log_info("irq_gpio=%d\n", retval);
 		strcat(g_buf_debug_data, "irq_gpio value is:");
 		sprintf(buf, "0x%x ", retval);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3609,10 +3608,10 @@ static int read_debug_power_pin_status(unsigned char *buffer)
 	retval =
 	    gpio_get_value(f54->rmi4_data->synaptics_chip_data->vci_gpio_ctrl);
 	if (retval < 0) {
-		TS_LOG_ERR("failed to get vci_gpio_ctrl %d\n", retval);
+		ts_log_err("failed to get vci_gpio_ctrl %d\n", retval);
 		strcat(g_buf_debug_data, "failed to get vci_gpio_ctrl");
 	} else {
-		TS_LOG_INFO("vci_gpio_ctrl=%d\n", retval);
+		ts_log_info("vci_gpio_ctrl=%d\n", retval);
 		strcat(g_buf_debug_data, "vci_gpio_ctrl value is:");
 		sprintf(buf, "0x%x ", retval);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3624,10 +3623,10 @@ static int read_debug_power_pin_status(unsigned char *buffer)
 	    gpio_get_value(f54->rmi4_data->synaptics_chip_data->
 			   vddio_gpio_ctrl);
 	if (retval < 0) {
-		TS_LOG_ERR("failed to get vddio_gpio_ctrl %d\n", retval);
+		ts_log_err("failed to get vddio_gpio_ctrl %d\n", retval);
 		strcat(g_buf_debug_data, "failed to get vddio_gpio_ctrl");
 	} else {
-		TS_LOG_INFO("vddio_gpio_ctrl=%d\n", retval);
+		ts_log_info("vddio_gpio_ctrl=%d\n", retval);
 		strcat(g_buf_debug_data, "vddio_gpio_ctrl value is:");
 		sprintf(buf, "0x%x ", retval);
 		len = rx * tx * DATA_TEMP_BUFF_SIZE + F54_MAX_CAP_TITLE_SIZE + F54_MAX_CAP_TITLE_SIZE +
@@ -3651,27 +3650,27 @@ static ssize_t synaptics_rmi4_f54_debug_test_show(struct device *dev,
 	int retval = 0;
 	int len = 0;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
-	TS_LOG_INFO("begin debug test.\n");
+	ts_log_info("begin debug test.\n");
 
 	if ((TS_SLEEP == atomic_read(&g_ts_data.state))
 	    || (TS_MMI_CAP_TEST == atomic_read(&g_ts_data.state))) {
-		TS_LOG_INFO("tp state unsupport debug.g_ts_data.state is %d\n",
+		ts_log_info("tp state unsupport debug.g_ts_data.state is %d\n",
 			    atomic_read(&g_ts_data.state));
 		return 0;
 	}
 	atomic_set(&g_ts_data.state, TS_MMI_CAP_TEST);
 	retval = mmi_runtest(F54_16BIT_IMAGE);
 	if (retval) {
-		TS_LOG_ERR("fail to do F54_16BIT_IMAGE test\n");
+		ts_log_err("fail to do F54_16BIT_IMAGE test\n");
 	}
 
 	retval = read_debug_reg_status(g_buf_debug_data);
 	if (retval < 0) {
-		TS_LOG_ERR("fail to do read_debug_reg_status test\n");
+		ts_log_err("fail to do read_debug_reg_status test\n");
 	}
 	retval = read_debug_power_pin_status(g_buf_debug_data);
 	if (retval < 0) {
-		TS_LOG_ERR("fail to do read_debug_power_pin_status test\n");
+		ts_log_err("fail to do read_debug_power_pin_status test\n");
 	}
 
 	sysfs_is_busy = true;
@@ -3681,9 +3680,9 @@ static ssize_t synaptics_rmi4_f54_debug_test_show(struct device *dev,
 		len = strlen(g_buf_debug_data);
 		memcpy(buf, g_buf_debug_data, len + 1);
 		strcat(buf, "\0");
-		TS_LOG_INFO("%s\n", buf);
+		ts_log_info("%s\n", buf);
 	} else {
-		TS_LOG_INFO("read debug data error\n");
+		ts_log_info("read debug data error\n");
 	}
 	if (NULL != g_buf_debug_data) {
 		kfree(g_buf_debug_data);
@@ -3697,7 +3696,7 @@ static ssize_t synaptics_rmi4_f54_mmi_test_result_show(struct device *dev,
 						       *attr, char *buf)
 {
 	int len = 0;
-	TS_LOG_INFO("%s begin \n", __func__);
+	ts_log_info("%s begin \n", __func__);
 	if (NULL != g_mmi_buf_f54test_result) {
 		len = strlen(g_mmi_buf_f54test_result);
 		memcpy(buf, g_mmi_buf_f54test_result, len + 1);
@@ -3733,7 +3732,7 @@ static ssize_t hw_synaptics_mmi_test_show(struct kobject *dev,
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 	struct device *cdev = &rmi4_data->input_dev->dev;
 	if (!cdev) {
-		TS_LOG_ERR("device is null\n");
+		ts_log_err("device is null\n");
 		return -EINVAL;
 	}
 	return synaptics_rmi4_f54_mmi_test_show(cdev, NULL, buf);
@@ -3746,7 +3745,7 @@ static ssize_t hw_synaptics_debug_test_show(struct kobject *dev,
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 	struct device *cdev = &rmi4_data->input_dev->dev;
 	if (!cdev) {
-		TS_LOG_ERR("device is null\n");
+		ts_log_err("device is null\n");
 		return -EINVAL;
 	}
 	return synaptics_rmi4_f54_debug_test_show(cdev, NULL, buf);
@@ -3756,7 +3755,7 @@ static ssize_t hw_synaptics_trigger_log_show(struct kobject *dev,
 					     struct kobj_attribute *attr,
 					     char *buf)
 {
-	TS_LOG_ERR("g_synaptics_trigger_log_flag show is %d\n",
+	ts_log_err("g_synaptics_trigger_log_flag show is %d\n",
 		   g_synaptics_trigger_log_flag);
 
 	return sprintf(buf, "%d\n", g_synaptics_trigger_log_flag);
@@ -3775,7 +3774,7 @@ static ssize_t hw_synaptics_trigger_log_store(struct kobject *dev,
 
 	g_synaptics_trigger_log_flag = setting;
 
-	TS_LOG_ERR("g_synaptics_trigger_log_flag store is %d\n",
+	ts_log_err("g_synaptics_trigger_log_flag store is %d\n",
 		   g_synaptics_trigger_log_flag);
 
 	return count;
@@ -3788,7 +3787,7 @@ static ssize_t hw_synaptics_mmi_test_result_show(struct kobject *dev,
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 	struct device *cdev = &rmi4_data->input_dev->dev;
 	if (!cdev) {
-		TS_LOG_ERR("device is null\n");
+		ts_log_err("device is null\n");
 		return -EINVAL;
 	}
 	return synaptics_rmi4_f54_mmi_test_result_show(cdev, NULL, buf);
@@ -3828,10 +3827,10 @@ static int add_synaptics_mmi_test_interfaces(struct device *dev)
 		return 0;
 	}
 
-	TS_LOG_INFO("%s: in!\n", __func__);
+	ts_log_info("%s: in!\n", __func__);
 	properties_kobj = tp_get_touch_screen_obj();
 	if (NULL == properties_kobj) {
-		TS_LOG_ERR("Error, get kobj failed!\n");
+		ts_log_err("Error, get kobj failed!\n");
 		return -1;
 	}
 
@@ -3841,7 +3840,7 @@ static int add_synaptics_mmi_test_interfaces(struct device *dev)
 			      &synaptics_mmi_test_result_v.attr);
 	if (error) {
 		kobject_put(properties_kobj);
-		TS_LOG_ERR("synaptics_mmi_test_result create file error = %d\n",
+		ts_log_err("synaptics_mmi_test_result create file error = %d\n",
 			   error);
 		return -ENODEV;
 	}
@@ -3850,21 +3849,21 @@ static int add_synaptics_mmi_test_interfaces(struct device *dev)
 	error = sysfs_create_file(properties_kobj, &synaptics_mmi_test_v.attr);
 	if (error) {
 		kobject_put(properties_kobj);
-		TS_LOG_ERR("synaptics_mmi_test create file error\n");
+		ts_log_err("synaptics_mmi_test create file error\n");
 		return -ENODEV;
 	}
 	error =
 	    sysfs_create_file(properties_kobj, &synaptics_debug_test_v.attr);
 	if (error) {
 		kobject_put(properties_kobj);
-		TS_LOG_ERR("synaptics_mmi_test create file error\n");
+		ts_log_err("synaptics_mmi_test create file error\n");
 		return -ENODEV;
 	}
 	error =
 	    sysfs_create_file(properties_kobj, &synaptics_trigger_log_v.attr);
 	if (error) {
 		kobject_put(properties_kobj);
-		TS_LOG_ERR("synaptics_trigger_log create file error\n");
+		ts_log_err("synaptics_trigger_log create file error\n");
 		return -ENODEV;
 	}
 
@@ -4005,7 +4004,7 @@ static ssize_t synaptics_rmi4_f54_burst_count_show(struct device *dev,
 				   (unsigned char *)f54->control.reg_17->data,
 				   f54->control.reg_17->length);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control reg_17\n", __func__);
+		ts_log_err("%s: Failed to read control reg_17\n", __func__);
 	}
 
 	retval = f54->fn_ptr->read(rmi4_data,
@@ -4013,7 +4012,7 @@ static ssize_t synaptics_rmi4_f54_burst_count_show(struct device *dev,
 				   (unsigned char *)f54->control.reg_18->data,
 				   f54->control.reg_18->length);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read control reg_18\n", __func__);
+		ts_log_err("%s: Failed to read control reg_18\n", __func__);
 	}
 
 	mutex_unlock(&f54->control_mutex);
@@ -4027,7 +4026,7 @@ static ssize_t synaptics_rmi4_f54_burst_count_show(struct device *dev,
 				  f54->control.reg_18->data[ii].
 				  burst_count_b0__7);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Faild to write output\n", __func__);
+			ts_log_err("%s: Faild to write output\n", __func__);
 			return retval;
 		}
 		size += retval;
@@ -4036,7 +4035,7 @@ static ssize_t synaptics_rmi4_f54_burst_count_show(struct device *dev,
 
 	retval = snprintf(temp, PAGE_SIZE - size, "\n");
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Faild to write null terminator\n", __func__);
+		ts_log_err("%s: Faild to write null terminator\n", __func__);
 		return retval;
 	}
 
@@ -4053,7 +4052,7 @@ static ssize_t synaptics_rmi4_f54_data_read(struct file *data_file,
 	mutex_lock(&f54->data_mutex);
 
 	if (count < f54->report_size) {
-		TS_LOG_ERR("%s: Report type %d data size (%d) too large\n",
+		ts_log_err("%s: Report type %d data size (%d) too large\n",
 			   __func__, f54->report_type, f54->report_size);
 		mutex_unlock(&f54->data_mutex);
 		return -EINVAL;
@@ -4064,7 +4063,7 @@ static ssize_t synaptics_rmi4_f54_data_read(struct file *data_file,
 		mutex_unlock(&f54->data_mutex);
 		return f54->report_size;
 	} else {
-		TS_LOG_ERR("%s: Report type %d data not available\n", __func__,
+		ts_log_err("%s: Report type %d data not available\n", __func__,
 			   f54->report_type);
 		mutex_unlock(&f54->data_mutex);
 		return -EINVAL;
@@ -4077,23 +4076,23 @@ static int synaptics_rmi4_f54_set_sysfs(void)
 	int reg_num;
 	struct synaptics_rmi4_data *rmi4_data = f54->rmi4_data;
 
-	TS_LOG_INFO("%s: in!\n", __func__);
+	ts_log_info("%s: in!\n", __func__);
 	f54->attr_dir = kobject_create_and_add("f54",
 					       &rmi4_data->input_dev->dev.kobj);
 	if (!f54->attr_dir) {
-		TS_LOG_ERR("%s: Failed to create sysfs directory\n", __func__);
+		ts_log_err("%s: Failed to create sysfs directory\n", __func__);
 		goto exit_1;
 	}
 
 	retval = sysfs_create_bin_file(f54->attr_dir, &dev_report_data);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to create sysfs bin file\n", __func__);
+		ts_log_err("%s: Failed to create sysfs bin file\n", __func__);
 		goto exit_2;
 	}
 
 	retval = sysfs_create_group(f54->attr_dir, &attr_group);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to create sysfs attributes\n", __func__);
+		ts_log_err("%s: Failed to create sysfs attributes\n", __func__);
 		goto exit_3;
 	}
 
@@ -4102,7 +4101,7 @@ static int synaptics_rmi4_f54_set_sysfs(void)
 			retval = sysfs_create_group(f54->attr_dir,
 						    &attrs_ctrl_regs[reg_num]);
 			if (retval < 0) {
-				TS_LOG_ERR
+				ts_log_err
 				    ("%s: Failed to create sysfs attributes\n",
 				     __func__);
 				goto exit_4;
@@ -4112,7 +4111,7 @@ static int synaptics_rmi4_f54_set_sysfs(void)
 
 	retval = add_synaptics_mmi_test_interfaces(&rmi4_data->input_dev->dev);
 	if (retval < 0) {
-		TS_LOG_ERR("Error, synaptics_mmi_test init sysfs fail! \n");
+		ts_log_err("Error, synaptics_mmi_test init sysfs fail! \n");
 		goto exit_4;
 	}
 
@@ -4668,7 +4667,7 @@ static int synaptics_rmi4_f54_set_ctrl(void)
 	return 0;
 
 exit_no_mem:
-	TS_LOG_ERR("%s: Failed to alloc mem for control registers\n", __func__);
+	ts_log_err("%s: Failed to alloc mem for control registers\n", __func__);
 	return -ENOMEM;
 }
 
@@ -4686,7 +4685,7 @@ static int synaptics_rmi4_f54_status_work(struct work_struct *work)
 
 	set_report_size();
 	if (f54->report_size == 0) {
-		TS_LOG_ERR("%s: Report data size = 0\n", __func__);
+		ts_log_err("%s: Report data size = 0\n", __func__);
 		retval = -EINVAL;
 		goto error_exit;
 	}
@@ -4697,7 +4696,7 @@ static int synaptics_rmi4_f54_status_work(struct work_struct *work)
 			kfree(f54->report_data);
 		f54->report_data = kzalloc(f54->report_size, GFP_KERNEL);
 		if (!f54->report_data) {
-			TS_LOG_ERR("%s: Failed to alloc mem for data buffer\n",
+			ts_log_err("%s: Failed to alloc mem for data buffer\n",
 				   __func__);
 			f54->data_buffer_size = 0;
 			mutex_unlock(&f54->data_mutex);
@@ -4719,7 +4718,7 @@ static int synaptics_rmi4_f54_status_work(struct work_struct *work)
 				    DATA_REPORT_INDEX_OFFSET, report_index,
 				    sizeof(report_index));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to write report data index\n", __func__);
+		ts_log_err("%s: Failed to write report data index\n", __func__);
 		retval = -EINVAL;
 		goto error_exit;
 	}
@@ -4737,7 +4736,7 @@ static int synaptics_rmi4_f54_status_work(struct work_struct *work)
 					   DATA_REPORT_DATA_OFFSET,
 					   report_data_temp, report_size_temp);
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to read report data\n",
+			ts_log_err("%s: Failed to read report data\n",
 				   __func__);
 			retval = -EINVAL;
 			mutex_unlock(&f54->data_mutex);
@@ -4771,7 +4770,7 @@ static void syna_rmi4_f54_status_work_func(struct work_struct *work)
 
 	ret = synaptics_rmi4_f54_status_work(work);
 	if (ret < 0)
-		TS_LOG_ERR("%s: can not get data\n", __func__);
+		ts_log_err("%s: can not get data\n", __func__);
 }
 
 static int synaptics_rmi4_f54_attention(void)
@@ -4817,7 +4816,7 @@ static void synaptics_rmi5_f55_init(struct synaptics_rmi4_data *rmi4_data)
 				   f55->query_base_addr,
 				   f55->query.data, sizeof(f55->query.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read f55 query registers\n",
+		ts_log_err("%s: Failed to read f55 query registers\n",
 			   __func__);
 		return;
 	}
@@ -4827,12 +4826,12 @@ static void synaptics_rmi5_f55_init(struct synaptics_rmi4_data *rmi4_data)
 
 	f55->rx_assignment = kzalloc(rx_electrodes, GFP_KERNEL);
 	if (f55->rx_assignment == NULL) {
-		TS_LOG_ERR("%s:kzalloc failed\n",__func__);
+		ts_log_err("%s:kzalloc failed\n",__func__);
 		return;
 	}
 	f55->tx_assignment = kzalloc(tx_electrodes, GFP_KERNEL);
 	if (f55->tx_assignment == NULL) {
-		TS_LOG_ERR("%s:kzalloc failed\n",__func__);
+		ts_log_err("%s:kzalloc failed\n",__func__);
 		return;
 	}
 	retval = f54->fn_ptr->read(rmi4_data,
@@ -4840,7 +4839,7 @@ static void synaptics_rmi5_f55_init(struct synaptics_rmi4_data *rmi4_data)
 				   SENSOR_RX_MAPPING_OFFSET, f55->rx_assignment,
 				   rx_electrodes);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read f55 rx assignment\n", __func__);
+		ts_log_err("%s: Failed to read f55 rx assignment\n", __func__);
 		return;
 	}
 
@@ -4849,7 +4848,7 @@ static void synaptics_rmi5_f55_init(struct synaptics_rmi4_data *rmi4_data)
 				   SENSOR_TX_MAPPING_OFFSET, f55->tx_assignment,
 				   tx_electrodes);
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read f55 tx assignment\n", __func__);
+		ts_log_err("%s: Failed to read f55 tx assignment\n", __func__);
 		return;
 	}
 
@@ -4874,7 +4873,7 @@ static void synaptics_rmi4_f55_set_regs(struct synaptics_rmi4_data *rmi4_data,
 {
 	f55 = kzalloc(sizeof(*f55), GFP_KERNEL);
 	if (!f55) {
-		TS_LOG_ERR("%s: Failed to alloc mem for f55\n", __func__);
+		ts_log_err("%s: Failed to alloc mem for f55\n", __func__);
 		return;
 	}
 
@@ -4888,7 +4887,7 @@ static void synaptics_rmi4_f55_set_regs(struct synaptics_rmi4_data *rmi4_data,
 
 static int match_module_name(const char *module_name)
 {
-	TS_LOG_INFO("%s: module_name = %s\n", __func__, module_name);
+	ts_log_info("%s: module_name = %s\n", __func__, module_name);
 
 	if (strcmp(module_name, "oflim") == 0)	/*oflim*/{
 		if (!strcmp(g_ts_data.product_name, "g760s")) {
@@ -4991,7 +4990,7 @@ static int match_module_name(const char *module_name)
 		return 0;
 
 	} else {
-		TS_LOG_ERR("%s: Failed to match module_name \n", __func__);
+		ts_log_err("%s: Failed to match module_name \n", __func__);
 		return -1;
 	}
 
@@ -5008,7 +5007,7 @@ int synaptics_rmi4_f54_s3207_init(struct synaptics_rmi4_data *rmi4_data,
 	bool f54found = false;
 	bool f55found = false;
 	struct synaptics_rmi4_fn_desc rmi_fd;
-	TS_LOG_INFO("%s: enter\n", __func__);
+	ts_log_info("%s: enter\n", __func__);
 
 	retval = match_module_name(module_name);
 	if (retval < 0) {
@@ -5018,14 +5017,14 @@ int synaptics_rmi4_f54_s3207_init(struct synaptics_rmi4_data *rmi4_data,
 
 	f54 = kzalloc(sizeof(*f54), GFP_KERNEL);
 	if (!f54) {
-		TS_LOG_ERR("%s: Failed to alloc mem for f54\n", __func__);
+		ts_log_err("%s: Failed to alloc mem for f54\n", __func__);
 		retval = -ENOMEM;
 		goto exit;
 	}
 
 	f54->fn_ptr = kzalloc(sizeof(*(f54->fn_ptr)), GFP_KERNEL);
 	if (!f54->fn_ptr) {
-		TS_LOG_ERR("%s: Failed to alloc mem for fn_ptr\n", __func__);
+		ts_log_err("%s: Failed to alloc mem for fn_ptr\n", __func__);
 		retval = -ENOMEM;
 		goto exit_free_f54;
 	}
@@ -5073,7 +5072,7 @@ int synaptics_rmi4_f54_s3207_init(struct synaptics_rmi4_data *rmi4_data,
 	}
 
 	if (!f54found) {
-		TS_LOG_INFO("%s: line(%d)\n", __func__, __LINE__);
+		ts_log_info("%s: line(%d)\n", __func__, __LINE__);
 		retval = -ENODEV;
 		goto exit_free_mem;
 	}
@@ -5083,7 +5082,7 @@ pdt_done:
 				   f54->query_base_addr,
 				   f54->query.data, sizeof(f54->query.data));
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to read f54 query registers\n",
+		ts_log_err("%s: Failed to read f54 query registers\n",
 			   __func__);
 		goto exit_free_mem;
 	}
@@ -5093,7 +5092,7 @@ pdt_done:
 
 	retval = synaptics_rmi4_f54_set_ctrl();
 	if (retval < 0) {
-		TS_LOG_ERR("%s: Failed to set up f54 control registers\n",
+		ts_log_err("%s: Failed to set up f54 control registers\n",
 			   __func__);
 		goto exit_free_control;
 	}
@@ -5106,11 +5105,11 @@ pdt_done:
 	mutex_init(&f54->control_mutex);
 /*Add synaptics capacitor test function */
 #if 1
-	TS_LOG_INFO("%s: sysfs_is_busy = %d\n", __func__, sysfs_is_busy);
+	ts_log_info("%s: sysfs_is_busy = %d\n", __func__, sysfs_is_busy);
 	if (!sysfs_is_busy) {
 		retval = synaptics_rmi4_f54_set_sysfs();
 		if (retval < 0) {
-			TS_LOG_ERR("%s: Failed to create sysfs entries\n",
+			ts_log_err("%s: Failed to create sysfs entries\n",
 				   __func__);
 			goto exit_sysfs;
 		}

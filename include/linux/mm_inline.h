@@ -29,8 +29,11 @@ static __always_inline void __update_lru_size(struct lruvec *lruvec,
 				int nr_pages)
 {
 	struct pglist_data *pgdat = lruvec_pgdat(lruvec);
-
+#ifdef CONFIG_REFAULT_IO_VMSCAN
+	__mod_lruvec_state(lruvec, NR_LRU_BASE + lru, nr_pages);
+#else
 	__mod_node_page_state(pgdat, NR_LRU_BASE + lru, nr_pages);
+#endif
 	__mod_zone_page_state(&pgdat->node_zones[zid],
 				NR_ZONE_LRU_BASE + lru, nr_pages);
 }

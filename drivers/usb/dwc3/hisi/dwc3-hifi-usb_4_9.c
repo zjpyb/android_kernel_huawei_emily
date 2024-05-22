@@ -9,11 +9,11 @@
 #include <linux/of_device.h>
 
 
-#define DBG_HIFI_USB(fmt, arg...) \
+#define dbg(fmt, arg...) \
 	pr_info("[HIFI_USB][DBG]%s:%d "fmt, __func__, __LINE__, ##arg)
-#define INFO_HIFI_USB(fmt, arg...) \
+#define info(fmt, arg...) \
 	pr_info("[HIFI_USB][INFO]%s:%d "fmt, __func__, __LINE__, ##arg)
-#define ERR_HIFI_USB(fmt, arg...) \
+#define err(fmt, arg...) \
 	pr_err("[HIFI_USB][ERR]%s:%d "fmt, __func__, __LINE__, ##arg)
 
 /* DWC3 registers memory space boundries */
@@ -27,29 +27,29 @@
 #define DWC3_GCTL		0xc110
 #define DWC3_GSNPSID		0xc120
 #define DWC3_VER_NUMBER		0xc1a0
-#define DWC3_GUSB2PHYCFG(n)	(0xc200 + (n * 0x04))
+#define dwc3_gusb2phycfg(n)	(0xc200 + ((n) * 0x04))
 
 /* Device Registers */
 #define DWC3_DCTL		0xc704
 
 /* Global Configuration Register */
-#define DWC3_GCTL_SCALEDOWN(n)		((n) << 4)
-#define DWC3_GCTL_SCALEDOWN_MASK	DWC3_GCTL_SCALEDOWN(3)
+#define dwc3_gctl_scaledown(n)		((n) << 4)
+#define DWC3_GCTL_SCALEDOWN_MASK	dwc3_gctl_scaledown(3)
 #define DWC3_GCTL_PRTCAP_HOST	1
 #define DWC3_GCTL_PRTCAP_OTG	3
-#define DWC3_GCTL_PRTCAPDIR(n)	((n) << 12)
+#define dwc3_gctl_prtcapdir(n)	((n) << 12)
 
 
-/* Global Constants*/
+/* Global Constants */
 #define DWC3_GSNPSID_MASK	0xffff0000
 #define DWC3_XHCI_RESOURCES_NUM	2
 
 
 /* Global USB2 PHY Configuration Register */
-#define DWC3_GUSB2PHYCFG_PHYIF(n)	(n << 3)
+#define dwc3_gusb2phycfg_phyif(n)	((n) << 3)
 #define USBTRDTIM_UTMI_16_BIT		5
-#define DWC3_GUSB2PHYCFG_USBTRDTIM(n)	(n << 10)
-#define DWC3_GUSB2PHYCFG_USBTRDTIM_MASK	DWC3_GUSB2PHYCFG_USBTRDTIM(0xf)
+#define dwc3_gusb2phycfg_usbtrdtim(n)	((n) << 10)
+#define DWC3_GUSB2PHYCFG_USBTRDTIM_MASK	dwc3_gusb2phycfg_usbtrdtim(0xf)
 #define UTMI_PHYIF_16_BIT		1
 
 
@@ -85,7 +85,7 @@ struct hifi_usb {
 	struct timer_list	enum_device_timer;
 
 	struct work_struct	handle_hifi_reset_wk;
-	u32			ap_use_hifiusb:1;
+	u32			ap_use_hifiusb : 1;
 };
 
 struct hifi_usb *g_hifi_usb;
@@ -95,33 +95,33 @@ static int ap_use_hifi_usb_runstop_and_wait(struct hifi_usb *hifi_usb, bool run)
 	int retval;
 	__s32 result;
 
-	DBG_HIFI_USB("+\n");
-	DBG_HIFI_USB("run %d\n", run);
+	dbg("+\n");
+	dbg("run %d\n", run);
 	init_completion(&hifi_usb->msg_completion);
 
-	hifi_usb->runstop_msg.mesg_id = ID_AP_USE_HIFI_USB; /*lint !e63 */
-	hifi_usb->runstop_msg.reserved = 0; /*lint !e63 */
-	hifi_usb->runstop_msg.runstop = run; /*lint !e63 */
-	hifi_usb->runstop_msg.result = 0; /*lint !e63 */
+	hifi_usb->runstop_msg.mesg_id = ID_AP_USE_HIFI_USB;
+	hifi_usb->runstop_msg.reserved = 0;
+	hifi_usb->runstop_msg.runstop = run;
+	hifi_usb->runstop_msg.result = 0;
 
-	result = hifi_usb_send_mailbox(&hifi_usb->runstop_msg,
+	result = hifi_usb_send_mailbox((struct hifi_usb_op_msg *)(&hifi_usb->runstop_msg),
 			sizeof(hifi_usb->runstop_msg));
 	if (result) {
-		ERR_HIFI_USB("send mailbox to hifi failed\n");
+		err("send mailbox to hifi failed\n");
 		return result;
 	}
 
 	retval = wait_for_completion_timeout(&hifi_usb->msg_completion,
 			HIFI_USB_MSG_TIMEOUT);
 	if (retval == 0) {
-		ERR_HIFI_USB("timeout!\n");
+		err("timeout!\n");
 		WARN_ON(1);
 		return -ETIMEDOUT;
 	}
 
 	result = hifi_usb->runstop_msg.result;
-	DBG_HIFI_USB("result %d\n", result);
-	DBG_HIFI_USB("-\n");
+	dbg("result %d\n", result);
+	dbg("-\n");
 	return result;
 }
 
@@ -130,18 +130,18 @@ static void handle_hifi_reset(struct work_struct *work)
 	int ret;
 
 	if (!g_hifi_usb) {
-		ERR_HIFI_USB("g_hifi_usb is NULL\n");
+		err("g_hifi_usb is NULL\n");
 		return;
 	}
 
-	ERR_HIFI_USB("hifi just restart\n");
+	err("hifi just restart\n");
 
 	mutex_lock(&g_hifi_usb->lock);
 	if (g_hifi_usb->ap_use_hifiusb) {
 		/* resend runstop message */
 		ret = ap_use_hifi_usb_runstop_and_wait(g_hifi_usb, 1);
 		if (ret)
-			ERR_HIFI_USB("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
+			err("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
 					ret);
 	}
 	mutex_unlock(&g_hifi_usb->lock);
@@ -153,7 +153,7 @@ void ap_use_hifi_usb_msg_receiver(void *msg_buf)
 	struct hifi_usb_runstop_msg *runstop_msg;
 
 	if (!g_hifi_usb) {
-		ERR_HIFI_USB("receive mesg while g_hifi_usb is NULL\n");
+		err("receive mesg while g_hifi_usb is NULL\n");
 		return;
 	}
 
@@ -166,7 +166,7 @@ void ap_use_hifi_usb_msg_receiver(void *msg_buf)
 		if (g_hifi_usb->ap_use_hifiusb) {
 			if (!queue_work(system_power_efficient_wq,
 					&g_hifi_usb->handle_hifi_reset_wk))
-				INFO_HIFI_USB("work already on the queue\n");
+				info("work already on the queue\n");
 		}
 	}
 }
@@ -200,20 +200,20 @@ static int hifi_usb_core_init(struct hifi_usb *hifi_usb)
 		hifi_usb->revision = hifi_usb_readl(hifi_usb->regs, DWC3_VER_NUMBER);
 		hifi_usb->revision |= DWC3_REVISION_IS_DWC31;
 	} else {
-		ERR_HIFI_USB("this is not a DesignWare USB3 DRD Core\n");
+		err("this is not a DesignWare USB3 DRD Core\n");
 		return -ENODEV;
 	}
 
 	/* set before PHY Interface SoftReset */
-	reg = hifi_usb_readl(hifi_usb->regs, DWC3_GUSB2PHYCFG(0));
-	reg |= DWC3_GUSB2PHYCFG_PHYIF(UTMI_PHYIF_16_BIT);
-	hifi_usb_writel(hifi_usb->regs, DWC3_GUSB2PHYCFG(0), reg);
+	reg = hifi_usb_readl(hifi_usb->regs, dwc3_gusb2phycfg(0));
+	reg |= dwc3_gusb2phycfg_phyif(UTMI_PHYIF_16_BIT);
+	hifi_usb_writel(hifi_usb->regs, dwc3_gusb2phycfg(0), reg);
 
 	/* do SoftReset */
 	timeout = jiffies + msecs_to_jiffies(500);
 
 	reg = hifi_usb_readl(hifi_usb->regs, DWC3_DCTL);
-	reg &= ~DWC3_DCTL_RUN_STOP;	/*lint !e648 */
+	reg &= ~DWC3_DCTL_RUN_STOP;
 	reg |= DWC3_DCTL_CSFTRST;
 	hifi_usb_writel(hifi_usb->regs, DWC3_DCTL, reg);
 	do {
@@ -222,7 +222,7 @@ static int hifi_usb_core_init(struct hifi_usb *hifi_usb)
 			break;
 
 		if (time_after(jiffies, timeout)) {
-			ERR_HIFI_USB("Reset Timed Out\n");
+			err("Reset Timed Out\n");
 			return -ETIMEDOUT;
 		}
 
@@ -232,16 +232,16 @@ static int hifi_usb_core_init(struct hifi_usb *hifi_usb)
 	reg = hifi_usb_readl(hifi_usb->regs, DWC3_GCTL);
 	reg &= ~DWC3_GCTL_SCALEDOWN_MASK;
 
-	reg &= ~(DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG));
-	reg |= DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_HOST);
+	reg &= ~(dwc3_gctl_prtcapdir(DWC3_GCTL_PRTCAP_OTG));
+	reg |= dwc3_gctl_prtcapdir(DWC3_GCTL_PRTCAP_HOST);
 
 	hifi_usb_writel(hifi_usb->regs, DWC3_GCTL, reg);
 
 	/* Set Turnaround Time = 9 (8-bit UTMI+ / ULPI) */
-	reg = hifi_usb_readl(hifi_usb->regs, DWC3_GUSB2PHYCFG(0));
+	reg = hifi_usb_readl(hifi_usb->regs, dwc3_gusb2phycfg(0));
 	reg &= ~DWC3_GUSB2PHYCFG_USBTRDTIM_MASK;
-	reg |= DWC3_GUSB2PHYCFG_USBTRDTIM(9);
-	hifi_usb_writel(hifi_usb->regs, DWC3_GUSB2PHYCFG(0), reg);
+	reg |= dwc3_gusb2phycfg_usbtrdtim(9);
+	hifi_usb_writel(hifi_usb->regs, dwc3_gusb2phycfg(0), reg);
 
 	/*
 	 * WARNING:ASP USB Controller may access DDR failed by setting
@@ -252,34 +252,105 @@ static int hifi_usb_core_init(struct hifi_usb *hifi_usb)
 	return 0;
 }
 
+static int hifi_usb_add_xhci_device(struct hifi_usb *hifi_usb)
+{
+	struct property_entry	props[4];
+	int			prop_idx = 0;
+	struct platform_device *xhci = NULL;
+	int			ret;
+	int			i;
+
+	xhci = platform_device_alloc("xhci-hcd", PLATFORM_DEVID_AUTO);
+	if (!xhci) {
+		err("couldn't allocate xHCI device\n");
+		return -ENOMEM;
+	}
+
+	xhci->dev.parent = hifi_usb->dev;
+	dev_set_name(&xhci->dev, "hifi-usb-xhci");
+
+	ret = platform_device_add_resources(xhci, hifi_usb->xhci_resources,
+						DWC3_XHCI_RESOURCES_NUM);
+	if (ret) {
+		err("couldn't add resources to xHCI device\n");
+		goto put_xhci;
+	}
+
+	memset(props, 0, sizeof(struct property_entry) * ARRAY_SIZE(props));
+
+	if (device_property_read_bool(hifi_usb->dev, "hcd_local_mem"))
+		props[prop_idx++].name = "hcd-local-mem";
+	if (device_property_read_bool(hifi_usb->dev, "disable_lpm"))
+		props[prop_idx++].name = "disable-lpm";
+	if (device_property_read_bool(hifi_usb->dev, "not_support_sg"))
+		props[prop_idx++].name = "not-support-sg";
+
+	if (prop_idx >= NUMBER_PROPS) {
+		ret = -EINVAL;
+		goto put_xhci;
+	}
+
+	if (prop_idx) {
+		for (i = 0; i < prop_idx; i++)
+			hifi_usb->props[i].name = props[i].name;
+		hifi_usb->num_props = prop_idx;
+	}
+
+	if (hifi_usb->num_props) {
+		ret = platform_device_add_properties(xhci, hifi_usb->props);
+		if (ret) {
+			err("couldn't add properties to xHCI device\n");
+			goto put_xhci;
+		}
+	}
+
+	ret = platform_device_add(xhci);
+	if (ret) {
+		err("failed to register xHCI device\n");
+		goto remove_prop;
+	}
+
+	hifi_usb->xhci = xhci;
+
+	return 0;
+
+remove_prop:
+	if (hifi_usb->num_props)
+		device_remove_properties(&xhci->dev);
+put_xhci:
+	platform_device_put(xhci);
+
+	return ret;
+}
+
 int ap_start_use_hifiusb(void)
 {
 	int ret;
 
-	DBG_HIFI_USB("+\n");
+	dbg("+\n");
 	if (!g_hifi_usb) {
-		ERR_HIFI_USB("no device\n");
+		err("no device\n");
 		return -ENODEV;
 	}
 
 	mutex_lock(&g_hifi_usb->lock);
 	ret = usb_h2x_on();
 	if (ret) {
-		ERR_HIFI_USB("usb_h2x_on failed\n");
+		err("usb_h2x_on failed\n");
 		mutex_unlock(&g_hifi_usb->lock);
 		return ret;
 	}
 
 	ret = ap_use_hifi_usb_runstop_and_wait(g_hifi_usb, 1);
 	if (ret) {
-		ERR_HIFI_USB("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
+		err("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
 				ret);
 		goto err_send_msg;
 	}
 
 	ret = hifi_usb_core_init(g_hifi_usb);
 	if (ret) {
-		ERR_HIFI_USB("hifi_usb_core_init failed err %d\n", ret);
+		err("hifi_usb_core_init failed err %d\n", ret);
 		goto err_core_init;
 	}
 
@@ -287,20 +358,9 @@ int ap_start_use_hifiusb(void)
 
 	usb_register_notify(&g_hifi_usb->usb_nb);
 
-	if (g_hifi_usb->num_props) {
-		ret = platform_device_add_properties(g_hifi_usb->xhci,
-				g_hifi_usb->props);
-		if (ret) {
-			ERR_HIFI_USB("couldn't add properties to xHCI device\n");
-			goto err_core_init;
-		}
-	}
-
-	ret = platform_device_add(g_hifi_usb->xhci);
-	if (ret) {
-		ERR_HIFI_USB("failed to register xHCI device\n");
-		goto err_prop_add;
-	}
+	ret = hifi_usb_add_xhci_device(g_hifi_usb);
+	if (ret)
+		goto err_core_init;
 
 	mod_timer(&g_hifi_usb->enum_device_timer,
 				jiffies + AP_USE_HIFIUSB_ENUM_DEVICE_TIMEOUT);
@@ -308,19 +368,16 @@ int ap_start_use_hifiusb(void)
 	g_hifi_usb->ap_use_hifiusb = 1;
 	mutex_unlock(&g_hifi_usb->lock);
 
-	DBG_HIFI_USB("-\n");
+	dbg("-\n");
 	return 0;
 
-err_prop_add:
-	if (g_hifi_usb->num_props)
-		device_remove_properties(&g_hifi_usb->xhci->dev);
 err_core_init:
 	if (ap_use_hifi_usb_runstop_and_wait(g_hifi_usb, 0))
-		ERR_HIFI_USB("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
+		err("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
 				ret);
 err_send_msg:
 	if (usb_h2x_off())
-		ERR_HIFI_USB("usb_h2x_off failed\n");
+		err("usb_h2x_off failed\n");
 	mutex_unlock(&g_hifi_usb->lock);
 
 	return ret;
@@ -330,10 +387,10 @@ void ap_stop_use_hifiusb(void)
 {
 	int ret;
 
-	DBG_HIFI_USB("+\n");
+	dbg("+\n");
 
 	if (!g_hifi_usb) {
-		ERR_HIFI_USB("no device\n");
+		err("no device\n");
 		return;
 	}
 
@@ -341,102 +398,75 @@ void ap_stop_use_hifiusb(void)
 
 	mutex_lock(&g_hifi_usb->lock);
 
-	platform_device_del(g_hifi_usb->xhci);
+	platform_device_unregister(g_hifi_usb->xhci);
 
 	usb_unregister_notify(&g_hifi_usb->usb_nb);
 
 	ret = ap_use_hifi_usb_runstop_and_wait(g_hifi_usb, 0);
-	if (ret) {
-		ERR_HIFI_USB("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
+	if (ret)
+		err("ap_use_hifi_usb_runstop_and_wait failed err %d\n",
 				ret);
-	}
 
 	ret = usb_h2x_off();
 	if (ret)
-		ERR_HIFI_USB("usb_h2x_off failed\n");
+		err("usb_h2x_off failed\n");
 
 	g_hifi_usb->ap_use_hifiusb = 0;
 	mutex_unlock(&g_hifi_usb->lock);
 
-	DBG_HIFI_USB("-\n");
+	dbg("-\n");
 }
 
-#define DSM_USB_DEVICE_INFO_LEN_MAX (50)
+#define DSM_USB_DEVICE_INFO_LEN_MAX 50
 static int usb_notifier_fn(struct notifier_block *nb,
 			unsigned long action, void *data)
 {
 	struct usb_device *udev = (struct usb_device *)data;
 
-	DBG_HIFI_USB("+\n");
+	dbg("+\n");
 	if (!udev || !udev->parent)
 		return 0;
 
 	if (action == USB_DEVICE_ADD) {
-		INFO_HIFI_USB("udev USB_DEVICE_ADD\n");
+		info("udev USB_DEVICE_ADD\n");
 		if (USB_CLASS_HUB != udev->descriptor.bDeviceClass) {
 			g_hifi_usb->device_connect++;
 
 			del_timer(&g_hifi_usb->enum_device_timer);
-#ifdef CONFIG_HUAWEI_DSM
-			if (udev->manufacturer && udev->product) {
-				char manufacturer[DSM_USB_DEVICE_INFO_LEN_MAX + 1];
-				char product[DSM_USB_DEVICE_INFO_LEN_MAX + 1];
-				int len;
-
-				len = strnlen(udev->manufacturer, DSM_USB_DEVICE_INFO_LEN_MAX);
-				strncpy(manufacturer, udev->manufacturer, len);
-				manufacturer[len] = '\0';
-
-				len = strnlen(udev->product, DSM_USB_DEVICE_INFO_LEN_MAX);
-				strncpy(product, udev->product, len);
-				product[len] = '\0';
-				power_dsm_dmd_report_format(POWER_DSM_USB, DSM_USB_RECORD_ABNORMAL_DEVICE,
-						"manufacturer %s, product %s\n",
-						manufacturer, product);
-			}
-#endif
 		}
 	} else if (action == USB_DEVICE_REMOVE) {
-		INFO_HIFI_USB("udev USB_DEVICE_REMOVE\n");
+		info("udev USB_DEVICE_REMOVE\n");
 		if (USB_CLASS_HUB != udev->descriptor.bDeviceClass) {
 			if (g_hifi_usb->device_connect)
 				g_hifi_usb->device_connect--;
 			else
-				ERR_HIFI_USB("Removing device that has not been added!\n");
+				err("Removing device that has not been added!\n");
 		}
 
 		if (g_hifi_usb->device_connect == 0) {
-			INFO_HIFI_USB("Thers's no device connected, switch to HOST\n");
-			hisi_usb_otg_event(STOP_AP_USE_HIFIUSB);
+			info("Thers's no device connected, switch to HOST\n");
+			chip_usb_otg_event(STOP_AP_USE_HIFIUSB);
 		}
 	}
-	DBG_HIFI_USB("-\n");
+	dbg("-\n");
 
 	return 0;
 }
 
 static void ap_use_hifiusb_enum_timeout(unsigned long data)
 {
-	ERR_HIFI_USB("enum device timeout!\n");
-#ifdef CONFIG_HUAWEI_DSM
-	power_dsm_dmd_report_format(POWER_DSM_USB, DSM_USB_AP_USE_HIFIUSB_ENUM_TIMEOUT,
-			"enum device failed or mayby device has been pulled out\n");
-#endif
+	err("enum device timeout!\n");
 }
 
 static int hifi_usb_plat_probe(struct platform_device *pdev)
 {
-	struct property_entry	props[4];
-	int			prop_idx = 0;
 	struct device		*dev = &pdev->dev;
 	struct resource		*res;
 	struct hifi_usb		*hifi_usb;
-	struct platform_device	*xhci;
 	void __iomem		*regs;
 	int			ret;
-	int			i;
 
-	DBG_HIFI_USB("+\n");
+	dbg("+\n");
 
 	hifi_usb = devm_kzalloc(dev, sizeof(*hifi_usb), GFP_KERNEL);
 	if (!hifi_usb)
@@ -447,8 +477,8 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
-		ERR_HIFI_USB("missing IRQ\n");
-		return -ENODEV; /*lint !e429 */
+		err("missing IRQ\n");
+		return -ENODEV;
 	}
 	hifi_usb->xhci_resources[1].start = res->start;
 	hifi_usb->xhci_resources[1].end = res->end;
@@ -457,8 +487,8 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		ERR_HIFI_USB("missing memory resource\n");
-		return -ENODEV; /*lint !e429 */
+		err("missing memory resource\n");
+		return -ENODEV;
 	}
 
 	hifi_usb->xhci_resources[0].start = res->start;
@@ -476,53 +506,22 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 	regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR(regs)) {
 		ret = PTR_ERR(regs);
-		goto err0;
+		goto probe_err;
 	}
 
 	hifi_usb->regs = regs;
 	hifi_usb->regs_size = resource_size(res);
 
-	xhci = platform_device_alloc("xhci-hcd", PLATFORM_DEVID_AUTO);
-	if (!xhci) {
-		ERR_HIFI_USB("couldn't allocate xHCI device\n");
-		ret = -ENOMEM;
-		goto err0;
+	pm_runtime_set_active(dev);
+	pm_runtime_enable(dev);
+	ret = pm_runtime_get_sync(dev);
+	if (ret < 0) {
+		err("pm_runtime_get_sync failed %d\n", ret);
+		goto probe_err;
 	}
 
-	/* config dma of xhci device */
-	of_dma_configure(&xhci->dev, dev->of_node);
+	pm_runtime_forbid(dev);
 
-	xhci->dev.parent = hifi_usb->dev;
-	dev_set_name(&xhci->dev, "hifi-usb-xhci");
-
-	ret = platform_device_add_resources(xhci, hifi_usb->xhci_resources,
-						DWC3_XHCI_RESOURCES_NUM);
-	if (ret) {
-		ERR_HIFI_USB("couldn't add resources to xHCI device\n");
-		goto err1;
-	}
-
-	memset(props, 0, sizeof(struct property_entry) * ARRAY_SIZE(props));
-
-	if (device_property_read_bool(dev, "hcd_local_mem"))
-		props[prop_idx++].name = "hcd-local-mem";
-	if (device_property_read_bool(dev, "disable_lpm"))
-		props[prop_idx++].name = "disable-lpm";
-	if (device_property_read_bool(dev, "not_support_sg"))
-		props[prop_idx++].name = "not-support-sg";
-
-	if (prop_idx >= NUMBER_PROPS) {
-		ret = -EINVAL;
-		goto err1;
-	}
-
-	if (prop_idx) {
-		for (i = 0; i < prop_idx; i++)
-			hifi_usb->props[i].name = props[i].name;
-		hifi_usb->num_props = prop_idx;
-	}
-
-	hifi_usb->xhci = xhci;
 	platform_set_drvdata(pdev, hifi_usb);
 
 	hifi_usb->usb_nb.notifier_call = usb_notifier_fn;
@@ -535,13 +534,11 @@ static int hifi_usb_plat_probe(struct platform_device *pdev)
 
 	g_hifi_usb = hifi_usb;
 
-	DBG_HIFI_USB("-\n");
+	dbg("-\n");
 
 	return 0;
 
-err1:
-	platform_device_put(xhci);
-err0:
+probe_err:
 	/*
 	 * restore res->start back to its original value so that, in case the
 	 * probe is deferred, we don't end up getting error in request the
@@ -549,7 +546,7 @@ err0:
 	 */
 	res->start -= DWC3_GLOBALS_REGS_START;
 
-	return ret; /*lint !e429 */
+	return ret;
 }
 
 static int hifi_usb_plat_remove(struct platform_device *pdev)
@@ -581,6 +578,9 @@ static int hifi_usb_plat_remove(struct platform_device *pdev)
 
 	platform_device_unregister(hifi_usb->xhci);
 
+	pm_runtime_put_sync(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
+
 	return 0;
 }
 
@@ -594,14 +594,34 @@ static const struct of_device_id hifi_usb_of_match[] = {
 MODULE_DEVICE_TABLE(of, phcd_of_match);
 #endif
 
-#define DEV_PM_OPS	NULL
+#ifdef CONFIG_PM
+static int hifi_usb_runtime_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int hifi_usb_runtime_resume(struct device *dev)
+{
+	return 0;
+}
+
+static int hifi_usb_runtime_idle(struct device *dev)
+{
+	return -EBUSY;
+}
+#endif /* CONFIG_PM */
+
+static const struct dev_pm_ops hifi_usb_dev_pm_ops = {
+	SET_RUNTIME_PM_OPS(hifi_usb_runtime_suspend, hifi_usb_runtime_resume,
+			hifi_usb_runtime_idle)
+};
 
 static struct platform_driver hifi_usb_plat_driver = {
 	.probe	= hifi_usb_plat_probe,
 	.remove	= hifi_usb_plat_remove,
 	.driver	= {
 		.name = "hifi-usb",
-		.pm = DEV_PM_OPS,
+		.pm = &hifi_usb_dev_pm_ops,
 		.of_match_table = of_match_ptr(hifi_usb_of_match),
 	},
 };

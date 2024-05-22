@@ -22,16 +22,20 @@
 #endif
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/sensor/hw_comm_pmic.h>
+#include "gp_buck.h"
 
 #define HWLOG_TAG huawei_pmic
 HWLOG_REGIST();
 
 #define GPIO_IRQ_REGISTER_SUCCESS 1
 #define MAX_I2C_EXCEP_TIME 3
+#define MAX_PMIC_ONCHIP    3
 
 struct hw_pmic_ctrl_t *hw_pmic_ctrl;
 struct dsm_client *hw_pmic_sen_client;
 int pmic_dsm_notify_limit;
+static struct pmic_ctrl_vote_t pmic_ctrl_vote[MAX_PMIC_ONCHIP][VOUT_BOOST_EN + 1];
+DEFINE_HW_PMIC_MUTEX(vote_cfg);
 
 struct dsm_dev dsm_hw_pmic = {
 	.name = "dsm_hw_pmic",
@@ -151,31 +155,190 @@ int hw_main_pmic_ctrl_cfg(u8 pmic_seq, u32 vol, int state)
 	return 0;
 }
 
+static void buck_max_volt_calc(enum pmic_power_req_src_t pmic_power_src,
+	struct hw_comm_pmic_cfg_t *pmic_cfg)
+{
+	pmic_seq_index_t seq;
+	u8 num;
+	u32 seq_volt = 0;
+	u32 i;
+
+	seq = pmic_cfg->pmic_power_type;
+	num = pmic_cfg->pmic_num;
+	for (i = 0; i < MAX_RMIC_REQ; i++) {
+		hwlog_debug("volt = %u\n",pmic_ctrl_vote[num][seq].pmic_volt[i]);
+		if (seq_volt <= pmic_ctrl_vote[num][seq].pmic_volt[i]) {
+			seq_volt = pmic_ctrl_vote[num][seq].pmic_volt[i];
+			hwlog_debug("%s higher vol = %u\n", __func__, seq_volt);
+		}
+	}
+	pmic_cfg->pmic_power_voltage = seq_volt;
+	hwlog_info("calc vote volt = %u\n", pmic_cfg->pmic_power_voltage);
+}
+
+// define a function to claim different vote algo
+static void pmic_volt_vote_set(enum pmic_power_req_src_t src,
+	struct hw_comm_pmic_cfg_t *pmic_cfg)
+{
+	pmic_seq_index_t seq = pmic_cfg->pmic_power_type;
+	u8 num = pmic_cfg->pmic_num;
+
+	if (pmic_ctrl_vote[num][seq].power_state == 0)
+		return;
+
+	if ((pmic_ctrl_vote[num][seq].power_state &
+		(~((u8)PMIC_VOTE_ON << (u8)src))) == 0) {
+		hwlog_info("only this src need power, no need vote");
+		return;
+	}
+	if (seq == VOUT_BUCK_1)
+		buck_max_volt_calc(src, pmic_cfg);
+}
+
+static void pmic_power_vote_set(enum pmic_power_req_src_t src,
+	struct hw_comm_pmic_cfg_t *pmic_cfg)
+{
+	pmic_seq_index_t seq = pmic_cfg->pmic_power_type;
+	u8 num = pmic_cfg->pmic_num;
+
+	switch (src) {
+	case MAIN_CAM_PMIC_REQ:
+		if (pmic_cfg->pmic_power_state == true) {
+			pmic_ctrl_vote[num][seq].power_state |= (u8)PMIC_VOTE_ON << (u8)src;
+			pmic_ctrl_vote[num][seq].power_cnt[src]++;
+			pmic_ctrl_vote[num][seq].pmic_volt[src] =
+				pmic_cfg->pmic_power_voltage;
+		} else {
+			pmic_ctrl_vote[num][seq].power_cnt[src]--;
+		}
+		if (pmic_ctrl_vote[num][seq].power_cnt[src] < 0) {
+			pmic_ctrl_vote[num][seq].power_cnt[src] = 0;
+			hwlog_err("err power vote cnt\n");
+		}
+		if (pmic_ctrl_vote[num][seq].power_cnt[src] == 0) {
+			pmic_ctrl_vote[num][seq].power_state &=
+				~((u8)PMIC_VOTE_ON << (u8)src);
+			pmic_ctrl_vote[num][seq].pmic_volt[src] = 0;
+		}
+		break;
+	default:
+		if (pmic_cfg->pmic_power_state == true) {
+			pmic_ctrl_vote[num][seq].power_state |= (u8)PMIC_VOTE_ON << (u8)src;
+			pmic_ctrl_vote[num][seq].pmic_volt[src] =
+				pmic_cfg->pmic_power_voltage;
+		} else {
+			pmic_ctrl_vote[num][seq].power_state &=
+				~((u8)PMIC_VOTE_ON << (u8)src);
+			pmic_ctrl_vote[num][seq].pmic_volt[src] = 0;
+		}
+		break;
+	}
+
+	if (pmic_ctrl_vote[num][seq].power_state > 0) {
+		pmic_cfg->pmic_power_state = PMIC_VOTE_ON;
+	} else {
+		pmic_cfg->pmic_power_state = PMIC_VOTE_OFF;
+		pmic_ctrl_vote[num][seq].pmic_volt[src] = 0;
+	}
+}
+
 int hw_pmic_power_cfg(enum pmic_power_req_src_t pmic_power_src,
 	struct hw_comm_pmic_cfg_t *comm_pmic_cfg)
 {
 	struct hw_pmic_ctrl_t *pmic_ctrl = NULL;
+	int ret;
 
 	if (!comm_pmic_cfg) {
 		hwlog_err("%s, pmic vol cfg para null\n", __func__);
 		return -EFAULT;
 	}
-	if (comm_pmic_cfg->pmic_num == 0)
-		return hw_main_pmic_ctrl_cfg(comm_pmic_cfg->pmic_power_type,
+	if ((pmic_power_src >= MAX_RMIC_REQ) ||
+		(comm_pmic_cfg->pmic_power_type > VOUT_BOOST_EN) ||
+		(comm_pmic_cfg->pmic_num >= MAX_PMIC_ONCHIP)) {
+		hwlog_err("%s, err para, %d, %d\n", __func__,
+			pmic_power_src, comm_pmic_cfg->pmic_power_type);
+		return -EFAULT;
+	}
+	mutex_lock(&pmic_mut_vote_cfg);
+	hwlog_info("need num-%d, seq-%d, type-%d, volt-%u, on-%d, state-%u\n",
+		comm_pmic_cfg->pmic_num, pmic_power_src,
+		comm_pmic_cfg->pmic_power_type,
+		comm_pmic_cfg->pmic_power_voltage,
+		comm_pmic_cfg->pmic_power_state,
+		pmic_ctrl_vote[comm_pmic_cfg->pmic_num][comm_pmic_cfg->pmic_power_type].power_state);
+
+	pmic_power_vote_set(pmic_power_src, comm_pmic_cfg);
+	pmic_volt_vote_set(pmic_power_src, comm_pmic_cfg);
+	hwlog_info("set num-%d, src-%d, type-%d, vol-%u, on-%d, state-%u\n",
+		comm_pmic_cfg->pmic_num, pmic_power_src,
+		comm_pmic_cfg->pmic_power_type,
+		comm_pmic_cfg->pmic_power_voltage,
+		comm_pmic_cfg->pmic_power_state,
+		pmic_ctrl_vote[comm_pmic_cfg->pmic_num][comm_pmic_cfg->pmic_power_type].power_state);
+
+	if (comm_pmic_cfg->pmic_num == 0) {
+		hw_main_pmic_ctrl_cfg(comm_pmic_cfg->pmic_power_type,
 			comm_pmic_cfg->pmic_power_voltage,
 			comm_pmic_cfg->pmic_power_state);
-
+		mutex_unlock(&pmic_mut_vote_cfg);
+		return 0;
+	} else if (comm_pmic_cfg->pmic_num == 2) { // 2 for gp buck type
+		 gp_buck_ctrl_en(comm_pmic_cfg->pmic_power_type,
+			comm_pmic_cfg->pmic_power_voltage,
+			comm_pmic_cfg->pmic_power_state);
+		mutex_unlock(&pmic_mut_vote_cfg);
+		return 0;
+	}
 	pmic_ctrl = hw_get_pmic_ctrl();
 	if (!pmic_ctrl || !pmic_ctrl->func_tbl ||
 		!pmic_ctrl->func_tbl->pmic_seq_config) {
 		hwlog_err("%s, pmic_ctrl is null,just return\n", __func__);
+		mutex_unlock(&pmic_mut_vote_cfg);
 		return -EFAULT;
 	}
 
-	return pmic_ctrl->func_tbl->pmic_seq_config(pmic_ctrl,
+	ret = pmic_ctrl->func_tbl->pmic_seq_config(pmic_ctrl,
 		comm_pmic_cfg->pmic_power_type,
 		comm_pmic_cfg->pmic_power_voltage,
 		comm_pmic_cfg->pmic_power_state);
+	mutex_unlock(&pmic_mut_vote_cfg);
+	return ret;
+}
+
+int set_boost_load_enable_cfg(enum pmic_power_req_src_t pmic_power_src, u8 pmic_num, int power_status)
+{
+	struct hisi_pmic_ctrl_t *pmic_main_ctrl = NULL;
+	int ret;
+
+	if (pmic_num != 0)
+		return -EFAULT;
+
+	pmic_main_ctrl = hisi_get_pmic_ctrl();
+	if (!pmic_main_ctrl || !pmic_main_ctrl->func_tbl ||
+		!pmic_main_ctrl->func_tbl->pmic_set_boost_load_enable) {
+		hwlog_err("%s, main pmic not support\n", __func__);
+		return -EFAULT;
+	}
+	ret = pmic_main_ctrl->func_tbl->pmic_set_boost_load_enable(pmic_main_ctrl, power_status);
+	return ret;
+}
+
+int set_force_pwm_mode_cfg(enum pmic_power_req_src_t pmic_power_src, u8 pmic_num, int power_status)
+{
+	struct hisi_pmic_ctrl_t *pmic_main_ctrl = NULL;
+	int ret;
+
+	if (pmic_num != 0)
+		return -EFAULT;
+
+	pmic_main_ctrl = hisi_get_pmic_ctrl();
+	if (!pmic_main_ctrl || !pmic_main_ctrl->func_tbl ||
+		!pmic_main_ctrl->func_tbl->pmic_force_pwm_mode) {
+		hwlog_err("%s, main pmic not support\n", __func__);
+		return -EFAULT;
+	}
+	ret = pmic_main_ctrl->func_tbl->pmic_force_pwm_mode(pmic_main_ctrl, power_status);
+	return ret;
 }
 
 static irqreturn_t hw_pmic_interrupt_handler(int vec, void *info)

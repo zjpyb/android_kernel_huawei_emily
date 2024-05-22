@@ -997,7 +997,7 @@ int mmc_can_ext_csd(struct mmc_card *card)
 	return (card && card->csd.mmca_vsn > CSD_SPEC_VER_3);
 }
 
-#ifndef CONFIG_HISI_MMC_MANUAL_BKOPS
+#ifndef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
 /**
  *	mmc_stop_bkops - stop ongoing BKOPS
  *	@card: MMC card to check BKOPS
@@ -1025,9 +1025,9 @@ int mmc_stop_bkops(struct mmc_card *card)
 
 	return err;
 }
-#endif /* CONFIG_HISI_MMC_MANUAL_BKOPS */
+#endif /* CONFIG_ZODIAC_MMC_MANUAL_BKOPS */
 
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
 int mmc_read_bkops_status(struct mmc_card *card)
 #else
 static int mmc_read_bkops_status(struct mmc_card *card)
@@ -1048,7 +1048,7 @@ static int mmc_read_bkops_status(struct mmc_card *card)
 	return 0;
 }
 
-#ifndef CONFIG_HISI_MMC_MANUAL_BKOPS
+#ifndef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
 /**
  *	mmc_start_bkops - start BKOPS for supported cards
  *	@card: MMC card to start BKOPS
@@ -1120,7 +1120,7 @@ void mmc_start_bkops(struct mmc_card *card, bool from_exception)
 out:
 	mmc_release_host(card->host);
 }
-#endif /* CONFIG_HISI_MMC_MANUAL_BKOPS */
+#endif /* CONFIG_ZODIAC_MMC_MANUAL_BKOPS */
 
 /*
  * Flush the cache to the non-volatile storage.

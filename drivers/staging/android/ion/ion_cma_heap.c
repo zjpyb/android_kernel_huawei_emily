@@ -25,15 +25,9 @@
 #include <linux/hisi/hisi_ion.h>
 
 #include "ion.h"
+#include "ion_mm_cma_heap.h"
 
-struct ion_cma_heap {
-	struct ion_heap heap;
-	struct cma *cma;
-};
-
-#define to_cma_heap(x) container_of(x, struct ion_cma_heap, heap)
-
-static bool install = false;
+static bool install;
 
 /* ION CMA heap operations functions */
 static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
@@ -51,6 +45,11 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	if (align > CONFIG_CMA_ALIGNMENT)
 		align = CONFIG_CMA_ALIGNMENT;
 
+#ifdef CONFIG_ION_HISI_CMA_HEAP
+	if (heap->id == ION_DMA_HEAP_ID)
+		align = 0;
+#endif
+
 	pages = cma_alloc(cma_heap->cma, nr_pages, align, false);
 	if (!pages)
 		return -ENOMEM;
@@ -63,7 +62,7 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 			void *vaddr = kmap_atomic(page);
 
 			memset(vaddr, 0, PAGE_SIZE);
-			kunmap_atomic(vaddr);
+			kunmap_atomic(vaddr);/*lint !e514*/
 			page++;
 			nr_clear_pages--;
 		}
@@ -112,6 +111,13 @@ static struct ion_heap_ops ion_cma_ops = {
 	.map_kernel = ion_heap_map_kernel,
 	.unmap_kernel = ion_heap_unmap_kernel,
 };
+
+#ifdef CONFIG_ION_HISI_CMA_HEAP
+void ion_mm_cma_heap_ops(struct ion_cma_heap *cma_heap)
+{
+	cma_heap->heap.ops = &ion_cma_ops;
+}
+#endif
 
 static struct ion_heap *__ion_cma_heap_create(struct cma *cma)
 {

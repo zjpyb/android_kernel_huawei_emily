@@ -31,8 +31,28 @@
 #include <linux/rbtree_latch.h>
 #include <linux/kallsyms.h>
 #include <linux/rcupdate.h>
-
+#ifdef CONFIG_HKIP_PRMEM
+#include <linux/hisi/prmem.h>
+#endif
 #include <asm/unaligned.h>
+
+/*
+ * BPF allocations are never modified inplace, so the memory can be
+ * declared as ro. However, they get released, so the allcoations must be
+ * reclaimable.
+ * Either disabling the feature or setting the pool cap to 0 will prevent
+ * any limitation in memory allocated.
+ * This limit should not be kept disabled in production code.
+ */
+#ifdef CONFIG_HKIP_PROTECT_BPF
+#if (CONFIG_HKIP_PROTECT_BPF_CAP > 0)
+#define bpf_cap round_up((CONFIG_HKIP_PROTECT_BPF_CAP * SZ_1M), PAGE_SIZE)
+#else
+#define bpf_cap PRMEM_NO_CAP
+#endif
+
+PRMEM_POOL(bpf_pool, ro_recl, sizeof(void *), PAGE_SIZE, bpf_cap);
+#endif
 
 /* Registers */
 #define BPF_R0	regs[BPF_REG_0]
@@ -51,6 +71,7 @@
 #define DST	regs[insn->dst_reg]
 #define SRC	regs[insn->src_reg]
 #define FP	regs[BPF_REG_FP]
+#define AX	regs[BPF_REG_AX]
 #define ARG1	regs[BPF_REG_ARG1]
 #define CTX	regs[BPF_REG_CTX]
 #define IMM	insn->imm
@@ -76,18 +97,27 @@ void *bpf_internal_load_pointer_neg_helper(const struct sk_buff *skb, int k, uns
 
 struct bpf_prog *bpf_prog_alloc(unsigned int size, gfp_t gfp_extra_flags)
 {
+#ifndef CONFIG_HKIP_PROTECT_BPF
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO | gfp_extra_flags;
+#endif
 	struct bpf_prog_aux *aux;
 	struct bpf_prog *fp;
 
 	size = round_up(size, PAGE_SIZE);
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	fp = pmalloc(&bpf_pool, size, PRMEM_FREEABLE_NODE);
+#else
 	fp = __vmalloc(size, gfp_flags, PAGE_KERNEL);
+#endif
 	if (fp == NULL)
 		return NULL;
-
 	aux = kzalloc(sizeof(*aux), GFP_KERNEL | gfp_extra_flags);
 	if (aux == NULL) {
+#ifdef CONFIG_HKIP_PROTECT_BPF
+		pfree(fp);
+#else
 		vfree(fp);
+#endif
 		return NULL;
 	}
 
@@ -104,7 +134,9 @@ EXPORT_SYMBOL_GPL(bpf_prog_alloc);
 struct bpf_prog *bpf_prog_realloc(struct bpf_prog *fp_old, unsigned int size,
 				  gfp_t gfp_extra_flags)
 {
+#ifndef CONFIG_HKIP_PROTECT_BPF
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO | gfp_extra_flags;
+#endif
 	struct bpf_prog *fp;
 	u32 pages, delta;
 	int ret;
@@ -121,7 +153,11 @@ struct bpf_prog *bpf_prog_realloc(struct bpf_prog *fp_old, unsigned int size,
 	if (ret)
 		return NULL;
 
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	fp = pmalloc(&bpf_pool, size, PRMEM_FREEABLE_NODE);
+#else
 	fp = __vmalloc(size, gfp_flags, PAGE_KERNEL);
+#endif
 	if (fp == NULL) {
 		__bpf_prog_uncharge(fp_old->aux->user, delta);
 	} else {
@@ -142,7 +178,11 @@ struct bpf_prog *bpf_prog_realloc(struct bpf_prog *fp_old, unsigned int size,
 void __bpf_prog_free(struct bpf_prog *fp)
 {
 	kfree(fp->aux);
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	pfree(fp);
+#else
 	vfree(fp);
+#endif
 }
 
 int bpf_prog_calc_tag(struct bpf_prog *fp)
@@ -289,6 +329,12 @@ struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 }
 
 #ifdef CONFIG_BPF_JIT
+/* All BPF JIT sysctl knobs here. */
+int bpf_jit_enable   __read_mostly = IS_BUILTIN(CONFIG_BPF_JIT_ALWAYS_ON);
+int bpf_jit_harden   __read_mostly;
+int bpf_jit_kallsyms __read_mostly;
+long bpf_jit_limit   __read_mostly;
+
 static __always_inline void
 bpf_get_prog_addr_region(const struct bpf_prog *prog,
 			 unsigned long *symbol_start,
@@ -356,8 +402,6 @@ static const struct latch_tree_ops bpf_tree_ops = {
 static DEFINE_SPINLOCK(bpf_lock);
 static LIST_HEAD(bpf_kallsyms);
 static struct latch_tree_root bpf_tree __cacheline_aligned;
-
-int bpf_jit_kallsyms __read_mostly;
 
 static void bpf_prog_ksym_node_add(struct bpf_prog_aux *aux)
 {
@@ -485,27 +529,88 @@ int bpf_get_kallsym(unsigned int symnum, unsigned long *value, char *type,
 	return ret;
 }
 
+static atomic_long_t bpf_jit_current;
+
+/* Can be overridden by an arch's JIT compiler if it has a custom,
+ * dedicated BPF backend memory area, or if neither of the two
+ * below apply.
+ */
+u64 __weak bpf_jit_alloc_exec_limit(void)
+{
+#if defined(MODULES_VADDR)
+	return MODULES_END - MODULES_VADDR;
+#else
+	return VMALLOC_END - VMALLOC_START;
+#endif
+}
+
+static int __init bpf_jit_charge_init(void)
+{
+	/* Only used as heuristic here to derive limit. */
+	bpf_jit_limit = min_t(u64, round_up(bpf_jit_alloc_exec_limit() >> 2,
+					    PAGE_SIZE), LONG_MAX);
+	return 0;
+}
+pure_initcall(bpf_jit_charge_init);
+
+static int bpf_jit_charge_modmem(u32 pages)
+{
+	if (atomic_long_add_return(pages, &bpf_jit_current) >
+	    (bpf_jit_limit >> PAGE_SHIFT)) {
+		if (!capable(CAP_SYS_ADMIN)) {
+			atomic_long_sub(pages, &bpf_jit_current);
+			return -EPERM;
+		}
+	}
+
+	return 0;
+}
+
+static void bpf_jit_uncharge_modmem(u32 pages)
+{
+	atomic_long_sub(pages, &bpf_jit_current);
+}
+
+#if IS_ENABLED(CONFIG_BPF_JIT) && IS_ENABLED(CONFIG_CFI_CLANG)
+bool __weak arch_bpf_jit_check_func(const struct bpf_prog *prog)
+{
+	return true;
+}
+EXPORT_SYMBOL(arch_bpf_jit_check_func);
+#endif
+
 struct bpf_binary_header *
 bpf_jit_binary_alloc(unsigned int proglen, u8 **image_ptr,
 		     unsigned int alignment,
 		     bpf_jit_fill_hole_t bpf_fill_ill_insns)
 {
 	struct bpf_binary_header *hdr;
-	unsigned int size, hole, start;
+	u32 size, hole, start, pages;
 
 	/* Most of BPF filters are really small, but if some of them
 	 * fill a page, allow at least 128 extra bytes to insert a
 	 * random section of illegal instructions.
 	 */
 	size = round_up(proglen + sizeof(*hdr) + 128, PAGE_SIZE);
-	hdr = module_alloc(size);
-	if (hdr == NULL)
+	pages = size / PAGE_SIZE;
+
+	if (bpf_jit_charge_modmem(pages))
 		return NULL;
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	hdr = pmalloc(&bpf_pool, size, PRMEM_FREEABLE_NODE);
+#else
+	hdr = module_alloc(size);
+#endif
+	if (!hdr) {
+		bpf_jit_uncharge_modmem(pages);
+		return NULL;
+	}
 
 	/* Fill space with illegal/arch-dep instructions. */
 	bpf_fill_ill_insns(hdr, size);
 
-	hdr->pages = size / PAGE_SIZE;
+	bpf_jit_set_header_magic(hdr);
+	hdr->pages = pages;
 	hole = min_t(unsigned int, size - (proglen + sizeof(*hdr)),
 		     PAGE_SIZE - sizeof(*hdr));
 	start = (get_random_int() % hole) & ~(alignment - 1);
@@ -518,7 +623,14 @@ bpf_jit_binary_alloc(unsigned int proglen, u8 **image_ptr,
 
 void bpf_jit_binary_free(struct bpf_binary_header *hdr)
 {
+	u32 pages = hdr->pages;
+
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	pfree(hdr);
+#else
 	module_memfree(hdr);
+#endif
+	bpf_jit_uncharge_modmem(pages);
 }
 
 /* This symbol is only overridden by archs that have different
@@ -538,8 +650,6 @@ void __weak bpf_jit_free(struct bpf_prog *fp)
 
 	bpf_prog_unlock_free(fp);
 }
-
-int bpf_jit_harden __read_mostly;
 
 static int bpf_jit_blind_insn(const struct bpf_insn *from,
 			      const struct bpf_insn *aux,
@@ -939,22 +1049,22 @@ select_insn:
 	ALU64_MOD_X:
 		if (unlikely(SRC == 0))
 			return 0;
-		div64_u64_rem(DST, SRC, &tmp);
-		DST = tmp;
+		div64_u64_rem(DST, SRC, &AX);
+		DST = AX;
 		CONT;
 	ALU_MOD_X:
 		if (unlikely((u32)SRC == 0))
 			return 0;
-		tmp = (u32) DST;
-		DST = do_div(tmp, (u32) SRC);
+		AX = (u32) DST;
+		DST = do_div(AX, (u32) SRC);
 		CONT;
 	ALU64_MOD_K:
-		div64_u64_rem(DST, IMM, &tmp);
-		DST = tmp;
+		div64_u64_rem(DST, IMM, &AX);
+		DST = AX;
 		CONT;
 	ALU_MOD_K:
-		tmp = (u32) DST;
-		DST = do_div(tmp, (u32) IMM);
+		AX = (u32) DST;
+		DST = do_div(AX, (u32) IMM);
 		CONT;
 	ALU64_DIV_X:
 		if (unlikely(SRC == 0))
@@ -964,17 +1074,17 @@ select_insn:
 	ALU_DIV_X:
 		if (unlikely((u32)SRC == 0))
 			return 0;
-		tmp = (u32) DST;
-		do_div(tmp, (u32) SRC);
-		DST = (u32) tmp;
+		AX = (u32) DST;
+		do_div(AX, (u32) SRC);
+		DST = (u32) AX;
 		CONT;
 	ALU64_DIV_K:
 		DST = div64_u64(DST, IMM);
 		CONT;
 	ALU_DIV_K:
-		tmp = (u32) DST;
-		do_div(tmp, (u32) IMM);
-		DST = (u32) tmp;
+		AX = (u32) DST;
+		do_div(AX, (u32) IMM);
+		DST = (u32) AX;
 		CONT;
 	ALU_END_TO_BE:
 		switch (IMM) {
@@ -1278,7 +1388,7 @@ STACK_FRAME_NON_STANDARD(___bpf_prog_run); /* jump table */
 static unsigned int PROG_NAME(stack_size)(const void *ctx, const struct bpf_insn *insn) \
 { \
 	u64 stack[stack_size / sizeof(u64)]; \
-	u64 regs[MAX_BPF_REG]; \
+	u64 regs[MAX_BPF_EXT_REG]; \
 \
 	FP = (u64) (unsigned long) &stack[ARRAY_SIZE(stack)]; \
 	ARG1 = (u64) (unsigned long) ctx; \
@@ -1306,9 +1416,13 @@ EVAL4(PROG_NAME_LIST, 416, 448, 480, 512)
 };
 
 #else
-static unsigned int __bpf_prog_ret0(const void *ctx,
-				    const struct bpf_insn *insn)
+static unsigned int __bpf_prog_ret0_warn(const void *ctx,
+					 const struct bpf_insn *insn)
 {
+	/* If this handler ever gets executed, then BPF_JIT_ALWAYS_ON
+	 * is not working properly, so warn about it!
+	 */
+	WARN_ON_ONCE(1);
 	return 0;
 }
 #endif
@@ -1365,7 +1479,7 @@ struct bpf_prog *bpf_prog_select_runtime(struct bpf_prog *fp, int *err)
 
 	fp->bpf_func = interpreters[(round_up(stack_depth, 32) / 32) - 1];
 #else
-	fp->bpf_func = __bpf_prog_ret0;
+	fp->bpf_func = __bpf_prog_ret0_warn;
 #endif
 
 	/* eBPF JITs can rewrite the program in case constant
@@ -1394,6 +1508,7 @@ struct bpf_prog *bpf_prog_select_runtime(struct bpf_prog *fp, int *err)
 }
 EXPORT_SYMBOL_GPL(bpf_prog_select_runtime);
 
+#ifndef CONFIG_HKIP_PROTECT_BPF
 static void bpf_prog_free_deferred(struct work_struct *work)
 {
 	struct bpf_prog_aux *aux;
@@ -1401,14 +1516,19 @@ static void bpf_prog_free_deferred(struct work_struct *work)
 	aux = container_of(work, struct bpf_prog_aux, work);
 	bpf_jit_free(aux->prog);
 }
+#endif
 
 /* Free internal BPF program */
 void bpf_prog_free(struct bpf_prog *fp)
 {
+#ifdef CONFIG_HKIP_PROTECT_BPF
+	__bpf_prog_free(fp);
+#else
 	struct bpf_prog_aux *aux = fp->aux;
 
 	INIT_WORK(&aux->work, bpf_prog_free_deferred);
 	schedule_work(&aux->work);
+#endif
 }
 EXPORT_SYMBOL_GPL(bpf_prog_free);
 

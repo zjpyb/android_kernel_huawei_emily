@@ -88,6 +88,7 @@
 #define OPEN_TEST_POINT_BY_POINT		1
 #define FTS_RETRY_READ_RAWDATA		3
 #define RAW_DATA_BUF_SIZE		2
+#define FTS_GET_ADC_DATA_MSLEEP 300
 struct focal_test_threshold {
 	int raw_data_min;
 	int raw_data_max;

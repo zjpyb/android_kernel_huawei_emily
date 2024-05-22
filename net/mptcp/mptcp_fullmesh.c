@@ -9,6 +9,7 @@
 #include <net/addrconf.h>
 #endif
 #include <linux/inet.h>
+#include <../../net/wireless/nl80211.h>
 
 enum {
 	MPTCP_EVENT_ADD = 1,
@@ -17,6 +18,9 @@ enum {
 };
 
 #define MPTCP_SUBFLOW_RETRY_DELAY	1000
+
+#define NETDEV_EVENT_WLAN_NOT_5G 1
+#define NETDEV_EVENT_WLAN_5G 2
 
 /* Max number of local or remote addresses we can store.
  * When changing, see the bitfield below in fullmesh_rem4/6.
@@ -54,8 +58,10 @@ struct mptcp_loc_addr {
 struct mptcp_addr_event {
 	struct list_head list;
 	unsigned short	family;
-	u8	code:7,
-		low_prio:1;
+	u8	code:5,
+		low_prio:1,
+		no_arp:1,
+		wlan_5g:1;
 	int	if_idx;
 	union inet_addr addr;
 };
@@ -80,6 +86,8 @@ struct fullmesh_priv {
 
 	u8 rem4_bits;
 	u8 rem6_bits;
+	u8 loc4_bits;
+	u8 loc6_bits;
 	u8 mptcp_rem_locid;
 	/* Are we established the additional subflows for primary pair? */
 	u8 first_pair:1;
@@ -389,6 +397,8 @@ static void mptcp_v4_set_init_addr_bit(const struct mptcp_cb *mpcb,
 	mptcp_for_each_bit_set(fmp->rem4_bits, i) {
 		if (fmp->remaddr4[i].addr.s_addr == addr->s_addr) {
 			fmp->remaddr4[i].bitfield |= (1 << index);
+			fmp->loc4_bits |= (1 << index);
+			mptcp_info("%s: loc4_bits set index %u\n", __FUNCTION__, index);
 			return;
 		}
 	}
@@ -404,6 +414,7 @@ static void mptcp_v6_set_init_addr_bit(struct mptcp_cb *mpcb,
 	mptcp_for_each_bit_set(fmp->rem6_bits, i) {
 		if (ipv6_addr_equal(&fmp->remaddr6[i].addr, addr)) {
 			fmp->remaddr6[i].bitfield |= (1 << index);
+			fmp->loc6_bits |= (1 << index);
 			return;
 		}
 	}
@@ -476,6 +487,9 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
+	if (!mptcp(tcp_sk(meta_sk)))
+		goto exit;
+
 	iter++;
 
 	if (sock_flag(meta_sk, SOCK_DEAD))
@@ -532,6 +546,7 @@ exit:
 	kfree(mptcp_local);
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk);
 }
 
@@ -552,6 +567,8 @@ static void create_subflow_worker(struct work_struct *work)
 	const struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(meta_sk));
 	int iter = 0, retry = 0;
 	int i;
+	u8 loc_forbid_bits_v4 = 0;
+	u8 loc_forbid_bits_v6 = 0;
 
 	/* We need a local (stable) copy of the address-list. Really, it is not
 	 * such a big deal, if the address-list is not 100% up-to-date.
@@ -574,7 +591,7 @@ next_subflow:
 	mutex_lock(&mpcb->mpcb_mutex);
 	lock_sock_nested(meta_sk, SINGLE_DEPTH_NESTING);
 
-	if (sock_flag(meta_sk, SOCK_DEAD))
+	if (sock_flag(meta_sk, SOCK_DEAD) || !mptcp(tcp_sk(meta_sk)))
 		goto exit;
 
 	if (mpcb->master_sk &&
@@ -601,6 +618,12 @@ next_subflow:
 	}
 	iter++;
 
+	/*lint -e504*/
+	mptcp_for_each_bit_set(mptcp_local->loc4_bits, i) {
+		if (mptcp_local->locaddr4[i].no_arp || mptcp_local->locaddr4[i].wlan_5g)
+			loc_forbid_bits_v4 |= (1 << i);
+	}
+	/*lint +e504*/
 	mptcp_for_each_bit_set(fmp->rem4_bits, i) {
 		struct fullmesh_rem4 *rem;
 		u8 remaining_bits;
@@ -610,7 +633,13 @@ next_subflow:
 		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_ALL_APP && rem->bitfield)
 			continue;
 #endif
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_PID_DIP_DPORT && rem->bitfield)
+			continue;
 		remaining_bits = ~(rem->bitfield | rem->forbid_bitfield) & mptcp_local->loc4_bits;
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_PID_DIP_DPORT) {
+			remaining_bits &= ~(u8)(fmp->loc4_bits | loc_forbid_bits_v4);
+			mptcp_info("%s: skip loc4_bits: %x\n", __func__, fmp->loc4_bits);
+		}
 		mptcp_debug("%s: remaining: %x, connected: %x, prohibit: %x, mptcp_local->loc4_bits: %x\n", __func__, remaining_bits, rem->bitfield, rem->forbid_bitfield, mptcp_local->loc4_bits);
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
@@ -618,6 +647,8 @@ next_subflow:
 			struct mptcp_rem4 rem4;
 
 			rem->bitfield |= (1 << i);
+			mptcp_info("%s: set loc4_bits index %d\n", __func__, i);
+			fmp->loc4_bits |= (1 << i);
 
 			rem4.addr = rem->addr;
 			rem4.port = rem->port;
@@ -653,6 +684,13 @@ next_subflow:
 
 			fmp->first_pair = 1;
 	}
+
+	/*lint -e504*/
+	mptcp_for_each_bit_set(mptcp_local->loc6_bits, i) {
+		if (mptcp_local->locaddr6[i].no_arp || mptcp_local->locaddr6[i].wlan_5g)
+			loc_forbid_bits_v6 |= (1 << i);
+	}
+	/*lint +e504*/
 	mptcp_for_each_bit_set(fmp->rem6_bits, i) {
 		struct fullmesh_rem6 *rem;
 		u8 remaining_bits;
@@ -662,14 +700,18 @@ next_subflow:
 		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_ALL_APP && rem->bitfield)
 			continue;
 #endif
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_PID_DIP_DPORT && rem->bitfield)
+			continue;
 		remaining_bits = ~(rem->bitfield) & mptcp_local->loc6_bits;
-
+		if (tcp_sk(meta_sk)->mptcp_cap_flag == MPTCP_CAP_PID_DIP_DPORT)
+			remaining_bits &= ~(u8)(fmp->loc6_bits | loc_forbid_bits_v6);
 		/* Are there still combinations to handle? */
 		if (remaining_bits) {
 			int i = mptcp_find_free_index(~remaining_bits);
 			struct mptcp_rem6 rem6;
 
 			rem->bitfield |= (1 << i);
+			fmp->loc6_bits |= (1 << i);
 
 			rem6.addr = rem->addr;
 			rem6.port = rem->port;
@@ -690,6 +732,7 @@ next_subflow:
 
 	if (retry && !delayed_work_pending(&fmp->subflow_retry_work)) {
 		sock_hold(meta_sk);
+		atomic_inc(&mpcb->mpcb_refcnt);
 		queue_delayed_work(mptcp_wq, &fmp->subflow_retry_work,
 				   msecs_to_jiffies(MPTCP_SUBFLOW_RETRY_DELAY));
 	}
@@ -698,6 +741,7 @@ exit:
 	kfree(mptcp_local);
 	release_sock(meta_sk);
 	mutex_unlock(&mpcb->mpcb_mutex);
+	mptcp_mpcb_put(mpcb);
 	sock_put(meta_sk);
 }
 
@@ -833,8 +877,9 @@ static bool mptcp_is_sock_closed_for_prim_iface_on(struct sock *meta_sk, int if_
 				return true;
 			}
 			dev_put(net_dev);
-		} else
+		} else {
 			mptcp_info("%s: can't find the net_dev\n", __func__);
+		}
 	}
 
 	return false;
@@ -921,11 +966,13 @@ next_event:
 		} else {
 			/* Let's check if anything changes */
 			if (event->family == AF_INET &&
-			    event->low_prio == mptcp_local->locaddr4[i].low_prio)
+			    event->low_prio == mptcp_local->locaddr4[i].low_prio &&
+			    event->wlan_5g == mptcp_local->locaddr4[i].wlan_5g)
 				goto duno;
 
 			if (event->family == AF_INET6 &&
-			    event->low_prio == mptcp_local->locaddr6[i].low_prio)
+			    event->low_prio == mptcp_local->locaddr6[i].low_prio &&
+			    event->wlan_5g == mptcp_local->locaddr6[i].wlan_5g)
 				goto duno;
 		}
 
@@ -939,11 +986,20 @@ next_event:
 			mptcp_local->locaddr4[i].addr.s_addr = event->addr.in.s_addr;
 			mptcp_local->locaddr4[i].loc4_id = i + 1;
 			mptcp_local->locaddr4[i].low_prio = event->low_prio;
+			mptcp_local->locaddr4[i].no_arp = event->no_arp;
+			if (event->wlan_5g)
+				mptcp_local->locaddr4[i].low_prio = 1;
+			mptcp_local->locaddr4[i].wlan_5g = event->wlan_5g;
 			mptcp_local->locaddr4[i].if_idx = event->if_idx;
+			mptcp_debug("%s idx %d no_arp %d\n", __func__, i, mptcp_local->locaddr4[i].no_arp);
 		} else {
 			mptcp_local->locaddr6[i].addr = event->addr.in6;
 			mptcp_local->locaddr6[i].loc6_id = i + MPTCP_MAX_ADDR;
 			mptcp_local->locaddr6[i].low_prio = event->low_prio;
+			mptcp_local->locaddr6[i].no_arp = event->no_arp;
+			if (event->wlan_5g)
+				mptcp_local->locaddr6[i].low_prio = 1;
+			mptcp_local->locaddr6[i].wlan_5g = event->wlan_5g;
 			mptcp_local->locaddr6[i].if_idx = event->if_idx;
 		}
 
@@ -984,6 +1040,10 @@ duno:
 			if (sock_net(meta_sk) != net)
 				continue;
 
+#if IS_ENABLED(CONFIG_IPV6)
+			if (meta_sk->sk_family == AF_INET6 && mptcp_v6_is_v4_mapped(meta_sk))
+				meta_v4 = true;
+#endif
 			if (meta_v4) {
 				/* skip IPv6 events if meta is IPv4 */
 				if (event->family == AF_INET6)
@@ -1007,9 +1067,7 @@ duno:
 				goto next;
 
 			if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
-			    mpcb->infinite_mapping_snd ||
-			    mpcb->infinite_mapping_rcv ||
-			    mpcb->send_infinite_mapping)
+				mptcp_in_infinite_mapping_weak(mpcb))
 				goto next;
 
 			/* May be that the pm has changed in-between */
@@ -1033,7 +1091,11 @@ duno:
 
 				if (mptcp_is_sock_closed_for_prim_iface_on(meta_sk, event->if_idx))
 					goto next;
-
+				/*lint -e530*/
+				if (mptcp_cap_is_local(meta_tp->mptcp_cap_flag) &&
+				    (event->no_arp || event->wlan_5g))
+					goto next;
+				/*lint +e530*/
 				fmp->add_addr++;
 				mpcb->addr_signal = 1;
 
@@ -1110,6 +1172,10 @@ duno:
 
 			if (event->code == MPTCP_EVENT_MOD) {
 				struct sock *sk;
+				bool addr_inuse = false;
+				u8 low_prio = event->low_prio;
+				if (mptcp_cap_is_local(meta_tp->mptcp_cap_flag) && event->wlan_5g)
+					low_prio = 1;
 
 				mptcp_for_each_sk(mpcb, sk) {
 					struct tcp_sock *tp = tcp_sk(sk);
@@ -1117,9 +1183,10 @@ duno:
 					    (sk->sk_family == AF_INET ||
 					     mptcp_v6_is_v4_mapped(sk)) &&
 					     inet_sk(sk)->inet_saddr == event->addr.in.s_addr) {
-						if (event->low_prio != tp->mptcp->low_prio) {
+						addr_inuse = true;
+						if (low_prio != tp->mptcp->low_prio) {
 							tp->mptcp->send_mp_prio = 1;
-							tp->mptcp->low_prio = event->low_prio;
+							tp->mptcp->low_prio = low_prio;
 
 							tcp_send_ack(sk);
 						}
@@ -1127,13 +1194,35 @@ duno:
 
 					if (event->family == AF_INET6 &&
 					    sk->sk_family == AF_INET6 &&
-					    !ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->addr.in6)) {
-						if (event->low_prio != tp->mptcp->low_prio) {
+					    ipv6_addr_equal(&inet6_sk(sk)->saddr, &event->addr.in6)) {
+						addr_inuse = true;
+						if (low_prio != tp->mptcp->low_prio) {
 							tp->mptcp->send_mp_prio = 1;
-							tp->mptcp->low_prio = event->low_prio;
+							tp->mptcp->low_prio = low_prio;
 
 							tcp_send_ack(sk);
 						}
+					}
+				}
+
+				if (mptcp_cap_is_local(meta_tp->mptcp_cap_flag) && !addr_inuse) {
+					if (low_prio) {
+						if (id >= 0) {
+							u8 loc_id = id
+								+ (event->family == AF_INET ? 1 : MPTCP_MAX_ADDR);
+							announce_remove_addr(loc_id, meta_sk);
+						}
+					} else {
+						struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
+
+						fmp->add_addr++;
+						mpcb->addr_signal = 1;
+
+						sk = mptcp_select_ack_sock(meta_sk);
+						if (sk)
+							tcp_send_ack(sk);
+
+						full_mesh_create_subflows(meta_sk);
 					}
 				}
 			}
@@ -1184,11 +1273,15 @@ static void add_pm_event(struct net *net, const struct mptcp_addr_event *event)
 		case MPTCP_EVENT_ADD:
 			mptcp_debug("%s add old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
+			eventq->no_arp = event->no_arp;
+			eventq->wlan_5g = event->wlan_5g;
 			eventq->code = MPTCP_EVENT_ADD;
 			return;
 		case MPTCP_EVENT_MOD:
 			mptcp_debug("%s mod old_code %u\n", __func__, eventq->code);
 			eventq->low_prio = event->low_prio;
+			eventq->no_arp = event->no_arp;
+			eventq->wlan_5g = event->wlan_5g;
 			eventq->code = MPTCP_EVENT_MOD;
 			return;
 		}
@@ -1207,6 +1300,35 @@ static void add_pm_event(struct net *net, const struct mptcp_addr_event *event)
 				   msecs_to_jiffies(500));
 }
 
+/* for mutex use, netdev_get_wlan_5g() must call in preemptible context */
+static u8 netdev_get_wlan_5g(const struct net_device *netdev)
+{
+	const char *ap_prefix = "wlan";
+	if (strncmp(netdev->name, ap_prefix, strlen(ap_prefix)) == 0) {
+		enum nl80211_band band = cfg80211_get_chanband_by_dev(netdev);
+		if (band == NL80211_BAND_5GHZ)
+			return 1;
+	}
+
+	return 0;
+}
+
+static u8 addr_event_get_wlan_5g(const struct net_device *netdev, unsigned long event)
+{
+	unsigned long flag_5g = event >> 16;
+
+	mptcp_debug("%s: event %lx flag_5g %lx\n", __FUNCTION__, event, flag_5g);
+	/* if already set in netdev_event() */
+	if (flag_5g) {
+		if (flag_5g == NETDEV_EVENT_WLAN_5G)
+			return 1;
+		else
+			return 0;
+	}
+
+	return netdev_get_wlan_5g(netdev);
+}
+
 static void addr4_event_handler(const struct in_ifaddr *ifa, unsigned long event,
 				struct net *net)
 {
@@ -1218,11 +1340,14 @@ static void addr4_event_handler(const struct in_ifaddr *ifa, unsigned long event
 	    ipv4_is_loopback(ifa->ifa_local))
 		return;
 
+	mpevent.wlan_5g = addr_event_get_wlan_5g(netdev, event);
+	event &= 0xFFFF;
 	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET;
 	mpevent.addr.in.s_addr = ifa->ifa_local;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
+	mpevent.no_arp = (netdev->flags & IFF_NOARP) ? 1 : 0;
 	mpevent.if_idx  = netdev->ifindex;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
@@ -1230,11 +1355,12 @@ static void addr4_event_handler(const struct in_ifaddr *ifa, unsigned long event
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
-	else if (event == NETDEV_CHANGE)
+	else
 		mpevent.code = MPTCP_EVENT_MOD;
 
-	mptcp_debug("%s created event for %pI4, code %u prio %u idx %u\n", __func__,
-		    &ifa->ifa_local, mpevent.code, mpevent.low_prio, mpevent.if_idx);
+	mptcp_debug("%s created event for %pI4, code %u prio %u no_arp %u wlan_5g %u idx %u\n", __func__,
+		    &ifa->ifa_local, mpevent.code, mpevent.low_prio,
+		    mpevent.no_arp, mpevent.wlan_5g, mpevent.if_idx);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -1247,9 +1373,10 @@ static int mptcp_pm_inetaddr_event(struct notifier_block *this,
 {
 	const struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	struct net *net = dev_net(ifa->ifa_dev->dev);
+	unsigned long dev_event = event & 0xFFFF;
 
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
-	      event == NETDEV_CHANGE))
+	if (!(dev_event == NETDEV_UP || dev_event == NETDEV_DOWN ||
+	      dev_event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
 	addr4_event_handler(ifa, event, net);
@@ -1347,11 +1474,14 @@ static void addr6_event_handler(const struct inet6_ifaddr *ifa, unsigned long ev
 	    (addr_type & IPV6_ADDR_LINKLOCAL))
 		return;
 
+	mpevent.wlan_5g = addr_event_get_wlan_5g(netdev, event);
+	event &= 0xFFFF;
 	spin_lock_bh(&fm_ns->local_lock);
 
 	mpevent.family = AF_INET6;
 	mpevent.addr.in6 = ifa->addr;
 	mpevent.low_prio = (netdev->flags & IFF_MPBACKUP) ? 1 : 0;
+	mpevent.no_arp = (netdev->flags & IFF_NOARP) ? 1 : 0;
 	mpevent.if_idx = netdev->ifindex;
 
 	if (event == NETDEV_DOWN || !netif_running(netdev) ||
@@ -1359,11 +1489,12 @@ static void addr6_event_handler(const struct inet6_ifaddr *ifa, unsigned long ev
 		mpevent.code = MPTCP_EVENT_DEL;
 	else if (event == NETDEV_UP)
 		mpevent.code = MPTCP_EVENT_ADD;
-	else if (event == NETDEV_CHANGE)
+	else
 		mpevent.code = MPTCP_EVENT_MOD;
 
-	mptcp_debug("%s created event for %pI6, code %u prio %u idx %u\n", __func__,
-		    &ifa->addr, mpevent.code, mpevent.low_prio, mpevent.if_idx);
+	mptcp_debug("%s created event for %pI6, code %u prio %u no_arp %u wlan_5g %u idx %u\n", __func__,
+		    &ifa->addr, mpevent.code, mpevent.low_prio,
+		    mpevent.no_arp, mpevent.wlan_5g, mpevent.if_idx);
 	add_pm_event(net, &mpevent);
 
 	spin_unlock_bh(&fm_ns->local_lock);
@@ -1376,9 +1507,10 @@ static int inet6_addr_event(struct notifier_block *this, unsigned long event,
 {
 	struct inet6_ifaddr *ifa6 = (struct inet6_ifaddr *)ptr;
 	struct net *net = dev_net(ifa6->idev->dev);
+	unsigned long dev_event = event & 0xFFFF;
 
-	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
-	      event == NETDEV_CHANGE))
+	if (!(dev_event == NETDEV_UP || dev_event == NETDEV_DOWN ||
+	      dev_event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
 
 	if ((ifa6->idev->dev->reg_state == NETREG_REGISTERED) &&
@@ -1410,6 +1542,13 @@ static int netdev_event(struct notifier_block *this, unsigned long event,
 	if (!(event == NETDEV_UP || event == NETDEV_DOWN ||
 	      event == NETDEV_CHANGE))
 		return NOTIFY_DONE;
+
+	/* for mutex use, cfg80211_get_chanband_by_dev() must call in preemptible context */
+	if (netdev_get_wlan_5g(dev)) {
+		event |= NETDEV_EVENT_WLAN_5G << 16;
+	} else {
+		event |= NETDEV_EVENT_WLAN_NOT_5G << 16;
+	}
 
 	rcu_read_lock();
 	in_dev = __in_dev_get_rtnl(dev);
@@ -1506,6 +1645,10 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 	INIT_DELAYED_WORK(&fmp->subflow_retry_work, retry_subflow_worker);
 	fmp->mpcb = mpcb;
 
+#if IS_ENABLED(CONFIG_IPV6)
+	if (meta_sk->sk_family == AF_INET6 && mptcp_v6_is_v4_mapped(meta_sk))
+		meta_v4 = true;
+#endif
 	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
@@ -1519,6 +1662,9 @@ static void full_mesh_new_session(const struct sock *meta_sk)
 		    saddr.ip == ifa_address)
 			continue;
 
+		if (mptcp_cap_is_local(tcp_sk(meta_sk)->mptcp_cap_flag) &&
+		    (mptcp_local->locaddr4[i].no_arp || mptcp_local->locaddr4[i].wlan_5g))
+			continue;
 		fmp->add_addr++;
 		mpcb->addr_signal = 1;
 	}
@@ -1538,6 +1684,9 @@ skip_ipv4:
 		    ipv6_addr_equal(&saddr.in6, ifa6))
 			continue;
 
+		if (mptcp_cap_is_local(tcp_sk(meta_sk)->mptcp_cap_flag) &&
+		    (mptcp_local->locaddr4[i].no_arp || mptcp_local->locaddr4[i].wlan_5g))
+			continue;
 		fmp->add_addr++;
 		mpcb->addr_signal = 1;
 	}
@@ -1568,11 +1717,10 @@ fallback:
 
 static void full_mesh_create_subflows(struct sock *meta_sk)
 {
-	const struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
+	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct fullmesh_priv *fmp = fullmesh_get_priv(mpcb);
 
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
+	if (mptcp_in_infinite_mapping_weak(mpcb) ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
@@ -1587,6 +1735,7 @@ static void full_mesh_create_subflows(struct sock *meta_sk)
 
 	if (!work_pending(&fmp->subflow_work)) {
 		sock_hold(meta_sk);
+		atomic_inc(&mpcb->mpcb_refcnt);
 		queue_work(mptcp_wq, &fmp->subflow_work);
 	}
 }
@@ -1598,8 +1747,7 @@ static void full_mesh_subflow_error(struct sock *meta_sk, struct sock *sk)
 	if (!create_on_err)
 		return;
 
-	if (mpcb->infinite_mapping_snd || mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping ||
+	if (mptcp_in_infinite_mapping_weak(mpcb) ||
 	    mpcb->server_side || sock_flag(meta_sk, SOCK_DEAD))
 		return;
 
@@ -1625,6 +1773,10 @@ static void full_mesh_release_sock(struct sock *meta_sk)
 	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
+#if IS_ENABLED(CONFIG_IPV6)
+	if (meta_sk->sk_family == AF_INET6 && mptcp_v6_is_v4_mapped(meta_sk))
+		meta_v4 = true;
+#endif
 	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
@@ -1802,11 +1954,28 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 	rcu_read_lock_bh();
 	mptcp_local = rcu_dereference(fm_ns->local);
 
+#if IS_ENABLED(CONFIG_IPV6)
+	if (meta_sk->sk_family == AF_INET6 && mptcp_v6_is_v4_mapped(meta_sk))
+		meta_v4 = true;
+#endif
 	if (!meta_v4 && meta_sk->sk_ipv6only)
 		goto skip_ipv4;
 
 	/* IPv4 */
 	unannouncedv4 = (~fmp->announced_addrs_v4) & mptcp_local->loc4_bits;
+	if (mptcp_cap_is_local(tcp_sk(meta_sk)->mptcp_cap_flag)) {
+		int i;
+		/*lint -e504*/
+		mptcp_for_each_bit_set(unannouncedv4, i) {
+			mptcp_debug("%s idx %d no_arp %d wlan_5g %d\n",__func__,
+				i, mptcp_local->locaddr4[i].no_arp, mptcp_local->locaddr4[i].wlan_5g);
+			if (mptcp_local->locaddr4[i].no_arp || mptcp_local->locaddr4[i].wlan_5g) {
+				mptcp_debug("%s skip idx %d\n", __func__, i);
+				unannouncedv4 &= ~(u8)(1 << (u8)i);
+			}
+		}
+		/*lint +e504*/
+	}
 	if (unannouncedv4 &&
 	    ((mpcb->mptcp_ver == MPTCP_VERSION_0 &&
 	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR4_ALIGN) ||
@@ -1850,6 +2019,15 @@ static void full_mesh_addr_signal(struct sock *sk, unsigned *size,
 skip_ipv4:
 	/* IPv6 */
 	unannouncedv6 = (~fmp->announced_addrs_v6) & mptcp_local->loc6_bits;
+	if (mptcp_cap_is_local(tcp_sk(meta_sk)->mptcp_cap_flag)) {
+		int i;
+		/*lint -e504*/
+		mptcp_for_each_bit_set(unannouncedv6, i) {
+			if (mptcp_local->locaddr6[i].no_arp || mptcp_local->locaddr6[i].wlan_5g)
+				unannouncedv6 &= ~(u8)(1 << (u8)i);
+		}
+		/*lint +e504*/
+	}
 	if (unannouncedv6 &&
 	    ((mpcb->mptcp_ver == MPTCP_VERSION_0 &&
 	    MAX_TCP_OPTION_SPACE - *size >= MPTCP_SUB_LEN_ADD_ADDR6_ALIGN) ||
@@ -1922,6 +2100,7 @@ static void full_mesh_delete_subflow(struct sock *sk)
 	struct mptcp_fm_ns *fm_ns = fm_get_ns(sock_net(sk));
 	struct mptcp_loc_addr *mptcp_local;
 	int index, i;
+	u32 mptcp_cap_flag = tcp_sk(mptcp_meta_sk(sk))->mptcp_cap_flag;
 
 	if (!create_on_err)
 		return;
@@ -1931,11 +2110,15 @@ static void full_mesh_delete_subflow(struct sock *sk)
 
 	if (sk->sk_family == AF_INET || mptcp_v6_is_v4_mapped(sk)) {
 		union inet_addr saddr;
-		u32 mptcp_cap_flag = tcp_sk(mptcp_meta_sk(sk))->mptcp_cap_flag;
 
 		saddr.ip = inet_sk(sk)->inet_saddr;
 		index = mptcp_find_address(mptcp_local, AF_INET, &saddr,
 					   sk->sk_bound_dev_if);
+		if (index < 0)
+			goto out;
+
+		fmp->loc4_bits &= ~(u8)(1 << (u8)index);
+		mptcp_info("%s: clear loc4_bits index %d\n", __func__, index);
 		if (index < 0 && mptcp_cap_flag != MPTCP_CAP_UID_DIP_DPORT)
 			goto out;
 
@@ -1952,9 +2135,9 @@ static void full_mesh_delete_subflow(struct sock *sk)
 				rem4->bitfield = rem4->bitfield & mptcp_local->loc4_bits;
 				if (!rem4->bitfield)
 					fmp->rem4_bits &= ~(1 << i);
-			} else
-				rem4->bitfield &= ~(1 << index);
-
+			} else {
+				rem4->bitfield &= ~(u8)(1 << (u8)index);
+			}
 			mptcp_debug("%s: rem4->bitfield:%u, index:%d, fmp->rem4_bits:%u \n",
 							__func__, rem4->bitfield, i, fmp->rem4_bits);
 		}
@@ -1968,6 +2151,7 @@ static void full_mesh_delete_subflow(struct sock *sk)
 		if (index < 0)
 			goto out;
 
+		fmp->loc6_bits &= ~(u8)(1 << (u8)index);
 		mptcp_for_each_bit_set(fmp->rem6_bits, i) {
 			struct fullmesh_rem6 *rem6 = &fmp->remaddr6[i];
 
@@ -1999,9 +2183,7 @@ static void full_mesh_user_switch(struct sock *meta_sk, bool on, const char *ifa
 
 	mpcb = meta_tp->mpcb;
 	if (!mptcp(meta_tp) || !is_meta_sk(meta_sk) ||
-	    mpcb->infinite_mapping_snd ||
-	    mpcb->infinite_mapping_rcv ||
-	    mpcb->send_infinite_mapping)
+		mptcp_in_infinite_mapping_weak(mpcb))
 		return;
 
 	meta_tp->user_switch = on;

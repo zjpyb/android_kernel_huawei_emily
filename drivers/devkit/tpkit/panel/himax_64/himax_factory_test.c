@@ -34,6 +34,9 @@
 #define GOLDEN_BASEC_CMD  5
 #define BASEC_CMD  7
 #define RTX_DELTA_CMD  8
+#define RTX_DELTA_CMD1 11
+#define OPEN_CMD 9
+#define SHORT_CMD 10
 #define HX_RAW_DUMP_FILE "/sdcard/hx_fac_dump.txt"
 
 //use for parse  dts start
@@ -239,6 +242,9 @@ int himax_nc_chip_self_test(void)
 	else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)	{
 		// 0x100007F8 -> 0x00006AA6
 		himax_rw_reg_reformat_com(ADDR_HAND_SHAKING_HX83102,DATA_HAND_SHAKING,tmp_addr,tmp_data);
+	} else if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		himax_rw_reg_reformat_com(ADDR_HAND_SHAKING_HX83102E,
+			DATA_HAND_SHAKING, tmp_addr, tmp_data);
 	}
 	himax_flash_write_burst(tmp_addr, tmp_data);
 
@@ -279,6 +285,9 @@ int himax_nc_chip_self_test(void)
 		else if (HX_83102B_SERIES_PWON==IC_NC_TYPE)	{
 			// 0x100007F8 -> 0x00006AA6
 			himax_rw_reg_reformat(ADDR_HAND_SHAKING_HX83102,tmp_addr);
+		} else if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+			himax_rw_reg_reformat(ADDR_HAND_SHAKING_HX83102E,
+				tmp_addr);
 		}
 
 		himax_nc_register_read(tmp_addr, FOUR_BYTE_CMD, tmp_data);
@@ -392,7 +401,8 @@ static int himax_alloc_Rawmem(void)
 		TS_LOG_ERR("%s:self_iir is NULL\n", __func__);
 		goto exit_self_iir;
 	}
-	if(HX_83112A_SERIES_PWON == IC_NC_TYPE) {
+	if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+		(IC_NC_TYPE == HX_83102E_SERIES_PWON)) {
 		mutual_open = kzalloc(mutual_num * sizeof(uint32_t), GFP_KERNEL);
 		if (mutual_open == NULL) {
 			TS_LOG_ERR("%s:mutual_open is NULL\n", __func__);
@@ -435,7 +445,8 @@ static int himax_alloc_Rawmem(void)
 	memset(mutual_iir, 0xFF, mutual_num * sizeof(int16_t));
 	memset(self_iir, 0xFF, self_num * sizeof(int16_t));
 
-	if(HX_83112A_SERIES_PWON == IC_NC_TYPE) {
+	if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+		(IC_NC_TYPE == HX_83102E_SERIES_PWON)) {
 		memset(mutual_open, 0xFF, mutual_num * sizeof(uint32_t));
 		memset(self_open, 0xFF, self_num * sizeof(uint32_t));
 		memset(mutual_mopen, 0xFF, mutual_num * sizeof(uint32_t));
@@ -493,7 +504,8 @@ static void himax_free_Rawmem(void)
 	kfree(mutual_iir);
 	kfree(self_iir);
 
-	if(HX_83112A_SERIES_PWON == IC_NC_TYPE) {
+	if ((IC_NC_TYPE == HX_83112A_SERIES_PWON) ||
+		(IC_NC_TYPE == HX_83102E_SERIES_PWON)) {
 		kfree(mutual_open);
 		kfree(self_open);
 		kfree(mutual_mopen);
@@ -533,42 +545,71 @@ static void himax_print_rawdata(int mode)
 		return;
 	}
 
-	switch(mode)
-	{
-		case BANK_CMD:
-			mutual_num	= x_channel * y_channel;
-			for(index1=0;index1<mutual_num;index1++)
-			{
-				info_test->buff[current_index++] = (int)mutual_bank[index1];
-			}
-			break;
-		case IIR_CMD:
-			mutual_num	= x_channel * y_channel;
-			for(index1=0;index1<mutual_num;index1++)
-			{
-				info_test->buff[current_index++] = mutual_iir[index1];
-			}
-			break;
-		case RTX_DELTA_CMD:
-			mutual_num	= x_channel*(y_channel-1);
-			self_num	= (x_channel-1)*y_channel;
-			for(index1=0;index1<mutual_num;index1++)
-			{
-				snprintf(buf, sizeof(buf),"%5d,", tx_delta[index1]);
-				strncat((char *)info_test->tx_delta_buf, buf, sizeof(buf));
-				if ((index1 % (x_channel)) == (x_channel - 1))
-					strncat((char *)info_test->tx_delta_buf , "\n", 1);
-			}
-			for(index1=0;index1<self_num;index1++)
-			{
-				snprintf(buf, sizeof(buf),"%5d,", rx_delta[index1]);
-				strncat((char *)info_test->rx_delta_buf , buf ,sizeof(buf));
-				if ((index1 % (x_channel-1)) == (x_channel - 2))
-					strncat((char *)info_test->rx_delta_buf , "\n", 1);
-			}
-			break;
-		default:
-			break;
+	switch (mode) {
+	case BANK_CMD:
+		mutual_num = x_channel * y_channel;
+		for (index1 = 0; index1 < mutual_num; index1++)
+			info_test->buff[current_index++] =
+				(int)mutual_bank[index1];
+		break;
+	case IIR_CMD:
+		mutual_num = x_channel * y_channel;
+		for (index1 = 0; index1 < mutual_num; index1++)
+			info_test->buff[current_index++] =
+				mutual_iir[index1];
+		break;
+	case RTX_DELTA_CMD:
+		mutual_num = x_channel * (y_channel - DATA_1);
+		self_num = (x_channel - DATA_1) * y_channel;
+		for (index1 = 0; index1 < mutual_num; index1++) {
+			snprintf(buf, sizeof(buf), "%5d,",
+				tx_delta[index1]);
+			strncat((char *)info_test->tx_delta_buf, buf,
+				sizeof(buf));
+			if ((index1 % (x_channel)) == (x_channel - DATA_1))
+				strncat((char *)info_test->tx_delta_buf,
+					"\n", DATA_1);
+		}
+		for (index1 = 0; index1 < self_num; index1++) {
+			snprintf(buf, sizeof(buf), "%5d,",
+				rx_delta[index1]);
+			strncat((char *)info_test->rx_delta_buf,
+				buf, sizeof(buf));
+			if ((index1 % (x_channel - DATA_1)) ==
+				(x_channel - DATA_2))
+				strncat((char *)info_test->rx_delta_buf,
+					"\n", DATA_1);
+		}
+		break;
+	case RTX_DELTA_CMD1:
+		mutual_num = x_channel * (y_channel - DATA_1);
+		self_num = (x_channel - DATA_1) * y_channel;
+		for (index1 = 0; index1 < self_num; index1++)
+			info_test->rx_delta_buf[index1] =
+				rx_delta[index1];
+
+		for (index1 = 0; index1 < mutual_num; index1++)
+			info_test->tx_delta_buf[index1] =
+				tx_delta[index1];
+		break;
+	case OPEN_CMD:
+		TS_LOG_INFO("%s: %s\n", __func__, "OPEN_CMD");
+		mutual_num = x_channel * y_channel;
+		TS_LOG_INFO("%s: x_ch = %d, y_ch = %d, mu_num = %d\n",
+			__func__, x_channel, y_channel, mutual_num);
+		for (index1 = 0; index1 < mutual_num; index1++)
+			info_test->buff[current_index++] =
+				mutual_open[index1];
+		break;
+	case SHORT_CMD:
+		TS_LOG_INFO("%s: %s\n", __func__, "SHORT_CMD");
+		mutual_num = x_channel * y_channel;
+		for (index1 = 0; index1 < mutual_num; index1++)
+			info_test->buff[current_index++] =
+				mutual_short[index1];
+		break;
+	default:
+		break;
 	}
 }
 
@@ -653,7 +694,16 @@ int himax_Raw_Data_test(int step) //for Rawdara
 
 	uint8_t info_data_hx102b[MUTUL_NUM_HX83102* 2] = {0};
 	uint8_t info_data_hx112a[MUTUL_NUM_HX83112* 2] = {0};
+	uint8_t *info_data_hx83102e = NULL;
 
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		info_data_hx83102e = kcalloc(MUTUL_NUM_HX83102E * DATA_2,
+			sizeof(uint8_t), GFP_KERNEL);
+		if (!info_data_hx83102e) {
+			TS_LOG_ERR("fail to alloc info data mem\n");
+			return HX_ERR;
+		}
+	}
 	//check if devided by zero
 	if (rx == 0)
 	{
@@ -664,9 +714,13 @@ int himax_Raw_Data_test(int step) //for Rawdara
 	TS_LOG_DEBUG("Get Raw Data Start:\n");
 	himax_nc_int_enable(g_himax_nc_ts_data->tskit_himax_data->ts_platform_data->irq_id,IRQ_DISABLE);
 
-	himax_nc_sense_off();
-	mdelay(HX_SLEEP_10MS);
-	himax_nc_sense_on(ON);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		himax_nc_switch_mode(DATA_0);
+	} else {
+		himax_nc_sense_off();
+		mdelay(HX_SLEEP_10MS);
+		himax_nc_sense_on(ON);
+	}
 
 	//himax_nc_switch_mode(1);/* 1: sorting mode 0: normal mode*/
 	himax_nc_diag_register_set(0x0A);/*===DC===*/
@@ -675,6 +729,8 @@ int himax_Raw_Data_test(int step) //for Rawdara
 		himax_nc_get_DSRAM_data(info_data_hx102b);
 	else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 		himax_nc_get_DSRAM_data(info_data_hx112a);
+	else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		himax_nc_get_DSRAM_data(info_data_hx83102e);
 	index = 0;
 	for (i = 0; i < tx; i++)
 		{
@@ -684,6 +740,11 @@ int himax_Raw_Data_test(int step) //for Rawdara
 					new_data = (short)(info_data_hx102b[index + 1] << 8 | info_data_hx102b[index]);
 				else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 					new_data = (short)(info_data_hx112a[index + 1] << 8 | info_data_hx112a[index]);
+				else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+					new_data = (short)((
+						info_data_hx83102e[index +
+						DATA_1] << DATA_8) |
+						info_data_hx83102e[index]);
 				mutual_bank[i*rx+j] = new_data;
 				index += 2;
 			}
@@ -723,6 +784,8 @@ int himax_Raw_Data_test(int step) //for Rawdara
 		strncat(buf_test_result, hx_result_fail_str,strlen(hx_result_fail_str)+1);
 		TS_LOG_INFO("[PANEL_ISSUE] %s: End --> FAIL\n",__func__);
 	}
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		kfree(info_data_hx83102e);
 
 	return result;
 }
@@ -818,6 +881,16 @@ static int himax_iir_test(int step) //for Noise Delta
 
 	uint8_t info_data_hx102b[MUTUL_NUM_HX83102* 2] = {0};
 	uint8_t info_data_hx112a[MUTUL_NUM_HX83112* 2] = {0};
+	uint8_t *info_data_hx83102e = NULL;
+
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		info_data_hx83102e = kcalloc(MUTUL_NUM_HX83102E * DATA_2,
+			sizeof(uint8_t), GFP_KERNEL);
+		if (!info_data_hx83102e) {
+			TS_LOG_ERR("fail to alloc info data mem\n");
+			return HX_ERR;
+		}
+	}
 	//check if devided by zero
 	if (rx == 0)
 	{
@@ -835,6 +908,8 @@ static int himax_iir_test(int step) //for Noise Delta
 		himax_nc_get_DSRAM_data(info_data_hx102b);
 	else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 		himax_nc_get_DSRAM_data(info_data_hx112a);
+	else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		himax_nc_get_DSRAM_data(info_data_hx83102e);
 
 	for (i = 0,index = 0; i < tx; i++)
 	{
@@ -844,6 +919,10 @@ static int himax_iir_test(int step) //for Noise Delta
 				new_data = (short)(info_data_hx102b[index + 1] << 8 | info_data_hx102b[index]);
 			else if(HX_83112A_SERIES_PWON ==IC_NC_TYPE)
 				new_data = (short)(info_data_hx112a[index + 1] << 8 | info_data_hx112a[index]);
+			else if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+				new_data = (short)((
+					info_data_hx83102e[index + DATA_1] <<
+					DATA_8) | info_data_hx83102e[index]);
 			mutual_iir[i*rx+j] = new_data;
 			index += 2;
 		}
@@ -879,6 +958,8 @@ static int himax_iir_test(int step) //for Noise Delta
 		strncat(buf_test_result, hx_result_fail_str,strlen(hx_result_fail_str)+1);
 		TS_LOG_INFO("[PANEL_ISSUE] %s: End --> FAIL\n",__func__);
 	}
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		kfree(info_data_hx83102e);
 
 	return result;
 
@@ -935,7 +1016,7 @@ uint32_t himax_get_rawdata_func(uint32_t *raw, uint32_t datalen)
 	uint8_t tmp_addr[4] = {0};
 	uint8_t tmp_data[4] = {0};
 	uint8_t *tmp_rawdata = NULL;
-	uint8_t max_i2c_size = NOR_READ_LENTH;
+	uint8_t max_i2c_size = NOR_READ_LENGTH;
 	uint16_t checksum_cal = 0;
 
 	uint32_t i = 0;
@@ -1261,7 +1342,8 @@ uint32_t mpTestFunc(uint8_t checktype, uint32_t datalen)
 	switch (checktype)
 	{
 	case HIMAX_INSPECTION_OPEN:
-		memcpy(mutual_open, raw, (HX_NC_TX_NUM*HX_NC_RX_NUM));
+		memcpy(mutual_open, raw,
+			sizeof(uint32_t) * (HX_NC_TX_NUM * HX_NC_RX_NUM));
 		for (i = 0; i < (HX_NC_TX_NUM*HX_NC_RX_NUM); i++)
 		{
 			if (g_himax_nc_ts_data->p2p_test_sel){
@@ -1281,7 +1363,8 @@ uint32_t mpTestFunc(uint8_t checktype, uint32_t datalen)
 		break;
 
 	case HIMAX_INSPECTION_MICRO_OPEN:
-		memcpy(mutual_mopen, raw, (HX_NC_TX_NUM*HX_NC_RX_NUM));
+		memcpy(mutual_mopen, raw,
+			sizeof(uint32_t) * (HX_NC_TX_NUM * HX_NC_RX_NUM));
 		for (i = 0; i < (HX_NC_TX_NUM*HX_NC_RX_NUM); i++)
 		{
 			if (g_himax_nc_ts_data->p2p_test_sel){
@@ -1301,7 +1384,8 @@ uint32_t mpTestFunc(uint8_t checktype, uint32_t datalen)
 		break;
 
 	case HIMAX_INSPECTION_SHORT:
-		memcpy(mutual_short, raw, (HX_NC_TX_NUM*HX_NC_RX_NUM));
+		memcpy(mutual_short, raw,
+			sizeof(uint32_t) * (HX_NC_TX_NUM * HX_NC_RX_NUM));
 		for (i = 0; i < (HX_NC_TX_NUM*HX_NC_RX_NUM); i++)
 		{
 			if (g_himax_nc_ts_data->p2p_test_sel){
@@ -1853,12 +1937,14 @@ int himax_nc_factory_start(struct himax_ts_data *ts,struct ts_rawdata_info *info
 	himax_fac_IIR_dump(mutual_num, mutual_iir);//,self_iir);//use for test
 
 	/* step4: Open/Short */
-	if(HX_83102B_SERIES_PWON == IC_NC_TYPE)
-		hx_result_status[test4] = himax_basec_test(test4); //for short/open
-	else if(HX_83112A_SERIES_PWON == IC_NC_TYPE) {
+	if (IC_NC_TYPE == HX_83102B_SERIES_PWON) {
+		hx_result_status[test4] = himax_basec_test(test4); // for short/open
+	} else if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
 		hx_result_status[test4] = himax_open_test(test4);
 		hx_result_status[test5] = himax_short_test(test5);
-
+	} else if (IC_NC_TYPE == HX_83112A_SERIES_PWON) {
+		hx_result_status[test4] = himax_open_test(test4);
+		hx_result_status[test5] = himax_short_test(test5);
 	}
 
 	//=============Show test result===================
@@ -1876,13 +1962,23 @@ int himax_nc_factory_start(struct himax_ts_data *ts,struct ts_rawdata_info *info
 
 	/*print basec and dc*/
 	current_index=2;
-	himax_print_rawdata(BANK_CMD);
-	himax_print_rawdata(IIR_CMD);
-	himax_print_rawdata(RTX_DELTA_CMD);
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON) {
+		himax_print_rawdata(BANK_CMD);
+		himax_print_rawdata(IIR_CMD);
+		himax_print_rawdata(OPEN_CMD);
+		himax_print_rawdata(SHORT_CMD);
+		himax_print_rawdata(RTX_DELTA_CMD1);
+	} else {
+		himax_print_rawdata(BANK_CMD);
+		himax_print_rawdata(IIR_CMD);
+		himax_print_rawdata(RTX_DELTA_CMD);
+	}
 
 	info_test->used_size = current_index;
 
 	himax_free_Rawmem();
+	if (IC_NC_TYPE == HX_83102E_SERIES_PWON)
+		himax_nc_switch_mode(DATA_0);
 
 	himax_nc_HW_reset(HX_LOADCONFIG_EN,HX_INT_DISABLE);
 

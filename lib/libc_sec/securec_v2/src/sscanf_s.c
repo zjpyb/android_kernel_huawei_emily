@@ -49,4 +49,3 @@ int sscanf_s(const char *buffer, const char *format, ...)
 EXPORT_SYMBOL(sscanf_s);
 #endif
 
-

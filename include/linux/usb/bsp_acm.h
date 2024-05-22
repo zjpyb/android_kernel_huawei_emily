@@ -1,8 +1,7 @@
 /*
- * Hisilicon bsp acm interface declaration.
- *
- * Copyright (C) 2014 Hisilicon
- * Author: Hisilicon
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description:  Chip bsp acm interface declaration.
+ * Create: 2014-06-23
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -12,7 +11,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
  */
 
 #ifndef __BSP_ACM_H__

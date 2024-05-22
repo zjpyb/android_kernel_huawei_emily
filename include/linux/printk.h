@@ -551,7 +551,7 @@ __packed __aligned(4)
 ;
 size_t print_time(u64 ts, char *buf);
 void panic_print_msg(struct printk_log *msg);
-void hisi_log_store_add_time(char *hisi_char, u32 sizeof_hisi_char, u16 *hisi_len);
+void pr_log_store_add_time(char *pr_char, u32 sizeof_pr_char, u16 *pr_len);
 #else
 extern u64 local_clock(void);
 static inline u64 hisi_getcurtime(void) {

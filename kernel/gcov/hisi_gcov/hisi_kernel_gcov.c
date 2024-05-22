@@ -27,7 +27,7 @@
 
 MODULE_LICENSE("GPL");
 
-extern noinline int atfd_hisi_service_freqdump_smc(u64, u64, u64, u64);
+extern noinline int atfd_service_freqdump_smc(u64, u64, u64, u64);
 extern void gcov_iter_new_gcov_get_panic_gcda(struct gcov_info *);
 extern size_t convert_to_gcda(char *buffer, struct gcov_info *);
 
@@ -40,7 +40,7 @@ unsigned int g_count_gcda;
 noinline void gcov_freqdump_atf(void)
 {
 	pr_err("%s: call start!\n", __func__);
-	atfd_hisi_service_freqdump_smc(0xC700EE0A, 0, 0, 0);
+	atfd_service_freqdump_smc(0xC700EE0A, 0, 0, 0);
 	pr_err("%s: call end!\n", __func__);
 	return;
 }

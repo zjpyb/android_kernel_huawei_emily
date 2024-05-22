@@ -1,35 +1,30 @@
 /*
- * drivers/inputhub/thp_channel.c
- *
- * THP Channel driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Description: thp channel source file
+ * Author: linjianpeng <linjianpeng1@huawei.com>
+ * Create: 2020-05-25
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
+#include "thp_channel.h"
+
 #include <linux/err.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
-#include <huawei_platform/inputhub/thphub.h>
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
-#include "protocol.h"
 
+#include <huawei_platform/inputhub/thphub.h>
+
+#include "contexthub_boot.h"
+#include "contexthub_pm.h"
+#include "contexthub_recovery.h"
+#include "contexthub_route.h"
+#include "sensor_info.h"
+#include "protocol.h"
 #ifdef CONFIG_CONTEXTHUB_SHMEM
 #include "shmem.h"
 #endif
@@ -41,17 +36,13 @@
 #define HWLOG_TAG thp_channel
 HWLOG_REGIST();
 
-extern int flag_for_sensor_test;
-extern int g_iom3_state;
-extern int iom3_power_state;
-
 static thp_status_data g_thp_status;
 static uint8_t g_thp_open_flag;
 
 struct thp_cmd_map {
 	unsigned int thp_ioctl_app_cmd;
 	int tag;
-	obj_sub_cmd_t cmd;
+	enum obj_sub_cmd cmd;
 };
 
 static const struct thp_cmd_map thp_cmd_map_tab[] = {
@@ -62,12 +53,12 @@ static const struct thp_cmd_map thp_cmd_map_tab[] = {
 	{ THP_IOCTL_THP_STATUS_CMD, TAG_THP, SUB_CMD_THP_STATUS_REQ },
 };
 
-static int send_thp_switch_cmd(int tag, obj_sub_cmd_t subcmd, bool use_lock)
+static int send_thp_switch_cmd(int tag, enum obj_sub_cmd subcmd, bool use_lock)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
-	obj_cmd_t cmd;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
+	enum obj_cmd cmd;
 	int ret;
 
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -81,8 +72,8 @@ static int send_thp_switch_cmd(int tag, obj_sub_cmd_t subcmd, bool use_lock)
 	pkg_ap.wr_len = SUBCMD_LEN;
 	hwlog_info("thp: %s cmd %d, tag %d sub cmd: %u\n", __func__,
 		pkg_ap.cmd, pkg_ap.tag, cpkt.subcmd);
-	if ((g_iom3_state == IOM3_ST_RECOVERY) ||
-		(iom3_power_state == ST_SLEEP))
+	if ((get_iom3_state() == IOM3_ST_RECOVERY) ||
+		(get_iomcu_power_state() == ST_SLEEP))
 		ret = write_customize_cmd(&pkg_ap, NULL, false);
 	else
 		ret = write_customize_cmd(&pkg_ap, NULL, true);
@@ -100,12 +91,18 @@ int send_thp_open_cmd(void)
 	return send_thp_switch_cmd(TAG_THP, SUB_CMD_THP_OPEN_REQ, true);
 }
 
+int send_thp_close_cmd(void)
+{
+	g_thp_open_flag = 0;
+	return send_thp_switch_cmd(TAG_THP, SUB_CMD_THP_CLOSE_REQ, true);
+}
+
 static int send_thp_config_cmd(unsigned int subcmd, int inpara_len,
 	const char *inpara, struct read_info *pkg_mcu, bool use_lock)
 {
-	write_info_t pkg_ap;
+	struct write_info pkg_ap;
 	pkt_parameter_req_t cpkt;
-	pkt_header_t *hd = (pkt_header_t *)&cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
 	int ret;
 
 	if (!(inpara) || (inpara_len <= 0)) {
@@ -116,7 +113,7 @@ static int send_thp_config_cmd(unsigned int subcmd, int inpara_len,
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
 
 	if (THP_IS_INVALID_BUFF(inpara, inpara_len,
-		(MAX_PKT_LENGTH - SUBCMD_LEN - (int)sizeof(pkt_header_t)))) {
+		(MAX_PKT_LENGTH - SUBCMD_LEN - (int)sizeof(struct pkt_header)))) {
 		hwlog_err("%s: subcmd: %u, inpara len: %d, maxlen: 128\n",
 			__func__, subcmd, inpara_len);
 		return -EINVAL;
@@ -133,8 +130,8 @@ static int send_thp_config_cmd(unsigned int subcmd, int inpara_len,
 	hwlog_info("%s: cmd %d, tag %d, subcmd %u, para0 %u, para1 %u\n",
 		__func__, pkg_ap.cmd, pkg_ap.tag, subcmd,
 		(unsigned int)(cpkt.para[0]), (unsigned int)(cpkt.para[1]));
-	if ((g_iom3_state == IOM3_ST_RECOVERY) ||
-		(iom3_power_state == ST_SLEEP))
+	if ((get_iom3_state() == IOM3_ST_RECOVERY) ||
+		(get_iomcu_power_state() == ST_SLEEP))
 		ret = write_customize_cmd(&pkg_ap, NULL, false);
 	else
 		ret = write_customize_cmd(&pkg_ap, pkg_mcu, use_lock);
@@ -230,6 +227,118 @@ static int send_thp_audio_status_cmd(unsigned char audio_on)
 	return ret;
 }
 
+static int send_thp_phone_sleep_mode_status_cmd(unsigned int para)
+{
+	int ret;
+	char cmd_para[THP_STATUS_CMD_PARA_LEN] = {0};
+	int cmd_len;
+
+	/* 0:cmd type offset, 1:sleep mode status offset */
+	cmd_para[0] = ST_CMD_TYPE_SET_PHONE_SLEEP_MODE_STATUS;
+	/* bit16 ~ bit23 is sleep mode status */
+	cmd_para[1] = (para >> 16) & 0xFF;
+	/* bit8 ~ bit15 is total time */
+	cmd_para[2] = (para >> 8) & 0xFF;
+	/* bit0 ~ bit7 is active time */
+	cmd_para[3] = para & 0xFF;
+	cmd_len = THP_STATUS_CMD_PARA_LEN;
+	hwlog_info("%s: called, para = %x, %d,%d,%d\n", __func__,
+		para, cmd_para[1], cmd_para[2], cmd_para[3]);
+	ret = send_thp_status_cmd(cmd_len, cmd_para);
+	return ret;
+}
+
+static int send_tp_ud_config_cmd(unsigned int subcmd, int inpara_len,
+	const char *inpara, struct read_info *pkg_mcu, bool use_lock)
+{
+	struct write_info pkg_ap;
+	pkt_parameter_req_t cpkt;
+	struct pkt_header *hd = (struct pkt_header *)&cpkt;
+	int ret;
+
+	if (!(inpara) || (inpara_len <= 0)) {
+		hwlog_err("%s para failed\n", __func__);
+		return -1;
+	}
+
+	memset(&pkg_ap, 0, sizeof(pkg_ap));
+
+	if (THP_IS_INVALID_BUFF(inpara, inpara_len,
+		(MAX_PKT_LENGTH - SUBCMD_LEN - (int)sizeof(struct pkt_header)))) {
+		hwlog_err("%s: subcmd: %u, inpara len: %d, maxlen: 128\n",
+			__func__, subcmd, inpara_len);
+		return -EINVAL;
+	}
+
+	pkg_ap.cmd = CMD_CMN_CONFIG_REQ;
+	pkg_ap.tag = TAG_TP;
+	cpkt.subcmd = subcmd;
+	pkg_ap.wr_buf = &hd[1];
+	pkg_ap.wr_len = SUBCMD_LEN + inpara_len;
+	if (inpara_len > 0)
+		memcpy(cpkt.para, inpara, (unsigned int)inpara_len);
+
+	hwlog_info("%s: cmd %d, tag %d, subcmd %u, para0 %u, para1 %u\n",
+		__func__, pkg_ap.cmd, pkg_ap.tag, subcmd,
+		(unsigned int)(cpkt.para[0]), (unsigned int)(cpkt.para[1]));
+	if ((get_iom3_state() == IOM3_ST_RECOVERY) ||
+		(get_iomcu_power_state() == ST_SLEEP))
+		ret = write_customize_cmd(&pkg_ap, NULL, false);
+	else
+		ret = write_customize_cmd(&pkg_ap, pkg_mcu, use_lock);
+	if (ret < 0) {
+		hwlog_err("%s: err. write cmd\n", __func__);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int send_thp_multi_tp_ud_status_cmd(unsigned char power_on,
+	unsigned int pannel_id)
+{
+	int ret;
+	char cmd_para[THP_STATUS_CMD_PARA_LEN] = {0};
+	int cmd_len;
+
+	g_thp_status.screen_state = power_on ? TP_SWITCH_ON : TP_SWITCH_OFF;
+
+	/* 0:cmd type offset, 1:power status offset, 2:gesture offset */
+	cmd_para[0] = ST_CMD_TYPE_SET_SCREEN_STATUS;
+	cmd_para[1] = g_thp_status.screen_state;
+	cmd_para[2] = (char)pannel_id;
+	cmd_len = THP_STATUS_CMD_PARA_LEN;
+	hwlog_info("%s: called\n", __func__);
+	ret = send_tp_ud_config_cmd(SUB_CMD_THP_STATUS_REQ, cmd_len, cmd_para,
+		NULL, true);
+	return ret;
+}
+
+int send_tp_ap_event(int inpara_len, const char *inpara, uint8_t cmd)
+{
+	int ret;
+	char cmd_para[THP_STATUS_CMD_PARA_LEN] = {0};
+	int cmd_len;
+
+	if (!(inpara) || (inpara_len <= 0)) {
+		hwlog_err("%s para failed\n", __func__);
+		return -1;
+	}
+	cmd_para[0] = (char)cmd;
+	hwlog_info("thp: %s, cmd = %u, inpara_len = %d\n", __func__, cmd,
+		inpara_len);
+	if (inpara_len > (THP_STATUS_CMD_PARA_LEN - 1)) {
+		hwlog_err("thp: %s, inpara_len is too large. size = %d\n",
+			__func__, inpara_len);
+		return -1;
+	}
+	memcpy((void *)&cmd_para[1], (void *)inpara, (unsigned int)inpara_len);
+	cmd_len = inpara_len + 1;
+	ret = send_tp_ud_config_cmd(SUB_CMD_TSA_EVENT_REQ, cmd_len,
+			cmd_para, NULL, true);
+	return ret;
+}
+
 int send_thp_driver_status_cmd(unsigned char status,
 	unsigned int para, unsigned char cmd)
 {
@@ -244,6 +353,12 @@ int send_thp_driver_status_cmd(unsigned char status,
 		break;
 	case ST_CMD_TYPE_SET_AUDIO_STATUS:
 		ret = send_thp_audio_status_cmd(status);
+		break;
+	case ST_CMD_TYPE_MULTI_TP_UD_STATUS:
+		ret = send_thp_multi_tp_ud_status_cmd(status, para);
+		break;
+	case ST_CMD_TYPE_SET_PHONE_SLEEP_MODE_STATUS:
+		ret = send_thp_phone_sleep_mode_status_cmd(para);
 		break;
 	default:
 		hwlog_err("thp: %s unknown cmd : %u\n", __func__, cmd);
@@ -291,14 +406,14 @@ static int send_thp_algo_sync_info_normal(int inpara_len, const char *inpara)
 
 int send_thp_algo_sync_event(int inpara_len, const char *inpara)
 {
-	int ret = 0;
+	int ret;
 
 	if (!inpara || (inpara_len <= 0)) {
 		hwlog_err("%s para failed\n", __func__);
 		return -1;
 	}
 	if (inpara_len <= MAX_PKT_LENGTH - SUBCMD_LEN -
-			THP_CMD_TYPE_LEN - (int)sizeof(pkt_header_t)) {
+			THP_CMD_TYPE_LEN - (int)sizeof(struct pkt_header)) {
 		ret = send_thp_algo_sync_info_normal(inpara_len, inpara);
 		if (ret) {
 			hwlog_err("%s error\n", __func__);
@@ -333,11 +448,10 @@ int send_thp_auxiliary_data(unsigned int inpara_len, const char *inpara)
 	return ret;
 }
 
-static int execute_thp_config_cmd(int tag, obj_sub_cmd_t subcmd,
+static int execute_thp_config_cmd(int tag, enum obj_sub_cmd subcmd,
 	unsigned long arg, bool use_lock)
 {
-	uintptr_t arg_tmp = (uintptr_t)arg;
-	void __user *argp = (void __user *)arg_tmp;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	int ret;
 	struct thp_ioctl_para para;
 	struct read_info resp_para;
@@ -376,7 +490,7 @@ static int send_thp_cmd(unsigned int cmd, unsigned long arg)
 	int ret;
 	int len = sizeof(thp_cmd_map_tab) / sizeof(thp_cmd_map_tab[0]);
 
-	if (flag_for_sensor_test) {
+	if (get_flag_for_sensor_test()) {
 		hwlog_info("thp: %s flag_for_sensor_test is enabled, cmd = %u\n",
 			__func__, cmd);
 		return 0;

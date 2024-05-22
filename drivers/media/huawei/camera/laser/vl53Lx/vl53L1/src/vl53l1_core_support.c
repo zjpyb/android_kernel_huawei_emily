@@ -1,6 +1,6 @@
 
 /*
-* Copyright (c) 2016, STMicroelectronics - All Rights Reserved
+* Copyright (c) 2017, STMicroelectronics - All Rights Reserved
 *
 * This file is part of VL53L1 Core and is dual licensed,
 * either 'STMicroelectronics
@@ -14,7 +14,7 @@
 ********************************************************************************
 *
 * License terms: STMicroelectronics Proprietary in accordance with licensing
-* terms at www.st.com/sla0044
+* terms at www.st.com/sla0081
 *
 * STMicroelectronics confidential
 * Reproduction and Communication of this document is strictly prohibited unless
@@ -322,7 +322,7 @@ uint32_t VL53L1_isqrt(uint32_t num)
 
 
 void  VL53L1_hist_calc_zero_distance_phase(
-	VL53L1_histogram_bin_data_t   *pdata)
+	struct VL53L1_histogram_bin_data_t   *pdata)
 {
 
 
@@ -352,8 +352,8 @@ void  VL53L1_hist_calc_zero_distance_phase(
 
 
 void  VL53L1_hist_estimate_ambient_from_thresholded_bins(
-	int32_t                        ambient_threshold_sigma,
-	VL53L1_histogram_bin_data_t   *pdata)
+	int32_t                              ambient_threshold_sigma,
+	struct VL53L1_histogram_bin_data_t   *pdata)
 {
 
 
@@ -419,7 +419,7 @@ void  VL53L1_hist_estimate_ambient_from_thresholded_bins(
 
 
 void  VL53L1_hist_remove_ambient_bins(
-	VL53L1_histogram_bin_data_t   *pdata)
+	struct VL53L1_histogram_bin_data_t   *pdata)
 {
 
 
@@ -659,6 +659,7 @@ int32_t VL53L1_range_maths(
 
 	int64_t     tmp_long_int  = 0;
 	int32_t     range_mm      = 0;
+	int32_t     range_mm_10   = 0;
 
 
 
@@ -725,8 +726,14 @@ int32_t VL53L1_range_maths(
 
 
 
-	if (fractional_bits == 0)
-		range_mm = range_mm / (0x01 << 2);
+	if (fractional_bits == 0) {
+		range_mm_10 = range_mm * 10; /* count rang_mm_10 value */
+		range_mm_10 = range_mm_10 / (0x01 << 2);
+		if ((range_mm_10 % 10) < 5)
+			range_mm = (int16_t)(range_mm_10 / 10); /* count range_mm value */
+		else
+			range_mm = (int16_t)(range_mm_10 / 10 + 1); /* count range_mm value */
+	}
 	else if (fractional_bits == 1)
 		range_mm = range_mm / (0x01 << 1);
 
@@ -751,8 +758,8 @@ uint8_t VL53L1_decode_vcsel_period(uint8_t vcsel_period_reg)
 
 
 void VL53L1_copy_xtalk_bin_data_to_histogram_data_struct(
-		VL53L1_xtalk_histogram_shape_t *pxtalk,
-		VL53L1_histogram_bin_data_t    *phist)
+	struct VL53L1_xtalk_histogram_shape_t *pxtalk,
+	struct VL53L1_histogram_bin_data_t    *phist)
 {
 
 
@@ -784,9 +791,9 @@ void VL53L1_copy_xtalk_bin_data_to_histogram_data_struct(
 
 
 void VL53L1_init_histogram_bin_data_struct(
-	int32_t                      bin_value,
-	uint16_t                     VL53L1_PRM_00021,
-	VL53L1_histogram_bin_data_t *pdata)
+	int32_t                            bin_value,
+	uint16_t                           VL53L1_PRM_00021,
+	struct VL53L1_histogram_bin_data_t *pdata)
 {
 
 
@@ -870,7 +877,7 @@ void VL53L1_decode_row_col(
 
 
 void  VL53L1_hist_find_min_max_bin_values(
-	VL53L1_histogram_bin_data_t   *pdata)
+	struct VL53L1_histogram_bin_data_t   *pdata)
 {
 
 
@@ -898,7 +905,7 @@ void  VL53L1_hist_find_min_max_bin_values(
 
 
 void  VL53L1_hist_estimate_ambient_from_ambient_bins(
-	VL53L1_histogram_bin_data_t   *pdata)
+	struct VL53L1_histogram_bin_data_t   *pdata)
 {
 
 

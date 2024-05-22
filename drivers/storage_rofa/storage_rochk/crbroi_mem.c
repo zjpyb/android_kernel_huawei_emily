@@ -18,8 +18,11 @@
 
 #include <linux/kernel.h>
 #include <linux/io.h>
-
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK)
+#include <soc/mediatek/log_store_kernel.h>
+#elif !defined(CONFIG_BOOT_DETECTOR_QCOM)
 #include <linux/hisi/rdr_hisi_platform.h>
+#endif
 
 #include "crbroi.h"
 
@@ -30,8 +33,23 @@
 
 #define PRINT_ERR(f, arg...) \
 	pr_err(CRBROI_NAME ": " f, ## arg)
+#if defined(CONFIG_BOOT_DETECTOR_QCOM)
+#define QCOM_SUB_RESERVED_UNUSED_PHYMEM_BASE 0xA4400000
+#endif
 
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK)
+#ifdef CONFIG_BOOT_DETECTOR
+#define BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR    (get_rofa_mem_base())
+#else
+#define BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR \
+	(((struct sram_log_header *)CONFIG_MTK_DRAM_LOG_STORE_ADDR)->bopd_ro_info)
+#endif
+#elif defined(CONFIG_BOOT_DETECTOR_QCOM)
+#define BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR (QCOM_SUB_RESERVED_UNUSED_PHYMEM_BASE)
+#else
 #define BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR (HISI_SUB_RESERVED_UNUSED_PHYMEM_BASE)
+#endif
+
 #define BFM_SUB_BOOTFAIL_NUM_OFFSET     4
 #define BFM_SUB_BOOTFAIL_COUNT_OFFSET   8
 #define CRBROI_IMPL_ROUND_OFFSET        12
@@ -67,8 +85,12 @@ static unsigned char *g_memmap_addr;
 
 static inline void *crbroi_map_reserved_phys_mem(void)
 {
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && defined(CONFIG_BOOT_DETECTOR)
+	return (void *)BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR;
+#else
 	return ioremap_nocache(BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR,
 			CRBROI_MEM_LEN * sizeof(unsigned int));
+#endif
 }
 
 static int crbroi_mem_write_header(unsigned int magic,
@@ -252,4 +274,29 @@ struct storage_crbroi_func crbroi_mem_func = {
 struct storage_crbroi_func *get_storage_crbroi_func(void)
 {
 	return &crbroi_mem_func;
+}
+
+void storage_rofa_info_clear(void)
+{
+	unsigned char *bopd_info = NULL;
+
+#if defined(CONFIG_HUAWEI_STORAGE_ROFA_FOR_MTK) && defined(CONFIG_BOOT_DETECTOR)
+	bopd_info = (unsigned char *)BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR;
+#else
+	bopd_info = (unsigned char *)ioremap_nocache(
+		BFM_SUB_BOOTFAIL_MAGIC_NUM_ADDR,
+		CRBROI_MEM_LEN * sizeof(unsigned int));
+#endif
+
+	if (!bopd_info) {
+		PRINT_INFO("%s: remap bopd info failed\n", __func__);
+		return;
+	}
+
+	writel(0, bopd_info);
+	writel(0, bopd_info + BFM_SUB_BOOTFAIL_NUM_OFFSET);
+	writel(0, bopd_info + BFM_SUB_BOOTFAIL_COUNT_OFFSET);
+	writel(0, bopd_info + CRBROI_IMPL_ROUND_OFFSET);
+
+	iounmap(bopd_info);
 }

@@ -60,7 +60,7 @@ static inline void fscrypt_set_encrypted_dentry(struct dentry *dentry)
 
 static inline struct page *fscrypt_control_page(struct page *page)
 {
-       return ((struct fscrypt_ctx *)page_private(page))->w.control_page;
+	return ((struct fscrypt_ctx *)page_private(page))->w.control_page;
 }
 
 extern void fscrypt_restore_control_page(struct page *);
@@ -71,10 +71,6 @@ extern int fscrypt_ioctl_get_policy(struct file *, void __user *);
 extern int fscrypt_has_permitted_context(struct inode *, struct inode *);
 extern int fscrypt_inherit_context(struct inode *, struct inode *,
 					void *, bool);
-#ifdef CONFIG_HWAA
-extern int hwaa_inherit_context(struct inode *, struct inode *,
-	struct dentry *, void *, bool);
-#endif
 
 /* keyinfo.c */
 extern int fscrypt_set_gcm_key(struct crypto_aead *, const u8 *);
@@ -83,8 +79,9 @@ extern int fscrypt_derive_gcm_key(struct crypto_aead *,
 extern struct key *fscrypt_request_key(const u8 *, const u8 *, int);
 extern int fscrypt_get_encryption_info(struct inode *);
 extern void fscrypt_put_encryption_info(struct inode *);
-#ifdef CONFIG_HWAA
-extern int hwaa_get_context(struct inode *);
+#ifdef CONFIG_HWDPS
+extern int hwdps_update_context(struct inode *, uid_t);
+extern int hwdps_get_context(struct inode *);
 #endif
 
 /* fname.c */

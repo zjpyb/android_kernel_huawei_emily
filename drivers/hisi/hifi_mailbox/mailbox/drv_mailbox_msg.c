@@ -1,171 +1,144 @@
+/*
+ * drv_mailbox_msg.c
+ *
+ * this file implement mailbox interfaces
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
+#include "drv_mailbox_msg.h"
 
-/*****************************************************************************
-1 头文件包含
-*****************************************************************************/
-#include "drv_mailbox_cfg.h"
 #include "drv_mailbox_debug.h"
 #include "drv_mailbox_gut.h"
 
+#undef _MAILBOX_FILE_
+#define _MAILBOX_FILE_ "msg"
 
-/*****************************************************************************
-	可维可测信息中包含的C文件编号宏定义
-*****************************************************************************/
-#undef	_MAILBOX_FILE_
-#define _MAILBOX_FILE_	 "msg"
-/*****************************************************************************
-  2 全局变量定义
-*****************************************************************************/
-/*lint -e715*/
-int BSP_CPU_StateGet(int CpuID)
-{
-	return 1;
-}
-/*lint +e715*/
-
-/*lint -e611*/
-/*lint -e818*/
 void mailbox_msg_receiver(void *mb_buf, void *handle, void *data)
 {
-	struct mb_queue * queue = NULL;  /*邮箱buffer临时句柄，用于传给用户回调*/
-	struct mb_buff * mbuf = (struct mb_buff *)mb_buf;
-	mb_msg_cb  func = (mb_msg_cb)handle;
+	/* Temporary handle of mailbox buffer, used to pass callback to user */
+	struct mb_queue *queue = NULL;
+	struct mb_buff *mbuf = mb_buf;
+	mb_msg_cb func = (mb_msg_cb)handle;
 
-    queue = &mbuf->usr_queue;
+	if(mbuf == NULL)
+		return;
+
+	queue = &mbuf->usr_queue;
 	if (func)
 		func(data, queue, queue->size);
 	else
-		(void)mailbox_logerro_p1(MAILBOX_ERR_GUT_READ_CALLBACK_NOT_FIND,
-				mbuf->mailcode);
+		(void)mb_logerro_p1(MB_E_GUT_READ_CALLBACK_NOT_FIND,
+			mbuf->mailcode);
 }
-/*lint +e611*/
-/*lint +e818*/
-MAILBOX_EXTERN unsigned int mailbox_reg_msg_cb(
-                unsigned int             mailcode,
-                mb_msg_cb                 func,
-                void                     *data)
+
+int mailbox_reg_msg_cb(uint32_t mailcode, mb_msg_cb func, void *data)
 {
-    return (unsigned int)mailbox_register_cb(mailcode, mailbox_msg_receiver, func, data);
+	return mailbox_register_cb(mailcode, mailbox_msg_receiver, func, data);
 }
-/*lint -e801*/
 
-MAILBOX_EXTERN unsigned int mailbox_try_send_msg(
-                unsigned int            mailcode,
-                const void              *pdata,
-                unsigned int            length)
+uint32_t mailbox_try_send_msg(uint32_t mailcode, const void *pdata,
+	uint32_t length)
 {
-    struct mb_buff      *mb_buf = MAILBOX_NULL;
-    struct mb_queue     *queue  = MAILBOX_NULL;
-    int        ret_val    = MAILBOX_OK;
+	struct mb_buff *mb_buf = NULL;
+	struct mb_queue *queue = NULL;
+	int ret;
 
-    if ((0 == pdata) || (0 == length)) {
-        ret_val = mailbox_logerro_p1(MAILBOX_ERRO, mailcode);
-        goto exit_out;
+	if ((pdata == NULL) || (length == 0)) {
+		ret = mb_logerro_p1(MAILBOX_ERRO, mailcode);
+		goto exit_out;
+	}
 
-    }
-    /*获取邮箱buffer*/
-    ret_val = mailbox_request_buff(mailcode, (void *)&mb_buf);
-    if (MAILBOX_OK != ret_val) {
-        goto exit_out;
-    }
+	/* Get mailbox buffer */
+	ret = mailbox_request_buff(mailcode, (void *)&mb_buf);
+	if (ret != 0)
+		goto exit_out;
 
-    /*填充用户数据*/
-    queue = &mb_buf->usr_queue;
-    if ( length != (unsigned int)mailbox_write_buff( queue, pdata, length)) {
-         ret_val = mailbox_logerro_p1(MAILBOX_FULL, mailcode);
-         goto exit_out;
-    }
+	/* Fill user data */
+	queue = &mb_buf->usr_queue;
+	if (length != mailbox_write_buff(queue, pdata, length)) {
+		ret = mb_logerro_p1(MAILBOX_FULL, mailcode);
+		goto exit_out;
+	}
 
-    /*封信*/
-    ret_val = mailbox_sealup_buff( mb_buf,  length);
-    if (MAILBOX_OK == ret_val) {
-         /*发送邮件*/
-        ret_val = mailbox_send_buff(mb_buf);
-    }
+	/* Package letter */
+	ret = mailbox_sealup_buff(mb_buf, length);
+	if (ret == 0)
+		ret = mailbox_send_buff(mb_buf);
 
 exit_out:
-    /*释放邮箱buffer*/
-    if (MAILBOX_NULL != mb_buf) {
-        mailbox_release_buff(mb_buf);
-    }
+	if (mb_buf != NULL)
+		mailbox_release_buff(mb_buf);
 
-    return (unsigned int)ret_val;
+	return (uint32_t)ret;
 }
 
-/*lint +e801*/
-
-MAILBOX_GLOBAL unsigned int mailbox_read_msg_data(
-                struct mb_queue *mail_handle,
-                char                   *buff,
-                unsigned int          *size)
+uint32_t mailbox_read_msg_data(struct mb_queue *mail_handle, char *buff,
+	uint32_t *size)
 {
-    struct mb_queue *pMailQueue = mail_handle;
+	struct mb_queue *q = mail_handle;
 
-    if ((MAILBOX_NULL == pMailQueue) || (MAILBOX_NULL == buff) || (MAILBOX_NULL == size)) {
-        return (unsigned int)mailbox_logerro_p1(MAILBOX_ERR_GUT_INPUT_PARAMETER, 0);
-    }
+	if ((q == NULL) || (buff == NULL) || (size == NULL)) {
+		return (uint32_t)mb_logerro_p1(
+			MB_E_GUT_INPUT_PARAMETER, 0);
+	}
 
-    if (pMailQueue->size  >  *size) {
-        return (unsigned int)mailbox_logerro_p1(MAILBOX_ERR_GUT_USER_BUFFER_SIZE_TOO_SMALL, *size);
-    }
+	if (q->size > *size) {
+		return (uint32_t)mb_logerro_p1(
+			MB_E_GUT_USER_BUFFER_SIZE_TOO_SMALL, *size);
+	}
 
-    /*检查用户传回的邮箱数据队列句柄的有效性*/
-    if ((0 == pMailQueue->length) ||
-        ((unsigned int)(pMailQueue->front - pMailQueue->base) >  pMailQueue->length ) ||
-        ((unsigned int)(pMailQueue->rear - pMailQueue->base) >  pMailQueue->length )) {
-        return (unsigned int)mailbox_logerro_p1(MAILBOX_CRIT_GUT_INVALID_USER_MAIL_HANDLE, pMailQueue);
-    }
+	/* Check the validity of the queue handle returned by the user */
+	if ((q->length == 0) ||
+		((uint32_t)(q->front - q->base) > q->length) ||
+		((uint32_t)(q->rear - q->base) > q->length)) {
+		return (uint32_t)mb_logerro_p1(
+			MB_F_GUT_INVALID_USER_MAIL_HANDLE, q);
+	}
 
-    *size =  (unsigned int)mailbox_read_buff(pMailQueue, buff, pMailQueue->size);
+	*size = mailbox_read_buff(q, buff, q->size);
 
-    return MAILBOX_OK;
+	return 0;
 }
-/*lint -e838*/
+
+uint32_t mailbox_send_msg(uint32_t mailcode, const void *data,
+	uint32_t length)
+{
+	int ret;
+	int try_go_on;
+	int try_times = 0;
 
 #ifdef CONFIG_HIFI_DSP_ONE_TRACK
-extern bool is_hifi_loaded(void);
-#endif
-MAILBOX_EXTERN unsigned int mailbox_send_msg(
-                unsigned int            mailcode,
-                const void              *data,
-                unsigned int            length)
-{
-	int  ret_val = MAILBOX_OK;
-	unsigned int  try_go_on = MAILBOX_TRUE;
-	int  try_times = 0;
-	#ifdef CONFIG_HIFI_DSP_ONE_TRACK
-	if (!is_hifi_loaded())
+	if (!is_dsp_img_loaded())
 		return MAILBOX_HIFI_NOT_LOAD;
-	#endif
-	ret_val= BSP_CPU_StateGet(mailbox_get_dst_id(mailcode));
-	if (!ret_val) {
-		return MAILBOX_TARGET_NOT_READY;
-	}
+#endif
 
-	ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
+	ret = (int)mailbox_try_send_msg(mailcode, data, length);
 
-	if (MAILBOX_FALSE == mailbox_int_context()) {
-		/*发送满等待轮询尝试*/
-		while ((int)MAILBOX_FULL == ret_val) {
+	if (mailbox_int_context() == MAILBOX_FALSE) {
+		while (ret == MAILBOX_FULL) {
 			mailbox_delivery(mailbox_get_channel_id(mailcode));
-			try_go_on = (unsigned int)mailbox_scene_delay(MAILBOX_DELAY_SCENE_MSG_FULL, &try_times);
-
-			if (MAILBOX_TRUE == try_go_on) {
-				ret_val = (int)mailbox_try_send_msg(mailcode, data, length);
-			} else {
+			try_go_on = mailbox_scene_delay(
+				MAILBOX_DELAY_SCENE_MSG_FULL, &try_times);
+			if (try_go_on != MAILBOX_TRUE)
 				break;
-			}
+
+			ret = (int)mailbox_try_send_msg(mailcode, data, length);
 		}
 	}
 
-	if (MAILBOX_OK != ret_val) {
-		if ((int)MAILBOX_FULL != ret_val) {
-			ret_val = (int)MAILBOX_ERRO;
-		}
-		return (unsigned int)ret_val;
-	}
+	if (ret != 0 && ret != MAILBOX_FULL)
+		return (uint32_t)MAILBOX_ERRO;
 
-	return (unsigned int)ret_val;
+	return (uint32_t)ret;
 }
-/*lint +e838*/
-

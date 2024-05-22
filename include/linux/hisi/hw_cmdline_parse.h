@@ -8,11 +8,8 @@
 #define RUNMODE_FLAG_NORMAL  0
 #define RUNMODE_FLAG_FACTORY 1
 
-
 extern int get_logctl_value(void);
 extern unsigned int runmode_is_factory(void);
 extern int get_uart0_config(void);
-
-
 
 #endif

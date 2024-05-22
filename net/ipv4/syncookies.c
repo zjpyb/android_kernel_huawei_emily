@@ -229,7 +229,7 @@ struct sock *tcp_get_cookie_sock(struct sock *sk, struct sk_buff *skb,
 	if (!child)
 		goto listen_overflow;
 
-	ret = mptcp_check_req_master(sk, child, req, skb, 0);
+	ret = mptcp_check_req_master(sk, child, req, skb, 0, tsoff);
 	if (ret < 0)
 		return NULL;
 
@@ -368,7 +368,8 @@ struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb)
 	ret = NULL;
 #ifdef CONFIG_MPTCP
 	if (mopt.saw_mpc)
-		req = inet_reqsk_alloc(&mptcp_request_sock_ops, sk, false); /* for safety */
+		req = inet_reqsk_alloc(&mptcp_request_sock_ops,
+			sk, false); /* for safety */
 	else
 #endif
 		req = inet_reqsk_alloc(&tcp_request_sock_ops, sk, false); /* for safety */

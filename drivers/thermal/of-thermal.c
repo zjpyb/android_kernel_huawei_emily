@@ -51,7 +51,7 @@ struct __thermal_bind_params {
 	unsigned int usage;
 	unsigned long min;
 	unsigned long max;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	bool is_soc_cdev;
 #endif
 };
@@ -179,7 +179,7 @@ of_thermal_get_trip_points(struct thermal_zone_device *tz)
 }
 EXPORT_SYMBOL_GPL(of_thermal_get_trip_points);
 
-#ifndef CONFIG_HISI_IPA_THERMAL
+#ifndef CONFIG_IPA_THERMAL
 /**
  * of_thermal_set_emul_temp - function to set emulated temperature
  *
@@ -285,12 +285,12 @@ static int of_thermal_set_mode(struct thermal_zone_device *tz,
 
 	if (mode == THERMAL_DEVICE_ENABLED) {
 		tz->polling_delay = data->polling_delay;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		tz->passive_delay = data->passive_delay;
 #endif
 	} else {
 		tz->polling_delay = 0;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		tz->passive_delay = 0;
 #endif
 	}
@@ -337,7 +337,7 @@ static int of_thermal_set_trip_temp(struct thermal_zone_device *tz, int trip,
 	if (trip >= data->ntrips || trip < 0)
 		return -EDOM;
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	if (!data->ops)
 		return -EINVAL;
 #endif
@@ -447,7 +447,7 @@ thermal_zone_of_add_sensor(struct device_node *zone,
 		tzd->ops->set_trips = of_thermal_set_trips;
 
 	if (ops->set_emul_temp)
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		tzd->ops->set_emul_temp = NULL;
 #else
 		tzd->ops->set_emul_temp = of_thermal_set_emul_temp;
@@ -726,7 +726,7 @@ static int thermal_of_populate_bind_params(struct device_node *np,
 		goto end;
 	}
 	__tbp->cooling_device = cooling_spec.np;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	if (cooling_spec.args_count >= 2) { /* at least min and max */
 		__tbp->min = cooling_spec.args[0];
 		__tbp->max = cooling_spec.args[1];
@@ -748,7 +748,7 @@ end:
 	return ret;
 }
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 bool thermal_of_get_cdev_type(struct thermal_zone_device *tzd,
 			struct thermal_cooling_device *cdev)
 {
@@ -1018,7 +1018,7 @@ static inline void of_thermal_free_zone(struct __thermal_zone *tz)
 	kfree(tz);
 }
 
-#ifdef CONFIG_HISI_THERMAL_SPM
+#ifdef CONFIG_THERMAL_SPM
 int of_thermal_get_num_tbps(struct thermal_zone_device *tz)
 {
 	struct __thermal_zone *data = tz->devdata;
@@ -1064,7 +1064,7 @@ int __init of_parse_thermal_zones(void)
 	struct device_node *np, *child;
 	struct __thermal_zone *tz;
 	struct thermal_zone_device_ops *ops;
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 	const char *gov_name;
 #endif
 
@@ -1099,7 +1099,7 @@ int __init of_parse_thermal_zones(void)
 			goto exit_free;
 		}
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		/* set power allocator governor as defualt */
 		if (!of_property_read_string(child, "governor_name", (const char **)&gov_name))
 			strncpy(tzp->governor_name, gov_name, sizeof(tzp->governor_name));/* unsafe_function_ignore: strncpy */
@@ -1108,7 +1108,7 @@ int __init of_parse_thermal_zones(void)
 		/* No hwmon because there might be hwmon drivers registering */
 		tzp->no_hwmon = true;
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		/*tzp->num_tbps?*/
 		/*tzp->tbp?*/
 		if (!of_property_read_u32(child, "k_po", &prop))
@@ -1123,7 +1123,7 @@ int __init of_parse_thermal_zones(void)
 		if (!of_property_read_u32(child, "sustainable-power", &prop))
 			tzp->sustainable_power = prop;
 
-#ifdef CONFIG_HISI_IPA_THERMAL
+#ifdef CONFIG_IPA_THERMAL
 		tzp->max_sustainable_power = tzp->sustainable_power;
 #endif
 

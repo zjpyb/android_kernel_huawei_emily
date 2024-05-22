@@ -1,4 +1,7 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/*
+ * hw_subdev.h
+ *
+ * Copyright (c) 2011-2020 Huawei Technologies Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,4 +24,4 @@ struct hw_sd_subdev {
 	int close_seq;
 };
 
-#endif /* _HW_SD_H_ */
+#endif /* _HW_SUBDEV_H_ */

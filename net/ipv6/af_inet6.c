@@ -86,6 +86,10 @@ static inline int current_has_network(void)
 #include <hwnet/hw_dpi_mark/dpi_hw_hook.h>
 #endif
 
+#ifdef CONFIG_HUAWEI_XENGINE
+#include <emcom/emcom_xengine.h>
+#endif
+
 MODULE_AUTHOR("Cast of dozens");
 MODULE_DESCRIPTION("IPv6 protocol stack for Linux");
 MODULE_LICENSE("GPL");
@@ -299,11 +303,19 @@ out:
 		get_task_comm(sk->sk_process_name, current->group_leader);
 #endif
 
+#ifdef CONFIG_HUAWEI_KSTATE
+	if (!err)
+		sk->sk_pid = current->tgid;
+#endif
+
 #ifdef CONFIG_HW_DPIMARK_MODULE
 	if (!err)
 		mplk_try_nw_bind(sk);
 #endif
-
+#ifdef CONFIG_HUAWEI_XENGINE
+	if (!err)
+		emcom_xengine_bind(sk);
+#endif
 	return err;
 out_rcu_unlock:
 	rcu_read_unlock();

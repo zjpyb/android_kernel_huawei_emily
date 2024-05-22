@@ -156,6 +156,9 @@ void machine__delete_threads(struct machine *machine)
 
 void machine__exit(struct machine *machine)
 {
+	if (machine == NULL)
+		return;
+
 	machine__destroy_kernel_maps(machine);
 	map_groups__exit(&machine->kmaps);
 	dsos__exit(&machine->dsos);
@@ -2236,6 +2239,20 @@ int machine__set_current_tid(struct machine *machine, int cpu, pid_t pid,
 	thread__put(thread);
 
 	return 0;
+}
+
+/*
+ * Compares the raw arch string. N.B. see instead perf_env__arch() if a
+ * normalized arch is needed.
+ */
+bool machine__is(struct machine *machine, const char *arch)
+{
+	return machine && !strcmp(perf_env__raw_arch(machine->env), arch);
+}
+
+int machine__nr_cpus_avail(struct machine *machine)
+{
+	return machine ? perf_env__nr_cpus_avail(machine->env) : 0;
 }
 
 int machine__get_kernel_start(struct machine *machine)

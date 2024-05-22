@@ -1,18 +1,12 @@
 /*
- * Hisilicon HHEE exception driver .
- *
- * Copyright (c) 2012-2013 Linaro Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2021. All rights reserved.
+ * Description: hhee message source file
+ * Create: 2017/6/1
  */
 
 #include <linux/errno.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
-
 #include "hhee.h"
 #include "hhee_msg.h"
 
@@ -60,31 +54,38 @@ static void hhee_msg_handle(unsigned int start, unsigned int end)
 
 #define MAX_IRQ_COUNT    0x3
 static int g_irq_counters;
-irqreturn_t hhee_irq_handle(int irq, void *data)
+
+static int hkip_hhee_dispatch(void)
 {
 	unsigned int start, end;
 
 	if (!msg_state)
-		return -IRQ_HANDLED;
+		return -1;
 
 	start = msg_state->read_pos;
 	end = msg_state->write_pos;
 
 	if (start >= HHEE_MSG_MAX_SLOTS || end >= HHEE_MSG_MAX_SLOTS) {
 		pr_err("unexpected error, pos=%u,%u\n", start, end);
-		return IRQ_HANDLED;
+		return -1;
 	}
 
 	if (g_irq_counters >= MAX_IRQ_COUNT)
-		return IRQ_HANDLED;
+		return -1;
 
 	hhee_msg_handle(start, end);
 	msg_state->read_pos = end;
 	g_irq_counters += 1;
+	return 0;
+}
+
+irqreturn_t hhee_irq_handle(int irq, void *data)
+{
+	if (hkip_hhee_dispatch())
+		pr_err("%s, msg handle error\n", __func__);
 
 	return IRQ_HANDLED;
 }
-
 void reset_hkip_irq_counters(void)
 {
 	g_irq_counters = 0;
@@ -113,8 +114,7 @@ int hhee_msg_init(void)
 		ret = -EFAULT;
 		goto err;
 	}
-
-	msg_state = (struct hhee_msg_state *)addr;
+	msg_state = addr;
 	return 0;
 
 err:

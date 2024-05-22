@@ -27,7 +27,7 @@
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
 #include "synaptics.h"
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 
 #define CHAR_DEVICE_NAME "rmi"
 #define DEVICE_CLASS_NAME "rmidev"
@@ -512,7 +512,7 @@ static int rmidev_open(struct inode *inp, struct file *filp)
 	    container_of(inp->i_cdev, struct rmidev_data, main_dev);
 	char *comm = NULL;
 
-	if( !rmi4_data->synaptics_chip_data->synaptics3718_Tp_Pressure_flag ){
+	if( !rmi4_data->synaptics_chip_data->synaptics3718_tp_pressure_flag ){
 		comm = current->group_leader->comm;
 		if(0 != strncmp(comm,"ptics.redremote",strlen("ptics.redremote")))
 		{

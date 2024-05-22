@@ -63,6 +63,7 @@
 #include <linux/nsproxy.h>
 #include <linux/poll.h>
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/rbtree.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/mm.h>
@@ -74,7 +75,9 @@
 #ifdef CONFIG_TRACING
 #include <linux/tracefs.h>
 #endif
-
+#ifdef CONFIG_HW_CGROUP_WORKINGSET
+#include <linux/workingset_cgroup.h>
+#endif
 #ifdef CONFIG_BINDER_TRANSACTION_PROC_BRIEF
 #include <linux/trace_clock.h>
 #endif
@@ -82,6 +85,7 @@
 #include <uapi/linux/android/binder.h>
 #include <uapi/linux/sched/types.h>
 #include "binder_alloc.h"
+#include "binder_internal.h"
 #include "binder_trace.h"
 
 #ifdef CONFIG_HUAWEI_DUBAI
@@ -90,6 +94,7 @@
 
 #ifdef CONFIG_FRAME_RTG
 #include <linux/hisi_rtg.h>
+#include <linux/sched/frame.h>
 #endif
 
 #ifdef CONFIG_HUAWEI_KSTATE
@@ -98,6 +103,11 @@
 #if (defined CONFIG_HW_QOS_THREAD) || (defined CONFIG_HW_BINDER_SCHED)
 #include <chipset_common/hwqos/hwqos_common.h>
 #endif
+#ifdef CONFIG_HW_BINDER_SCHED
+#include <linux/sched/clock.h>
+#endif
+
+#include <securec.h>
 #ifdef CONFIG_HW_BINDER_FG_REQ_FIRST
 #define MAX_FG_WORKS_PROCEEDED 2
 
@@ -119,6 +129,7 @@ static const char *SYSTEM_SERVER_NAME = "system_server";
 static const char *BINDER_NAME = "binder";
 static atomic_t binder_sched_switch = ATOMIC_INIT(0);
 static atomic_t binder_sched_debug_switch = ATOMIC_INIT(0);
+static uid_t fg_euid = 0;
 #endif
 
 static HLIST_HEAD(binder_deferred_list);
@@ -167,8 +178,6 @@ BINDER_DEBUG_ENTRY(proc);
 
 #define FORBIDDEN_MMAP_FLAGS                (VM_WRITE)
 
-#define SURFACEFLINGER_NAME  "surfaceflinger"
-
 enum {
 	BINDER_DEBUG_USER_ERROR             = 1U << 0,
 	BINDER_DEBUG_FAILED_TRANSACTION     = 1U << 1,
@@ -190,7 +199,7 @@ static uint32_t binder_debug_mask = BINDER_DEBUG_USER_ERROR |
 	BINDER_DEBUG_FAILED_TRANSACTION | BINDER_DEBUG_DEAD_TRANSACTION;
 module_param_named(debug_mask, binder_debug_mask, uint, 0644);
 
-static char *binder_devices_param = CONFIG_ANDROID_BINDER_DEVICES;
+char *binder_devices_param = CONFIG_ANDROID_BINDER_DEVICES;
 module_param_named(devices, binder_devices_param, charp, 0444);
 
 static DECLARE_WAIT_QUEUE_HEAD(binder_user_error_wait);
@@ -309,20 +318,6 @@ static struct binder_transaction_log_entry *binder_transaction_log_add(
 	return e;
 }
 
-struct binder_context {
-	struct binder_node *binder_context_mgr_node;
-	struct mutex context_mgr_node_lock;
-
-	kuid_t binder_context_mgr_uid;
-	const char *name;
-};
-
-struct binder_device {
-	struct hlist_node hlist;
-	struct miscdevice miscdev;
-	struct binder_context context;
-};
-
 /**
  * struct binder_work - work enqueued on a worklist
  * @entry:             node enqueued on list
@@ -333,7 +328,7 @@ struct binder_device {
 struct binder_work {
 	struct list_head entry;
 
-	enum {
+	enum binder_work_type {
 		BINDER_WORK_TRANSACTION = 1,
 		BINDER_WORK_TRANSACTION_COMPLETE,
 		BINDER_WORK_RETURN_ERROR,
@@ -1003,27 +998,6 @@ static struct binder_work *binder_dequeue_work_head_ilocked(
 	return w;
 }
 
-/**
- * binder_dequeue_work_head() - Dequeues the item at head of list
- * @proc:         binder_proc associated with list
- * @list:         list to dequeue head
- *
- * Removes the head of the list if there are items on the list
- *
- * Return: pointer dequeued binder_work, NULL if list was empty
- */
-static struct binder_work *binder_dequeue_work_head(
-					struct binder_proc *proc,
-					struct list_head *list)
-{
-	struct binder_work *w;
-
-	binder_inner_proc_lock(proc);
-	w = binder_dequeue_work_head_ilocked(list);
-	binder_inner_proc_unlock(proc);
-	return w;
-}
-
 #ifdef CONFIG_HW_BINDER_SCHED
 static inline bool binder_proc_has_bgworklist_ilocked(
 	struct binder_proc *proc)
@@ -1045,7 +1019,7 @@ static inline bool binder_thread_has_bgworklist_ilocked(
 static struct binder_thread *binder_select_thread_by_type_ilocked(
 	struct binder_proc *proc, int type)
 {
-	struct binder_thread *thread;
+	struct binder_thread *thread = NULL;
 
 	list_for_each_entry(thread, &proc->waiting_threads,
 		waiting_thread_node) {
@@ -1068,8 +1042,8 @@ static void binder_wakeup_bgthread_ilocked(struct binder_proc *proc)
 
 static void adjust_bg_todo_ilocked(struct binder_proc *proc, uid_t fguid)
 {
-	struct binder_work *w;
-	struct binder_work *w_tmp;
+	struct binder_work *w = NULL;
+	struct binder_work *w_tmp = NULL;
 
 	if (proc == NULL)
 		return;
@@ -1167,8 +1141,8 @@ static inline struct list_head *binder_proc_select_worklist_ilocked(
 		proc->fg_count = 0;
 
 		if (!binder_worklist_empty_ilocked(&proc->todo)) {
-			struct binder_work *fg_w;
-			struct binder_work *w;
+			struct binder_work *fg_w = NULL;
+			struct binder_work *w = NULL;
 
 			fg_w = list_first_entry(&proc->fg_todo,
 				struct binder_work, entry);
@@ -1184,25 +1158,6 @@ static inline struct list_head *binder_proc_select_worklist_ilocked(
 	return &proc->fg_todo;
 }
 
-#ifdef CONFIG_HW_QOS_THREAD
-static inline bool binder_thread_check_and_set_dynamic_qos(
-	struct binder_thread *thread, struct binder_thread *from,
-	unsigned int oneway)
-{
-	if ((!oneway) && from)
-		return dynamic_qos_enqueue(thread->task, from->task,
-			DYNAMIC_QOS_BINDER);
-	return false;
-}
-
-static inline void binder_thread_check_and_remove_dynamic_qos(
-	struct binder_thread *thread, unsigned int oneway)
-{
-	if (!oneway)
-		dynamic_qos_dequeue(thread->task, DYNAMIC_QOS_BINDER);
-}
-
-#endif
 #ifdef CONFIG_HW_VIP_THREAD
 static inline void binder_thread_check_and_set_dynamic_vip(
 	struct binder_thread *thread, struct binder_thread *from)
@@ -1221,6 +1176,25 @@ static inline void binder_thread_check_and_remove_dynamic_vip(
 		dynamic_vip_dequeue(thread->task, DYNAMIC_VIP_BINDER);
 }
 #endif
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+static inline bool binder_thread_check_and_set_dynamic_qos(
+	struct binder_thread *thread, struct binder_thread *from,
+	unsigned int oneway)
+{
+	if ((!oneway) && from)
+		return dynamic_qos_enqueue(thread->task, from->task,
+			DYNAMIC_QOS_BINDER);
+	return false;
+}
+
+static inline void binder_thread_check_and_remove_dynamic_qos(
+	struct binder_thread *thread, unsigned int oneway)
+{
+	if (!oneway)
+		dynamic_qos_dequeue(thread->task, DYNAMIC_QOS_BINDER);
+}
 #endif
 
 static void
@@ -1331,11 +1305,11 @@ static bool binder_has_work(struct binder_thread *thread, bool do_proc_work)
 bool check_binder_calling_work(int calledPid)
 {
 	bool ret = false;
-	struct binder_proc *proc;
+	struct binder_proc *proc = NULL;
 	struct binder_proc *cacheCalledProc = NULL;
 	struct binder_thread *calledBinderThread = NULL;
 	struct binder_transaction *t = NULL;
-	struct rb_node *n;
+	struct rb_node *n = NULL;
 
 	mutex_lock(&binder_procs_lock);
 	hlist_for_each_entry(proc, &binder_procs, proc_node) {
@@ -1427,6 +1401,35 @@ static void binder_wakeup_poll_threads_ilocked(struct binder_proc *proc,
 	}
 }
 
+#ifdef CONFIG_HW_CGROUP_WORKINGSET
+static bool workingset_preread_ilocked(
+	struct binder_proc *proc,
+	struct binder_thread *thread)
+{
+	if (binder_has_work_ilocked(thread, true))
+		return true;
+	if (list_empty(&proc->waiting_threads))
+		return false;
+
+	binder_inner_proc_unlock(proc);
+	__set_current_state(TASK_RUNNING);
+	workingset_preread_by_self();
+	binder_inner_proc_lock(proc);
+
+	return false;
+}
+
+static inline bool workingset_try_preread_ilocked(
+	struct binder_proc *proc,
+	struct binder_thread *thread,
+	struct task_struct *tsk)
+{
+	if (likely(!tsk || !(tsk->ext_flags & PF_EXT_WSCG_PREREAD)))
+		return false;
+	return workingset_preread_ilocked(proc, thread);
+}
+#endif
+
 /**
  * binder_select_thread_ilocked() - selects a thread for doing proc work.
  * @proc:	process to select a thread from
@@ -1503,7 +1506,7 @@ static bool is_uncontrolled_list(struct binder_transaction *t,
 {
 	if ((!t->from) || (!t->from->proc))
 		return true;
-	return ((t->from->proc->pid == t->from->pid) ||
+	return ((t->from->proc->pid == t->from->pid) || (sender_euid == fg_euid) ||
 		(multiuser_get_app_id(sender_euid) < MIN_APPLICATION_UID) ||
 		(attr > 0));
 }
@@ -1518,8 +1521,8 @@ static void update_binder_work_params(struct binder_proc *proc,
 
 static void check_timeout(struct binder_proc *proc)
 {
-	struct binder_work *w;
-	struct binder_work *w_tmp;
+	struct binder_work *w = NULL;
+	struct binder_work *w_tmp = NULL;
 	u64 now = sched_clock();
 
 	if ((!atomic_read(&binder_sched_switch)) ||
@@ -1548,8 +1551,8 @@ static void check_timeout(struct binder_proc *proc)
 
 static void dequeue_all_bg_work(void)
 {
-	struct binder_work *w;
-	struct binder_work *tmp;
+	struct binder_work *w = NULL;
+	struct binder_work *tmp = NULL;
 
 	if (system_server_proc == NULL)
 		return;
@@ -1759,6 +1762,14 @@ static int to_kernel_prio(int policy, int user_priority)
 		return MAX_USER_RT_PRIO - 1 - user_priority;
 }
 
+#ifdef CONFIG_FRAME_RTG
+static bool is_special_rtg(struct task_struct *task)
+{
+	unsigned int grp_id = sched_get_group_id(task);
+	return is_frame_rtg(grp_id) || (grp_id == DEFAULT_AUX_ID);
+}
+#endif
+
 static void binder_do_set_priority(struct task_struct *task,
 				   struct binder_priority desired,
 				   bool verify)
@@ -1769,14 +1780,14 @@ static void binder_do_set_priority(struct task_struct *task,
 
 	if (task->policy == policy && task->normal_prio == desired.prio)
 		return;
-
 #ifdef CONFIG_FRAME_RTG
-	if (sched_get_group_id(task) == DEFAULT_RT_FRAME_ID)
+	if (is_special_rtg(task))
 		return;
 #endif
-	if ((task->normal_prio < desired.prio) &&
-		(!strcmp(task->comm, SURFACEFLINGER_NAME)))
+#ifdef CONFIG_HW_QOS_THREAD
+	if (!should_binder_do_set_priority(task, desired.prio, verify))
 		return;
+#endif
 
 	has_cap_nice = has_capability_noaudit(task, CAP_SYS_NICE);
 
@@ -4789,6 +4800,11 @@ static int binder_wait_for_work(struct binder_thread *thread,
 	freezer_do_not_count();
 	binder_inner_proc_lock(proc);
 	for (;;) {
+#ifdef CONFIG_HW_CGROUP_WORKINGSET
+		if (do_proc_work && workingset_try_preread_ilocked(
+			proc, thread, proc->tsk))
+			break;
+#endif
 		prepare_to_wait(&thread->wait, &wait, TASK_INTERRUPTIBLE);
 		if (binder_has_work_ilocked(thread, do_proc_work))
 			break;
@@ -5232,13 +5248,17 @@ static void binder_release_work(struct binder_proc *proc,
 				struct list_head *list)
 {
 	struct binder_work *w;
+	enum binder_work_type wtype;
 
 	while (1) {
-		w = binder_dequeue_work_head(proc, list);
+		binder_inner_proc_lock(proc);
+		w = binder_dequeue_work_head_ilocked(list);
+		wtype = w ? w->type : 0;
+		binder_inner_proc_unlock(proc);
 		if (!w)
 			return;
 
-		switch (w->type) {
+		switch (wtype) {
 		case BINDER_WORK_TRANSACTION: {
 			struct binder_transaction *t;
 
@@ -5272,9 +5292,11 @@ static void binder_release_work(struct binder_proc *proc,
 			kfree(death);
 			binder_stats_deleted(BINDER_STAT_DEATH);
 		} break;
+		case BINDER_WORK_NODE:
+			break;
 		default:
 			pr_err("unexpected work type, %d, not freed\n",
-			       w->type);
+			       wtype);
 			break;
 		}
 	}
@@ -5689,7 +5711,7 @@ static void update_proc_attr(struct binder_proc *proc, int attr)
 
 static void find_update_proc_attr(int pid, int attr)
 {
-	struct binder_proc *proc;
+	struct binder_proc *proc = NULL;
 
 	mutex_lock(&binder_procs_lock);
 	hlist_for_each_entry(proc, &binder_procs, proc_node) {
@@ -5707,8 +5729,10 @@ static void binder_sched_scene_ctl(struct binder_sched_args *args)
 	switch (args->scene) {
 	case BINDER_CTL_SCENE_FG_CHANGED:
 		if (atomic_read(&binder_sched_switch) &&
-			(args->status == APP_IS_FG))
+			(args->status == APP_IS_FG)) {
+			fg_euid = args->id;
 			check_and_adjust_bg_todo(args->id);
+		}
 		break;
 	case BINDER_CTL_SCENE_SET_DEBUG_SWITCH:
 		atomic_set(&binder_sched_debug_switch, args->status);
@@ -5747,6 +5771,82 @@ static void binder_sched_proc_init(struct binder_proc *proc)
 	proc->bg_count = 0;
 }
 #endif
+
+/*
+* if pid and name is equal, but proc is not equal,
+* it means this user process has opened /dev/binder twice
+*/
+static struct binder_proc * find_to_proc_bypid(int pid, struct binder_proc *from_proc)
+{
+	struct binder_proc *proc = NULL;
+	mutex_lock(&binder_procs_lock);
+	hlist_for_each_entry(proc, &binder_procs, proc_node) {
+		if ((proc->pid == pid) && (proc != from_proc)
+			&& (!strcmp(proc->context->name, from_proc->context->name))) {
+			mutex_unlock(&binder_procs_lock);
+			return proc;
+		}
+	}
+	mutex_unlock(&binder_procs_lock);
+	return NULL;
+}
+
+/*
+ * translate handle occour in hosp, so proc belong to hosp,
+ * info.has_weak_ref == 1 means hosp2aosp, else info.has_weak_ref == 2 means aosp2hosp,
+ * info.has_weak_ref == 3 means hosp stub to aosp bpBinder.
+ * if input a cookie, find or new node, else find node existd to add ref to it.
+ */
+static int binder_translate_within_process(struct binder_node_debug_info *info,
+	struct binder_proc *aosp_proc, struct binder_proc *hosp_proc,
+	struct binder_thread *hosp_thread)
+{
+	struct binder_ref_data dest_rdata;
+	struct binder_node *node = NULL;
+	int ret = -EINVAL;
+	if (info->has_weak_ref == 1) {
+		node = binder_get_node_from_ref(hosp_proc, info->has_strong_ref, true, NULL);
+	} else if (info->has_weak_ref == 2) {
+		node = binder_get_node_from_ref(aosp_proc, info->has_strong_ref, true, NULL);
+	} else if (info->has_weak_ref == 3 || info->has_weak_ref == 4) {
+		struct flat_binder_object flat;
+		flat.hdr.type = BINDER_TYPE_BINDER;
+		flat.binder = info->ptr;
+		flat.cookie = info->cookie;
+		flat.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS | info->has_strong_ref;
+		if (info->has_weak_ref == 3) {
+			node = binder_new_node(hosp_proc, &flat);
+		} else {
+			node = binder_new_node(aosp_proc, &flat);
+		}
+	}
+	if (node == NULL) {
+		pr_err("translate handle: node is invalid");
+		return ret;
+	}
+	if (info->has_weak_ref == 1) {
+		ret = binder_inc_ref_for_node(aosp_proc, node, true, NULL, &dest_rdata);
+	} else if (info->has_weak_ref == 2) {
+		ret = binder_inc_ref_for_node(hosp_proc, node, true, NULL, &dest_rdata);
+	} else if (info->has_weak_ref == 3) {
+		ret = binder_inc_ref_for_node(aosp_proc, node, true, &hosp_thread->todo, &dest_rdata);
+	} else if (info->has_weak_ref == 4) {
+		struct binder_thread * aosp_thread = binder_get_thread(aosp_proc);
+		if (aosp_thread != NULL) {
+			pr_err("translate handle: aosp_thread is valid");
+			ret = binder_inc_ref_for_node(hosp_proc, node, true, &aosp_thread->todo, &dest_rdata);
+		}
+	}
+	if (ret) {
+		info->has_strong_ref = 0;
+		pr_err("translate handle: ref is not valid");
+	} else {
+		info->has_strong_ref = dest_rdata.desc;
+		pr_info("translate handle to %d success\n", info->has_strong_ref);
+	}
+	binder_put_node(node);
+	return ret;
+}
 
 static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -5882,6 +5982,28 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	}
 #endif
+	case BINDER_TRANSLATE_HANDLE: {
+		struct binder_node_debug_info info;
+		struct binder_proc *aosp_proc;
+
+		if (copy_from_user(&info, ubuf, sizeof(info))) {
+			ret = -EINVAL;
+			goto err;
+		}
+		aosp_proc = find_to_proc_bypid(proc->pid, proc);
+		if (!aosp_proc) {
+			ret = -EINVAL;
+			pr_err("failed! translate handle:only one proc of this process");
+			goto err;
+		}
+		ret = binder_translate_within_process(&info, aosp_proc, proc, thread);
+		if (!ret && copy_to_user(ubuf, &info, sizeof(info))) {
+			ret = -EINVAL;
+			goto err;
+		}
+		break;
+	}
+
 	default:
 		ret = -EINVAL;
 		goto err;
@@ -6006,8 +6128,12 @@ static int binder_open(struct inode *nodp, struct file *filp)
 		proc->default_priority.prio = NICE_TO_PRIO(0);
 	}
 
-	binder_dev = container_of(filp->private_data, struct binder_device,
-				  miscdev);
+	/* binderfs stashes devices in i_private */
+	if (is_binderfs_device(nodp))
+		binder_dev = nodp->i_private;
+	else
+		binder_dev = container_of(filp->private_data,
+					  struct binder_device, miscdev);
 	proc->context = &binder_dev->context;
 	binder_alloc_init(&proc->alloc);
 
@@ -6864,7 +6990,7 @@ static int binder_transaction_log_show(struct seq_file *m, void *unused)
 	return 0;
 }
 
-static const struct file_operations binder_fops = {
+const struct file_operations binder_fops = {
 	.owner = THIS_MODULE,
 	.poll = binder_poll,
 	.unlocked_ioctl = binder_ioctl,
@@ -7015,6 +7141,137 @@ static int binder_transaction_proc_show(struct seq_file *m, void *unused)
 
 	return 0;
 }
+
+static ssize_t print_binder_brief_ilocked(char *buf,
+					  const char *prefix,
+					  struct binder_transaction *t,
+					  u64 timestamp,
+					  int free_buf_len)
+{
+	char *start = buf;
+	struct binder_proc *to_proc = NULL;
+	int from_pid;
+	int from_tid;
+	int to_pid;
+	int ret;
+
+	spin_lock(&t->lock);
+	to_proc = t->to_proc;
+	from_pid = t->from ?
+		(t->from->proc ? t->from->proc->pid : 0) : t->async_from_pid;
+	from_tid = t->from ? t->from->pid : t->async_from_tid;
+	to_pid = to_proc ? to_proc->pid : 0;
+	/* 1000000000 means convert us to s */
+	ret = snprintf_s(buf, free_buf_len, free_buf_len - 1,
+		"%s%d:%d to %d:%d code %x wait:%lld.%lld s\n",
+		prefix, from_pid, from_tid, to_pid,
+		t->to_thread ? t->to_thread->pid : 0, t->code,
+		timestamp > t->timestamp ?
+			(timestamp - t->timestamp) / 1000000000 : 0,
+		timestamp > t->timestamp ?
+			(timestamp - t->timestamp) % 1000000000 : 0);
+	spin_unlock(&t->lock);
+	if (ret != -1)
+		buf += ret;
+
+	return buf - start;
+}
+
+static ssize_t print_binder_brief(char *buf,
+				  struct binder_proc *proc,
+				  u64 timestamp,
+				  int free_buf_len)
+{
+	char *start = buf;
+	int len;
+	struct rb_node *n = NULL;
+
+	/* sync binder not one way */
+	binder_inner_proc_lock(proc);
+	for (n = rb_first(&proc->threads); n != NULL; n = rb_next(n)) {
+		struct binder_thread *thread =
+			rb_entry(n, struct binder_thread, rb_node);
+		struct binder_transaction *t =
+			thread->transaction_stack;
+
+		while (t) {
+			if (t->from == thread) {
+				len = print_binder_brief_ilocked(
+					buf, "\t", t, timestamp, free_buf_len);
+				t = t->to_parent;
+				free_buf_len -= len;
+				buf += len;
+			} else if (t->to_thread == thread) {
+				t = t->to_parent;
+			} else {
+				t = NULL;
+			}
+		}
+	}
+	binder_inner_proc_unlock(proc);
+
+	return buf - start;
+}
+
+static ssize_t binder_brief_show(struct kobject *kobj,
+				 struct kobj_attribute *attr,
+				 char *buf)
+{
+	char *start = buf;
+	struct binder_proc *proc = NULL;
+	int free_buf_len = PAGE_SIZE;
+	u64 now;
+	int len;
+
+	mutex_lock(&binder_procs_lock);
+	now = binder_clock();
+
+	hlist_for_each_entry(proc, &binder_procs, proc_node) {
+		len = print_binder_brief(buf, proc, now, free_buf_len);
+		free_buf_len -= len;
+		buf += len;
+	}
+
+	mutex_unlock(&binder_procs_lock);
+
+	return buf - start;
+}
+
+static struct kobj_attribute transaction_proc_attr = {
+	.attr = {
+		.name = "transaction_proc",
+		.mode = 0640,
+	},
+	.show = binder_brief_show,
+};
+
+static struct attribute *attrs[] = {
+	&transaction_proc_attr,
+	NULL
+};
+
+static struct attribute_group binder_attr_group = {
+	.attrs = attrs,
+};
+
+struct kobject *binder_kobj;
+int create_sysfs_binder(void)
+{
+	int retval;
+
+	while (kernel_kobj == NULL)
+		msleep(1000);  // sleep 1 s
+
+	binder_kobj = kobject_create_and_add("binder", kernel_kobj);
+	if (!binder_kobj)
+		return -ENOMEM;
+
+	retval = sysfs_create_group(binder_kobj, &binder_attr_group);
+	if (retval)
+		kobject_put(binder_kobj);
+
+	return retval;
+}
 #endif
 
 BINDER_DEBUG_ENTRY(state);
@@ -7056,9 +7313,10 @@ static int __init init_binder_device(const char *name)
 static int __init binder_init(void)
 {
 	int ret;
-	char *device_name, *device_names, *device_tmp;
+	char *device_name, *device_tmp;
 	struct binder_device *device;
 	struct hlist_node *tmp;
+	char *device_names = NULL;
 
 	ret = binder_alloc_shrinker_init();
 	if (ret)
@@ -7134,23 +7392,33 @@ static int __init binder_init(void)
 	}
 #endif
 
-	/*
-	 * Copy the module_parameter string, because we don't want to
-	 * tokenize it in-place.
-	 */
-	device_names = kzalloc(strlen(binder_devices_param) + 1, GFP_KERNEL);
-	if (!device_names) {
-		ret = -ENOMEM;
-		goto err_alloc_device_names_failed;
-	}
-	strcpy(device_names, binder_devices_param);
+	if (!IS_ENABLED(CONFIG_ANDROID_BINDERFS) &&
+	    strcmp(binder_devices_param, "") != 0) {
+		/*
+		* Copy the module_parameter string, because we don't want to
+		* tokenize it in-place.
+		 */
+		device_names = kstrdup(binder_devices_param, GFP_KERNEL);
+		if (!device_names) {
+			ret = -ENOMEM;
+			goto err_alloc_device_names_failed;
+		}
 
-	device_tmp = device_names;
-	while ((device_name = strsep(&device_tmp, ","))) {
-		ret = init_binder_device(device_name);
-		if (ret)
-			goto err_init_binder_device_failed;
+		device_tmp = device_names;
+		while ((device_name = strsep(&device_tmp, ","))) {
+			ret = init_binder_device(device_name);
+			if (ret)
+				goto err_init_binder_device_failed;
+		}
 	}
+#ifdef CONFIG_BINDER_TRANSACTION_PROC_BRIEF
+	if (create_sysfs_binder())
+		pr_err("binder: create sysfs_binder failed.\n");
+#endif
+
+	ret = init_binderfs();
+	if (ret)
+		goto err_init_binder_device_failed;
 
 	return ret;
 

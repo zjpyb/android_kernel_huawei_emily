@@ -803,7 +803,7 @@ static long long fail_umount(void *data, const struct ChfilImpl *impl)
 	if (CHFILETYPE_HUNMOUNTALL == impl->ct ||
 	    (CHFILETYPE_HUNMOUNT == impl->ct && mnt == impl->mnt)) {
 		while (impl->ct)
-			ras_sleep(20);
+			ras_delay(20);
 	}
 	return 0;
 }
@@ -983,7 +983,9 @@ static inline int chfile_check(void)
 #endif
 	/*rw_verify_area(mode, f, ppos, count);*/
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+	security_file_open(f);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
 	security_file_open(f, NULL);
 #else
 	security_dentry_open(f, NULL);

@@ -1,10 +1,20 @@
 /*
-* File:   fusb30x_global.h
-* Author: Tim Bremm <tim.bremm@fairchildsemi.com>
-* Company: Fairchild Semiconductor
-*
-* Created on September 11, 2015, 15:28 AM
-*/
+ * fusb30x_global.h
+ *
+ * fusb30x_global driver
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #ifndef FUSB30X_TYPES_H
 #define FUSB30X_TYPES_H
@@ -38,6 +48,7 @@ struct fusb30x_chip                                 // Contains data required by
     FSC_U8 enter_mode_supported;
     FSC_U8 discover_svid_supported;
     FSC_U8 sink_pdo_number;
+	u32 wait_goodcrc_timeout_en;
 
 #ifdef FSC_DEBUG
     FSC_U8 dbgTimerTicks;                           // Count of timer ticks

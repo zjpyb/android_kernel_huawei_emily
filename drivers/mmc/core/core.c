@@ -39,7 +39,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmc.h>
 
-#include <linux/hisi/mmc_trace.h>
 #include "core.h"
 #include "card.h"
 #include "bus.h"
@@ -62,8 +61,10 @@
 #include "queue.h"
 #endif
 
-#ifdef CONFIG_MMC_DW_MUX_SDSIM
+#if defined(CONFIG_MMC_DW_MUX_SDSIM)
 #include <linux/mmc/dw_mmc_mux_sdsim.h>
+#elif defined(CONFIG_MMC_SDHCI_MUX_SDSIM)
+#include <linux/mmc/sdhci_hisi_mux_sdsim.h>
 #endif
 
 /* If the device is not responding */
@@ -288,7 +289,7 @@ EXPORT_SYMBOL(mmc_request_done);
 
 static void __mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 {
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 	int err;
 
 	/* Assumes host controller has been runtime resumed by mmc_claim_host */
@@ -376,7 +377,6 @@ static void mmc_mrq_pr_debug(struct mmc_host *host, struct mmc_request *mrq)
 			}
 		}
 	}
-
 }
 
 static int mmc_mrq_prep(struct mmc_host *host, struct mmc_request *mrq)
@@ -723,9 +723,6 @@ EXPORT_SYMBOL(mmc_is_req_done);
  */
 static void mmc_pre_req(struct mmc_host *host, struct mmc_request *mrq)
 {
-#ifdef CONFIG_MMC_HISI_TRACE
-	mmc_trace_record(host, mrq);
-#endif
 	if (host->ops->pre_req)
 		host->ops->pre_req(host, mrq);
 }
@@ -1058,6 +1055,26 @@ unsigned int mmc_align_data_size(struct mmc_card *card, unsigned int sz)
 }
 EXPORT_SYMBOL(mmc_align_data_size);
 
+/*
+ * Allow claiming an already claimed host if the context is the same or there is
+ * no context but the task is the same.
+ */
+static inline bool mmc_ctx_matches(struct mmc_host *host, struct mmc_ctx *ctx,
+		struct task_struct *task)
+{
+	return (ctx && host->claimer == ctx->task) ||
+		(!ctx && task && host->claimer == task);
+}
+
+static inline void mmc_ctx_set_claimer(struct mmc_host *host,
+		struct mmc_ctx *ctx, struct task_struct *task)
+{
+	if (ctx)
+		host->claimer = ctx->task;
+	else
+		host->claimer = task;
+}
+
 /**
  *	__mmc_claim_host - exclusively claim a host
  *	@host: mmc host to claim
@@ -1068,8 +1085,10 @@ EXPORT_SYMBOL(mmc_align_data_size);
  *	that non-zero value without acquiring the lock.  Returns zero
  *	with the lock held otherwise.
  */
-int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
+
+int __mmc_claim_host(struct mmc_host *host, struct mmc_ctx *ctx, atomic_t *abort)
 {
+	struct task_struct *task = ctx ? NULL : current;
 	DECLARE_WAITQUEUE(wait, current);
 	unsigned long flags;
 	int stop;
@@ -1082,7 +1101,7 @@ int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
 	while (1) {
 		set_current_state(TASK_UNINTERRUPTIBLE); /*lint !e446*//*lint !e666*/
 		stop = abort ? atomic_read(abort) : 0;
-		if (stop || !host->claimed || host->claimer == current)
+		if (stop || !host->claimed || mmc_ctx_matches(host, ctx, task))
 			break;
 		spin_unlock_irqrestore(&host->lock, flags);
 		schedule();
@@ -1091,7 +1110,7 @@ int __mmc_claim_host(struct mmc_host *host, atomic_t *abort)
 	set_current_state(TASK_RUNNING); /*lint !e446*//*lint !e666*/
 	if (!stop) {
 		host->claimed = 1;
-		host->claimer = current;
+		mmc_ctx_set_claimer(host, ctx, task);
 		host->claim_cnt += 1;
 		if (host->claim_cnt == 1)
 			pm = true;
@@ -1147,7 +1166,7 @@ void mmc_get_card(struct mmc_card *card)
 	if (mmc_blk_cmdq_hangup(card))
 		pr_err("%s: cmdq hangup err.\n", __func__);
 #endif
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
 	if (mmc_card_doing_bkops(card) && mmc_stop_bkops(card))
 		pr_err("%s: mmc_stop_bkops failed!\n", __func__);
 #endif
@@ -2838,9 +2857,7 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 	return -EIO;
 }
 
-
-
-#ifdef CONFIG_MMC_DW_MUX_SDSIM
+#if defined(CONFIG_MMC_DW_MUX_SDSIM) || defined(CONFIG_MMC_SDHCI_MUX_SDSIM)
 /*return 0 if sd or mmc card detected,return non-0 if not*/
 static int mmc_rescan_detect_sd_or_mmc(struct mmc_host *host, unsigned freq)
 {
@@ -2878,13 +2895,7 @@ int mmc_detect_sd_or_mmc(struct mmc_host *host)
 
 	return sd_or_mmc_detected;
 }
-
-
 #endif
-
-
-
-
 
 int _mmc_detect_card_removed(struct mmc_host *host)
 {
@@ -3068,15 +3079,12 @@ void mmc_rescan(struct work_struct *work)
 	}
 #endif
 
-#ifdef CONFIG_MMC_HISI_TRACE
-	mmc_trace_init_begin(host);
-#endif
 	for (i = 0; i < ARRAY_SIZE(freqs); i++) {/*lint !e574*/
 		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min))){
 			extend_wakelock = true;
 			break;
 		}
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 		else {
 			if (host->index == 0) {
 				pr_err("%s emmc init failed, need to reinit\n", __func__);
@@ -3087,11 +3095,6 @@ void mmc_rescan(struct work_struct *work)
 		if (freqs[i] <= host->f_min)
 			break;
 	}
-#ifdef CONFIG_MMC_HISI_TRACE
-	if ((host->index == 0) && ARRAY_SIZE(freqs) == i) {
-		mmc_trace_emmc_init_fail_reset(); /*emmc init failed, bug_on*/
-	}
-#endif
 #ifdef CONFIG_MMC_DW_MUX_SDSIM
 	if (host->index == 1) {
 		if(ARRAY_SIZE(freqs) == i)
@@ -3105,9 +3108,6 @@ void mmc_rescan(struct work_struct *work)
 	notify_sd_init_result(host, init_success);
 #endif
 	mmc_release_host(host);
-#ifdef CONFIG_MMC_HISI_TRACE
-	mmc_trace_init_end(host);
-#endif
  out:
 	if (extend_wakelock)
 		__pm_wakeup_event(&host->detect_wake_lock, jiffies_to_msecs(HZ / 2));
@@ -3139,7 +3139,7 @@ void mmc_start_host(struct mmc_host *host)
 
 void mmc_stop_host(struct mmc_host *host)
 {
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 	if (host->slot.cd_irq >= 0) {
 		if (host->slot.cd_wake_enabled)
 			disable_irq_wake(host->slot.cd_irq);
@@ -3242,10 +3242,8 @@ static int mmc_pm_notify(struct notifier_block *notify_block,
 			__pm_relax(&host->detect_wake_lock);/*lint !e455*/
 /*make sure we cancel the detect change work before suspend*/
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-		if (mmc_bus_needs_resume(host)) {
-			spin_unlock_irqrestore(&host->lock, flags);
+		if (mmc_bus_needs_resume(host))
 			break;
-		}
 #endif
 
 		if (!host->bus_ops)

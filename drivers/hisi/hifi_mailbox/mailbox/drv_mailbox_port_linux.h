@@ -1,72 +1,65 @@
+/*
+ * drv_mailbox_port_linux.h
+ *
+ * mailbox implement on linux platform
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
+#ifndef __DRV_MAILBOX_PORT_LINUX_H__
+#define __DRV_MAILBOX_PORT_LINUX_H__
 
-#ifndef _DRV_MAILBOX_PORT_LINUX_H_
-#define _DRV_MAILBOX_PORT_LINUX_H_
-
-
-/*****************************************************************************
-1 头文件包含
-*****************************************************************************/
 #include <linux/kernel.h>
 
-#ifdef __cplusplus
-#if __cplusplus
-extern "C" {
-#endif
-#endif
+/*
+ * At present, We has not pre-mapped the reserved virtual address space.
+ * Do the mapping in the init function.
+ */
+#define MEM_CORE_SHARE_PHY2VIRT(phy) (phy)
+#define MEM_CORE_SHARE_VIRT2PHY(virt) (virt)
 
-/*目前k3还未做预留虚拟地址空间的预映射，在init函数中再做映射*/
-#define MEM_CORE_SHARE_PHY2VIRT(phy)		 (phy)
-#define MEM_CORE_SHARE_VIRT2PHY(virt)		 (virt)
+/* ID of this CPU */
+#define MAILBOX_LOCAL_CPUID MAILBOX_CPUID_ACPU
 
-
-/*邮箱通道，功能，核等相关配置接口定义*/
-/*表明此CPU的ID*/
-#define MAILBOX_LOCAL_CPUID 						MAILBOX_CPUID_ACPU
-
-/*定义C核平台相关的 邮箱通道 总数，关心收发通道 */
+/*
+ * Define the total number of mailbox channels related to the C core platform,
+ * and care about the sending and receiving channels
+ */
 #define MAILBOX_CHANNEL_NUM \
-( MAILBOX_CHANNEL_BUTT(ACPU, HIFI)	 \
-+ MAILBOX_CHANNEL_BUTT(HIFI, ACPU)	 \
-)
+	(MAILBOX_CHANNEL_BUTT(ACPU, HIFI) + MAILBOX_CHANNEL_BUTT(HIFI, ACPU))
 
-/*定义C核平台相关的 邮件 总数 , 只关心接收通道*/
-#define MAILBOX_USER_NUM	\
-( MAILBOX_USER_BUTT(HIFI, ACPU, MSG) \
-)
+/*
+ * Define the total number of emails related to the C core platform,
+ * only concerned with the receiving channel
+ */
+#define MAILBOX_USER_NUM (MAILBOX_USER_BUTT(HIFI, ACPU, MSG))
 
-/*打印输出相关配置定义*/
-/*控制台打印输出接口*/
-#ifdef _DRV_LLT_
-#define mailbox_out(p)								(printk p)
-#else
-#define mailbox_out(p)								(printk p)
-#endif
+/* Define whether the macro controls whether to print the number of lines */
+#define _MAILBOX_LINE_ __LINE__
 
-/*定义宏控制是否打印行数*/
-#define _MAILBOX_LINE_								__LINE__
+/*
+ * Define macro control whether to print the file name,
+ * do not print the file name to save code space
+ */
+#define _MAILBOX_FILE_ (void *)(0) /* __FILE__ */
+#define MAILBOX_LOG_LEVEL MAILBOX_LOG_ERROR
 
-/*定义宏控制是否打印文件名,(不打印文件名可节省代码空间)*/
-#define _MAILBOX_FILE_								(void*)(0) /*__FILE__*/
-
-#define MAILBOX_LOG_LEVEL							MAILBOX_LOG_ERROR
-
-
-/*邮箱调试功能相关配置定义*/
-/*表明在此CPU上打开可维可测功能*/
+/* Definition of configuration related to mailbox debugging */
+/* Indicates that the om function is turned on on this CPU */
 #ifndef MAILBOX_OPEN_MNTN
 #define MAILBOX_OPEN_MNTN
 #endif
 
-/*可维可测记录的最大传送ID数*/
-#define MAILBOX_RECORD_USEID_NUM					(64)
+/* The maximum number of transmission IDs that can be recorded */
+#define MAILBOX_RECORD_USEID_NUM 64
 
-#define RT	"\n"   /*打印回车符号*/
-
-#ifdef __cplusplus
-#if __cplusplus
-}
-#endif
-#endif
-
-#endif	/*_DRV_MAILBOX_LINUX_H_*/
-
+#endif /* __DRV_MAILBOX_PORT_LINUX_H__ */

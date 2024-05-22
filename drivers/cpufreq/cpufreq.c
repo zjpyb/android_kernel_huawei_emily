@@ -31,8 +31,11 @@
 #include <linux/syscore_ops.h>
 #include <linux/tick.h>
 #include <trace/events/power.h>
-#ifdef CONFIG_HISI_DRG
-#include <linux/hisi/hisi_drg.h>
+#ifdef CONFIG_DRG
+#include <linux/drg.h>
+#endif
+#ifdef CONFIG_FREQ_LIMIT_COUNTER
+#include <linux/hisi/perfhub.h>
 #endif
 
 static LIST_HEAD(cpufreq_policy_list);
@@ -94,7 +97,7 @@ static void cpufreq_governor_limits(struct cpufreq_policy *policy);
  */
 static BLOCKING_NOTIFIER_HEAD(cpufreq_policy_notifier_list);
 static struct srcu_notifier_head cpufreq_transition_notifier_list;
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 struct atomic_notifier_head cpufreq_govinfo_notifier_list;
 #endif
 
@@ -107,7 +110,7 @@ static int __init init_cpufreq_transition_notifier_list(void)
 }
 pure_initcall(init_cpufreq_transition_notifier_list);
 
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 static bool init_cpufreq_govinfo_notifier_list_called;
 static int __init init_cpufreq_govinfo_notifier_list(void)
 {
@@ -685,7 +688,7 @@ static ssize_t show_##file_name				\
 show_one(cpuinfo_min_freq, cpuinfo.min_freq);
 show_one(cpuinfo_max_freq, cpuinfo.max_freq);
 show_one(cpuinfo_transition_latency, cpuinfo.transition_latency);
-#ifdef CONFIG_HISI_DRG
+#ifdef CONFIG_DRG
 show_one(scaling_min_freq, user_policy.min);
 show_one(scaling_max_freq, user_policy.max);
 #else
@@ -949,6 +952,9 @@ static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 	struct freq_attr *fattr = to_attr(attr);
 	ssize_t ret;
 
+	if (!fattr->show)
+		return -EIO;
+
 	down_read(&policy->rwsem);
 	ret = fattr->show(policy, buf);
 	up_read(&policy->rwsem);
@@ -962,6 +968,9 @@ static ssize_t store(struct kobject *kobj, struct attribute *attr,
 	struct cpufreq_policy *policy = to_policy(kobj);
 	struct freq_attr *fattr = to_attr(attr);
 	ssize_t ret = -EINVAL;
+
+	if (!fattr->store)
+		return -EIO;
 
 	cpus_read_lock();
 
@@ -1135,10 +1144,17 @@ static struct cpufreq_policy *cpufreq_policy_alloc(unsigned int cpu)
 	if (!zalloc_cpumask_var(&policy->real_cpus, GFP_KERNEL))
 		goto err_free_rcpumask;
 
+#ifdef CONFIG_HISI_CPUFREQ
+	ret = kobject_init_and_add(&policy->kobj, &ktype_cpufreq,
+				   cpufreq_global_kobject, "policy%u",
+				   topology_physical_package_id(cpu));
+#else
 	ret = kobject_init_and_add(&policy->kobj, &ktype_cpufreq,
 				   cpufreq_global_kobject, "policy%u", cpu);
+#endif
 	if (ret) {
 		pr_err("%s: failed to init policy->kobj: %d\n", __func__, ret);
+		kobject_put(&policy->kobj);
 		goto err_free_real_cpus;
 	}
 
@@ -1797,7 +1813,7 @@ int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list)
 	if (cpufreq_disabled())
 		return -EINVAL;
 
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 	WARN_ON(!init_cpufreq_govinfo_notifier_list_called);
 #endif
 	WARN_ON(!init_cpufreq_transition_notifier_list_called);
@@ -1821,7 +1837,7 @@ int cpufreq_register_notifier(struct notifier_block *nb, unsigned int list)
 		ret = blocking_notifier_chain_register(
 				&cpufreq_policy_notifier_list, nb);
 		break;
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 	case CPUFREQ_GOVINFO_NOTIFIER:
 		ret = atomic_notifier_chain_register(
 				&cpufreq_govinfo_notifier_list, nb);
@@ -1867,7 +1883,7 @@ int cpufreq_unregister_notifier(struct notifier_block *nb, unsigned int list)
 		ret = blocking_notifier_chain_unregister(
 				&cpufreq_policy_notifier_list, nb);
 		break;
-#ifdef CONFIG_HISI_CORE_CTRL
+#ifdef CONFIG_CORE_CTRL
 	case CPUFREQ_GOVINFO_NOTIFIER:
 		ret = atomic_notifier_chain_unregister(
 				&cpufreq_govinfo_notifier_list, nb);
@@ -1957,10 +1973,8 @@ static int __target_index(struct cpufreq_policy *policy, int index)
 	int retval = -EINVAL;
 	bool notify;
 
-#ifndef CONFIG_HISI_BIG_MAXFREQ_HOTPLUG
 	if (newfreq == policy->cur)
 		return 0;
-#endif
 
 	notify = !(cpufreq_driver->flags & CPUFREQ_ASYNC_NOTIFICATION);
 	if (notify) {
@@ -2021,12 +2035,16 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 	/* Make sure that target_freq is within supported range */
 	target_freq = clamp_val(target_freq, policy->min, policy->max);
 
-#ifdef CONFIG_HISI_DRG
+#ifdef CONFIG_DRG
 	target_freq = drg_cpufreq_check_limit(policy, target_freq);
 #endif
 
 	pr_debug("target for CPU %u: %u kHz, relation %u, requested %u kHz\n",
 		 policy->cpu, target_freq, relation, old_target_freq);
+
+#ifdef CONFIG_FREQ_LIMIT_COUNTER
+	update_cpu_freq_limit_counter(policy, target_freq);
+#endif
 
 	/*
 	 * This might look like a redundant call as we are checking it again
@@ -2034,10 +2052,8 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 	 * exactly same freq is called again and so we can save on few function
 	 * calls.
 	 */
-#ifndef CONFIG_HISI_BIG_MAXFREQ_HOTPLUG
 	if (target_freq == policy->cur)
 		return 0;
-#endif
 
 	/* Save last value to restore later on errors */
 	policy->restore_freq = policy->cur;
@@ -2562,6 +2578,13 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 	if (cpufreq_disabled())
 		return -ENODEV;
 
+	/*
+	 * The cpufreq core depends heavily on the availability of device
+	 * structure, make sure they are available before proceeding further.
+	 */
+	if (!get_cpu_device(0))
+		return -EPROBE_DEFER;
+
 	if (!driver_data || !driver_data->verify || !driver_data->init ||
 	    !(driver_data->setpolicy || driver_data->target_index ||
 		    driver_data->target) ||
@@ -2666,14 +2689,6 @@ int cpufreq_unregister_driver(struct cpufreq_driver *driver)
 }
 EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
 
-/*
- * Stop cpufreq at shutdown to make sure it isn't holding any locks
- * or mutexes when secondary CPUs are halted.
- */
-static struct syscore_ops cpufreq_syscore_ops = {
-	.shutdown = cpufreq_suspend,
-};
-
 struct kobject *cpufreq_global_kobject;
 EXPORT_SYMBOL(cpufreq_global_kobject);
 
@@ -2684,8 +2699,6 @@ static int __init cpufreq_core_init(void)
 
 	cpufreq_global_kobject = kobject_create_and_add("cpufreq", &cpu_subsys.dev_root->kobj);
 	BUG_ON(!cpufreq_global_kobject);
-
-	register_syscore_ops(&cpufreq_syscore_ops);
 
 	return 0;
 }

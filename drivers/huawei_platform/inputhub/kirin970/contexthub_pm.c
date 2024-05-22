@@ -8,7 +8,7 @@
 #include <linux/of_device.h>
 #include <linux/suspend.h>
 #include <linux/fb.h>
-#include <linux/wakelock.h>
+#include <linux/pm_wakeup.h>
 #ifdef CONFIG_HUAWEI_DSM
 #include <dsm/dsm_pub.h>
 #endif
@@ -55,7 +55,7 @@ static char *sys_status_t_str[] = {
 
 int get_iomcu_power_state(void)
 {
-    return iom3_power_state;
+	return iom3_power_state;
 }
 EXPORT_SYMBOL(get_iomcu_power_state);
 
@@ -78,8 +78,8 @@ static inline void print_ipc_debug_info(void)
 
 int tell_ap_status_to_mcu(int ap_st)
 {
-	read_info_t pkg_mcu;
-	write_info_t winfo;
+	struct read_info pkg_mcu;
+	struct write_info winfo;
 
 	if ((ST_BEGIN <= ap_st) && (ap_st < ST_END)) {
 		pkt_sys_statuschange_req_t pkt;
@@ -206,30 +206,30 @@ static int sensorhub_pm_resume(struct device *dev)
 		hwlog_err("time %llu\n", pConfigOnDDr->WrongWakeupMsg.time);
 		hwlog_err("irqs [%x] [%x]\n", pConfigOnDDr->WrongWakeupMsg.irq0, pConfigOnDDr->WrongWakeupMsg.irq1);
 		hwlog_err("recvfromapmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[3]);
+			pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[0],
+			pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[1],
+			pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[2],
+			pConfigOnDDr->WrongWakeupMsg.recvfromapmsg[3]);
 		hwlog_err("recvfromlpmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[3]);
+			pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[0],
+			pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[1],
+			pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[2],
+			pConfigOnDDr->WrongWakeupMsg.recvfromlpmsg[3]);
 		hwlog_err("sendtoapmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[3]);
+			pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[0],
+			pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[1],
+			pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[2],
+			pConfigOnDDr->WrongWakeupMsg.sendtoapmsg[3]);
 		hwlog_err("sendtolpmsg [%x] [%x] [%x] [%x]\n",
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[0],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[1],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[2],
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[3]);
+			pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[0],
+			pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[1],
+			pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[2],
+			pConfigOnDDr->WrongWakeupMsg.sendtolpmsg[3]);
 		hwlog_err("ap lpm3 tap tlpm3 %x %x %x %x\n",
-			  pConfigOnDDr->WrongWakeupMsg.recvfromapmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.recvfromlpmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.sendtoapmsgmode,
-			  pConfigOnDDr->WrongWakeupMsg.sendtolpmsgmode);
+			pConfigOnDDr->WrongWakeupMsg.recvfromapmsgmode,
+			pConfigOnDDr->WrongWakeupMsg.recvfromlpmsgmode,
+			pConfigOnDDr->WrongWakeupMsg.sendtoapmsgmode,
+			pConfigOnDDr->WrongWakeupMsg.sendtolpmsgmode);
 		hwlog_err("************ sensorhub has wrong wakeup mesg end\n");
 		memset(&(pConfigOnDDr->WrongWakeupMsg), 0, sizeof(wrong_wakeup_msg_t));
 	}
@@ -493,10 +493,10 @@ static struct dev_pm_ops sensorhub_io_pm_ops = {
 static struct platform_driver sensorhub_io_driver = {
 	.probe = sensorhub_io_driver_probe,
 	.driver = {
-		   .name = "Sensorhub_io_driver",
-		   .owner = THIS_MODULE,
-		   .of_match_table = of_match_ptr(sensorhub_io_supply_ids),
-		   .pm = &sensorhub_io_pm_ops,
+		.name = "Sensorhub_io_driver",
+		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(sensorhub_io_supply_ids),
+		.pm = &sensorhub_io_pm_ops,
 	},
 };
 

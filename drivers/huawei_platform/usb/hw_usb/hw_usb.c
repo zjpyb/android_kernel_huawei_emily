@@ -3,7 +3,7 @@
  *
  * usb driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,129 +16,85 @@
  *
  */
 
+#include <huawei_platform/usb/hw_usb.h>
 #include <linux/device.h>
-#include <linux/hisi/usb/hisi_usb.h>
-#include <linux/module.h>
 #include <linux/err.h>
-#include <linux/string.h>
+#include <linux/hisi/usb/hisi_usb.h>
 #include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/platform_device.h>
+#include <linux/module.h>
 #include <linux/of.h>
-#include <linux/usb.h>
+#include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
-
-#include <huawei_platform/log/hw_log.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/usb.h>
+#include <chipset_common/hwpower/common_module/power_dts.h>
+#include <chipset_common/hwpower/common_module/power_printk.h>
+#include <chipset_common/hwpower/common_module/power_sysfs.h>
+#include <chipset_common/hwpower/common_module/power_vote.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
-#include <huawei_platform/usb/hw_usb.h>
-
-#ifdef HWLOG_TAG
-#undef HWLOG_TAG
-#endif
 
 #define HWLOG_TAG hw_usb
 HWLOG_REGIST();
 
-struct hw_usb_device *g_hw_usb_di;
-
-static struct class *hw_usb_class;
+static struct hw_usb_device *g_hw_usb_di;
 static struct device *hw_usb_dev;
-
-static unsigned int g_hw_usb_ldo_status;
-static DEFINE_MUTEX(g_hw_usb_ldo_op_mutex);
 
 static unsigned int g_hw_usb_speed = USB_SPEED_UNKNOWN;
 static unsigned int g_hw_usb_abnormal_event = USB_HOST_EVENT_NORMAL;
 
-static const char *hw_usb_ldo_ctrl_strings(enum hw_usb_ldo_ctrl_type type)
+static int hw_usb_vote_callback(struct power_vote_object *obj,
+	void *data, int result, const char *client_str)
 {
-	static const char * const string_table[HW_USB_LDO_CTRL_MAX] = {
-		[HW_USB_LDO_CTRL_USB] = "USB",
-		[HW_USB_LDO_CTRL_COMBOPHY] = "COMBOPHY",
-		[HW_USB_LDO_CTRL_DIRECT_CHARGE] = "DC",
-		[HW_USB_LDO_CTRL_HIFIUSB] = "HIFIUSB",
-		[HW_USB_LDO_CTRL_TYPECPD] = "TYPECPD",
-	};
+	struct hw_usb_device *l_dev = (struct hw_usb_device *)data;
 
-	if ((type >= HW_USB_LDO_CTRL_BEGIN) && (type < HW_USB_LDO_CTRL_MAX))
-		return string_table[type];
-
-	return "invalid type";
-}
-
-int hw_usb_ldo_supply_enable(enum hw_usb_ldo_ctrl_type type)
-{
-	int ret;
-
-	if (type < HW_USB_LDO_CTRL_BEGIN || type >= HW_USB_LDO_CTRL_MAX) {
-		hwlog_err("invalid type=%d\n", type);
+	if (!client_str) {
+		hwlog_err("client_str is null\n");
 		return -EINVAL;
 	}
 
-	hwlog_info("count=%d type=%s\n",
-		g_hw_usb_ldo_status, hw_usb_ldo_ctrl_strings(type));
+	if (!l_dev || !l_dev->usb_phy_ldo) {
+		hwlog_err("l_dev or usb_phy_ldo is null\n");
+		return -EINVAL;
+	}
+
+	hwlog_info("result=%d client_str=%s\n", result, client_str);
+
+	if (result)
+		regulator_enable(g_hw_usb_di->usb_phy_ldo);
+	else
+		regulator_disable(g_hw_usb_di->usb_phy_ldo);
+
+	return 0;
+}
+
+int hw_usb_ldo_supply_enable(const char *client_name)
+{
+	if (!client_name)
+		return -EINVAL;
 
 	if (!g_hw_usb_di || !g_hw_usb_di->usb_phy_ldo) {
 		hwlog_err("g_hw_usb_di or usb_phy_ldo is null\n");
 		return -EINVAL;
 	}
 
-	mutex_lock(&g_hw_usb_ldo_op_mutex);
-
-	if (g_hw_usb_ldo_status == 0) {
-		ret = regulator_enable(g_hw_usb_di->usb_phy_ldo);
-		if (ret) {
-			hwlog_err("enable failed\n");
-			mutex_unlock(&g_hw_usb_ldo_op_mutex);
-			return -EPERM;
-		}
-	}
-	g_hw_usb_ldo_status =  g_hw_usb_ldo_status | (1 << type);
-
-	mutex_unlock(&g_hw_usb_ldo_op_mutex);
-
-	hwlog_info("%s enable success\n", hw_usb_ldo_ctrl_strings(type));
-	return 0;
+	return power_vote_set(HW_USB_VOTE_OBJECT, client_name, true, true);
 }
 EXPORT_SYMBOL_GPL(hw_usb_ldo_supply_enable);
 
-int hw_usb_ldo_supply_disable(enum hw_usb_ldo_ctrl_type type)
+int hw_usb_ldo_supply_disable(const char *client_name)
 {
-	int ret;
-
-	if (type >= HW_USB_LDO_CTRL_MAX) {
-		hwlog_err("invalid type=%d\n", type);
+	if (!client_name)
 		return -EINVAL;
-	}
-
-	hwlog_info("count=%d type=%s\n",
-		g_hw_usb_ldo_status, hw_usb_ldo_ctrl_strings(type));
 
 	if (!g_hw_usb_di || !g_hw_usb_di->usb_phy_ldo) {
 		hwlog_err("g_hw_usb_di or usb_phy_ldo is null\n");
 		return -EINVAL;
 	}
 
-	mutex_lock(&g_hw_usb_ldo_op_mutex);
-
-	if (g_hw_usb_ldo_status != 0) {
-		g_hw_usb_ldo_status = g_hw_usb_ldo_status & (~(1 << type));
-		if (g_hw_usb_ldo_status == 0) {
-			ret = regulator_disable(g_hw_usb_di->usb_phy_ldo);
-			if (ret) {
-				hwlog_err("disable failed\n");
-				mutex_unlock(&g_hw_usb_ldo_op_mutex);
-				return -EPERM;
-			}
-		}
-	}
-
-	mutex_unlock(&g_hw_usb_ldo_op_mutex);
-
-	hwlog_info("%s disable success\n", hw_usb_ldo_ctrl_strings(type));
-	return 0;
+	return power_vote_set(HW_USB_VOTE_OBJECT, client_name, false, false);
 }
 EXPORT_SYMBOL_GPL(hw_usb_ldo_supply_disable);
 
@@ -167,34 +123,23 @@ static unsigned int hw_usb_get_usb_speed(void)
 static ssize_t hw_usb_speed_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	int len;
-
 	switch (hw_usb_get_usb_speed()) {
 	case USB_SPEED_UNKNOWN:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "unknown");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "unknown");
 	case USB_SPEED_LOW:
 	case USB_SPEED_FULL:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "full-speed");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "full-speed");
 	case USB_SPEED_HIGH:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "high-speed");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "high-speed");
 	case USB_SPEED_WIRELESS:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "wireless-speed");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "wireless-speed");
 	case USB_SPEED_SUPER:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "super-speed");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "super-speed");
 	case USB_SPEED_SUPER_PLUS:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "super-speed-plus");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "super-speed-plus");
 	default:
-		len = scnprintf(buf, PAGE_SIZE, "%s", "unknown");
-		break;
+		return scnprintf(buf, PAGE_SIZE, "%s", "unknown");
 	}
-
-	return len;
 }
 
 void hw_usb_host_abnormal_event_notify(unsigned int event)
@@ -255,18 +200,26 @@ static const struct attribute_group hw_usb_attr_group = {
 	.attrs = hw_usb_ctrl_attributes,
 };
 
+static struct device *hw_usb_create_group(void)
+{
+	return power_sysfs_create_group("hw_usb", "usb",
+		&hw_usb_attr_group);
+}
+
+static void hw_usb_remove_group(struct device *dev)
+{
+	power_sysfs_remove_group(dev, &hw_usb_attr_group);
+}
+
 static int hw_usb_parse_dts(struct hw_usb_device *di)
 {
-	int ret;
 	int volt;
 	const char *speed = NULL;
 
-	ret = of_property_read_string(di->dev->of_node, "maximum-speed",
-		&speed);
-	if (ret) {
-		hwlog_err("maximum-speed dts read failed\n");
+	if (power_dts_read_string(power_dts_tag(HWLOG_TAG),
+		di->dev->of_node, "maximum-speed", &speed))
 		return -1;
-	}
+
 	strncpy(di->usb_speed, speed, (HW_USB_STR_MAX_LEN - 1));
 
 	hwlog_info("maximum-speed=%s\n", di->usb_speed);
@@ -288,8 +241,6 @@ static int hw_usb_probe(struct platform_device *pdev)
 	struct hw_usb_device *di = NULL;
 	int ret;
 
-	hwlog_info("probe begin\n");
-
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
 
@@ -305,54 +256,17 @@ static int hw_usb_probe(struct platform_device *pdev)
 	if (ret)
 		hwlog_err("parse dts failed\n");
 
-	hw_usb_class = class_create(THIS_MODULE, "hw_usb");
-	if (IS_ERR(hw_usb_class)) {
-		hwlog_err("cannot create class\n");
-		ret = PTR_ERR(hw_usb_class);
-		goto fail_create_class;
-	}
-
-	if (hw_usb_class) {
-		hw_usb_dev = device_create(hw_usb_class, NULL, 0, NULL, "usb");
-		if (IS_ERR(hw_usb_dev)) {
-			hwlog_err("sysfs device create failed\n");
-			ret = PTR_ERR(hw_usb_dev);
-			goto fail_create_device;
-		}
-
-		ret = sysfs_create_group(&hw_usb_dev->kobj, &hw_usb_attr_group);
-		if (ret) {
-			hwlog_err("sysfs group create failed\n");
-			goto fail_create_sysfs;
-		}
-	}
-
+	hw_usb_dev = hw_usb_create_group();
+	power_vote_create_object(HW_USB_VOTE_OBJECT, POWER_VOTE_SET_ANY,
+		hw_usb_vote_callback, g_hw_usb_di);
 	platform_set_drvdata(pdev, di);
 
-	hwlog_info("probe end\n");
 	return 0;
-
-fail_create_sysfs:
-	hw_usb_dev = NULL;
-
-fail_create_device:
-	hw_usb_class = NULL;
-
-fail_create_class:
-	if (!IS_ERR(di->usb_phy_ldo))
-		regulator_put(di->usb_phy_ldo);
-
-	devm_kfree(&pdev->dev, di);
-	g_hw_usb_di = NULL;
-
-	return ret;
 }
 
 static int hw_usb_remove(struct platform_device *pdev)
 {
 	struct hw_usb_device *di = platform_get_drvdata(pdev);
-
-	hwlog_info("remove begin\n");
 
 	if (!di)
 		return -ENODEV;
@@ -360,14 +274,13 @@ static int hw_usb_remove(struct platform_device *pdev)
 	if (!IS_ERR(di->usb_phy_ldo))
 		regulator_put(di->usb_phy_ldo);
 
-	sysfs_remove_group(&hw_usb_dev->kobj, &hw_usb_attr_group);
+	power_vote_destroy_object(HW_USB_VOTE_OBJECT);
+	hw_usb_remove_group(hw_usb_dev);
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, di);
 	hw_usb_dev = NULL;
-	hw_usb_class = NULL;
 	g_hw_usb_di = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

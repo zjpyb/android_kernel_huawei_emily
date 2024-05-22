@@ -126,6 +126,24 @@ int color_sensor_read_fifo(struct i2c_client *client, uint8_t reg,
 	return 0;
 }
 
+int color_sensor_write_fifo(struct i2c_client *i2c, uint8_t reg,
+	const void *buf, size_t len)
+{
+	int ret = -EINVAL;
+
+	if (!i2c || !buf) {
+		hwlog_err("%s data or handle Pointer is NULL\n", __func__);
+		return ret;
+	}
+
+	ret = i2c_smbus_write_i2c_block_data(i2c, reg, len, buf);
+	if (ret < 0)
+		hwlog_err("%s failed\n", __func__);
+
+	return ret;
+}
+
+
 #ifdef CONFIG_HUAWEI_DSM
 static void color_dmd_work(struct work_struct *work)
 {
@@ -284,10 +302,13 @@ static ssize_t at_color_calibrate_store(struct device *dev,
 	hwlog_info("[%s] color_sensor store in\n", __func__);
 
 	memcpy(&in_data, buf, min(size, sizeof(in_data)));
-	hwlog_info("%s, target = %d, %d, %d, %d, %d, %d, %d, %d, %d", __func__,
-		in_data.enable,	in_data.reserverd[0], in_data.reserverd[1],
-		in_data.reserverd[2], in_data.reserverd[3], in_data.reserverd[4],
-		in_data.reserverd[5], in_data.reserverd[6], in_data.reserverd[7]);
+	hwlog_info("%s, target = %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d",
+		__func__, in_data.enable, in_data.reserverd[0],
+		in_data.reserverd[1], in_data.reserverd[2],
+		in_data.reserverd[3], in_data.reserverd[4],
+		in_data.reserverd[5], in_data.reserverd[6],
+		in_data.reserverd[7], in_data.reserverd[8],
+		in_data.reserverd[9]);
 	chip->at_color_store_calibrate_state(chip, &in_data);
 
 	return size;
@@ -520,7 +541,7 @@ static ssize_t color_data_show(struct device *dev,
 	}
 	// color_report_val
 	memcpy(buf, color_report_val, MAX_REPORT_LEN * sizeof(int));
-	hwlog_err("color_report_val = %d, %d, %d, %d, %d\n",
+	hwlog_info("color_report_val = %d, %d, %d, %d, %d\n",
 		color_report_val[0], color_report_val[1], color_report_val[2],
 		color_report_val[3], color_report_val[4]);
 	return (MAX_REPORT_LEN * sizeof(int));
@@ -584,7 +605,7 @@ static ssize_t color_name_show(struct device *dev,
 		goto unsupport_rgb;
 
 	len = strlen(color_name);
-	hwlog_err("get color name len = %d\n", len);
+	hwlog_info("get color name len = %d\n", len);
 	if (len >= MAX_NAME_STR_LEN)
 		goto unsupport_rgb;
 
@@ -620,7 +641,7 @@ static ssize_t color_algo_type_show(struct device *dev,
 		goto unsupport_algo;
 
 	len = strlen(color_algo);
-	hwlog_err("get color algo type = %s, len = %d\n", color_algo, len);
+	hwlog_info("get color algo type = %s, len = %d\n", color_algo, len);
 	if (len >= MAX_ALGO_TYPE_STR_LEN)
 		goto unsupport_algo;
 

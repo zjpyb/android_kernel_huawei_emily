@@ -3510,7 +3510,7 @@ again:
 	    (blkcg == &blkcg_root || !blk_throtl_weight_offon))
 		goto out;
 
-#if defined(CONFIG_HUAWEI_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
+#if defined(CONFIG_QOS_BLKIO) || defined(CONFIG_ROW_VIP_QUEUE)
 	if (!blk_queue_qos_on(q)) {
 		if (blkcg->type <= BLK_THROTL_FG)
 			bio->bi_opf |= REQ_FG;
@@ -3534,6 +3534,10 @@ again:
 	    (blk_throtl_weight_offon == BLK_THROTL_WEIGHT_ON_FS))
 		goto out;
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	if (blk_queue_query_unistore_enable(q))
+		goto out;
+#endif
 	/*
 	 * Now we just support limit control for one layer.
 	 */

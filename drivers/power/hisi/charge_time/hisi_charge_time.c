@@ -1,16 +1,23 @@
 /*
- * hisi_charge_time.c  --  Calculate the remaining time of charging.
+ * hisi_charge_time.c
  *
- * Copyright (c) 2019 Huawei Technologies CO., Ltd.
+ * Description: Calculate the remaining time of charging.
  *
- * Author: yangshunlong
+ * Copyright (c) 2019-2020 Huawei Technologies Co., Ltd.
  *
- *  This program is free software; you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License as published by the
- *  Free Software Foundation; either version 2 of the  License, or (at your
- *  option) any later version.
+ * This software is licensed under the terms of the GNU General Public
+ * License, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  *
  */
+
+
+#include "hisi_charge_time.h"
 
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -20,17 +27,14 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/wakelock.h>
 
-#include <hisi_partition.h>
-#include <linux/hisi/kirin_partition.h>
+#include <partition_macro.h>
+#include <linux/hisi/partition_ap_kernel.h>
 #include <linux/syscalls.h>
 #include <linux/sysfs.h>
 #include <linux/uaccess.h>
 
-#include "hisi_charge_time.h"
-#include "securec.h"
-#include <huawei_platform/power/direct_charger.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
@@ -38,6 +42,8 @@
 #include <linux/of_device.h>
 #include <linux/power_supply.h>
 #include <linux/workqueue.h>
+
+#include "securec.h"
 
 struct hisi_chg_time_device *g_hisi_chg_time_info;
 
@@ -103,17 +109,18 @@ static int hisi_chg_time_flash_open(int flags)
 }
 
 /**
- * @brief	  : hisi_chg_time_read_flash_data
+ * @brief	   : hisi_chg_time_read_flash_data
  * @param[in]  : buf
  * @param[in]  : buf_size
  * @param[in]  : flash_offset
- * @return	:int
- * @note	:
+ * @return	   : int
+ * @note	   : NA
  */
-int hisi_chg_time_read_flash_data(void *buf,
-					u32 buf_size, u32 flash_offset)
+static int hisi_chg_time_read_flash_data(void *buf,
+				  u32 buf_size, u32 flash_offset)
 {
-	int ret, fd_flash = -1;
+	int ret;
+	int fd_flash;
 	int cnt = 0;
 	mm_segment_t old_fs;
 
@@ -130,18 +137,18 @@ int hisi_chg_time_read_flash_data(void *buf,
 		ret = sys_lseek(fd_flash, flash_offset, SEEK_SET);
 		if (ret < 0) {
 			ct_err("%s()-line=%d, ret=%d, flash_offset=%x\n",
-				__func__, __LINE__, ret, flash_offset);
+			       __func__, __LINE__, ret, flash_offset);
 			goto close;
 		}
 		cnt = sys_read(fd_flash, buf, buf_size);
 		if (cnt != buf_size) {
 			ct_err("%s()-line=%d, cnt=%d\n", __func__,
-				__LINE__, cnt);
+			       __LINE__, cnt);
 			goto close;
 		}
 	} else {
 		ct_err("%s()-line=%d, fd_flash=%d\n", __func__, __LINE__,
-			fd_flash);
+		       fd_flash);
 		set_fs(old_fs);
 		return fd_flash;
 	}
@@ -152,17 +159,18 @@ close:
 }
 
 /**
- * @brief	  : hisi_chg_time_add_flash_data
+ * @brief	   : hisi_chg_time_add_flash_data
  * @param[in]  : p_buf
  * @param[in]  : buf_size
  * @param[in]  : flash_offset
- * @return	 : void
- * @note	   :
+ * @return	   : void
  */
 void hisi_chg_time_write_flash_data(const void *p_buf,
-					u32 buf_size, u32 flash_offset)
+				    u32 buf_size, u32 flash_offset)
 {
-	int ret, fd_flash, cnt = 0;
+	int ret;
+	int fd_flash;
+	int cnt;
 	mm_segment_t old_fs;
 
 	if (!p_buf) {
@@ -178,13 +186,13 @@ void hisi_chg_time_write_flash_data(const void *p_buf,
 		ret = sys_lseek(fd_flash, flash_offset, SEEK_SET);
 		if (ret < 0) {
 			ct_err("%s()-line=%d, ret=%d\n", __func__,
-				__LINE__, ret);
+			       __LINE__, ret);
 			goto close;
 		}
 		cnt = sys_write(fd_flash, p_buf, buf_size);
 		if (cnt != buf_size) {
 			ct_err("%s()-line=%d, cnt=%d\n", __func__,
-				__LINE__, cnt);
+			       __LINE__, cnt);
 			goto close;
 		}
 	} else {
@@ -203,7 +211,7 @@ static void hisi_chg_time_sub_param_printk(
 	int i, j;
 	char buff[PARAM_SIZE] = {0};
 	int offset = 0;
-	int ret = 0;
+	int ret;
 	int str_len = PARAM_SIZE - 1;
 	int soc;
 
@@ -220,8 +228,8 @@ static void hisi_chg_time_sub_param_printk(
 		for (j = 0; j < COL; j++) {
 			soc = i * ROW + j + 1;
 			ret = snprintf_s(buff + offset, str_len - strlen(buff),
-				30, "[%d(%d)] ", soc,
-				type_param->step_time[soc]);
+					 str_len - strlen(buff) - 1, "[%d(%d)]", soc,
+					 type_param->step_time[soc]);
 			if (ret < 0) {
 				ct_err(
 					" %s, ret %d, i %d, j %d error! %s\n",
@@ -233,7 +241,7 @@ static void hisi_chg_time_sub_param_printk(
 		ct_info(" %s,  %s\n", __func__, buff);
 		if (memset_s(buff, PARAM_SIZE, 0, PARAM_SIZE) != EOK)
 			ct_err("%s():%d:memset_s fail!\n",
-						__func__, __LINE__);
+			       __func__, __LINE__);
 
 		offset = 0;
 	}
@@ -256,13 +264,13 @@ static void hisi_chg_time_param_printk(
 }
 
 static int hisi_chg_time_read_param_from_flash(
-					struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
-	int cnt = 0;
+	int cnt;
 	size_t size = sizeof(struct hisi_chg_time_info);
 
 	cnt = hisi_chg_time_read_flash_data(
-		&di->flash_param, size, CHG_DUR_OFFSET);
+		      &di->flash_param, size, CHG_DUR_OFFSET);
 	if (cnt <= 0) {
 		ct_err("%s()-line=%d fail\n", __func__, __LINE__);
 		return -1;
@@ -275,7 +283,7 @@ static int hisi_chg_time_read_param_from_flash(
 }
 
 static void hisi_chg_time_write_param_to_flash(
-					struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
 	size_t size = sizeof(struct hisi_chg_time_info);
 
@@ -299,16 +307,16 @@ void hisi_chg_time_flash_test(int type, int soc, int time)
 	struct hisi_chg_time_device *di = g_hisi_chg_time_info;
 	struct hisi_chg_time_param *param = NULL;
 
-	if (!di || soc > FULL_SOC || soc < 0)
+	if (!di || soc > SOC_FULL || soc < 0)
 		return;
 
-	if (type == 0)
+	if (type == PARA_STANDARD)
 		param = &di->flash_param.standard;
-	else if (type == 1)
+	else if (type == PARA_FCP)
 		param = &di->flash_param.fcp;
-	else if (type == 2)
+	else if (type == PARA_LVC)
 		param = &di->flash_param.lvc;
-	else if (type == 3)
+	else if (type == PARA_SC)
 		param = &di->flash_param.sc;
 	else
 		return;
@@ -316,7 +324,7 @@ void hisi_chg_time_flash_test(int type, int soc, int time)
 	param->step_time[soc] = time;
 	ct_info("%s type %d, i[%d] = %d\n", __func__, type, soc, time);
 
-	if (soc == FULL_SOC) {
+	if (soc == SOC_FULL) {
 		param->batt_cycles = di->batt_info.batt_cycles;
 		param->temp_high = NORMAL_TEMP;
 		param->temp_low = NORMAL_TEMP;
@@ -335,12 +343,11 @@ void hisi_chg_time_test_flag(int flag)
 }
 
 /*
- * @brief	  : hisi_chg_time_flash_param_show
+ * @brief	   : hisi_chg_time_flash_param_show
  * @param[in]  : dev
  * @param[in]  : attr
  * @param[in]  : buf
  * @return	 : ::ssize_t
- * @note	   :
  */
 ssize_t hisi_chg_time_flash_param_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
@@ -368,7 +375,7 @@ void hisi_chg_time_clear_flash_data(void)
 }
 
 ssize_t hisi_chg_time_flash_param_clear(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+					struct device_attribute *attr, const char *buf, size_t count)
 {
 	int status = count;
 
@@ -382,7 +389,7 @@ ssize_t hisi_chg_time_flash_param_clear(struct device *dev,
 }
 
 static DEVICE_ATTR(flash_param, 0644,
-	hisi_chg_time_flash_param_show, hisi_chg_time_flash_param_clear);
+		   hisi_chg_time_flash_param_show, hisi_chg_time_flash_param_clear);
 #endif
 
 static int hisi_chg_time_test_soc(void)
@@ -394,7 +401,7 @@ static int hisi_chg_time_test_soc(void)
 	if (!di)
 		return 0;
 
-	if (soc > 100)
+	if (soc > SOC_FULL)
 		soc = 0;
 	return soc++;
 #else
@@ -420,7 +427,7 @@ int hisi_chg_time_remaining(bool with_valid)
 
 static int is_charge_full(struct hisi_chg_time_device *di)
 {
-	if (di->batt_info.soc == FULL_SOC)
+	if (di->batt_info.soc == SOC_FULL)
 		return 1;
 	else
 		return 0;
@@ -463,7 +470,7 @@ static int hisi_chg_time_param_select(
 	default:
 		di->ref_curve = NULL;
 		ct_dbg(
-			"%s charger_type: %d error\n", __func__, charger_type);
+			"%s charger_type: %d \n", __func__, charger_type);
 		return -1;
 	}
 	return 0;
@@ -478,9 +485,9 @@ static void hisi_chg_time_updata_flash(struct hisi_chg_time_device *di)
 		di->chg_info.charge_type, di->start_capacity,
 		di->batt_info.soc);
 
-	if (di->start_capacity < 0 || di->start_capacity > FULL_SOC) {
+	if (di->start_capacity < 0 || di->start_capacity > SOC_FULL) {
 		ct_err("%s start_capacity %d error\n", __func__,
-			di->start_capacity);
+		       di->start_capacity);
 		return;
 	}
 
@@ -492,14 +499,14 @@ static void hisi_chg_time_updata_flash(struct hisi_chg_time_device *di)
 	ct_info("%s cur curve temp_high %d, temp_low %d\n", __func__,
 		di->cur_curve.temp_high, di->cur_curve.temp_low);
 	if (di->cur_curve.temp_high < TEMP_HIGH &&
-		di->cur_curve.temp_low > TEMP_LOW) {
+			di->cur_curve.temp_low > TEMP_LOW) {
 		if (di->ref_curve) {
 			di->ref_curve->batt_cycles = di->batt_info.batt_cycles;
 			di->ref_curve->start_soc = di->start_capacity;
 			di->ref_curve->fcc = di->batt_info.fcc;
 			di->ref_curve->temp_high = di->cur_curve.temp_high;
 			di->ref_curve->temp_low = di->cur_curve.temp_low;
-			for (i = FULL_SOC; i > di->start_capacity; i--) {
+			for (i = SOC_FULL; i > di->start_capacity; i--) {
 				di->ref_curve->step_time[i] =
 					di->cur_curve.step_time[i];
 				di->ref_curve->volt[i] = di->cur_curve.volt[i];
@@ -521,18 +528,18 @@ static void hisi_chg_time_self_study(struct hisi_chg_time_device *di)
 		di->cur_curve.fcc = di->batt_info.fcc;
 		di->cur_curve.batt_cycles = di->batt_info.batt_cycles;
 		di->cur_curve.temp_low = di->cur_curve.temp_high =
-			di->batt_info.batt_temp;
+						 di->batt_info.batt_temp;
 	}
 
 	/*
-	 *start soc is larger than the reference curve soc,
-	 *and battery cycle is within 5 times, then not update the curve
+	 * start soc is larger than the reference curve soc,
+	 * and battery cycle is within 5 times, then not update the curve
 	 */
 
 	if (di->ref_curve->start_soc != 0 &&
-		di->start_capacity > di->ref_curve->start_soc &&
-		di->batt_info.batt_cycles < (di->ref_curve->batt_cycles
-								+ CYCLE_TH)) {
+			di->start_capacity > di->ref_curve->start_soc &&
+			di->batt_info.batt_cycles < (di->ref_curve->batt_cycles
+					+ CYCLE_TH)) {
 		ct_info("%s start:%d ref st %d,cyc %d,ref cyc %d\n",
 			__func__, di->start_capacity, di->ref_curve->start_soc,
 			di->batt_info.batt_cycles, di->ref_curve->batt_cycles);
@@ -544,8 +551,8 @@ static void hisi_chg_time_self_study(struct hisi_chg_time_device *di)
 	 *  avoid excessive current deviation due to internal resistance.
 	 */
 	if (is_direct_charge(di->chg_info.charge_type) &&
-		(di->start_timestemp + MIN_START_TH) > timestemp &&
-		di->start_capacity > SOC_START_TH) {
+			(di->start_timestemp + MIN_START_TH) > timestemp &&
+			di->start_capacity > SOC_START_TH) {
 		ct_info("%s start:%ld now %ld,start_capacity %d\n",
 			__func__, di->start_timestemp, timestemp,
 			di->start_capacity);
@@ -553,9 +560,8 @@ static void hisi_chg_time_self_study(struct hisi_chg_time_device *di)
 	}
 
 	if (di->batt_info.soc == (di->pre_capacity + 1)) {
-
 		if (di->pre_capacity == di->start_capacity &&
-			di->start_capacity > 2) {
+				di->start_capacity > START_CAP) {
 			/* Discard the first value */
 		} else {
 			di->cur_curve.step_time[di->batt_info.soc] =
@@ -589,10 +595,11 @@ static void hisi_chg_time_self_study(struct hisi_chg_time_device *di)
 }
 
 static void hisi_chg_time_adjust_by_current(
-					struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
 	int i;
-	int ref_current, delt_mA;
+	int ref_current;
+	int delt_ma;
 	int compensation_time, durations;
 
 	if (!di->param_dts.adjust_by_current)
@@ -603,26 +610,25 @@ static void hisi_chg_time_adjust_by_current(
 		durations = di->remaining_duration;
 
 		ref_current = di->batt_info.fcc * SEC_PRE_HOUR /
-			di->ref_curve->step_time[i] / FULL_SOC;
-		delt_mA = di->batt_info.curr_ma - ref_current;
-		 /* pre 500mA add 1min */
-		compensation_time = delt_mA / 500 * 60;
+			      di->ref_curve->step_time[i] / SOC_FULL;
+		delt_ma = di->batt_info.curr_ma - ref_current;
+		/* pre 500 mA add 1min */
+		compensation_time = delt_ma / 500 * SEC_PER_MIN;
 		durations -= compensation_time;
 
 		ct_info("%s fcc %dmAh,time[%d] %d,cur %dmA\n", __func__,
 			di->batt_info.fcc, i,
 			di->ref_curve->step_time[i], ref_current);
 		ct_info("%s cur %d,ref %d, delt %dmA, comp %d, dur %d\n",
-			__func__, di->batt_info.curr_ma, ref_current, delt_mA,
+			__func__, di->batt_info.curr_ma, ref_current, delt_ma,
 			compensation_time, durations);
 	}
-
 }
 
 static void hisi_chg_time_adjust_by_fcc(
-			struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
-	int delt_time = 0;
+	int delt_time;
 	int remaining_duration = di->remaining_duration;
 	int delt_fcc = di->batt_info.fcc - di->ref_curve->fcc;
 
@@ -636,31 +642,54 @@ static void hisi_chg_time_adjust_by_fcc(
 
 	remaining_duration += delt_time;
 	ct_dbg("%s fcc %d,soc %d,ref %d,delt %d,delt T %d,dur %d,duration %d\n",
-		__func__, di->batt_info.fcc, di->batt_info.soc,
-		di->ref_curve->fcc, delt_fcc, delt_time,
-		di->remaining_duration, remaining_duration);
+	       __func__, di->batt_info.fcc, di->batt_info.soc,
+	       di->ref_curve->fcc, delt_fcc, delt_time,
+	       di->remaining_duration, remaining_duration);
 
 	di->remaining_duration = remaining_duration;
 }
 
 static void hisi_chg_time_adjust_by_temperature(
-			struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
 	if (!di->param_dts.adjust_by_temp)
 		return;
 }
 
 static void hisi_chg_time_adjust_by_volt(
-			struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
 	if (!di->param_dts.adjust_by_volt)
 		return;
 }
 
+static int hisi_chg_time_step_check(struct hisi_chg_time_device *di, int soc)
+{
+	int pre_step, pos_step;
+	int cur_step = di->ref_curve->step_time[soc];
+
+	/* step time is normal */
+	if (cur_step < STEP_TIME_MAX || soc >= SOC_FULL || soc <= 0)
+		return cur_step;
+
+	pre_step = di->ref_curve->step_time[soc - 1];
+	pos_step = di->ref_curve->step_time[soc + 1];
+
+	if (pre_step > 0 && pre_step < STEP_TIME_MAX &&
+			pos_step > 0 && pos_step < STEP_TIME_MAX)
+		cur_step = ave_step(pre_step, pos_step);
+
+	ct_warn("%s soc %d, ori step %d, cur step %d\n", __func__,
+			soc, di->ref_curve->step_time[soc], cur_step);
+
+	return cur_step;
+}
+
 static void hisi_chg_time_calc_param(struct hisi_chg_time_device *di)
 {
-	int i = 0;
+	int i;
 	int durations = 0;
+	int cur_step;
 
 	ct_dbg("%s  +\n", __func__);
 
@@ -671,7 +700,7 @@ static void hisi_chg_time_calc_param(struct hisi_chg_time_device *di)
 		goto out;
 	}
 
-	for (i = FULL_SOC; i > di->batt_info.soc; i--) {
+	for (i = SOC_FULL; i > di->batt_info.soc; i--) {
 		if (di->ref_curve->step_time[i] <= 0) {
 			di->remaining_duration = INVALID;
 			ct_info("%s durations %d, i %d, time %d\n",
@@ -679,10 +708,10 @@ static void hisi_chg_time_calc_param(struct hisi_chg_time_device *di)
 				di->ref_curve->step_time[i]);
 			goto out;
 		} else {
+			cur_step = hisi_chg_time_step_check(di, i);
 			ct_info("%s durations %d, step_time[%d] = %d\n",
-				__func__, durations, i,
-				di->ref_curve->step_time[i]);
-			durations += di->ref_curve->step_time[i];
+				__func__, durations, i, cur_step);
+			durations += cur_step;
 		}
 	}
 	di->remaining_duration = durations;
@@ -692,26 +721,26 @@ static void hisi_chg_time_calc_param(struct hisi_chg_time_device *di)
 	hisi_chg_time_adjust_by_fcc(di);
 	hisi_chg_time_adjust_by_temperature(di);
 
-	/* Add valid flag for framework to check*/
+	/* Add valid flag for framework to check */
 	di->remaining_duration_with_valid =
 		(int)((unsigned int)di->remaining_duration | VALID_FLAG);
 
 out:
-	ct_info("%s durations sec:%d, code:0xlx\n", __func__,
+	ct_info("%s durations sec:%d, code:0x%x\n", __func__,
 		di->remaining_duration, di->remaining_duration_with_valid);
 
 	ct_dbg("%s  -\n", __func__);
 }
 
 static void hisi_chg_time_get_charger_type(
-					struct hisi_chg_time_device *di)
+	struct hisi_chg_time_device *di)
 {
 	enum charge_type_enum charge_type = CHG_OTHERS;
-	enum huawei_usb_charger_type type = charge_get_charger_type();
+	unsigned int type = charge_get_charger_type();
 
-	if (direct_charge_get_super_charging_flag()) {
+	if (dc_get_super_charging_flag()) {
 		/*
-		 *when direct charger change to buck charger, flag still be true
+		 * when direct charger change to buck charger, flag still be true
 		 */
 		ct_dbg("%s supre charger succ\n", __func__);
 		if (di->chg_info.direct_charge_type == SC_MODE) {
@@ -721,10 +750,10 @@ static void hisi_chg_time_get_charger_type(
 			charge_type = CHG_LVC;
 			di->chg_info.direct_charge_done = false;
 		} else {
-		/*
-		 *when direct charger done and change to buck charger,
-		 *charge type still be direct charger.
-		 */
+			/*
+			 * when direct charger done and change to buck charger,
+			 * charge type still be direct charger.
+			 */
 			ct_dbg(
 				"%s direct charger done, charge type %d\n",
 				__func__, di->chg_info.charge_type);
@@ -745,9 +774,8 @@ static void hisi_chg_time_get_charger_type(
 	}
 
 	if (charge_type != di->chg_info.charge_type) {
-		ct_info("%s type %d is %s,pre charge_type %s[%d]\n",
+		ct_info("%s type %u is %s,pre charge_type %s[%d]\n",
 			__func__, type, charge_type_str_enum[charge_type],
-			charge_type,
 			charge_type_str_enum[di->chg_info.charge_type],
 			di->chg_info.charge_type);
 
@@ -759,17 +787,17 @@ static void hisi_chg_time_get_charger_type(
 
 static void hisi_chg_time_get_charge_info(struct hisi_chg_time_device *di)
 {
-	int ret = 0;
+	int ret;
 	bool pre_direct_charger_done = di->chg_info.direct_charge_done;
 
 	hisi_chg_time_get_charger_type(di);
 
 	if (is_direct_charge(di->chg_info.charge_type)) {
 		ret = direct_charge_get_info(
-			CC_CABLE_DETECT_OK, &di->chg_info.cc_cable_detect_ok);
+			      CC_CABLE_DETECT_OK, &di->chg_info.cc_cable_detect_ok);
 		if (ret) {
 			ct_err("%s, get cc_cable_detect fail %d\n",
-				__func__, ret);
+			       __func__, ret);
 			di->chg_info.cc_cable_detect_ok = 1;
 		}
 
@@ -777,40 +805,40 @@ static void hisi_chg_time_get_charge_info(struct hisi_chg_time_device *di)
 			di->chg_info.cc_cable_detect_ok);
 
 		if (pre_direct_charger_done == false &&
-			di->chg_info.direct_charge_done == true) {
+				di->chg_info.direct_charge_done == true) {
 			di->chg_info.direct_charge_done_soc = di->batt_info.soc;
 			ct_dbg("%s, direct charge done at %d\n",
-				__func__, di->batt_info.soc);
+			       __func__, di->batt_info.soc);
 		}
 	}
 }
 
 static void hisi_chg_time_get_batt_info(struct hisi_chg_time_device *di)
 {
-	di->batt_info.fcc = hisi_battery_get_limit_fcc();
+	di->batt_info.fcc = coul_drv_battery_get_limit_fcc();
 	if (di->test_flag)
 		di->batt_info.soc = hisi_chg_time_test_soc();
 	else
-		di->batt_info.soc = hisi_bci_show_capacity();
-	di->batt_info.volt_mv = hisi_battery_voltage();
-	di->batt_info.curr_ma = hisi_battery_current();
-	di->batt_info.batt_temp = hisi_battery_temperature_for_charger();
-	di->batt_info.batt_cycles = hisi_battery_cycle_count();
+		di->batt_info.soc = bci_show_capacity();
+	di->batt_info.volt_mv = coul_drv_battery_voltage();
+	di->batt_info.curr_ma = coul_drv_battery_current();
+	di->batt_info.batt_temp = coul_drv_battery_temperature_for_charger();
+	di->batt_info.batt_cycles = coul_drv_battery_cycle_count();
 
 	ct_dbg("%s, fcc %d, soc %d, vol %d, cur %d, temp %d\n",
-		__func__, di->batt_info.fcc, di->batt_info.soc,
-		di->batt_info.volt_mv, di->batt_info.curr_ma,
-		di->batt_info.batt_temp);
+	       __func__, di->batt_info.fcc, di->batt_info.soc,
+	       di->batt_info.volt_mv, di->batt_info.curr_ma,
+	       di->batt_info.batt_temp);
 	/* soc check */
-	if (di->batt_info.soc < 0 || di->batt_info.soc > FULL_SOC)
+	if (di->batt_info.soc < 0 || di->batt_info.soc > SOC_FULL)
 		di->batt_info.soc = 0;
 }
 
 static void hisi_charge_time_calc_work(struct work_struct *work)
 {
-	int ret = 0;
+	int ret;
 	struct hisi_chg_time_device *di = container_of(
-		work, struct hisi_chg_time_device, charge_time_work.work);
+			work, struct hisi_chg_time_device, charge_time_work.work);
 	u64 timestemp = get_current_time();
 
 	if (!di) {
@@ -825,7 +853,7 @@ static void hisi_charge_time_calc_work(struct work_struct *work)
 	hisi_chg_time_get_charge_info(di);
 	hisi_chg_time_get_batt_info(di);
 	ct_dbg("%s, pre soc :%d, soc %d\n", __func__,
-		di->pre_capacity, di->batt_info.soc);
+	       di->pre_capacity, di->batt_info.soc);
 
 	if (di->charge_type_change) {
 		di->start_capacity = di->batt_info.soc;
@@ -837,18 +865,18 @@ static void hisi_charge_time_calc_work(struct work_struct *work)
 		if (ret < 0)
 			goto next;
 
-		/*reset current curve*/
+		/* reset current curve */
 		if (memset_s(&di->cur_curve, sizeof(struct hisi_chg_time_param),
-			0, sizeof(struct hisi_chg_time_param)) != EOK)
+				0, sizeof(struct hisi_chg_time_param)) != EOK)
 			ct_err("%s():%d:memset_s fail!\n",
-						__func__, __LINE__);
+			       __func__, __LINE__);
 
 		ct_info("%s charge type change: soc %d, timestep %ld\n",
 			__func__, di->batt_info.soc, di->start_timestemp);
 	}
 
 	if (di->chg_info.charge_type == CHG_NONE ||
-		di->chg_info.charge_type == CHG_USB) {
+			di->chg_info.charge_type == CHG_USB) {
 		di->work_running = 0;
 		ct_info(
 			"%s, charge type is usb/none, exit work!\n", __func__);
@@ -858,7 +886,7 @@ static void hisi_charge_time_calc_work(struct work_struct *work)
 	ret = hisi_chg_time_param_select(di, di->chg_info.charge_type);
 	if (ret) {
 		di->work_running = 0;
-		ct_err("%s param select error\n", __func__);
+		ct_err("%s param select\n", __func__);
 		return;
 	}
 
@@ -874,7 +902,7 @@ static void hisi_charge_time_calc_work(struct work_struct *work)
 	ct_dbg("%s -\n", __func__);
 next:
 	queue_delayed_work(system_power_efficient_wq, &di->charge_time_work,
-		msecs_to_jiffies(CHG_TYPE_DETECT_TIME));
+			   msecs_to_jiffies(CHG_TYPE_DETECT_TIME));
 }
 
 static int hisi_charger_event_rcv(
@@ -893,7 +921,7 @@ static int hisi_charger_event_rcv(
 			return ret;
 		di->work_running = 1;
 		queue_delayed_work(system_power_efficient_wq,
-			&di->charge_time_work, msecs_to_jiffies(1000));
+				   &di->charge_time_work, msecs_to_jiffies(1000));
 		break;
 	case VCHRG_STOP_CHARGING_EVENT:
 		di->work_running = 0;
@@ -922,66 +950,62 @@ static int hisi_chg_time_dc_status_notifier_call(
 	struct notifier_block *nb, unsigned long event, void *data)
 {
 	struct hisi_chg_time_device *di =
-	container_of(nb, struct hisi_chg_time_device, direct_charger_nb);
+		container_of(nb, struct hisi_chg_time_device, direct_charger_nb);
 
-	if (!di) {
-		ct_err("%s di is null\n", __func__);
+	if (!di)
 		return NOTIFY_OK;
-	}
+
 	switch (event) {
-	case LVC_STATUS_CHARGING:
+	case POWER_NE_DC_LVC_CHARGING:
 		di->chg_info.direct_charge_type = LVC_MODE;
 		break;
-
-	case SC_STATUS_CHARGING:
+	case POWER_NE_DC_SC_CHARGING:
 		di->chg_info.direct_charge_type = SC_MODE;
 		break;
-	case DC_STATUS_STOP_CHARGE:
-	default:
+	case POWER_NE_DC_STOP_CHARGE:
 		di->chg_info.direct_charge_type = UNDEFINED_MODE;
 		break;
+	default:
+		break;
 	}
-	ct_err("%s direct charge type is %d\n", __func__,
-		di->chg_info.direct_charge_type);
 
 	return NOTIFY_OK;
 }
 
 static void parse_dts(struct device_node *np,
-			struct hisi_chg_time_device *di)
+		      struct hisi_chg_time_device *di)
 {
 	int ret;
 
 	ret = of_property_read_u32(np, "adjust_by_volt",
-				(u32 *)&(di->param_dts.adjust_by_volt));
+				   (u32 *)&(di->param_dts.adjust_by_volt));
 	if (ret)
 		ct_err("get adjust_by_volt fail\n");
 
 	ret = of_property_read_u32(np, "adjust_by_current",
-				(u32 *)&(di->param_dts.adjust_by_current));
+				   (u32 *)&(di->param_dts.adjust_by_current));
 	if (ret)
 		ct_err("get adjust_by_current fail\n");
 
 	ret = of_property_read_u32(np, "adjust_by_fcc",
-				(u32 *)&(di->param_dts.adjust_by_fcc));
+				   (u32 *)&(di->param_dts.adjust_by_fcc));
 	if (ret)
 		ct_err("get adjust_by_fcc fail\n");
 
 	ret = of_property_read_u32(np, "adjust_by_temp",
-				(u32 *)&(di->param_dts.adjust_by_temp));
+				   (u32 *)&(di->param_dts.adjust_by_temp));
 	if (ret)
 		ct_err("get adjust_by_temp fail\n");
-
 }
 
 static int hisi_chg_time_probe(struct platform_device *pdev)
 {
 	struct hisi_chg_time_device *di = NULL;
 	struct device_node *np = NULL;
-	int ret = 0;
+	int ret;
 
 	di = (struct hisi_chg_time_device *)devm_kzalloc(
-		&pdev->dev, sizeof(*di), GFP_KERNEL);
+		     &pdev->dev, sizeof(*di), GFP_KERNEL);
 	if (!di) {
 		ct_err("%s failed to alloc di struct\n", __func__);
 		return -1;
@@ -993,16 +1017,16 @@ static int hisi_chg_time_probe(struct platform_device *pdev)
 	parse_dts(np, di);
 
 	di->nb.notifier_call = hisi_charger_event_rcv;
-	ret = hisi_register_notifier(&di->nb, 1);
+	ret = bci_register_notifier(&di->nb, 1);
 	if (ret)
-		goto out0;
+		goto ne_get_err;
 
 	di->direct_charger_nb.notifier_call =
 		hisi_chg_time_dc_status_notifier_call;
-	ret = direct_charge_notifier_chain_register(&di->direct_charger_nb);
+	ret = power_event_bnc_register(POWER_BNT_DC, &di->direct_charger_nb);
 	if (ret) {
 		ct_err("%s register notifier failed\n", __func__);
-		goto out1;
+		goto register_ne_err;
 	}
 
 	INIT_DELAYED_WORK(&di->charge_time_work, hisi_charge_time_calc_work);
@@ -1011,7 +1035,7 @@ static int hisi_chg_time_probe(struct platform_device *pdev)
 	ret = device_create_file(di->dev, &dev_attr_flash_param);
 	if (ret) {
 		ct_err("failed to create file");
-		goto out2;
+		goto create_file_err;
 	}
 #endif
 
@@ -1021,16 +1045,16 @@ static int hisi_chg_time_probe(struct platform_device *pdev)
 	return 0;
 
 #ifdef CONFIG_HISI_DEBUG_FS
-out2:
-	ret = direct_charge_notifier_chain_unregister(&di->direct_charger_nb);
+create_file_err:
+	ret = power_event_bnc_unregister(POWER_BNT_DC, &di->direct_charger_nb);
 	if (ret)
 		ct_err("%s direct charge unregister fail\n", __func__);
 #endif
-out1:
-	ret = hisi_unregister_notifier(&di->nb, 1);
+register_ne_err:
+	ret = bci_unregister_notifier(&di->nb, 1);
 	if (ret)
-		ct_err("%s hisi_unregister_notifier fail\n", __func__);
-out0:
+		ct_err("%s bci_unregister_notifier fail\n", __func__);
+ne_get_err:
 	return -1;
 }
 
@@ -1039,14 +1063,18 @@ static int hisi_chg_time_remove(struct platform_device *pdev)
 	struct hisi_chg_time_device *di = platform_get_drvdata(pdev);
 
 	platform_set_drvdata(pdev, NULL);
-	kfree(di);
+	devm_kfree(&pdev->dev,di);
 	g_hisi_chg_time_info = NULL;
 
 	return 0;
 }
 
 static const struct of_device_id hisi_chg_time_of_match[] = {
-	{.compatible = "hisilicon,charger_time", .data = NULL}, {},
+	{
+		.compatible = "hisilicon,charger_time", 
+		.data = NULL
+		},
+	{ },
 };
 
 MODULE_DEVICE_TABLE(of, hisi_chg_time_of_match);

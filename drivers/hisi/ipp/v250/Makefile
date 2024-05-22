@@ -1,6 +1,6 @@
 # Hisilicon IPP v250cs Makefile
 
-obj-$(CONFIG_HISPIPP_V250) += ipp-core.o ipp-com.o memory.o smc.o
+obj-$(CONFIG_HISPIPP_V250) += ipp_core.o ipp_com.o memory.o smc.o
 obj-$(CONFIG_HISPIPP_V250) += v250/ device/
 obj-$(CONFIG_HISPIPP_V250) += adapter_common.o \
                             adapter_mcf.o \

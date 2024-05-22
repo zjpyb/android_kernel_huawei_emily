@@ -12,8 +12,8 @@
 
 #include <linux/device.h>
 #include <linux/mod_devicetable.h>
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
-#include <linux/hisi-bkops-core.h>
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
+#include <linux/mas_bkops_core.h>
 #endif
 #ifdef CONFIG_HUAWEI_EMMC_DSM
 #define EXT_CSD_PRE_EOL_INFO_NORMAL     0x01
@@ -22,6 +22,7 @@
 #endif
 
 #define MMC_CARD_CMDQ_BLK_SIZE 512
+#define RDR_MODID_MMC_COLDBOOT      0x81ffff02
 
 /* Card states */
 #define MMC_STATE_PRESENT	(1<<0)		/* present in sysfs */
@@ -271,7 +272,7 @@ struct mmc_queue_req;
  * MMC Physical partitions
  */
 struct mmc_part {
-	unsigned int	size;	/* partition size (in bytes) */
+	u64		size;	/* partition size (in bytes) */
 	unsigned int	part_cfg;	/* partition type */
 	char	name[MAX_MMC_PART_NAME_LEN];
 	bool	force_ro;	/* to make boot parts RO by default */
@@ -363,8 +364,8 @@ struct mmc_card {
 	u8 *cached_ext_csd;
 #endif
 	unsigned int		bouncesz;	/* Bounce buffer size */
-#ifdef CONFIG_HISI_MMC_MANUAL_BKOPS
-	struct hisi_bkops *mmc_bkops;
+#ifdef CONFIG_ZODIAC_MMC_MANUAL_BKOPS
+	struct mas_bkops *mmc_bkops;
 #endif
 };
 

@@ -26,397 +26,399 @@
         /* Use struct assignment */ \
         switch (count) { \
             case 1: \
-                *(SecStrBuf1 *)(dest) = *(const SecStrBuf1 *)(src); \
+                *(unsigned char *)(dest) = *(const unsigned char *)(src); \
                 break; \
             case 2: \
-                *(SecStrBuf2 *)(dest) = *(const SecStrBuf2 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 2); \
                 break; \
             case 3: \
-                *(SecStrBuf3 *)(dest) = *(const SecStrBuf3 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 3); \
                 break; \
             case 4: \
-                *(SecStrBuf4 *)(dest) = *(const SecStrBuf4 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 4); \
                 break; \
             case 5: \
-                *(SecStrBuf5 *)(dest) = *(const SecStrBuf5 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 5); \
                 break; \
             case 6: \
-                *(SecStrBuf6 *)(dest) = *(const SecStrBuf6 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 6); \
                 break; \
             case 7: \
-                *(SecStrBuf7 *)(dest) = *(const SecStrBuf7 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 7); \
                 break; \
             case 8: \
-                *(SecStrBuf8 *)(dest) = *(const SecStrBuf8 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 8); \
                 break; \
             case 9: \
-                *(SecStrBuf9 *)(dest) = *(const SecStrBuf9 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 9); \
                 break; \
             case 10: \
-                *(SecStrBuf10 *)(dest) = *(const SecStrBuf10 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 10); \
                 break; \
             case 11: \
-                *(SecStrBuf11 *)(dest) = *(const SecStrBuf11 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 11); \
                 break; \
             case 12: \
-                *(SecStrBuf12 *)(dest) = *(const SecStrBuf12 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 12); \
                 break; \
             case 13: \
-                *(SecStrBuf13 *)(dest) = *(const SecStrBuf13 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 13); \
                 break; \
             case 14: \
-                *(SecStrBuf14 *)(dest) = *(const SecStrBuf14 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 14); \
                 break; \
             case 15: \
-                *(SecStrBuf15 *)(dest) = *(const SecStrBuf15 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 15); \
                 break; \
             case 16: \
-                *(SecStrBuf16 *)(dest) = *(const SecStrBuf16 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 16); \
                 break; \
             case 17: \
-                *(SecStrBuf17 *)(dest) = *(const SecStrBuf17 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 17); \
                 break; \
             case 18: \
-                *(SecStrBuf18 *)(dest) = *(const SecStrBuf18 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 18); \
                 break; \
             case 19: \
-                *(SecStrBuf19 *)(dest) = *(const SecStrBuf19 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 19); \
                 break; \
             case 20: \
-                *(SecStrBuf20 *)(dest) = *(const SecStrBuf20 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 20); \
                 break; \
             case 21: \
-                *(SecStrBuf21 *)(dest) = *(const SecStrBuf21 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 21); \
                 break; \
             case 22: \
-                *(SecStrBuf22 *)(dest) = *(const SecStrBuf22 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 22); \
                 break; \
             case 23: \
-                *(SecStrBuf23 *)(dest) = *(const SecStrBuf23 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 23); \
                 break; \
             case 24: \
-                *(SecStrBuf24 *)(dest) = *(const SecStrBuf24 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 24); \
                 break; \
             case 25: \
-                *(SecStrBuf25 *)(dest) = *(const SecStrBuf25 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 25); \
                 break; \
             case 26: \
-                *(SecStrBuf26 *)(dest) = *(const SecStrBuf26 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 26); \
                 break; \
             case 27: \
-                *(SecStrBuf27 *)(dest) = *(const SecStrBuf27 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 27); \
                 break; \
             case 28: \
-                *(SecStrBuf28 *)(dest) = *(const SecStrBuf28 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 28); \
                 break; \
             case 29: \
-                *(SecStrBuf29 *)(dest) = *(const SecStrBuf29 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 29); \
                 break; \
             case 30: \
-                *(SecStrBuf30 *)(dest) = *(const SecStrBuf30 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 30); \
                 break; \
             case 31: \
-                *(SecStrBuf31 *)(dest) = *(const SecStrBuf31 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 31); \
                 break; \
             case 32: \
-                *(SecStrBuf32 *)(dest) = *(const SecStrBuf32 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 32); \
                 break; \
             case 33: \
-                *(SecStrBuf33 *)(dest) = *(const SecStrBuf33 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 33); \
                 break; \
             case 34: \
-                *(SecStrBuf34 *)(dest) = *(const SecStrBuf34 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 34); \
                 break; \
             case 35: \
-                *(SecStrBuf35 *)(dest) = *(const SecStrBuf35 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 35); \
                 break; \
             case 36: \
-                *(SecStrBuf36 *)(dest) = *(const SecStrBuf36 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 36); \
                 break; \
             case 37: \
-                *(SecStrBuf37 *)(dest) = *(const SecStrBuf37 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 37); \
                 break; \
             case 38: \
-                *(SecStrBuf38 *)(dest) = *(const SecStrBuf38 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 38); \
                 break; \
             case 39: \
-                *(SecStrBuf39 *)(dest) = *(const SecStrBuf39 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 39); \
                 break; \
             case 40: \
-                *(SecStrBuf40 *)(dest) = *(const SecStrBuf40 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 40); \
                 break; \
             case 41: \
-                *(SecStrBuf41 *)(dest) = *(const SecStrBuf41 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 41); \
                 break; \
             case 42: \
-                *(SecStrBuf42 *)(dest) = *(const SecStrBuf42 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 42); \
                 break; \
             case 43: \
-                *(SecStrBuf43 *)(dest) = *(const SecStrBuf43 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 43); \
                 break; \
             case 44: \
-                *(SecStrBuf44 *)(dest) = *(const SecStrBuf44 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 44); \
                 break; \
             case 45: \
-                *(SecStrBuf45 *)(dest) = *(const SecStrBuf45 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 45); \
                 break; \
             case 46: \
-                *(SecStrBuf46 *)(dest) = *(const SecStrBuf46 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 46); \
                 break; \
             case 47: \
-                *(SecStrBuf47 *)(dest) = *(const SecStrBuf47 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 47); \
                 break; \
             case 48: \
-                *(SecStrBuf48 *)(dest) = *(const SecStrBuf48 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 48); \
                 break; \
             case 49: \
-                *(SecStrBuf49 *)(dest) = *(const SecStrBuf49 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 49); \
                 break; \
             case 50: \
-                *(SecStrBuf50 *)(dest) = *(const SecStrBuf50 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 50); \
                 break; \
             case 51: \
-                *(SecStrBuf51 *)(dest) = *(const SecStrBuf51 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 51); \
                 break; \
             case 52: \
-                *(SecStrBuf52 *)(dest) = *(const SecStrBuf52 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 52); \
                 break; \
             case 53: \
-                *(SecStrBuf53 *)(dest) = *(const SecStrBuf53 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 53); \
                 break; \
             case 54: \
-                *(SecStrBuf54 *)(dest) = *(const SecStrBuf54 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 54); \
                 break; \
             case 55: \
-                *(SecStrBuf55 *)(dest) = *(const SecStrBuf55 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 55); \
                 break; \
             case 56: \
-                *(SecStrBuf56 *)(dest) = *(const SecStrBuf56 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 56); \
                 break; \
             case 57: \
-                *(SecStrBuf57 *)(dest) = *(const SecStrBuf57 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 57); \
                 break; \
             case 58: \
-                *(SecStrBuf58 *)(dest) = *(const SecStrBuf58 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 58); \
                 break; \
             case 59: \
-                *(SecStrBuf59 *)(dest) = *(const SecStrBuf59 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 59); \
                 break; \
             case 60: \
-                *(SecStrBuf60 *)(dest) = *(const SecStrBuf60 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 60); \
                 break; \
             case 61: \
-                *(SecStrBuf61 *)(dest) = *(const SecStrBuf61 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 61); \
                 break; \
             case 62: \
-                *(SecStrBuf62 *)(dest) = *(const SecStrBuf62 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 62); \
                 break; \
             case 63: \
-                *(SecStrBuf63 *)(dest) = *(const SecStrBuf63 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 63); \
                 break; \
             case 64: \
-                *(SecStrBuf64 *)(dest) = *(const SecStrBuf64 *)(src); \
+                SECUREC_COPY_VALUE_BY_STRUCT((dest), (src), 64); \
                 break; \
             default: \
+                /* Do nothing */ \
                 break; \
         } /* END switch */ \
     } else { \
-        char *tmpDest = (char *)(dest); \
-        const char *tmpSrc = (const char *)(src); \
+        unsigned char *tmpDest_ = (unsigned char *)(dest); \
+        const unsigned char *tmpSrc_ = (const unsigned char *)(src); \
         switch (count) { \
             case 64: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 63: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 62: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 61: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 60: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 59: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 58: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 57: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 56: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 55: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 54: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 53: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 52: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 51: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 50: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 49: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 48: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 47: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 46: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 45: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 44: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 43: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 42: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 41: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 40: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 39: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 38: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 37: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 36: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 35: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 34: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 33: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 32: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 31: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 30: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 29: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 28: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 27: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 26: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 25: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 24: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 23: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 22: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 21: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 20: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 19: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 18: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 17: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 16: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 15: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 14: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 13: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 12: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 11: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 10: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 9: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 8: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 7: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 6: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 5: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 4: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 3: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 2: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             case 1: \
-                *(tmpDest++) = *(tmpSrc++); \
+                *(tmpDest_++) = *(tmpSrc_++); \
                 /* fall-through */ /* FALLTHRU */ \
             default: \
+                /* Do nothing */ \
                 break; \
         } \
     } \

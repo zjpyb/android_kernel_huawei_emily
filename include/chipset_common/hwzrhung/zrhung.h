@@ -68,9 +68,12 @@ enum zrhung_wp_id {
 	ZRHUNG_WP_CAMERA,
 	ZRHUNG_WP_UPLOAD_BIGDATA,
 	ZRHUNG_WP_ION,
+	ZRHUNG_WP_WATCHDOG,
 	ZRHUNG_WP_TEMP1,
 	ZRHUNG_WP_TEMP2,
 	ZRHUNG_WP_TEMP3,
+	ZRHUNG_WP_SERVICE_CHAIN,
+	ZRHUNG_WP_SOFT_LOCKUP,
 	ZRHUNG_WP_MAX,
 	APPEYE_NONE = ZRHUNG_CAT_APPEYE << 8 | 0x0000,
 	APPEYE_UIP_WARNING,
@@ -137,6 +140,7 @@ enum zrhung_wp_id {
 
 #define ZRHUNG_WP_TO_ENTRY(wp) (ZRHUNG_WPCAT(wp) * \
 	ZRHUNG_CFG_CAT_NUM_MAX + ZRHUNG_WPID(wp))
+#define RAW_EVENT_ZRHUNG 1000
 
 struct zrhung_write_event {
 	uint32_t magic;
@@ -150,7 +154,7 @@ struct zrhung_write_event {
 int zrhung_is_id_valid(short wp_id);
 int zrhung_send_event(enum zrhung_wp_id id, const char *cmd_buf, const char *buf);
 int zrhung_get_config(enum zrhung_wp_id id, char *data, uint32_t maxlen);
-long zrhung_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+long zrhung_ioctl(struct file *file, unsigned int cmd, uintptr_t arg);
 long zrhung_save_lastword(void);
 int lmkwp_init(void);
 void lmkwp_report(struct task_struct *selected, struct shrink_control *sc,

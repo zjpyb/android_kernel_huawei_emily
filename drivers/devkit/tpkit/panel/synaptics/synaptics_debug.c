@@ -29,7 +29,7 @@
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
-#include "../../huawei_ts_kit.h"
+#include "huawei_ts_kit.h"
 #include "raw_data.h"
 
 #define  CSV_TP_CAP_RAW_MIN "MutualRawMin"   /*1p/f*/
@@ -1732,14 +1732,14 @@ static int f54_rawimage_report(void)
 
 		TS_LOG_INFO("rows:%d, columns:%d\n", rows_size, columns_size);
 
-		limit_tab.MutualRawMax =
+		limit_tab.mutual_raw_max =
 			(int32_t*)kzalloc((rows_size+1)*(columns_size+1)*sizeof(int32_t), GFP_KERNEL);
-		limit_tab.MutualRawMin =
+		limit_tab.mutual_raw_min =
 			(int32_t*)kzalloc((rows_size+1)*(columns_size+1)*sizeof(int32_t), GFP_KERNEL);
 		rawdata_from_chip = (int*)kzalloc((rows_size * columns_size)*sizeof(int), GFP_KERNEL);
-		if (!limit_tab.MutualRawMax || !limit_tab.MutualRawMin || !rawdata_from_chip){
+		if (!limit_tab.mutual_raw_max || !limit_tab.mutual_raw_min || !rawdata_from_chip){
 			TS_LOG_ERR("kzalloc error: MutualRawMax:%pK, MutualRawMin:%pK, rawdata_from_chip:%pK\n",
-				limit_tab.MutualRawMax, limit_tab.MutualRawMin, rawdata_from_chip);
+				limit_tab.mutual_raw_max, limit_tab.mutual_raw_min, rawdata_from_chip);
 			goto error_release_mem;
 		}
 		if (!strnlen(f54->rmi4_data->synaptics_chip_data->ts_platform_data->product_name, MAX_STR_LEN-1)
@@ -1761,8 +1761,8 @@ static int f54_rawimage_report(void)
 #endif
 		TS_LOG_INFO("threshold file name:%s, rows_size=%d, columns_size=%d\n", file_path, rows_size, columns_size);
 
-		Result   =ts_kit_parse_csvfile(file_path, CSV_TP_CAP_RAW_MAX, limit_tab.MutualRawMax, rows_size, columns_size);
-		Result +=ts_kit_parse_csvfile(file_path, CSV_TP_CAP_RAW_MIN, limit_tab.MutualRawMin, rows_size, columns_size);
+		Result   =ts_kit_parse_csvfile(file_path, CSV_TP_CAP_RAW_MAX, limit_tab.mutual_raw_max, rows_size, columns_size);
+		Result +=ts_kit_parse_csvfile(file_path, CSV_TP_CAP_RAW_MIN, limit_tab.mutual_raw_min, rows_size, columns_size);
 		if (0 != Result) {
 			TS_LOG_ERR("csv file parse fail:%s\n", file_path);
 			goto error_release_mem;
@@ -1786,23 +1786,23 @@ static int f54_rawimage_report(void)
 			}
 
 			for (i = 0; i < (mmi_buf_size / 2); i++) {
-				if (rawdata_from_chip[i] > limit_tab.MutualRawMin[i]
-					&& rawdata_from_chip[i] < limit_tab.MutualRawMax[i]){
+				if (rawdata_from_chip[i] > limit_tab.mutual_raw_min[i]
+					&& rawdata_from_chip[i] < limit_tab.mutual_raw_max[i]){
 					Result++;
 				}else{
 					TS_LOG_ERR("error rawdata[%d]:%d out of range, min:%d, max:%d\n",
-						i, rawdata_from_chip[i], limit_tab.MutualRawMin[i], limit_tab.MutualRawMax[i]);
+						i, rawdata_from_chip[i], limit_tab.mutual_raw_min[i], limit_tab.mutual_raw_max[i]);
 				}
 			}
 
 			/* rawdata check done, release mem */
-			if (limit_tab.MutualRawMax) {
-				kfree(limit_tab.MutualRawMax);
-				limit_tab.MutualRawMax = NULL;
+			if (limit_tab.mutual_raw_max) {
+				kfree(limit_tab.mutual_raw_max);
+				limit_tab.mutual_raw_max = NULL;
 			}
-			if (limit_tab.MutualRawMin) {
-				kfree(limit_tab.MutualRawMin);
-				limit_tab.MutualRawMin = NULL;
+			if (limit_tab.mutual_raw_min) {
+				kfree(limit_tab.mutual_raw_min);
+				limit_tab.mutual_raw_min = NULL;
 			}
 			if (rawdata_from_chip) {
 				kfree(rawdata_from_chip);
@@ -1832,13 +1832,13 @@ static int f54_rawimage_report(void)
 		return 0;
 	}
 error_release_mem:
-	if (limit_tab.MutualRawMax){
-		kfree(limit_tab.MutualRawMax);
-		limit_tab.MutualRawMax = NULL;
+	if (limit_tab.mutual_raw_max){
+		kfree(limit_tab.mutual_raw_max);
+		limit_tab.mutual_raw_max = NULL;
 	}
-	if (limit_tab.MutualRawMin){
-		kfree(limit_tab.MutualRawMin);
-		limit_tab.MutualRawMin = NULL;
+	if (limit_tab.mutual_raw_min){
+		kfree(limit_tab.mutual_raw_min);
+		limit_tab.mutual_raw_min = NULL;
 	}
 	if (rawdata_from_chip){
 		kfree(rawdata_from_chip);
@@ -1861,9 +1861,8 @@ static int test_wait_for_command_completion(void)
 					&value,
 					sizeof(value));
 		if (retval < 0) {
-			dev_err(rmi4_data->pdev->dev.parent,
-						"%s: Failed to read command register\n",
-						__func__);
+			TS_LOG_ERR("%s: Failed to read command register\n",
+				__func__);
 			return retval;
 		}
 
@@ -2054,7 +2053,7 @@ static int f54_deltarawimage_report(void)
 	} else {
 		TS_LOG_ERR("deltadata is out of range, Result = %d\n", result);
 		ret = TEST_FAIL;
-		test_failed_reason[RAW_DATA_TYPE_Noise] = TEST_THRESHOLD_FAIL;
+		test_failed_reason[RAW_DATA_TYPE_NOISE] = TEST_THRESHOLD_FAIL;
 	}
 error_release_mem:
 	if (limit_tab.unique_test && limit_tab.unique_test->noise_data_limit){
@@ -2156,7 +2155,7 @@ static void check_hybrid_raw_cap(void)
 			hybird_raw_tx_range[i+tx_num], hybird_raw_tx_range[i]) ) {
 		    TS_LOG_ERR("%s(%d), check_hybrid_raw_cap test is out of range, test result is 6F\n", __func__, __LINE__);
 		    strncpy(tp_test_failed_reason, "-panel_reason",TP_TEST_FAILED_REASON_LEN);
-			test_failed_reason[RAW_DATA_TYPE_SelfCap] = TEST_THRESHOLD_FAIL;
+			test_failed_reason[RAW_DATA_TYPE_SELFCAP] = TEST_THRESHOLD_FAIL;
 		    goto test_fail;
 		}
 	}
@@ -2172,7 +2171,7 @@ static void check_hybrid_raw_cap(void)
 			hybird_raw_rx_range[i+rx_num], hybird_raw_rx_range[i]) ){
 		    TS_LOG_ERR("%s(%d), check_hybrid_raw_cap test is out of range, test result is 6F\n", __func__, __LINE__);
 		    strncpy(tp_test_failed_reason, "-panel_reason",TP_TEST_FAILED_REASON_LEN);
-			test_failed_reason[RAW_DATA_TYPE_SelfCap] = TEST_THRESHOLD_FAIL;
+			test_failed_reason[RAW_DATA_TYPE_SELFCAP] = TEST_THRESHOLD_FAIL;
 		    goto test_fail;
 		}
 	}
@@ -2224,7 +2223,7 @@ static void check_hybrid_abs_delta(void)
 		    TS_LOG_ERR("%s(%d), hybrid_abs_delta test is out of range, test result is 9F\n", __func__, __LINE__);
 		    strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
-			test_failed_reason[RAW_DATA_TYPE_SelfNoisetest] = TEST_THRESHOLD_FAIL;
+			test_failed_reason[RAW_DATA_TYPE_SELFNOISETEST] = TEST_THRESHOLD_FAIL;
 		    goto test_fail;
 		}
 	}
@@ -2242,7 +2241,7 @@ static void check_hybrid_abs_delta(void)
 		    TS_LOG_ERR("%s(%d), hybrid_abs_delta test is out of range, test result is 9F\n", __func__, __LINE__);
 		    strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
-			test_failed_reason[RAW_DATA_TYPE_SelfNoisetest] = TEST_THRESHOLD_FAIL;
+			test_failed_reason[RAW_DATA_TYPE_SELFNOISETEST] = TEST_THRESHOLD_FAIL;
 		    goto test_fail;
 		}
 	}
@@ -2643,7 +2642,7 @@ static int td43xx_ee_short_report(void)
 				td43xx_rt95_part_two[i * rx_num + j];
 			if (0 != td43xx_ee_short_data[i * rx_num + j]) {
 				TestResult = TEST_FAIL;
-				test_failed_reason[RAW_DATA_TYPE_OpenShort] = TEST_THRESHOLD_FAIL;
+				test_failed_reason[RAW_DATA_TYPE_OPENSHORT] = TEST_THRESHOLD_FAIL;
 				TS_LOG_ERR("td43xx_ee_short_data:[%d, %d]%d\n",
 					i, j, td43xx_ee_short_data[i * tx_num + j]);
 			}
@@ -2726,7 +2725,7 @@ static void mmi_trex_shorts_test(void)
 	return;
 
 err_match_defult:
-	test_failed_reason[RAW_DATA_TYPE_OpenShort] = TEST_THRESHOLD_FAIL;
+	test_failed_reason[RAW_DATA_TYPE_OPENSHORT] = TEST_THRESHOLD_FAIL;
 err_report_size:
 	kfree(buf_backup);
 err_kzalloc_buf:
@@ -2957,20 +2956,20 @@ static int f54_delta_rx2_report(void)
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	limit_tab.unique_test->Read_only_support_unique = f54->rmi4_data->synaptics_chip_data->trx_delta_test_support;
-	limit_tab.unique_test->Rx_delta_abslimit =
+	limit_tab.unique_test->read_only_support_unique = f54->rmi4_data->synaptics_chip_data->trx_delta_test_support;
+	limit_tab.unique_test->rx_delta_abslimit =
 			(int32_t*)kzalloc(rows_size*columns_size*sizeof(int32_t), GFP_KERNEL);
-	if (!limit_tab.unique_test->Rx_delta_abslimit) {
+	if (!limit_tab.unique_test->rx_delta_abslimit) {
 		TS_LOG_ERR("rx_delta_abslimit buffer kzalloc error\n");
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size-1, rows_size, CSV_TP_DELTA_ABS_RX_LIMIT, limit_tab.unique_test->Rx_delta_abslimit)) {
+	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size-1, rows_size, CSV_TP_DELTA_ABS_RX_LIMIT, limit_tab.unique_test->rx_delta_abslimit)) {
 		TS_LOG_ERR("get abs_rxdelt_cap_limit err\n");
 		ret = TEST_FAIL;
-		memset(limit_tab.unique_test->Rx_delta_abslimit, 0, rows_size*columns_size*sizeof(int32_t));
+		memset(limit_tab.unique_test->rx_delta_abslimit, 0, rows_size*columns_size*sizeof(int32_t));
 	}
-	abs_rxdelt_cap_limit = limit_tab.unique_test->Rx_delta_abslimit;
+	abs_rxdelt_cap_limit = limit_tab.unique_test->rx_delta_abslimit;
 
 	if(f54->rmi4_data->synaptics_chip_data->rawdata_newformatflag == TS_RAWDATA_NEWFORMAT) {
 		for ( i = 0; i < mmi_buf_size; i+=2) {
@@ -3024,12 +3023,12 @@ static int f54_delta_rx2_report(void)
 	else {
 		TS_LOG_ERR("rawdata rx diff is out of range, Result = %d\n", Result);
 		ret = TEST_FAIL;
-		test_failed_reason[RAW_DATA_TYPE_TrxDelta] = TEST_THRESHOLD_FAIL;
+		test_failed_reason[RAW_DATA_TYPE_TRXDELTA] = TEST_THRESHOLD_FAIL;
 	}
 error_release_mem:
-	if (limit_tab.unique_test && limit_tab.unique_test->Rx_delta_abslimit){
-		kfree(limit_tab.unique_test->Rx_delta_abslimit);
-		limit_tab.unique_test->Rx_delta_abslimit = NULL;
+	if (limit_tab.unique_test && limit_tab.unique_test->rx_delta_abslimit){
+		kfree(limit_tab.unique_test->rx_delta_abslimit);
+		limit_tab.unique_test->rx_delta_abslimit = NULL;
 	}
 	if (limit_tab.unique_test) {
 		kfree(limit_tab.unique_test);
@@ -3063,20 +3062,20 @@ static int f54_delta_tx2_report(void)
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	limit_tab.unique_test->Read_only_support_unique = f54->rmi4_data->synaptics_chip_data->trx_delta_test_support;
-	limit_tab.unique_test->Tx_delta_abslimit =
+	limit_tab.unique_test->read_only_support_unique = f54->rmi4_data->synaptics_chip_data->trx_delta_test_support;
+	limit_tab.unique_test->tx_delta_abslimit =
 			(int32_t*)kzalloc(rows_size*columns_size*sizeof(int32_t), GFP_KERNEL);
-	if (!limit_tab.unique_test->Tx_delta_abslimit) {
+	if (!limit_tab.unique_test->tx_delta_abslimit) {
 		TS_LOG_ERR("Tx_delta_abslimit buffer kzalloc error\n");
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size-1, CSV_TP_DELTA_ABS_TX_LIMIT, limit_tab.unique_test->Tx_delta_abslimit)) {
+	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size-1, CSV_TP_DELTA_ABS_TX_LIMIT, limit_tab.unique_test->tx_delta_abslimit)) {
 		TS_LOG_ERR("get abs_txdelt_cap_limit err\n");
 		ret = TEST_FAIL;
-		memset(limit_tab.unique_test->Tx_delta_abslimit, 0, rows_size*columns_size*sizeof(int32_t));
+		memset(limit_tab.unique_test->tx_delta_abslimit, 0, rows_size*columns_size*sizeof(int32_t));
 	}
-	abs_txdelt_cap_limit = limit_tab.unique_test->Tx_delta_abslimit;
+	abs_txdelt_cap_limit = limit_tab.unique_test->tx_delta_abslimit;
 
 	Rawimage_tx = (short *)kzalloc(mmi_buf_size, GFP_KERNEL);
 	if (!Rawimage_tx) {
@@ -3136,16 +3135,16 @@ static int f54_delta_tx2_report(void)
 	else {
 		TS_LOG_ERR("rawdata tx diff is out of range, Result = %d\n", Result);
 		ret = TEST_FAIL;
-		test_failed_reason[RAW_DATA_TYPE_TrxDelta] = TEST_THRESHOLD_FAIL;
+		test_failed_reason[RAW_DATA_TYPE_TRXDELTA] = TEST_THRESHOLD_FAIL;
 	}
 error_release_mem:
 	if (Rawimage_tx) {
 		kfree(Rawimage_tx);
 		Rawimage_tx = NULL;
 	}
-	if (limit_tab.unique_test && limit_tab.unique_test->Tx_delta_abslimit) {
-		kfree(limit_tab.unique_test->Tx_delta_abslimit);
-		limit_tab.unique_test->Tx_delta_abslimit = NULL;
+	if (limit_tab.unique_test && limit_tab.unique_test->tx_delta_abslimit) {
+		kfree(limit_tab.unique_test->tx_delta_abslimit);
+		limit_tab.unique_test->tx_delta_abslimit = NULL;
 	}
 	if (limit_tab.unique_test) {
 		kfree(limit_tab.unique_test);
@@ -3293,21 +3292,21 @@ static int check_csvfile_raw_capacitance(void)
 	save_capacitance_data_to_rawdatabuf();
 	get_capacitance_stats();
 
-	limit_tab.MutualRawMax =
+	limit_tab.mutual_raw_max =
 		(int32_t*)kzalloc((rows_size)*(columns_size)*sizeof(int32_t), GFP_KERNEL);
-	limit_tab.MutualRawMin =
+	limit_tab.mutual_raw_min =
 		(int32_t*)kzalloc((rows_size)*(columns_size)*sizeof(int32_t), GFP_KERNEL);
-	if (!limit_tab.MutualRawMax || !limit_tab.MutualRawMin ){
+	if (!limit_tab.mutual_raw_max || !limit_tab.mutual_raw_min ){
 		TS_LOG_ERR("kzalloc rawdata buffer is NULL\n");
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size, CSV_TP_CAP_RAW_MAX, limit_tab.MutualRawMax)) {
+	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size, CSV_TP_CAP_RAW_MAX, limit_tab.mutual_raw_max)) {
 		TS_LOG_ERR("get rawdata_cap_max_limit err\n");
 		ret = TEST_FAIL;
 		goto error_release_mem;
 	}
-	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size, CSV_TP_CAP_RAW_MIN, limit_tab.MutualRawMin)) {
+	if (TEST_FAIL == synaptics_get_threshold_from_csvfile(columns_size, rows_size, CSV_TP_CAP_RAW_MIN, limit_tab.mutual_raw_min)) {
 		TS_LOG_ERR("get rawdata_cap_min_limit err\n");
 		ret = TEST_FAIL;
 		goto error_release_mem;
@@ -3315,22 +3314,22 @@ static int check_csvfile_raw_capacitance(void)
 
 	for (i = 0; i < count; i++) {
 		/* rawdatabuf[0] rawdatabuf[1] are num_of_rx and num_of_tx */
-		if ((f54->rawdatabuf[i+2] > limit_tab.MutualRawMax[i]) || (f54->rawdatabuf[i+2] < limit_tab.MutualRawMin[i])) {
+		if ((f54->rawdatabuf[i+2] > limit_tab.mutual_raw_max[i]) || (f54->rawdatabuf[i+2] < limit_tab.mutual_raw_min[i])) {
 			TS_LOG_ERR("rawdata is out of range, failed at %d: upper: %d, lower: %d, raw: %d\n",
-				i, limit_tab.MutualRawMax[i], limit_tab.MutualRawMin[i], f54->rawdatabuf[i+2]);
+				i, limit_tab.mutual_raw_max[i], limit_tab.mutual_raw_min[i], f54->rawdatabuf[i+2]);
 			ret = TEST_FAIL;
 			test_failed_reason[RAW_DATA_TYPE_CAPRAWDATA] = TEST_THRESHOLD_FAIL;
 		}
 	}
 
 error_release_mem:
-	if (limit_tab.MutualRawMax){
-		kfree(limit_tab.MutualRawMax);
-		limit_tab.MutualRawMax = NULL;
+	if (limit_tab.mutual_raw_max){
+		kfree(limit_tab.mutual_raw_max);
+		limit_tab.mutual_raw_max = NULL;
 	}
-	if (limit_tab.MutualRawMin){
-		kfree(limit_tab.MutualRawMin);
-		limit_tab.MutualRawMin = NULL;
+	if (limit_tab.mutual_raw_min){
+		kfree(limit_tab.mutual_raw_min);
+		limit_tab.mutual_raw_min = NULL;
 	}
 
 	return ret;
@@ -3680,7 +3679,7 @@ exit_26100_type:
 	{
 		TS_LOG_INFO("%s: test result is fail\n", __func__);
 		strncat(buf_f54test_result, SHORT_TEST_FAIL, MAX_STR_LEN);
-		test_failed_reason[RAW_DATA_TYPE_OpenShort] = TEST_THRESHOLD_FAIL;
+		test_failed_reason[RAW_DATA_TYPE_OPENSHORT] = TEST_THRESHOLD_FAIL;
 	}
 	if(p_data_baseline1)
 	{
@@ -3775,7 +3774,7 @@ static void synaptics_f54_free(void)
 
 	if (f55) {
 		kfree(f55);
-		f54 = NULL;
+		f55 = NULL;
 	}
 }
 
@@ -3854,7 +3853,7 @@ static void synaptics_change_report_rate(void)
 		strncat(buf_f54test_result, "-4F", MAX_STR_LEN);
 		strncpy(tp_test_failed_reason, "-panel_reason",
 			TP_TEST_FAILED_REASON_LEN);
-		test_failed_reason[RAW_DATA_TYPE_FreShift] = TEST_THRESHOLD_FAIL;
+		test_failed_reason[RAW_DATA_TYPE_FRESHIFT] = TEST_THRESHOLD_FAIL;
 	}
 	return;
 }
@@ -4057,7 +4056,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			pts_node->size = mmi_buf_size;
 		}
 		pts_node->testresult = buf_f54test_result[test_num];
-		pts_node->typeindex = RAW_DATA_TYPE_TrxDelta;
+		pts_node->typeindex = RAW_DATA_TYPE_TRXDELTA;
 		strncpy(pts_node->test_name,"Trx delta",sizeof(pts_node->test_name)-1);
 		list_add_tail(&pts_node->node, &info->rawdata_head);
 		test_num = test_num + test_tmp_num;
@@ -4077,7 +4076,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			pts_node->values[i] = f54->rawdatabuf[rawbufsize+2+i];
 	pts_node->size = rawbufsize;
 	pts_node->testresult = buf_f54test_result[test_num];
-	pts_node->typeindex = RAW_DATA_TYPE_Noise;
+	pts_node->typeindex = RAW_DATA_TYPE_NOISE;
 	strncpy(pts_node->statistics_data,statistics_tmp_data,sizeof(pts_node->statistics_data)-1);
 	memset(statistics_tmp_data, 0, sizeof(statistics_tmp_data));
 	strncpy(pts_node->test_name,"noise delta",sizeof(pts_node->test_name)-1);
@@ -4092,7 +4091,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			return -EINVAL;
 		}
 		pts_node->testresult = buf_f54test_result[test_num];
-		pts_node->typeindex = RAW_DATA_TYPE_FreShift;
+		pts_node->typeindex = RAW_DATA_TYPE_FRESHIFT;
 		strncpy(pts_node->test_name,"Frequency shift",sizeof(pts_node->test_name)-1);
 		list_add_tail(&pts_node->node, &info->rawdata_head);
 		test_num = test_num + test_tmp_num;
@@ -4108,7 +4107,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			return -EINVAL;
 		}
 		pts_node->testresult = buf_f54test_result[test_num];
-		pts_node->typeindex = RAW_DATA_TYPE_OpenShort;
+		pts_node->typeindex = RAW_DATA_TYPE_OPENSHORT;
 		strncpy(pts_node->test_name,"Open short",sizeof(pts_node->test_name)-1);
 		list_add_tail(&pts_node->node, &info->rawdata_head);
 		test_num = test_num + test_tmp_num;
@@ -4122,7 +4121,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			return rc;
 		}
 		pts_node->testresult = buf_f54test_result[test_num];
-		pts_node->typeindex = RAW_DATA_TYPE_SelfCap;
+		pts_node->typeindex = RAW_DATA_TYPE_SELFCAP;
 		pts_node->size = rawSelfbuf;
 		for (i = 0; i < rawSelfbuf; i++)
 			pts_node->values[i] =f54->hybridbuf[i+mmi_hybrid_abs_delta /4];
@@ -4137,7 +4136,7 @@ int synap_put_cap_test_dataNewformat(struct ts_rawdata_info_new *info)
 			return rc;
 		}
 		pts_node->testresult = buf_f54test_result[test_num];
-		pts_node->typeindex = RAW_DATA_TYPE_SelfNoisetest;
+		pts_node->typeindex = RAW_DATA_TYPE_SELFNOISETEST;
 		pts_node->size = rawSelfbuf;
 		for (i = 0; i < rawSelfbuf; i++)
 			pts_node->values[i] =f54->hybridbuf[i];

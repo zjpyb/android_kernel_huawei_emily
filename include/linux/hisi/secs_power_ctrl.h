@@ -20,5 +20,6 @@
 
 int hisi_secs_power_on(void);
 int hisi_secs_power_down(void);
+unsigned long get_secs_suspend_status(void);
 
 #endif /* end of secs_power_ctrl.h */

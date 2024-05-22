@@ -4,7 +4,9 @@
  *
  * Author: Vitor Soares <vitor.soares@synopsys.com>
  */
-
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+#include "dw_i3c_v100.h"
+#else
 #include <linux/bitops.h>
 #include <linux/clk.h>
 #include <linux/completion.h>
@@ -20,10 +22,6 @@
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 #include <linux/slab.h>
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-#include <linux/overflow.h>
-#include <linux/printk.h>
-#include <linux/pinctrl/consumer.h>
 #endif
 
 #define DEVICE_CTRL			0x0
@@ -91,6 +89,7 @@
 #define IBI_SIR_REQ_REJECT		0x30
 #define IBI_REQ_REJECT_ALL		GENMASK(31, 0)
 
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 #define RESET_CTRL			0x34
 #define RESET_CTRL_IBI_QUEUE		BIT(5)
 #define RESET_CTRL_RX_FIFO		BIT(4)
@@ -98,6 +97,7 @@
 #define RESET_CTRL_RESP_QUEUE		BIT(2)
 #define RESET_CTRL_CMD_QUEUE		BIT(1)
 #define RESET_CTRL_SOFT			BIT(0)
+#endif
 
 #define SLV_EVENT_CTRL			0x38
 #define INTR_STATUS			0x3c
@@ -159,16 +159,12 @@
 #define SLV_DEBUG_STATUS		0x88
 #define SLV_INTR_REQ			0x8c
 #define DEVICE_CTRL_EXTENDED		0xb0
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-#define SCL_HCNT_TIMING		0xb4
-#define SCL_LCNT_TIMING		0xb8
-#else
+
 #define SCL_I3C_OD_TIMING		0xb4
 #define SCL_I3C_PP_TIMING		0xb8
 #define SCL_I3C_TIMING_HCNT(x)		(((x) << 16) & GENMASK(23, 16))
 #define SCL_I3C_TIMING_LCNT(x)		((x) & GENMASK(7, 0))
 #define SCL_I3C_TIMING_CNT_MIN		5
-#endif
 
 #define SCL_I2C_FM_TIMING		0xbc
 #define SCL_I2C_FM_TIMING_HCNT(x)	(((x) << 16) & GENMASK(31, 16))
@@ -195,19 +191,12 @@
 #define SLAVE_CONFIG			0xec
 
 #define DEV_ADDR_TABLE_LEGACY_I2C_DEV	BIT(31)
-#define DEV_NACK_RETRY_CNT(x)	(((x) << 29) & GENMASK(30, 29))  //?????á????
+#define DEV_NACK_RETRY_CNT(x)	(((x) << 29) & GENMASK(30, 29))
 #define DEV_ADDR_TABLE_DYNAMIC_ADDR(x)	(((x) << 16) & GENMASK(23, 16))
 #define DEV_ADDR_TABLE_STATIC_ADDR(x)	((x) & GENMASK(6, 0))
 #define DEV_ADDR_TABLE_LOC(start, idx)	((start) + ((idx) << 2))
 
 #define MAX_DEVS 32
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-#define I3C_BUS_I2C_FM_TLOW_MIN_NS	 1300
-#define I3C_BUS_I2C_FM_THIGH_MIN_NS	 600
-#define I3C_BUS_I3C_SDR_TLOW_MIN_NS	 40
-#define I3C_BUS_I3C_SDR_THIGH_MIN_NS 41
-#define I3C_BUS_I3C_OD_MIN_NS 		 460
-#else
 #define I3C_BUS_SDR1_SCL_RATE		8000000
 #define I3C_BUS_SDR2_SCL_RATE		6000000
 #define I3C_BUS_SDR3_SCL_RATE		4000000
@@ -215,10 +204,10 @@
 #define I3C_BUS_I2C_FM_TLOW_MIN_NS	1300
 #define I3C_BUS_I2C_FMP_TLOW_MIN_NS	500
 #define I3C_BUS_THIGH_MAX_NS		41
-#endif
 
 #define XFER_TIMEOUT (msecs_to_jiffies(1000))
 
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 struct dw_i3c_master_caps {
 	u8 cmdfifodepth;
 	u8 datafifodepth;
@@ -259,11 +248,8 @@ struct dw_i3c_master {
 	char version[5];
 	char type[5];
 	u8 addrs[MAX_DEVS];
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	struct pinctrl		*pinctrl;
-	int			pinctrl_flag;
- #endif
 };
+#endif
 
 struct dw_i3c_i2c_dev_data {
 	u8 index;
@@ -274,7 +260,7 @@ static u8 even_parity(u8 p)
 	p ^= p >> 4;
 	p &= 0xf;
 
-	return (0x9669 >> p) & 1;    /* [false alarm]:原生代码无风险屏幕处理 */
+	return (0x9669 >> p) & 1; /* [false alarm]: kernel origin src and no effective */
 }
 
 static bool dw_i3c_master_supports_ccc_cmd(struct i3c_master_controller *m,
@@ -314,7 +300,7 @@ static bool dw_i3c_master_supports_ccc_cmd(struct i3c_master_controller *m,
 	}
 }
 
-static inline struct dw_i3c_master *
+inline struct dw_i3c_master *
 to_dw_i3c_master(struct i3c_master_controller *master)
 {
 	return container_of(master, struct dw_i3c_master, base);
@@ -352,6 +338,7 @@ static int dw_i3c_master_get_free_pos(struct dw_i3c_master *master)
 	return ffs(master->free_pos) - 1;
 }
 
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 static void dw_i3c_master_wr_tx_fifo(struct dw_i3c_master *master,
 				     const u8 *bytes, int nbytes)
 {
@@ -375,6 +362,7 @@ static void dw_i3c_master_read_rx_fifo(struct dw_i3c_master *master,
 		memcpy(bytes + (nbytes & ~3), &tmp, nbytes & 3);
 	}
 }
+#endif
 
 static struct dw_i3c_xfer *
 dw_i3c_master_alloc_xfer(struct dw_i3c_master *master, unsigned int ncmds)
@@ -397,6 +385,7 @@ static void dw_i3c_master_free_xfer(struct dw_i3c_xfer *xfer)
 	kfree(xfer);
 }
 
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 static void dw_i3c_master_start_xfer_locked(struct dw_i3c_master *master)
 {
 	struct dw_i3c_xfer *xfer = master->xferqueue.cur;
@@ -424,6 +413,7 @@ static void dw_i3c_master_start_xfer_locked(struct dw_i3c_master *master)
 		writel(cmd->cmd_lo, master->regs + COMMAND_QUEUE_PORT);
 	}
 }
+#endif
 
 static void dw_i3c_master_enqueue_xfer(struct dw_i3c_master *master,
 				       struct dw_i3c_xfer *xfer)
@@ -470,7 +460,7 @@ static void dw_i3c_master_dequeue_xfer(struct dw_i3c_master *master,
 	spin_unlock_irqrestore(&master->xferqueue.lock, flags);
 }
 
-static void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
+void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
 {
 	struct dw_i3c_xfer *xfer = master->xferqueue.cur;
 	int i, ret = 0;
@@ -487,13 +477,18 @@ static void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
 		u32 resp;
 
 		resp = readl(master->regs + RESPONSE_QUEUE_PORT);
-
 		cmd = &xfer->cmds[RESPONSE_PORT_TID(resp)];
 		cmd->rx_len = RESPONSE_PORT_DATA_LEN(resp);
 		cmd->error = RESPONSE_PORT_ERR_STATUS(resp);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+		if ((master->trans_mode == I3C_TRANSFER_MODE_IRQ) &&
+			!cmd->read_finish && cmd->rx_len && !cmd->error)
+			 dw_i3c_master_read_rx_fifo(master);
+#else
 		if (cmd->rx_len && !cmd->error)
 			dw_i3c_master_read_rx_fifo(master, cmd->rx_buf,
-						   cmd->rx_len);
+				cmd->rx_len);
+#endif
 	}
 
 	for (i = 0; i < nresp; i++) {
@@ -537,57 +532,7 @@ static void dw_i3c_master_end_xfer_locked(struct dw_i3c_master *master, u32 isr)
 	dw_i3c_master_start_xfer_locked(master);
 }
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-static int dw_i3c_clk_cfg(struct dw_i3c_master *master)
-{
-	u32 i3c_pp_cnt, i3c_pp_lcnt, i3c_pp_hcnt;
-	u32 i3c_od_cnt, i3c_od_lcnt, i3c_od_hcnt;
-	unsigned long core_rate;
-
-	core_rate = clk_get_rate(master->core_clk);
-	if (!core_rate)
-		return -EINVAL;
-
-	i3c_pp_cnt = DIV_ROUND_UP(core_rate, I3C_BUS_I2C_FM_PLUS_SCL_RATE) + 1;
-	i3c_od_cnt = DIV_ROUND_UP(core_rate, I3C_BUS_I2C_FM_SCL_RATE);
-
-	i3c_pp_hcnt = i3c_pp_cnt / 2;
-	i3c_pp_lcnt = i3c_pp_cnt - i3c_pp_hcnt;
-
-	i3c_od_hcnt = i3c_od_cnt / 2;
-	i3c_od_lcnt = i3c_od_cnt - i3c_od_hcnt;
-
-	/* PP_HCNT affects  (Push-Pull hcnt) */
-	writel((i3c_pp_hcnt << 16) | (i3c_od_hcnt << 8) | (readl(master->regs + SCL_HCNT_TIMING)), master->regs + SCL_HCNT_TIMING);
-
-	/* PP LCNT affects (Push-Pull lcnt) */
-	writel((i3c_pp_lcnt << 24) | (i3c_od_lcnt << 16) | (readl(master->regs + SCL_LCNT_TIMING)), master->regs + SCL_LCNT_TIMING);
-
-	return 0;
-}
-
-static int dw_i2c_clk_cfg(struct dw_i3c_master *master)
-{
-	u32 i2c_od_cnt, i2c_od_lcnt, i2c_od_hcnt;
-	unsigned long core_rate;
-
-	core_rate = clk_get_rate(master->core_clk);
-	if (!core_rate)
-		return -EINVAL;
-
-	i2c_od_cnt = DIV_ROUND_UP(core_rate, I3C_BUS_I2C_FM_SCL_RATE);
-
-	i2c_od_hcnt = DIV_ROUND_UP((i2c_od_cnt * I3C_BUS_I2C_FM_THIGH_MIN_NS), (I3C_BUS_I2C_FM_TLOW_MIN_NS + I3C_BUS_I2C_FM_THIGH_MIN_NS));
-	i2c_od_lcnt = i2c_od_cnt - i2c_od_hcnt;
-
-	/* OD_HCNT affects */
-	writel((i2c_od_hcnt << 0) | (readl(master->regs + SCL_HCNT_TIMING)), master->regs + SCL_HCNT_TIMING);
-	/* OD LCNT affects */
-	writel((i2c_od_lcnt << 0) | (readl(master->regs + SCL_LCNT_TIMING)), master->regs + SCL_LCNT_TIMING);
-
-	return 0;
-}
-#else
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 static int dw_i3c_clk_cfg(struct dw_i3c_master *master)
 {
 	unsigned long core_rate, core_period;
@@ -663,7 +608,7 @@ static int dw_i2c_clk_cfg(struct dw_i3c_master *master)
 }
 #endif
 
-static int dw_i3c_master_bus_init(struct i3c_master_controller *m)
+int dw_i3c_master_bus_init(struct i3c_master_controller *m)
 {
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
 	struct i3c_bus *bus = i3c_master_get_bus(m);
@@ -673,12 +618,20 @@ static int dw_i3c_master_bus_init(struct i3c_master_controller *m)
 
 	switch (bus->mode) {
 	case I3C_BUS_MODE_MIXED_FAST:
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+		ret = hs_dw_i2c_clk_cfg(master);
+#else
 		ret = dw_i2c_clk_cfg(master);
+#endif
 		if (ret)
 			return ret;
 		/* fall through */
 	case I3C_BUS_MODE_PURE:
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+		ret = hs_dw_i3c_clk_cfg(master);
+#else
 		ret = dw_i3c_clk_cfg(master);
+#endif
 		if (ret)
 			return ret;
 		break;
@@ -697,34 +650,38 @@ static int dw_i3c_master_bus_init(struct i3c_master_controller *m)
 	writel(INTR_ALL, master->regs + INTR_STATUS);
 	writel(INTR_MASTER_MASK, master->regs + INTR_STATUS_EN);
 	writel(INTR_MASTER_MASK, master->regs + INTR_SIGNAL_EN);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!master->i3c_resume_init) {
+#endif
+		ret = i3c_master_get_free_addr(m, 0);
+		if (ret < 0)
+			return ret;
 
-	ret = i3c_master_get_free_addr(m, 0);
-	if (ret < 0)
-		return ret;
-
-	writel(DEV_ADDR_DYNAMIC_ADDR_VALID | DEV_ADDR_DYNAMIC(ret),
+		writel(DEV_ADDR_DYNAMIC_ADDR_VALID | DEV_ADDR_DYNAMIC(ret),
 	       master->regs + DEVICE_ADDR);
 
-	memset(&info, 0, sizeof(info));
-	info.dyn_addr = ret;
+		memset(&info, 0, sizeof(info));
+		info.dyn_addr = ret;
 
-	ret = i3c_master_set_info(&master->base, &info);
-	if (ret)
-		return ret;
+		ret = i3c_master_set_info(&master->base, &info);
+		if (ret)
+			return ret;
 
-	writel(IBI_REQ_REJECT_ALL, master->regs + IBI_SIR_REQ_REJECT);
-	writel(IBI_REQ_REJECT_ALL, master->regs + IBI_MR_REQ_REJECT);
+		writel(IBI_REQ_REJECT_ALL, master->regs + IBI_SIR_REQ_REJECT);
+		writel(IBI_REQ_REJECT_ALL, master->regs + IBI_MR_REQ_REJECT);
 
-	/* For now don't support Hot-Join */
-	writel(readl(master->regs + DEVICE_CTRL) | DEV_CTRL_HOT_JOIN_NACK,
-	       master->regs + DEVICE_CTRL);
-
+		/* For now don't support Hot-Join */
+		writel(readl(master->regs + DEVICE_CTRL) | DEV_CTRL_HOT_JOIN_NACK,
+			master->regs + DEVICE_CTRL);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	}
+#endif
 	dw_i3c_master_enable(master);
 
 	return 0;
 }
 
-static void dw_i3c_master_bus_cleanup(struct i3c_master_controller *m)
+void dw_i3c_master_bus_cleanup(struct i3c_master_controller *m)
 {
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
 
@@ -762,9 +719,17 @@ static int dw_i3c_ccc_set(struct dw_i3c_master *master,
 		      COMMAND_PORT_ROC;
 
 	dw_i3c_master_enqueue_xfer(master, xfer);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT)) {
+		pr_err("%s timeout\n", __func__);
+		xfer->ret = -ETIMEDOUT;
+		reset_i3c_controller(master);
+		dw_i3c_master_dequeue_xfer(master, xfer);
+	}
+#else
 	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT))
 		dw_i3c_master_dequeue_xfer(master, xfer);
-
+#endif
 	ret = xfer->ret;
 	if (xfer->cmds[0].error == RESPONSE_ERROR_IBA_NACK)
 		ccc->err = I3C_ERROR_M2;
@@ -803,9 +768,17 @@ static int dw_i3c_ccc_get(struct dw_i3c_master *master, struct i3c_ccc_cmd *ccc)
 		      COMMAND_PORT_ROC;
 
 	dw_i3c_master_enqueue_xfer(master, xfer);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT)) {
+		pr_err("%s timeout\n", __func__);
+		xfer->ret = -ETIMEDOUT;
+		reset_i3c_controller(master);
+		dw_i3c_master_dequeue_xfer(master, xfer);
+	}
+#else
 	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT))
 		dw_i3c_master_dequeue_xfer(master, xfer);
-
+#endif
 	ret = xfer->ret;
 	if (xfer->cmds[0].error == RESPONSE_ERROR_IBA_NACK)
 		ccc->err = I3C_ERROR_M2;
@@ -814,48 +787,11 @@ static int dw_i3c_ccc_get(struct dw_i3c_master *master, struct i3c_ccc_cmd *ccc)
 	return ret;
 }
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-static int dw_hisi_pins_cfg(struct i3c_master_controller *m, const char *name)
-{
-	struct dw_i3c_master *master = to_dw_i3c_master(m);
-	struct pinctrl_state *s = NULL;
-	int ret;
-
-	if (master->pinctrl_flag == 0) {
-		master->pinctrl = devm_pinctrl_get(m->dev.parent);
-		if (IS_ERR(master->pinctrl))
-			return -1;
-		master->pinctrl_flag = 1;
-	}
-
-	s = pinctrl_lookup_state(master->pinctrl, name);
-	if (IS_ERR(s)) {
-		devm_pinctrl_put(master->pinctrl);
-		master->pinctrl_flag = 0;
-		return -1;
-	}
-
-	ret = pinctrl_select_state(master->pinctrl, s);
-	if (ret < 0) {
-		devm_pinctrl_put(master->pinctrl);
-		master->pinctrl_flag = 0;
-		return -1;
-	}
-	return 0;
-}
-#endif
-
-static int dw_i3c_master_send_ccc_cmd(struct i3c_master_controller *m,
+int dw_i3c_master_send_ccc_cmd(struct i3c_master_controller *m,
 				      struct i3c_ccc_cmd *ccc)
 {
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
 	int ret = 0;
-
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_DEFAULT);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
 
 	if (ccc->id == I3C_CCC_ENTDAA)
 		return -EINVAL;
@@ -865,16 +801,10 @@ static int dw_i3c_master_send_ccc_cmd(struct i3c_master_controller *m,
 	else
 		ret = dw_i3c_ccc_set(master, ccc);
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_IDLE);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
-
 	return ret;
 }
 
-static int dw_i3c_master_daa(struct i3c_master_controller *m)
+int dw_i3c_master_daa(struct i3c_master_controller *m)
 {
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
 	struct dw_i3c_xfer *xfer;
@@ -882,12 +812,6 @@ static int dw_i3c_master_daa(struct i3c_master_controller *m)
 	u32 olddevs, newdevs;
 	u8 p, last_addr = 0;
 	int ret, pos;
-
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_DEFAULT);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
 
 	olddevs = ~(master->free_pos);
 
@@ -925,8 +849,16 @@ static int dw_i3c_master_daa(struct i3c_master_controller *m)
 		      COMMAND_PORT_ROC;
 
 	dw_i3c_master_enqueue_xfer(master, xfer);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT)) {
+		pr_err("%s timeout\n", __func__);
+		reset_i3c_controller(master);
+		dw_i3c_master_dequeue_xfer(master, xfer);
+	}
+#else
 	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT))
 		dw_i3c_master_dequeue_xfer(master, xfer);
+#endif
 
 	newdevs = GENMASK(master->maxdevs - cmd->rx_len - 1, 0);
 	newdevs &= ~olddevs;
@@ -943,16 +875,10 @@ static int dw_i3c_master_daa(struct i3c_master_controller *m)
 				I3C_CCC_EVENT_MR |
 				I3C_CCC_EVENT_SIR);
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_IDLE);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
-
 	return 0;
 }
 
-static int dw_i3c_master_priv_xfers(struct i3c_dev_desc *dev,
+int dw_i3c_master_priv_xfers(struct i3c_dev_desc *dev,
 				    struct i3c_priv_xfer *i3c_xfers,
 				    int i3c_nxfers)
 {
@@ -962,12 +888,6 @@ static int dw_i3c_master_priv_xfers(struct i3c_dev_desc *dev,
 	unsigned int nrxwords = 0, ntxwords = 0;
 	struct dw_i3c_xfer *xfer;
 	int i, ret = 0;
-
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_DEFAULT);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
 
 	if (!i3c_nxfers)
 		return 0;
@@ -1018,22 +938,25 @@ static int dw_i3c_master_priv_xfers(struct i3c_dev_desc *dev,
 	}
 
 	dw_i3c_master_enqueue_xfer(master, xfer);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT)) {
+		pr_err("%s timeout\n", __func__);
+		xfer->ret = -ETIMEDOUT;
+		reset_i3c_controller(master);
+		dw_i3c_master_dequeue_xfer(master, xfer);
+	}
+#else
 	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT))
 		dw_i3c_master_dequeue_xfer(master, xfer);
+#endif
 
 	ret = xfer->ret;
 	dw_i3c_master_free_xfer(xfer);
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_IDLE);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
-
 	return ret;
 }
 
-static int dw_i3c_master_reattach_i3c_dev(struct i3c_dev_desc *dev,
+int dw_i3c_master_reattach_i3c_dev(struct i3c_dev_desc *dev,
 					  u8 old_dyn_addr)
 {
 	struct dw_i3c_i2c_dev_data *data = i3c_dev_get_master_data(dev);
@@ -1049,7 +972,7 @@ static int dw_i3c_master_reattach_i3c_dev(struct i3c_dev_desc *dev,
 	return 0;
 }
 
-static int dw_i3c_master_attach_i3c_dev(struct i3c_dev_desc *dev)
+int dw_i3c_master_attach_i3c_dev(struct i3c_dev_desc *dev)
 {
 	struct i3c_master_controller *m = i3c_dev_get_master(dev);
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
@@ -1076,7 +999,7 @@ static int dw_i3c_master_attach_i3c_dev(struct i3c_dev_desc *dev)
 	return 0;
 }
 
-static void dw_i3c_master_detach_i3c_dev(struct i3c_dev_desc *dev)
+void dw_i3c_master_detach_i3c_dev(struct i3c_dev_desc *dev)
 {
 	struct dw_i3c_i2c_dev_data *data = i3c_dev_get_master_data(dev);
 	struct i3c_master_controller *m = i3c_dev_get_master(dev);
@@ -1092,26 +1015,22 @@ static void dw_i3c_master_detach_i3c_dev(struct i3c_dev_desc *dev)
 	kfree(data);
 }
 
-static int dw_i3c_master_i2c_xfers(struct i2c_dev_desc *dev,
+int dw_i3c_master_i2c_xfers(struct i2c_dev_desc *dev,
 				   const struct i2c_msg *i2c_xfers,
 				   int i2c_nxfers)
 {
 	struct dw_i3c_i2c_dev_data *data = i2c_dev_get_master_data(dev);
 	struct i3c_master_controller *m = i2c_dev_get_master(dev);
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 	unsigned int nrxwords = 0, ntxwords = 0;
+#endif
 	struct dw_i3c_xfer *xfer;
 	int i, ret = 0;
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_DEFAULT);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
-
 	if (!i2c_nxfers)
 		return 0;
-
+#ifndef CONFIG_HISI_I3C_DESIGNWARE
 	if (i2c_nxfers > master->caps.cmdfifodepth)
 		return -ENOTSUPP;
 	for (i = 0; i < i2c_nxfers; i++) {
@@ -1124,6 +1043,7 @@ static int dw_i3c_master_i2c_xfers(struct i2c_dev_desc *dev,
 	if (ntxwords > master->caps.datafifodepth ||
 	    nrxwords > master->caps.datafifodepth)
 		return -ENOTSUPP;
+#endif
 
 	xfer = dw_i3c_master_alloc_xfer(master, i2c_nxfers);
 	if (!xfer)
@@ -1151,23 +1071,26 @@ static int dw_i3c_master_i2c_xfers(struct i2c_dev_desc *dev,
 		if (i == (i2c_nxfers - 1))
 			cmd->cmd_lo |= COMMAND_PORT_TOC;
 	}
-
 	dw_i3c_master_enqueue_xfer(master, xfer);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT)) {
+		pr_err("%s timeout\n", __func__);
+		xfer->ret = -ETIMEDOUT;
+		reset_i3c_controller(master);
+		dw_i3c_master_dequeue_xfer(master, xfer);
+	}
+#else
 	if (!wait_for_completion_timeout(&xfer->comp, XFER_TIMEOUT))
 		dw_i3c_master_dequeue_xfer(master, xfer);
+#endif
 
 	ret = xfer->ret;
 	dw_i3c_master_free_xfer(xfer);
 
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = dw_hisi_pins_cfg(m, PINCTRL_STATE_IDLE);
-	if (ret < 0)
-		return -ENOTSUPP;
-#endif
 	return ret;
 }
 
-static int dw_i3c_master_attach_i2c_dev(struct i2c_dev_desc *dev)
+int dw_i3c_master_attach_i2c_dev(struct i2c_dev_desc *dev)
 {
 	struct i3c_master_controller *m = i2c_dev_get_master(dev);
 	struct dw_i3c_master *master = to_dw_i3c_master(m);
@@ -1195,7 +1118,7 @@ static int dw_i3c_master_attach_i2c_dev(struct i2c_dev_desc *dev)
 	return 0;
 }
 
-static void dw_i3c_master_detach_i2c_dev(struct i2c_dev_desc *dev)
+void dw_i3c_master_detach_i2c_dev(struct i2c_dev_desc *dev)
 {
 	struct dw_i3c_i2c_dev_data *data = i2c_dev_get_master_data(dev);
 	struct i3c_master_controller *m = i2c_dev_get_master(dev);
@@ -1222,14 +1145,20 @@ static irqreturn_t dw_i3c_master_irq_handler(int irq, void *dev_id)
 	u32 status;
 
 	status = readl(master->regs + INTR_STATUS);
-
 	if (!(status & readl(master->regs + INTR_STATUS_EN))) {
 		writel(INTR_ALL, master->regs + INTR_STATUS);
 		return IRQ_NONE;
 	}
 
 	spin_lock(&master->xferqueue.lock);
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	if (master->trans_mode == I3C_TRANSFER_MODE_IRQ)
+		hs_dw_i3c_irq_handler(master, status);
+	else
+		dw_i3c_master_end_xfer_locked(master, status);
+#else
 	dw_i3c_master_end_xfer_locked(master, status);
+#endif
 	if (status & INTR_TRANSFER_ERR_STAT)
 		writel(INTR_TRANSFER_ERR_STAT, master->regs + INTR_STATUS);
 	spin_unlock(&master->xferqueue.lock);
@@ -1237,6 +1166,23 @@ static irqreturn_t dw_i3c_master_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+static const struct i3c_master_controller_ops dw_mipi_i3c_ops = {
+	.bus_init = dw_i3c_master_bus_init,
+	.bus_cleanup = hs_dw_i3c_master_bus_cleanup,
+	.attach_i3c_dev = hs_dw_i3c_master_attach_i3c_dev,
+	.reattach_i3c_dev = hs_dw_i3c_master_reattach_i3c_dev,
+	.detach_i3c_dev = hs_dw_i3c_master_detach_i3c_dev,
+	.do_daa = hs_dw_i3c_master_daa,
+	.supports_ccc_cmd = dw_i3c_master_supports_ccc_cmd,
+	.send_ccc_cmd = hs_dw_i3c_master_send_ccc_cmd,
+	.priv_xfers = hs_dw_i3c_master_priv_xfers,
+	.attach_i2c_dev = hs_dw_i3c_master_attach_i2c_dev,
+	.detach_i2c_dev = hs_dw_i3c_master_detach_i2c_dev,
+	.i2c_xfers = hs_dw_i3c_master_i2c_xfers,
+	.i2c_funcs = dw_i3c_master_i2c_funcs,
+};
+#else
 static const struct i3c_master_controller_ops dw_mipi_i3c_ops = {
 	.bus_init = dw_i3c_master_bus_init,
 	.bus_cleanup = dw_i3c_master_bus_cleanup,
@@ -1252,6 +1198,7 @@ static const struct i3c_master_controller_ops dw_mipi_i3c_ops = {
 	.i2c_xfers = dw_i3c_master_i2c_xfers,
 	.i2c_funcs = dw_i3c_master_i2c_funcs,
 };
+#endif
 
 static int dw_i3c_probe(struct platform_device *pdev)
 {
@@ -1259,18 +1206,10 @@ static int dw_i3c_probe(struct platform_device *pdev)
 	struct dw_i3c_master *master;
 	struct resource *res;
 	int ret, irq;
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	u64 clk_rate = 0;
-	struct device *dev = &pdev->dev;
-#endif
+
 	master = devm_kzalloc(&pdev->dev, sizeof(*master), GFP_KERNEL);
 	if (!master)
 		return -ENOMEM;
-
-#if defined CONFIG_HISI_I3C_DESIGNWARE
-	master->pinctrl_flag = 0;
-	master->pinctrl = NULL;
-#endif
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	master->regs = devm_ioremap_resource(&pdev->dev, res);
@@ -1291,17 +1230,9 @@ static int dw_i3c_probe(struct platform_device *pdev)
 		goto err_disable_core_clk;
 
 #if defined CONFIG_HISI_I3C_DESIGNWARE
-	ret = of_property_read_u64(dev->of_node, "clock-rate", &clk_rate);
-	if (ret) {
-		pr_err("doesn't have clock-rate property!\n");
-	} else {
-		ret = clk_set_rate(master->core_clk, clk_rate);
-		if (ret) {
-			pr_err("clock rate set failed r[0x%x]\n", ret);
-			//goto err_disable_core_clk;
-			return -EINVAL;
-		}
-	}
+	ret = hs_dw_i3c_init(pdev, master);
+	if (ret)
+		goto err_disable_core_clk;
 #endif
 	reset_control_deassert(master->core_rst);
 
@@ -1315,7 +1246,10 @@ static int dw_i3c_probe(struct platform_device *pdev)
 			       dev_name(&pdev->dev), master);
 	if (ret)
 		goto err_assert_rst;
-
+#if defined CONFIG_HISI_I3C_DESIGNWARE
+	master->irq = irq;
+	disable_irq(master->irq);
+#endif
 	platform_set_drvdata(pdev, master);
 
 	/* Information regarding the FIFOs/QUEUEs depth */
@@ -1368,93 +1302,9 @@ static const struct of_device_id dw_i3c_master_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, dw_i3c_master_of_match);
 
-#ifdef CONFIG_HISI_I3C_DESIGNWARE
-int i3c_master_suspend(struct dw_i3c_master *master)
-{
-	unsigned long flags;
-	unsigned limit = 500;
-	int ret = 0;
-
-	spin_lock_irqsave(&master->xferqueue.lock, flags);
-
-	while (!list_empty(&master->xferqueue.list) && limit--) {
-		spin_unlock_irqrestore(&master->xferqueue.lock, flags);
-		usleep_range(10000, 11000);
-		spin_lock_irqsave(&master->xferqueue.lock, flags);
-	}
-
-	if (!list_empty(&master->xferqueue.list))
-		ret = -EBUSY;
-	else {
-		writel(RESET_CTRL_RX_FIFO | RESET_CTRL_TX_FIFO |
-		       RESET_CTRL_RESP_QUEUE | RESET_CTRL_CMD_QUEUE,
-		       master->regs + RESET_CTRL);
-	}
-
-	spin_unlock_irqrestore(&master->xferqueue.lock, flags);
-
-	return ret;
-}
-
-int i3c_master_resume(struct dw_i3c_master *master)
-{
-	int ret = 0;
-	struct dw_i3c_xfer *xfer = master->xferqueue.cur;
-
-	if (!xfer)
-		return 0;
-
-	dw_i3c_master_enqueue_xfer(master, xfer);
-
-	return ret;
-}
-static int hs_dw_i3c_suspend(struct device *dev)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-	struct dw_i3c_master *master = platform_get_drvdata(pdev);
-	int ret = 0;
-
-	if (!master) {
-		dev_err(dev,"%s: get drvdata failed\n", __func__);
-		return -EINVAL;
-	}
-
-	dev_info(dev, "%s: suspend +\n", __func__);
-
-	ret = i3c_master_suspend(master);
-	if (ret) {
-		dev_err(dev, "cannot suspend master\n");
-		return ret;
-	}
-
-	dev_info(dev, "%s: suspend -\n", __func__);
-	return 0;
-}
-
-static int hs_dw_i3c_resume(struct device *dev)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-	struct dw_i3c_master *master = platform_get_drvdata(pdev);
-	int ret = 0;
-
-	if (!master) {
-		dev_err(dev,"%s: get drvdata failed\n", __func__);
-		return -EINVAL;
-	}
- 
-	dev_info(dev, "%s: resume +\n", __func__);
-
-	ret = i3c_master_resume(master);
-	if (ret)
-		dev_err(dev, "problem starting queue (%d)\n", ret);
-
-	dev_info(dev, "%s: resume -\n", __func__);
-
-	return 0;
-}
-#endif
-
+#if defined CONFIG_HISI_I3C_DESIGNWARE
 static SIMPLE_DEV_PM_OPS(hs_dw_i3c_dev_pm_ops, hs_dw_i3c_suspend, hs_dw_i3c_resume);
+#endif
 
 static struct platform_driver dw_i3c_driver = {
 	.probe = dw_i3c_probe,
@@ -1462,7 +1312,9 @@ static struct platform_driver dw_i3c_driver = {
 	.driver = {
 		.name = "dw-i3c-master",
 		.of_match_table = of_match_ptr(dw_i3c_master_of_match),
+#if defined CONFIG_HISI_I3C_DESIGNWARE
 		.pm	= &hs_dw_i3c_dev_pm_ops,
+#endif
 	},
 };
 module_platform_driver(dw_i3c_driver);

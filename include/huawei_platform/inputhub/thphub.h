@@ -66,6 +66,9 @@ enum thp_st_cmd {
 	ST_CMD_TYPE_ALGO_SYNC_EVENT_SHMEM,
 	ST_CMD_TYPE_SET_RECOVER_STATUS,
 	ST_CMD_TYPE_SET_AUDIO_STATUS,
+	ST_CMD_TYPE_MULTI_TP_UD_STATUS,
+	ST_CMD_TYPE_FINGERPRINT_SWITCH,
+	ST_CMD_TYPE_SET_PHONE_SLEEP_MODE_STATUS = 12,
 	ST_CMD_TYPE_MAX
 };
 
@@ -95,6 +98,9 @@ enum thp_poweroff_status_enum {
 	THP_VOLUME_SIDE_STATUS_LEFT = 7,
 	/* bit8:volume bar on the right side flag:1 */
 	THP_VOLUME_SIDE_STATUS_RIGHT = 8,
+	/* bit 9~16 saved power status flag */
+	/* bit17:click to display the AOD function */
+	THP_AOD_TOUCH_STATUS = 17,
 };
 
 struct format_data_head_s {
@@ -117,7 +123,9 @@ enum thp_state {
 };
 
 int send_thp_open_cmd(void);
+int send_thp_close_cmd(void);
 int send_thp_ap_event(int inpara_len, const char *inpara, uint8_t cmd);
+int send_tp_ap_event(int inpara_len, const char *inpara, uint8_t cmd);
 /* thp sync status info for tp driver */
 int send_thp_driver_status_cmd(unsigned char power_on,
 	unsigned int para, unsigned char cmd);

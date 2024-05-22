@@ -3,7 +3,7 @@
  *
  * series batt charger driver
  *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,13 +18,14 @@
 
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/power/huawei_charger.h>
-#ifdef CONFIG_HISI_COUL
-#include <linux/power/hisi/coul/hisi_coul_drv.h>
+#ifdef CONFIG_COUL_DRV
+#include <linux/power/hisi/coul/coul_drv.h>
 #endif
 #include <huawei_platform/power/battery_voltage.h>
 #include <huawei_platform/power/series_batt_charger.h>
-#include <huawei_platform/power/huawei_battery_temp.h>
+#include <chipset_common/hwpower/battery/battery_temp.h>
 #include <huawei_platform/power/huawei_battery_capacity.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
 
 #define BATTERY_NUM                 2
 #define IAVG_MAX                    3000
@@ -33,10 +34,13 @@
 #define IRCOMP_I_MAX_DEFAULT        1000
 #define UV_TO_MV                    1000
 #define DIFF_VOL_10MV               10
-#define DIFF_VOL_60MV               60
+#define DIFF_VOL_MAX                60
 #define IAVG_0MA                    0
-#define ADC_OFFSET                  10
+#define ADC_OFFSET                  16
 #define RECHARGE_VOL_OFFSET         100
+#define VTERM_MIN                   6800
+#define NO_NEED_STABLE              0
+#define WORK_DELAY_TIME             5000 /* 5s */
 
 #define HWLOG_TAG series_batt_charger
 HWLOG_REGIST();
@@ -45,8 +49,10 @@ struct series_batt_info {
 	struct blocking_notifier_head chg_state_nh;
 	struct charge_device_ops *g_ops;
 	struct charge_device_ops local_ops;
+	struct notifier_block nb;
 	struct platform_device *pdev;
 	struct device *dev;
+	struct delayed_work set_vterm_work;
 	int chg_cur;
 	int ircomp_r;
 	int ircomp_i_min;
@@ -57,6 +63,13 @@ struct series_batt_info {
 	int force_term_curr;
 	int term_curr;
 	int term_vol;
+	int need_stable;
+	int vterm_comp;
+	int last_cccv;
+	int i_avg;
+	int ichg;
+	int vbat_max;
+	int vbat_min;
 };
 
 static struct series_batt_info *g_series_batt_di;
@@ -79,61 +92,14 @@ int series_batt_chg_state_notifier_unregister(struct notifier_block *nb)
 		&g_series_batt_di->chg_state_nh, nb);
 }
 
-static int series_batt_set_terminal_voltage(int vol)
+static int series_batt_vterm_cal(struct series_batt_info *di,
+	int term_vol, int vterm_signal)
 {
-	struct series_batt_info *di = g_series_batt_di;
-	int vbat_max = hw_battery_voltage(BAT_ID_MAX);
-	int i_avg = hisi_battery_current_avg();
-	int vbat_min;
-	int term_vol;
-	int ichg;
-	int ir_comp_i_max;
-	unsigned int chg_state = 0;
-	int vol_diff_signal;
-	int vol_diff_series;
-	int vol_sum;
-	int batt_num;
-	int vol_ir = 0;
-	int delta;
+	unsigned int chg_state = CHAGRE_STATE_NORMAL;
+	int vol_diff_signal, vol_diff_series;
+	int vol_sum, batt_num, delta;
 	int cccv_pre;
 	int ret;
-
-	if (!di || !di->g_ops || !di->g_ops->set_terminal_voltage) {
-		hwlog_err("g_ops or set_terminal_voltage is null\n");
-		return -1;
-	}
-
-	di->term_vol = vol;
-	vol -= ADC_OFFSET;
-	if ((vol < 0) || (vol > hisi_battery_vbat_max())) {
-		hwlog_err("vol is out of range\n");
-		return -1;
-	}
-
-	vbat_min = hw_battery_voltage(BAT_ID_MIN);
-	if (vbat_min < 0) {
-		hwlog_err("vbat_min is out of range\n");
-		return -1;
-	}
-
-	term_vol = vbat_min + vol;
-	term_vol = term_vol > vol * BATTERY_NUM ? vol * BATTERY_NUM : term_vol;
-
-	ichg = -hisi_battery_current();
-
-	hwlog_info("ichg:%d, i_avg:%d, vbat_max:%d, vbat_min:%d, term_vol:%d\n",
-		ichg, i_avg, vbat_max, vbat_min, term_vol);
-
-	if ((i_avg > di->ircomp_i_min) && (i_avg < IAVG_MAX)) {
-		ir_comp_i_max = di->ircomp_i_max < di->chg_cur ?
-			di->ircomp_i_max : di->chg_cur;
-		if (i_avg > ir_comp_i_max)
-			i_avg = ir_comp_i_max;
-
-		vol_ir = (i_avg * di->ircomp_r) / UV_TO_MV;
-		term_vol += vol_ir;
-		hwlog_info("ir vterm:%d, IRCOMP curr:%d\n", term_vol, i_avg);
-	}
 
 	if (!di->g_ops->get_terminal_voltage) {
 		cccv_pre = term_vol;
@@ -143,10 +109,16 @@ static int series_batt_set_terminal_voltage(int vol)
 			cccv_pre = term_vol;
 	}
 
+	if (di->g_ops->get_charge_state) {
+		ret = di->g_ops->get_charge_state(&chg_state);
+		if (ret)
+			hwlog_info("get_charge_state fail\n");
+	}
+
 	hwlog_info("cccv_pre is %d\n", cccv_pre);
 	batt_num = hw_battery_get_series_num();
-	vol_sum = vbat_min + vbat_max;
-	vol_diff_signal = vol - vbat_max;
+	vol_sum = di->vbat_min + di->vbat_max;
+	vol_diff_signal = vterm_signal - di->vbat_max;
 	vol_diff_series = cccv_pre - vol_sum;
 
 	if (vol_diff_signal < 0) {
@@ -155,30 +127,124 @@ static int series_batt_set_terminal_voltage(int vol)
 		hwlog_info("ir vterm drop to %dmv,delta:%d\n", term_vol, delta);
 	} else if (vol_diff_signal > DIFF_VOL_10MV &&
 		vol_diff_series > DIFF_VOL_10MV) {
-		if (di->g_ops->get_charge_state) {
-			ret = di->g_ops->get_charge_state(&chg_state);
-			if (ret)
-				chg_state = CHAGRE_STATE_NORMAL;
-		} else {
-			chg_state = CHAGRE_STATE_NORMAL;
-		}
-
 		if ((chg_state & CHAGRE_STATE_CV_MODE) &&
-			(i_avg < di->ircomp_i_min) && (i_avg > IAVG_0MA)) {
+			(di->i_avg < di->ircomp_i_min)) {
 			term_vol = cccv_pre + vol_diff_series;
 			hwlog_info("after vol comp,term_vol:%dmv\n", term_vol);
 		}
 	} else {
-		if ((chg_state & CHAGRE_STATE_CV_MODE) &&
-			(i_avg < di->ircomp_i_min))
+		if ((di->need_stable > 0) && (di->last_cccv > 0) &&
+			(chg_state & CHAGRE_STATE_CV_MODE) &&
+			(di->i_avg < di->ircomp_i_min))
 			term_vol = cccv_pre;
 	}
 
-	if (term_vol > vol + vbat_max + vol_ir + DIFF_VOL_60MV)
-		term_vol = vol + vbat_max + vol_ir + DIFF_VOL_60MV;
+	return term_vol;
+}
 
-	hwlog_info("series_batt_set_terminal_voltage:%d\n", term_vol);
+static int series_batt_get_ircomp(struct series_batt_info *di)
+{
+	int ir_comp_i_max;
+	int vol_ir = 0;
+	int i_avg = di->i_avg;
+
+	if ((di->i_avg >= di->ircomp_i_min) && (di->i_avg < IAVG_MAX)) {
+		ir_comp_i_max = di->ircomp_i_max < di->chg_cur ?
+			di->ircomp_i_max : di->chg_cur;
+		if (di->i_avg > ir_comp_i_max)
+			i_avg = ir_comp_i_max;
+
+		vol_ir = (i_avg * di->ircomp_r) / UV_TO_MV;
+		hwlog_info("vol_ir:%d ircomp_r:%d\n", vol_ir, di->ircomp_r);
+	}
+
+	return vol_ir;
+}
+
+static int series_batt_set_vterm(struct series_batt_info *di)
+{
+	int term_vol, vol, vol_ir, term_vol_max;
+
+	vol = di->term_vol - ADC_OFFSET;
+	if ((vol < 0) || (vol > coul_drv_battery_vbat_max())) {
+		hwlog_err("vol is out of range\n");
+		return -1;
+	}
+
+	if (di->vbat_min < 0) {
+		hwlog_err("vbat_min is out of range\n");
+		return -1;
+	}
+
+	term_vol = di->vbat_min + vol;
+	term_vol = term_vol > vol * BATTERY_NUM ? vol * BATTERY_NUM : term_vol;
+	hwlog_info("term_vol:%d\n", term_vol);
+
+	vol_ir = series_batt_get_ircomp(di);
+	term_vol += vol_ir;
+	term_vol = series_batt_vterm_cal(di, term_vol, vol);
+
+	term_vol_max = vol + di->vbat_max + vol_ir + di->vterm_comp;
+	if (term_vol > term_vol_max)
+		term_vol = term_vol_max;
+
+	term_vol = term_vol > VTERM_MIN ? term_vol : VTERM_MIN;
+	di->last_cccv = term_vol;
+	hwlog_info("terminal voltage:%d\n", term_vol);
 	return di->g_ops->set_terminal_voltage(term_vol);
+}
+
+static void series_batt_set_vterm_work(struct work_struct *work)
+{
+	struct series_batt_info *di = NULL;
+	int ret;
+
+	if (!work) {
+		hwlog_err("work is null\n");
+		return;
+	}
+
+	di = container_of(work, struct series_batt_info, set_vterm_work.work);
+	if (!di) {
+		hwlog_err("di is null\n");
+		return;
+	}
+
+	if (charge_get_charger_type() == CHARGER_REMOVED ||
+		direct_charge_in_charging_stage() == DC_IN_CHARGING_STAGE) {
+		hwlog_info("charger remove or direct charger\n");
+		cancel_delayed_work(&di->set_vterm_work);
+		return;
+	}
+
+	di->i_avg = coul_drv_battery_current_avg();
+	di->ichg = -coul_drv_battery_current();
+	di->vbat_max = hw_battery_voltage(BAT_ID_MAX);
+	di->vbat_min = hw_battery_voltage(BAT_ID_MIN);
+	hwlog_info("ichg:%d, i_avg:%d, vbat_max:%d, vbat_min:%d\n",
+		di->ichg, di->i_avg, di->vbat_max, di->vbat_min);
+
+	ret = series_batt_set_vterm(di);
+	if (ret < 0)
+		hwlog_err("set termination voltage fail\n");
+
+	schedule_delayed_work(&di->set_vterm_work,
+		msecs_to_jiffies(WORK_DELAY_TIME));
+}
+
+static int series_batt_set_terminal_voltage(int vol)
+{
+	struct series_batt_info *di = g_series_batt_di;
+
+	if (!di || !di->g_ops || !di->g_ops->set_terminal_voltage) {
+		hwlog_err("g_ops or set_terminal_voltage is null\n");
+		return -1;
+	}
+
+	di->term_vol = vol;
+	schedule_delayed_work(&di->set_vterm_work,
+		msecs_to_jiffies(0));
+	return 0;
 }
 
 static int series_batt_set_charge_current(int value)
@@ -205,7 +271,7 @@ static int series_batt_set_charge_enable(int enable)
 		return -1;
 	}
 
-	if (di->last_chg_en ^ enable) {
+	if (di->last_chg_en != enable) {
 		hwlog_info("enable changed\n");
 		if (enable)
 			blocking_notifier_call_chain(&di->chg_state_nh,
@@ -215,9 +281,11 @@ static int series_batt_set_charge_enable(int enable)
 				SERIES_BATT_CHG_DISABLE, NULL);
 	}
 
+	if (enable == 0)
+		di->last_cccv = 0;
+
 	di->last_chg_en = enable;
 	chg_en = enable && di->set_chg_en;
-
 	di->get_chg_en = chg_en;
 	hwlog_info("old_en:%d,chg_en=%d\n", enable, chg_en);
 	return di->g_ops->set_charge_enable(chg_en);
@@ -227,6 +295,7 @@ static int series_batt_get_charge_state(unsigned int *state)
 {
 	struct series_batt_info *di = g_series_batt_di;
 	int ret;
+	unsigned int charger_type;
 
 	if (!state || !di || !di->g_ops || !di->g_ops->get_charge_state) {
 		hwlog_err("g_ops or get_charge_state is null\n");
@@ -235,7 +304,7 @@ static int series_batt_get_charge_state(unsigned int *state)
 
 	ret = di->g_ops->get_charge_state(state);
 	if (ret) {
-		hwlog_err("series_batt_get_charge_state fail\n");
+		hwlog_err("get_charge_state fail\n");
 		return ret;
 	}
 
@@ -243,7 +312,8 @@ static int series_batt_get_charge_state(unsigned int *state)
 		blocking_notifier_call_chain(&di->chg_state_nh,
 			SERIES_BATT_CHG_DONE, NULL);
 
-	if (di->force_term_curr) {
+	charger_type = charge_get_charger_type();
+	if (di->force_term_curr && (charger_type != CHARGER_REMOVED)) {
 		if (hw_battery_voltage(BAT_ID_MAX) >=
 			di->term_vol - RECHARGE_VOL_OFFSET)
 			*state |= CHAGRE_STATE_CHRG_DONE;
@@ -287,8 +357,23 @@ static int series_batt_set_charger_hiz(int enable)
 		blocking_notifier_call_chain(&di->chg_state_nh,
 			SERIES_BATT_HIZ_DISABLE, NULL);
 
-	hwlog_info("series_batt_set_charger_hiz,enable:%d\n", enable);
+	di->last_cccv = 0;
+	hwlog_info("set_charger_hiz,enable:%d\n", enable);
 	return di->g_ops->set_charger_hiz(enable);
+}
+
+static int series_batt_chip_init(struct chip_init_crit *init_crit)
+{
+	struct series_batt_info *di = g_series_batt_di;
+
+	if (!di || !di->g_ops || !di->g_ops->chip_init) {
+		hwlog_err("di or g_ops or chip_init is null\n");
+		return -1;
+	}
+
+	g_series_batt_di->last_cccv = 0;
+	di->set_chg_en = CHARGE_ENABLE;
+	return g_series_batt_di->g_ops->chip_init(init_crit);
 }
 
 int series_batt_set_charge_en(int enable)
@@ -302,6 +387,10 @@ int series_batt_set_charge_en(int enable)
 
 	hwlog_info("set_charge_en:en=%d\n", enable);
 	g_series_batt_di->set_chg_en = enable;
+
+	if (di->last_chg_en == 0)
+		enable = 0;
+
 	return g_series_batt_di->g_ops->set_charge_enable(enable);
 }
 
@@ -314,7 +403,7 @@ int series_batt_set_term_curr(int value)
 
 	hwlog_info("set_term_curr:curr=%d\n", value);
 	g_series_batt_di->force_term_curr = value;
-	return 0;
+	return series_batt_set_terminal_current(value);
 }
 
 int series_batt_get_term_curr(void)
@@ -325,6 +414,16 @@ int series_batt_get_term_curr(void)
 	}
 
 	return g_series_batt_di->term_curr;
+}
+
+int series_batt_get_vterm_single(void)
+{
+	if (!g_series_batt_di) {
+		hwlog_err("g_series_batt_di is null\n");
+		return -1;
+	}
+
+	return g_series_batt_di->term_vol;
 }
 
 int series_batt_ops_register(struct charge_device_ops *ops)
@@ -345,6 +444,7 @@ int series_batt_ops_register(struct charge_device_ops *ops)
 	di->local_ops.get_charge_state = series_batt_get_charge_state;
 	di->local_ops.set_terminal_current = series_batt_set_terminal_current;
 	di->local_ops.set_charger_hiz = series_batt_set_charger_hiz;
+	di->local_ops.chip_init = series_batt_chip_init;
 
 	ret = charge_ops_register(&di->local_ops);
 	if (ret) {
@@ -355,25 +455,20 @@ int series_batt_ops_register(struct charge_device_ops *ops)
 	return ret;
 }
 
-int get_series_batt_chargelog_head(char *chargelog, int size)
+static int get_series_batt_chargelog_head(char *chargelog, int size, void *dev_data)
 {
-	char cap_log[CHARGERLOG_SIZE] = { 0 };
-
 	if (!chargelog) {
 		hwlog_err("chargelog is null\n");
 		return -1;
 	}
 
-	sercap_log_head(cap_log, CHARGERLOG_SIZE);
-
-	snprintf(chargelog, size, "%s%s",
-		"bat0_temp   bat1_temp   mixed_temp   bat0_vol   bat1_vol   series_vol   ",
-		cap_log);
+	snprintf(chargelog, size, "%s",
+		"bat0_temp   bat1_temp   mixed_temp   bat0_vol   bat1_vol   series_vol   Ibus   Vbus   ");
 
 	return 0;
 }
 
-int get_series_batt_chargelog(char *chargelog, int size)
+static int get_series_batt_chargelog(char *chargelog, int size, void *dev_data)
 {
 	int bat0_temp = 0;
 	int bat1_temp = 0;
@@ -381,59 +476,90 @@ int get_series_batt_chargelog(char *chargelog, int size)
 	int bat0_vol;
 	int bat1_vol;
 	int series_vol;
-	char cap_log[CHARGERLOG_SIZE] = { 0 };
+	int ibus = 0;
+	unsigned int vbus = 0;
 
 	if (!chargelog) {
 		hwlog_err("chargelog is null\n");
 		return -1;
 	}
 
-	sercap_log(cap_log, CHARGERLOG_SIZE);
-
-	huawei_battery_temp(BAT_TEMP_1, &bat1_temp);
-	huawei_battery_temp(BAT_TEMP_0, &bat0_temp);
-	huawei_battery_temp(BAT_TEMP_MIXED, &mixed_temp);
+	bat_temp_get_temperature(BAT_TEMP_1, &bat1_temp);
+	bat_temp_get_temperature(BAT_TEMP_0, &bat0_temp);
+	bat_temp_get_temperature(BAT_TEMP_MIXED, &mixed_temp);
 	bat1_vol = hw_battery_voltage(BAT_ID_1);
 	bat0_vol = hw_battery_voltage(BAT_ID_0);
 	series_vol = hw_battery_voltage(BAT_ID_ALL);
+	if (direct_charge_in_charging_stage() == DC_IN_CHARGING_STAGE) {
+		ibus = direct_charge_get_ibus();
+		vbus = direct_charge_get_vbus();
+	} else {
+		if (g_series_batt_di && g_series_batt_di->g_ops &&
+			g_series_batt_di->g_ops->get_ibus &&
+			g_series_batt_di->g_ops->get_vbus) {
+			ibus = g_series_batt_di->g_ops->get_ibus();
+			g_series_batt_di->g_ops->get_vbus(&vbus);
+		}
+	}
 
 	snprintf(chargelog, size,
-		"%-9d   %-9d   %-8d   %-8d   %-8d   %-10d%s",
+		"%-9d   %-9d   %-8d   %-8d   %-8d   %-10d%-4d   %-4d   ",
 		bat0_temp, bat1_temp, mixed_temp,
-		bat0_vol, bat1_vol, series_vol, cap_log);
+		bat0_vol, bat1_vol, series_vol, ibus, vbus);
 	return 0;
 }
 
-static int series_batt_parse_dts(struct device_node *np,
+static int series_batt_recv_dc_status_notifier_call(struct notifier_block *nb,
+	unsigned long event, void *data)
+{
+	struct series_batt_info *di = NULL;
+
+	if (!nb)
+		return NOTIFY_OK;
+
+	di = container_of(nb, struct series_batt_info, nb);
+	if (!di)
+		return NOTIFY_OK;
+
+	switch (event) {
+	case POWER_NE_DC_LVC_CHARGING:
+	case POWER_NE_DC_SC_CHARGING:
+	case POWER_NE_DC_STOP_CHARGE:
+		break;
+	default:
+		return NOTIFY_OK;
+	}
+
+	di->last_cccv = 0;
+	return NOTIFY_OK;
+}
+
+static struct power_log_ops series_batt_log_ops = {
+	.dev_name = "series_batt",
+	.dump_log_head = get_series_batt_chargelog_head,
+	.dump_log_content = get_series_batt_chargelog,
+};
+
+static void series_batt_parse_dts(struct device_node *np,
 	struct series_batt_info *di)
 {
-	if (of_property_read_u32(np, "ircomp_r", &di->ircomp_r)) {
-		hwlog_err("ircomp_r dts read failed\n");
-		di->ircomp_r = IRCOMP_R_DEFAULT;
-	}
-	hwlog_info("ir_comp_r=%d\n", di->ircomp_r);
-
-	if (of_property_read_u32(np, "ircomp_i_min", &di->ircomp_i_min)) {
-		hwlog_err("ircomp_i_min dts read failed\n");
-		di->ircomp_i_min = IRCOMP_I_MIN_DEFAULT;
-	}
-	hwlog_info("ircomp_i_min=%d\n", di->ircomp_i_min);
-
-	if (of_property_read_u32(np, "ircomp_i_max", &di->ircomp_i_max)) {
-		hwlog_err("ircomp_i_max dts read failed\n");
-		di->ircomp_i_max = IRCOMP_I_MAX_DEFAULT;
-	}
-	hwlog_info("ircomp_i_max=%d\n", di->ircomp_i_max);
-
-	return 0;
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ircomp_r", &di->ircomp_r, IRCOMP_R_DEFAULT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ircomp_i_min", &di->ircomp_i_min, IRCOMP_I_MIN_DEFAULT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ircomp_i_max", &di->ircomp_i_max, IRCOMP_I_MAX_DEFAULT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"need_stable", &di->need_stable, NO_NEED_STABLE);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vterm_comp", &di->vterm_comp, DIFF_VOL_MAX);
 }
 
 static int series_batt_probe(struct platform_device *pdev)
 {
 	struct series_batt_info *di = NULL;
 	struct device_node *np = NULL;
-
-	hwlog_info("probe begin\n");
+	int ret;
 
 	if (!pdev || !pdev->dev.of_node)
 		return -ENODEV;
@@ -448,22 +574,29 @@ static int series_batt_probe(struct platform_device *pdev)
 	np = di->dev->of_node;
 
 	series_batt_parse_dts(np, di);
+	INIT_DELAYED_WORK(&di->set_vterm_work, series_batt_set_vterm_work);
 	BLOCKING_INIT_NOTIFIER_HEAD(&di->chg_state_nh);
 	platform_set_drvdata(pdev, di);
+
+	di->nb.notifier_call = series_batt_recv_dc_status_notifier_call;
+	ret = power_event_bnc_register(POWER_BNT_DC, &di->nb);
+	if (ret)
+		hwlog_err("register scp_charge_stage notifier failed\n");
+
 	di->set_chg_en = CHARGE_ENABLE;
 	di->force_term_curr = DEFAULT_VALUE;
 	di->last_chg_en = DEFAULT_VALUE;
 	di->term_curr = 0;
-
-	hwlog_info("probe end\n");
+	di->term_vol = coul_drv_battery_vbat_max();
+	series_batt_log_ops.dev_data = (void *)di;
+	power_log_ops_register(&series_batt_log_ops);
+	di->last_cccv = 0;
 	return 0;
 }
 
 static int series_batt_remove(struct platform_device *pdev)
 {
 	struct series_batt_info *info = platform_get_drvdata(pdev);
-
-	hwlog_info("remove begin\n");
 
 	if (!info)
 		return -ENODEV;
@@ -472,7 +605,6 @@ static int series_batt_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, info);
 	g_series_batt_di = NULL;
 
-	hwlog_info("remove end\n");
 	return 0;
 }
 

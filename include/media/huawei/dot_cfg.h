@@ -19,8 +19,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef __HW_ALAN_KERNEL_HWCAM_DOT_CFG_H__
-#define __HW_ALAN_KERNEL_HWCAM_DOT_CFG_H__
+#ifndef __HW_ALAN_KERNEL_CAM_DOT_CFG_H__
+#define __HW_ALAN_KERNEL_CAM_DOT_CFG_H__
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
@@ -29,8 +29,8 @@
 
 typedef enum _tag_hwdot_config_type
 {
-    HWCAM_DOT_POWERON,
-    HWCAM_DOT_POWEROFF,
+    CAM_DOT_POWERON,
+    CAM_DOT_POWEROFF,
 //TODO...
 } hwdot_config_type_t;
 
@@ -80,5 +80,5 @@ typedef struct _dot_thermal_data{
 #define HWDOT_IOCTL_CONFIG                  _IOWR('T',  BASE_VIDIOC_PRIVATE + 19, hwdot_config_data_t)
 #define HWDOT_IOCTL_GET_THERMAL           _IOR('T',  BASE_VIDIOC_PRIVATE + 20, dot_thermal_data)
 
-#endif // __HW_ALAN_KERNEL_HWCAM_DOT_CFG_H__
+#endif // __HW_ALAN_KERNEL_CAM_DOT_CFG_H__
  

@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2014-2020. All rights reserved.
+ * Description: Provide kernel device information for bastet.
+ * Author: pengyu@huawei.com
+ * Create: 2014-06-21
+ */
+
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/types.h>
@@ -7,6 +14,7 @@
 #include <huawei_platform/net/bastet/bastet_comm.h>
 #include <huawei_platform/net/bastet/bastet_utils.h>
 #include <huawei_platform/net/bastet/bastet.h>
+#include <huawei_platform/net/bastet/bastet_interface.h>
 
 #define BASTET_MODEM_DEV "/dev/bastet_modem"
 
@@ -17,57 +25,77 @@ struct buffer {
 	uint8_t data[BST_MAX_READ_PAYLOAD];
 };
 
-extern void ind_hisi_com(const void *info, u32 len);
-
-extern void ind_modem_reset(uint8_t *value, uint32_t len);
-
-#ifdef CONFIG_HW_CROSSLAYER_OPT
-extern void aspen_crosslayer_recovery(void *info, int length);
-#endif
-
-#ifdef CONFIG_HUAWEI_EMCOM
-extern void Emcom_Ind_Modem_Support(u8 ucState);
-#endif
-
-
-static struct file *dev_filp;
+static struct file *dev_filp = NULL;
 
 static int kernel_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-        mm_segment_t oldfs = get_fs();
-        int error = -ENOTTY;
+	mm_segment_t oldfs = get_fs();
+	int error = 0;
 
-        if (!filp || !filp->f_op || !filp->f_op->unlocked_ioctl)
-                goto out;
+	if (!filp || !filp->f_op || !filp->f_op->unlocked_ioctl)
+		return -EBADF;
 
-        set_fs(KERNEL_DS);
-        error = filp->f_op->unlocked_ioctl(filp, cmd, arg);
-        set_fs(oldfs);
+	set_fs(KERNEL_DS);
+	error = filp->f_op->unlocked_ioctl(filp, cmd, arg);
+	set_fs(oldfs);
 
-        if (error == -ENOIOCTLCMD)
-                error = -ENOTTY;
- out:
-        return error;
+	if (error == -ENOIOCTLCMD)
+		error = -ENOTTY;
+
+	return error;
 }
 
 #ifdef CONFIG_HUAWEI_BASTET_COMM
+/*
+ * get_modem_rab_id() - get the rab id.
+ * @info, pointer of modem rab structer.
+ *
+ * use the current device name to get the modem rab info.
+ * then fill the bst_modem_rab_id structer.
+ *
+ * Return: ret > 0, it means success.
+ * Otherwise is fail.
+ */
 int get_modem_rab_id(struct bst_modem_rab_id *info)
 {
 	union bst_rab_id_ioc_arg ioc_arg = {};
 	int ret;
 
-	if (!info) {
+	if (!info)
 		return -EINVAL;
-	}
 
-	if (IS_ERR_OR_NULL(dev_filp)) {
+	if (IS_ERR_OR_NULL(dev_filp))
 		return -EBUSY;
-	}
 
 	memcpy(ioc_arg.in, cur_netdev_name, IFNAMSIZ);
 	ioc_arg.in[IFNAMSIZ - 1] = '\0';
 
-	ret = kernel_ioctl(dev_filp, BST_MODEM_IOC_GET_MODEM_RAB_ID, (unsigned long)&ioc_arg);
+	ret = kernel_ioctl(dev_filp, BST_MODEM_IOC_GET_MODEM_RAB_ID,
+		(unsigned long)&ioc_arg);
+	if (ret >= 0) {
+		info->modem_id = ioc_arg.out.modem_id;
+		info->rab_id = ioc_arg.out.rab_id;
+	}
+
+	return ret;
+}
+
+int get_ipv6_modem_rab_id(struct bst_modem_rab_id *info)
+{
+	union bst_rab_id_ioc_arg ioc_arg = {};
+	int ret;
+
+	if (!info)
+		return -EINVAL;
+
+	if (IS_ERR_OR_NULL(dev_filp))
+		return -EBUSY;
+
+	memcpy(ioc_arg.in, cur_netdev_name, IFNAMSIZ);
+	ioc_arg.in[IFNAMSIZ - 1] = '\0';
+
+	ret = kernel_ioctl(dev_filp, BST_MODEM_IOC_GET_IPV6_MODEM_RAB_ID,
+		(unsigned long)&ioc_arg);
 	if (ret >= 0) {
 		info->modem_id = ioc_arg.out.modem_id;
 		info->rab_id = ioc_arg.out.rab_id;
@@ -77,200 +105,194 @@ int get_modem_rab_id(struct bst_modem_rab_id *info)
 }
 #endif /* CONFIG_HUAWEI_BASTET_COMM */
 
+/*
+ * bastet_modem_dev_write() - write message into dev.
+ * @msg: the message need to write.
+ * @len: message length.
+ *
+ * write the message to device.
+ *
+ * Return: ret > 0, it means success.
+ * Otherwise is fail.
+ */
 int bastet_modem_dev_write(uint8_t *msg, uint32_t len)
 {
 	loff_t offset = 0;
 	ssize_t ret;
 
-	if (!msg) {
+	if (!msg)
 		return -EINVAL;
-	}
 
-	if (IS_ERR_OR_NULL(dev_filp)) {
+	if (IS_ERR_OR_NULL(dev_filp))
 		return -EBUSY;
-	}
 
-	BASTET_LOGI("len %u", len);
+	bastet_logi("len %u", len);
 
-	if (BASTET_DEBUG) {
-		print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)msg, len, 1);
-	}
+	if (BASTET_DEBUG)
+		print_hex_dump(KERN_ERR, "bstmsg:", 0, BST_HEX_DUMP_LEN, 1,
+			(void *)msg, len, 1);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 	ret = kernel_write(dev_filp, msg, len, &offset);
 #else
 	ret = kernel_write(dev_filp, msg, len, offset);
 #endif
-	BASTET_LOGI("ret %ld", ret);
+	bastet_logi("ret %ld", ret);
 
 	return ret;
 }
 
+/*
+ * bastet_comm_write() - write the common info.
+ * @msg: the message need to write.
+ * @len: message length.
+ * @type: message type.
+ *
+ * write the message to device, invoke the bastet_modem_dev_write.
+ *
+ * Return: ret > 0, it means success.
+ * Otherwise is fail.
+ */
 int bastet_comm_write(uint8_t *msg, uint32_t len, uint32_t type)
 {
-	bst_acom_msg *pMsg = NULL;
+	struct bst_acom_msg *p_msg = NULL;
 	uint8_t *buf = NULL;
-	uint32_t ulLength;
+	uint32_t ul_length;
 	int ret;
 
 	if (len > BST_MAX_WRITE_PAYLOAD) {
-		BASTET_LOGE("write length over BST_MAX_WRITE_PAYLOAD!");
+		bastet_loge("write length over BST_MAX_WRITE_PAYLOAD!");
 		return -EINVAL;
 	}
 
-	buf = kmalloc(sizeof(bst_acom_msg) + BST_MAX_WRITE_PAYLOAD, GFP_KERNEL);
-	if (NULL == buf) {
+	buf = kzalloc(sizeof(*p_msg) + BST_MAX_WRITE_PAYLOAD, GFP_KERNEL);
+	if (buf == NULL)
 		return -ENOMEM;
-	}
 
-	pMsg = (bst_acom_msg *)buf;
-	pMsg->enMsgType = type;
-	pMsg->ulLen     = len;
-	memcpy(pMsg->aucValue, msg, len);
+	p_msg = (struct bst_acom_msg *)buf;
+	p_msg->en_msg_type = type;
+	p_msg->ul_len = len;
+	memcpy(p_msg->auc_value, msg, len);
+	ul_length = sizeof(*p_msg) + len;
 
-	ulLength = sizeof(bst_acom_msg) + len; // sub sizeof(aucValue[4]) ?
-
-	ret = bastet_modem_dev_write((uint8_t *)pMsg, ulLength);
+	ret = bastet_modem_dev_write((uint8_t *)p_msg, ul_length);
 	kfree(buf);
 
 	return ret;
 }
 
 #ifdef CONFIG_HUAWEI_EMCOM
-int bastet_comm_keypsInfo_write(uint32_t ulState)
+/*
+ * bastet_comm_key_ps_info_write() - write the common key ps info.
+ * @state: the message state.
+ *
+ * write the message to device, invoke the bastet_modem_dev_write.
+ *
+ * Return: ret > 0, it means success.
+ * Otherwise is fail.
+ */
+int bastet_comm_key_ps_info_write(uint32_t state)
 {
-	bst_key_psinfo key_ps_info = {};
+	struct bst_key_psinfo key_ps_info = {};
 	int ret;
 
-	BASTET_LOGI("state: %d", ulState);
+	bastet_logi("state: %d", state);
 
-	key_ps_info.enMsgType = BST_ACORE_CORE_MSG_TYPE_EMCOM_KEY_PSINFO;
-	key_ps_info.enState = ulState;
+	key_ps_info.en_msg_type = BST_ACORE_CORE_MSG_TYPE_EMCOM_KEY_PSINFO;
+	key_ps_info.en_state = state;
 
-	ret = bastet_modem_dev_write((uint8_t *)&key_ps_info, sizeof(key_ps_info));
+	ret = bastet_modem_dev_write((uint8_t *)&key_ps_info,
+		sizeof(key_ps_info));
 	return ret;
 }
 #endif /* CONFIG_HUAWEI_EMCOM */
 
-#ifdef CONFIG_HW_CROSSLAYER_OPT
-static void bastet_aspen_pkt_drop_proc(uint8_t *msg, uint32_t len)
+static void handle_bst_acore_core_msg_type_dspp(uint8_t *msg, uint32_t len)
 {
-	bst_aspen_pkt_drop *aspen_msg = (bst_aspen_pkt_drop *)msg;
+	struct bst_acom_msg *acom_msg = (struct bst_acom_msg *)msg;
+	long hdrlen = (uint8_t *)(acom_msg->auc_value) - (uint8_t *)acom_msg;
 
-	if (NULL == aspen_msg) {
-		BASTET_LOGE("aspen msg is empty");
+	if (len != hdrlen + acom_msg->ul_len) {
+		bastet_loge("dspp msg len error %u %u", len, acom_msg->ul_len);
 		return;
 	}
-
-	if (len < (sizeof(*aspen_msg) - sizeof(aspen_msg->stPkt))) {
-		BASTET_LOGE("aspen msg size too small %u", len);
-		return;
-	}
-
-	switch(aspen_msg->ulAspenInfoType)
-	{
-		case BST_ASPEN_INFO_PKT_DROP:
-		{
-			if (len != (sizeof(bst_aspen_pkt_drop) - (BST_ASPEN_PKT_DROP_SIZE - aspen_msg->ulPktNum) * sizeof(struct aspen_cdn_info))) {
-				BASTET_LOGE("aspen msg size wrong %u", len);
-				break;
-			}
-			aspen_crosslayer_recovery((void *)aspen_msg->stPkt, (int)aspen_msg->ulPktNum);
-			break;
-		}
-		default:
-		{
-			BASTET_LOGE("aspen info type is wrong %u", aspen_msg->ulAspenInfoType);
-			break;
-		}
-	}
+	ind_hisi_com(acom_msg->auc_value, acom_msg->ul_len);
 }
-#endif /* CONFIG_HW_CROSSLAYER_OPT */
+
+#ifdef CONFIG_HUAWEI_EMCOM
+static void handle_bst_acore_core_msg_type_emcom_support(uint8_t *msg,
+	uint32_t len)
+{
+	struct bst_emcom_support_msg *emcom_support_msg =
+		(struct bst_emcom_support_msg *)msg;
+	if (len != sizeof(*emcom_support_msg)) {
+		bastet_loge("emcom support msg len error %u %lu", len,
+			sizeof(*emcom_support_msg));
+		return;
+	}
+	Emcom_Ind_Modem_Support(emcom_support_msg->en_state);
+}
+#endif
+
+static void handle_bst_acore_core_msg_type_reset_info(uint8_t *msg,
+	uint32_t len)
+{
+	struct bst_acom_msg *acom_msg = (struct bst_acom_msg *)msg;
+	long hdrlen = (uint8_t *)(acom_msg->auc_value) - (uint8_t *)acom_msg;
+
+	if (acom_msg->ul_len > BST_MAX_READ_PAYLOAD ||
+		len != hdrlen + acom_msg->ul_len) {
+		bastet_loge("reset info msg len error %u %u", len,
+			acom_msg->ul_len);
+		return;
+	}
+	ind_modem_reset(acom_msg->auc_value, acom_msg->ul_len);
+}
 
 static int handle_event(uint8_t *msg, uint32_t len)
 {
-	bst_common_msg *bst_msg = NULL;
+	struct bst_common_msg *bst_msg = NULL;
 
 	if (msg == NULL) {
-		BASTET_LOGE("msg is null");
+		bastet_loge("msg is null");
 		return 0;
 	}
 
-	if (len < sizeof(bst_common_msg)) {
-		BASTET_LOGE("msg len error %u", len);
+	if (len < sizeof(*bst_msg)) {
+		bastet_loge("msg len error %u", len);
 		return 0;
 	}
 
-	bst_msg = (bst_common_msg *)msg;
+	bst_msg = (struct bst_common_msg *)msg;
 
-	BASTET_LOGI("bst msg type %u len %u", bst_msg->enMsgType, len);
+	bastet_logi("bst msg type %u len %u", bst_msg->en_msg_type, len);
 
-	switch(bst_msg->enMsgType)
-	{
-	#ifdef CONFIG_HW_CROSSLAYER_OPT
-		case BST_ACORE_CORE_MSG_TYPE_ASPEN:
-		{
-			bst_acom_msg *acom_msg = (bst_acom_msg *)msg;
-			long hdrlen = (uint8_t *)(acom_msg->aucValue) - (uint8_t *)acom_msg;
-
-			if (len != hdrlen + acom_msg->ulLen) {
-				BASTET_LOGE("aspen msg len error %u %u", len, acom_msg->ulLen);
-				break;
-			}
-			bastet_aspen_pkt_drop_proc(acom_msg->aucValue, acom_msg->ulLen);
-			break;
-		}
-	#endif
-		case BST_ACORE_CORE_MSG_TYPE_DSPP:
-		{
-			bst_acom_msg *acom_msg = (bst_acom_msg *)msg;
-			long hdrlen = (uint8_t *)(acom_msg->aucValue) - (uint8_t *)acom_msg;
-
-			if (len != hdrlen + acom_msg->ulLen) {
-				BASTET_LOGE("dspp msg len error %u %u", len, acom_msg->ulLen);
-				break;
-			}
-			ind_hisi_com(acom_msg->aucValue, acom_msg->ulLen);
-			break;
-		}
-	#ifdef CONFIG_HUAWEI_EMCOM
-		case BST_ACORE_CORE_MSG_TYPE_EMCOM_SUPPORT:
-		{
-			bst_emcom_support_msg *emcom_support_msg = (bst_emcom_support_msg *)msg;
-			if (len != sizeof(bst_emcom_support_msg)) {
-				BASTET_LOGE("emcom support msg len error %u %lu", len, sizeof(bst_emcom_support_msg));
-				break;
-			}
-			Emcom_Ind_Modem_Support(emcom_support_msg->enState);
-			break;
-		}
-	#endif
-		case BST_ACORE_CORE_MSG_TYPE_RESET_INFO:
-		{
-			bst_acom_msg *acom_msg = (bst_acom_msg *)msg;
-			long hdrlen = (uint8_t *)(acom_msg->aucValue) - (uint8_t *)acom_msg;
-
-			if (len != hdrlen + acom_msg->ulLen) {
-				BASTET_LOGE("reset info msg len error %u %u", len, acom_msg->ulLen);
-				break;
-			}
-			ind_modem_reset(acom_msg->aucValue, acom_msg->ulLen);
-			break;
-		}
-		default:
-			BASTET_LOGE("bst msg type error %u", bst_msg->enMsgType);
-			break;
+	switch (bst_msg->en_msg_type) {
+	case BST_ACORE_CORE_MSG_TYPE_DSPP:
+		handle_bst_acore_core_msg_type_dspp(msg, len);
+		break;
+#ifdef CONFIG_HUAWEI_EMCOM
+	case BST_ACORE_CORE_MSG_TYPE_EMCOM_SUPPORT:
+		handle_bst_acore_core_msg_type_emcom_support(msg, len);
+		break;
+#endif
+	case BST_ACORE_CORE_MSG_TYPE_RESET_INFO:
+		handle_bst_acore_core_msg_type_reset_info(msg, len);
+		break;
+	default:
+		bastet_loge("bst msg type error %u", bst_msg->en_msg_type);
+		break;
 	}
 	return 0;
 }
 
 static void free_buffers(struct list_head *buffers)
 {
-	struct buffer *buffer_entry, *tmp;
+	struct buffer *buffer_entry = NULL;
+	struct buffer *tmp = NULL;
 
-	if (!buffers) {
+	if (!buffers)
 		return;
-	}
 
 	list_for_each_entry_safe(buffer_entry, tmp, buffers, list) {
 		list_del(&buffer_entry->list);
@@ -278,128 +300,143 @@ static void free_buffers(struct list_head *buffers)
 	}
 }
 
-static void copy_from_buffers(uint8_t *data, struct list_head *buffers, uint32_t total)
+static void copy_from_buffers(uint8_t *data, struct list_head *buffers,
+	uint32_t total)
 {
-	struct buffer *buffer_entry;
+	struct buffer *buffer_entry = NULL;
 	uint8_t *pdata = data;
 	int remain = total;
 	int size;
 
-	if (!data || !buffers) {
+	if (!data || !buffers)
 		return;
-	}
 
 	list_for_each_entry(buffer_entry, buffers, list) {
 		if (remain <= 0)
 			break;
-		size = remain > BST_MAX_READ_PAYLOAD ? BST_MAX_READ_PAYLOAD : remain;
+		size = remain > BST_MAX_READ_PAYLOAD ?
+			BST_MAX_READ_PAYLOAD : remain;
 		memcpy(pdata, buffer_entry->data, size);
 		pdata += size;
 		remain -= size;
 	}
 }
 
-static int get_more_data(uint8_t *firstdata)
+static int read_data_from_file(uint32_t *len, struct list_head *buffers)
 {
-	int32_t ret = 0;
-	uint32_t len = 0;
-	struct buffer *buf;
-	uint8_t *data = NULL;
+	int32_t ret;
+	int ret_code;
+	struct buffer *buf = NULL;
 	loff_t offset = 0;
-	struct list_head buffers = LIST_HEAD_INIT(buffers);
 
 	while (1) {
-		buf = kmalloc(sizeof(*buf), GFP_KERNEL); // GFP_ATOMIC ?
-		if (NULL == buf) {
-			free_buffers(&buffers);
-			return -ENOMEM;
+		buf = kzalloc(sizeof(*buf), GFP_KERNEL);
+		if (buf == NULL) {
+			free_buffers(buffers);
+			ret_code = -ENOMEM;
+			break;
 		}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
-		ret = kernel_read(dev_filp, buf->data, BST_MAX_READ_PAYLOAD, &offset);
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+		ret = kernel_read(dev_filp, buf->data,
+			BST_MAX_READ_PAYLOAD, &offset);
 #else
-		ret = kernel_read(dev_filp, offset, buf->data, BST_MAX_READ_PAYLOAD);
+		ret = kernel_read(dev_filp, offset, buf->data,
+			BST_MAX_READ_PAYLOAD);
 #endif
-		BASTET_LOGI("read %d", ret);
+		bastet_logi("read %d", ret);
 
-		if (-EBUSY == ret) {
-			msleep(5000);
+		if (ret == -EBUSY) {
+			msleep(BST_SLEEP_VAL_5000);
 			kfree(buf);
 			continue;
 		}
 
 		if (ret > 0 && ret < BST_MAX_READ_PAYLOAD) {
-			if (BASTET_DEBUG) {
-				print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)buf, ret, 1);
-			}
-			len += ret;
-			list_add(&buf->list, &buffers);
+			if (BASTET_DEBUG)
+				print_hex_dump(KERN_ERR, "bstmsg:", 0,
+					BST_HEX_DUMP_LEN, 1, (void *)buf, ret,
+					1);
+			*len += ret;
+			list_add(&buf->list, buffers);
 			break;
-		} else if (BST_MAX_READ_PAYLOAD == ret) {
-			if (BASTET_DEBUG) {
-				print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)buf, ret, 1);
-			}
-			len += ret;
-			list_add(&buf->list, &buffers);
-		} else if (0 == ret) {
+		} else if (ret == BST_MAX_READ_PAYLOAD) {
+			if (BASTET_DEBUG)
+				print_hex_dump(KERN_ERR, "bstmsg:", 0,
+					BST_HEX_DUMP_LEN, 1, (void *)buf, ret,
+					1);
+			*len += ret;
+			list_add(&buf->list, buffers);
+		} else if (ret == 0) {
 			kfree(buf);
 			break;
-		} else {
-			free_buffers(&buffers);
-			kfree(buf);
-			return -EINVAL;
 		}
-	}
 
-	if (0 == len) {
-		handle_event(firstdata, BST_MAX_READ_PAYLOAD);
+		free_buffers(buffers);
+		kfree(buf);
+		ret_code = -EINVAL;
+		break;
+	}
+	return ret_code;
+}
+
+static int get_more_data(uint8_t *firstdata, uint32_t buffer_size)
+{
+	uint32_t len = 0;
+	uint8_t *data = NULL;
+	struct list_head buffers = LIST_HEAD_INIT(buffers);
+
+	int ret = read_data_from_file(&len, &buffers);
+	if (ret == -EINVAL || ret == -ENOMEM)
+		return ret;
+
+	if (len == 0) {
+		handle_event(firstdata, buffer_size);
 		return 0;
 	}
 
-	data = (uint8_t *)kmalloc(len + BST_MAX_READ_PAYLOAD, GFP_KERNEL);
-	if (NULL == data) {
+	data = kzalloc(len + BST_MAX_READ_PAYLOAD, GFP_KERNEL);
+	if (data == NULL) {
 		free_buffers(&buffers);
 		return -EINVAL;
 	}
 
-	memcpy(data, firstdata, BST_MAX_READ_PAYLOAD);
+	memcpy(data, firstdata, buffer_size);
 	copy_from_buffers(data + BST_MAX_READ_PAYLOAD, &buffers, len);
 	free_buffers(&buffers);
 
 	handle_event(data, len + BST_MAX_READ_PAYLOAD);
 
-	if (data != NULL) {
+	if (data != NULL)
 		kfree(data);
-	}
 
 	return 0;
 }
 
 static int get_event(void)
 {
-	int32_t size = 0;
+	int32_t size;
 	int ret = 0;
 	uint8_t *buf = NULL;
 	loff_t offset = 0;
 
-	if (IS_ERR_OR_NULL(dev_filp)) {
+	if (IS_ERR_OR_NULL(dev_filp))
 		return -EINVAL;
-	}
 
-	buf = kmalloc(BST_MAX_READ_PAYLOAD, GFP_KERNEL);
-	if (NULL == buf) {
+	buf = kzalloc(BST_MAX_READ_PAYLOAD, GFP_KERNEL);
+	if (buf == NULL)
 		return -ENOMEM;
-	}
 
 	while (1) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
-		size = kernel_read(dev_filp, buf, BST_MAX_READ_PAYLOAD, &offset);
+#if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
+		size = kernel_read(dev_filp, buf,
+			BST_MAX_READ_PAYLOAD, &offset);
 #else
 		size = kernel_read(dev_filp, offset, buf, BST_MAX_READ_PAYLOAD);
 #endif
-		BASTET_LOGI("read %d", size);
-		if (-EBUSY == size) {
-			msleep(5000);
+		bastet_logi("read %d", size);
+		if (size == -EBUSY) {
+			msleep(BST_SLEEP_VAL_5000);
 			continue;
 		} else {
 			break;
@@ -407,17 +444,17 @@ static int get_event(void)
 	}
 
 	if (size > 0 && size < BST_MAX_READ_PAYLOAD) {
-		if (BASTET_DEBUG) {
-			print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)buf, size, 1);
-		}
+		if (BASTET_DEBUG)
+			print_hex_dump(KERN_ERR, "bstmsg:", 0, BST_HEX_DUMP_LEN,
+				1, (void *)buf, size, 1);
 		handle_event(buf, size);
-	} else if (BST_MAX_READ_PAYLOAD == size) {
-		if (BASTET_DEBUG) {
-			print_hex_dump(KERN_ERR, "bstmsg:", 0, 16, 1, (void *)buf, size, 1);
-		}
-		ret = get_more_data(buf);
+	} else if (size == BST_MAX_READ_PAYLOAD) {
+		if (BASTET_DEBUG)
+			print_hex_dump(KERN_ERR, "bstmsg:", 0, BST_HEX_DUMP_LEN,
+				1, (void *)buf, size, 1);
+		ret = get_more_data(buf, BST_MAX_READ_PAYLOAD);
 	} else {
-		BASTET_LOGI("read error %d", size);
+		bastet_logi("read error %d", size);
 		ret = -EINVAL;
 	}
 
@@ -432,14 +469,12 @@ static int bastet_modem_dev_open(void)
 
 	while (try--) {
 		filp = filp_open(BASTET_MODEM_DEV, O_RDWR, 0);
-
 		if (IS_ERR(filp)) {
-			BASTET_LOGI("open err=%ld", PTR_ERR(filp));
-
-			msleep(1000);
+			bastet_logi("open err=%ld", PTR_ERR(filp));
+			msleep(BST_SLEEP_VAL_1000);
 			continue;
 		} else {
-			BASTET_LOGI("open succ");
+			bastet_logi("open succ");
 			break;
 		}
 	}
@@ -457,37 +492,43 @@ static int bastet_modem_reader(void *data)
 
 	err = bastet_modem_dev_open();
 	if (err < 0) {
-		BASTET_LOGE("error open bastet modem dev");
+		bastet_loge("Did not open bastet modem dev");
 		return 0;
 	}
 
 	while (!kthread_should_stop()) {
-		//wait_for_event(); // poll in kernel
-
 		err = get_event();
 		if (err < 0) {
-			BASTET_LOGI("get_event err=%d", err);
+			bastet_logi("get_event err=%d", err);
 			break;
 		}
 	}
 
-	BASTET_LOGI("kthread exit");
+	bastet_logi("kthread exit");
 	return 0;
 }
 
+/*
+ * bastet_comm_init() - initialize the bastet.
+ *
+ * invoke the kthread to run the kernel thread. no parameters.
+ * bastet_modem_reader was running on the thread.
+ *
+ * Return: 0, it means success.
+ * Otherwise is fail.
+ */
 int bastet_comm_init(void)
 {
-	struct task_struct *task;
+	struct task_struct *task = NULL;
 
-	BASTET_LOGI("bastet_comm_init");
+	bastet_logi("bastet_comm_init");
 
 	task = kthread_run(bastet_modem_reader, NULL, "bastet_modem_rd");
 	if (IS_ERR(task)) {
-		BASTET_LOGE("create reader thread failed err=%ld", PTR_ERR(task));
+		bastet_loge("create reader thread failed err=%ld",
+			PTR_ERR(task));
 		return -1;
 	}
 
 	return 0;
 }
-
-

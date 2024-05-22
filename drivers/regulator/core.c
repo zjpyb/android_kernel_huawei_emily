@@ -40,7 +40,7 @@
 #include "internal.h"
 
 #ifdef CONFIG_HISI_REGULATOR_TRACE
-#include "hisi_regulator_debug.h"
+#include "regulator_debug.h"
 #endif
 
 #define rdev_crit(rdev, fmt, ...)					\
@@ -488,20 +488,19 @@ static ssize_t regulator_state_set(struct device *dev,
 			mutex_unlock(&rdev->mutex);
 		}
 		return count;
-	#ifdef CONFIG_HISI_PMIC_DEBUG
-	} else if (NULL != strstr(saved_command_line, "androidboot.swtype=normal")) {
-		if (1 == val) {
-			mutex_lock(&rdev->mutex);
-			_regulator_enable(rdev);
-			mutex_unlock(&rdev->mutex);
-		} else if (0 == val) {
-			mutex_lock(&rdev->mutex);
-			_regulator_disable(rdev);
-			mutex_unlock(&rdev->mutex);
-		}
-		return count;
-	#endif
 	}
+	#ifdef CONFIG_HISI_PMIC_DEBUG
+	if (1 == val) {
+		mutex_lock(&rdev->mutex);
+		_regulator_enable(rdev);
+		mutex_unlock(&rdev->mutex);
+	} else if (0 == val) {
+		mutex_lock(&rdev->mutex);
+		_regulator_disable(rdev);
+		mutex_unlock(&rdev->mutex);
+	}
+	return count;
+	#endif
 
 	return -EINVAL;
 }
@@ -4239,7 +4238,7 @@ regulator_register(const struct regulator_desc *regulator_desc,
 
 	dev_set_drvdata(&rdev->dev, rdev);
 
-#if defined (CONFIG_HISI_PMIC_DEBUG) || defined(CONFIG_HISI_SR_DEBUG)
+#if defined (CONFIG_HISI_PMIC_DEBUG) || defined(CONFIG_SR_DEBUG)
         list_add(&rdev->list, &regulator_list);
 #endif
 

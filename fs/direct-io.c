@@ -466,6 +466,7 @@ dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
  */
 static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
 {
+	struct request_queue *queue = dio->inode->i_sb->s_bdev->bd_disk->queue;
 	struct bio *bio = sdio->bio;
 	unsigned long flags;
 #ifdef CONFIG_FS_ENCRYPTION
@@ -474,11 +475,14 @@ static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
 	if (fscrypt_has_encryption_key(inode) && S_ISREG(inode->i_mode) &&
 		inode->i_sb->s_cop->is_inline_encrypted &&
 		inode->i_sb->s_cop->is_inline_encrypted(inode)) {
-		bio->hisi_bio.ci_key = fscrypt_ci_key(inode);
-		bio->hisi_bio.ci_key_len = fscrypt_ci_key_len(inode);
-		bio->hisi_bio.ci_key_index = fscrypt_ci_key_index(inode);
+		bio->ci_key = fscrypt_ci_key(inode);
+		bio->ci_key_len = fscrypt_ci_key_len(inode);
+		bio->ci_key_index = fscrypt_ci_key_index(inode);
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+		bio->ci_metadata = fscrypt_ci_metadata(inode);
+#endif
 		/*lint -save -e704*/
-		bio->hisi_bio.index = sdio->logical_offset_in_bio >> sdio->blkbits;
+		bio->index = sdio->logical_offset_in_bio >> sdio->blkbits;
 		/*lint -restore*/
 	}
 #endif
@@ -494,8 +498,10 @@ static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
 
 	dio->bio_disk = bio->bi_disk;
 
-	blk_throtl_get_quota(dio->inode->i_sb->s_bdev, bio->bi_iter.bi_size,
-			     msecs_to_jiffies(100), true);
+	/* throttle will conflict with LBA order in unistore */
+	if (!blk_queue_query_unistore_enable(queue))
+		blk_throtl_get_quota(dio->inode->i_sb->s_bdev, bio->bi_iter.bi_size,
+				msecs_to_jiffies(100), true);
 	if (sdio->submit_io) {
 		sdio->submit_io(bio, dio->inode, sdio->logical_offset_in_bio);
 		dio->bio_cookie = BLK_QC_T_NONE;
@@ -539,14 +545,14 @@ static struct bio *dio_await_one(struct dio *dio)
 		__set_current_state(TASK_UNINTERRUPTIBLE);
 		dio->waiter = current;
 		spin_unlock_irqrestore(&dio->bio_lock, flags);
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		if (
 #else
 		if (!(dio->iocb->ki_flags & IOCB_HIPRI) ||
 #endif
 		    !blk_mq_poll(dio->bio_disk->queue, dio->bio_cookie))
 			io_schedule();
-#ifdef CONFIG_HISI_BLK
+#ifdef CONFIG_MAS_BLK
 		else
 			/*
 			 * some delay to let end_io process get bio_lock
@@ -712,6 +718,8 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 	unsigned long fs_count;	/* Number of filesystem-sized blocks */
 	int create;
 	unsigned int i_blkbits = sdio->blkbits + sdio->blkfactor;
+	loff_t i_size;
+	struct request_queue *queue = dio->inode->i_sb->s_bdev->bd_disk->queue;
 
 	/*
 	 * If there was a memory error and we've overwritten all the
@@ -740,10 +748,12 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 		 * buffer head.
 		 */
 		create = dio->op == REQ_OP_WRITE;
-		if (dio->flags & DIO_SKIP_HOLES) {
-			if (fs_startblk <= ((i_size_read(dio->inode) - 1) >>
-							i_blkbits))
-				create = 0;
+		if (!blk_queue_query_unistore_enable(queue)) {
+			if (dio->flags & DIO_SKIP_HOLES) {
+				i_size = i_size_read(dio->inode);
+				if (i_size && fs_startblk <= (i_size - 1) >> i_blkbits)
+					create = 0;
+			}
 		}
 
 		ret = (*sdio->get_block)(dio->inode, fs_startblk,
@@ -887,6 +897,7 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		    struct buffer_head *map_bh)
 {
 	int ret = 0;
+	int boundary = sdio->boundary;	/* may clear in dio_send_cur_page */
 
 	if (dio->op == REQ_OP_WRITE) {
 		/*
@@ -926,10 +937,10 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 	sdio->cur_page_fs_offset = sdio->block_in_file << sdio->blkbits;
 out:
 	/*
-	 * If sdio->boundary then we want to schedule the IO now to
+	 * If boundary then we want to schedule the IO now to
 	 * avoid metadata seeks.
 	 */
-	if (sdio->boundary) {
+	if (boundary) {
 		ret = dio_send_cur_page(dio, sdio);
 		if (sdio->bio)
 			dio_bio_submit(dio, sdio);
@@ -1223,6 +1234,10 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 	struct buffer_head map_bh = { 0, };
 	struct blk_plug plug;
 	unsigned long align = offset | iov_iter_alignment(iter);
+	struct gendisk *target_disk = NULL;
+	ktime_t dio_start = ktime_get();
+	int dio_op;
+	int dio_page_count;
 
 	/*
 	 * Avoid references to bdev if not absolutely needed to give
@@ -1305,6 +1320,8 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 		dio->op = REQ_OP_READ;
 	}
 
+	dio_op = iov_iter_rw(iter);
+
 	/*
 	 * For AIO O_(D)SYNC writes we need to defer completions to a workqueue
 	 * so that we can call ->fsync.
@@ -1367,6 +1384,8 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 
 	sdio.pages_in_io += iov_iter_npages(iter, INT_MAX);
 
+	dio_page_count = sdio.pages_in_io;
+
 	blk_start_plug(&plug);
 
 	retval = do_direct_IO(dio, &sdio, &map_bh);
@@ -1400,6 +1419,8 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 
 	blk_finish_plug(&plug);
 
+	target_disk = dio->bio_disk;
+
 	/*
 	 * It is possible that, we return short IO due to end of file.
 	 * In that case, we need to release all the pages we got hold on.
@@ -1432,6 +1453,10 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 		retval = dio_complete(dio, retval, DIO_COMPLETE_INVALIDATE);
 	} else
 		BUG_ON(retval != -EIOCBQUEUED);
+
+#ifdef CONFIG_MAS_BLK
+	blk_dio_ck(target_disk, dio_start, dio_op, dio_page_count);
+#endif
 
 out:
 	return retval;

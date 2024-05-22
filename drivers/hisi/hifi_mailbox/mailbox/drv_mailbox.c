@@ -1,58 +1,39 @@
+/*
+ * drv_mailbox.c
+ *
+ * this file encapsulate mailbox interfaces
+ *
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ */
 
-
-/*****************************************************************************
-  1 头文件包含
-*****************************************************************************/
 #include "drv_mailbox_cfg.h"
+#include "drv_mailbox_msg.h"
 
-
-
-/*****************************************************************************
-  2 函数声明
-*****************************************************************************/
-unsigned int mailbox_send_msg(
-                unsigned int            mailcode,
-                const void              *data,
-                unsigned int            length);
-
-unsigned int mailbox_reg_msg_cb(
-                unsigned int             mailcode,
-                mb_msg_cb                 func,
-                void                     *data);
-
-unsigned int mailbox_read_msg_data(
-                void                   *mail_handle,
-                 char                  *buff,
-                unsigned int          *size);
-/*****************************************************************************
-  3 函数实现
-*****************************************************************************/
-
-
-unsigned int DRV_MAILBOX_SENDMAIL(
-                unsigned int           MailCode,
-                const void             *pData,
-                unsigned int           Length)
+/* funcions below use by others, just keep captial case */
+uint32_t DRV_MAILBOX_SENDMAIL(uint32_t mail_code, const void *data,
+	uint32_t length)
 {
-	return mailbox_send_msg(MailCode, pData, Length);
+	return mailbox_send_msg(mail_code, data, length);
 }
 
-
-unsigned int DRV_MAILBOX_REGISTERRECVFUNC(
-                unsigned int           MailCode,
-                mb_msg_cb               pFun,
-                void                   *UserHandle)
+uint32_t DRV_MAILBOX_REGISTERRECVFUNC(uint32_t mail_code, mb_msg_cb func,
+	void *data)
 {
-	return mailbox_reg_msg_cb(MailCode, pFun, UserHandle);
+	return (uint32_t)mailbox_reg_msg_cb(mail_code, func, data);
 }
 
-
-unsigned int DRV_MAILBOX_READMAILDATA(
-                struct mb_queue *MailHandle,
-                unsigned char          *pData,
-                unsigned int          *pSize)
+uint32_t DRV_MAILBOX_READMAILDATA(struct mb_queue *mail_handle,
+	unsigned char *data, uint32_t *size)
 {
-	return mailbox_read_msg_data(MailHandle, (char *)pData, pSize);
+	return mailbox_read_msg_data(mail_handle, (char *)data, size);
 }
-
-

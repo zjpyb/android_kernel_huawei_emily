@@ -29,9 +29,6 @@
 #include "moisture_detection.h"
 #include "core.h"
 #include "../Platform_Linux/fusb3601_global.h"
-#ifdef CONFIG_DIRECT_CHARGER
-#include <huawei_platform/power/direct_charger.h>
-#endif
 #include <huawei_platform/power/huawei_charger.h>
 
 #define FUSB3601_MUS_INTERRUPT_MASK 0xd4
@@ -105,6 +102,8 @@ void moisture_detection_complete(void)
 	int vbus_val = 0;
 	static int moisture_detected_already_reported = 0;
 	static int moisture_detected_counter = 0;
+	unsigned int flag;
+
 	ret = FUSB3601_fusb_I2C_ReadData(FUSB3601_VBUS_VOLTAGEL,&data);
 	if (ret) {
 		hwlog_info("%s:VBUS_VOLTAGEL is: [0x%x]\n", __func__, data);
@@ -132,13 +131,16 @@ void moisture_detection_complete(void)
 	if (moisture_detected_counter >= MOISTURE_DETECTED_CNT_THRESHOLD) {
 		hwlog_info("%s:moisture detected\n", __func__);
 		if (!moisture_detected_already_reported) {
-			send_water_intrused_event(true);
+			flag = WD_NON_STBY_MOIST;
+			power_event_bnc_notify(POWER_BNT_WD, POWER_NE_WD_REPORT_UEVENT, &flag);
+			power_event_bnc_notify(POWER_BNT_WD, POWER_NE_WD_REPORT_DMD, "fusb3601");
 			moisture_detected_already_reported = 1;
 		}
 	} else {
 		hwlog_info("%s:moisture not detected\n", __func__);
 		if (moisture_detected_already_reported) {
-			send_water_intrused_event(false);
+			flag = WD_NON_STBY_DRY;
+			power_event_bnc_notify(POWER_BNT_WD, POWER_NE_WD_REPORT_UEVENT, &flag);
 			moisture_detected_already_reported = 0;
 		}
 	}

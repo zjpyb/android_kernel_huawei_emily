@@ -83,7 +83,7 @@ static int gest_most_bottom_y=0;
 uint8_t *self_data = NULL;
 uint8_t *mutual_data = NULL;
 
-int g_state_get_frame = 0;
+unsigned int g_state_get_frame;
 
 #define HIMAX_VENDER_NAME  "himax"
 char himax_product_id[HX_PROJECT_ID_LEN+1]={"999999999"};
@@ -776,6 +776,7 @@ static int himax_parse_sensor_id_dts(struct device_node *device, struct ts_kit_d
 	struct device_node *child = NULL;
 	const char *modulename = NULL;
 	const char *projectid = NULL;
+	int lentmp;
 
 	TS_LOG_INFO("%s: parameter init begin\n", __func__);
 	if(NULL == device||NULL == chip_data) {
@@ -807,7 +808,12 @@ static int himax_parse_sensor_id_dts(struct device_node *device, struct ts_kit_d
 		TS_LOG_INFO("Not define module in Dts,use default\n");
 	}
 	else{
-		strncpy(chip_data->module_name, modulename,strlen(modulename)+1);
+		if (strlen(modulename) >= MAX_STR_LEN)
+			lentmp = MAX_STR_LEN - 1;
+		else
+			lentmp = strlen(modulename);
+		strncpy(chip_data->module_name, modulename, lentmp);
+		chip_data->module_name[lentmp] = '\0';
 	}
 	TS_LOG_INFO("module_name: %s\n", chip_data->module_name);
 
@@ -1608,38 +1614,38 @@ static int hmx_check_key_gesture_report( struct ts_fingers *info, struct ts_easy
 			}
 		break;
 		case SPECIFIC_LETTER_C:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_c) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_C) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_c detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_c;
+				reprot_gesture_key_value = TS_LETTER_C;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_E:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_e) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_E) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_e detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_e;
+				reprot_gesture_key_value = TS_LETTER_E;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_M:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_m) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_M) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_m detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_m;
+				reprot_gesture_key_value = TS_LETTER_M;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 			break;
 		case SPECIFIC_LETTER_W:
-			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_w) &
+			if (IS_APP_ENABLE_GESTURE(GESTURE_LETTER_W) &
 			    gesture_report_info->easy_wakeup_gesture) {
 				TS_LOG_DEBUG
 				    ("@@@SPECIFIC_LETTER_w detected!@@@\n");
-				reprot_gesture_key_value = TS_LETTER_w;
+				reprot_gesture_key_value = TS_LETTER_W;
 				reprot_gesture_point_num = LETTER_LOCUS_NUM;
 			}
 		break;
@@ -2031,7 +2037,7 @@ static int himax_parse_specific_dts(struct himax_ts_data *ts,
 	pdata->screenWidth  = coords[1];
 	pdata->screenHeight = coords[3];
 
-	TS_LOG_INFO("DT-%s:display-coords = (%d, %d)", __func__, pdata->screenWidth,
+	TS_LOG_INFO("%s:display= %u, %u", __func__, pdata->screenWidth,
 		pdata->screenHeight);
 
 	if (g_himax_ts_data->power_support){
@@ -2093,7 +2099,7 @@ static int himax_parse_dts(struct device_node *device, struct ts_kit_device_data
 	const char *tptesttype = NULL;
 	unsigned int value;
 	const char *chipname = NULL;
-	int read_val = 0;
+	unsigned int read_val = 0;
 	TS_LOG_INFO("%s: parameter init begin\n", __func__);
 	if(NULL == device||NULL == chip_data) {
 		return -1;
@@ -2191,6 +2197,7 @@ static int himax_parse_dts(struct device_node *device, struct ts_kit_device_data
 	retval =of_property_read_string(device, "project_id", &projectid);
 	if (retval) {
 		strncpy(himax_product_id, PRODUCE_ID, HX_PROJECT_ID_LEN);
+		himax_product_id[HX_PROJECT_ID_LEN] = '\0';
 		TS_LOG_ERR("Not define product id in Dts, use default\n");
 	}
 	else{
@@ -2558,7 +2565,8 @@ out:
 	TS_LOG_ERR("detect himax error\n");
 	return err;
 }
-static int __init early_parse_himax_panel_name_cmdline(char *p)
+static int __init early_parse_himax_panel_name_cmdline(
+	const char *p)
 {
 	if (p)
 	{
@@ -2882,7 +2890,7 @@ static int himax_core_resume(void)
 #ifdef HX_CHIP_STATUS_MONITOR
 	int t=0;
 #endif
-	struct himax_ts_data *ts;
+	struct himax_ts_data *ts = NULL;
 	int retval=0;
 	struct ts_easy_wakeup_info *info = &g_himax_ts_data->tskit_himax_data->easy_wakeup_info;
 
@@ -3256,9 +3264,9 @@ static int himax_chip_get_info(struct ts_chip_info_param *info)
 	} else {
 		snprintf(info->ic_vendor, sizeof(info->ic_vendor), "%s", himax_product_id);
 	}
-	snprintf(info->mod_vendor, CHIP_INFO_LENGTH , g_himax_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name);
-
-	snprintf(info->fw_vendor, PAGE_SIZE,
+	snprintf(info->mod_vendor, CHIP_INFO_LENGTH, "%s",
+		g_himax_ts_data->tskit_himax_data->ts_platform_data->chip_data->module_name);
+	snprintf(info->fw_vendor, sizeof(info->fw_vendor) - 1,
 		"%x.%x.%x",
 		g_himax_ts_data->vendor_fw_ver_H,
 		g_himax_ts_data->vendor_fw_ver_L,

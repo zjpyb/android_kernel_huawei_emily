@@ -65,6 +65,6 @@ typedef __u32               FSC_U32;    /* 32-bit unsigned */
 #undef __EXTENSION
 
 //#endif /* FSC_PLATFORM_LINUX */
- 
+
 #endif /* _FUSB30X_FSCTYPES_H_ */
 

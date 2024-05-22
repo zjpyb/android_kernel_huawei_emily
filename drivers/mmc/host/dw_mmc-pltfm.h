@@ -12,6 +12,8 @@
 #ifndef _DW_MMC_PLTFM_H_
 #define _DW_MMC_PLTFM_H_
 
+#include <linux/platform_device.h>
+
 #define INTMSK_ALL	0xFFFFFFFF
 #define INTMSK_CDETECT	(0x1 << 0)
 #define INTMSK_RE	(0x1 << 1)

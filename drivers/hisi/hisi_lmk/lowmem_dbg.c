@@ -1,3 +1,19 @@
+/*
+ * drivers/hisi/hisi_lmk/lowmem_dbg.c
+ *
+ * Copyright (C) 2004-2020 Hisilicon Technologies Co., Ltd. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
 #define pr_fmt(fmt) "hisi_lowmem: " fmt
 
 #include <linux/module.h>
@@ -18,15 +34,15 @@
 #include <linux/ion.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/version.h>
+#include <linux/skbuff.h>
 #include <linux/hisi/page_tracker.h>
-#include <log/log_usertype.h>
 #ifdef CONFIG_SLUB
 #include <linux/slub_def.h>
 #endif
 #ifdef CONFIG_HISI_PAGE_TRACE
 #include <linux/hisi/mem_trace.h>
 #endif
-#include "lowmem_killer.h"
+#include <linux/hisi/lowmem_killer.h>
 
 #define LMK_PRT_TSK_RSS 10000
 #define LMK_INTERVAL 3
@@ -93,23 +109,14 @@ static void dump_tasks(bool verbose)
 
 static void lowmem_dump(struct work_struct *work)
 {
-	bool verbose = false;
-	int logusertype = get_logusertype_flag();
-
-	/*
-	 * for internal debug, we hope print more lowmemory info.
-	 */
-	if (logusertype == BETA_USER || logusertype == OVERSEA_USER)
-		verbose = true;
-	else
-		verbose = (work == &lowmem_dbg_verbose_wk) ? true : false;
+	bool verbose = (work == &lowmem_dbg_verbose_wk) ? true : false;
 
 	mutex_lock(&lowmem_dump_mutex);
 	show_mem(SHOW_MEM_FILTER_NODES, NULL);
 	dump_tasks(verbose);
 	ksm_show_stats();
 #ifdef CONFIG_ION
-	hisi_ion_memory_info(verbose);
+	mm_ion_memory_info(verbose);
 #endif
 #ifdef CONFIG_SLABINFO
 	show_slab(verbose);
@@ -118,6 +125,7 @@ static void lowmem_dump(struct work_struct *work)
 	if (verbose) {
 		hisi_mem_stats_show();
 		hisi_vmalloc_detail_show();
+		alloc_skb_with_frags_stats_show();
 	}
 #endif
 	if (verbose)
@@ -129,9 +137,9 @@ void hisi_lowmem_dbg(short oom_score_adj)
 {
 	unsigned long long jiffs = get_jiffies_64();
 
-	if (oom_score_adj == 0)
+	if (oom_score_adj == 0) {
 		schedule_work(&lowmem_dbg_verbose_wk);
-	else if (time_after64(jiffs, (last_jiffs + LMK_INTERVAL * HZ))) {
+	} else if (time_after64(jiffs, (last_jiffs + LMK_INTERVAL * HZ))) {
 		last_jiffs = get_jiffies_64();
 		schedule_work(&lowmem_dbg_wk);
 	}
@@ -141,7 +149,7 @@ void hisi_lowmem_dbg_timeout(struct task_struct *p, struct task_struct *leader)
 {
 	struct task_struct *t = NULL;
 
-	pr_info("timeout '%s' (%d)\n", leader->comm, leader->pid);
+	pr_info("timeout '%s' %d\n", leader->comm, leader->pid);
 	for_each_thread(p, t) {
 		pr_info("  pid=%d tgid=%d %s mm=%d frozen=%d 0x%lx 0x%x\n",
 			t->pid, t->tgid, t->comm, t->mm ? 1 : 0,

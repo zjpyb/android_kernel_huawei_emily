@@ -18,28 +18,13 @@
 #ifndef __ANC_HS_INTERFACE__
 #define __ANC_HS_INTERFACE__
 
-enum {
-	ANC_HS_NORMAL_4POLE = 0,
-	ANC_HS_NORMAL_3POLE,
-	ANC_HS_HEADSET,
-	ANC_HS_REVERT_4POLE,
-	ANC_HS_NONE,
-};
+#include "huawei_platform/audio/ana_hs_common.h"
 
 #define ANC_HS_ENABLE_CHARGE                       0
 #define ANC_HS_DISABLE_CHARGE                      1
 
 #define ANC_HS_ENABLE_5VOLTATE                     1
 #define ANC_HS_DISABLE_5VOLTATE                    0
-
-/* IO controls for user */
-#define IOCTL_ANC_HS_CHARGE_ENABLE_CMD           _IO('A', 0x01)
-#define IOCTL_ANC_HS_CHARGE_DISABLE_CMD          _IO('A', 0x02)
-#define IOCTL_ANC_HS_GET_CHARGE_STATUS_CMD       _IOR('A', 0xFF, __u32)
-#define IOCTL_ANC_HS_GET_HEADSET_CMD             _IOR('A', 0xFE, __u32)
-#define IOCTL_ANC_HS_GET_VBST_5VOLTAGE_CMD       _IOR('A', 0xFD, __u32)
-#define IOCTL_ANC_HS_GET_VDD_BUCK_VOLTAGE_CMD    _IOR('A', 0xFC, __u32)
-#define IOCTL_ANC_HS_GET_HEADSET_RESISTANCE_CMD  _IOR('A', 0xFB, __u32)
 
 enum {
 	NO_MAX14744,

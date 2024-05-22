@@ -1,11 +1,19 @@
 /*
- * hw_soundtrigger_event.c -- huawei soundigger event driver
+ * soundtrigger_event.c
  *
- * Copyright (c) 2014 Hisilicon Technologies CO., Ltd.
+ * soundtrigger event to userspace implement
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Copyright (c) 2014-2020 Huawei Technologies Co., Ltd.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #include <linux/kernel.h>
@@ -17,75 +25,42 @@
 #include <linux/of_platform.h>
 #include <linux/miscdevice.h>
 #include <linux/input.h>
+#include <linux/hisi/audio_log.h>
 
 /*lint -e750*/
+#define LOG_TAG "soundtrigger"
 
-#define LOG_TAG "HW_SOUNDTRIGGER_EVENT"
+#define SOUNDTRIGGER_EVENT_BASE KEY_F14
+#define SOUNDTRIGGER_EVENT_NUM 5
+#define ENVP_LENTH 16
 
-#define PRINT_INFO  1
-#define PRINT_WARN  0
-#define PRINT_DEBUG 0
-#define PRINT_ERR   1
+static struct input_dev *g_soundtrigger_input_dev;
 
-#if PRINT_INFO
-#define logi(fmt, ...) printk("[" LOG_TAG "][I]" fmt "\n", ##__VA_ARGS__)
-#else
-#define logi(fmt, ...) ((void)0)
-#endif
-
-#if PRINT_WARN
-#define logw(fmt, ...) printk("[" LOG_TAG "][W]" fmt "\n", ##__VA_ARGS__)
-#else
-#define logw(fmt, ...) ((void)0)
-#endif
-
-#if PRINT_DEBUG
-#define logd(fmt, ...) printk("[" LOG_TAG "][D]" fmt "\n", ##__VA_ARGS__)
-#else
-#define logd(fmt, ...) ((void)0)
-#endif
-
-#if PRINT_ERR
-#define loge(fmt, ...) printk("[" LOG_TAG "][E]" fmt "\n", ##__VA_ARGS__)
-#else
-#define loge(fmt, ...) ((void)0)
-#endif
-
-#define SOUNDTRIGGER_EVENT_BASE				KEY_F14
-#define SOUNDTRIGGER_EVENT_NUM				(5)
-
-#define	ENVP_LENTH					(16)
-
-struct input_dev *soundtrigger_input_dev;
-
-struct miscdevice hw_soundtrigger_miscdev = {
-	.minor	=	MISC_DYNAMIC_MINOR,
-	.name	=	"hw_soundtrigger_uevent",
+static struct miscdevice hw_soundtrigger_miscdev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "hw_soundtrigger_uevent",
 };
 
-void hw_soundtrigger_event_input(unsigned int soundtrigger_event)
+void hw_soundtrigger_event_input(uint32_t soundtrigger_event)
 {
-	if(soundtrigger_event < SOUNDTRIGGER_EVENT_NUM) {
-		input_report_key(soundtrigger_input_dev,
-			SOUNDTRIGGER_EVENT_BASE + soundtrigger_event, 1);
-		input_sync(soundtrigger_input_dev);
+	if (soundtrigger_event >= SOUNDTRIGGER_EVENT_NUM)
+		return;
 
-		input_report_key(soundtrigger_input_dev,
-			SOUNDTRIGGER_EVENT_BASE + soundtrigger_event, 0);
-		input_sync(soundtrigger_input_dev);
-	}
-	return;
+	input_report_key(g_soundtrigger_input_dev, SOUNDTRIGGER_EVENT_BASE + soundtrigger_event, 1);
+	input_sync(g_soundtrigger_input_dev);
+
+	input_report_key(g_soundtrigger_input_dev, SOUNDTRIGGER_EVENT_BASE + soundtrigger_event, 0);
+	input_sync(g_soundtrigger_input_dev);
 }
 EXPORT_SYMBOL(hw_soundtrigger_event_input);
 
-void hw_soundtrigger_event_uevent(unsigned int soundtrigger_event)
+void hw_soundtrigger_event_uevent(uint32_t soundtrigger_event)
 {
-	char envp_ext0[ENVP_LENTH];
+	char envp_ext0[ENVP_LENTH] = { 0 };
 	char *envp_ext[2] = { envp_ext0, NULL };
-	snprintf(envp_ext0, ENVP_LENTH, "soundtrigger=%d", soundtrigger_event);
 
+	snprintf(envp_ext0, ENVP_LENTH, "soundtrigger=%d", soundtrigger_event);
 	kobject_uevent_env(&hw_soundtrigger_miscdev.this_device->kobj, KOBJ_CHANGE, envp_ext);
-	return;
 }
 EXPORT_SYMBOL(hw_soundtrigger_event_uevent);
 
@@ -97,91 +72,96 @@ static const struct of_device_id hw_soundtrigger_event_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, hi6402_vad_of_match);
 
-static int soundtrigger_input_init(struct device *dev)
+static int soundtrigger_input_init(void)
 {
-	int error = 0;
+	int error;
 
-	soundtrigger_input_dev = input_allocate_device();
-	if (!soundtrigger_input_dev) {
-		loge("failed to allocate memory for input dev\n");
-		error = -ENOMEM;
-		goto err_dev;
+	g_soundtrigger_input_dev = input_allocate_device();
+	if (!g_soundtrigger_input_dev) {
+		AUDIO_LOGE("failed to allocate memory for input dev");
+		return -ENOMEM;
 	}
 
-	soundtrigger_input_dev->name = "soundtrigger_input_dev";
+	g_soundtrigger_input_dev->name = "soundtrigger_input_dev";
 
-	soundtrigger_input_dev->evbit[0] = BIT_MASK(EV_KEY);
-	soundtrigger_input_dev->keybit[BIT_WORD(KEY_F14)] |= BIT_MASK(KEY_F14);
-	soundtrigger_input_dev->keybit[BIT_WORD(KEY_F15)] |= BIT_MASK(KEY_F15);
-	soundtrigger_input_dev->keybit[BIT_WORD(KEY_F16)] |= BIT_MASK(KEY_F16);
-	soundtrigger_input_dev->keybit[BIT_WORD(KEY_F17)] |= BIT_MASK(KEY_F17);
-	soundtrigger_input_dev->keybit[BIT_WORD(KEY_F18)] |= BIT_MASK(KEY_F18);
-	error = input_register_device(soundtrigger_input_dev);
-	if(error < 0) {
-		loge("input register device failed, error_no is %d.\n", error);
-		goto err_free_dev;
+	g_soundtrigger_input_dev->evbit[0] = BIT_MASK(EV_KEY);
+	g_soundtrigger_input_dev->keybit[BIT_WORD(KEY_F14)] |= BIT_MASK(KEY_F14);
+	g_soundtrigger_input_dev->keybit[BIT_WORD(KEY_F15)] |= BIT_MASK(KEY_F15);
+	g_soundtrigger_input_dev->keybit[BIT_WORD(KEY_F16)] |= BIT_MASK(KEY_F16);
+	g_soundtrigger_input_dev->keybit[BIT_WORD(KEY_F17)] |= BIT_MASK(KEY_F17);
+	g_soundtrigger_input_dev->keybit[BIT_WORD(KEY_F18)] |= BIT_MASK(KEY_F18);
+
+	error = input_register_device(g_soundtrigger_input_dev);
+	if (error < 0) {
+		AUDIO_LOGE("input register device failed, error_no is %d", error);
+		/*
+		 * This function should only be used if input_register_device was not called yet or if it failed.
+		 * Once device was registered use input_unregister_device
+		 * and memory will be freed once last reference to the device is dropped
+		 */
+		input_free_device(g_soundtrigger_input_dev);
+		g_soundtrigger_input_dev = NULL;
+		return error;
 	}
-	logi("input register device successful.\n");
+
+	AUDIO_LOGI("input register device successful");
 	return 0;
-
-err_free_dev:
-	input_free_device(soundtrigger_input_dev);
-
-err_dev:
-	loge("error_no is %d.\n", error);
-
-	return error;
 }
 
- static int hw_soundtrigger_event_probe(struct platform_device *pdev)
+static void soundtrigger_input_deinit(void)
 {
-	struct device *dev = &pdev->dev;
-	int ret = 0;
+	/*
+	 * Once device has been successfully registered it can be unregistered with input_unregister_device;
+	 * input_free_device should not be called in this case.
+	 */
+	input_unregister_device(g_soundtrigger_input_dev);
+	g_soundtrigger_input_dev = NULL;
+}
 
-	logi("%s enter\n",__FUNCTION__);
+static int hw_soundtrigger_event_probe(struct platform_device *pdev)
+{
+	int ret;
 
-	//register soundtrigger input device.
-	ret = soundtrigger_input_init(dev);
-	if(ret) {
-		loge("input registor failed: %d\n", ret);
-		goto init_err;
+	AUDIO_LOGI("in");
+
+	ret = soundtrigger_input_init();
+	if (ret) {
+		AUDIO_LOGE("input registor failed: %d", ret);
+		return ret;
 	}
 
 	ret = misc_register(&hw_soundtrigger_miscdev);
 	if (ret) {
-	loge("%s : hw_soundtrigger_miscdev register failed", __FUNCTION__);
-		goto init_err;
+		AUDIO_LOGE("misc_register failed");
+		soundtrigger_input_deinit();
+		return ret;
 	}
 
-	logi("%s : huawei soundtrigger event probe successfully \n", __FUNCTION__);
+	AUDIO_LOGI("successfully");
 
 	return 0;
-
-init_err:
-	loge("%s : huawei soundtrigger event probe failed \n", __FUNCTION__);
-
-	return ret;
 }
 
 static int hw_soundtrigger_event_remove(struct platform_device *pdev)
 {
-	input_unregister_device(soundtrigger_input_dev);
+	misc_deregister(&hw_soundtrigger_miscdev);
+	soundtrigger_input_deinit();
+
 	return 0;
 }
 
 static struct platform_driver hw_soundtrigger_event_driver = {
 	.driver = {
-		.name	= "hw_soundtrigger_event",
-		.owner	= THIS_MODULE,
+		.name = "hw_soundtrigger_event",
+		.owner = THIS_MODULE,
 		.of_match_table = hw_soundtrigger_event_of_match,
 	},
-	.probe	= hw_soundtrigger_event_probe,
-	.remove	= hw_soundtrigger_event_remove,
+	.probe = hw_soundtrigger_event_probe,
+	.remove = hw_soundtrigger_event_remove,
 };
 
 static int __init hw_soundtrigger_event_init(void)
 {
-	logi("%s : huawei soundtrigger event init ok \n", __FUNCTION__);
 	return platform_driver_register(&hw_soundtrigger_event_driver);
 }
 

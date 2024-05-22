@@ -254,7 +254,7 @@ static ssize_t cxd224x_dev_read(struct file *filp, char __user *buf,
 				  size_t count, loff_t *offset)
 {
 	struct cxd224x_dev *cxd224x_dev = filp->private_data;
-	unsigned char tmp[MAX_BUFFER_SIZE];
+	unsigned char tmp[MAX_BUFFER_SIZE] = {0};
 	int total, len, ret;
 
 	total = 0;
@@ -538,7 +538,7 @@ static int cxd224x_probe(struct i2c_client *client,
 {
 	int ret;
 	struct cxd224x_platform_data *platform_data=NULL;
-	struct cxd224x_dev *cxd224x_dev;
+	struct cxd224x_dev *cxd224x_dev = NULL;
 	int irq_gpio_ok  = 0;
 #if defined(CONFIG_NFC_CXD224X_VEN) || defined(CONFIG_NFC_CXD224X_VEN_MODULE)
 	int en_gpio_ok	 = 0;
@@ -732,7 +732,7 @@ err_exit:
 
 static int cxd224x_remove(struct i2c_client *client)
 {
-	struct cxd224x_dev *cxd224x_dev;
+	struct cxd224x_dev *cxd224x_dev = NULL;
 
 	unregister_reboot_notifier(&cxd224x_pon_low_notifier);
 	cxd224x_dev = i2c_get_clientdata(client);

@@ -7,8 +7,8 @@
 #include <linux/interrupt.h>
 #include <linux/ctype.h>
 #include <linux/regulator/consumer.h>
-#include "../../huawei_ts_kit_algo.h"
-#include "../../tpkit_platform_adapter.h"
+#include "huawei_ts_kit_algo.h"
+#include "tpkit_platform_adapter.h"
 #include "atmel.h"
 
 #define MXT_FW_CHG_TIMEOUT 5000

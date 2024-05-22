@@ -1,66 +1,50 @@
 /*
- * drivers/inputhub/motion_channel.c
- *
- * Motion Hub Channel driver
- *
- * Copyright (c) 2012-2019 Huawei Technologies Co., Ltd.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
+ * Copyright (c) Huawei Technologies Co., Ltd. 2012-2020. All rights reserved.
+ * Description: motion channel source file
+ * Author: DIVS_SENSORHUB
+ * Create: 2012-05-29
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/init.h>
-#include <linux/fs.h>
+#include "motion_channel.h"
+
 #include <linux/err.h>
-#include <linux/of.h>
-#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/slab.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
-#include <huawei_platform/inputhub/motionhub.h>
-#include "protocol.h"
-#include "contexthub_route.h"
-#include "contexthub_boot.h"
-#ifdef CONFIG_HUAWEI_DSM
-#include <dsm/dsm_pub.h>
-#endif
-#include "contexthub_ext_log.h"
 
-#define USER_WRITE_BUFFER_SIZE ((1) + ((2) * (sizeof(int))))
+#include <huawei_platform/inputhub/motionhub.h>
+
+#include "contexthub_boot.h"
+#include "contexthub_ext_log.h"
+#include "contexthub_recovery.h"
+#include "contexthub_route.h"
+#include "sensor_info.h"
+#include "protocol.h"
+
+#define USER_WRITE_BUFFER_SIZE (1 + 2 * sizeof(int))
 /* include MOTIONHUB_TYPE_POPUP_CAM */
-#define MAX_SUPPORTED_MOTIONS_TYPE_CNT ((MOTION_TYPE_END) + (1))
+#define MAX_SUPPORTED_MOTIONS_TYPE_CNT ((MOTION_TYPE_END) + 1)
 #define SUPPORTED_MOTIONS_TYPE_NODE_PATH "/sensorhub/motion"
 #define SUPPORTED_MOTIONS_TYPE_PROP "supported_motions_type"
 #define MOTION_SUPPORTED_FLAG 1
 #define MOTION_UNSUPPORTED_FLAG 0
 
 static bool motion_status[MOTION_TYPE_END];
-static int motion_ref_cnt;
+static int64_t motion_ref_cnt;
 static u32 g_supported_motions_type[MAX_SUPPORTED_MOTIONS_TYPE_CNT];
-
-extern int stop_auto_motion;
-extern int step_ref_cnt;
-extern int flag_for_sensor_test;
-
-extern bool really_do_enable_disable(int *ref_cnt, bool enable, int bit);
-extern void save_step_count(void);
-
 
 struct motions_cmd_map {
 	int mhb_ioctl_app_cmd;
 	int motion_type;
 	int tag;
-	obj_cmd_t cmd;
-	obj_sub_cmd_t subcmd;
+	enum obj_cmd cmd;
+	enum obj_sub_cmd subcmd;
 };
 
 static const struct motions_cmd_map motions_cmd_map_tab[] = {
@@ -95,10 +79,12 @@ static char *motion_type_str[] = {
 	[MOTION_TYPE_REMOVE] = "remove",
 	[MOTION_TYPE_FALL] = "fall",
 	[MOTION_TYPE_SIDEGRIP] = "sidegrip",
+	[MOTION_TYPE_FALL_DOWN] = "fall_down",
+	[MOTION_TYPE_TOUCH_LINK] = "touchlink",
 	[MOTION_TYPE_END] = "end",
 };
 
-static int motion_ext_log_handler (const pkt_header_t *head)
+static int motion_ext_log_handler (const struct pkt_header *head)
 {
 	int offset;
 	int total_len;
@@ -112,7 +98,7 @@ static int motion_ext_log_handler (const pkt_header_t *head)
 	/* extract every payload */
 	offset = 0;
 	total_len = pkt_ext->hd.length -
-		(offsetof(ext_logger_req_t, data) - sizeof(pkt_header_t));
+		(offsetof(ext_logger_req_t, data) - sizeof(struct pkt_header));
 	while (offset < total_len) {
 		payload_len = pkt_pedo->len +
 			offsetof(pedo_ext_logger_req_t, data);
@@ -131,7 +117,7 @@ static int motion_ext_log_handler (const pkt_header_t *head)
 	return 0;
 }
 
-static void update_motion_info(obj_cmd_t cmd, motion_type_t type)
+static void update_motion_info(enum obj_cmd cmd, motion_type_t type)
 {
 	if (!(type >= MOTION_TYPE_START && type < MOTION_TYPE_END))
 		return;
@@ -181,7 +167,7 @@ static int extend_step_counter_process_nolock(bool enable)
 		send_app_config_cmd(TAG_STEP_COUNTER, app_config, false);
 
 	hwlog_info("%s extend_step_counter\n", enable ? "open" : "close");
-	if (really_do_enable_disable(&step_ref_cnt, enable, TYPE_EXTEND))
+	if (really_do_enable_disable(get_step_ref_cnt(), enable, TYPE_EXTEND))
 		inputhub_sensor_enable_nolock(TAG_STEP_COUNTER, enable);
 	if (enable) {
 		interval_param_t extend_open_param = {
@@ -197,16 +183,16 @@ static int extend_step_counter_process_nolock(bool enable)
 	return 0;
 }
 
-static int send_motion_cmd_internal(int tag, obj_cmd_t cmd,
-	obj_sub_cmd_t subcmd, motion_type_t type, bool use_lock)
+static int send_motion_cmd_internal(int tag, enum obj_cmd cmd,
+	enum obj_sub_cmd subcmd, motion_type_t type, bool use_lock)
 {
 	uint8_t app_config[16] = { 0 };
 	interval_param_t interval_param;
 	bool cmd_status = false;
 
-	if (stop_auto_motion == 1) {
+	if (get_stop_auto_motion() == 1) {
 		hwlog_info("%s stop_auto_motion: %d", __func__,
-			stop_auto_motion);
+			get_stop_auto_motion());
 		return 0;
 	}
 
@@ -265,13 +251,12 @@ static int send_motion_cmd_internal(int tag, obj_cmd_t cmd,
 
 static int send_motion_cmd(unsigned int cmd, unsigned long arg)
 {
-	uintptr_t arg_tmp = (uintptr_t)arg;
-	void __user *argp = (void __user *)arg_tmp;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	int argvalue = 0;
 	int i;
 	int loop_num;
 
-	if (flag_for_sensor_test)
+	if (get_flag_for_sensor_test())
 		return 0;
 
 	loop_num = sizeof(motions_cmd_map_tab) /
@@ -373,8 +358,7 @@ static bool is_motion_supported(u32 motion_type)
 
 static int motion_support_query(unsigned long arg)
 {
-	uintptr_t arg_tmp = (uintptr_t)arg;
-	void __user *argp = (void __user *)arg_tmp;
+	void __user *argp = (void __user *)(uintptr_t)arg;
 	int motion_type = MOTIONHUB_TYPE_POPUP_CAM;
 	int supported = MOTION_SUPPORTED_FLAG;
 	int unsupported = MOTION_UNSUPPORTED_FLAG;
@@ -384,14 +368,14 @@ static int motion_support_query(unsigned long arg)
 		return -EFAULT;
 	}
 	if (is_motion_supported(motion_type)) {
-		if (copy_to_user((void __user *)arg_tmp, (void *)&supported,
+		if (copy_to_user(argp, (void *)&supported,
 			sizeof(supported)) != 0) {
 			hwlog_err("%s, supported copy_to_user error\n",
 				__func__);
 			return -EFAULT;
 		}
 	} else {
-		if (copy_to_user((void __user *)arg_tmp, (void *)&unsupported,
+		if (copy_to_user(argp, (void *)&unsupported,
 			sizeof(unsupported)) != 0) {
 			hwlog_err("%s, unsupported copy_to_user error\n",
 				__func__);
@@ -531,7 +515,7 @@ static int __init motionhub_init(void)
 	if (is_sensorhub_disabled())
 		return -1;
 
-	if (!getSensorMcuMode()) {
+	if (!get_sensor_mcu_mode()) {
 		hwlog_err("mcu boot fail,motionhub_init exit\n");
 		return -1;
 	}

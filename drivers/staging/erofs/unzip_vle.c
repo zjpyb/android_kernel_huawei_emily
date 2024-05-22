@@ -1627,8 +1627,10 @@ static int z_erofs_vle_normalaccess_readpages(struct file *filp,
 {
 	struct inode *const inode = mapping->host;
 	struct erofs_sb_info *const sbi = EROFS_I_SB(inode);
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	struct block_device *const bdev = inode->i_sb->s_bdev;
-
+#endif
 	bool sync = __should_decompress_synchronously(sbi, nr_pages);
 	struct z_erofs_vle_frontend f = VLE_FRONTEND_INIT(inode);
 	gfp_t gfp = mapping_gfp_constraint(mapping, GFP_KERNEL);
@@ -1640,6 +1642,8 @@ static int z_erofs_vle_normalaccess_readpages(struct file *filp,
 			      nr_pages, false);
 
 #ifdef CONFIG_EROFS_FS_HUAWEI_EXTENSION
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	if (pages) {
 		/*
 		 * Get one quota before read pages, when this ends,
@@ -1649,6 +1653,7 @@ static int z_erofs_vle_normalaccess_readpages(struct file *filp,
 		blk_throtl_get_quota(bdev, PAGE_SIZE,
 				     msecs_to_jiffies(100), true);
 	}
+#endif
 #endif
 
 	f.headoffset = (erofs_off_t)lru_to_page(pages)->index << PAGE_SHIFT;
@@ -1704,10 +1709,13 @@ static int z_erofs_vle_normalaccess_readpages(struct file *filp,
 	put_pages_list(&pagepool);
 
 #ifdef CONFIG_EROFS_FS_HUAWEI_EXTENSION
+#if defined(CONFIG_BLK_CGROUP_IOSMART) || \
+	defined(CONFIG_BLK_DEV_THROTTLING)
 	if (io_submitted)
 		while (--io_submitted)
 			blk_throtl_get_quota(bdev, PAGE_SIZE,
 					     msecs_to_jiffies(100), true);
+#endif
 #endif
 	return 0;
 }

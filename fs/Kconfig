@@ -33,6 +33,7 @@ source "fs/ocfs2/Kconfig"
 source "fs/btrfs/Kconfig"
 source "fs/nilfs2/Kconfig"
 source "fs/f2fs/Kconfig"
+source "fs/hmfs/Kconfig"
 
 config FS_DAX
 	bool "Direct Access (DAX) support"
@@ -97,6 +98,8 @@ config MANDATORY_FILE_LOCKING
 
 source "fs/crypto/Kconfig"
 
+source "fs/verity/Kconfig"
+
 source "fs/notify/Kconfig"
 
 source "fs/quota/Kconfig"
@@ -126,7 +129,6 @@ menu "DOS/FAT/NT Filesystems"
 
 source "fs/fat/Kconfig"
 source "fs/ntfs/Kconfig"
-source "fs/exfat/Kconfig"
 
 endmenu
 endif # BLOCK
@@ -207,7 +209,7 @@ config ARCH_HAS_GIGANTIC_PAGE
 config FILE_MAP
 	bool "file map support"
 	default n
-	depends on (F2FS_FS || EROFS_FS) && BLK_CGROUP
+	depends on (F2FS_FS || HMFS_FS || EROFS_FS) && BLK_CGROUP
 
 	---help---
 	  This selects file map support.
@@ -317,10 +319,12 @@ source "fs/ncpfs/Kconfig"
 source "fs/coda/Kconfig"
 source "fs/afs/Kconfig"
 source "fs/9p/Kconfig"
+-source "fs/hmdfs/Kconfig"
 
 endif # NETWORK_FILESYSTEMS
 
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
+source "fs/unicode/Kconfig"
 
 endmenu

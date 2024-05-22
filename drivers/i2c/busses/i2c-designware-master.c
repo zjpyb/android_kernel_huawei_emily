@@ -437,11 +437,30 @@ i2c_dw_read(struct dw_i2c_dev *dev)
  * Prepare controller for a transaction and call i2c_dw_xfer_msg.
  */
 #if defined CONFIG_HISI_I2C_DESIGNWARE
+#ifdef CONFIG_HUAWEI_DSM
+void eusb_i2c_dmd_report(struct dw_i2c_dev *dev,
+	struct i2c_msg msgs[], int ret)
+{
+	if (dev->dmd_support) {
+		dev->dsm_count += 1;
+		if ((dev->dsm_count == DSM_TIME) &&
+			!dsm_client_ocuppy(dev->i2c_dclient)) {
+			dsm_client_record(dev->i2c_dclient,
+				"error info %d.\n",
+				ret, msgs[0].addr);
+			dsm_client_notify(dev->i2c_dclient,
+				DSM_EUSB_I2C_TRANSFER_NO);
+			dev->dsm_count = 0;
+		}
+	}
+}
+#endif
+
 int
 i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 {
 	struct dw_i2c_dev *dev = i2c_get_adapdata(adap);
-	struct dw_hisi_controller *controller = dev->priv_data;
+	struct dw_i2c_controller *controller = dev->priv_data;
 	int totallen = 0;
 	int ret;
 	int r;
@@ -453,14 +472,7 @@ i2c_dw_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 	mutex_lock(&dev->lock);
 
-	r = clk_enable(dev->clk);
-	if (r) {
-		dev_warn(dev->dev, "Unable to enable clock!\n");
-		mutex_unlock(&dev->lock);
-		return  -EINVAL;
-	}
-
-	r = dw_hisi_pins_ctrl(dev, PINCTRL_STATE_DEFAULT);
+	r = dw_i2c_pins_ctrl(dev, PINCTRL_STATE_DEFAULT);
 	if (r < 0)
 		dev_warn(dev->dev,
 	        "pins are not configured from the driver\n");
@@ -586,18 +598,17 @@ done:
 		ret = -EAGAIN;/*lint !e838  */
 	}
 
-	clk_disable(dev->clk);
-
-	r = dw_hisi_pins_ctrl(dev, PINCTRL_STATE_IDLE);
+	r = dw_i2c_pins_ctrl(dev, PINCTRL_STATE_IDLE);
 	if (r < 0)
 		dev_warn(dev->dev,
 				 "pins are not configured from the driver\n");
 
-
-
 	mutex_unlock(&dev->lock);
 	if (ret < 0) {
 		dev_err(dev->dev, "error info %d, slave addr 0x%x.\n", ret, msgs[0].addr);
+#ifdef CONFIG_HUAWEI_DSM
+		eusb_i2c_dmd_report(dev, msgs, ret);
+#endif
 	}
 
 	return ret;
@@ -757,7 +768,7 @@ static int i2c_dw_irq_handler_master(struct dw_i2c_dev *dev)
 {
 	u32 stat;
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-        struct dw_hisi_controller *controller = dev->priv_data;
+        struct dw_i2c_controller *controller = dev->priv_data;
 #endif
 	stat = i2c_dw_read_clear_intrbits(dev);
 	if (stat & DW_IC_INTR_TX_ABRT) {
@@ -813,7 +824,7 @@ irqreturn_t i2c_dw_isr(int this_irq, void *dev_id)
 	struct dw_i2c_dev *dev = dev_id;
 	u32 stat, enabled;
 #if defined CONFIG_HISI_I2C_DESIGNWARE
-	struct dw_hisi_controller *controller = dev->priv_data;
+	struct dw_i2c_controller *controller = dev->priv_data;
 
 	if (!controller) {
 		dev_err(dev->dev, "%s: i2c contrller do not be init.\n", __func__);

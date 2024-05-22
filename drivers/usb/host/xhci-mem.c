@@ -1090,7 +1090,7 @@ static u32 xhci_find_real_port_number(struct xhci_hcd *xhci,
 			top_dev = top_dev->parent)
 		/* Found device below root hub */;
 
-	return	xhci_find_raw_port_number(hcd, top_dev->portnum);  /*[false alarm]: it is a false alarm*/
+	return	xhci_find_raw_port_number(hcd, top_dev->portnum);
 }
 
 /* Setup an xHCI virtual device for a Set Address command */
@@ -1366,7 +1366,7 @@ static u32 xhci_get_endpoint_max_burst(struct usb_device *udev,
 	if (udev->speed == USB_SPEED_HIGH &&
 	    (usb_endpoint_xfer_isoc(&ep->desc) ||
 	     usb_endpoint_xfer_int(&ep->desc)))
-		return usb_endpoint_maxp_mult(&ep->desc) - 1;  /*[false alarm]: it is a false alarm*/
+		return usb_endpoint_maxp_mult(&ep->desc) - 1;
 
 	return 0;
 }
@@ -1381,11 +1381,11 @@ static u32 xhci_get_endpoint_type(struct usb_host_endpoint *ep)
 	case USB_ENDPOINT_XFER_CONTROL:
 		return CTRL_EP;
 	case USB_ENDPOINT_XFER_BULK:
-		return in ? BULK_IN_EP : BULK_OUT_EP;  /*[false alarm]: it is a false alarm*/
+		return in ? BULK_IN_EP : BULK_OUT_EP;
 	case USB_ENDPOINT_XFER_ISOC:
-		return in ? ISOC_IN_EP : ISOC_OUT_EP;  /*[false alarm]: it is a false alarm*/
+		return in ? ISOC_IN_EP : ISOC_OUT_EP;
 	case USB_ENDPOINT_XFER_INT:
-		return in ? INT_IN_EP : INT_OUT_EP;  /*[false alarm]: it is a false alarm*/
+		return in ? INT_IN_EP : INT_OUT_EP;
 	}
 	return 0;
 }
@@ -1416,7 +1416,7 @@ static u32 xhci_get_max_esit_payload(struct usb_device *udev,
 	max_packet = usb_endpoint_maxp(&ep->desc);
 	max_burst = usb_endpoint_maxp_mult(&ep->desc);
 	/* A 0 in max burst means 1 transfer per ESIT */
-	return max_packet * max_burst;  /*[false alarm]: it is a false alarm*/
+	return max_packet * max_burst;
 }
 
 /* Set up an endpoint with one ring segment.  Do not allocate stream rings.
@@ -1479,9 +1479,15 @@ int xhci_endpoint_init(struct xhci_hcd *xhci,
 	/* Allow 3 retries for everything but isoc, set CErr = 3 */
 	if (!usb_endpoint_xfer_isoc(&ep->desc))
 		err_count = 3;
-	/* Some devices get this wrong */
-	if (usb_endpoint_xfer_bulk(&ep->desc) && udev->speed == USB_SPEED_HIGH)
-		max_packet = 512;
+	/* HS bulk max packet should be 512, FS bulk supports 8, 16, 32 or 64 */
+	if (usb_endpoint_xfer_bulk(&ep->desc)) {
+		if (udev->speed == USB_SPEED_HIGH)
+			max_packet = 512;
+		if (udev->speed == USB_SPEED_FULL) {
+			max_packet = rounddown_pow_of_two(max_packet);
+			max_packet = clamp_val(max_packet, 8, 64);
+		}
+	}
 	/* xHCI 1.0 and 1.1 indicates that ctrl ep avg TRB Length should be 8 */
 	if (usb_endpoint_xfer_control(&ep->desc) && xhci->hci_version >= 0x100)
 		avg_trb_len = 8;
@@ -1866,10 +1872,14 @@ no_bw:
 	kfree(xhci->port_array);
 	kfree(xhci->rh_bw);
 	kfree(xhci->ext_caps);
+	kfree(xhci->usb2_rhub.psi);
+	kfree(xhci->usb3_rhub.psi);
 
 	xhci->usb2_ports = NULL;
 	xhci->usb3_ports = NULL;
 	xhci->port_array = NULL;
+	xhci->usb2_rhub.psi = NULL;
+	xhci->usb3_rhub.psi = NULL;
 	xhci->rh_bw = NULL;
 	xhci->ext_caps = NULL;
 

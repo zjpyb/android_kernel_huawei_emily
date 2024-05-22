@@ -66,6 +66,7 @@
 #include <linux/nospec.h>
 
 #include <linux/kmsg_dump.h>
+#include <chipset_common/security/kshield.h>
 /* Move somewhere else to avoid recompiling? */
 #include <generated/utsrelease.h>
 
@@ -1215,6 +1216,7 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
 	struct new_utsname tmp;
 
+	kshield_chk_kinfo();
 	down_read(&uts_sem);
 	memcpy(&tmp, utsname(), sizeof(tmp));
 	up_read(&uts_sem);
@@ -1236,6 +1238,7 @@ SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)
 {
 	struct old_utsname tmp;
 
+	kshield_chk_kinfo();
 	if (!name)
 		return -EFAULT;
 
@@ -1256,6 +1259,7 @@ SYSCALL_DEFINE1(olduname, struct oldold_utsname __user *, name)
 {
 	struct oldold_utsname tmp = {};
 
+	kshield_chk_kinfo();
 	if (!name)
 		return -EFAULT;
 
@@ -1898,7 +1902,7 @@ static int validate_prctl_map(struct prctl_mm_map *prctl_map)
 	((unsigned long)prctl_map->__m1 __op				\
 	 (unsigned long)prctl_map->__m2) ? 0 : -EINVAL
 	error  = __prctl_check_order(start_code, <, end_code);
-	error |= __prctl_check_order(start_data, <, end_data);
+	error |= __prctl_check_order(start_data,<=, end_data);
 	error |= __prctl_check_order(start_brk, <=, brk);
 	error |= __prctl_check_order(arg_start, <=, arg_end);
 	error |= __prctl_check_order(env_start, <=, env_end);
@@ -2384,6 +2388,9 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 	struct task_struct *me = current;
 	unsigned char comm[sizeof(me->comm)];
 	long error;
+#if (defined(CONFIG_HW_IAWARE_THREAD_BOOST) || defined(CONFIG_HW_RTG_SCHED))
+	int sock_num;
+#endif
 
 	error = security_task_prctl(option, arg2, arg3, arg4, arg5);
 	if (error != -ENOSYS)
@@ -2442,10 +2449,13 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		if (strncpy_from_user(comm, (char __user *)arg2,
 				      sizeof(me->comm) - 1) < 0)
 			return -EFAULT;
+#if (defined(CONFIG_HW_IAWARE_THREAD_BOOST) || defined(CONFIG_HW_RTG_SCHED))
+		sock_num = iaware_proc_comm_connector(me, comm);
+#endif
 		set_task_comm(me, comm);
 		proc_comm_connector(me);
 #if (defined(CONFIG_HW_IAWARE_THREAD_BOOST) || defined(CONFIG_HW_RTG_SCHED))
-		iaware_proc_comm_connector(me, comm);
+		iaware_send_comm_msg(me, sock_num);
 #endif
 		break;
 	case PR_GET_NAME:

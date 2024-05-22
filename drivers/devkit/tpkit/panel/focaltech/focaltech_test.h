@@ -140,8 +140,8 @@ struct focal_test_result {
 	int *values;
 	size_t size;
 	char test_name[FTS_TEST_NAME_LEN];
-	char result_code[FTS_RESULT_CODE_LEN];
-	char tptestfailedreason[TP_TEST_FAILED_REASON_LEN];
+	char result_code[FTS_RESULT_CODE_LEN + 1];
+	char tptestfailedreason[TP_TEST_FAILED_REASON_LEN + 1];
 	char statistics_data[FTS_STATISTICS_DATA_LEN];
 	u8 typeindex;
 	char testresult;

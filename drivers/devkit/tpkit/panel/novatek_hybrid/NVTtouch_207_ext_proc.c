@@ -25,10 +25,10 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
-#include <../../huawei_ts_kit.h>
+#include <huawei_ts_kit.h>
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/log_jank.h>
-#include "../../huawei_ts_kit_algo.h"
+#include "huawei_ts_kit_algo.h"
 #if defined (CONFIG_HUAWEI_DSM)
 #include <dsm/dsm_pub.h>
 #endif
@@ -380,7 +380,7 @@ return:
 void nvt_hybrid_read_mdata(uint32_t xdata_addr, uint32_t xdata_btn_addr)
 {
 	int32_t ret;
-	int32_t i = 0;
+	uint32_t i;
 	int32_t j = 0;
 	int32_t k = 0;
 	uint8_t buf[NVT_HYBRID_I2C_TANSFER_LENGTH + 1] = {0};
@@ -424,8 +424,8 @@ void nvt_hybrid_read_mdata(uint32_t xdata_addr, uint32_t xdata_btn_addr)
 	if (residual_len != 0) {
 		//---change xdata index---
 		buf[0] = 0xFF;
-		buf[1] = ((xdata_addr + data_len - residual_len) >> 16);
-		buf[2] = ((xdata_addr + data_len - residual_len) >> 8) & 0xFF;
+		buf[1] = ((uint32_t)(xdata_addr + data_len - residual_len) >> 16);
+		buf[2] = ((uint32_t)(xdata_addr + data_len - residual_len) >> 8) & 0xFF;
 		nvt_hybrid_ts_i2c_write(nvt_hybrid_ts->client, NVT_HYBRID_I2C_FW_Address, buf, 3);
 
 		//---read xdata by NVT_HYBRID_I2C_TANSFER_LENGTH

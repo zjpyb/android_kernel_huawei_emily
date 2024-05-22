@@ -1,1 +1,1 @@
-obj-$(CONFIG_HISI_SOH_PMIC) += hisi_pmic_soh.o
+obj-$(CONFIG_BATT_SOH_PMIC) += hisi_pmic_soh.o

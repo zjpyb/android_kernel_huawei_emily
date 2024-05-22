@@ -21,9 +21,7 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/mmc.h>
-#ifdef CONFIG_MMC_HISI_TRACE
-#include <linux/hisi/mmc_trace.h>
-#endif
+
 #include "core.h"
 #include "card.h"
 #include "host.h"
@@ -38,9 +36,6 @@
 #ifdef CONFIG_HISI_BOOTDEVICE
 #include <linux/bootdevice.h>
 #include "emmc-rpmb.h"
-#endif
-#ifdef CONFIG_HISI_AB_PARTITION
-#include "mmc-kirin-lib.h"
 #endif
 #ifdef CONFIG_HUAWEI_STORAGE_ROFA
 #include <chipset_common/storage_rofa/storage_rofa.h>
@@ -80,6 +75,11 @@ static const unsigned int taac_mant[] = {
 			__res |= resp[__off-1] << ((32 - __shft) % 32);	\
 		__res & __mask;						\
 	})
+
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+static ssize_t mmc_fwrev_show(struct device *dev,
+	struct device_attribute *attr, char *buf);
+#endif
 
 /*
  * Given the decoded CSD structure, decode the raw CID to our CID structure.
@@ -375,8 +375,7 @@ static void mmc_manage_enhanced_area(struct mmc_card *card, u8 *ext_csd)
 		}
 	}
 }
-
-static void mmc_part_add(struct mmc_card *card, unsigned int size,
+static void mmc_part_add(struct mmc_card *card, u64 size,
 			 unsigned int part_cfg, const char *name, int idx, bool ro,
 			 int area_type)
 {
@@ -392,7 +391,7 @@ static void mmc_manage_gp_partitions(struct mmc_card *card, u8 *ext_csd)
 {
 	int idx;
 	u8 hc_erase_grp_sz, hc_wp_grp_sz;
-	unsigned int part_size;
+	u64 part_size;
 
 	/*
 	 * General purpose partition feature support --
@@ -422,8 +421,7 @@ static void mmc_manage_gp_partitions(struct mmc_card *card, u8 *ext_csd)
 				(ext_csd[EXT_CSD_GP_SIZE_MULT + idx * 3 + 1]
 				<< 8) +
 				ext_csd[EXT_CSD_GP_SIZE_MULT + idx * 3];
-			part_size *= (size_t)(hc_erase_grp_sz *
-				hc_wp_grp_sz);
+			part_size *= (hc_erase_grp_sz * hc_wp_grp_sz);
 			mmc_part_add(card, part_size << 19,
 				EXT_CSD_PART_CONFIG_ACC_GP0 + idx,
 				"gp%d", idx, false,
@@ -445,9 +443,12 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 {
 	int err = 0;
 	unsigned int idx;
-	unsigned int part_size;
+	u64 part_size;
 	struct device_node *np;
 	bool broken_hpi = false;
+#ifdef CONFIG_HUAWEI_STORAGE_ROFA
+	char fwrev[BOOTDEVICE_FWREV_SIZE] = { 0 };
+#endif
 
 	/* Version is coded in the CSD_STRUCTURE byte in the EXT_CSD register */
 	card->ext_csd.raw_ext_csd_structure = ext_csd[EXT_CSD_STRUCTURE];
@@ -529,10 +530,9 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 
 		card->ext_csd.rel_sectors = ext_csd[EXT_CSD_REL_WR_SEC_C];
 
-
-#ifdef CONFIG_MMC_DW_MUX_SDSIM
+#if defined(CONFIG_MMC_DW_MUX_SDSIM) || defined(CONFIG_MMC_SDHCI_MUX_SDSIM)
 		/*for sdcard which index=1,no need bootpartition*/
-		if(1 != card->host->index)
+		if (1 != card->host->index)
 #endif
 		{
 			/*
@@ -729,7 +729,7 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 	/* eMMC v5 or later */
 	if (card->ext_csd.rev >= 7) {
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 		/*new feature for emmc v5.0*/
 		mmc_decode_ext_csd_emmc50(card, ext_csd);
 #endif
@@ -779,13 +779,9 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		}
 	}
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	/*new feature for emmc v5.0*/
 	mmc_decode_ext_csd_emmc51(card, ext_csd);
-#endif
-
-#ifdef CONFIG_HISI_AB_PARTITION
-	mmc_get_boot_partition_type(card, ext_csd);
 #endif
 
 #ifdef CONFIG_HISI_BOOTDEVICE
@@ -803,7 +799,10 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 #if defined(CONFIG_HISI_BOOTDEVICE) && defined(CONFIG_HUAWEI_STORAGE_ROFA)
 	if ((get_bootdevice_type() == BOOT_DEVICE_EMMC) &&
 	    !strncmp(mmc_hostname(card->host), "mmc0", strlen("mmc0"))) {
-		storage_rochk_record_bootdevice_fwrev(card->ext_csd.fwrev);
+		if (mmc_fwrev_show(&card->dev, NULL, fwrev) > 0)
+			storage_rochk_record_bootdevice_fwrev(fwrev);
+		else
+			storage_rochk_record_bootdevice_fwrev("invalid");
 		storage_rochk_record_bootdevice_pre_eol_info(
 				card->ext_csd.pre_eol_info);
 	}
@@ -1594,7 +1593,7 @@ static int mmc_select_hs200(struct mmc_card *card)
 	int err = -EINVAL;
 	u8 val;
 
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 	unsigned int old_signal_voltage;
 	old_signal_voltage = host->ios.signal_voltage;
 	if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS200_1_2V)
@@ -1643,7 +1642,7 @@ static int mmc_select_hs200(struct mmc_card *card)
 		 * switch failed. If there really is a problem, we would expect
 		 * tuning will fail and the result ends up the same.
 		 */
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 		err = __mmc_switch_status(card, false);
 		/*
 		 * mmc_select_timing() assumes timing has not changed if
@@ -1655,7 +1654,7 @@ static int mmc_select_hs200(struct mmc_card *card)
 	}
 err:
 	if (err) {
-#ifndef CONFIG_HISI_MMC
+#ifndef CONFIG_ZODIAC_MMC
 		/* fall back to the old signal voltage, if fails report error */
 		if (mmc_set_signal_voltage(host, old_signal_voltage))
 			err = -EIO;
@@ -1683,7 +1682,7 @@ static int mmc_select_timing(struct mmc_card *card)
 		err = mmc_select_hs200(card);
 	else if (card->mmc_avail_type & EXT_CSD_CARD_TYPE_HS)
 		err = mmc_select_hs(card);
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	else if(0 == card->mmc_avail_type)
         	mmc_select_new_sd(card);
 #endif
@@ -2051,7 +2050,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	storage_rofi_switch_mmc_card_pwronwp(card);
 #endif
 
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	err = mmc_init_card_enable_feature(card);
 	if (err)
 		goto free_card;
@@ -2086,7 +2085,7 @@ static int mmc_can_sleep_notify(const struct mmc_card *card)
 {
 	return card && mmc_card_mmc(card) && card->ext_csd.raw_sleep_noti_time;
 }
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 static int mmc_sleep(struct mmc_host *host)
 {
 	struct mmc_card *card = host->card;
@@ -2138,7 +2137,7 @@ static int mmc_poweroff_notify(struct mmc_card *card, unsigned int notify_type)
 	/* Use EXT_CSD_POWER_OFF_SHORT as default notification type. */
 	if (notify_type == EXT_CSD_POWER_OFF_LONG)
 		timeout = card->ext_csd.power_off_longtime;
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	else if (notify_type == EXT_CSD_SLEEP_NOTIFICATION)
 		timeout = card->ext_csd.sleep_notification_time;
 #endif
@@ -2170,6 +2169,12 @@ static void mmc_remove(struct mmc_host *host)
  */
 static int mmc_alive(struct mmc_host *host)
 {
+#ifdef CONFIG_HISI_DEBUG_FS
+	if (host->sim_remove_nano && host->index == 1) {
+		pr_err("%s nano sd remove test, return err\n", __func__);
+		return -1;
+	}
+#endif
 	return mmc_send_status(host->card, NULL);
 }
 
@@ -2202,7 +2207,7 @@ static void mmc_detect(struct mmc_host *host)
  * suspend operation on hisi platform, conclude disable cmdq
  * swich to normal partion and so on
  */
-extern int mmc_suspend_hisi_operation(struct mmc_host *host);
+extern int mmc_suspend_zodiac_operation(struct mmc_host *host);
 static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 {
 	int err = 0;
@@ -2220,8 +2225,8 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 			goto out;
 	}
 
-#ifdef CONFIG_HISI_MMC
-	err = mmc_suspend_hisi_operation(host);
+#ifdef CONFIG_ZODIAC_MMC
+	err = mmc_suspend_zodiac_operation(host);
 	if (err) {
 		pr_err("%s: mmc suspend hisi operation failed.\n", __func__);
 		goto out;
@@ -2239,7 +2244,7 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 			if (err)
 				goto out;
 		}
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 		err = mmc_card_sleep(host);
 		/*if sleep(send cmd5 failed),we reinit the card
 		 *we don't need to reinit when shut down
@@ -2261,9 +2266,9 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 	}
 
 	if (!err) {
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 		if(!mmc_card_keep_power(host))
-			hisi_mmc_power_off(host);
+			zodiac_mmc_power_off(host);
 #endif
 		mmc_card_set_suspended(host->card);
 	}
@@ -2304,7 +2309,7 @@ static int _mmc_resume(struct mmc_host *host)
 		goto out;
 
 	if (!mmc_card_keep_power(host)) {
-		hisi_mmc_power_up(host);
+		zodiac_mmc_power_up(host);
 		if (mmc_card_removable_mmc(host->card)) {
 			/* naono MMC card handle */
 			while(sdcard_retry-- > 0){
@@ -2319,9 +2324,9 @@ static int _mmc_resume(struct mmc_host *host)
 			/*repower again for mmc resume cmd1 timeout issue*/
 			if(err)
 			{
-				hisi_mmc_power_off(host);
+				zodiac_mmc_power_off(host);
 				mdelay(200);
-				hisi_mmc_power_up(host);
+				zodiac_mmc_power_up(host);
 				mdelay(100);
 				err = mmc_init_card(host, host->card->ocr, host->card);
 				pr_err("%s invoke mmc_init_card() again after power_cycle err = %d\n", __func__, err);
@@ -2338,8 +2343,8 @@ static int _mmc_resume(struct mmc_host *host)
 	if(host->caps2 & MMC_CAP2_FULL_PWR_CYCLE
 		&& mmc_can_sleep_notify(host->card))
 		host->card->ext_csd.power_off_notification = EXT_CSD_POWER_ON;
-#ifdef CONFIG_HISI_MMC
-	err = mmc_card_awake(host);/*according to K3 modify*/
+#ifdef CONFIG_ZODIAC_MMC
+	err = mmc_card_awake(host); /* according to K3 modify */
 	if (err) {
 		pr_err("%s awake failed err=%d\n", __func__, err);
 		mmc_power_off(host);
@@ -2443,8 +2448,8 @@ int mmc_can_reset(struct mmc_card *card)
 }
 
 EXPORT_SYMBOL(mmc_can_reset);
-#ifdef CONFIG_HISI_MMC
-extern int hisi_mmc_reset(struct mmc_host *host);
+#ifdef CONFIG_ZODIAC_MMC
+extern int zodiac_mmc_reset(struct mmc_host *host);
 /* TODO: this function is not exist in kernel 4.4, add it just to be compitable
  * with hisi reset, it should be integrated to mmc reset as kernel 4.4.
  * mmc_power_restore_host should also be cared  invoked in ffu.c*/
@@ -2484,7 +2489,7 @@ static int mmc_reset(struct mmc_host *host)
 #endif
 
 static const struct mmc_bus_ops mmc_ops = {
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	.awake = mmc_awake,
 	.sleep = mmc_sleep,
 #endif
@@ -2500,16 +2505,15 @@ static const struct mmc_bus_ops mmc_ops = {
 	.runtime_resume = mmc_runtime_resume,
 	.alive = mmc_alive,
 	.shutdown = mmc_shutdown,
-#ifdef CONFIG_HISI_MMC
+#ifdef CONFIG_ZODIAC_MMC
 	.power_restore = mmc_power_restore,
-	.reset = hisi_mmc_reset,
+	.reset = zodiac_mmc_reset,
 #else
 	.reset = mmc_reset,
 #endif
 };
 
-
-#ifdef CONFIG_MMC_DW_MUX_SDSIM
+#if defined(CONFIG_MMC_DW_MUX_SDSIM) || defined(CONFIG_MMC_SDHCI_MUX_SDSIM)
 #define OCR_REGISTER_BIT_0_TO_27_MASK 0xFFFFFFF
 #define OCR_REGISTER_SD 0xFF8080
 
@@ -2538,7 +2542,6 @@ int mmc_detect_mmc(struct mmc_host *host)
 	return err;
 }
 #endif
-
 
 /*
  * Starting point for MMC card init.

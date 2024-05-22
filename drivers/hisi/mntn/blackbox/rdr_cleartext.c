@@ -1,13 +1,21 @@
 /*
+ * rdr_cleartext.c
+ *
  * blackbox cleartext. (kernel run data recorder clear text recording.)
  *
- * Copyright (c) 2013 Huawei Technologies CO., Ltd.
+ * Copyright (c) 2001-2019 Huawei Technologies Co., Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
-
+#include <linux/kernel.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/slab.h>
@@ -26,79 +34,75 @@
 #include <linux/hisi/hisi_bootup_keypoint.h>
 #include <linux/hisi/rdr_pub.h>
 #include <linux/hisi/util.h>
-#include <hisi_partition.h>
-#include <linux/hisi/kirin_partition.h>
+#include <partition_macro.h>
+#include <linux/hisi/partition_ap_kernel.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <securec.h>
 #include <linux/hisi/rdr_hisi_ap_ringbuffer.h>
-#include <linux/hisi/hisi_log.h>
-#define HISI_LOG_TAG HISI_BLACKBOX_TAG
+#include <pr_log.h>
 
 #include "../bl31/hisi_bl31_exception.h"
 #include "rdr_inner.h"
 #include "rdr_print.h"
 #include "rdr_field.h"
 
+#define PR_LOG_TAG BLACKBOX_TAG
+#define BUFFER_SIZE  128
+
+
 struct semaphore rdr_cleartext_sem;
 static LIST_HEAD(rdr_cleartext_ops_list);
 static DEFINE_SPINLOCK(rdr_cleartext_ops_list_lock);
 
-static u64 g_coreid_from_area_id[RDR_AREA_MAXIMUM] =
-{
-    RDR_AP,
-    RDR_CP,
-    RDR_TEEOS,
-    RDR_HIFI,
-    RDR_LPM3,
-    RDR_IOM3,
-    RDR_ISP,
-    RDR_IVP,
-    RDR_EMMC,
-    RDR_MODEMAP,
-    RDR_CLK,
-    RDR_REGULATOR,
-    RDR_BFM,
-    RDR_HISEE,
-    RDR_NPU,
-    RDR_CONN,
-	RDR_EXCEPTION_TRACE
+static u64 g_coreid_from_area_id[RDR_AREA_MAXIMUM] = {
+	RDR_AP,
+	RDR_CP,
+	RDR_TEEOS,
+	RDR_HIFI,
+	RDR_LPM3,
+	RDR_IOM3,
+	RDR_ISP,
+	RDR_IVP,
+	RDR_EMMC,
+	RDR_MODEMAP,
+	RDR_CLK,
+	RDR_REGULATOR,
+	RDR_BFM,
+	RDR_HISEE,
+	RDR_NPU,
+	RDR_CONN,
+	RDR_EXCEPTION_TRACE,
+	RDR_DSS
 };
 
-static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len);
-static pfn_cleartext_ops g_exception_cleartext_fn[EXCEPTION_TRACE_ENUM] =
-{
+static int rdr_exception_trace_ap_cleartext_print(const char *dir_path, u64 log_addr, u32 log_len);
+static pfn_cleartext_ops g_exception_cleartext_fn[EXCEPTION_TRACE_ENUM] = {
 	rdr_exception_trace_ap_cleartext_print,
 	rdr_exception_trace_bl31_cleartext_print,
 };
 
 /*
- * func name: rdr_cleartext_print
- *
  * append(save) data to path.
  * func args:
  *  struct file *fp: the pointer of file which to save the clear text.
  *  bool *error: to fast the cpu process when there is error happened
  *              before nowadays print, please refer the function
  *              bbox_head_cleartext_print to get the use of this parameter.
- *
- * return
  */
 void rdr_cleartext_print(struct file *fp, bool *error, const char *format, ...)
 {
 	va_list arglist;
-	size_t  len;
-	char    buffer[PATH_MAXLEN];
-	int     ret;
+	size_t len;
+	char buffer[PATH_MAXLEN];
+	int ret;
 
-	if ( unlikely(IS_ERR_OR_NULL(fp) || IS_ERR_OR_NULL(error)) ) {
+	if (unlikely(IS_ERR_OR_NULL(fp) || IS_ERR_OR_NULL(error)))
 		return;
-	}
 
 	/* stoping the next printing for the previous error printing */
-	if (unlikely(true == *error)) {
+	if (unlikely(*error == true))
 		return;
-	}
 
 	/* get the string buffer for the next printing */
 	va_start(arglist, format);
@@ -107,26 +111,22 @@ void rdr_cleartext_print(struct file *fp, bool *error, const char *format, ...)
 
 	if (unlikely(ret <= 0)) {
 		*error = true;
-		BB_PRINT_ERR("%s():vsnprintf_s error ret %d.\n", __func__, ret);
+		BB_PRINT_ERR("%s():vsnprintf_s error ret %d\n", __func__, ret);
 		return;
 	}
 
 	/* print the string buffer to the specified file descriptor */
-	len = (size_t)ret;/*lint !e571*/
-	ret = vfs_write(fp, buffer, len, &(fp->f_pos));/*lint !e613 */
+	len = (size_t)ret;
+	ret = vfs_write(fp, buffer, len, &(fp->f_pos));
 	if (unlikely(ret != len)) {
-		BB_PRINT_ERR("%s():write file exception with ret %d.\n",
+		BB_PRINT_ERR("%s():write file exception with ret %d\n",
 			     __func__, ret);
 		*error = true;
 		return;
 	}
-
-	return;
 }
 
 /*
- * func name: bbox_cleartext_get_filep
- *
  * Get the file descriptor pointer whose abosolute path composed
  * by the dir_path&file_name and initialize it.
  *
@@ -141,13 +141,13 @@ void rdr_cleartext_print(struct file *fp, bool *error, const char *format, ...)
  * the function bbox_cleartext_get_filep shall be used
  * in paired with function bbox_cleartext_end_filep.
  */
-struct file *bbox_cleartext_get_filep(char *dir_path, char *file_name)
+struct file *bbox_cleartext_get_filep(const char *dir_path, char *file_name)
 {
 	struct file *fp = NULL;
-	char        path[PATH_MAXLEN];
-	int         flags, ret;
+	char path[PATH_MAXLEN];
+	int flags, ret;
 
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(file_name)) ) {
+	if (unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(file_name))) {
 		BB_PRINT_ERR("[%s], invalid file path dir_path %pK file_name %pK!\n",
 			__func__, dir_path, file_name);
 		return NULL;
@@ -173,8 +173,6 @@ struct file *bbox_cleartext_get_filep(char *dir_path, char *file_name)
 }
 
 /*
- * func name: bbox_cleartext_end_filep
- *
  * cleaning of the specified file
  *
  * func args:
@@ -188,15 +186,13 @@ struct file *bbox_cleartext_get_filep(char *dir_path, char *file_name)
  * the function bbox_cleartext_end_filep shall be used
  * in paired with function bbox_cleartext_get_filep.
  */
-void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
+void bbox_cleartext_end_filep(struct file *fp, const char *dir_path, char *file_name)
 {
 	char path[PATH_MAXLEN];
-	int  ret;
+	int ret;
 
-	if ( unlikely(IS_ERR_OR_NULL(fp)
-		|| IS_ERR_OR_NULL(dir_path)
-		|| IS_ERR_OR_NULL(file_name)) ) {
-		BB_PRINT_ERR("[%s], invalid file path dir_path %pK file_name %pK fp %pK!\n",
+	if (unlikely(IS_ERR_OR_NULL(fp) || IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(file_name))) {
+		BB_PRINT_ERR("[%s], invalid file path dir_path %pK file_name %pK fp %pK\n",
 			__func__, dir_path, file_name, fp);
 		return;
 	}
@@ -212,19 +208,17 @@ void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
 	vfs_fsync(fp, 0);
 
 	/* close the specified file descriptor */
-	filp_close(fp, NULL);/*lint !e668 */
+	filp_close(fp, NULL);
 
-	/* 根据权限要求，hisi_logs目录及子目录群组调整为root-system */
+	/* According to the permission requirements, */
+	/* dfx_logs directory and subdirectory groups adjust to root-system */
 	ret = (int)bbox_chown((const char __user *)path, ROOT_UID, SYSTEM_GID, false);
-	if (unlikely(ret)) {
+	if (unlikely(ret))
 		BB_PRINT_ERR("[%s], chown %s uid [%d] gid [%d] failed err [%d]!\n",
 		     __func__, path, ROOT_UID, SYSTEM_GID, ret);
-	}
 }
 
 /*
- * func name: bbox_head_cleartext_print
- *
  * The clear text printing for the common header of reserved debug memory
  *
  * func args:
@@ -235,31 +229,29 @@ void bbox_cleartext_end_filep(struct file *fp, char *dir_path, char *file_name)
  * return value
  *
  */
-static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
+static int bbox_head_cleartext_print(const char *dir_path, u64 log_addr, u32 log_len)
 {
 	struct rdr_struct_s *p = (struct rdr_struct_s *)(uintptr_t)log_addr;
-	struct file         *fp = NULL;
-	bool                error = false;
+	struct file *fp = NULL;
+	bool error = false;
 
 	if (unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(p))) {
-		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n", __func__, dir_path, p);
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK\n", __func__, dir_path, p);
 		return -1;
 	}
 
-	if (unlikely(log_len < sizeof(struct rdr_struct_s))) {
-		BB_PRINT_ERR("%s() error:log_len %u sizeof(struct rdr_struct_s) %lu.\n",
-			__func__, log_len, sizeof(struct rdr_struct_s));
+	if (unlikely(log_len < sizeof(*p))) {
+		BB_PRINT_ERR("%s() error:log_len %u sizeof(struct rdr_struct_s) %lu\n",
+			__func__, log_len, sizeof(*p));
 		return -1;
 	}
 
 	/* get the file descriptor from the specified directory path */
 	fp = bbox_cleartext_get_filep(dir_path, "BBOX_HEAD_INFO.txt");
 	if (unlikely(IS_ERR_OR_NULL(fp))) {
-		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK\n", __func__, fp);
 		return -1;
 	}
-
-	error = false;
 
 	p->base_info.datetime[DATATIME_MAXLEN - 1] = '\0';
 	p->base_info.e_module[MODULE_NAME_LEN - 1] = '\0';
@@ -293,16 +285,13 @@ static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
 	/* the cleaning of specified file descriptor */
 	bbox_cleartext_end_filep(fp, dir_path, "BBOX_HEAD_INFO.txt");
 
-	if (unlikely(true == error)) {
+	if (unlikely(error == true))
 		return -1;
-	}
 
 	return 0;
 }
 
 /*
- * func name: _incorrect_reboot_reason_analysis
- *
  * in the case of reboot reason error reported, we must correct it to the real
  * real reboot reason.
  *
@@ -318,35 +307,28 @@ static int bbox_head_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
  * return value
  *
  */
-static void _incorrect_reboot_reason_analysis(struct file *fp,
-	                                          bool        *error,
-	                                          u64         e_from_core,
-	                                          u32         e_exce_type,
-	                                          u32         e_exce_subtype)
+static void _incorrect_reboot_reason_analysis(struct file *fp, bool *error,
+				u64 e_from_core, u32 e_exce_type, u32 e_exce_subtype)
 {
 	char *subtype_name = NULL;
 
 	subtype_name = rdr_get_subtype_name(e_exce_type, e_exce_subtype);
-	if (subtype_name) {
+	if (subtype_name)
 		rdr_cleartext_print(fp, error,
 			 "system exception core [%s], reason [%s:%s], category [%s]\n",
 			rdr_get_exception_core(e_from_core),
 			rdr_get_exception_type(e_exce_type),
 			subtype_name,
 			rdr_get_category_name(e_exce_type, e_exce_subtype));
-	}
-	else {
+	else
 		rdr_cleartext_print(fp, error,
 			 "system exception core [%s], reason [%s], category [%s]\n",
 			rdr_get_exception_core(e_from_core),
 			rdr_get_exception_type(e_exce_type),
 			rdr_get_category_name(e_exce_type, e_exce_subtype));
-	}
 }
 
 /*
- * func name: incorrect_reboot_reason_analysis
- *
  * in the case of reboot reason error reported, we must correct it to the real
  * real reboot reason.
  *
@@ -360,10 +342,10 @@ static void _incorrect_reboot_reason_analysis(struct file *fp,
 void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_s *exception)
 {
 	struct file *fp = NULL;
-	bool        error = false;
+	bool error = false;
 
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(exception)) ) {
-		BB_PRINT_ERR("%s() error:dir_path 0x%pK exception 0x%pK.\n",
+	if (unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL(exception))) {
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK exception 0x%pK\n",
 			__func__, dir_path, exception);
 		return;
 	}
@@ -371,11 +353,9 @@ void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_
 	/* get the file descriptor from the specified directory path */
 	fp = bbox_cleartext_get_filep(dir_path, "incorrect_reboot_reason.txt");
 	if (unlikely(IS_ERR_OR_NULL(fp))) {
-		BB_PRINT_ERR(KERN_ERR "%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR(KERN_ERR "%s() error:fp 0x%pK\n", __func__, fp);
 		return;
 	}
-
-	error = false;
 
 	rdr_cleartext_print(fp, &error, "<incorrect reboot reason>\n");
 	_incorrect_reboot_reason_analysis(fp, &error, RDR_AP, rdr_get_reboot_type(),
@@ -387,12 +367,9 @@ void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_
 
 	/* the cleaning of specified file descriptor */
 	bbox_cleartext_end_filep(fp, dir_path, "incorrect_reboot_reason.txt");
-	return;
 }
 
 /*
- * func name: rdr_exception_trace_ap_cleartext_print
- *
  * The clear text printing for the reserved debug memory of ap exceptiontrace
  *
  * func args:
@@ -405,38 +382,39 @@ void incorrect_reboot_reason_analysis(char *dir_path, struct rdr_exception_info_
  * -1 failed
  *
  */
-/*lint -e679*/
-static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
+static int rdr_exception_trace_ap_cleartext_print(const char *dir_path, u64 log_addr, u32 log_len)
 {
 	struct hisiap_ringbuffer_s *q = NULL;
-	rdr_exception_trace_t      *trace = NULL;
-	struct file                *fp = NULL;
-	bool                       error = false;
-	u32                        start, end, i;
+	rdr_exception_trace_t *trace = NULL;
+	struct file *fp = NULL;
+	bool error = false;
+	u32 start, end, i;
 
+	if (!dir_path) {
+		BB_PRINT_ERR("[%s], parameter is NULL\n", __func__);
+		return -1;
+	}
 	q = (struct hisiap_ringbuffer_s *)(uintptr_t)log_addr;
-	if (unlikely(is_ringbuffer_invalid(sizeof(rdr_exception_trace_t), log_len, q))) {
-		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid.\n", __func__);
+	if (unlikely(is_ringbuffer_invalid(sizeof(*trace), log_len, q))) {
+		BB_PRINT_ERR("%s() fail:check_ringbuffer_invalid\n", __func__);
 		return -1;
 	}
 
 	/* ring buffer is empty, return directly */
 	if (is_ringbuffer_empty(q)) {
-		BB_PRINT_DBG("%s():ring buffer is empty.\n", __func__);
+		BB_PRINT_DBG("%s():ring buffer is empty\n", __func__);
 		return 0;
 	}
 
 	/* get the file descriptor from the specified directory path */
 	fp = bbox_cleartext_get_filep(dir_path, "exception_trace_ap.txt");
 	if (unlikely(IS_ERR_OR_NULL(fp))) {
-		BB_PRINT_ERR("%s() error:fp 0x%pK.\n", __func__, fp);
+		BB_PRINT_ERR("%s() error:fp 0x%pK\n", __func__, fp);
 		return -1;
 	}
 
-	error = false;
-
 	rdr_cleartext_print(fp, &error, "slice          reset_core_mask   from_core      "
-		"exception_type           exception_subtype        \n");
+		"exception_type           exception_subtype\n");
 
 	get_ringbuffer_start_end(q, &start, &end);
 	for (i = start; i <= end; i++) {
@@ -451,35 +429,19 @@ static int rdr_exception_trace_ap_cleartext_print(char *dir_path, u64 log_addr, 
 	/* the cleaning of specified file descriptor */
 	bbox_cleartext_end_filep(fp, dir_path, "exception_trace_ap.txt");
 
-	if (unlikely(true == error)) {
+	if (unlikely(error == true))
 		return -1;
-	}
+
 	return 0;
 }
-/*lint +e679*/
 
-/*
- * func name: rdr_hisi_exception_trace_cleartext_print
- *
- * The clear text printing for the reserved debug memory of core exceptiontrace
- *
- * func args:
- * @dir_path: the file directory of saved clear text
- * @log_addr: the start address of reserved memory for specified core
- * @log_len: the length of reserved memory for specified core
- *
- * return value
- * 0 success
- * -1 failed
- *
- */
-int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_len)
+int rdr_exception_trace_cleartext_print(const char *dir_path, u64 log_addr, u32 log_len)
 {
 	pfn_cleartext_ops ops_fn = NULL;
-	u32               i, num, size[EXCEPTION_TRACE_ENUM], offset;
+	u32 i, num, size[EXCEPTION_TRACE_ENUM], offset;
 
-	if ( unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr)) ) {
-		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK.\n",
+	if (unlikely(IS_ERR_OR_NULL(dir_path) || IS_ERR_OR_NULL((void *)(uintptr_t)log_addr))) {
+		BB_PRINT_ERR("%s() error:dir_path 0x%pK log_addr 0x%pK\n",
 			__func__, dir_path, (void *)(uintptr_t)log_addr);
 		return -1;
 	}
@@ -499,7 +461,13 @@ int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_le
 			return -1;
 		}
 
-		if ( unlikely(ops_fn && ops_fn(dir_path, log_addr + offset, size[i])) ) {
+		if (unlikely(log_addr + offset < log_addr)) {
+			BB_PRINT_ERR("[%s], log_addr: %llx offset: %x\n",
+					 __func__, log_addr, offset);
+			return -1;
+		}
+
+		if (unlikely(ops_fn && ops_fn(dir_path, log_addr + offset, size[i]))) {
 			BB_PRINT_ERR("[%s], pfn_cleartext_ops 0x%pK fail! core %u size %u\n",
 					 __func__, ops_fn, i, size[i]);
 			return -1;
@@ -512,8 +480,6 @@ int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_le
 }
 
 /*
- * func name: rdr_get_coreid_from_areaid
- *
  * The core id mapping from the memory area id
  *
  * func args:
@@ -524,18 +490,15 @@ int rdr_exception_trace_cleartext_print(char *dir_path, u64 log_addr, u32 log_le
  * otherwise success
  *
  */
-static inline int64_t rdr_get_coreid_from_areaid(u32 area_id)
+static int64_t rdr_get_coreid_from_areaid(u32 area_id)
 {
-	if (unlikely(area_id >= RDR_AREA_MAXIMUM)) {
+	if (unlikely(area_id >= RDR_AREA_MAXIMUM))
 		return -1;
-	} else {
+	else
 		return (int64_t)g_coreid_from_area_id[area_id];
-	}
 }
 
 /*
- * func name: rdr_get_cleartext_fn
- *
  * Get the registered clear text callback function
  * from the memory area id.
  *
@@ -550,16 +513,16 @@ static inline int64_t rdr_get_coreid_from_areaid(u32 area_id)
 static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
 {
 	struct rdr_cleartext_ops_s *p_cleartext_ops = NULL;
-	pfn_cleartext_ops          ops = NULL;
-	struct list_head           *cur = NULL;
-	unsigned long              lock_flag;
-	int64_t                    ret;
-	u64                        coreid;
+	pfn_cleartext_ops ops = NULL;
+	struct list_head *cur = NULL;
+	unsigned long lock_flag;
+	int64_t ret;
+	u64 coreid;
 
 	ret = rdr_get_coreid_from_areaid(area_id);
 	if (unlikely(ret < 0))
 		return NULL;
-	coreid = (u64)ret;/*lint !e571*/
+	coreid = (u64)ret;
 
 	spin_lock_irqsave(&rdr_cleartext_ops_list_lock, lock_flag);
 	list_for_each(cur, &rdr_cleartext_ops_list) {
@@ -568,7 +531,7 @@ static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
 		if (coreid == p_cleartext_ops->s_core_id) {
 			ops = p_cleartext_ops->ops_cleartext;
 			spin_unlock_irqrestore(&rdr_cleartext_ops_list_lock, lock_flag);
-			return (ops);
+			return ops;
 		}
 	}
 	spin_unlock_irqrestore(&rdr_cleartext_ops_list_lock, lock_flag);
@@ -576,8 +539,6 @@ static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
 }
 
 /*
- * func name: bbox_save_cleartext
- *
  * Get the start address of reserved memory and length for specified core first,
  * then transfer them to the correponding clear text callback function.
  * The registered clear text callback function is respobsible of the clear text
@@ -592,39 +553,94 @@ static pfn_cleartext_ops rdr_get_cleartext_fn(u32 area_id)
  * return value
  *
  */
-static void bbox_save_cleartext(char *dir_path,
-                                u64  log_addr,
-                                u32  log_len,
-                                u32  area_id,
-                                u32  is_bbox_head)
+static void bbox_save_cleartext(const char *dir_path, u64 log_addr, u32 log_len, u32 area_id, u32 is_bbox_head)
 {
 	pfn_cleartext_ops ops = NULL;
-	int               ret;
+	int ret;
 
 	BB_PRINT_START();
 
 	/* for the common head, it introduces special process */
-	if (true == is_bbox_head) {
+	if (is_bbox_head == true) {
 		ops = bbox_head_cleartext_print;
 	} else {
 		ops = rdr_get_cleartext_fn(area_id);
-		if (IS_ERR_OR_NULL(ops)) {
+		if (IS_ERR_OR_NULL(ops))
 			return;
-		}
 	}
 
 	ret = ops(dir_path, log_addr, log_len);
-	if (unlikely(ret < 0)) {
+	if (unlikely(ret < 0))
 		BB_PRINT_ERR("[%s], call pfn_cleartext_ops 0x%pK failed err [%d]!\n",
 		     __func__, ops, ret);
-	}
 
 	BB_PRINT_END();
 }
 
+const static char g_cleartext_files[][RDR_LOG_PATH_LEN] = {
+	{ "AP.txt" },
+	{ "BBOX_HEAD_INFO.txt" },
+	{ "cpu_onoff.txt" },
+	{ "cpuidle.txt" },
+	{ "exception_trace_ap.txt" },
+	{ "last_kirq.txt" },
+};
+
+static void cleartext_log_write(const char *dir_path, struct file *dst_fp, int fp_index)
+{
+	struct file *src_fp = NULL;
+	char path[PATH_MAXLEN] = {0};
+	char buf[BUFFER_SIZE] = {0};
+	ssize_t len;
+	bool error = false;
+	int ret;
+
+	rdr_cleartext_print(dst_fp, &error, "--------%s start--------\n", g_cleartext_files[fp_index]);
+	ret = snprintf_s(path, PATH_MAXLEN, PATH_MAXLEN - 1, "%s/%s", dir_path, g_cleartext_files[fp_index]);
+	if (unlikely(ret < 0)) {
+		BB_PRINT_ERR("[%s], snprintf_s ret %d!\n", __func__, ret);
+		return;
+	}
+
+	src_fp = filp_open(path, O_RDONLY, FILE_LIMIT);
+	if (IS_ERR_OR_NULL(src_fp)) {
+		rdr_cleartext_print(dst_fp, &error, "no log in this file\n");
+		rdr_cleartext_print(dst_fp, &error, "--------%s end--------\n", g_cleartext_files[fp_index]);
+		BB_PRINT_ERR("[%s], open [%s] failed! err [%pK]\n",
+			__func__, path, src_fp);
+		return;
+	}
+
+	len = vfs_read(src_fp, buf, BUFFER_SIZE, &src_fp->f_pos);
+	while (len > 0) {
+		vfs_write(dst_fp, buf, len, &dst_fp->f_pos);
+		len = vfs_read(src_fp, buf, BUFFER_SIZE, &src_fp->f_pos);
+	}
+
+	rdr_cleartext_print(dst_fp, &error, "--------%s end--------\n", g_cleartext_files[fp_index]);
+	filp_close(src_fp, NULL);
+}
+
+static void bbox_cleartext_log_combine(const char *dir_path)
+{
+	int i;
+	struct file *fp = NULL;
+	int file_num = ARRAY_SIZE(g_cleartext_files);
+
+	fp = bbox_cleartext_get_filep(dir_path, "ap_combine.txt");
+	if (IS_ERR_OR_NULL(fp)) {
+		BB_PRINT_ERR("[%s], create bbox.txt failed! err [%pK]\n",
+			__func__, fp);
+		return;
+	}
+
+	for (i = 0; i < file_num; i++)
+		cleartext_log_write(dir_path, fp, i);
+
+	bbox_cleartext_end_filep(fp, dir_path, "ap_combine.txt");
+}
+
 /*
- * func name: bbox_get_every_core_area_info
- *
  * Get the info about the reserved debug memroy area from
  * the dtsi file.
  *
@@ -640,8 +656,12 @@ static void bbox_save_cleartext(char *dir_path,
 int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **npp, u32 datalen)
 {
 	struct device_node *np = NULL;
-	int                ret;
+	int ret;
 
+	if (!value || !data || !npp) {
+		BB_PRINT_ERR("[%s], parameter is NULL\n", __func__);
+		return -1;
+	}
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,rdr");
 	if (unlikely(!np)) {
 		BB_PRINT_ERR("[%s], find rdr_memory node fail!\n", __func__);
@@ -676,8 +696,6 @@ int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **np
 }
 
 /*
- * func name: bbox_cleartext_proc
- *
  * Get the start address of reserved memory and length for each core first,
  * then transfer them to each registered clear text callback function who
  * come from surrounding core.
@@ -694,12 +712,16 @@ int bbox_get_every_core_area_info(u32 *value, u32 *data, struct device_node **np
 void bbox_cleartext_proc(const char *path, const char *base_addr)
 {
 	struct device_node *np = NULL;
-	char               *addr = NULL;
-	char               dir_path[PATH_MAXLEN];
-	int                ret;
-	u32                value, size, i;
-	u32                data[RDR_CORE_MAX];
+	char *addr = NULL;
+	char dir_path[PATH_MAXLEN];
+	int ret;
+	u32 value, size;
+	u32 data[RDR_CORE_MAX];
 
+	if (!path || !base_addr) {
+		BB_PRINT_ERR("[%s], parameter invaild, please check\n", __func__);
+		return;
+	}
 	if (unlikely(bbox_get_every_core_area_info(&value, data, &np, RDR_CORE_MAX))) {
 		BB_PRINT_ERR("[%s], bbox_get_every_core_area_info fail!\n",
 			     __func__);
@@ -714,13 +736,12 @@ void bbox_cleartext_proc(const char *path, const char *base_addr)
 
 	addr = (char *)base_addr + rdr_get_pbb_size();
 	size = 0;
-	for (i = value - 1; i > 0; i--) {
-		addr -= data[i];
-		size += data[i];
+	for (value = value - 1; value > 0; value--) {
+		addr -= data[value];
+		size += data[value];
 
-		if (data[i] > 0) {
-			bbox_save_cleartext(dir_path, (uintptr_t)addr, data[i], i, false);
-		}
+		if (data[value] > 0)
+			bbox_save_cleartext(dir_path, (uintptr_t)addr, data[value], value, false);
 	}
 
 	bbox_save_cleartext(dir_path, (uintptr_t)base_addr, RDR_BASEINFO_SIZE, 0, true);
@@ -729,19 +750,13 @@ void bbox_cleartext_proc(const char *path, const char *base_addr)
 	addr = (char *)base_addr + RDR_BASEINFO_SIZE;
 	size = (u32)rdr_get_pbb_size() - (size + RDR_BASEINFO_SIZE);
 	bbox_save_cleartext(dir_path, (uintptr_t)addr, size, 0, false);
+	bbox_cleartext_log_combine(dir_path);
 
-	if (!in_atomic() && !irqs_disabled()
-		&& !in_irq()) {
-		/* synchronize the file system */
-		sys_sync();
-	}
-
-	return;
+	if (!in_atomic() && !irqs_disabled() && !in_irq())
+		SYS_SYNC(); /* synchronize the file system */
 }
 
 /*
- * func name: rdr_cleartext_body
- *
  * When exception occur, save the dump log first then trigger the clear text saving
  * thread who is responsible of the saving operation.
  * func args:
@@ -756,7 +771,7 @@ int rdr_cleartext_body(void *arg)
 {
 	char path[PATH_MAXLEN];
 	char *date = NULL;
-	int  ret = 0;
+	int ret;
 
 	/*
 	 * in the case of multiple continuos rdr_syserr_process
@@ -766,31 +781,35 @@ int rdr_cleartext_body(void *arg)
 	while (1) {
 		down(&rdr_cleartext_sem);
 
-		BB_PRINT_PN("rdr_cleartext_body enter\n");
+		BB_PRINT_PN("%s", "rdr_cleartext_body enter\n");
 
 
 		date = rdr_field_get_datetime();
-		if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+		if (memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN) != EOK) {
 			BB_PRINT_ERR("[%s], memset_s err\n", __func__);
+			continue;
 		}
 		ret = snprintf_s(path, PATH_MAXLEN, PATH_MAXLEN - 1, "%s%s/", PATH_ROOT, date);
-		if(unlikely(ret < 0)){
+		if (unlikely(ret < 0)) {
 			BB_PRINT_ERR("[%s], snprintf_s ret %d!\n", __func__, ret);
+			continue;
 		}
 		bbox_cleartext_proc(path, (char *)rdr_get_pbb());
 
-		/* save the cleartext dumplog over flag to avoid
-		the same saving during the next reboot procedure */
+		/* save the cleartext dumplog over flag to avoid the same saving during the next reboot procedure */
 		rdr_cleartext_dumplog_done();
 		BB_PRINT_PN("rdr_cleartext_dumplog_done\n");
 	}
 
-	return 0; /*lint !e527*/
+	return 0;
+}
+
+struct semaphore *get_cleartext_sem(void)
+{
+	return &rdr_cleartext_sem;
 }
 
 /*
- * func name: rdr_check_date
- *
  * Check the date string if it's valid.
  *
  * return value
@@ -801,13 +820,16 @@ static int rdr_check_date(const char *date, u32 len)
 {
 	u32 i;
 
+	if (!date) {
+		BB_PRINT_ERR("%s(): parameter date invalid\n", __func__);
+		return -1;
+	}
 	for (i = 0; i < len; i++) {
-		if ('\0' == date[i]) {
-			if (i > 0) {
+		if (date[i] == '\0') {
+			if (i > 0)
 				return 0;
-			} else {
+			else
 				return -1;
-			}
 		}
 	}
 
@@ -815,8 +837,6 @@ static int rdr_check_date(const char *date, u32 len)
 }
 
 /*
- * func name: rdr_exceptionboot_save_cleartext
- *
  * When exception occur, save the dump log first then trigger the cleartext saving.
  * If the cleartext saving isn't finised,but the reset opertation has been triggered,
  * so it's necessary to delay the cleartext saving to the next reboot procedure,
@@ -830,7 +850,7 @@ void rdr_exceptionboot_save_cleartext(void)
 	struct rdr_struct_s *tmpbb = NULL;
 	char path[PATH_MAXLEN];
 	char *date = NULL;
-	int ret = 0;
+	int ret;
 
 	tmpbb = rdr_get_tmppbb();
 	date = (char *)(tmpbb->base_info.datetime);
@@ -840,13 +860,15 @@ void rdr_exceptionboot_save_cleartext(void)
 		return;
 	}
 
-	if (EOK != memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN)) {
+	if (memset_s(path, PATH_MAXLEN, 0, PATH_MAXLEN) != EOK) {
 		BB_PRINT_ERR("[%s]: memset_s err\n", __func__);
+		return;
 	}
 	ret = snprintf_s(path, PATH_MAXLEN, PATH_MAXLEN - 1,
 		"%s%s/", PATH_ROOT, date);
-	if(unlikely(ret < 0)){
+	if (unlikely(ret < 0)) {
 		BB_PRINT_ERR("[%s], snprintf_s ret %d!\n", __func__, ret);
+		return;
 	}
 
 	bbox_cleartext_proc(path, (char *)tmpbb);
@@ -858,6 +880,10 @@ static void __rdr_register_cleartext_ops(struct rdr_cleartext_ops_s *ops)
 	struct list_head *cur = NULL;
 	struct list_head *next = NULL;
 
+	if (!ops) {
+		BB_PRINT_ERR("invalid parameter\n");
+		return;
+	}
 	BB_PRINT_START();
 
 	list_for_each_safe(cur, next, &rdr_cleartext_ops_list) {
@@ -870,12 +896,11 @@ static void __rdr_register_cleartext_ops(struct rdr_cleartext_ops_s *ops)
 	list_add_tail(&(ops->s_list), &rdr_cleartext_ops_list);
 
 out:
-	BB_PRINT_DBG("__rdr_register_cleartext_ops coreid is [0x%llx]\n", ops->s_core_id);
+	BB_PRINT_DBG("%s coreid is [0x%llx]\n", __func__, ops->s_core_id);
 	BB_PRINT_END();
 }
 
 /*
- * func name: rdr_register_cleartext_ops
  * func args:
  *   u64 core_id: the same with the parameter coreid of function rdr_register_module_ops
  *   pfn_cleartext_ops ops_fn: the function to write the content
@@ -887,15 +912,14 @@ out:
  */
 int rdr_register_cleartext_ops(u64 coreid, pfn_cleartext_ops ops_fn)
 {
-	/*lint -e429*/
 	struct rdr_cleartext_ops_s *p_cleartext_ops = NULL;
-	struct list_head           *cur = NULL;
-	unsigned long              lock_flag;
-	int                        ret = -1;
+	struct list_head *cur = NULL;
+	unsigned long lock_flag;
+	const int ret = -1;
 
 	BB_PRINT_START();
 
-	if ( unlikely(IS_ERR_OR_NULL(ops_fn)) ) {
+	if (unlikely(IS_ERR_OR_NULL(ops_fn))) {
 		BB_PRINT_ERR("invalid para ops_fn!\n");
 		BB_PRINT_END();
 		return ret;
@@ -919,42 +943,36 @@ int rdr_register_cleartext_ops(u64 coreid, pfn_cleartext_ops ops_fn)
 		}
 	}
 
-	p_cleartext_ops = kzalloc(sizeof(struct rdr_cleartext_ops_s), GFP_ATOMIC);
-	if ( unlikely(IS_ERR_OR_NULL(p_cleartext_ops)) ) {
+	p_cleartext_ops = kzalloc(sizeof(*p_cleartext_ops), GFP_ATOMIC);
+	if (unlikely(IS_ERR_OR_NULL(p_cleartext_ops))) {
 		spin_unlock_irqrestore(&rdr_cleartext_ops_list_lock, lock_flag);
 		BB_PRINT_ERR("kzalloc error\n");
 		BB_PRINT_END();
 		return ret;
 	}
 
-	INIT_LIST_HEAD(&(p_cleartext_ops->s_list));/*lint !e613*/
-	p_cleartext_ops->s_core_id = coreid;/*lint !e613*/
-	p_cleartext_ops->ops_cleartext = ops_fn;/*lint !e613*/
+	INIT_LIST_HEAD(&(p_cleartext_ops->s_list));
+	p_cleartext_ops->s_core_id = coreid;
+	p_cleartext_ops->ops_cleartext = ops_fn;
 
 	__rdr_register_cleartext_ops(p_cleartext_ops);
 
 	spin_unlock_irqrestore(&rdr_cleartext_ops_list_lock, lock_flag);
 
-	BB_PRINT_DBG("rdr_register_cleartext_ops success.\n");
+	BB_PRINT_DBG("%s", "rdr_register_cleartext_ops success\n");
 	BB_PRINT_END();
 	return 0;
-	/*lint +e429*/
 }
 
 /*
- * func name: rdr_cleartext_print_ops
- *
- * print registered clear text rollback function.
- * func args:
- *
- * return
+ * print registered clear text rollback function
  */
 void rdr_cleartext_print_ops(void)
 {
 	struct rdr_cleartext_ops_s *p_cleartext_ops = NULL;
-	struct list_head           *cur = NULL;
-	struct list_head           *next = NULL;
-	int                        index = 1;
+	struct list_head *cur = NULL;
+	struct list_head *next = NULL;
+	int index;
 
 	BB_PRINT_START();
 	index = 1;
@@ -971,5 +989,4 @@ void rdr_cleartext_print_ops(void)
 	spin_unlock(&rdr_cleartext_ops_list_lock);
 
 	BB_PRINT_END();
-	return;
 }

@@ -57,13 +57,13 @@
  * @li stmvl53l1_ranging1
  * @li stmvl53l1_ranging2
  */
-#define VL53L1_MISC_DEV_NAME		"stmvl53l1_ranging"
+#define VL53L1_MISC_DEV_NAME "stmvl53l1_ranging"
 /**
  * register data use for simple/single ranging data @ref VL53L1_IOCTL_GETDATAS
  *
  * @warning this definition is subject to change !
  */
-#define stmvl531_range_data_t VL53L1_RangingMeasurementData_t
+#define stmvl531_range_data_t struct VL53L1_RangingMeasurementData_t
 
 /**
  * parameter name in @ref stmvl53l1_parameter when using
@@ -248,7 +248,7 @@ struct stmvl53l1_roi_t {
 		 * [out] number of ROI  copied back to user\n
 		 * @warning 0 will not return any roi datas!
 		*/
-		VL53L1_UserRoi_t    UserRois[1];
+		struct VL53L1_UserRoi_t    UserRois[1];
 		/*!< roi data array length  definition is 1 but
 		 * NumberOfRoi+ FirstRoiToScan in array are required
 		 * and will be effectively copy to/from user space
@@ -267,12 +267,12 @@ struct stmvl53l1_roi_t {
  * @sa stmvl53l1_roi_t for  field details
  */
 struct stmvl53l1_roi_full_t {
-	int32_t		is_read;
+	int32_t is_read;
 	/*!<  specify roi transfer direction \n
 	 * @li 0 to get roi
 	 * @li !0 to set roi
 	*/
-	VL53L1_RoiConfig_t roi_cfg;
+	struct VL53L1_RoiConfig_t roi_cfg;
 	/*!< roi data array of max length but only requested copy to/from user
 	 * space effectively used
 	 * see @a stmvl53l1_roi_t::roi_cfg for  details
@@ -283,8 +283,8 @@ struct stmvl53l1_roi_full_t {
  * parameter structure use in @ref VL53L1_IOCTL_CALIBRATION_DATA
  */
 struct stmvl53l1_ioctl_calibration_data_t {
-	int32_t is_read;	/*!< [in] 1: Get 0: Set*/
-	VL53L1_CalibrationData_t data;
+	int32_t is_read; /*!< [in] 1: Get 0: Set*/
+	struct VL53L1_CalibrationData_t data;
 	/*!< [in/out] data to set /get. Caller
 	 * should consider this structure as an opaque one
 	 */
@@ -384,7 +384,7 @@ struct stmvl53l1_autonomous_config_t {
 	/*!< [in] 1: Get 0: Set*/
 	uint32_t pollingTimeInMs;
 	/*!< [in/out] interval between two measure in ms */
-	VL53L1_DetectionConfig_t config;
+	struct VL53L1_DetectionConfig_t config;
 	/*!< [int/out] autonomous mode configuration structure */
 };
 
@@ -478,7 +478,7 @@ int smtvl53l1_stop(int fd){
  * to ensure race free usage acquiring mutex and/or locks.
  */
 #define VL53L1_IOCTL_GETDATAS \
-			_IOWR('p', 0x0b, stmvl531_range_data_t)
+	_IOWR('p', 0x0b, stmvl531_range_data_t)
 
 /**
  * set or get parameter
@@ -495,7 +495,7 @@ int smtvl53l1_stop(int fd){
  * @note a set parameter may not be absorbed straight aways !
  */
 #define VL53L1_IOCTL_PARAMETER \
-			_IOWR('p', 0x0d, struct stmvl53l1_parameter)
+	_IOWR('p', 0x0d, struct stmvl53l1_parameter)
 
 
 /**
@@ -526,7 +526,7 @@ int smtvl53l1_stop(int fd){
  *  @li other errno code could be ll driver specific
  */
 #define VL53L1_IOCTL_ROI\
-			_IOWR('p', 0x0e, struct stmvl53l1_roi_t)
+	_IOWR('p', 0x0e, struct stmvl53l1_roi_t)
 
 /**
  * Get multi object/zone ranging data
@@ -544,7 +544,7 @@ int smtvl53l1_stop(int fd){
  * as in that case MZ data may not be fully valid
  */
 #define VL53L1_IOCTL_MZ_DATA\
-			_IOR('p', 0x0f, VL53L1_MultiRangingData_t)
+	_IOR('p', 0x0f, struct VL53L1_MultiRangingData_t)
 
 /**
  * get single ranging data @sa for multi zone/objet
@@ -561,7 +561,7 @@ int smtvl53l1_stop(int fd){
  * @li -ERESTARTSYS interrupt while sleeping.
  */
 #define VL53L1_IOCTL_GETDATAS_BLOCKING\
-			_IOWR('p', 0x10, stmvl531_range_data_t)
+	_IOWR('p', 0x10, stmvl531_range_data_t)
 
 /**
  * Get multi object/zone ranging data
@@ -580,7 +580,7 @@ int smtvl53l1_stop(int fd){
  * as in that case MZ data may not be fully valid
  */
 #define VL53L1_IOCTL_MZ_DATA_BLOCKING\
-			_IOR('p', 0x11, VL53L1_MultiRangingData_t)
+	_IOR('p', 0x11, struct VL53L1_MultiRangingData_t)
 
 /**
  * Get / set calibration data

@@ -1792,7 +1792,7 @@ static int get_pll_mode_and_sample_rate(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = NULL;
 	struct ak4376_priv *ak4376 = NULL;
-	int pll_mode_and_sample_rate = PLL_OFF_48kHz; //default: PLL_OFF_48kHz
+	int pll_mode_and_sample_rate = PLL_OFF_48kHz; // default: PLL_OFF_48kHz
 
 	codec = snd_soc_kcontrol_codec(kcontrol);
 	ak4376 = snd_soc_codec_get_drvdata(codec);
@@ -3103,7 +3103,7 @@ static int ak4376_populate_get_switch_gpio_pdata(struct device *dev,
 	}
 
 	isexistgpio = false;
-	pdata->switch_dir = -1;	//invalid gpio
+	pdata->switch_dir = -1; // invalid gpio
 	isexistgpio = of_property_read_bool(dev->of_node, switch_dir);
 	if (isexistgpio) {
 		ret = get_switch_dir_gpio_pdata(dev, pdata, switch_dir);

@@ -1,17 +1,19 @@
 /*
+ * mntn_dump.c
  *
- * Copyright (C) 2012 Hisilicon, Inc.
+ * Copyright (c) 2012-2020 Huawei Technologies Co., Ltd.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
+ *
  */
+
 #include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
@@ -22,21 +24,20 @@
 #include <linux/io.h>
 #include <linux/of_address.h>
 #include <linux/hisi/mntn_dump.h>
+#include <pr_log.h>
 #include <mntn_public_interface.h>
 #include <securec.h>
-
-#define HISI_LOG_TAG  MNTN_DUMP_TAG
-#include <linux/hisi/hisi_log.h>
+#define PR_LOG_TAG  MNTN_DUMP_TAG
 #include "blackbox/rdr_print.h"
 
 static void __iomem *g_mntn_dump_base;
 static unsigned long  g_mntn_dump_reserved_addr;
 static unsigned int  	g_mntn_dump_init;
 static unsigned int  	g_mntn_dump_size;
-static struct mdump_head  	*g_mdump_head;
+static struct mdump_head *g_mdump_head;
 
 #define MNTN_DUMP_NOCLEAN (0xAA)
-struct mntn_dump_mem_info{
+struct mntn_dump_mem_info {
 	unsigned int size; // mntn dump region size
 	unsigned int clean_flag; // clean flag
 };
@@ -53,7 +54,7 @@ struct mntn_dump_mem_info g_mntn_dump_mem_size[MNTN_DUMP_MAX] = {
 };
 
 static DEFINE_RAW_SPINLOCK(g_mdump_lock);
-struct mdump_mem_info{
+struct mdump_mem_info {
 	unsigned int size;
 	unsigned int offset;
 	void __iomem *vaddr;
@@ -73,9 +74,10 @@ static int get_mntn_dump_reserve_addr(void)
 		return -1;
 	}
 
-	/* check if status = ok, okay or status not defined*/
+	/* check if status = ok, okay or status not defined */
 	name = of_get_property(np, "status", &len);
-	if (name && strncmp(name, "okay", sizeof("okay")) != 0 && strncmp(name, "ok", sizeof("ok")) != 0){
+	if (name && strncmp(name, "okay", sizeof("okay")) != 0 &&
+		strncmp(name, "ok", sizeof("ok")) != 0) {
 		BB_PRINT_ERR("%s: get status(%.7s)  error\n", __func__, name);
 		return -1;
 	}
@@ -132,9 +134,8 @@ int mntn_dump_init(void)
 	}
 	BB_PRINT_PN("%s: mntn dump base addr:%pK\n", __func__, g_mntn_dump_base);
 	/* clean the memory of information struct  */
-	if (EOK != memset_s((void *)g_mdump_mem_info, sizeof(g_mdump_mem_info), 0x00, sizeof(g_mdump_mem_info))) {
+	if (EOK != memset_s((void *)g_mdump_mem_info, sizeof(g_mdump_mem_info), 0x00, sizeof(g_mdump_mem_info)))
 		BB_PRINT_ERR("[%s:%d]: memset_s err \n]", __func__, __LINE__);
-	}
 
 	offset = 0;
 	for (i = 0; i < MNTN_DUMP_MAX; i++) {
@@ -142,7 +143,7 @@ int mntn_dump_init(void)
 		g_mdump_mem_info[i].size = g_mntn_dump_mem_size[i].size;
 		g_mdump_mem_info[i].vaddr = g_mntn_dump_base + offset;
 
-		/*clean the reserve memory of mntn dump*/
+		/* clean the reserve memory of mntn dump */
 		if (MNTN_DUMP_NOCLEAN != g_mntn_dump_mem_size[i].clean_flag)
 			memset((void *)g_mdump_mem_info[i].vaddr, 0x00, g_mdump_mem_info[i].size);
 
