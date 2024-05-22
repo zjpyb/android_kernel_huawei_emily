@@ -177,6 +177,7 @@ struct wlan_chip_ops {
     /* zero wait dfs流程，目前，1106支持，1103/05不支持 */
     void (*start_zero_wait_dfs)(mac_vap_stru *mac_vap, mac_cfg_channel_param_stru *channel_info);
 #endif
+    void (*tx_pt_mcast_set_cb)(hmac_vap_stru *pst_vap, mac_ether_header_stru *ether_hdr, mac_tx_ctl_stru *tx_ctl);
 };
 
 extern const struct wlan_chip_ops *g_wlan_chip_ops;

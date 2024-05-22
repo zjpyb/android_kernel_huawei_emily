@@ -111,6 +111,7 @@ struct batt_info {
 	char sn_buff[MAX_SN_LEN];
 	int dmd_retry;
 	int dmd_no;
+	int moved_recheck_logic;
 	int nv_sn_old;
 	unsigned int sn_version;
 	unsigned int sn_len;

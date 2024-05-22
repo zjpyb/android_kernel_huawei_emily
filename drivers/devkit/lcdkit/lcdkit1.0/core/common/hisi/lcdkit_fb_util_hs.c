@@ -2786,7 +2786,7 @@ ssize_t alpm_function_store(struct device* dev,
 		return -1;
 	}
 
-	if (!hisifd->panel_power_on) {
+	if (!hisifd->panel_power_on && !lcdkit_info.panel_infos.watch_aod) {
 		HISI_FB_ERR("fb%d, panel power off!\n", hisifd->index);
 		return -1;
 	}
@@ -2863,6 +2863,8 @@ ssize_t alpm_setting_store(struct device* dev,
 			mutex_unlock(&lcdkit_info.panel_infos.switch_lock);
 			return -EINVAL;
 		}
+		if (cmd == AOD_SEND_FRAME_CMD)
+			lcdkit_info.panel_infos.watch_aod_send_frame = 1;
 	}
 	pinfo = &(hisifd->panel_info);
 	if (!hisifd->panel_power_on) {
@@ -2883,10 +2885,14 @@ ssize_t alpm_setting_store(struct device* dev,
 	}
 
 err_out:
-	if (!lcdkit_info.panel_infos.watch_aod)
+	if (!lcdkit_info.panel_infos.watch_aod) {
 		up(&hisifd->blank_sem);
-	else
+	} else {
+		if (cmd == AOD_SEND_FRAME_CMD)
+			lcdkit_info.panel_infos.watch_aod_send_frame = 0;
+
 		mutex_unlock(&lcdkit_info.panel_infos.switch_lock);
+	}
 
 	return count;
 }

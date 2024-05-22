@@ -24,9 +24,15 @@
 
 #ifdef CONFIG_HUAWEI_BATTERY_INFORMATION
 int get_battery_type(unsigned char *name, unsigned int name_size);
+int get_batt_changed_on_boot(void);
 int check_battery_sn_changed(void);
 #else
 static inline int get_battery_type(unsigned char *name, unsigned int name_size)
+{
+	return -1;
+}
+
+static inline int get_batt_changed_on_boot(void)
 {
 	return -1;
 }

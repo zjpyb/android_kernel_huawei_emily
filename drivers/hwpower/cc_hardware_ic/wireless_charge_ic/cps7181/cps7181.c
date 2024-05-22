@@ -239,7 +239,7 @@ int cps7181_get_chip_id(struct cps7181_dev_info *di, u16 *chip_id)
 	ret = cps7181_read_word(di, CPS7181_CHIP_ID_ADDR, chip_id);
 	if (ret)
 		return ret;
-	*chip_id = CPS7181_CHIP_ID;
+	*chip_id = CPS7181_CHIP_ID_A;
 	return 0;
 }
 
@@ -384,7 +384,8 @@ static void cps7181_irq_work(struct work_struct *work)
 	}
 	/* init i2c */
 	ret = cps7181_read_word(di, CPS7181_CHIP_ID_ADDR, &chip_id);
-	if (!di->g_val.sram_i2c_ready || (chip_id != CPS7181_CHIP_ID)) {
+	if (!di->g_val.sram_i2c_ready ||
+		((chip_id != CPS7181_CHIP_ID_A) && (chip_id != CPS7181_CHIP_ID_B))) {
 		ret = cps7181_fw_sram_i2c_init(di, CPS7181_BYTE_INC);
 		if (ret) {
 			hwlog_err("irq_work: i2c init failed\n");
@@ -451,7 +452,7 @@ static int cps7181_dev_check(struct cps7181_dev_info *di)
 	wlps_control(di->ic_type, WLPS_RX_EXT_PWR, false);
 
 	hwlog_info("[dev_check] ic_type=%d chip_id=0x%04x\n", di->ic_type, chip_id);
-	if (chip_id != CPS7181_CHIP_ID)
+	if (chip_id != CPS7181_CHIP_ID_A)
 		hwlog_err("dev_check: rx_chip not match\n");
 
 	return 0;

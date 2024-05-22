@@ -1396,6 +1396,21 @@ static ssize_t thp_magnification_info_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE - 1, "%u\n", magnification);
 }
 
+static ssize_t thp_daemon_version_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	u32 d_version;
+	struct thp_core_data *cd = thp_get_core_data();
+	bool error_flag = (dev == NULL) || (cd == NULL);
+	if (error_flag) {
+		thp_log_err("%s: dev or cd is null\n", __func__);
+		return -EINVAL;
+	}
+	d_version = cd->aptouch_daemon_version;
+	thp_log_info("daemon_version: %u\n", d_version);
+	return snprintf(buf, PAGE_SIZE - 1, "%u\n", d_version);
+}
+
 static DEVICE_ATTR(thp_status, 0444, thp_status_show, NULL);
 static DEVICE_ATTR(touch_chip_info, 0640,
 	thp_chip_info_show, NULL);
@@ -1463,6 +1478,7 @@ static DEVICE_ATTR(phone_sleep_mode_status, 0660, NULL,
 	thp_phone_sleep_mode_status_store);
 static DEVICE_ATTR(thp_magnification_info, 0660,
 	thp_magnification_info_show, NULL);
+static DEVICE_ATTR(daemon_version, 0440, thp_daemon_version_show, NULL);
 
 static struct attribute *thp_ts_attributes[] = {
 	&dev_attr_thp_status.attr,
@@ -1504,6 +1520,7 @@ static struct attribute *thp_ts_attributes[] = {
 #endif
 	&dev_attr_phone_sleep_mode_status.attr,
 	&dev_attr_thp_magnification_info.attr,
+	&dev_attr_daemon_version.attr,
 	NULL,
 };
 

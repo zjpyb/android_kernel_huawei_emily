@@ -151,7 +151,8 @@ static int bsc_charge_cycles_cb(struct notifier_block *nb,
 		if ((drv_data->batt_rematch_current == BATTERY_REMATCHABLE) &&
 			(drv_data->batt_rematch_onboot ==
 			BATTERY_REMATCHABLE) &&
-			(drv_data->free_cycles <= charge_cycles)) {
+			(drv_data->free_cycles <= charge_cycles) &&
+			(check_sn_binded(drv_data) == 1)) {
 			ret = drv_data->bco.set_batt_safe_info(drv_data,
 				BATT_MATCH_ABILITY, &temp);
 			if (ret)

@@ -35,6 +35,7 @@
 #include <linux/spinlock.h>
 #include <chipset_common/hwpower/common_module/power_cmdline.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
+#include <chipset_common/hwpower/common_module/power_wakeup.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_pogopin.h>
 #include <huawei_platform/usb/hw_pogopin_otg_id.h>
@@ -100,8 +101,10 @@ static int pogopin_otg_status_check_notifier_call(struct notifier_block *nb,
 
 	switch (event) {
 	case POGOPIN_CHARGER_OUT_COMPLETE:
-		if (gpio_get_value(di->gpio) == LOW)
+		if (gpio_get_value(di->gpio) == LOW) {
+			power_wakeup_lock(di->wakelock);
 			schedule_work(&di->otg_intb_work);
+		}
 		break;
 	default:
 		break;
@@ -231,9 +234,9 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 	}
 
 	di = container_of(work, struct pogopin_otg_id_dev, otg_intb_work);
-	if (!di || (pogopin_is_charging() &&
-		pogopin_typec_chg_ana_audio_support())) {
-		hwlog_err("di is null, or pogo charging ignore otg event\n");
+
+	if (!di) {
+		hwlog_err("di is null\n");
 		return;
 	}
 
@@ -241,6 +244,11 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 
 	gpio_value = gpio_get_value(di->gpio);
 	if (gpio_value == LOW) {
+		if (pogopin_is_charging() &&
+			pogopin_typec_chg_ana_audio_support()) {
+			hwlog_err("pogo charging ignore otg event\n");
+			goto exit;
+		}
 		avgvalue = pogopin_otg_id_adc_sampling(di);
 		if ((avgvalue >= 0) && (avgvalue <= ADC_VOLTAGE_LIMIT)) {
 			pogo_otg_trigger = true;
@@ -257,7 +265,7 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 		if (pogopin_typec_chg_ana_audio_support() &&
 			!pogo_otg_trigger) {
 			hwlog_err("%s:otg insert error, do nothing\n", __func__);
-			return;
+			goto exit;
 		}
 		pogo_otg_trigger = false;
 		chip_usb_otg_event(ID_RISE_EVENT);
@@ -267,6 +275,9 @@ static void pogopin_otg_id_intb_work(struct work_struct *work)
 		if (pogopin_typec_chg_ana_audio_support())
 			pogopin_otg_status_change_process(POGO_NONE);
 	}
+
+exit:
+	power_wakeup_unlock(di->wakelock);
 }
 
 static irqreturn_t pogopin_otg_id_irq_handle(int irq, void *dev_id)
@@ -279,6 +290,7 @@ static irqreturn_t pogopin_otg_id_irq_handle(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
+	power_wakeup_lock(di->wakelock);
 	disable_irq_nosync(di->irq);
 	pogopin_5pin_int_irq_disable(TRUE);
 	gpio_value = gpio_get_value(di->gpio);
@@ -347,6 +359,7 @@ static void pogopin_ocp_irq_work(struct work_struct *work)
 		msleep(OCP_DELAY_2MS);
 		gpio_set_value(di->ocp_en_gpio, LOW);
 	}
+	power_wakeup_unlock(di->wakelock);
 }
 
 static irqreturn_t pogopin_ocp_handler(int irq, void *dev_id)
@@ -359,6 +372,7 @@ static irqreturn_t pogopin_ocp_handler(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
+	power_wakeup_lock(di->wakelock);
 	disable_irq_nosync(di->ocp_irq);
 	gpio_value = gpio_get_value(di->ocp_int_gpio);
 	if (gpio_value == LOW)
@@ -523,6 +537,8 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 		goto fail_register_otg_check_notifier;
 	}
 
+	di->wakelock = power_wakeup_source_register(dev, "pogopin_otg_wakelock");
+
 	ret = pogopin_otg_id_parse_dts(di, np);
 	if (ret != 0)
 		goto fail_parse_dts;
@@ -537,7 +553,7 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 	if (di->ocp_control_support) {
 		if (pogopin_set_ocp_gpio(di) < 0) {
 			hwlog_err("ocp gpio set fail\n");
-			goto fail_set_gpio_direction;
+			goto fail_set_ocp_gpio;
 		}
 	}
 
@@ -578,6 +594,12 @@ static int pogopin_otg_id_probe(struct platform_device *pdev)
 
 fail_request_irq:
 fail_set_gpio_direction:
+	if (di->ocp_control_support) {
+		gpio_free(di->ocp_en_gpio);
+		free_irq(di->ocp_irq, pdev);
+		gpio_free(di->ocp_int_gpio);
+	}
+fail_set_ocp_gpio:
 	gpio_free(di->gpio);
 fail_request_gpio:
 fail_parse_dts:
@@ -602,6 +624,7 @@ static int pogopin_otg_id_remove(struct platform_device *pdev)
 	chip_charger_type_notifier_unregister(&di->pogopin_nb);
 	free_irq(di->irq, pdev);
 	if (di->ocp_control_support) {
+		gpio_free(di->ocp_en_gpio);
 		free_irq(di->ocp_irq, pdev);
 		gpio_free(di->ocp_int_gpio);
 	}

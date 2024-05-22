@@ -37,6 +37,10 @@
 #define STK3235_PARA_SIZE                   9
 #define SY3079_PARA_SIZE                    10
 #define TMD2745_PARA_SIZE                   10
+#define TMD2755_PARA_SIZE                   10
+#define MN78911_PARA_SIZE                   13
+#define SY3133_PARA_SIZE                    30
+#define STK33562_PARA_SIZE                  15
 #define RPR531_PARA_SIZE                    16
 #define APDS9999_PARA_SIZE                  24
 #define TMD3702_PARA_SIZE                   29
@@ -109,6 +113,11 @@ enum {
 	ALS_CHIP_SYH399,
 	ALS_CHIP_BU27006,
 	ALS_CHIP_TCS3707,
+	ALS_CHIP_LTR311,
+	ALS_CHIP_TMD2755,
+	ALS_CHIP_MN78911,
+	ALS_CHIP_STK33562,
+	ALS_CHIP_SY3133,
 };
 
 struct als_device_info {
@@ -135,6 +144,9 @@ enum {
 	PS_CHIP_TMD3702,
 	PS_CHIP_VCNL36658,
 	PS_CHIP_LTR2568,
+	PS_CHIP_TMD2755,
+	PS_CHIP_MN78911,
+	PS_CHIP_STK33562,
 };
 
 struct ps_device_info {
@@ -187,6 +199,14 @@ typedef struct _bh1745_als_para_table {
 	uint8_t tp_color;
 	s16 bh745_para[25]; /* give to bh1745 rgb sensor use,output lux and cct will use these para */
 } bh1745_als_para_table;
+
+typedef struct _sy3133_als_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_lcd_manufacture;
+	uint8_t tp_color;
+	s16 sy3133_para[SY3133_PARA_SIZE]; /* give to sy3133 rgb sensor use,output lux and cct will use these para */
+} sy3133_als_para_table;
 
 typedef struct _bu27006_als_para_table {
 	uint8_t phone_type;
@@ -281,6 +301,54 @@ typedef struct _tmd2745_als_para_table {
 	s16 als_para[TMD2745_PARA_SIZE]; /* modify the size of the array to pass more data */
 } tmd2745_als_para_table; /* keep als_para size smaller than SENSOR_PLATFORM_EXTEND_DATA_SIZE */
 
+typedef struct _tmd2755_als_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	float als_para[TMD2755_PARA_SIZE]; /* modify the size of the array to pass more data */
+} tmd2755_als_para_table; /* keep als_para size smaller than SENSOR_PLATFORM_EXTEND_DATA_SIZE */
+
+typedef struct _tmd2755_ps_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	s16 ps_para[TMD2755_PARA_SIZE]; /* modify the size of the array to pass more data */
+} tmd2755_ps_para_table;
+
+typedef struct _mn78911_als_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	float als_para[MN78911_PARA_SIZE]; /* modify the size of the array to pass more data */
+} mn78911_als_para_table; /* keep als_para size smaller than SENSOR_PLATFORM_EXTEND_DATA_SIZE */
+
+typedef struct _mn78911_ps_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	s16 ps_para[MN78911_PARA_SIZE]; /* modify the size of the array to pass more data */
+} mn78911_ps_para_table; /* keep als_para size smaller than SENSOR_PLATFORM_EXTEND_DATA_SIZE */
+
+typedef struct _stk33562_als_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	float als_para[STK33562_PARA_SIZE]; /* modify the size of the array to pass more data */
+} stk33562_als_para_table; /* keep als_para size smaller than SENSOR_PLATFORM_EXTEND_DATA_SIZE */
+
+typedef struct _stk33562_ps_para_table {
+	uint8_t phone_type;
+	uint8_t phone_version;
+	uint8_t tp_manufacture;
+	uint8_t tp_color;
+	s16 ps_para[STK33562_PARA_SIZE]; /* modify the size of the array to pass more data */
+} stk33562_ps_para_table;
+
 typedef struct _rpr531_als_para_table {
 	uint8_t phone_type;
 	uint8_t phone_version;
@@ -348,7 +416,6 @@ extern int combo_bus_trans(struct sensor_combo_cfg *p_cfg, uint8_t *tx, uint32_t
 extern void __dmd_log_report(int dmd_mark, const char *err_func, const char *err_msg);
 extern int write_gyro_sensor_offset_to_nv(char *temp, int length);
 extern int write_ps_sensor_offset_to_nv(char *temp, int length);
-extern int write_magsensor_calibrate_data_to_nv(char *src);
 extern void reset_calibrate_data(void);
 extern void reset_add_data(void);
 extern int send_gsensor_calibrate_data_to_mcu(void);
@@ -375,12 +442,14 @@ uint8_t *get_ps_sensor_calibrate_data(void);
 uint8_t *get_tof_sensor_calibrate_data(void);
 int send_app_config_cmd(int tag, void *app_config, bool use_lock);
 int send_vibrator_calibrate_data_to_mcu(void);
-int send_mag_calibrate_data_to_mcu(void);
 int send_cap_prox_calibrate_data_to_mcu(void);
 int send_ps_calibrate_data_to_mcu(void);
 int send_tof_calibrate_data_to_mcu(void);
 int send_als_calibrate_data_to_mcu(void);
 int send_gyro_temperature_offset_to_mcu(void);
 int send_sar_add_data_to_mcu(void);
+void select_ps_para(struct sensor_detect_manager *sm);
 
+int open_send_current(int (*send) (int));
+int close_send_current(void);
 #endif /* __SENSORS_H__ */

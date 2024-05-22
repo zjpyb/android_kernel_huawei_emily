@@ -129,7 +129,7 @@ static int uvdm_protocol_send_data(u32 *data, u8 cnt, bool wait_rsp)
 	return 0;
 }
 
-static int uvdm_protocol_handle_vdo_data(u32 *data, int len,
+int uvdm_protocol_handle_vdo_data(u32 *data, int len,
 	bool response, unsigned int retrys)
 {
 	struct uvdm_protocol_dev *l_dev = uvdm_protocol_get_dev();
@@ -563,6 +563,10 @@ static int uvdm_protocol_handle_receive_data(void *data)
 		break;
 	case UVDM_FUNCTION_PD_CTRL:
 		uvdm_protocol_handle_receive_pd_crtl_data(vdo, UVDM_VDOS_COUNT_THREE);
+		break;
+	case UVDM_FUNCTION_USB_EXT_MODEM:
+		power_event_bnc_notify(POWER_BNT_USB_EXT_MODEM,
+			POWER_NE_UEM_RECEIVE_UVDM_DATA, vdo);
 		break;
 	default:
 		break;

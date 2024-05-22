@@ -341,6 +341,7 @@ struct ps_core_s {
     // 在SR流程中使用
     struct semaphore sr_wake_sema;
     atomic_t sr_cnt;
+    uint16_t skb_retry_count;
 };
 
 /*

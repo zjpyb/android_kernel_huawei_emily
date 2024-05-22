@@ -260,7 +260,8 @@ s8 *hwdps_utils_get_json_str(const s8 *str, const s8 *key, u32 *out_len)
 	if (!pc_start_buf)
 		return NULL;
 	len = strlen(key);
-
+	if (strlen(pc_start_buf) < (len + 1))
+		return NULL;
 	/* buf + len + 1 must be inner str */
 	ch = *(pc_start_buf + len + 1); /* one indicates size of end */
 

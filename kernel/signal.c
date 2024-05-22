@@ -1237,8 +1237,6 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 	int ret = -ESRCH;
 
 #ifdef CONFIG_HW_DIE_CATCH
-	#define DBUG_SIG 35
-	#define SI_CODE_MAGIC 78569
 	unsigned short catch_flags = 0;
 	pid_t to_pid = 0;
 	#define EXIT_CATCH_FORAPP_FLAG      (0x8)
@@ -1248,7 +1246,6 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 
 #if (defined CONFIG_HW_DIE_CATCH) && (defined CONFIG_HW_ZEROHUNG)
 	unsigned short cur_flags = 0;
-	struct siginfo new_sigino;
 #endif
 
 #ifdef CONFIG_HUAWEI_KSTATE
@@ -1281,14 +1278,9 @@ int do_send_sig_info(int sig, struct siginfo *info, struct task_struct *p,
 #if (defined CONFIG_HW_DIE_CATCH) && (defined CONFIG_HW_ZEROHUNG)
 	cur_flags = current->signal->unexpected_die_catch_flags;
 	if ((catch_flags & EXIT_CATCH_FORAPP_FLAG) && !(cur_flags & KILL_CATCH_OLD_FLAG) && hung_wp_screen_getbl()) {
-		if (current->pid != 1 && (sig == SIGKILL || sig == SIGTERM) && to_pid != current->pid) {
-			new_sigino.si_signo = DBUG_SIG;
-			new_sigino.si_errno = 0;
-			new_sigino.si_code = SI_CODE_MAGIC;
+		if (current->pid != 1 && (sig == SIGKILL || sig == SIGTERM) && to_pid != current->pid)
 			pr_warn("ExitCatch:%s:%d send signal %d to dst_process %s:%d\n",
 				current->comm, current->pid, sig, dst_comm, to_pid);
-			force_sig_info(DBUG_SIG, &new_sigino, current);
-		}
 	}
 #endif
 	return ret;

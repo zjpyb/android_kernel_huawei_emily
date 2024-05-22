@@ -601,7 +601,7 @@ static ssize_t isplogctrl_store(struct device *pdev,
 }
 
 /*lint -e846 -e514 -e778 -e866 -e84*/
-static DEVICE_ATTR(isplogctrl, 0664, isplogctrl_show,
+static DEVICE_ATTR(isplogctrl, 0440, isplogctrl_show,
 		isplogctrl_store);
 /*lint +e846 +e514 +e778 +e866 +e84*/
 static const struct file_operations isplog_ops = {
@@ -621,46 +621,11 @@ static struct miscdevice isplog_miscdev = {
 
 static int __init isplog_init(void)
 {
-	struct isplog_device_s *dev = &isplog_dev;
-	int ret = 0;
-
-	pr_info("[%s] +\n", __func__);
-
-	dev->initialized = 0;
-	init_waitqueue_head(&dev->wait_ctl);
-
-	ret = misc_register(&isplog_miscdev);
-	if (ret != 0) {
-		pr_err("[%s] Failed : misc_register.%d\n", __func__, ret);
-		return ret;
-	}
-
-	ret = device_create_file(isplog_miscdev.this_device,
-				 &dev_attr_isplogctrl);
-	if (ret != 0)
-		pr_err("[%s] Faield : device_create_file.%d\n", __func__, ret);
-
-	dev->local_loglevel = ISPCPU_DEFAULT_LOG_LEVEL;
-	atomic_set(&dev->open_cnt, 0);
-	atomic_set(&dev->timer_cnt, 0);
-	setup_timer(&dev->sync_timer, sync_timer_fn, 0);
-	dev->version_type =  0;
-	dev->use_cacheable_rdr = 1;
-	dev->ispdev = isplog_miscdev.this_device;
-	dev->initialized = 1;
-	pr_info("[%s] -\n", __func__);
-
 	return 0;
 }
 
 static void __exit isplog_exit(void)
 {
-	struct isplog_device_s *dev = &isplog_dev;
-
-	pr_info("[%s] +\n", __func__);
-	misc_deregister((struct miscdevice *)&isplog_miscdev);
-	dev->initialized = 0;
-	pr_info("[%s] -\n", __func__);
 }
 
 module_init(isplog_init);

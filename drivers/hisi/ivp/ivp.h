@@ -156,6 +156,7 @@ struct ivp_image_info {
 struct ivp_power_up_info {
 	int sec_mode;
 	int sec_buff_fd;
+	unsigned int sec_buff_size;
 };
 
 struct ion_page_info {

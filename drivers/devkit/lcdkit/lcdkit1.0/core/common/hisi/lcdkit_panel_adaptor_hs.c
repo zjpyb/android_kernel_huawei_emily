@@ -26,7 +26,39 @@
 /* set global variables of td4336 */
 extern uint32_t g_read_value_td4336[19];
 
+#define ESD_TMP_BUF 10
+
 int lcdkit_check_mipi_fifo_empty(char __iomem *dsi_base);
+
+static bool lcdkit_is_write_cmd(const struct dsi_cmd_desc *cmd)
+{
+	bool is_write = false;
+
+	switch (DSI_HDR_DTYPE(cmd->dtype)) {
+	case DTYPE_GEN_WRITE:
+	case DTYPE_GEN_WRITE1:
+	case DTYPE_GEN_WRITE2:
+	case DTYPE_GEN_LWRITE:
+	case DTYPE_DCS_WRITE:
+	case DTYPE_DCS_WRITE1:
+	case DTYPE_DCS_LWRITE:
+	case DTYPE_DSC_LWRITE:
+		is_write = true;
+		break;
+	case DTYPE_GEN_READ:
+	case DTYPE_GEN_READ1:
+	case DTYPE_GEN_READ2:
+	case DTYPE_DCS_READ:
+		is_write = false;
+		break;
+	default:
+		is_write = false;
+		break;
+	}
+
+	return is_write;
+}
+
 //lint -save -e144 -e578 -e647
 void lcdkit_info_init(void* pdata)
 {
@@ -434,6 +466,8 @@ void lcdkit_info_init(void* pdata)
 		pinfo->acm_ce_support = 0;
 	pinfo->left_time_to_te_us = lcdkit_info.panel_infos.left_time_to_te_us;
 	pinfo->right_time_to_te_us = lcdkit_info.panel_infos.right_time_to_te_us;
+	pinfo->dcdelay_support = lcdkit_info.panel_infos.dcdelay_support;
+	pinfo->dc_time_to_te_us = lcdkit_info.panel_infos.dc_time_to_te_us;
 	pinfo->ramless_aod = lcdkit_info.panel_infos.ramless_aod;
 }
 
@@ -510,6 +544,33 @@ void lcdkit_dsi_tx(void* pdata, struct lcdkit_dsi_panel_cmds* cmds)
 	return;
 }
 
+int lcdkit_mipi_dsi_cmds_rx(uint32_t *out, struct dsi_cmd_desc *cmd, int cnt,
+	char __iomem *dsi_base) {
+	int i, j;
+	int ret = 0;
+	int count = 0;
+	uint8_t tmp[ESD_TMP_BUF] = {0};
+
+	if (out == NULL || cmd == NULL || dsi_base == NULL) {
+		LCDKIT_ERR("NULL pointer\n");
+	}
+
+	for (i = 0; i < cnt; i++) {
+		if (lcdkit_is_write_cmd(cmd)) {
+			mipi_dsi_cmds_tx(cmd, 1, dsi_base);
+		} else {
+			memset(tmp, 0, sizeof(tmp));
+			ret = mipi_dsi_cmds_rx(tmp, cmd, 1, dsi_base);
+			for (j = 0; (j < cmd->dlen) && (count < MAX_REG_READ_COUNT); j++) {
+				out[count++] = tmp[j];
+			}
+		}
+		cmd++;
+	}
+
+	return ret;
+}
+
 int lcdkit_dsi_rx(void* pdata, uint32_t* out, int len, struct lcdkit_dsi_panel_cmds* cmds)
 {
 	struct hisi_fb_data_type* hisifd = NULL;
@@ -537,7 +598,10 @@ int lcdkit_dsi_rx(void* pdata, uint32_t* out, int len, struct lcdkit_dsi_panel_c
 		packet_size_cmd_set.vc = 0;
 		packet_size_cmd_set.dlen = len;
 		mipi_dsi_max_return_packet_size(&packet_size_cmd_set, mipi_dsi0_base);
-		ret = mipi_dsi_cmds_rx(out, cmd, cmds->cmd_cnt, mipi_dsi0_base);
+		if (lcdkit_info.panel_infos.mipi_rx_have_tx_cmd)
+			ret = lcdkit_mipi_dsi_cmds_rx(out, cmd, cmds->cmd_cnt, mipi_dsi0_base);
+		else
+			ret = mipi_dsi_cmds_rx(out, cmd, cmds->cmd_cnt, mipi_dsi0_base);
 	}
 	if (ret)
 		LCDKIT_INFO("lcdkit_dsi_rx failed!\n");
@@ -1827,7 +1891,7 @@ static int __init early_parse_ddic_oem_cmdline(char *arg)
 
 early_param("DDIC_INFO", early_parse_ddic_oem_cmdline);
 
-static void lcdkit_single_cmd_tx(const struct lcdkit_dsi_cmd_desc *cmd,
+void lcdkit_single_cmd_tx(const struct lcdkit_dsi_cmd_desc *cmd,
 	const struct hisi_fb_data_type *hisifd)
 {
 	struct dsi_cmd_desc dsi_cmd;
@@ -1849,7 +1913,7 @@ static void lcdkit_single_cmd_tx(const struct lcdkit_dsi_cmd_desc *cmd,
 	(void)mipi_dsi_cmds_tx(&dsi_cmd, SINGLE_CMD, mipi_dsi0_base);
 }
 
-static bool lcdkit_cmd_is_write(const struct lcdkit_dsi_cmd_desc *cmd)
+bool lcdkit_cmd_is_write(const struct lcdkit_dsi_cmd_desc *cmd)
 {
 	bool is_write = false;
 

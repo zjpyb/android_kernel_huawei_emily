@@ -425,6 +425,7 @@ typedef struct {
     uint8_t mbo_switch;
     uint8_t fastscan_switch;
 
+    uint8_t pt_mcast_enable;
     uint8_t linkloss_th[WLAN_LINKLOSS_MODE_BUTT];
     uint8_t ftm_cap;
 

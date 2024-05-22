@@ -41,6 +41,8 @@ unsigned long affinity_normal_zone_start_pfn(void);
 
 void init_mm_internals(void);
 
+bool is_in_direct_reclaim(void);
+
 #ifndef CONFIG_NEED_MULTIPLE_NODES	/* Don't use mapnrs, do it properly */
 extern unsigned long max_mapnr;
 
@@ -1643,7 +1645,17 @@ void account_page_cleaned(struct page *page, struct address_space *mapping,
 			  struct bdi_writeback *wb);
 int set_page_dirty(struct page *page);
 int set_page_dirty_lock(struct page *page);
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 void cancel_dirty_page(struct page *page);
+#else
+void __cancel_dirty_page(struct page *page);
+static inline void cancel_dirty_page(struct page *page)
+{
+	/* Avoid atomic ops, locking, etc. when not actually needed. */
+	if (PageDirty(page))
+		__cancel_dirty_page(page);
+}
+#endif
 int clear_page_dirty_for_io(struct page *page);
 
 int get_cmdline(struct task_struct *task, char *buffer, int buflen);
@@ -1759,6 +1771,21 @@ static inline void update_hiwater_vm(struct mm_struct *mm)
 	if (mm->hiwater_vm < mm->total_vm)
 		mm->hiwater_vm = mm->total_vm;
 }
+
+#ifdef CONFIG_PM_PEAK
+static inline unsigned long get_mm_pm(struct mm_struct *mm)
+{
+	return get_mm_rss(mm) + get_mm_counter(mm, MM_SWAPENTS);
+}
+
+static inline void update_hiwater_pm(struct task_struct *task)
+{
+	struct mm_struct *mm = task->mm;
+
+	if (likely(mm))
+		mm->hiwater_pm = max(mm->hiwater_pm, get_mm_pm(mm));
+}
+#endif
 
 static inline void reset_mm_hiwater_rss(struct mm_struct *mm)
 {
@@ -2887,6 +2914,10 @@ int force_page_cache_readahead_abs(struct address_space *mapping,
 #endif
 
 int should_only_do_gss(void);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+int freeswap_min_mbytes(void);
+#endif
 
 #ifdef CONFIG_OVERWRITE_FAULT_AROUND_BYTES
 extern unsigned long sysctl_fault_around_bytes;

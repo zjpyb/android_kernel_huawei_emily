@@ -142,7 +142,12 @@ static big_data_param_detail_t event_aod_info_param[] = {
 	{ "swing_animation_count", INT_PARAM, NO_TAG }
 };
 
-
+static big_data_param_detail_t event_blpwm_info_param[] = {
+	{ "powers", INT_PARAM, NO_TAG },
+	{ "dutys", INT_PARAM, NO_TAG },
+	{ "flips", INT_PARAM, NO_TAG },
+	{ "taps", INT_PARAM, NO_TAG },
+};
 /* 2.register event param here {EVENT_ID, param_num, param_detail_struct} */
 static const big_data_event_detail_t big_data_event[] = {
 	{ BIG_DATA_EVENT_MOTION_TYPE, 12, event_motion_type_param },
@@ -154,6 +159,7 @@ static const big_data_event_detail_t big_data_event[] = {
 	{ BIG_DATA_FOLD_TEMP, 2, event_fold_temp_param },
 	{ BIG_DATA_EVENT_PS_SOUND_INFO, 16, event_ps_sound_param },
 	{ BIG_DATA_EVENT_AOD_INFO, 2, event_aod_info_param },
+	{ BIG_DATA_EVENT_BLPWM_USED_INFO, 4, event_blpwm_info_param },
 };
 
 /* 3.(optional)map tag to str */
@@ -409,6 +415,7 @@ static int iomcu_big_data_process(const struct pkt_header *head)
 	case BIG_DATA_EVENT_VIB_RESP_TIME:
 	case BIG_DATA_FOLD_TEMP:
 	case BIG_DATA_EVENT_AOD_INFO:
+	case BIG_DATA_EVENT_BLPWM_USED_INFO:
 		process_big_data(report_t->event_id, data);
 		break;
 	case BIG_DATA_EVENT_PS_SOUND_INFO:

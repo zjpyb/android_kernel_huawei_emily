@@ -125,7 +125,7 @@ int dpufb_set_dss_vote_voltage(struct dpu_fb_data_type *dpufd,
 
 	expected_voltage_level = max(expected_voltage_level, dss_voltage_level);
 
-	volt_to_set = dpe_get_voltage_value(expected_voltage_level);
+	volt_to_set = dpe_get_voltage_value(dpufd, expected_voltage_level);
 	dpu_check_and_return((volt_to_set < 0), -EINVAL, ERR, "get votage_value failed\n");
 
 	dpu_check_and_return(dss_set_peri_volt(volt_to_set, curr_volt), -EINVAL, ERR,

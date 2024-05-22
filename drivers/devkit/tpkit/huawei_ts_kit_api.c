@@ -644,6 +644,10 @@ int ts_power_control(int irq_id, struct ts_cmd_node *in_cmd,
 			break;
 		case TS_I2C_TO_AP:
 			g_ts_kit_platform_data.chip_data->need_drop_point = 1;
+			g_ts_kit_platform_data.get_info_flag = 1;
+			if (dev->ops->chip_set_info_flag)
+				error = dev->ops->chip_set_info_flag(&g_ts_kit_platform_data);
+			g_ts_kit_platform_data.get_info_flag = -1;
 			TS_LOG_INFO("get TS_I2C_TO_AP enable");
 			enable_irq(irq_id);
 			if (get_ts_irq_depth(irq_id, &depth) == 0) {
@@ -658,6 +662,10 @@ int ts_power_control(int irq_id, struct ts_cmd_node *in_cmd,
 			disable_irq(irq_id);
 			if (get_ts_irq_depth(irq_id, &depth) == 0)
 				TS_LOG_INFO("disable_irq depth:%lu\n", depth);
+			g_ts_kit_platform_data.get_info_flag = 0;
+			if (dev->ops->chip_set_info_flag)
+				error = dev->ops->chip_set_info_flag(&g_ts_kit_platform_data);
+			g_ts_kit_platform_data.get_info_flag = -1;
 			break;
 		default:
 			TS_LOG_ERR("pm_type = %d\n", pm_type);
@@ -1627,6 +1635,37 @@ int ts_roi_switch(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd)
 
 	TS_LOG_INFO("roi action :%d, value:%d, process result: %d\n",
 		info->op_action, info->roi_switch, error);
+
+	return error;
+}
+
+int ts_horizon_switch(struct ts_cmd_node *in_cmd)
+{
+	int error = -EIO;
+	struct ts_kit_device_data *dev = g_ts_kit_platform_data.chip_data;
+	struct ts_horizon_info *info = NULL;
+
+	if (!in_cmd) {
+		TS_LOG_ERR("%s : find a null pointer\n", __func__);
+		return -EINVAL;
+	}
+	info = (struct ts_horizon_info *)in_cmd->cmd_param.prv_params;
+	if (!info) {
+		TS_LOG_ERR("%s, find a null pointer\n", __func__);
+		return -EINVAL;
+	}
+	if (dev->ops->chip_horizon_switch)
+		error = dev->ops->chip_horizon_switch(info);
+
+	if (error) {
+		info->status = TS_ACTION_FAILED;
+		TS_LOG_ERR("horizon switch process error: %d\n", error);
+	} else {
+		info->status = TS_ACTION_SUCCESS;
+	}
+
+	TS_LOG_INFO("horizon action :%d, value:%d, process result: %d\n",
+		info->op_action, info->horizon_switch, error);
 
 	return error;
 }

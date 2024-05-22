@@ -851,6 +851,9 @@ void phcd_giveback_all_urbs(struct proxy_hcd_client *client)
 			struct urb *urb;
 
 			phcd_urb = list_first_entry(list, struct proxy_hcd_urb, urb_list);
+			if (phcd_urb == NULL)
+				goto done;
+
 			urb = phcd_urb->urb;
 
 			if (urb->unlinked)

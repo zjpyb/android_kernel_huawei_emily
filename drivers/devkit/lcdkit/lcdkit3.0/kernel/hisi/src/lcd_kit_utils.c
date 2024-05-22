@@ -2780,6 +2780,10 @@ void lcd_kit_pinfo_init(struct device_node *np, struct hisi_panel_info *pinfo)
 		&pinfo->bgr_fmt, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,panel-bl-type",
 		&pinfo->bl_set_type, 0);
+	lcd_kit_parse_u32(np, "lcd-kit,display-on-before-backlight",
+		&pinfo->display_on_before_backlight, 0);
+	lcd_kit_parse_u32(np, "lcd-kit,before-bl-on-mdelay",
+		&pinfo->before_bl_on_mdelay, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,panel-bl-min",
 		&pinfo->bl_min, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,panel-bl-max",
@@ -3259,6 +3263,8 @@ void lcd_kit_pinfo_init(struct device_node *np, struct hisi_panel_info *pinfo)
 			&pinfo->esd_timing_ctrl, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,esd-check-time-period",
 			&pinfo->esd_check_time_period, 0);
+		lcd_kit_parse_u32(np, "lcd-kit,esd-first-check-delay",
+			&pinfo->esd_first_check_delay, 0);
 	}
 	lcd_kit_fps_init(np, pinfo);
 	/* aod */

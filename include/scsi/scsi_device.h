@@ -438,6 +438,13 @@ static inline int scsi_execute_req(struct scsi_device *sdev,
 		bufflen, NULL, sshdr, timeout, retries,  0, 0, resid);
 }
 
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+extern int scsi_unistore_execute(struct scsi_device *sdev,
+	const unsigned char *cmd, int data_direction, void *buffer,
+	unsigned bufflen, int timeout, int retries, rq_end_io_fn *done);
+extern void scsi_unistore_execute_done(struct request *rq);
+#endif
+
 static inline int
 scsi_execute_req_with_flags(struct scsi_device *sdev, const unsigned char *cmd,
 			    int data_direction, void *buffer, unsigned bufflen,

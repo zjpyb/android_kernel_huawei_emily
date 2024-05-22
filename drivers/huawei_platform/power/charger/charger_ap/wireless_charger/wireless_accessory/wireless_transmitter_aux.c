@@ -981,6 +981,10 @@ void wltx_aux_notify_android_uevent(struct wltx_acc_dev *di)
 		snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_STATE].value,
 			ACC_VALUE_MAX_LEN, "%s", ACC_PING_TIMEOUT_STR);
 		break;
+	case WL_ACC_DEV_STATE_PING_ERROR:
+		snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_STATE].value,
+			ACC_VALUE_MAX_LEN, "%s", ACC_PING_ERR_STR);
+		break;
 	default:
 		snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_STATE].value,
 			ACC_VALUE_MAX_LEN, "%s", ACC_UNKNOWN_STR);
@@ -1100,25 +1104,21 @@ static int wltx_aux_ping_rx(struct wltx_aux_dev_info *di)
 			return WL_TX_FAIL;
 		}
 	}
-	wltx_aux_set_acc_dev_state(di, WL_ACC_DEV_STATE_PING_TIMEOUT);
-	wltx_aux_set_acc_dev_info_cnt(di, WL_TX_ACC_DEV_INFO_CNT);
-	ret = wltx_aux_get_acc_info(di);
-	if (!ret)
-		wltx_aux_notify_android_uevent(di->wireless_tx_acc);
 
 	wltx_aux_set_tx_open_flag(false);
 	wltx_aux_set_tx_status(WL_TX_STATUS_PING_TIMEOUT);
+	wltx_aux_report_acc_info(WL_ACC_DEV_STATE_PING_TIMEOUT);
 	hwlog_info("%s: TX ping RX timeout\n", __func__);
 
 	return WL_TX_FAIL;
 }
 
-static void wltx_aux_report_ping_succ(void)
+void wltx_aux_report_acc_info(int state)
 {
 	int ret;
 	struct wltx_aux_dev_info *di = g_wltx_aux_di;
 
-	wltx_aux_set_acc_dev_state(di, WL_ACC_DEV_STATE_PING_SUCC);
+	wltx_aux_set_acc_dev_state(di, state);
 	wltx_aux_set_acc_dev_info_cnt(di, WL_TX_ACC_DEV_INFO_CNT);
 
 	ret = wltx_aux_get_acc_info(di);
@@ -1246,7 +1246,7 @@ static void hall_approach_process_work(struct work_struct *work)
 		if (ret)
 			goto func_end;
 		wltx_aux_set_stage(WL_TX_STAGE_REGULATION);
-		wltx_aux_report_ping_succ();
+		wltx_aux_report_acc_info(WL_ACC_DEV_STATE_PING_SUCC);
 	}
 	hwlog_info("%s: start wireless reverse charging, -out-\n", __func__);
 	wltx_aux_set_tx_status(WL_TX_STATUS_IN_CHARGING);
@@ -1360,6 +1360,12 @@ static void wltx_aux_event_work(struct work_struct *work)
 		else
 			wltx_aux_notify_android_uevent(di->wireless_tx_acc);
 		break;
+	case POWER_NE_WLTX_TX_PING_OCP:
+		wltx_aux_set_tx_status(WL_TX_STATUS_TX_CLOSE);
+		di->stop_reverse_charge = true;
+		wltx_aux_report_acc_info(WL_ACC_DEV_STATE_PING_ERROR);
+		hwlog_info("[event_work]: POWER_NE_WLTX_TX_PING_OCP\n");
+		break;
 	case POWER_NE_WLTX_TX_FOD:
 		wltx_aux_set_tx_status(WL_TX_STATUS_TX_CLOSE);
 		di->stop_reverse_charge = true;
@@ -1396,6 +1402,7 @@ static int wltx_aux_event_notifier_call(struct notifier_block *tx_event_nb,
 	case POWER_NE_WLTX_HALL_APPROACH:
 	case POWER_NE_WLTX_HALL_AWAY_FROM:
 	case POWER_NE_WLTX_ACC_DEV_CONNECTED:
+	case POWER_NE_WLTX_TX_PING_OCP:
 	case POWER_NE_WLTX_TX_FOD:
 		break;
 	default:

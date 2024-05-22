@@ -547,7 +547,6 @@ static uint8_t hmac_tx_classify_lan_to_wlan_eth_type_handle(hmac_vap_stru *hmac_
             break;
         case oal_host2net_short(ETHER_TYPE_ARP):
         /* 如果是ARP帧，则进入VO队列发送 */
-            curr_tid = WLAN_DATA_VIP_TID;
             MAC_GET_CB_FRAME_SUBTYPE(tx_ctl) =
                 (uint8_t)mac_get_arp_type_by_arphdr((oal_eth_arphdr_stru *)(ether_header + 1));
             break;
@@ -1657,14 +1656,11 @@ OAL_STATIC OAL_INLINE uint32_t hmac_tx_lan_mpdu_process_ap(hmac_vap_stru *pst_va
     oal_netbuf_stru *pst_buf, mac_tx_ctl_stru *pst_tx_ctl)
 {
     hmac_user_stru *pst_user = NULL; /* 目标STA结构体 */
-    mac_ether_header_stru *pst_ether_hdr;    /* 以太网头 */
-    uint8_t *puc_addr;                     /* 目的地址 */
+    mac_ether_header_stru *pst_ether_hdr = (mac_ether_header_stru *)oal_netbuf_data(pst_buf); /* 以太网头 */
+    uint8_t *puc_addr = pst_ether_hdr->auc_ether_dhost; /* 目的地址 */
     uint32_t ret;
     uint16_t us_user_idx = g_wlan_spec_cfg->invalid_user_id;
 
-    /* 判断是组播或单播,对于lan to wlan的单播帧，返回以太网地址 */
-    pst_ether_hdr = (mac_ether_header_stru *)oal_netbuf_data(pst_buf);
-    puc_addr = pst_ether_hdr->auc_ether_dhost;
     /* 单播数据帧 */
     if (oal_likely(!ether_is_multicast(puc_addr))) {
         ret = mac_vap_find_user_by_macaddr(&(pst_vap->st_vap_base_info), puc_addr, &us_user_idx);
@@ -1716,6 +1712,7 @@ OAL_STATIC OAL_INLINE uint32_t hmac_tx_lan_mpdu_process_ap(hmac_vap_stru *pst_va
         MAC_GET_CB_TX_USER_IDX(pst_tx_ctl) = pst_vap->st_vap_base_info.us_multi_user_idx;
         MAC_GET_CB_WME_TID_TYPE(pst_tx_ctl) = WLAN_TIDNO_BCAST;
         MAC_GET_CB_WME_AC_TYPE(pst_tx_ctl) = WLAN_WME_TID_TO_AC(WLAN_TIDNO_BCAST);
+        wlan_chip_tx_pt_mcast_set_cb(pst_vap, pst_ether_hdr, pst_tx_ctl);
     }
 
     /* 封装802.11头 */

@@ -169,7 +169,7 @@ init_error:
 	return NULL;
 }
 
-void icmp_ping_process(struct req_msg_head *msg)
+void icmp_ping_process(struct req_msg_head *msg, u32 len)
 {
 	struct icmp_req_msg *icmp_msg = (struct icmp_req_msg *)msg;
 	u32 cmd_type = STOP_DETECT;
@@ -180,6 +180,10 @@ void icmp_ping_process(struct req_msg_head *msg)
 	if (msg->len < sizeof(struct icmp_req_msg))
 		return;
 
+	if (msg->len != len) {
+		pr_err("icmp_ping_detect msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	cmd_type = icmp_msg->cmd_type;
 	if (msg->type != ICMP_PING_DETECT_CMD ||
 		(cmd_type != STOP_DETECT && cmd_type != START_DETECT)) {

@@ -919,7 +919,11 @@ struct kmem_cache *__init create_kmalloc_cache(const char *name, size_t size,
 	if (!s)
 		panic("Out of memory when creating slab %s\n", name);
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	create_boot_cache(s, name, size, flags | SLAB_KMALLOC);
+#else
 	create_boot_cache(s, name, size, flags);
+#endif
 	list_add(&s->list, &slab_caches);
 	memcg_link_cache(s);
 	s->refcount = 1;

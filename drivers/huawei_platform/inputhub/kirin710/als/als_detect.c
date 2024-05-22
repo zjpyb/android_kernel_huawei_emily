@@ -129,6 +129,21 @@ static int als_ams_detect(struct als_device_info *dev_info,
 	else if (!strncmp(chip_info, "als_s001_005",
 		sizeof("als_s001_005")))
 		dev_info->chip_type = ALS_CHIP_TCS3707;
+	else if (!strncmp(chip_info, "als,als_s001006",
+		sizeof("als,als_s001006")))
+		dev_info->chip_type = ALS_CHIP_TMD2755;
+	else
+		return -1;
+
+	return 0;
+}
+
+static int als_emin_detect(struct als_device_info *dev_info,
+	const char *chip_info)
+{
+	if (!strncmp(chip_info, "als_s007_001",
+		sizeof("als_s007_001")))
+		dev_info->chip_type = ALS_CHIP_MN78911;
 	else
 		return -1;
 
@@ -147,6 +162,9 @@ static int als_liteon_detect(struct als_device_info *dev_info,
 	else if (!strncmp(chip_info, "huawei,liteon_ltr2568",
 		sizeof("huawei,liteon_ltr2568")))
 		dev_info->chip_type = ALS_CHIP_LTR2568;
+	else if (!strncmp(chip_info, "als_s002_002",
+		sizeof("als_s002_002")))
+		dev_info->chip_type = ALS_CHIP_LTR311;
 	else
 		return -1;
 
@@ -165,6 +183,9 @@ static int als_sensortek_detect(struct als_device_info *dev_info,
 	else if (!strncmp(chip_info, "huawei,arrow_stk3338",
 		sizeof("huawei,arrow_stk3338")))
 		dev_info->chip_type = ALS_CHIP_STK3338;
+	else if (!strncmp(chip_info, "als_s003_004",
+		sizeof("als_s003_004")))
+		dev_info->chip_type = ALS_CHIP_STK33562;
 	else
 		return -1;
 
@@ -195,6 +216,12 @@ static int als_silergy_detect(struct als_device_info *dev_info,
 	else if (!strncmp(chip_info, "huawei,silergy_syh399",
 		sizeof("huawei,silergy_syh399")))
 		dev_info->chip_type = ALS_CHIP_SYH399;
+	else if (!strncmp(chip_info, "als_s004_001",
+		sizeof("als_s004_001")))
+		dev_info->chip_type = ALS_CHIP_SYH399;
+	else if (!strncmp(chip_info, "als_s004_002",
+		sizeof("als_s004_002")))
+		dev_info->chip_type = ALS_CHIP_SY3133;
 	else
 		return -1;
 
@@ -214,6 +241,7 @@ static int als_get_chip_type_by_compatible(struct als_device_info *dev_info,
 	} else if (!als_vishay_detect(dev_info, chip_info)) {
 	} else if (!als_sensortek_detect(dev_info, chip_info)) {
 	} else if (!als_silergy_detect(dev_info, chip_info)) {
+	} else if (!als_emin_detect(dev_info, chip_info)) {
 	} else {
 		return -1;
 	}

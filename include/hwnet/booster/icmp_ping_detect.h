@@ -47,6 +47,6 @@ struct icmp_res_msg {
 };
 
 msg_process *icmp_ping_detect_init(notify_event *fn);
-void icmp_ping_process(struct req_msg_head *msg);
+void icmp_ping_process(struct req_msg_head *msg, u32 len);
 void icmp_ping_timer_expire(unsigned long data);
 #endif // _ICMP_PING_DETECT_H

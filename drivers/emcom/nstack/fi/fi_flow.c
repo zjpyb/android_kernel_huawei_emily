@@ -169,6 +169,8 @@ struct fi_flow_node *fi_ipv4_flow_add(struct fi_flow_head *head, int32_t uid,
 		newnode->dport = dport;
 		newnode->uid = uid;
 		newnode->updatetime = jiffies_to_msecs(jiffies);
+		newnode->ip_flow_print_log_time = jiffies_to_msecs(jiffies) - FI_FLOW_PRINT_LOG_PERIOD;
+		newnode->flow_qos_print_log_time = jiffies_to_msecs(jiffies) - FI_FLOW_PRINT_LOG_PERIOD;
 		newnode->flow_cb = flow_cb;
 		if (fi_flow_ctx_init(newnode, &flow_cb)) {
 			fi_loge("fi_flow_ctx_init failed");
@@ -442,6 +444,8 @@ struct fi_flow_node *fi_ipv6_flow_add(struct fi_flow_head *head, int32_t uid,
 		newnode->dport = dport;
 		newnode->uid = uid;
 		newnode->updatetime = jiffies_to_msecs(jiffies);
+		newnode->ip_flow_print_log_time = jiffies_to_msecs(jiffies) - FI_FLOW_PRINT_LOG_PERIOD;
+		newnode->flow_qos_print_log_time = jiffies_to_msecs(jiffies) - FI_FLOW_PRINT_LOG_PERIOD;
 		newnode->flow_cb = flow_cb;
 		if (fi_flow_ctx_init(newnode, &flow_cb)) {
 			fi_loge("fi_flow_ctx_init failed");
@@ -874,6 +878,15 @@ static void fi_ip_stat_periodic_log(const struct fi_flow_node *node)
 	}
 }
 
+static void fi_ip_stat_periodic_log_limited(struct fi_flow_node *node)
+{
+	uint32_t curtime = jiffies_to_msecs(jiffies);
+	if (curtime - node->ip_flow_print_log_time >= FI_FLOW_PRINT_LOG_PERIOD) {
+		fi_ip_stat_periodic_log(node);
+		node->ip_flow_print_log_time = curtime;
+	}
+}
+
 bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir)
 {
 	bool enable = false;
@@ -994,7 +1007,7 @@ void fi_ip_flow_periodic_report(const struct fi_flow *flow,
 					(*flow_unlock)(i);
 					return;
 				}
-				fi_ip_stat_periodic_log(node);
+				fi_ip_stat_periodic_log_limited(node);
 				local_var.ret = memset_s(&node->flow_ctx.flow_stat,
 					sizeof(struct fi_flow_stat), 0, sizeof(struct fi_flow_stat));
 				if (local_var.ret)
@@ -1051,6 +1064,15 @@ void fi_flow_qos_msg_log(struct fi_flow_node *node)
 #endif
 }
 
+void fi_flow_qos_msg_log_limited(struct fi_flow_node * node)
+{
+	uint32_t curtime = jiffies_to_msecs(jiffies);
+	if (curtime - node->flow_qos_print_log_time >= FI_FLOW_PRINT_LOG_PERIOD) {
+		fi_flow_qos_msg_log(node);
+		node->flow_qos_print_log_time = curtime;
+	}
+}
+
 int fi_flow_qos_msg(const struct fi_flow_head *head, struct sk_buff **pskb, char **data, uint32_t *offset, uint32_t *size)
 {
 	int ret;
@@ -1071,7 +1093,7 @@ int fi_flow_qos_msg(const struct fi_flow_head *head, struct sk_buff **pskb, char
 			fi_flow_get_filesize(node);
 			if (node->flow_ctx.key_info_check_rst == FI_RPT_BLOCK)
 				continue;
-			fi_flow_qos_msg_log(node);
+			fi_flow_qos_msg_log_limited(node);
 			if (*offset >= *size) {
 				/* enqueue pre skb and alloc a new skb */
 				fi_enqueue_netlink_skb(*pskb);

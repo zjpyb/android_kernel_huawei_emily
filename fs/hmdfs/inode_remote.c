@@ -25,6 +25,9 @@
 #include "DFS_1_0/dentry_syncer.h"
 #endif
 
+#define INUNUMBER_START 10000000
+static atomic64_t curr_ino = ATOMIC_INIT(INUNUMBER_START);
+
 struct hmdfs_lookup_ret *lookup_remote_dentry(struct dentry *child_dentry,
 					      const struct qstr *qstr,
 					      uint64_t dev_id)
@@ -125,7 +128,8 @@ static void hmdfs_remote_readdir_work(struct work_struct *work)
 			     dwork);
 	struct dentry *dentry = rw->dentry;
 	struct hmdfs_peer *con = rw->con;
-	const struct cred *old_cred = hmdfs_override_creds(con->sbi->cred);
+	const struct cred *old_cred =
+		hmdfs_override_creds(con->sbi->system_cred);
 	bool empty = false;
 
 	get_remote_dentry_file(dentry, con);
@@ -177,13 +181,13 @@ void get_remote_dentry_file_sync(struct dentry *dentry, struct hmdfs_peer *con)
 	flush_workqueue(con->dentry_wq);
 }
 
-struct hmdfs_lookup_ret *hmdfs_lookup_by_con(struct hmdfs_peer *con,
-					     struct dentry *dentry,
-					     struct qstr *qstr,
-					     unsigned int flags,
-					     const char *relative_path)
+static struct hmdfs_lookup_ret *hmdfs_lookup_by_con(struct hmdfs_peer *con,
+						    struct dentry *dentry,
+						    struct qstr *qstr,
+						    unsigned int flags)
 {
 	struct hmdfs_lookup_ret *result = NULL;
+	char *relative_path = NULL;
 
 	if (con->version > USERSPACE_MAX_VER) {
 		/*
@@ -222,11 +226,14 @@ struct hmdfs_lookup_ret *hmdfs_lookup_by_con(struct hmdfs_peer *con,
 			get_remote_dentry_file_in_wq(dentry->d_parent, con);
 		}
 	} else {
-		if (!relative_path)
+		relative_path =
+			hmdfs_get_dentry_relative_path(dentry->d_parent);
+		if (unlikely(!relative_path))
 			return NULL;
 
 		result = con->conn_operations->remote_lookup(
-			con, relative_path, dentry->d_name.name);
+				con, relative_path, dentry->d_name.name);
+		kfree(relative_path);
 	}
 
 	return result;
@@ -348,16 +355,52 @@ static void hmdfs_fill_inode_android(struct inode *inode, struct inode *dir,
 #endif
 }
 
+static void hmdfs_fill_remote_inode(struct hmdfs_peer *con, struct inode *dir,
+				    struct hmdfs_lookup_ret *res,
+				    struct inode *inode)
+{
+	inode->i_ctime.tv_sec = 0;
+	inode->i_ctime.tv_nsec = 0;
+	inode->i_mtime.tv_sec = res->i_mtime;
+	inode->i_mtime.tv_nsec = res->i_mtime_nsec;
+	inode->i_uid = KUIDT_INIT((uid_t)1000);
+	inode->i_gid = KGIDT_INIT((gid_t)1000);
+
+	if (S_ISDIR(res->i_mode))
+		inode->i_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IXOTH;
+	else if (S_ISREG(res->i_mode))
+		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+	else if (S_ISLNK(res->i_mode))
+		inode->i_mode = S_IFREG | S_IRWXU | S_IRWXG;
+
+	if (S_ISREG(res->i_mode) || S_ISLNK(res->i_mode)) { // Reguler file
+		inode->i_op = con->conn_operations->remote_file_iops;
+		inode->i_fop = con->conn_operations->remote_file_fops;
+		inode->i_size = res->i_size;
+		set_nlink(inode, 1);
+	} else if (S_ISDIR(res->i_mode)) { // Directory
+		inode->i_op = &hmdfs_dev_dir_inode_ops_remote;
+		inode->i_fop = &hmdfs_dev_dir_ops_remote;
+		set_nlink(inode, 2);
+	}
+	inode->i_mapping->a_ops = con->conn_operations->remote_file_aops;
+
+	hmdfs_fill_inode_android(inode, dir, res->i_mode);
+}
+
 struct inode *fill_inode_remote(struct super_block *sb, struct hmdfs_peer *con,
 				struct hmdfs_lookup_ret *res, struct inode *dir)
 {
 	struct inode *inode = NULL;
 	struct hmdfs_inode_info *info;
 	umode_t mode = res->i_mode;
+	uint64_t remote_ino;
 
-	if (con->version > USERSPACE_MAX_VER)
-		inode = hmdfs_iget5_locked_remote(sb, con, res->i_ino);
-	else
+	if (con->version > USERSPACE_MAX_VER) {
+		remote_ino = hmdfs_sb(sb)->s_external_fs ?
+			     atomic64_inc_return(&curr_ino) : res->i_ino;
+		inode = hmdfs_iget5_locked_remote(sb, con, remote_ino);
+	} else
 		inode = hmdfs_iget_locked_dfs_1_0(sb, con);
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
@@ -378,34 +421,7 @@ struct inode *fill_inode_remote(struct super_block *sb, struct hmdfs_peer *con,
 #ifdef CONFIG_HMDFS_1_0
 	info->file_no = res->fno;
 #endif
-	inode->i_ctime.tv_sec = 0;
-	inode->i_ctime.tv_nsec = 0;
-	inode->i_mtime.tv_sec = res->i_mtime;
-	inode->i_mtime.tv_nsec = res->i_mtime_nsec;
-
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
-
-	if (S_ISDIR(mode))
-		inode->i_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IXOTH;
-	else if (S_ISREG(mode))
-		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-	else if (S_ISLNK(mode))
-		inode->i_mode = S_IFREG | S_IRWXU | S_IRWXG;
-
-	if (S_ISREG(mode) || S_ISLNK(mode)) { // Reguler file
-		inode->i_op = con->conn_operations->remote_file_iops;
-		inode->i_fop = con->conn_operations->remote_file_fops;
-		inode->i_size = res->i_size;
-		set_nlink(inode, 1);
-	} else if (S_ISDIR(mode)) { // Directory
-		inode->i_op = &hmdfs_dev_dir_inode_ops_remote;
-		inode->i_fop = &hmdfs_dev_dir_ops_remote;
-		set_nlink(inode, 2);
-	}
-	inode->i_mapping->a_ops = con->conn_operations->remote_file_aops;
-
-	hmdfs_fill_inode_android(inode, dir, mode);
+	hmdfs_fill_remote_inode(con, dir, res, inode);
 	unlock_new_inode(inode);
 	return inode;
 }
@@ -425,7 +441,6 @@ static struct dentry *hmdfs_lookup_remote_dentry(struct inode *parent_inode,
 	struct qstr qstr;
 	struct hmdfs_dentry_info *gdi = hmdfs_d(child_dentry);
 	uint64_t device_id = 0;
-	char *relative_path = NULL;
 
 	file_name = kzalloc(NAME_MAX + 1, GFP_KERNEL);
 	if (!file_name)
@@ -442,15 +457,7 @@ static struct dentry *hmdfs_lookup_remote_dentry(struct inode *parent_inode,
 		goto done;
 	}
 
-	relative_path = hmdfs_get_dentry_relative_path(child_dentry->d_parent);
-	if (unlikely(!relative_path)) {
-		ret = ERR_PTR(-ENOMEM);
-		hmdfs_err("get relative path failed %d", -ENOMEM);
-		goto done;
-	}
-
-	lookup_result = hmdfs_lookup_by_con(con, child_dentry, &qstr, flags,
-					    relative_path);
+	lookup_result = hmdfs_lookup_by_con(con, child_dentry, &qstr, flags);
 	if (lookup_result != NULL) {
 		if (S_ISLNK(lookup_result->i_mode))
 			gdi->file_type = HM_SYMLINK;
@@ -468,7 +475,6 @@ static struct dentry *hmdfs_lookup_remote_dentry(struct inode *parent_inode,
 done:
 	if (con)
 		peer_put(con);
-	kfree(relative_path);
 	kfree(lookup_result);
 	kfree(file_name);
 	return ret;
@@ -762,7 +768,7 @@ int hmdfs_unlink_remote(struct inode *dir, struct dentry *dentry)
 	if (!conn)
 		return 0;
 
-	if (conn->status != NODE_STAT_ONLINE)
+	if (!hmdfs_is_node_online_or_shaking(conn))
 		return 0;
 
 	return conn->conn_operations->remote_unlink(conn, dentry);
@@ -843,7 +849,7 @@ int hmdfs_rename_remote(struct inode *old_dir, struct dentry *old_dentry,
 						     new_dentry);
 		}
 	} else if (S_ISDIR(old_dentry->d_inode->i_mode)) {
-		if ((con->status == NODE_STAT_ONLINE) &&
+		if ((hmdfs_is_node_online_or_shaking(con)) &&
 		    (con->version > USERSPACE_MAX_VER)) {
 			ret = hmdfs_client_start_rename(
 				con, relative_old_dir_path, old_dentry_d_name,

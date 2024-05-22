@@ -91,7 +91,11 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	osq_lock_init(&sem->osq);
 #endif
 #ifdef CONFIG_HW_VIP_THREAD
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	sem->boost = false;
+#else
 	sem->vip_dep_task = NULL;
+#endif
 #endif
 }
 

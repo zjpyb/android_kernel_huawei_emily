@@ -34,18 +34,17 @@ static struct kmem_cache *hmfs_inode_gc_entry_slab;
 #define IDLE_WT_WITH_MANUAL_GC 1000
 #define MANUAL_GC_START_WT 50
 #define MIN_WT 1000
-#define DEF_CP_LONG_TIME_IN_GC   10000   /* milliseconds*/
-#define MS_TO_NS   1000000
+#define DEF_LONG_GC_TIME 10000000000   /* 10s */
 #define GC_URGENT_DISABLE_BLKS	       (32<<18)        /* 32G */
 #define GC_URGENT_SPACE			       (10<<18)        /* 10G */
 #define GC_IOLIMIT_STRONG 8
 #define GC_IOLIMIT_WEAK 4
 #define GC_SKIP_ROUND 200
 #define FREE_SEC_UNVERIFY 2
+#define GC_PRINT_ROUND 2000
 
 #define DM_MAX_BLKS 768		/* max blocks moved per datamove */
 #define DM_REPEAT_BLKS 512	/* align 2M per datamove if the size needed longer than DM_MAX_BLKS */
-#define DM_RETRY_TIMES 5	/* max retry times when datamove repeat mode fails */
 
 #define MIN_SEGS 768	/* 1.5G space for normal use, unit:segment */
 #define MIN_SECS 4	/* min sections alloceted in meantime for node and data streams */
@@ -166,7 +165,7 @@ static unsigned int hmfs_get_gc_policy(struct f2fs_sb_info *sbi, int *level_ret)
 		if (hmfs_disk_is_frag(sbi, free_block_count, free_secs)) {
 			wait_ms = MIN_WT;
 			hmfs_set_gc_control_info(sbi,
-				GC_IOLIMIT_WEAK, true, false);
+				GC_IOLIMIT_WEAK, true, true);
 		} else {
 			wait_ms = MIN_WT * 30;
 			hmfs_set_gc_control_info(sbi, 0, false, true);
@@ -176,7 +175,7 @@ static unsigned int hmfs_get_gc_policy(struct f2fs_sb_info *sbi, int *level_ret)
 		if (hmfs_disk_is_frag(sbi, free_block_count, free_secs)) {
 			wait_ms = 0;
 			hmfs_set_gc_control_info(sbi,
-				GC_IOLIMIT_STRONG, true, false);
+				GC_IOLIMIT_STRONG, true, true);
 		} else {
 			wait_ms = MIN_WT * 5;
 			hmfs_set_gc_control_info(sbi,
@@ -273,7 +272,7 @@ static int gc_thread_func(void *data)
 			   we must wait & take sbi->gc_mutex before FG_GC */
 			mutex_lock(&sbi->gc_mutex);
 
-			trace_hmfs_gc_policy(sbi, wait_ms, free_sections(sbi), 1);
+			trace_hmfs_gc_policy(sbi, wait_ms, free_sections(sbi), FG_GC);
 			hmfs_gc(sbi, false, false, NULL_SEGNO);
 			wake_up_all(&gc_th->fg_gc_wait);
 			level = FG_GC_LEVEL;
@@ -337,7 +336,7 @@ do_gc:
 		}
 	}
 #endif
-		trace_hmfs_gc_policy(sbi, wait_ms, free_sections(sbi), 0);
+		trace_hmfs_gc_policy(sbi, wait_ms, free_sections(sbi), BG_GC);
 		hmfs_gc(sbi, test_opt(sbi, FORCE_FG_GC), true, NULL_SEGNO);
 
 		trace_hmfs_background_gc(sbi->sb, wait_ms,
@@ -1008,6 +1007,38 @@ void hmfs_release_victim_entry(struct f2fs_sb_info *sbi)
 	f2fs_bug_on(sbi, !list_empty(&gc_th->victim_list));
 }
 
+static bool is_last_write_sec(struct f2fs_sb_info *sbi, int secno)
+{
+	struct free_segmap_info *free_i = FREE_I(sbi);
+	int i;
+	int type;
+	int stream_id, index;
+	int start_segno, segno;
+
+	start_segno = GET_SEG_FROM_SEC(sbi, secno);
+	segno = find_next_bit(free_i->free_segmap,
+		start_segno + sbi->segs_per_sec, start_segno);
+	/*
+	 * Find first valid segment: 0 < valid_block <= 2M.
+	 * First segment in section can't be used because change_segment may
+	 * skip some segments. Prefree segment type is valid.
+	 */
+	if (segno >= start_segno + sbi->segs_per_sec)
+		return false;
+
+	type = get_seg_entry(sbi, segno)->type;
+	stream_id = get_stream_id_by_seg_type(type);
+	index = get_last_sec_index_by_stream(stream_id);
+	if (index < 0)
+		return false;
+
+	for (i = 0; i < GC_RESERVE_VICTIM; i++) {
+		if (sbi->last_sec[index][i] == secno)
+			return true;
+	}
+
+	return false;
+}
 
 /*
  * This function is called from two paths.
@@ -1105,6 +1136,8 @@ retry:
 		secno = GET_SEC_FROM_SEG(sbi, segno);
 
 		if (sec_usage_check(sbi, secno))
+			goto next;
+		if (is_last_write_sec(sbi, secno))
 			goto next;
 		/* Don't touch checkpointed data */
 		if (unlikely(is_sbi_flag_set(sbi, SBI_CP_DISABLED) &&
@@ -1319,6 +1352,8 @@ next_step:
 		/* phase == 2 */
 		node_page = hmfs_get_node_page(sbi, nid);
 		if (IS_ERR(node_page)) {
+			if (PTR_ERR(node_page) == -EIO)
+				sbi->gc_loop.has_node_rd_err = true;
 			hmfs_gc_loop_debug(sbi);
 			continue;
 		}
@@ -1939,6 +1974,9 @@ static int move_data_by_file(struct f2fs_sb_info *sbi,
 				err = move_data_page(inode, start_bidx, gc_type,
 							segno, ge->offset);
 
+			if (err == -EIO)
+				sbi->gc_loop.has_node_rd_err = true;
+
 			if (!err && (gc_type == FG_GC || datamove_gc ||
 						f2fs_post_read_required(inode)))
 				submitted++;
@@ -2096,6 +2134,7 @@ static int __get_victim(struct f2fs_sb_info *sbi, unsigned int *victim,
 	int ret;
 	unsigned int segno;
 	struct rescue_seg_entry *rs_entry;
+	bool has_rescue = !list_empty(&sbi->gc_control_info.rescue_segment_list);
 
 retry:
 	/* should gc rescue segments reported by ufs first */
@@ -2115,6 +2154,9 @@ retry:
 		sbi->next_victim_seg = segno;
 		hmfs_msg(sbi->sb, KERN_NOTICE, "try to gc rescue segment %u", segno);
 	}
+
+	if (list_empty(&sbi->gc_control_info.rescue_segment_list) && has_rescue)
+		sbi->next_victim_seg = NULL_SEGNO;
 
 	if (sbi->next_victim_seg != NULL_SEGNO) {
 		*victim = sbi->next_victim_seg;
@@ -2263,11 +2305,11 @@ int hmfs_gc(struct f2fs_sb_info *sbi, bool sync,
 	unsigned int skipped_round = 0, round = 0;
 	int gc_completed = 0;
 	u64 fggc_begin = 0, fggc_end;
-	u64 cp_begin, cp_end;
-	u64 cp_time = 0;
+	u64 gc_time;
 	unsigned int total_rounds = 0;
 
 	fggc_begin = local_clock();
+	gc_time = fggc_begin;
 
 	trace_hmfs_gc_begin(sbi->sb, sync, background,
 				get_pages(sbi, F2FS_DIRTY_NODES),
@@ -2283,12 +2325,16 @@ int hmfs_gc(struct f2fs_sb_info *sbi, bool sync,
 	first_skipped = last_skipped;
 gc_more:
 	total_rounds++;
-	if ((cp_time / MS_TO_NS) > DEF_CP_LONG_TIME_IN_GC) {
-		hmfs_msg(sbi->sb, KERN_ERR, "Long cp_time in gc, "
-				"over 10s. total_rounds=%d, iolimit=%d",
-				total_rounds, sbi->gc_control_info.iolimit);
-		cp_time = 0;
-		total_rounds = 0;
+	if (!(total_rounds % GC_PRINT_ROUND) ||
+		local_clock() - gc_time > DEF_LONG_GC_TIME) {
+		hmfs_msg(sbi->sb, KERN_ERR, "too many gc rounds=%u, "
+			"free_sec=%u, free_seg=%u, segno=%u, prefree_sec=%d, "
+			"prefree_seg=%d, gc lock time=%llu",
+			total_rounds, free_sections(sbi), free_segments(sbi),
+			segno, prefree_sections(sbi), prefree_segments(sbi),
+			local_clock() - gc_time);
+
+			gc_time = local_clock();
 	}
 	if (unlikely(!(sbi->sb->s_flags & MS_ACTIVE))) {
 		ret = -EINVAL;
@@ -2305,7 +2351,7 @@ gc_more:
 		 * threshold, we can make them free by checkpoint. Then, we
 		 * secure free segments which doesn't need fggc any more.
 		 */
-		if ((prefree_segments(sbi) > sbi->segs_per_sec) &&
+		if ((prefree_sections(sbi) >= 1) &&
 				!is_sbi_flag_set(sbi, SBI_CP_DISABLED)) {
 			ret = hmfs_write_checkpoint(sbi, &cpc);
 			if (ret)
@@ -2340,10 +2386,23 @@ gc_more:
 
 	if (unlikely(sbi->gc_loop.check && (GET_SEG_FROM_SEC(sbi,
 		GET_SEC_FROM_SEG(sbi, segno)) != sbi->gc_loop.segno))) {
+		if (sbi->gc_loop.has_node_rd_err) {
+			/* update one time per section */
+			sbi->gc_loop.unc_fail_cnt++;
+		}
+		if (sbi->gc_loop.unc_fail_cnt == HMFS_UNC_FSCK_TH) {
+			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			hmfs_set_need_fsck_report();
+			hmfs_msg(sbi->sb, KERN_WARNING,
+				"%s: seg [%u, %d] gc fail due to node unc\n",
+				__func__, segno,
+				get_seg_entry(sbi, segno)->type);
+		}
 		hmfs_msg(sbi->sb, KERN_NOTICE,
 			"init gc_loop :segno=%u, gc_loop.segno=%u, "
-			"round=%u, total_freed=%d\n",
-			segno, sbi->gc_loop.segno, round, total_freed);
+			"round=%u, total_freed=%d, unc_cnt=%u",
+			segno, sbi->gc_loop.segno, round, total_freed,
+			sbi->gc_loop.unc_fail_cnt);
 		init_hmfs_gc_loop(sbi);
 	}
 	seg_freed = do_garbage_collect(sbi, segno, &gc_list, gc_type);
@@ -2367,7 +2426,8 @@ gc_more:
 				free_segments(sbi), prefree_segments(sbi),
 				reserved_segments(sbi));
 		sbi->gc_loop.count++;
-		if (sbi->gc_loop.count > F2FS_GC_LOOP_MAX) {
+		if (sbi->gc_loop.count > F2FS_GC_LOOP_MAX
+			|| sbi->gc_loop.has_node_rd_err) {
 			if (!sbi->gc_loop.segmap)
 				sbi->gc_loop.segmap =
 					kvzalloc(f2fs_bitmap_size(MAIN_SEGS(sbi)), GFP_NOFS);
@@ -2413,13 +2473,10 @@ gc_more:
 		if (skipped_round <= MAX_SKIP_GC_COUNT ||
 					skipped_round * 2 < round) {
 			segno = NULL_SEGNO;
-			if (prefree_segments(sbi) > sbi->segs_per_sec) {
-				cp_begin = local_clock();
+			if (prefree_sections(sbi) >= 1) {
 				ret = hmfs_write_checkpoint(sbi, &cpc);
 				if (ret)
 					goto stop;
-				cp_end = local_clock();
-				cp_time += cp_end - cp_begin;
 				sec_freed = 0;
 				if (!has_not_enough_free_secs(sbi, 0, 0))
 					goto stop;
@@ -2432,13 +2489,10 @@ gc_more:
 						sbi->skipped_gc_rwsem) {
 			hmfs_drop_inmem_pages_all(sbi, true);
 			segno = NULL_SEGNO;
-			if (prefree_segments(sbi) > sbi->segs_per_sec) {
-				cp_begin = local_clock();
+			if (prefree_sections(sbi) >= 1) {
 				ret = hmfs_write_checkpoint(sbi, &cpc);
 				if (ret)
 					goto stop;
-				cp_end = local_clock();
-				cp_time += cp_end - cp_begin;
 				sec_freed = 0;
 				if (!has_not_enough_free_secs(sbi, 0, 0))
 					goto stop;
@@ -2467,6 +2521,8 @@ stop:
 	}
 	if (unlikely(sbi->gc_loop.check))
 		init_hmfs_gc_loop(sbi);
+
+	sbi->gc_loop.unc_fail_cnt = 0;
 
 	mutex_unlock(&sbi->gc_mutex);
 	if (gc_completed) {
@@ -3050,6 +3106,8 @@ static void change_levels_by_bad_block(
 int hmfs_build_gc_control_info(struct f2fs_sb_info *sbi)
 {
 	int err = 0;
+	int i, j;
+
 	atomic_set(&(sbi->gc_control_info.inflight), 0);
 	init_waitqueue_head(&(sbi->gc_control_info.wait));
 	sbi->gc_control_info.iolimit = 0;
@@ -3081,6 +3139,10 @@ int hmfs_build_gc_control_info(struct f2fs_sb_info *sbi)
 	 * stay the same since then. So, we initialize this value to 5.
 	 */
 	sbi->prefree_sec_threshold = 5;
+
+	for (i = 0; i < NR_CURSEG_DATA_TYPE - 1; i++)
+		for (j = 0; j < GC_RESERVE_VICTIM; j++)
+			sbi->last_sec[i][j] = NULL_SECNO;
 out:
 	return err;
 }
@@ -3102,6 +3164,9 @@ void hmfs_destroy_gc_control_info(struct f2fs_sb_info *sbi)
 	}
 }
 
+static void hmfs_dm_end_work(struct work_struct *work);
+static void hmfs_datamove_end(struct stor_dev_verify_info verify_info,
+		void *private_data);
 
 static inline void __hmfs_remove_datamove_entry(struct hmfs_dm_manager *dm,
 		block_t blkaddr, struct hmfs_dm_entry *e)
@@ -3115,6 +3180,14 @@ int hmfs_datamove_init(struct f2fs_sb_info *sbi)
 {
 	int i;
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info;
+
+	if (test_hw_opt(sbi, DATAMOVE) &&
+			is_set_ckpt_flags(sbi, CP_DATAMOVE_FLAG)) {
+		set_sbi_flag(sbi, SBI_DATAMOVE_GC);
+	} else {
+		goto out;
+	}
 
 	atomic_set(&dm->count, 0);
 	INIT_RADIX_TREE(&dm->root, GFP_ATOMIC);
@@ -3123,63 +3196,71 @@ int hmfs_datamove_init(struct f2fs_sb_info *sbi)
 	atomic_set(&dm->refs, 0);
 
 	dm->source_addrs = kvzalloc(sizeof(struct stor_dev_data_move_source_addr) *
-					HMFS_DATAMOVE_PU_SIZE(sbi), GFP_KERNEL);
+					HMFS_DM_MAX_PU_SIZE, GFP_NOFS);
 	if (!dm->source_addrs)
-		return -ENOMEM;
+		goto err_out;
 
 	dm->source_inodes = kvzalloc(sizeof(struct stor_dev_data_move_source_inode) *
-					HMFS_DATAMOVE_PU_SIZE(sbi), GFP_KERNEL);
-	if (!dm->source_inodes) {
-		kvfree(dm->source_addrs);
-		return -ENOMEM;
-	}
+					HMFS_DM_MAX_PU_SIZE, GFP_NOFS);
+	if (!dm->source_inodes)
+		goto err_out;
 
 	for (i = 0; i < NR_CURSEG_DM_TYPE; i++) {
-		struct hmfs_dm_info *dm_info = &dm->dm_info[i];
-
-		dm_info->entries = kvzalloc(sizeof(struct hmfs_dm_entry) *
-				HMFS_DATAMOVE_PU_SIZE(sbi), GFP_KERNEL);
-		if (!dm_info->entries) {
-			kvfree(dm->source_addrs);
-			kvfree(dm->source_inodes);
-			return -ENOMEM;
-		}
-
-		dm_info->index = 0;
+		dm_info = &(dm->dm_info[i]);
+		dm_info->dm_len = 0;
 		dm_info->verified_blkaddr = 0;
 		dm_info->next_blkaddr = 0;
+		dm_info->dm_first_blkaddr = 0;
 		dm_info->cached_last_blkaddr = 0;
+		dm_info->rescue_len = 0;
+		dm_info->rescue_first_blkaddr = 0;
+		dm_info->data = kvzalloc(sizeof(struct hmfs_dm_private_data),
+			GFP_NOFS);
+		if (!dm_info->data)
+			goto err_out;
 
-		dm_info->rescue_index = 0;
-		dm_info->rescue_entries = NULL;
+		init_waitqueue_head(&dm_info->dm_wait);
+		dm_info->wait_dm_complete = true;
+		INIT_WORK(&dm_info->dm_async_work, hmfs_dm_end_work);
 	}
 
-	if (test_hw_opt(sbi, DATAMOVE) &&
-			is_set_ckpt_flags(sbi, CP_DATAMOVE_FLAG))
-		set_sbi_flag(sbi, SBI_DATAMOVE_GC);
+	dm->dm_async_wq = alloc_workqueue("hmfs_dm_workqueue",
+			WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 
+	if (!dm->dm_async_wq)
+		goto err_out;
+
+out:
 	return 0;
+
+err_out:
+	hmfs_datamove_destroy(sbi);
+	return -ENOMEM;
 }
 
 void hmfs_datamove_destroy(struct f2fs_sb_info *sbi)
 {
-	int i;
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info;
+	int i;
 
 	if (dm->source_addrs)
 		kvfree(dm->source_addrs);
 	if (dm->source_inodes)
 		kvfree(dm->source_inodes);
-
 	dm->source_addrs = NULL;
 	dm->source_inodes = NULL;
 
 	for (i = 0; i < NR_CURSEG_DM_TYPE; i++) {
-		dm_info = &dm->dm_info[i];
-		if (dm_info->entries)
-			kvfree(dm_info->entries);
-		dm_info->entries = NULL;
+		dm_info = &(dm->dm_info[i]);
+		if (dm_info->data)
+			kvfree(dm_info->data);
+		dm_info->data = NULL;
+	}
+
+	if (dm->dm_async_wq) {
+		destroy_workqueue(dm->dm_async_wq);
+		dm->dm_async_wq = NULL;
 	}
 }
 
@@ -3191,10 +3272,9 @@ void hmfs_datamove_fill_array(struct f2fs_sb_info *sbi,
 		block_t next_submit_blkaddr, block_t cache_last_blkaddr,
 		int dm_stream_id)
 {
-	struct hmfs_dm_entry *tmp, *dm_entry;
+	struct hmfs_dm_entry *tmp;
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
-	int index = dm_info->index;
 	bool cached_newsec = false;
 
 	if (!cache_last_blkaddr)
@@ -3202,7 +3282,7 @@ void hmfs_datamove_fill_array(struct f2fs_sb_info *sbi,
 
 	if (next_submit_blkaddr) {
 		if (DATA_BLOCK_IN_SAME_SEC(sbi,
-				next_submit_blkaddr, cache_last_blkaddr) &&
+				next_submit_blkaddr - 1, cache_last_blkaddr) &&
 				next_submit_blkaddr > cache_last_blkaddr)
 			return;
 
@@ -3217,23 +3297,21 @@ void hmfs_datamove_fill_array(struct f2fs_sb_info *sbi,
 		next_submit_blkaddr = START_BLOCK(sbi, GET_SEG_FROM_SEC(sbi,
 			GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, cache_last_blkaddr))));
 
-	/* refill dm submit array */
-	f2fs_bug_on(sbi, index != 0);
-	while (index < HMFS_DATAMOVE_PU_SIZE(sbi) &&
-			next_submit_blkaddr <= cache_last_blkaddr) {
+	dm_info->dm_first_blkaddr = next_submit_blkaddr;
+	dm_info->dm_len = cache_last_blkaddr - next_submit_blkaddr + 1;
+
+	while (next_submit_blkaddr <= cache_last_blkaddr) {
 		rcu_read_lock();
 		tmp = radix_tree_lookup(&dm->root, next_submit_blkaddr++);
 		rcu_read_unlock();
 		/* can always find unverified entry */
-		f2fs_bug_on(sbi, !tmp);
-
-		dm_entry = &dm_info->entries[index++];
-		dm_entry->src_blkaddr = tmp->src_blkaddr;
-		dm_entry->dst_blkaddr = tmp->dst_blkaddr;
-		dm_entry->ino = tmp->ino;
-		dm_entry->offset = tmp->offset;
+		if (unlikely(!tmp))
+			hmfs_msg(sbi->sb, KERN_ERR, "%s:datamove entry not found, "
+				"stream id:%d, dst:%u, verify:%u, next:%u, last:%u",
+				__func__, dm_stream_id, next_submit_blkaddr - 1,
+				dm_info->verified_blkaddr, dm_info->next_blkaddr,
+				dm_info->cached_last_blkaddr);
 	}
-	dm_info->index = index;
 }
 
 /*
@@ -3248,10 +3326,11 @@ static bool hmfs_datamove_need_force_flush(struct f2fs_sb_info *sbi,
 	struct hmfs_dm_entry *entries[16];
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	unsigned long first_index = 0;
+	int *level = sbi->gc_stat.level;
 	int sec_count = 0;
 	int i, ret;
 
-	if (free_secs > hmfs_overprovision_sections(sbi))
+	if (free_secs > level[BG_GC_LEVEL4])
 		return false;
 
 	while (1) {
@@ -3287,9 +3366,7 @@ static bool hmfs_datamove_need_force_flush(struct f2fs_sb_info *sbi,
  * ret: 0 success, others fail
  */
 static int __hmfs_datamove_submit(struct f2fs_sb_info *sbi,
-		block_t *verified_blkaddr, block_t *next_blkaddr,
-		int dm_stream_id, bool force_flush, bool rescue,
-		int *verify_fail)
+	int dm_stream_id, bool force_flush, bool rescue)
 {
 	struct stor_dev_data_move_info data_move_info;
 	struct stor_dev_data_move_source_addr *source_addrs;
@@ -3297,20 +3374,21 @@ static int __hmfs_datamove_submit(struct f2fs_sb_info *sbi,
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
 	unsigned int array_size, i;
-	struct hmfs_dm_entry *entries;
+	struct hmfs_dm_entry *entry;
+	struct hmfs_dm_private_data *private_data = dm_info->data;
 	struct curseg_info *curseg =
 				CURSEG_I(sbi, CURSEG_DATA_MOVE1 + dm_stream_id);
 	struct block_device *bdev;
-	block_t dst_blkaddr;
+	block_t dst_blkaddr, ori_dst_blkaddr;
 	int ret = 0;
 
 	f2fs_bug_on(sbi, dm_stream_id >= NR_CURSEG_DM_TYPE);
 	f2fs_bug_on(sbi, force_flush && rescue);
 
 	if (rescue) {
-		f2fs_bug_on(sbi, dm_info->rescue_index == 0);
-		array_size = dm_info->rescue_index;
-		entries = dm_info->rescue_entries;
+		f2fs_bug_on(sbi, !dm_info->rescue_len);
+		array_size = dm_info->rescue_len;
+		dst_blkaddr = dm_info->rescue_first_blkaddr;
 		source_addrs = f2fs_vzalloc(sizeof(struct stor_dev_data_move_source_addr) *
 					array_size, GFP_NOFS);
 		if (!source_addrs)
@@ -3323,59 +3401,85 @@ static int __hmfs_datamove_submit(struct f2fs_sb_info *sbi,
 			return -ENOMEM;
 		}
 	} else {
-		array_size = dm_info->index;
-		entries = dm_info->entries;
+		array_size = dm_info->dm_len;
+		dst_blkaddr = array_size ? dm_info->dm_first_blkaddr :
+				NEXT_FREE_BLKADDR(sbi, curseg);
 		source_addrs = dm->source_addrs;
 		source_inodes = dm->source_inodes;
 	}
 
-	dst_blkaddr = array_size ? entries[0].dst_blkaddr :
-				NEXT_FREE_BLKADDR(sbi, curseg);
+	ori_dst_blkaddr = dst_blkaddr;
 	bdev = hmfs_target_device(sbi, dst_blkaddr, NULL);
 
 	for (i = 0; i < array_size; i++) {
-		(source_addrs + i)->data_move_source_addr = entries[i].src_blkaddr;
-		(source_addrs + i)->source_length = 1;
-		(source_addrs + i)->src_lun = 0;
-		(source_inodes + i)->data_move_source_inode = entries[i].ino;
-		(source_inodes + i)->data_move_source_offset = entries[i].offset;
+		entry = radix_tree_lookup(&dm->root, dst_blkaddr++);
+		if (likely(entry)) {
+			(source_addrs + i)->data_move_source_addr = entry->src_blkaddr;
+			(source_addrs + i)->source_length = 1;
+			(source_addrs + i)->src_lun = 0;
+			(source_inodes + i)->data_move_source_inode = entry->ino;
+			(source_inodes + i)->data_move_source_offset = entry->offset;
+		} else {
+			/*
+			 * If src lba is in 4k area, dst lba data will become NULL.
+			 * This case is used for lba pair not found, the phone can
+			 * restart and save data.
+			 */
+			(source_addrs + i)->data_move_source_addr = SEG0_BLKADDR(sbi);
+			(source_addrs + i)->source_length = 1;
+			(source_addrs + i)->src_lun = 0;
+			(source_inodes + i)->data_move_source_inode = 0;
+			(source_inodes + i)->data_move_source_offset = 0;
+
+			set_sbi_flag(sbi, SBI_NEED_FSCK);
+			hmfs_set_need_fsck_report();
+			hmfs_msg(sbi->sb, KERN_ERR, "datamove submit lba:%u not found",
+					dst_blkaddr - 1);
+		}
 	}
 
 	data_move_info.source_addr_num = array_size;
 	data_move_info.source_inode_num = array_size;
 	data_move_info.data_move_total_length = array_size;
 
-	data_move_info.dest_4k_lba = dst_blkaddr;
+	data_move_info.dest_4k_lba = ori_dst_blkaddr;
 	data_move_info.dest_stream_id = dm_stream_id;
 
 	data_move_info.source_addr = source_addrs;
 	data_move_info.source_inode = source_inodes;
 	data_move_info.repeat_option = rescue ? 1 : 0;
 	data_move_info.error_injection = 0;
+#ifdef CONFIG_HMFS_CHECK_FS
+	if (sbi->datamove_inject) {
+		hmfs_msg(sbi->sb, KERN_INFO, "datamove error injection:%u",
+			sbi->datamove_inject);
+		data_move_info.error_injection = sbi->datamove_inject;
+		sbi->datamove_inject = 0;
+	}
+#endif
 
 	data_move_info.dest_blk_mode = TLC_MODE;
 	data_move_info.dest_lun_info = 0;
 	data_move_info.force_flush_option = force_flush ? 1 : 0;
+
+	private_data->sbi = sbi;
+	private_data->stream_id = dm_stream_id;
+	private_data->rescue = rescue;
+	private_data->force_flush = force_flush;
+	data_move_info.done_info.done = hmfs_datamove_end;
+	data_move_info.done_info.private_data = private_data;
+	dm_info->wait_dm_complete = false;
 
 	memset(&(data_move_info.verify_info), 0,
 			sizeof(struct stor_dev_verify_info));
 
 	ret = mas_blk_data_move(bdev, &data_move_info);
 	if (ret) {
-		hmfs_msg(sbi->sb, KERN_ERR, "gc mas_blk_data_move ret %d "
-			"failed, verified_blkaddr %u, next_blkaddr %u\n", ret,
-			data_move_info.verify_info.next_to_be_verify_4k_lba,
-			data_move_info.verify_info.next_available_write_4k_lba);
+		hmfs_msg(sbi->sb, KERN_ERR, "gc mas_blk_data_move ret %d failed",
+				ret);
 		goto out;
 	}
 
-	*next_blkaddr =  data_move_info.verify_info.next_available_write_4k_lba;
-	*verified_blkaddr = data_move_info.verify_info.next_to_be_verify_4k_lba;
-	*verify_fail = data_move_info.verify_info.verify_done_status;
-	if (*verify_fail)
-		hmfs_msg(sbi->sb, KERN_ERR, "gc mas_blk_data_move verify "
-				"failed fail_reason (%d)\n",
-				data_move_info.verify_info.verify_fail_reason);
 out:
 	if (rescue) {
 		vfree(source_addrs);
@@ -3384,40 +3488,49 @@ out:
 	return ret;
 }
 
+void hmfs_datamove_err_handle(struct f2fs_sb_info *sbi,
+		int stream_id, int ret)
+{
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &(dm->dm_info[stream_id]);
+
+	hmfs_stop_checkpoint(sbi, true);
+	hmfs_msg(sbi->sb, KERN_ERR,
+		"hmfs reboot for dm return error! %d %u %u %u\n",
+		ret, dm_info->verified_blkaddr, dm_info->next_blkaddr,
+		dm_info->cached_last_blkaddr);
+#ifdef CONFIG_HUAWEI_HMFS_DSM
+	if (hmfs_dclient && !dsm_client_ocuppy(hmfs_dclient)) {
+		dsm_client_record(hmfs_dclient,
+			"HMFS reboot: %s:%d [%d %u %u %u]\n",
+			__func__, __LINE__, ret, dm_info->verified_blkaddr,
+			dm_info->next_blkaddr, dm_info->cached_last_blkaddr);
+		dsm_client_notify(hmfs_dclient, DSM_HMFS_NEED_FSCK);
+	}
+#endif
+	f2fs_restart(); /* force restarting */
+}
+
 /*
  * GC cannot be interrupted in one segment, so every dm cmd must
  * executes successfully. Retry is provided in __hmfs_datamove to
  * ensure that.
  */
-static void __hmfs_datamove(struct f2fs_sb_info *sbi,
-		block_t *verified_blkaddr, block_t *next_blkaddr,
-		int dm_stream_id, bool force_flush, bool rescue,
-		int *verify_fail)
+static void __hmfs_datamove(struct f2fs_sb_info *sbi, int dm_stream_id,
+		bool force_flush, bool rescue)
 {
 	int fail_times = 0;
 	int ret;
 
 dm_fail:
-	ret = __hmfs_datamove_submit(sbi, verified_blkaddr, next_blkaddr,
-			dm_stream_id, force_flush, rescue, verify_fail);
+	ret = __hmfs_datamove_submit(sbi, dm_stream_id,
+			force_flush, rescue);
 
-	if (ret || (rescue && *verify_fail)) {
+	if (ret) {
 		fail_times++;
-		if (fail_times > DM_RETRY_TIMES) {
-			hmfs_stop_checkpoint(sbi, true);
-			hmfs_msg(sbi->sb, KERN_ERR,
-				"hmfs reboot for dm submit error! ret:%d rescue:%d vfail:%d\n",
-				ret, rescue, *verify_fail);
-#ifdef CONFIG_HUAWEI_HMFS_DSM
-			if (hmfs_dclient && !dsm_client_ocuppy(hmfs_dclient)) {
-				dsm_client_record(hmfs_dclient, "HMFS reboot: %s:%d [%d %d %d]\n",
-						__func__, __LINE__, ret, rescue, *verify_fail);
-				dsm_client_notify(hmfs_dclient, DSM_HMFS_NEED_FSCK);
-			}
-#endif
-			f2fs_restart(); /* force restarting */
-		}
-		msleep(MIN_WT);
+		if (fail_times > DM_RETRY_TIMES)
+			hmfs_datamove_err_handle(sbi, dm_stream_id, ret);
+		msleep(DM_MIN_WT);
 		goto dm_fail;
 	}
 }
@@ -3465,11 +3578,125 @@ void hmfs_datamove_drop_verified_entries(struct f2fs_sb_info *sbi,
 	}
 }
 
-static inline void hmfs_check_blkaddr(struct f2fs_sb_info *sbi, block_t blkaddr)
+static void hmfs_dm_end_work(struct work_struct *work)
 {
-	if ((blkaddr < MAIN_BLKADDR(sbi)) || (blkaddr > MAX_BLKADDR(sbi))) {
-		hmfs_msg(sbi->sb, KERN_ERR, "dm illegal blkaddr %u\n", blkaddr);
-		f2fs_bug_on(sbi, 1);
+	struct hmfs_dm_info *dm_info = container_of(work,
+		struct hmfs_dm_info, dm_async_work);
+	struct hmfs_dm_private_data *private_data = dm_info->data;
+	struct f2fs_sb_info *sbi = private_data->sbi;
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	int dm_stream_id = private_data->stream_id;
+	struct curseg_info *curseg =
+			CURSEG_I(sbi, CURSEG_DATA_MOVE1 + dm_stream_id);
+	unsigned int old_segno = curseg->segno;
+	unsigned int old_blkoff = curseg->next_blkoff;
+	bool force_flush = private_data->force_flush;
+
+	if (private_data->verify_fail == DM_IO_ERROR)
+		hmfs_datamove_err_handle(sbi, dm_stream_id, DM_IO_ERROR);
+
+	down_write(&dm->rw_sem);
+	hmfs_datamove_drop_verified_entries(sbi, dm_info->verified_blkaddr, 0);
+	up_write(&dm->rw_sem);
+
+	if (force_flush &&
+		dm_info->next_blkaddr != NEXT_FREE_BLKADDR(sbi, curseg) &&
+		!private_data->verify_fail) {
+		/* align curseg next write addr with device */
+		hmfs_datamove_change_curseg(sbi, curseg,
+			CURSEG_DATA_MOVE1 + dm_stream_id, dm_info->next_blkaddr);
+		trace_hmfs_datamove_align(dm_stream_id,
+			old_segno, old_blkoff, curseg->segno, curseg->next_blkoff);
+	}
+
+	/*
+	 * Force dm must be synchronized, so we can set
+	 * cached_last_blkaddr as 0 here.
+	 */
+	if (force_flush && !private_data->verify_fail)
+		dm_info->cached_last_blkaddr = 0;
+
+	private_data->force_flush = false;
+	dm_info->wait_dm_complete = true;
+	wake_up_all(&dm_info->dm_wait);
+}
+
+void hmfs_datamove_update_info(struct f2fs_sb_info *sbi, int stream,
+		struct stor_dev_verify_info *verify_info, bool pwron)
+{
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[stream];
+
+	dm_info->verified_blkaddr = verify_info->next_to_be_verify_4k_lba;
+	dm_info->next_blkaddr = verify_info->next_available_write_4k_lba;
+
+	if (!pwron || dm_info->verified_blkaddr)
+		hmfs_dm_check_blkaddr(sbi, dm_info->verified_blkaddr);
+	if (!pwron || dm_info->next_blkaddr)
+		hmfs_dm_check_blkaddr(sbi, dm_info->next_blkaddr);
+
+	sbi->next_pu_size[stream] = verify_info->pu_size;
+	if (sbi->next_pu_size[stream] == 0) {
+		if ((pwron && !dm_info->next_blkaddr) ||
+			IS_FIRST_DATA_BLOCK_IN_SEC(sbi, dm_info->next_blkaddr))
+			sbi->next_pu_size[stream] = HMFS_DM_MAX_PU_SIZE;
+		else
+			f2fs_bug_on(sbi, 1);
+	}
+}
+
+static void hmfs_datamove_end(struct stor_dev_verify_info verify_info,
+		void *private_data)
+{
+	struct hmfs_dm_private_data *private =
+			(struct hmfs_dm_private_data *)private_data;
+	struct f2fs_sb_info *sbi = private->sbi;
+	int dm_stream_id = private->stream_id;
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
+	bool rescue = private->rescue;
+	bool force_flush = private->force_flush;
+
+	if (dm_info->next_blkaddr && !force_flush && !rescue &&
+		!verify_info.verify_done_status &&
+		!IS_LAST_DATA_BLOCK_IN_SEC(sbi, dm_info->next_blkaddr - 1, DATA) &&
+		(verify_info.next_available_write_4k_lba - dm_info->next_blkaddr !=
+		sbi->next_pu_size[dm_stream_id])) {
+		hmfs_msg(sbi->sb, KERN_ERR, "not continuous blkaddr returned by"
+			"storage, fs expect next:%u, returned next:%u",
+			dm_info->next_blkaddr + sbi->next_pu_size[dm_stream_id],
+			verify_info.next_available_write_4k_lba);
+		BUG_ON(1);
+	}
+	/*
+	 * If dm return fail, fs will change current pos. Next_blkaddr
+	 * is returned by dm. IF next_blkaddr == end of section, fs will
+	 * use new section. IF next_blkaddr != end of section, fs will
+	 * align with storage(in same sec).
+	 */
+	if (!verify_info.verify_done_status ||
+		verify_info.verify_fail_reason != DM_IN_RESET) {
+		/*
+		 * Verified blkaddr and next blkaddr in repeat dm response are invalid.
+		 * We need not update these infos.
+		 */
+		if (!rescue)
+			hmfs_datamove_update_info(sbi, dm_stream_id, &verify_info, false);
+
+		private->verify_fail = verify_info.verify_done_status;
+		if (verify_info.verify_fail_reason == DM_IO_ERROR)
+			private->verify_fail = DM_IO_ERROR;
+	} else {
+		hmfs_msg(sbi->sb, KERN_ERR, "DM response ufs reset!");
+		private->verify_fail = DM_IN_RESET;
+	}
+
+	if (rescue) {
+		private->rescue = false;
+		dm_info->wait_dm_complete = true;
+		wake_up_all(&dm_info->dm_wait);
+	} else {
+		queue_work(dm->dm_async_wq, &dm_info->dm_async_work);
 	}
 }
 
@@ -3478,112 +3705,55 @@ void hmfs_datamove(struct f2fs_sb_info *sbi, int dm_stream_id,
 {
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
-	struct hmfs_dm_entry *entries = dm_info->entries;
-	block_t verified_blkaddr, next_blkaddr;
-	block_t next_submit_blkaddr = 0;
-	struct curseg_info *curseg =
-				CURSEG_I(sbi, CURSEG_DATA_MOVE1 + dm_stream_id);
-	unsigned int old_segno = curseg->segno;
-	unsigned int old_blkoff = curseg->next_blkoff;
-	int array_size = dm_info->index;
-	int verify_fail;
+	int length = dm_info->dm_len;
 
-	f2fs_bug_on(sbi, !force_flush &&
-				array_size != HMFS_DATAMOVE_PU_SIZE(sbi));
-	if (array_size != 0)
-		next_submit_blkaddr = entries[array_size - 1].dst_blkaddr + 1;
+	/*
+	 * Submit dm with next_pu_size and save remained address. dm_len
+	 * must be equal with next_pu_size in end of section. Force_flush dm
+	 * don't split address.
+	 */
+	if (!force_flush && dm_info->dm_len > sbi->next_pu_size[dm_stream_id])
+		dm_info->dm_len = sbi->next_pu_size[dm_stream_id];
 
-	__hmfs_datamove(sbi, &verified_blkaddr, &next_blkaddr,
-				dm_stream_id, force_flush, 0, &verify_fail);
-	trace_hmfs_datamove(verified_blkaddr, next_blkaddr,
-						array_size, force_flush);
-
-	hmfs_check_blkaddr(sbi, verified_blkaddr);
-	hmfs_check_blkaddr(sbi, next_blkaddr);
-	dm_info->verified_blkaddr = verified_blkaddr;
-	dm_info->next_blkaddr = next_blkaddr;
-	hmfs_datamove_drop_verified_entries(sbi, dm_info->verified_blkaddr, 0);
-	dm_info->index = 0;
-
-	if (!verify_fail) {
-		if (next_submit_blkaddr != next_blkaddr && !force_flush) {
-			hmfs_msg(sbi->sb, KERN_ERR, "next_submit %u, "
-				"next_blkaddr %u, verified_blkaddr %u, "
-				"force flush %d, array size:%d\n",
-				next_submit_blkaddr, next_blkaddr,
-				verified_blkaddr, force_flush, array_size);
-			f2fs_bug_on(sbi, 1);
-		}
-	} else {
-		/*
-		 * If dm return fail, fs will change current pos. Next_blkaddr
-		 * is returned by dm. IF next_blkaddr == end of section, fs will
-		 * use new section. IF next_blkaddr != end of section, fs will
-		 * align with storage(in same sec).
-		 */
-		hmfs_msg(sbi->sb, KERN_INFO, "dm verify failed: "
-				"stream id %d, verify_fail %ld, "
-				"verified_blkaddr %u, next_blkaddr %u, "
-				"cache_last %u, next_submit %u, dm_index %d\n",
-				dm_stream_id, verify_fail, verified_blkaddr,
-				next_blkaddr, dm_info->cached_last_blkaddr,
-				next_submit_blkaddr, dm_info->index);
-
-		hmfs_datamove_rescue(sbi, dm_stream_id, next_submit_blkaddr - 1);
-	}
-
-	if (force_flush || IS_LAST_DATA_BLOCK_IN_SEC(sbi,
-			dm_info->verified_blkaddr - 1, DATA))
-		dm_info->cached_last_blkaddr = 0;
-
-	if (next_blkaddr != NEXT_FREE_BLKADDR(sbi, curseg)) {
-		down_read(&SM_I(sbi)->curseg_lock);
-		mutex_lock(&curseg->curseg_mutex);
-		down_write(&SIT_I(sbi)->sentry_lock);
-		/* align curseg next write addr with device */
-		hmfs_datamove_change_curseg(sbi, curseg,
-			CURSEG_DATA_MOVE1 + dm_stream_id, next_blkaddr);
-		trace_hmfs_datamove_align(dm_stream_id,
-			old_segno, old_blkoff, curseg->segno, curseg->next_blkoff);
-		up_write(&SIT_I(sbi)->sentry_lock);
-		mutex_unlock(&curseg->curseg_mutex);
-		up_read(&SM_I(sbi)->curseg_lock);
-	}
+	__hmfs_datamove(sbi, dm_stream_id, force_flush, 0);
+	dm_info->dm_len = length - dm_info->dm_len;
+	if (dm_info->dm_len)
+		dm_info->dm_first_blkaddr += sbi->next_pu_size[dm_stream_id];
 }
 
 static void hmfs_datamove_rescue_fill_array(struct f2fs_sb_info *sbi,
 		block_t next_submit_blkaddr, block_t cache_last_blkaddr, int dm_stream_id)
 {
-	struct hmfs_dm_entry *tmp, *dm_entry;
+	struct hmfs_dm_entry *tmp;
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
-	int index = 0;
 
 	if (!cache_last_blkaddr)
 		return;
 
+	dm_info->rescue_first_blkaddr = next_submit_blkaddr;
+	dm_info->rescue_len = cache_last_blkaddr - next_submit_blkaddr + 1;
+	f2fs_bug_on(sbi, dm_info->rescue_len > DM_MAX_BLKS);
+
 	/* refill dm rescue submit array */
-	while (index < DM_MAX_BLKS &&
-			next_submit_blkaddr <= cache_last_blkaddr) {
+	while (next_submit_blkaddr <= cache_last_blkaddr) {
 		rcu_read_lock();
 		tmp = radix_tree_lookup(&dm->root, next_submit_blkaddr++);
 		rcu_read_unlock();
 		/* can always find unverified entry */
-		f2fs_bug_on(sbi, !tmp);
-
-		dm_entry = &dm_info->rescue_entries[index++];
-		dm_entry->src_blkaddr = tmp->src_blkaddr;
-		dm_entry->dst_blkaddr = tmp->dst_blkaddr;
-		dm_entry->ino = tmp->ino;
-		dm_entry->offset = tmp->offset;
+		if (unlikely(!tmp))
+			hmfs_msg(sbi->sb, KERN_ERR, "%s:datamove entry not found, "
+				"stream id:%d, dst:%u, verify:%u, next:%u, last:%u",
+				__func__, dm_stream_id, next_submit_blkaddr - 1,
+				dm_info->verified_blkaddr, dm_info->next_blkaddr,
+				dm_info->cached_last_blkaddr);
 	}
-	dm_info->rescue_index = index;
 }
 
 /*
  * Add rescue segments into rescue list, these rescue segments must
  * be moved by gc at first. "start" and "end" indicate lba range
- * of rescue segments.
+ * of rescue segments. This function is protected by gc_mutex.
  */
 static void add_rescue_segs_list(struct f2fs_sb_info *sbi,
 			block_t start, block_t end)
@@ -3609,14 +3779,17 @@ void hmfs_datamove_rescue(struct f2fs_sb_info *sbi, int dm_stream_id,
 {
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
-	block_t next_submit_blkaddr, verified_blkaddr, next_blkaddr;
+	block_t next_submit_blkaddr;
 	int array_size, need_datamove_size;
 	bool submit_once;
-	int verify_fail;
 
-	if ((DATA_BLOCK_IN_SAME_SEC(sbi, dm_info->verified_blkaddr, last_addr) ||
-		 DATA_BLOCK_IN_SAME_SEC(sbi, dm_info->verified_blkaddr - 1, last_addr)) &&
-		 dm_info->verified_blkaddr > last_addr) {
+	if (!last_addr) {
+		hmfs_msg(sbi->sb, KERN_INFO, "Unverified lba don't exist, skip rescue.");
+		return;
+	}
+
+	if (DATA_BLOCK_IN_SAME_SEC(sbi, dm_info->verified_blkaddr, last_addr) &&
+		dm_info->verified_blkaddr > last_addr) {
 		hmfs_datamove_drop_verified_entries(sbi, dm_info->verified_blkaddr, 1);
 		return;
 	}
@@ -3642,32 +3815,40 @@ void hmfs_datamove_rescue(struct f2fs_sb_info *sbi, int dm_stream_id,
 			last_addr, next_submit_blkaddr,
 			need_datamove_size, array_size);
 
-	dm_info->rescue_entries = f2fs_kvzalloc(sbi,
-			sizeof(struct hmfs_dm_entry) * array_size,
-			GFP_NOFS | __GFP_NOFAIL);
-
 	if (!submit_once)
 		array_size = sbi->blocks_per_seg -
 				GET_BLKOFF_FROM_SEG0(sbi, next_submit_blkaddr);
 
-dm_retry:
+dm_continue:
 	if (need_datamove_size == 0)
 		goto dm_done;
 
 	hmfs_datamove_rescue_fill_array(sbi, next_submit_blkaddr,
 			next_submit_blkaddr + array_size - 1, dm_stream_id);
-	f2fs_bug_on(sbi, array_size != dm_info->rescue_index);
+	f2fs_bug_on(sbi, array_size != dm_info->rescue_len);
 
-	__hmfs_datamove(sbi, &verified_blkaddr, &next_blkaddr,
-			dm_stream_id, 0, 1, &verify_fail);
+dm_retry:
+	__hmfs_datamove(sbi, dm_stream_id, 0, 1);
+
+	io_wait_event(dm_info->dm_wait, dm_info->wait_dm_complete);
+	/*
+	 * If repeat dm happens in ufs reset, the system restarts.
+	 * The probability for this is low.
+	 */
+	if (dm_info->data->verify_fail == DM_IO_ERROR ||
+		dm_info->data->verify_fail == DM_IN_RESET)
+		hmfs_datamove_err_handle(sbi, dm_stream_id,
+				dm_info->data->verify_fail);
+
+	if (dm_info->data->verify_fail)
+		goto dm_retry;
+
 	add_rescue_segs_list(sbi, next_submit_blkaddr,
 			next_submit_blkaddr + array_size - 1);
-
 	/* in recsue mode, all data has been verified */
-	next_submit_blkaddr =
-			dm_info->rescue_entries[array_size - 1].dst_blkaddr + 1;
+	next_submit_blkaddr = next_submit_blkaddr + array_size;
 	dm_info->verified_blkaddr = next_submit_blkaddr;
-	dm_info->rescue_index = 0;
+	dm_info->rescue_len = 0;
 	need_datamove_size = need_datamove_size - array_size;
 
 	if (need_datamove_size <= DM_REPEAT_BLKS)
@@ -3677,19 +3858,43 @@ dm_retry:
 	hmfs_msg(sbi->sb, KERN_INFO, "dm rescue: need_datamove_size:%u, "
 			"array_size:%u", need_datamove_size, array_size);
 	if (need_datamove_size)
-		goto dm_retry;
+		goto dm_continue;
 
 dm_done:
 	/*
 	 * After repeat mode, all addr in tree must be verified,
 	 * so we clear out tree.
 	 */
-	dm_info->index = 0;
-	dm_info->rescue_index = 0;
+	dm_info->dm_len = 0;
+	dm_info->rescue_len = 0;
+	dm_info->verified_blkaddr = dm_info->next_blkaddr;
 	hmfs_datamove_drop_verified_entries(sbi, dm_info->verified_blkaddr, 1);
 	dm_info->cached_last_blkaddr = 0;
-	kvfree(dm_info->rescue_entries);
-	dm_info->rescue_entries = NULL;
+	dm_info->data->verify_fail = 0;
+}
+
+void hmfs_wait_all_dm_complete(struct f2fs_sb_info *sbi)
+{
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info;
+	struct curseg_info *curseg;
+	int i;
+
+	for (i = 0; i < NR_CURSEG_DM_TYPE; i++) {
+		dm_info = &(dm->dm_info[i]);
+		io_wait_event(dm_info->dm_wait, dm_info->wait_dm_complete);
+		down_write(&dm->rw_sem);
+		if (dm_info->data->verify_fail) {
+			if (dm_info->data->verify_fail == DM_IN_RESET)
+				hmfs_sync_verify(sbi, i, NULL, false);
+
+			curseg = CURSEG_I(sbi, CURSEG_DATA_MOVE1 + i);
+			hmfs_datamove_rescue(sbi, i, dm_info->cached_last_blkaddr);
+			hmfs_datamove_change_curseg(sbi, curseg,
+				CURSEG_DATA_MOVE1 + i, dm_info->next_blkaddr);
+		}
+		up_write(&dm->rw_sem);
+	}
 }
 
 void hmfs_datamove_force_flush(struct f2fs_sb_info *sbi,
@@ -3713,7 +3918,7 @@ void hmfs_datamove_force_flush(struct f2fs_sb_info *sbi,
 		if (cpc->reason & CP_UMOUNT) {
 			force_flush = true;
 		} else {
-			dm_info = &dm->dm_info[i];
+			dm_info = &(dm->dm_info[i]);
 			verified_blkaddr = dm_info->verified_blkaddr;
 			cur_sec = (verified_blkaddr >= MAX_BLKADDR(sbi)) ?
 					GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, MAX_BLKADDR(sbi) - 1)) :
@@ -3831,8 +4036,8 @@ void __hmfs_datamove_add_entry(struct f2fs_sb_info *sbi, block_t src,
 {
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
-	struct hmfs_dm_entry *dm_array = dm_info->entries;
-	struct hmfs_dm_entry *e;
+	struct curseg_info *curseg =
+			CURSEG_I(sbi, CURSEG_DATA_MOVE1 + dm_stream_id);
 
 	f2fs_bug_on(sbi, !is_set_ckpt_flags(sbi, CP_DATAMOVE_FLAG));
 	down_write(&dm->rw_sem);
@@ -3841,19 +4046,53 @@ void __hmfs_datamove_add_entry(struct f2fs_sb_info *sbi, block_t src,
 			!DATA_BLOCK_IN_SAME_SEC(sbi, dst, dm_info->cached_last_blkaddr)) {
 		dm_info->cached_last_blkaddr = dst;
 	}
-	f2fs_bug_on(sbi, dm_info->index > HMFS_DATAMOVE_PU_SIZE(sbi));
 
-	if (dm_info->index < HMFS_DATAMOVE_PU_SIZE(sbi)) {
-		e = dm_array + dm_info->index;
-		e->src_blkaddr = src;
-		e->dst_blkaddr = dst;
-		dm_info->index++;
+	if (!dm_info->dm_len)
+		dm_info->dm_first_blkaddr = dst;
+
+	dm_info->dm_len++;
+
+	if (dm_info->wait_dm_complete) {
+		/* no inflight datamove */
+submit:
+		if (dm_info->data->verify_fail) {
+			if (dm_info->data->verify_fail == DM_IN_RESET)
+				hmfs_sync_verify(sbi, dm_stream_id, NULL, false);
+
+			hmfs_datamove_rescue(sbi, dm_stream_id, dm_info->cached_last_blkaddr);
+			hmfs_datamove_change_curseg(sbi, curseg,
+				CURSEG_DATA_MOVE1 + dm_stream_id, dm_info->next_blkaddr);
+			goto out;
+		}
+
+		if (!dm_info->dm_len)
+			goto out;
+
+		if (dm_info->dm_len >= sbi->next_pu_size[dm_stream_id]) {
+			hmfs_datamove(sbi, dm_stream_id, false);
+		} else if (dm_info->cached_last_blkaddr &&
+			IS_LAST_DATA_BLOCK_IN_SEC(sbi, dm_info->cached_last_blkaddr, DATA)) {
+			hmfs_msg(sbi->sb, KERN_ERR, "next pu_size is not "
+				"aligned with section end");
+			BUG_ON(1);
+		}
 	}
+	/* maybe exist inflight datamove */
+	if (dm_info->dm_len >= HMFS_DM_MAX_PU_SIZE ||
+		(dm_info->cached_last_blkaddr &&
+		IS_LAST_DATA_BLOCK_IN_SEC(sbi, dm_info->cached_last_blkaddr, DATA))) {
 
-	if (dm_info->index >= HMFS_DATAMOVE_PU_SIZE(sbi))
-		hmfs_datamove(sbi, dm_stream_id, false);
-
+		up_write(&dm->rw_sem);
+		io_wait_event(dm_info->dm_wait, dm_info->wait_dm_complete);
+		down_write(&dm->rw_sem);
+		goto submit;
+	}
+out:
 	up_write(&dm->rw_sem);
+
+	if (dm_info->cached_last_blkaddr &&
+		IS_LAST_DATA_BLOCK_IN_SEC(sbi, dm_info->cached_last_blkaddr, DATA))
+		dm_info->cached_last_blkaddr = 0;
 }
 
 void __hmfs_datamove_remove_entry(struct f2fs_sb_info *sbi,
@@ -4062,8 +4301,7 @@ int hmfs_datamove_write_entry(struct f2fs_sb_info *sbi, block_t blkaddr)
 	return nblock;
 }
 
-
-void hmfs_datamove_tree_print_info(struct f2fs_sb_info *sbi,
+void hmfs_datamove_tree_get_info(struct f2fs_sb_info *sbi,
 					unsigned int *unverify_sec,
 					unsigned int *unverify_free_sec)
 {
@@ -4103,8 +4341,4 @@ void hmfs_datamove_tree_print_info(struct f2fs_sb_info *sbi,
 		*unverify_sec = used_sec;
 	if (unverify_free_sec)
 		*unverify_free_sec = free_sec;
-
-	hmfs_msg(sbi->sb, KERN_INFO,
-		"unverify_used_sec = %d  entry_count=%d\n",
-		used_sec, atomic_read(&dm->count));
 }

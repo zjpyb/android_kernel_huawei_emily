@@ -523,11 +523,6 @@ static void hisi_online_play_post_handle(
 	dpufd->emi_protect_check_count = 0;
 
 	if ((dpufd->index == PRIMARY_PANEL_IDX) && (dss_free_buffer_refcount > 1)) {
-		if (!dpufd->fb_mem_free_flag) {
-			dpufb_free_fb_buffer(dpufd);
-			dpufd->fb_mem_free_flag = true;
-		}
-
 		if (g_logo_buffer_base && g_logo_buffer_size) {
 			dpufb_free_logo_buffer(dpufd);
 			DPU_FB_INFO("dss_free_buffer_refcount=%d!\n", dss_free_buffer_refcount);
@@ -705,6 +700,7 @@ int hisi_ov_online_play(
 	static int dss_free_buffer_refcount;
 	int ret;
 	uint64_t ov_block_infos_ptr;
+	uint64_t ov_hihdr_infos_ptr;
 	dss_overlay_t *pov_req = NULL;
 	struct timeval tv[3] = { {0}, {0}, {0}};  /* timestamp diff */
 
@@ -732,14 +728,17 @@ int hisi_ov_online_play(
 		pov_req->online_wait_timediff = dpufb_timestamp_diff(&tv[0], &tv[1]);
 
 		ov_block_infos_ptr = pov_req->ov_block_infos_ptr;
+		ov_hihdr_infos_ptr = pov_req->ov_hihdr_infos_ptr;
 		pov_req->ov_block_infos_ptr = (uint64_t)0;
+		pov_req->ov_hihdr_infos_ptr = (uint64_t)0;
 		if (copy_to_user((struct dss_overlay_t __user *)argp, pov_req, sizeof(dss_overlay_t))) {
 			dpufb_buf_sync_close_fence(&pov_req->release_fence, &pov_req->retire_fence);
 			DPU_FB_ERR("fb%d, copy_to_user failed\n", dpufd->index);
 			ret = -EFAULT;
 		} else {
-			/* restore the original value from the variable ov_block_infos_ptr */
+			/* restore the original value from the variable ov_block_infos_ptr and ov_hihdr_infos_ptr */
 			pov_req->ov_block_infos_ptr = ov_block_infos_ptr;
+			pov_req->ov_hihdr_infos_ptr = ov_hihdr_infos_ptr;
 			hisi_online_play_post_handle(dpufd, pov_req, dss_free_buffer_refcount);
 			dss_free_buffer_refcount++;
 		}

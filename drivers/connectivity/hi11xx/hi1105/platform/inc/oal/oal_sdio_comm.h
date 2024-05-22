@@ -99,6 +99,7 @@ typedef enum _hisdio_h2d_msg_type_ {
 #define hisdio_comm_reg_seq_get(reg) (((reg) >> 24) & 0xFF)
 
 #define HISDIO_BLOCK_SIZE 512 /* one size of data transfer block size, 64, 128, 256, 512, 1024 */
+#define HISDIO_SEND_SIZE 4096
 /* The max scatter buffers when host to device */
 #define HISDIO_HOST2DEV_SCATT_MAX  64
 #define HISDIO_HOST2DEV_SCATT_SIZE 64

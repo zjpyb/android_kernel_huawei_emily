@@ -20,6 +20,8 @@
 #include <chipset_common/hwpower/wireless_charge/wireless_trx_ic_intf.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_acc_types.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_acc.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_dts.h>
 #include <chipset_common/hwpower/common_module/power_common.h>
 #include <chipset_common/hwpower/protocol/wireless_protocol.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
@@ -134,4 +136,15 @@ void wlrx_acc_det(struct wlrx_acc_det_para *acc)
 		return;
 
 	wlrx_acc_det_notify(min_acc_pwr);
+}
+
+int wlrx_acc_get_tx_eff(unsigned int drv_type)
+{
+	enum wlrx_scene scn_id = wlrx_get_scene();
+	struct wlrx_dts *dts = wlrx_get_dts();
+
+	if (!dts || (scn_id >= WLRX_SCN_END) || (scn_id < WLRX_SCN_BEGIN))
+		return -EINVAL;
+
+	return dts->eff_para[scn_id];
 }

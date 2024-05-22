@@ -2570,13 +2570,7 @@ typedef struct
     /* dts */
     /* no used var Begin:: 1102A ASIC no used ini */
     oal_int16 aus_cali_txpwr_pa_dc_ref_2g_val[13]; /* txpwr分信道ref值 */
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band1;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band2;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band3;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band4;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band5;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band6;
-    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band7;
+    oal_int16 us_cali_txpwr_pa_dc_ref_5g_val_band[7];
     /* no used var End:: 1102A ASIC no used ini */
     oal_int8 uc_band_5g_enable;
     oal_uint8 uc_tone_amp_grade;
@@ -2624,7 +2618,7 @@ typedef struct
     /* dyn cali */
     oal_uint16 aus_dyn_cali_dscr_interval[WLAN_BAND_BUTT]; /* 动态校准开关2.4g 5g */
     oal_uint8 uc_5g_ext_fem_type;
-    oal_uint8 auc_res[1];
+    oal_uint8 close_filter_switch;
     hal_temp_pri_custom_stru st_temp_pri_custom;
 #ifdef _PRE_WLAN_FEATURE_DYN_BYPASS_EXTLNA
     oal_uint8 uc_dyn_bypass_extlna_enable;
@@ -3111,7 +3105,7 @@ extern oal_void hi1102_set_psm_listen_interval_count(hal_to_dmac_vap_stru *pst_h
 extern oal_void hi1102_set_psm_tbtt_offset(hal_to_dmac_vap_stru *pst_hal_vap, oal_uint16 us_offset);
 extern oal_void hi1102_set_psm_ext_tbtt_offset(hal_to_dmac_vap_stru *pst_hal_vap, oal_uint16 us_offset);
 extern oal_void hi1102_set_psm_beacon_period(hal_to_dmac_vap_stru *pst_hal_vap, oal_uint32 ul_beacon_period);
-#if defined(_PRE_WLAN_FEATURE_TXOPPS) 
+#if defined(_PRE_WLAN_FEATURE_TXOPPS)
 extern oal_void hi1102_set_txop_ps_enable(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_on_off);
 extern oal_void hi1102_set_txop_ps_condition1(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_on_off);
 extern oal_void hi1102_set_txop_ps_condition2(hal_to_dmac_device_stru *pst_hal_device, oal_uint8 uc_on_off);

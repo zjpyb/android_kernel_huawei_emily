@@ -114,8 +114,4 @@
 #define SO_XENGINE_BINDTODEVICE			102
 #endif
 
-#ifdef CONFIG_HUAWEI_TRACK_SOCKET
-#define SO_HUAWEI_TRACK_SOCKET			110
-#endif
-
 #endif /* __ASM_GENERIC_SOCKET_H */

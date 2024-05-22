@@ -44,6 +44,7 @@ static int gpio_vsp_enable;
 static int gpio_vsn_enable;
 static bool fastboot_display_enable = true;
 static int is_nt50358_support;
+static int is_aw37503_support;
 
 #define DTS_COMP_SHARP_NT35695_5P5 "hisilicon,mipi_sharp_NT35695_5P5"
 #define DTS_COMP_SHARP_NT35695_5P7 "hisilicon,mipi_sharp_NT35695_5p7"
@@ -340,6 +341,18 @@ static int tps65132_finish_setting(void)
 }
 
 
+static bool aw37503_biasic_verify(struct i2c_client *client)
+{
+	int vendorid = 0;
+
+	vendorid = i2c_smbus_read_byte_data(client, AW37503_REG_VENDORID);
+	if (vendorid != AW37503_ENABLE_FLAG) {
+		pr_err("%s read vendorid failed\n", __func__);
+		return false;
+	}
+	return true;
+}
+
 static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int retval = 0;
@@ -362,6 +375,9 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 	ret = of_property_read_u32(np, "nt50358_support", &is_nt50358_support);
 	if (ret >= 0)
 		DPU_FB_INFO("nt50358 is support!\n");
+	ret = of_property_read_u32(np, "aw37503_support", &is_aw37503_support);
+	if (ret >= 0)
+		DPU_FB_INFO("aw37503 is support!\n");
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("[%s,%d]: need I2C_FUNC_I2C\n",__FUNCTION__,__LINE__);
@@ -383,6 +399,13 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 	if (!fastboot_display_enable)
 		tps65132_start_setting();
 
+	if (is_aw37503_support) {
+		if (aw37503_biasic_verify(di->client)) {
+			pr_info("aw37503 device\n");
+			retval = -ENODEV;
+			goto failed_2;
+		}
+	}
 	tps65132_get_target_voltage(&vpos_target, &vneg_target);
 
 	ret = tps65132_reg_inited(di->client, (u8)vpos_target, (u8)vneg_target);

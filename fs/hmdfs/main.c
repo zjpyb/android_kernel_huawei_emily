@@ -99,9 +99,15 @@ static int hmdfs_xattr_remote_get(struct dentry *dentry, const char *name,
 	return res;
 }
 
+#ifndef CONFIG_HMDFS_XATTR_NOSECURITY_SUPPORT
 static int hmdfs_xattr_get(const struct xattr_handler *handler,
 			   struct dentry *dentry, struct inode *inode,
 			   const char *name, void *value, size_t size)
+#else
+static int hmdfs_xattr_get(const struct xattr_handler *handler,
+			   struct dentry *dentry, struct inode *inode,
+			   const char *name, void *value, size_t size, int flags)
+#endif
 {
 	int res = 0;
 	struct hmdfs_inode_info *info = hmdfs_i(inode);
@@ -313,7 +319,7 @@ static int hmdfs_remote_statfs(struct dentry *dentry, struct kstatfs *buf)
 	}
 	mutex_lock(&sbi->connections.node_lock);
 	list_for_each_entry(con, &sbi->connections.node_list, list) {
-		if (con->status == NODE_STAT_ONLINE &&
+		if (hmdfs_is_node_online_or_shaking(con) &&
 		    con->version > USERSPACE_MAX_VER) {
 			peer_get(con);
 			mutex_unlock(&sbi->connections.node_lock);
@@ -380,6 +386,7 @@ static int hmdfs_show_options(struct seq_file *m, struct dentry *root)
 
 	seq_printf(m, ",ra_pages=%lu", root->d_sb->s_bdi->ra_pages);
 	seq_printf(m, ",account=%s", sbi->local_info.account);
+	seq_printf(m, ",recv_uid=%lu", sbi->mnt_uid);
 
 	if (sbi->cache_dir)
 		seq_printf(m, ",cache_dir=%s", sbi->cache_dir);
@@ -388,6 +395,7 @@ static int hmdfs_show_options(struct seq_file *m, struct dentry *root)
 
 	seq_printf(m, ",%soffline_stash", sbi->s_offline_stash ? "" : "no_");
 	seq_printf(m, ",%sdentry_cache", sbi->s_dentry_cache ? "" : "no_");
+	seq_printf(m, "%s", sbi->s_external_fs ? ",external_storage" : "");
 
 	return 0;
 }
@@ -462,7 +470,7 @@ static int hmdfs_sync_fs(struct super_block *sb, int wait)
 		 * devices that go offline normally. It's okay to drop
 		 * them.
 		 */
-		if (con->status != NODE_STAT_ONLINE)
+		if (!hmdfs_is_node_online_or_shaking(con))
 			continue;
 
 		peer_get(con);
@@ -648,6 +656,7 @@ static void hmdfs_init_cmd_timeout(struct hmdfs_sb_info *sbi)
 	set_cmd_timeout(sbi, F_OPEN, TIMEOUT_COMMON);
 	set_cmd_timeout(sbi, F_RELEASE, TIMEOUT_NONE);
 	set_cmd_timeout(sbi, F_READPAGE, TIMEOUT_COMMON);
+	set_cmd_timeout(sbi, F_READPAGES, TIMEOUT_COMMON);
 	set_cmd_timeout(sbi, F_WRITEPAGE, TIMEOUT_COMMON);
 	set_cmd_timeout(sbi, F_ITERATE, TIMEOUT_30S);
 	set_cmd_timeout(sbi, F_CREATE, TIMEOUT_COMMON);
@@ -668,13 +677,45 @@ static void hmdfs_init_cmd_timeout(struct hmdfs_sb_info *sbi)
 	set_cmd_timeout(sbi, F_LISTXATTR, TIMEOUT_COMMON);
 }
 
-static int hmdfs_init_sbi(struct hmdfs_sb_info *sbi)
+static void init_syncfs_info(struct hmdfs_syncfs_info *hsi)
 {
-	int ret;
+	spin_lock_init(&hsi->v_lock);
+	init_waitqueue_head(&hsi->wq);
+	hsi->version = 0;
+	hsi->is_executing = false;
+	INIT_LIST_HEAD(&hsi->wait_list);
+	INIT_LIST_HEAD(&hsi->pending_list);
+	spin_lock_init(&hsi->list_lock);
+	atomic_set(&hsi->wait_count, 0);
+}
 
-	ret = kfifo_alloc(&sbi->notify_fifo, PAGE_SIZE, GFP_KERNEL);
+static void init_sbi_for_async_readdir(struct hmdfs_sb_info *sbi)
+{
+	init_waitqueue_head(&sbi->async_readdir_wq);
+	INIT_LIST_HEAD(&sbi->async_readdir_msg_list);
+	INIT_LIST_HEAD(&sbi->async_readdir_work_list);
+	spin_lock_init(&sbi->async_readdir_msg_lock);
+	spin_lock_init(&sbi->async_readdir_work_lock);
+}
+
+static void init_sbi_for_dentry_cache(struct hmdfs_sb_info *sbi)
+{
+	sbi->dcache_threshold = DEFAULT_DCACHE_THRESHOLD;
+	sbi->dcache_precision = DEFAULT_DCACHE_PRECISION;
+	sbi->dcache_timeout = DEFAULT_DCACHE_TIMEOUT;
+	INIT_LIST_HEAD(&sbi->client_cache);
+	INIT_LIST_HEAD(&sbi->server_cache);
+	INIT_LIST_HEAD(&sbi->to_delete);
+	mutex_init(&sbi->cache_list_lock);
+	hmdfs_cfn_load(sbi);
+	sbi->s_dentry_cache = true;
+}
+
+static int hmdfs_init_sbi_comm(struct hmdfs_sb_info *sbi)
+{
+	int ret = kfifo_alloc(&sbi->notify_fifo, PAGE_SIZE, GFP_KERNEL);
 	if (ret)
-		goto out;
+		return ret;
 
 	/*
 	 * We have to use dynamic memory since struct server/client_statistic
@@ -684,50 +725,37 @@ static int hmdfs_init_sbi(struct hmdfs_sb_info *sbi)
 		kzalloc(sizeof(*sbi->s_server_statis) * F_SIZE, GFP_KERNEL);
 	sbi->s_client_statis =
 		kzalloc(sizeof(*sbi->s_client_statis) * F_SIZE, GFP_KERNEL);
-	if (!sbi->s_server_statis || !sbi->s_client_statis) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!sbi->s_server_statis || !sbi->s_client_statis)
+		return -ENOMEM;
 
 	ret = hmdfs_alloc_sb_seq();
 	if (ret < 0) {
 		hmdfs_err("no sb seq available err %d", ret);
-		goto out;
+		return ret;
 	}
+
 	sbi->seq = ret;
-	ret = 0;
 
 	spin_lock_init(&sbi->notify_fifo_lock);
-	sbi->s_case_sensitive = false;
-	sbi->s_features = HMDFS_FEATURE_READPAGES |
-			  HMDFS_FEATURE_READPAGES_OPEN |
-			  HMDFS_ATOMIC_OPEN;
-	sbi->s_merge_switch = false;
-	sbi->dcache_threshold = DEFAULT_DCACHE_THRESHOLD;
-	sbi->dcache_precision = DEFAULT_DCACHE_PRECISION;
-	sbi->dcache_timeout = DEFAULT_DCACHE_TIMEOUT;
+	sbi->s_features = 0;
+	sbi->s_readpages_nr = HMDFS_READPAGES_NR_DEF;
 	sbi->write_cache_timeout = DEFAULT_WRITE_CACHE_TIMEOUT;
 	hmdfs_init_cmd_timeout(sbi);
 	sbi->async_cb_delay = HMDFS_NODE_EVT_CB_DELAY;
 	sbi->async_req_max_active = DEFAULT_SRV_REQ_MAX_ACTIVE;
-	sbi->s_offline_stash = true;
-	sbi->s_dentry_cache = true;
 	sbi->wb_timeout_ms = HMDFS_DEF_WB_TIMEOUT_MS;
+	sbi->p2p_conn_establish_timeout = TIMEOUT_COMMON;
+	sbi->p2p_conn_timeout = TIMEOUT_30S;
+	sbi->cred = get_cred(current_cred());
 	/* Initialize before hmdfs_register_sysfs() */
 	atomic_set(&sbi->connections.conn_seq, 0);
 	mutex_init(&sbi->connections.node_lock);
 	INIT_LIST_HEAD(&sbi->connections.node_list);
 
-	init_waitqueue_head(&sbi->async_readdir_wq);
-	INIT_LIST_HEAD(&sbi->async_readdir_msg_list);
-	INIT_LIST_HEAD(&sbi->async_readdir_work_list);
-	spin_lock_init(&sbi->async_readdir_msg_lock);
-	spin_lock_init(&sbi->async_readdir_work_lock);
+	init_sbi_for_async_readdir(sbi);
+	init_syncfs_info(&sbi->hsi);
 
 	return 0;
-
-out:
-	return ret;
 }
 
 void hmdfs_client_resp_statis(struct hmdfs_sb_info *sbi, u8 cmd,
@@ -808,77 +836,93 @@ uint64_t hmdfs_gen_boot_cookie(void)
 	return now << HMDFS_FID_VER_BOOT_COOKIE_SHIFT;
 }
 
-static int hmdfs_fill_super(struct super_block *sb, void *data, int silent)
+static int hmdfs_init_sbi(struct hmdfs_sb_info *sbi)
 {
-	struct hmdfs_mount_priv *priv = (struct hmdfs_mount_priv *)data;
-	const char *dev_name = priv->dev_name;
-	const char *raw_data = priv->raw_data;
-	struct hmdfs_sb_info *sbi;
-	int err = 0;
-	struct inode *root_inode;
-	struct path lower_path;
-	struct super_block *lower_sb;
-	struct dentry *root_dentry;
+	uint64_t ctrl_hash = 0;
 	char ctrl_path[CTRL_PATH_MAX_LEN];
-	uint64_t ctrl_hash;
-
-	sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
-	if (!sbi) {
-		err = -ENOMEM;
-		goto out_err;
-	}
-	err = hmdfs_init_sbi(sbi);
+	struct super_block *sb = sbi->sb;
+	int err = hmdfs_init_sbi_comm(sbi);
 	if (err)
-		goto out_freesbi;
-	sbi->sb = sb;
-	err = hmdfs_parse_options(sbi, raw_data);
-	if (err)
-		goto out_freesbi;
+		return err;
 
 	sb->s_fs_info = sbi;
 	sb->s_magic = HMDFS_SUPER_MAGIC;
 	sb->s_xattr = hmdfs_xattr_handlers;
 	sb->s_op = &hmdfs_sops;
-
 	sbi->boot_cookie = hmdfs_gen_boot_cookie();
 
 	err = hmdfs_init_writeback(sbi);
 	if (err)
-		goto out_freesbi;
+		return err;
+
 	err = hmdfs_init_server_writeback(sbi);
 	if (err)
-		goto out_freesbi;
+		return err;
 
 	err = hmdfs_init_stash(sbi);
 	if (err)
-		goto out_freesbi;
+		return err;
 
-	// add ctrl sysfs node
+	/* add ctrl sysfs node */
 	ctrl_hash = path_hash(sbi->local_dst, strlen(sbi->local_dst), true);
 	scnprintf(ctrl_path, CTRL_PATH_MAX_LEN, "%llu", ctrl_hash);
 	hmdfs_debug("hash %llu", ctrl_hash);
-	err = hmdfs_register_sysfs(ctrl_path, sbi);
+	err = hmdfs_register_sysfs(sbi, ctrl_path, CTRL_PATH_MAX_LEN);
 	if (err)
-		goto out_freesbi;
+		return err;
 
-	err = hmdfs_update_dst(sbi);
-	if (err)
-		goto out_unreg_sysfs;
+	hmdfs_fault_inject_init(&sbi->fault_inject, ctrl_path,
+				CTRL_PATH_MAX_LEN);
+	return 0;
+}
 
-	err = kern_path(dev_name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-			&lower_path);
+static void hmdfs_free_sbi(struct hmdfs_sb_info *sbi)
+{
+	if (!sbi)
+		return;
+
+	if (sbi->cred)
+		put_cred(sbi->cred);
+
+	sbi->sb->s_fs_info = NULL;
+	hmdfs_exit_stash(sbi);
+	hmdfs_destroy_writeback(sbi);
+	hmdfs_destroy_server_writeback(sbi);
+	kfifo_free(&sbi->notify_fifo);
+	hmdfs_free_sb_seq(sbi->seq);
+	kfree(sbi->local_src);
+	kfree(sbi->local_dst);
+	kfree(sbi->real_dst);
+	kfree(sbi->cache_dir);
+	kfree(sbi->s_server_statis);
+	kfree(sbi->s_client_statis);
+	kfree(sbi);
+}
+
+static int hmdfs_setup_lower(struct hmdfs_sb_info *sbi, const char *name,
+			     struct path *lower_path)
+{
+	struct super_block *lower_sb = NULL;
+	struct super_block *sb = sbi->sb;
+	int err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, lower_path);
 	if (err) {
 		hmdfs_err("open dev failed, errno = %d", err);
-		goto out_unreg_sysfs;
+		return err;
 	}
 
-	lower_sb = lower_path.dentry->d_sb;
+#ifdef IS_CASEFOLDED
+	if (IS_CASEFOLDED(d_inode(lower_path->dentry)))
+		sbi->s_case_sensitive = false;
+#endif
+
+	lower_sb = lower_path->dentry->d_sb;
 	atomic_inc(&lower_sb->s_active);
 	sbi->lower_sb = lower_sb;
-	sbi->local_src = get_full_path(&lower_path);
+	sbi->local_src = get_full_path(lower_path);
 	if (!sbi->local_src) {
 		hmdfs_err("get local_src failed!");
-		goto out_sput;
+		err = -ENOMEM;
+		goto out_err;
 	}
 
 	sb->s_time_gran = lower_sb->s_time_gran;
@@ -887,71 +931,95 @@ static int hmdfs_fill_super(struct super_block *sb, void *data, int silent)
 	if (sb->s_stack_depth > FILESYSTEM_MAX_STACK_DEPTH) {
 		hmdfs_err("maximum fs stacking depth exceeded");
 		err = -EINVAL;
-		goto out_sput;
+		goto out_err;
 	}
-	root_inode = fill_root_inode(sb, d_inode(lower_path.dentry));
-	if (IS_ERR(root_inode)) {
-		err = PTR_ERR(root_inode);
-		goto out_sput;
-	}
+
+	return 0;
+out_err:
+	atomic_dec(&lower_sb->s_active);
+	path_put(lower_path);
+	return err;
+}
+
+static int hmdfs_setup_root(struct hmdfs_sb_info *sbi, struct path *path)
+{
+	int err = 0;
+	struct super_block *sb = sbi->sb;
+	struct dentry *root_dentry = NULL;
+	struct inode *root_inode = fill_root_inode(sb, d_inode(path->dentry));
+	if (IS_ERR(root_inode))
+		return PTR_ERR(root_inode);
+
 	hmdfs_root_inode_perm_init(root_inode);
 	sb->s_root = root_dentry = d_make_root(root_inode);
 	if (!root_dentry) {
-		err = -ENOMEM;
-		goto out_sput;
+		iput(root_inode);
+		return -ENOMEM;
 	}
+
 #ifdef CONFIG_HMDFS_1_0
 	hmdfs_i(root_inode)->adapter_dentry_flag = ADAPTER_OTHER_DENTRY_FLAG;
 #endif
 	err = init_hmdfs_dentry_info(sbi, root_dentry, HMDFS_LAYER_ZERO);
-	if (err)
-		goto out_freeroot;
-	hmdfs_set_lower_path(root_dentry, &lower_path);
+	if (err) {
+		dput(sb->s_root);
+		iput(root_inode);
+		sb->s_root = NULL;
+		return err;
+	}
+
+	hmdfs_set_lower_path(root_dentry, path);
 	d_rehash(sb->s_root);
-	sbi->cred = get_cred(current_cred());
-	INIT_LIST_HEAD(&sbi->client_cache);
-	INIT_LIST_HEAD(&sbi->server_cache);
-	INIT_LIST_HEAD(&sbi->to_delete);
-	mutex_init(&sbi->cache_list_lock);
-	hmdfs_cfn_load(sbi);
+	return 0;
+}
 
-	/* Initialize syncfs info */
-	spin_lock_init(&sbi->hsi.v_lock);
-	init_waitqueue_head(&sbi->hsi.wq);
-	sbi->hsi.version = 0;
-	sbi->hsi.is_executing = false;
-	INIT_LIST_HEAD(&sbi->hsi.wait_list);
-	INIT_LIST_HEAD(&sbi->hsi.pending_list);
-	spin_lock_init(&sbi->hsi.list_lock);
-	hmdfs_fault_inject_init(&sbi->fault_inject, ctrl_path);
+static int hmdfs_fill_super(struct super_block *sb, void *data, int silent)
+{
+	struct hmdfs_mount_priv *priv = (struct hmdfs_mount_priv *)data;
+	int err = 0;
+	struct path lower_path;
+	struct hmdfs_sb_info *sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
+	if (!sbi)
+		return -ENOMEM;
 
-	return err;
-out_freeroot:
-	dput(sb->s_root);
-	sb->s_root = NULL;
-out_sput:
-	atomic_dec(&lower_sb->s_active);
+	sbi->sb = sb;
+
+	/* these are enabled on default */
+	sbi->s_offline_stash = true;
+	sbi->s_dentry_cache = true;
+	init_sbi_for_dentry_cache(sbi);
+
+	err = hmdfs_parse_options(sbi, priv->raw_data);
+	if (err)
+		goto out_freesbi;
+
+	err = hmdfs_init_sbi(sbi);
+	if (err)
+		goto out_freesbi;
+
+	err = hmdfs_update_dst(sbi);
+	if (err)
+		goto out_fini_sbi;
+
+	err = hmdfs_setup_lower(sbi, priv->dev_name, &lower_path);
+	if (err)
+		goto out_fini_sbi;
+
+	err = hmdfs_setup_root(sbi, &lower_path);
+	if (err)
+		goto out_put_lower;
+
+	return 0;
+out_put_lower:
+	atomic_dec(&lower_path.dentry->d_sb->s_active);
 	path_put(&lower_path);
-out_unreg_sysfs:
+out_fini_sbi:
 	hmdfs_unregister_sysfs(sbi);
 	hmdfs_release_sysfs(sbi);
+	hmdfs_fault_inject_fini(&sbi->fault_inject);
 out_freesbi:
-	if (sbi) {
-		sb->s_fs_info = NULL;
-		hmdfs_exit_stash(sbi);
-		hmdfs_destroy_writeback(sbi);
-		hmdfs_destroy_server_writeback(sbi);
-		kfifo_free(&sbi->notify_fifo);
-		hmdfs_free_sb_seq(sbi->seq);
-		kfree(sbi->local_src);
-		kfree(sbi->local_dst);
-		kfree(sbi->real_dst);
-		kfree(sbi->cache_dir);
-		kfree(sbi->s_server_statis);
-		kfree(sbi->s_client_statis);
-		kfree(sbi);
-	}
-out_err:
+	hmdfs_free_sbi(sbi);
+
 	return err;
 }
 

@@ -579,10 +579,7 @@ static int handle_force_upgrade(unsigned char *payload_buf, int payload_bufsz)
 			hwlog_warn("%s malloc fail", __func__);
 			return -ENOMEM;
 		}
-		if (memset_s(tx_buff, (tx_len + payload_bufsz - 1), 0,
-			     (tx_len + payload_bufsz - 1)) != EOK)
-			return -EFAULT;
-
+		memset_s(tx_buff, (tx_len + payload_bufsz - 1), 0, (tx_len + payload_bufsz - 1));
 		tmp_buff = kmalloc((tx_len + payload_bufsz - 1), GFP_KERNEL);
 		if (tmp_buff == NULL) {
 			hwlog_warn("%s malloc fail", __func__);
@@ -590,10 +587,7 @@ static int handle_force_upgrade(unsigned char *payload_buf, int payload_bufsz)
 			tx_buff = NULL;
 			return -ENOMEM;
 		}
-		if (memset_s(tmp_buff, (tx_len + payload_bufsz - 1), 0,
-			     (tx_len + payload_bufsz - 1)) != EOK)
-			return -EFAULT;
-
+		memset_s(tmp_buff, (tx_len + payload_bufsz - 1), 0, (tx_len + payload_bufsz - 1));
 		if (memcpy_s(tmp_buff, payload_bufsz - 1,
 			     payload_buf + 1, payload_bufsz - 1) != EOK) {
 			kfree(tx_buff);
@@ -1264,8 +1258,11 @@ void notify_mcu_spi_irq(unsigned char *payload_buf, int payload_bufsz)
 	pr_info("%s direct mode irq data", __func__);
 	/* resp_list free in ext_sensorhub_route_append after used */
 	resp_list = kmalloc(sizeof(*resp_list), GFP_KERNEL);
-	if (!resp_list)
+	if (!resp_list) {
+		kfree(buffer);
+		buffer = NULL;
 		return;
+	}
 
 	for (int i = 0; i < payload_bufsz; i++)
 		pr_info("%s payload_buf[%d] = 0x%02x", __func__,

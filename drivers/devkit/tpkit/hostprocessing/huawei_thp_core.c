@@ -256,6 +256,11 @@ int thp_send_esd_event(unsigned int status)
 		thp_log_err("%s: gpio detect fail\n", __func__);
 		return -EINVAL;
 	}
+#if defined(CONFIG_HUAWEI_DSM)
+	thp_dmd_report(DSM_LCD_ESD_STATUS_ERROR_NO,
+		"%s, status value is %d\n",
+		__func__, status);
+#endif
 
 	return 0;
 }
@@ -3501,6 +3506,8 @@ static struct thp_vendor thp_vendor_table[] = {
 	{ "170", "auo" },
 	{ "250", "txd" },
 	{ "270", "tcl" },
+	{ "320", "dpt" },
+	{ "360", "skyworth"},
 };
 
 static struct thp_ic_name thp_ic_table[] = {
@@ -3538,6 +3545,8 @@ static struct thp_ic_name thp_ic_table[] = {
 	{ "A8", "synaptics" },
 	{ "A9", "focaltech" },
 	{ "A6", "ilitek" },
+	{ "80", "focaltech" },
+	{ "AZ", "chipone" },
 };
 
 static int thp_projectid_to_vender_name(const char *project_id,
@@ -5121,6 +5130,14 @@ static void  thp_parse_extra_feature_config(
 			__func__, value);
 	}
 
+	cd->aptouch_daemon_version = 2; /* 2 is daemon default version */
+	rc = of_property_read_u32(thp_node, "aptouch_daemon_version",
+		&value);
+	if (!rc) {
+		cd->aptouch_daemon_version = value;
+		thp_log_info("%s: aptouch_daemon_version: %u\n",
+			__func__, value);
+	}
 	thp_parse_multi_panel_config(thp_node, cd);
 }
 
@@ -5278,7 +5295,14 @@ int thp_parse_feature_config(struct device_node *thp_node,
 				__func__, value);
 		}
 	}
-
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+	rc = of_property_read_u32(thp_node, "statistic_invalid_irq", &value);
+	if (!rc) {
+		cd->statistic_invalid_irq = value;
+		thp_log_info("%s:statistic_invalid_irq configed %u\n",
+			__func__, value);
+	}
+#endif
 	rc = of_property_read_u32(thp_node, "aod_display_support", &value);
 	if (!rc) {
 		cd->aod_display_support = value;
@@ -5504,6 +5528,15 @@ int thp_parse_feature_config(struct device_node *thp_node,
 	if (!rc) {
 		cd->change_vendor_name = value;
 		thp_log_info("%s: change_vendor_name %u\n",
+			__func__, value);
+	}
+
+	cd->thp_compatible_tskit = 0;
+	rc = of_property_read_u32(thp_node, "thp_compatible_tskit",
+		&value);
+	if (!rc) {
+		cd->thp_compatible_tskit = value;
+		thp_log_info("%s: thp_compatible_tskit %u\n",
 			__func__, value);
 	}
 
@@ -6121,6 +6154,20 @@ static int thp_thread_init(struct thp_core_data *cd)
 	return 0;
 }
 
+#ifdef CONFIG_LCDKIT_DRIVER
+static int thp_check_tp_driver_type(void)
+{
+	unsigned int driver_type;
+
+	driver_type = lcdkit_get_tp_driver_type();
+	thp_log_info("%s:enter driver_type = %u\n", __func__, driver_type);
+	if (driver_type == THP)
+		return 0;
+	else
+		return TP_DRIVER_TYPE_MATCH_FAIL;
+}
+#endif
+
 static int thp_probe(struct spi_device *sdev)
 {
 	struct thp_core_data *thp_core = NULL;
@@ -6156,6 +6203,17 @@ static int thp_probe(struct spi_device *sdev)
 		kfree(thp_core);
 		return -ENODEV;
 	}
+#ifdef CONFIG_LCDKIT_DRIVER
+	if (thp_core->thp_compatible_tskit) {
+		rc = thp_check_tp_driver_type();
+		if (rc) {
+			thp_log_err("%s: tp driver type is not match\n", __func__);
+			kfree(thp_core->frame_read_buf);
+			kfree(thp_core);
+			return rc;
+		}
+	}
+#endif
 	if (thp_core->use_thp_queue) {
 		thp_core->thp_queue = thp_queue_init(thp_core);
 		if (thp_core->thp_queue == NULL) {

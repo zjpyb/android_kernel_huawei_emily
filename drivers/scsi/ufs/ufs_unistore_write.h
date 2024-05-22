@@ -29,9 +29,9 @@ int ufshcd_dev_slc_mode_configuration(
 	struct scsi_device *sdev, int *status);
 int ufshcd_dev_sync_read_verify(struct scsi_device *sdev,
 	struct stor_dev_sync_read_verify_info *verify_info);
-int ufshcd_dev_data_move_init(void);
+int ufshcd_dev_data_move_ctl_init(void);
 void ufshcd_dev_data_move_done(struct scsi_cmnd *cmd,
-	struct utp_upiu_rsp *ucd_rsp_ptr);
+	struct ufshcd_lrb *lrbp);
 void ufschd_data_move_prepare_buf(struct scsi_device *sdev,
 	struct stor_dev_data_move_info *data_move_info, unsigned char *buf);
 #ifdef CONFIG_MAS_DEBUG_FS

@@ -404,8 +404,9 @@ void mm_ion_mutex_unlock_recursive(struct mutex *lock, int is_lock_recursive)
 
 
 static int check_vaddr_bounds(struct mm_struct *mm,
-	unsigned long start, unsigned long length)
+	int fd, unsigned long start, unsigned long length)
 {
+	struct dma_buf *dmabuf = NULL;
 	struct vm_area_struct *vma = NULL;
 
 	if (start >= start + length) {
@@ -434,6 +435,19 @@ static int check_vaddr_bounds(struct mm_struct *mm,
 			__func__, vma->vm_end);
 		return -EINVAL;
 	}
+
+	dmabuf = dma_buf_get(fd);
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		pr_err("%s, not dma buf!\n", __func__);
+		return -EINVAL;
+	}
+	if (!vma->vm_file || file_to_dma_buf(vma->vm_file) != dmabuf) {
+		pr_err("%s, not dma buf's va!\n", __func__);
+		dma_buf_put(dmabuf);
+		return -EINVAL;
+	}
+	dma_buf_put(dmabuf);
+
 	return 0;
 }
 
@@ -514,7 +528,7 @@ int mm_ion_cache_operate(int fd, unsigned long uaddr,
 		return  -ENOMEM;
 	}
 	down_read(&mm->mmap_sem);
-	if (check_vaddr_bounds(mm, start, length)) {
+	if (check_vaddr_bounds(mm, fd, start, length)) {
 		pr_err("%s: invalid virt 0x%lx 0x%lx\n",
 			__func__, start, length);
 		up_read(&mm->mmap_sem);

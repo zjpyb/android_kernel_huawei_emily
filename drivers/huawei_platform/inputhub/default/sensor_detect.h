@@ -303,6 +303,7 @@ struct vibrator_paltform_data {
 	uint8_t dma_channel;
 	uint16_t dma_irq_gpio;
 	uint32_t dma_irq_gpio_addr;
+	uint32_t phone_type;
 };
 
 struct magn_bracket_platform_data {

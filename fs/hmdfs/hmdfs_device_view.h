@@ -166,17 +166,17 @@ struct hmdfs_lookup_ret *get_remote_inode_info(struct hmdfs_peer *con,
 					       struct dentry *dentry,
 					       unsigned int flags);
 void hmdfs_set_time(struct dentry *dentry, unsigned long time);
+int hmdfs_generic_get_inode(struct super_block *sb, uint64_t root_ino,
+			    struct inode *lo_i, struct inode **inode,
+			    struct hmdfs_peer *peer, bool is_inode_local);
+void hmdfs_generic_fill_inode(struct inode *inode, struct inode *lower_inode,
+			      int inode_type, bool is_inode_local);
 struct inode *fill_inode_local(struct super_block *sb,
 			       struct inode *lower_inode);
 struct inode *fill_root_inode(struct super_block *sb,
 			      struct inode *lower_inode);
 struct inode *fill_device_inode(struct super_block *sb,
 				struct inode *lower_inode);
-struct hmdfs_lookup_ret *hmdfs_lookup_by_con(struct hmdfs_peer *con,
-					     struct dentry *dentry,
-					     struct qstr *qstr,
-					     unsigned int flags,
-					     const char *relative_path);
 char *hmdfs_connect_path(const char *path, const char *name);
 
 char *hmdfs_get_dentry_relative_path(struct dentry *dentry);

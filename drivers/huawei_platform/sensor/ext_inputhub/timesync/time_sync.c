@@ -48,6 +48,7 @@
 #define GET_TIMER_LEN 12
 #define COMMAND_COUNT 1
 #define TIME_GET_LEN 4
+#define GET_TIME_LEN 1
 #define RSUME_SEND_INTERVAL 5400
 #define MCU_SEND_INTERVAL 5
 
@@ -98,9 +99,9 @@ static int get_rtc_time(void)
 	cmd.send_buffer = &buff;
 	cmd.send_buffer_len = sizeof(buff);
 
-	ret = send_command(AT_CHANNEL, &cmd, false, NULL);
+	ret = send_command(TIMESYNC_CHANNEL, &cmd, false, NULL);
 	if (ret < 0)
-		pr_err("[%s]setting time send failed\n", __func__);
+		pr_err("[%s]getting time send failed\n", __func__);
 
 	return ret;
 }
@@ -179,7 +180,7 @@ int send_time_to_mcu(unsigned long time)
 	cmd.send_buffer = (unsigned char *)&dm_set_time;
 	cmd.send_buffer_len = sizeof(struct time_tlv);
 
-	ret = send_command(AT_CHANNEL, &cmd, false, NULL);
+	ret = send_command(TIMESYNC_CHANNEL, &cmd, false, NULL);
 	if (ret < 0)
 		pr_err("[%s]setting time send failed\n", __func__);
 
@@ -318,6 +319,7 @@ static int get_time_from_buffer(unsigned char service_id,
 		pr_info("[%s] datalen: %u is error\n", __func__, data_len);
 		return -EINVAL;
 	}
+	pr_info("service id is:[%d],command id is:[%d]\n", service_id, command_id);
 
 	return 0;
 }
@@ -342,7 +344,7 @@ static int get_time_from_channel(void)
 	sub_cmd->cmds->service_id = SERVICE_ID;
 	sub_cmd->cmds->command_id = CMD_ID_GET_TIMER;
 
-	ret = register_data_callback(AT_CHANNEL, sub_cmd, get_time_from_buffer);
+	ret = register_data_callback(TIMESYNC_CHANNEL, sub_cmd, get_time_from_buffer);
 	if (ret < 0)
 		pr_err("[%s]register data callback failed\n", __func__);
 
@@ -373,6 +375,24 @@ int handshake_callback(enum ext_sensorhub_event event, unsigned char tid,
 	}
 }
 
+static int get_time_from_mcu(void)
+{
+	int ret;
+	unsigned char buff[GET_TIME_LEN] = { 0x04 };
+	struct command cmd;
+
+	cmd.service_id = SERVICE_ID;
+	cmd.command_id = CMD_ID_SET_TIMER;
+	cmd.send_buffer = &buff;
+	cmd.send_buffer_len = sizeof(buff);
+
+	ret = send_command(TIMESYNC_CHANNEL, &cmd, false, NULL);
+	if (ret < 0)
+		pr_err("[%s]ap send message to mcu failed\n", __func__);
+
+	return ret;
+}
+
 static void send_time_resume(void)
 {
 	unsigned long now_uptime = get_uptime();
@@ -383,6 +403,8 @@ static void send_time_resume(void)
 			__func__, now_uptime, last_resume_send);
 		last_resume_send = now_uptime;
 		get_rtc_time();
+		if (get_time_from_mcu() < 0)
+			pr_err("%s ap send to mcu failed\n", __func__);
 	}
 }
 

@@ -1421,6 +1421,7 @@ int fi_iface_msg_by_index(char *data, int index, uint32_t size)
 	struct rtnl_link_stats64 stats;
 	char *iface = NULL;
 	int ret;
+	static int report_cnt = FI_IFACE_PRINT_LOG_INTERVAL;
 	iface = emcom_xengine_get_network_iface_name(index);
 	ret = strncpy_s(iface_msg.dev, IFNAMSIZ, iface, strlen(iface));
 	if (ret != EOK) {
@@ -1443,17 +1444,26 @@ int fi_iface_msg_by_index(char *data, int index, uint32_t size)
 		iface_msg.rcv_bytes = 0;
 		/* clear g_fi_iface_bytes if dev is off */
 		g_fi_iface_bytes[index] = 0;
-		fi_logi("can't find dev %s", iface);
 		iface_msg.dev[0] = '\0';
 	}
-	fi_logi("Periodic report. iface: %s, total_byes: %lu", iface, g_fi_iface_bytes[index]);
+
+	if (dev && report_cnt == FI_IFACE_PRINT_LOG_INTERVAL)
+		fi_logi("Periodic report. iface: %s, total_byes: %lu", iface, g_fi_iface_bytes[index]);
+
 	ret = memcpy_s(data + index * sizeof(struct fi_iface_msg), size - index * sizeof(struct fi_iface_msg),
 		&iface_msg, sizeof(struct fi_iface_msg));
 	if (ret != EOK) {
 		fi_loge("memcpy_s failed ret: %d, size: %u", ret, size);
 		return -1;
 	}
-	fi_logi("iface %s message rcv_bytes: %u", iface_msg.dev, iface_msg.rcv_bytes);
+
+	if (dev && report_cnt == FI_IFACE_PRINT_LOG_INTERVAL)
+		fi_logi("iface %s message rcv_bytes: %u", iface_msg.dev, iface_msg.rcv_bytes);
+
+	report_cnt--;
+	if (report_cnt <= 0)
+		report_cnt = FI_IFACE_PRINT_LOG_INTERVAL;
+
 	return 0;
 }
 

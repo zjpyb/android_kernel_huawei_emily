@@ -28,6 +28,9 @@
 #define HWLOG_TAG sc8545
 HWLOG_REGIST();
 
+#define POWER_CURVE_BASE0 0xD0
+#define POWER_CURVE_NUM   32
+
 static bool sc8545_scp_check_data(void *dev_data)
 {
 	int ret;
@@ -80,7 +83,7 @@ static int sc8545_scp_cmd_transfer_check(void *dev_data)
 			return -EINVAL;
 		}
 		cnt++;
-	} while (cnt < SC8545_SCP_ACK_RETRY_TIME);
+	} while (cnt < di->scp_ack_retry_cycle);
 
 	hwlog_err("scp adapter trans time out\n");
 	return -EINVAL;
@@ -368,6 +371,8 @@ static void sc8545_fcp_adapter_detect_reset(struct sc8545_device_info *di)
 	(void)sc8545_write_mask(di, SC8545_SCP_CTRL_REG, SC8545_SCP_EN_MASK,
 		SC8545_SCP_EN_SHIFT, false);
 	(void)sc8545_fcp_adapter_reset(di);
+	if (!di->reset_fcp_config)
+		di->fcp_support = false;
 }
 
 static int sc8545_fcp_adapter_detect_enable(struct sc8545_device_info *di)
@@ -452,6 +457,8 @@ static int sc8545_fcp_adapter_detect_ping_stat(struct sc8545_device_info *di)
 static int sc8545_fcp_adapter_detect(struct sc8545_device_info *di)
 {
 	int ret;
+	int vbus_uvp;
+	int i;
 
 	mutex_lock(&di->scp_detect_lock);
 	di->init_finish_flag = true;
@@ -470,7 +477,15 @@ static int sc8545_fcp_adapter_detect(struct sc8545_device_info *di)
 	}
 
 	/* waiting for hvdcp */
-	(void)power_msleep(DT_MSLEEP_1S, 0, NULL);
+	 for (i = 0; i < SC8545_SCP_HVDCP_CNT; i++) {
+		vbus_uvp = sc8545_get_vbus_uvp_status(di);
+		if (vbus_uvp) {
+			hwlog_err("0x%x vbus uv happen, adapter plug out\n", vbus_uvp);
+			mutex_unlock(&di->scp_detect_lock);
+			return ADAPTER_DETECT_OTHER;
+		}
+		(void)power_msleep(DT_MSLEEP_100MS, 0, NULL);
+	 }
 
 	/* detect dpdm stat */
 	ret = sc8545_fcp_adapter_detct_dpdm_stat(di);
@@ -553,6 +568,7 @@ static int sc8545_scp_multi_reg_read_block(u8 reg, u8 *val, u8 num,
 {
 	int ret;
 	int i;
+	int value[POWER_CURVE_NUM] = { 0 };
 	u8 data[SC8545_SCP_MULTI_READ_LEN] = { 0 };
 	struct sc8545_device_info *di = dev_data;
 
@@ -560,6 +576,19 @@ static int sc8545_scp_multi_reg_read_block(u8 reg, u8 *val, u8 num,
 		return -ENODEV;
 
 	di->scp_error_flag = SC8545_SCP_NO_ERR;
+
+	/* 10v4a OB adapter not support two byte read power curve, use single byte read func */
+	if (reg == POWER_CURVE_BASE0) {
+		hwlog_info("%s read power curve, use single read func\n", __func__);
+		ret = sc8545_scp_reg_read_block(reg, value, num, dev_data);
+		if (ret)
+			return -EINVAL;
+
+		for (i = 0; i < num; i++)
+			val[i] = value[i];
+
+	return ret;
+	}
 
 	for (i = 0; i < num; i += SC8545_SCP_MULTI_READ_LEN) {
 		ret = sc8545_scp_adapter_multi_reg_read(reg + i, data,

@@ -485,6 +485,7 @@ static int cps4029_tx_clear_ept_src(struct cps4029_dev_info *di)
 static void cps4029_tx_ept_handler(struct cps4029_dev_info *di)
 {
 	int ret;
+	u8 rx_ept_value = 0;
 
 	ret = cps4029_tx_get_ept_type(di, &di->ept_type);
 	ret += cps4029_tx_clear_ept_src(di);
@@ -493,6 +494,11 @@ static void cps4029_tx_ept_handler(struct cps4029_dev_info *di)
 
 	switch (di->ept_type) {
 	case CPS4029_TX_EPT_SRC_RX_EPT:
+		ret = cps4029_read_byte(di, CPS4029_TX_RCVD_RX_EPT_ADDR, &rx_ept_value);
+		ret += cps4029_write_byte(di, CPS4029_TX_RCVD_RX_EPT_ADDR,
+			CPS4029_TX_RCVD_RX_EPT_CLEAR);
+		hwlog_info("[ept_handler] type=0x%02x, ret=%d\n", rx_ept_value, ret);
+		/* fall-through */
 	case CPS4029_TX_EPT_SRC_SSP:
 	case CPS4029_TX_EPT_SRC_CEP_TIMEOUT:
 	case CPS4029_TX_EPT_SRC_OCP:
@@ -501,9 +507,14 @@ static void cps4029_tx_ept_handler(struct cps4029_dev_info *di)
 			POWER_NE_WLTX_CEP_TIMEOUT, NULL);
 		break;
 	case CPS4029_TX_EPT_SRC_FOD:
-	case CPS4029_TX_EPT_SRC_POCP:
 		di->ept_type &= ~CPS4029_TX_EPT_SRC_FOD;
 		power_event_bnc_notify(cps4029_tx_get_bnt_wltx_type(di->ic_type),
+			POWER_NE_WLTX_TX_FOD, NULL);
+		break;
+	case CPS4029_TX_EPT_SRC_POCP:
+		di->ept_type &= ~CPS4029_TX_EPT_SRC_POCP;
+		power_event_bnc_notify(cps4029_tx_get_bnt_wltx_type(di->ic_type),
+			(di->ic_type == WLTRX_IC_AUX) ? POWER_NE_WLTX_TX_PING_OCP :
 			POWER_NE_WLTX_TX_FOD, NULL);
 		break;
 	default:

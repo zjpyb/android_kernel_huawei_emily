@@ -74,7 +74,7 @@
 #define EFUSE_FN_GET_NVCNT                0xCA000032
 #define EFUSE_FN_SET_NVCNT                0xCA000033
 #define EFUSE_FN_GET_SOCID                0xCA000034
-
+#define EFUSE_FN_UPDATE_NVCNT             0xCA000038
 
 /*
  * define for r/w func verification
@@ -308,7 +308,7 @@ static int __init parse_socid_from_cmdline(char *src)
 
 	return 0;
 }
-early_param("androidboot.socid", parse_socid_from_cmdline);
+early_param("socid", parse_socid_from_cmdline);
 
 static inline char to_char(char high, char low)
 {
@@ -425,11 +425,12 @@ s32 hisi_efuse_read_value(u32 *buf, u32 buf_size, u32 func_id)
 	for (i = 0; i < buf_len; i++)
 		p_dst[i] = temp_buf[i];
 exit:
+	/* clr shmem */
+	memset(g_efusec.vaddr, 0, buf_len);
+
 	mutex_unlock(&g_efusec.efuse_mutex);
 	/* clr temp mem */
 	memset(temp_buf, 0, EFUSE_BUFFER_MAX_BYTES);
-	/* clr shmem */
-	memset(g_efusec.vaddr, 0, buf_len);
 	pr_info("%s: ret=%d.\n", __func__, ret);
 	return ret;
 }
@@ -598,6 +599,36 @@ static s32 efuse_set_nvcnt(u8 *buf, u32 size)
 
 	return ret;
 }
+/* write the software verion of xloader's image into both nvcount1 and nvcount2 in efuse,
+ * the return value is nvcount1 in efuse
+ */
+s32 efuse_update_nvcnt(u8 *buf, u32 size)
+{
+	s32 ret;
+
+	if (!buf) {
+		pr_err("%s: buf is NULL.\n", __func__);
+		return -EFAULT;
+	}
+
+	if (g_efusec.is_init_success != EFUSE_MODULE_INIT_SUCCESS) {
+		pr_err("%s: efuse module is not ready now.\n", __func__);
+		return -ENODEV;
+	}
+
+	mutex_lock(&g_efusec.efuse_mutex);
+
+	memmove((void *)g_efusec.vaddr, (void *)buf, sizeof(u32));
+	ret = g_efusec.atf_fn(EFUSE_FN_UPDATE_NVCNT, (u64)g_efusec.paddr,
+			      (u64)size, (u64)EFUSE_TIMEOUT_SECOND);
+
+	*(uint32_t *)buf = *(uint32_t *)g_efusec.vaddr;
+	mutex_unlock(&g_efusec.efuse_mutex);
+
+	pr_info("%s: nv=%d.\n", __func__, *(uint32_t *)buf);
+
+	return ret;
+}
 
 static s32 set_efuse_chipid_value(u8 *buf, u32 size, u32 timeout)
 {
@@ -715,6 +746,27 @@ static s32 ioctl_get_nvcnt(u8 *buffer, void __user *argp)
 		return ERROR;
 	}
 	ret = efuse_get_nvcnt(buffer, size);
+	if (ret != OK) {
+		pr_err("%s: efuse_get_nvcnt failed,ret=%d\n",
+		       __func__, ret);
+		return ERROR;
+	}
+
+	if (copy_to_user(argp, buffer, size))
+		return ERROR;
+	return OK;
+}
+
+s32 ioctl_update_nvcnt(u8 *buffer, void __user *argp)
+{
+	s32 size = EFUSE_NVCNT_LENGTH_BYTES;
+	s32 ret;
+
+	if (!argp) {
+		pr_err("%s: argp NULL", __func__);
+		return ERROR;
+	}
+	ret = efuse_update_nvcnt(buffer, size);
 	if (ret != OK) {
 		pr_err("%s: efuse_get_nvcnt failed,ret=%d\n",
 		       __func__, ret);
@@ -1175,6 +1227,7 @@ static const struct ioctl_efuse_func_t g_ioctl_func_table[] = {
 	{(u32)HISI_EFUSE_READ_DEBUGMODE, ioctl_read_dbgmode},
 	{(u32)HISI_EFUSE_GET_NVCNT, ioctl_get_nvcnt},
 	{(u32)HISI_EFUSE_READ_SOCID, ioctl_read_socid},
+	{(u32)HISI_EFUSE_UPDATE_NVCNT, ioctl_update_nvcnt},
 };
 
 static const struct ioctl_efuse_func_const_t g_ioctl_func_const_tbl[] = {

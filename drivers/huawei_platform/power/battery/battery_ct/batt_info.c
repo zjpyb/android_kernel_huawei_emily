@@ -48,6 +48,7 @@ static int prepare_dmd_no(struct batt_chk_rslt *result);
 static void dmd_record_reporter(struct work_struct *work);
 static int get_dmd_no(unsigned int index);
 static const char *dmd_no_to_str(unsigned int dmd_no);
+static int g_sn_change_onboot = -EBUSY;
 
 void add_to_batt_checkers_lists(struct batt_checker_entry *entry)
 {
@@ -176,6 +177,15 @@ int check_battery_sn_changed(void)
 	}
 
 	return 0;
+}
+
+int get_batt_changed_on_boot(void)
+{
+	if (g_sn_change_onboot != -EBUSY)
+		return g_sn_change_onboot;
+	if (valid_checkers == g_total_checkers)
+		g_sn_change_onboot = check_battery_sn_changed();
+	return g_sn_change_onboot;
 }
 
 enum phone_work_mode_t {
@@ -1244,6 +1254,46 @@ static void check_nv_sn(struct batt_info *info)
 	schedule_delayed_work(&info->dmd_report_dw, 5 * HZ);
 }
 
+enum batt_match_type get_batt_match_type()
+{
+	struct batt_chk_data *checker_data = NULL;
+	struct batt_checker_entry *temp = NULL;
+	int check_cnt = 0;
+	enum batt_match_type match_type = BATTERY_REMATCHABLE;
+
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		check_cnt++;
+		checker_data = platform_get_drvdata(temp->pdev);
+		if (checker_data->batt_rematch_onboot ==
+				BATTERY_UNREMATCHABLE) {
+			match_type = BATTERY_UNREMATCHABLE;
+			break;
+		}
+	}
+	if ((match_type == BATTERY_REMATCHABLE) && (check_cnt != g_total_checkers))
+		match_type = BATTERY_UNREMATCHABLE;
+	hwlog_info("%s:batt_match_type %d, check_cnt %d\n", __func__, match_type, check_cnt);
+	return match_type;
+}
+
+static bool check_moved_recheck(struct batt_info *info)
+{
+	int removed_flag = 0;
+	int sn_change_flag = 0;
+	bool need_recheck = false;
+
+	sn_change_flag = check_battery_sn_changed();
+	removed_flag = power_platform_is_battery_removed();
+	if (info->moved_recheck_logic) {
+		need_recheck = (sn_change_flag != 0) && (removed_flag == 1);
+	} else {
+		need_recheck = (sn_change_flag != 0) || (removed_flag == 1);
+	}
+	hwlog_info("%s:moved_recheck_logic %d, removed_flag %d, sn_change_flag %d\n",
+		__func__, info->moved_recheck_logic, removed_flag, sn_change_flag);
+	return need_recheck;
+}
+
 static void check_func(struct work_struct *work)
 {
 	int ret;
@@ -1272,6 +1322,10 @@ static void check_func(struct work_struct *work)
 	 */
 	if (!drv_data->is_first_check_done)
 		wait_for_completion(&ct_srv_ready);
+
+	if (drv_data->check_strategy_no == CHECK_STRATEGY_BOOTING &&
+		g_sn_change_onboot < 0)
+		g_sn_change_onboot = check_battery_sn_changed();
 
 	/* check last result */
 	last_result = &drv_data->last_result;
@@ -1324,7 +1378,8 @@ static void check_func(struct work_struct *work)
 	 */
 	if (!(ret || !is_legal_result(last_result) ||
 		(last_result->check_mode == FACTORY_CHECK_MODE) ||
-		power_platform_is_battery_removed())) {
+		check_moved_recheck(drv_data) ||
+		(get_batt_match_type() == BATTERY_REMATCHABLE))) {
 		*final_result = *last_result;
 		result_status = FINAL_RESULT_PASS;
 		check_nv_sn(drv_data);
@@ -1655,20 +1710,8 @@ static ssize_t board_show(struct device *dev, struct device_attribute *attr,
 static ssize_t battery_show(struct device *dev, struct device_attribute *attr,
 	char *buf)
 {
-	struct batt_chk_data *checker_data = NULL;
-	struct batt_checker_entry *temp = NULL;
-
-	if (new_battery < 0) {
-		list_for_each_entry(temp, &batt_checkers_head, node) {
-			checker_data = platform_get_drvdata(temp->pdev);
-			if (checker_data->batt_rematch_onboot ==
-				BATTERY_UNREMATCHABLE) {
-				new_battery = BATTERY_UNREMATCHABLE;
-				break;
-			}
-		}
-	}
-
+	if (new_battery < 0)
+		new_battery = get_batt_match_type();
 	return snprintf(buf, PAGE_SIZE, "%s", new_battery ? "New" : "Old");
 }
 
@@ -1813,15 +1856,15 @@ static ssize_t bind_info_show(struct device *dev, struct device_attribute *attr,
 static ssize_t bind_info_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	int indx = 0;
+	char sn_buf[MAX_SN_LEN];
 	struct binded_info bbinfo;
-	struct batt_info *drv_data = NULL;
 
-	dev_get_drv_data(drv_data, dev);
-	if (!drv_data || !sysfs_streq(buf, "clear"))
+	sscanf(buf, "%d,%s", &indx, sn_buf);
+	power_nv_read(POWER_NV_BBINFO, &bbinfo, sizeof(bbinfo));
+	if ((indx < 0) || (indx >= MAX_BATT_BIND_NUM))
 		return -1;
-
-	memset(&bbinfo, 0, sizeof(bbinfo));
-	bbinfo.version = ILLEGAL_BIND_VERSION;
+	memcpy(bbinfo.info[indx], sn_buf, MAX_SN_LEN);
 	if (record_sn_to_nv(&bbinfo))
 		return -1;
 
@@ -2425,6 +2468,12 @@ static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 	if (!drv_data)
 		return NULL;
 	platform_set_drvdata(pdev, drv_data);
+	if (of_property_read_u32(pdev->dev.of_node, "moved_recheck_logic",
+		&drv_data->moved_recheck_logic)) {
+		/* 0 change logic or, 1 moved logic */
+		drv_data->moved_recheck_logic = 1;
+		hwlog_err("set default batt_change_logic and\n");
+	}
 	ret = of_property_read_u32(pdev->dev.of_node, "sn-check-type",
 		&sn_check_type);
 	if (ret || (sn_check_type >= ARRAY_SIZE(final_sn_checkers))) {
@@ -2515,15 +2564,15 @@ static int battery_info_probe(struct platform_device *pdev)
 		goto trash_wakelock;
 	}
 
-	/* start checking work */
-	run_check_func(drv_data, CHECK_STRATEGY_BOOTING);
-
 	/*
 	 * for batt_info compatible not contain "simple-bus"
 	 * reason: if batt_info not valid, no battery checker should be valid
 	 */
 	create_battery_checker_devices(pdev);
 	hwlog_info("Battery information driver was probed successfully\n");
+
+	/* start checking work */
+	run_check_func(drv_data, CHECK_STRATEGY_BOOTING);
 
 	return BATTERY_DRIVER_SUCCESS;
 

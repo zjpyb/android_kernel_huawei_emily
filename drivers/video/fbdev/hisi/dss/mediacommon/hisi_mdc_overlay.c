@@ -496,6 +496,8 @@ static int hisi_mdc_cmdlist_config_start(
 	/* wait for buffer ready */
 	dpufb_buf_sync_wait_async(&(dpufd->buf_sync_ctrl));
 
+	dpu_check_and_return((!dpufd->media_common_info), -EINVAL, ERR, "media_common_info is nullptr!\n");
+
 	dpufd->media_common_info->mdc_flag = 1;
 	dpufd->media_common_info->mdc_done = 0;
 
@@ -524,6 +526,8 @@ static void hisi_mdc_wait_and_sync_compose(
 	struct timeval tv0;
 	struct timeval tv1;
 	uint32_t timeout_interval;
+
+	dpu_check_and_no_retval((!dpufd->media_common_info), ERR, "media_common_info is nullptr!\n");
 
 	dpufb_get_timestamp(&tv0);
 	timeout_interval = (g_fpga_flag == 0) ?

@@ -39,6 +39,35 @@ static int lcdkit_bias_ic_write_byte(struct lcdkit_bias_ic_device *pbias_ic, uns
 	return ret;
 }
 
+void lcdkit_bias_pull_down_boost(void)
+{
+	int ret;
+
+	if (plcdkit_bias_ic == NULL) {
+		LCDKIT_ERR("no bias ic is found!\n");
+		return;
+	}
+
+	if (!plcdkit_bias_ic->bias_config.pull_down_support) {
+		LCDKIT_DEBUG("bias pull down boost not support!\n");
+		return;
+	}
+
+	ret = lcdkit_bias_ic_write_byte(plcdkit_bias_ic, plcdkit_bias_ic->bias_config.vpos_reg,
+		plcdkit_bias_ic->bias_config.vpos_down_val);
+	if (ret < 0) {
+		LCDKIT_ERR("set bias ic pull down vsp failed!\n");
+		return;
+	}
+
+	ret = lcdkit_bias_ic_write_byte(plcdkit_bias_ic, plcdkit_bias_ic->bias_config.vneg_reg,
+		plcdkit_bias_ic->bias_config.vneg_down_val);
+	if (ret < 0) {
+		LCDKIT_ERR("set bias ic pull down vsp failed!\n");
+		return;
+	}
+}
+
 int lcdkit_bias_set_voltage(void)
 {
 	int ret;
@@ -182,6 +211,18 @@ int lcdkit_parse_bias_ic_config(struct device_node *np)
 	lcdkit_bias_ic_propname_cat(tmp_buf,"lcdkit-bias-state-mask",sizeof(tmp_buf));
 	ret = of_property_read_u32(np,tmp_buf,&tmp_val);
 	g_bias_config.state_mask = (!ret? (unsigned char)tmp_val : 0);
+
+	lcdkit_bias_ic_propname_cat(tmp_buf, "lcdkit-bias-pull-down-support", sizeof(tmp_buf));
+	ret = of_property_read_u32(np, tmp_buf, &tmp_val);
+	g_bias_config.pull_down_support = (!ret ? (unsigned char)tmp_val : 0);
+
+	lcdkit_bias_ic_propname_cat(tmp_buf, "lcdkit-bias-vpos-down-val", sizeof(tmp_buf));
+	ret = of_property_read_u32(np, tmp_buf, &tmp_val);
+	g_bias_config.vpos_down_val = (!ret ? (unsigned char)tmp_val : 0);
+
+	lcdkit_bias_ic_propname_cat(tmp_buf, "lcdkit-bias-vneg-down-val", sizeof(tmp_buf));
+	ret = of_property_read_u32(np, tmp_buf, &tmp_val);
+	g_bias_config.vneg_down_val = (!ret ? (unsigned char)tmp_val : 0);
 
 	return 0;
 }

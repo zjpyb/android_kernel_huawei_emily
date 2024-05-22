@@ -544,7 +544,17 @@ int get_fd_by_addr(struct addr_to_fd *guide)
 		sk = get_sock_by_fd_pid(i, guide->pid);
 		if (!sk)
 			continue;
+		if (sk->sk_protocol != IPPROTO_TCP) {
+			bastet_loge("sk_protocol is not IPPROTO_TCP");
+			sock_put(sk);
+			continue;
+		}
 
+		if (sk->sk_type != SOCK_STREAM) {
+			bastet_loge("sk_type is not SOCK_STREAM");
+			sock_put(sk);
+			continue;
+		}
 		inet = inet_sk(sk);
 		if (!inet) {
 			sock_put(sk);
@@ -867,6 +877,17 @@ int get_sock_net_dev_name(struct get_netdev_name *dev_name)
 			dev_name->guide.fd, dev_name->guide.pid);
 		return -ENOENT;
 	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
 	/* struct net_device is in struct dst_entry */
 	dst = __sk_dst_get(sk);
 	if (dst && dst->dev) {
@@ -899,6 +920,17 @@ int bastet_set_freezer(struct freezer_state freezer)
 		bastet_loge("can not find sock by fd: %d, pid: %d",
 			freezer.guide.fd, freezer.guide.pid);
 		return -ENOENT;
+	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
 	}
 	if (is_wifi_proxy(sk)) {
 		bastet_logi("frozen: %d", freezer.frozen);

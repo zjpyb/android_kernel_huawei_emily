@@ -24,7 +24,7 @@
 #define REAL_PROJECT_ID_LEN 10
 
 struct ilitek_ts_data *ilits;
-extern int hostprocessing_get_project_id(char *out);
+extern int hostprocessing_get_project_id(char *out, int len);
 
 void ili_tp_reset(void)
 {
@@ -340,7 +340,7 @@ int read_projectid_from_lcd(char *project_id)
 {
 	int retval;
 
-	retval = hostprocessing_get_project_id(project_id);
+	retval = hostprocessing_get_project_id(project_id, REAL_PROJECT_ID_LEN);
 	if (retval)
 		TS_LOG_ERR("%s, fail get project_id\n", __func__);
 
@@ -895,7 +895,6 @@ static unsigned char *chip_roi_rawdata(void)
 void input_kit_read_roi_data(void)
 {
 	if (ilits->ts_dev_data->ts_platform_data->feature_info.roi_info.roi_supported) {
-
 		reinit_completion(&ilits->roi_completion);
 		ilitek_read_roi_data();
 	}

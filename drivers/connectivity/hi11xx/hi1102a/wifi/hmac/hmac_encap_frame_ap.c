@@ -342,20 +342,20 @@ oal_err_code_enum hmac_encap_auth_rsp_get_user_idx(mac_vap_stru *pst_mac_vap,
 hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq1(mac_vap_stru *pst_mac_vap,
                                                               hmac_auth_rsp_param_stru *pst_auth_rsp_param,
                                                               oal_uint8 *puc_code,
-                                                              mac_user_asoc_state_enum_uint8 *pst_usr_ass_stat)
+                                                              hmac_user_stru *hmac_user_sta)
 {
     *puc_code = MAC_SUCCESSFUL_STATUSCODE;
-    *pst_usr_ass_stat = MAC_USER_STATE_BUTT;
+    hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_BUTT;
     /* 如果不是重传 */
     if (pst_auth_rsp_param->uc_auth_resend != OAL_TRUE) {
         if (pst_auth_rsp_param->us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM) {
-            *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+            hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
 
             return HMAC_AP_AUTH_SEQ1_OPEN_ANY;
         }
 
         if (pst_auth_rsp_param->en_is_wep_allowed == OAL_TRUE) {
-            *pst_usr_ass_stat = MAC_USER_STATE_AUTH_KEY_SEQ1;
+            hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_KEY_SEQ1;
             /* 此处返回后需要wep后操作 */
             return HMAC_AP_AUTH_SEQ1_WEP_NOT_RESEND;
         }
@@ -372,24 +372,24 @@ hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq1(mac_vap_stru *pst_
     /* 检查用户状态 */
     if ((pst_auth_rsp_param->en_user_asoc_state == MAC_USER_STATE_ASSOC) &&
         (pst_auth_rsp_param->us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM)) {
-        if (pst_mac_vap->pst_mib_info->st_wlan_mib_privacy.en_dot11RSNAMFPC == OAL_TRUE) {
-            *pst_usr_ass_stat = MAC_USER_STATE_ASSOC;
-        } else {
-            *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
-        }
+        OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_AUTH,
+            "{hmac_encap_auth_rsp_seq1::user assiociated rx auth req, do not change user[%d] state.}",
+            hmac_user_sta->st_user_base_info.us_assoc_id);
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_ASSOC;
+        hmac_user_sta->assoc_ap_up_tx_auth_req = OAL_TRUE;
 
         return HMAC_AP_AUTH_DUMMY;
     }
 
     if (pst_auth_rsp_param->us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM) {
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
 
         return HMAC_AP_AUTH_SEQ1_OPEN_ANY;
     }
 
     if (pst_auth_rsp_param->en_is_wep_allowed == OAL_TRUE) {
         /* seq为1 的认证帧重传 */
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
         return HMAC_AP_AUTH_SEQ1_WEP_RESEND;
     }
     /* 不支持算法 */
@@ -405,11 +405,11 @@ hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq1(mac_vap_stru *pst_
 hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq3(mac_vap_stru *pst_mac_vap,
                                                               hmac_auth_rsp_param_stru *pst_auth_rsp_param,
                                                               oal_uint8 *puc_code,
-                                                              mac_user_asoc_state_enum_uint8 *pst_usr_ass_stat)
+                                                              hmac_user_stru *hmac_user_sta)
 {
     /* 如果不存在，返回错误 */
     if (pst_auth_rsp_param->uc_auth_resend == OAL_FALSE) {
-        *pst_usr_ass_stat = MAC_USER_STATE_BUTT;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_BUTT;
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
         return HMAC_AP_AUTH_BUTT;
     }
@@ -417,9 +417,9 @@ hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq3(mac_vap_stru *pst_
     if ((pst_auth_rsp_param->en_user_asoc_state == MAC_USER_STATE_ASSOC) &&
         (pst_auth_rsp_param->us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM)) {
         if (pst_mac_vap->pst_mib_info->st_wlan_mib_privacy.en_dot11RSNAMFPC == OAL_TRUE) {
-            *pst_usr_ass_stat = MAC_USER_STATE_ASSOC;
+            hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_ASSOC;
         } else {
-            *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+            hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
         }
 
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
@@ -427,31 +427,31 @@ hmac_ap_auth_process_code_enum_uint8 hmac_encap_auth_rsp_seq3(mac_vap_stru *pst_
     }
 
     if (pst_auth_rsp_param->us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM) {
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
         return HMAC_AP_AUTH_SEQ3_OPEN_ANY;
     }
 
     if (pst_auth_rsp_param->en_user_asoc_state == MAC_USER_STATE_AUTH_KEY_SEQ1) {
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
         return HMAC_AP_AUTH_SEQ3_WEP_COMPLETE;
     }
 
     if (pst_auth_rsp_param->en_user_asoc_state == MAC_USER_STATE_AUTH_COMPLETE) {
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_COMPLETE;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_COMPLETE;
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
         return HMAC_AP_AUTH_SEQ3_WEP_COMPLETE;
     }
 
     if (pst_auth_rsp_param->en_user_asoc_state == MAC_USER_STATE_ASSOC) {
-        *pst_usr_ass_stat = MAC_USER_STATE_AUTH_KEY_SEQ1;
+        hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_AUTH_KEY_SEQ1;
         *puc_code = MAC_SUCCESSFUL_STATUSCODE;
         return HMAC_AP_AUTH_SEQ3_WEP_ASSOC;
     }
 
     /* 不支持算法 */
-    *pst_usr_ass_stat = MAC_USER_STATE_BUTT;
+    hmac_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_BUTT;
     *puc_code = MAC_UNSUPT_ALG;
 #ifdef _PRE_WLAN_1102A_CHR
     chr_exception_report(CHR_PLATFORM_EXCEPTION_EVENTID, CHR_SYSTEM_WIFI, CHR_LAYER_DRV,
@@ -689,7 +689,7 @@ void hmac_process_auth_seq1_seq3(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_
         *pul_auth_proc_rst = pst_auth_rsp_handle->st_auth_rsp_fun(pst_mac_vap,
                                                                   &(pst_auth_rsp_handle->st_auth_rsp_param),
                                                                   &puc_frame[4], /* puc_frame偏移4byte(认证和关联帧状态码) */
-                                                                  &pst_user_sta->st_user_base_info.en_user_asoc_state);
+                                                                  pst_user_sta);
         /* 清空 HMAC层TID信息 */
         hmac_tid_clear(pst_mac_vap, pst_user_sta);
     } else {
@@ -770,7 +770,27 @@ void hmac_process_auth_seq3_wep_assoc(mac_vap_stru *pst_mac_vap, oal_uint8 *puc_
 void hmac_process_default(hmac_user_stru *pst_user_sta)
 {
     hmac_user_init_key(&pst_user_sta->st_user_base_info);
-    pst_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_BUTT;  
+    pst_user_sta->st_user_base_info.en_user_asoc_state = MAC_USER_STATE_BUTT;
+}
+OAL_STATIC oal_bool_enum_uint8 hmac_auth_rx_invalid(mac_vap_stru *pst_mac_vap, hmac_user_stru  *pst_user_sta,
+    oal_uint16 us_auth_type, oal_uint16 us_auth_seq)
+{
+    if (pst_user_sta->st_user_base_info.en_user_asoc_state == MAC_USER_STATE_ASSOC &&
+        (us_auth_type != WLAN_WITP_AUTH_OPEN_SYSTEM ||
+        (us_auth_type == WLAN_WITP_AUTH_OPEN_SYSTEM && us_auth_seq != WLAN_AUTH_TRASACTION_NUM_ONE))) {
+        oam_warning_log2(pst_mac_vap->uc_vap_id, OAM_SF_AUTH,
+            "{hmac_auth_rx_invalid::auth recv invalid seq, auth seq [%d], auth type[%d]}", us_auth_seq, us_auth_type);
+        return OAL_TRUE;
+    }
+    return OAL_FALSE;
+}
+OAL_STATIC void hmac_auth_rsp_param_init(hmac_auth_rsp_handle_stru *auth_rsp_handle, mac_vap_stru *mac_vap,
+    hmac_user_stru *user_sta, oal_uint16 auth_type, oal_uint16 auth_seq)
+{
+    auth_rsp_handle->st_auth_rsp_param.en_is_wep_allowed = mac_is_wep_allowed(mac_vap);
+    auth_rsp_handle->st_auth_rsp_param.en_user_asoc_state = user_sta->st_user_base_info.en_user_asoc_state;
+    auth_rsp_handle->st_auth_rsp_param.us_auth_type = auth_type;
+    auth_rsp_handle->st_auth_rsp_fun = hmac_encap_auth_rsp_get_func(auth_seq);
 }
 
 oal_uint16 hmac_encap_auth_rsp(mac_vap_stru *pst_mac_vap, oal_netbuf_stru *pst_auth_rsp,
@@ -882,6 +902,10 @@ oal_uint16 hmac_encap_auth_rsp(mac_vap_stru *pst_mac_vap, oal_netbuf_stru *pst_a
     pst_tx_ctl->us_tx_user_idx = us_user_index;
     pst_tx_ctl->us_mpdu_len = us_auth_rsp_len;
 
+    if (hmac_auth_rx_invalid(pst_mac_vap, pst_user_sta, us_auth_type, us_auth_seq) == OAL_TRUE) {
+        return 0;
+    }
+
     /* 判断算法是否支持 */
     ul_alg_suppt = hmac_encap_auth_rsp_support(pst_hmac_vap, us_auth_type);
     if (ul_alg_suppt != OAL_SUCC) {
@@ -891,10 +915,7 @@ oal_uint16 hmac_encap_auth_rsp(mac_vap_stru *pst_mac_vap, oal_netbuf_stru *pst_a
     }
 
     /* 初始化处理参数 */
-    st_auth_rsp_handle.st_auth_rsp_param.en_is_wep_allowed = mac_is_wep_allowed(pst_mac_vap);
-    st_auth_rsp_handle.st_auth_rsp_param.en_user_asoc_state = pst_user_sta->st_user_base_info.en_user_asoc_state;
-    st_auth_rsp_handle.st_auth_rsp_param.us_auth_type = us_auth_type;
-    st_auth_rsp_handle.st_auth_rsp_fun = hmac_encap_auth_rsp_get_func(us_auth_seq);
+    hmac_auth_rsp_param_init(&st_auth_rsp_handle, pst_mac_vap, pst_user_sta, us_auth_type, us_auth_seq);
 
     /* 处理seq1或者seq3 */
     hmac_process_auth_seq1_seq3(pst_mac_vap, pst_user_sta, puc_frame, &st_auth_rsp_handle, &ul_auth_proc_rst);
@@ -930,14 +951,12 @@ oal_uint16 hmac_encap_auth_rsp(mac_vap_stru *pst_mac_vap, oal_netbuf_stru *pst_a
         case HMAC_AP_AUTH_DUMMY: {
             break;
         }
-        case HMAC_AP_AUTH_BUTT:
         default:
         {
             hmac_process_default(pst_user_sta);
             break;
         }
     }
-
     /* dmac offload架构下，同步user关联状态信息到dmac */
     ul_ret = hmac_config_user_asoc_state_syn(&(pst_hmac_vap->st_vap_base_info), &pst_user_sta->st_user_base_info);
     if (ul_ret != OAL_SUCC) {

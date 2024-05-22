@@ -639,6 +639,25 @@ static void direct_charge_enter_specified_mode(struct direct_charge_device *di,
 	}
 }
 
+static void direct_charge_select_working_mode(bool *sc_flag, const bool *lvc_flag)
+{
+	int adp_type;
+	enum cur_cap c_cap;
+	int bat_num = hw_battery_get_series_num();
+
+	if (!*sc_flag || !*lvc_flag)
+		return;
+
+	adp_type = dc_get_adapter_type();
+	c_cap = pd_dpm_get_cvdo_cur_cap();
+
+	if ((adp_type == ADAPTER_TYPE_FCR_C_11V6A)
+		&& (c_cap > PD_DPM_CURR_3A) && (bat_num == HW_TWO_SERIES_BAT)) {
+		hwlog_info("sc not matched");
+		*sc_flag = false;
+	}
+}
+
 void direct_charge_check(void)
 {
 	unsigned int adp_mode;
@@ -646,6 +665,8 @@ void direct_charge_check(void)
 	bool cc_safe = false;
 	struct direct_charge_device *lvc_di = NULL;
 	struct direct_charge_device *sc_di = NULL;
+	bool sc_flag = false;
+	bool lvc_flag = false;
 
 	hwlog_info("check\n");
 
@@ -682,23 +703,38 @@ void direct_charge_check(void)
 
 	direct_charge_rework_priority_inversion(lvc_di, sc_di);
 	cc_safe = direct_charge_check_port_fault();
+
 	if (sc_di && (local_mode & SC_MODE) &&
 		(adp_mode & ADAPTER_SUPPORT_SCP_B_SC) &&
 		!sc_di->dc_err_report_flag && cc_safe &&
-		!sc_di->pri_inversion) {
+		!sc_di->pri_inversion)
+		sc_flag = true;
+
+	if (lvc_di && (local_mode & LVC_MODE) &&
+		(adp_mode & ADAPTER_SUPPORT_SCP_B_LVC) &&
+		!lvc_di->dc_err_report_flag &&
+		(!lvc_di->cc_protect || cc_safe))
+		lvc_flag = true;
+
+	if (!sc_flag && !lvc_flag) {
+		direct_charge_set_can_enter_status(false);
+		hwlog_info("neither sc nor lvc matched");
+		return;
+	}
+
+	direct_charge_select_working_mode(&sc_flag, &lvc_flag);
+
+	if (sc_flag) {
 		sc_di->adapter_type = adp_mode;
 		direct_charge_set_can_enter_status(true);
 		direct_charge_enter_specified_mode(sc_di, SC_MODE, AT_TYPE_SC);
-	} else if (lvc_di && (local_mode & LVC_MODE) &&
-		(adp_mode & ADAPTER_SUPPORT_SCP_B_LVC) &&
-		!lvc_di->dc_err_report_flag &&
-		(!lvc_di->cc_protect || cc_safe)) {
+		return;
+	}
+
+	if (lvc_flag) {
 		lvc_di->adapter_type = adp_mode;
 		direct_charge_set_can_enter_status(true);
 		direct_charge_enter_specified_mode(lvc_di, LVC_MODE, AT_TYPE_LVC);
-	} else {
-		direct_charge_set_can_enter_status(false);
-		hwlog_info("neither sc nor lvc matched");
 	}
 }
 

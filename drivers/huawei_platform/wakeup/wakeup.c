@@ -108,7 +108,7 @@ static int wakeup_notifier_call(unsigned long event, char *str)
 
     printk("%s: wakeup_notifier_call: wakeup is %lu, str is %s\n", __func__, event, str);
     mutex_lock(&g_wakeup_pdata->notifier_lock);
-    ret = snprintf_s(envp_ext0, ENVP_LENTH, (ENVP_LENTH - 1), str);
+    ret = snprintf_s(envp_ext0, ENVP_LENTH, (ENVP_LENTH - 1), "%s", str);
     if (ret < 0) {
         printk("%s: snprintf_s failed, ret = %d\n", __func__, ret);
         mutex_unlock(&g_wakeup_pdata->notifier_lock);

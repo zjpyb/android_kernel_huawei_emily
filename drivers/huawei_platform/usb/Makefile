@@ -11,3 +11,4 @@ obj-$(CONFIG_OTG_DUAL_ROLE) += otg_dual_role/
 obj-$(CONFIG_POGO_PIN) += hw_pogopin/
 obj-$(CONFIG_HUAWEI_YCABLE) += hw_ycable/
 obj-$(CONFIG_HUAWEI_HISHOW) += hw_hishow/
+obj-$(CONFIG_USB_EXTRA_MODEM) += usb_extra_modem/

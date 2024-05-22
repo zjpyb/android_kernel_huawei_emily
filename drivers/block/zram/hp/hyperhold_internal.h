@@ -50,6 +50,9 @@ static inline void pr_none(void) {}
 #define hh_print(l, f, ...) \
 	(l <= cur_lvl() ? pt(f, ##__VA_ARGS__) : pr_none())
 
+bool hyperhold_discard_enable(void);
+void hyperhold_set_discard_enable(bool en);
+struct block_device *hyperhold_bdev(void);
 int hyperhold_loglevel(void);
 
 enum hyperhold_scenario {
@@ -162,6 +165,11 @@ struct hyperhold_stat {
 	atomic64_t alloc_fail_cnt[HYPERHOLD_SCENARIO_BUTT];
 	struct hyperhold_lat_stat lat[HYPERHOLD_SCENARIO_BUTT];
 	struct hyperhold_fail_record_info record;
+
+	atomic64_t discard_total_cnt;
+	atomic64_t discard_comp_cnt;
+	atomic64_t discard_fail_cnt;
+	atomic64_t discard_success_cnt;
 };
 
 struct hyperhold_page_pool {

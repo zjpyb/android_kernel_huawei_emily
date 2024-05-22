@@ -1092,6 +1092,16 @@ OAL_STATIC void hmac_ap_rx_asoc_req_destroy_timer(hmac_user_stru *hmac_user)
         frw_immediate_destroy_timer(&hmac_user->st_mgmt_timer);
     }
 }
+OAL_STATIC void hmac_ap_up_rx_asoc_req_change_user_state_to_auth(hmac_vap_stru *hmac_vap, hmac_user_stru *hmac_user)
+{
+    if (hmac_user->assoc_ap_up_tx_auth_req) {
+        oam_warning_log0(hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+                         "{hmac_ap_up_rx_asoc_req::RX (re)assoc req, change user to auth.}");
+        hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
+        hmac_user_set_asoc_state(&(hmac_vap->st_vap_base_info), &hmac_user->st_user_base_info,
+            MAC_USER_STATE_AUTH_COMPLETE);
+    }
+}
 
 OAL_STATIC oal_uint32 hmac_ap_up_rx_asoc_req(
     hmac_vap_stru *pst_hmac_vap, oal_uint8 uc_mgmt_frm_type, oal_uint8 *puc_mac_hdr,
@@ -1110,9 +1120,8 @@ OAL_STATIC oal_uint32 hmac_ap_up_rx_asoc_req(
 #ifdef _PRE_WLAN_FEATURE_P2P
     oal_int32 l_len;
 #endif
-    oal_uint8 uc_frm_least_len;
+    oal_uint8 uc_frm_least_len = MAC_CAP_INFO_LEN + MAC_LIS_INTERVAL_IE_LEN;
 
-    uc_frm_least_len = MAC_CAP_INFO_LEN + MAC_LIS_INTERVAL_IE_LEN;
     uc_frm_least_len += (uc_mgmt_frm_type == WLAN_FC0_SUBTYPE_REASSOC_REQ) ? WLAN_MAC_ADDR_LEN : 0;
 
     if (ul_payload_len < uc_frm_least_len) {
@@ -1148,8 +1157,8 @@ OAL_STATIC oal_uint32 hmac_ap_up_rx_asoc_req(
 
         return OAL_ERR_CODE_PTR_NULL;
     }
-
     hmac_ap_rx_asoc_req_destroy_timer(pst_hmac_user);
+    hmac_ap_up_rx_asoc_req_change_user_state_to_auth(pst_hmac_vap, pst_hmac_user);
     en_status_code = MAC_SUCCESSFUL_STATUSCODE;
 
     /* 是否符合触发SA query流程的条件 */

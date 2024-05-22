@@ -43,6 +43,9 @@
 #include <linux/profile.h>
 #include <linux/notifier.h>
 #include <linux/atomic.h>
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#include <linux/freezer.h>
+#endif
 #include <linux/hisi/lowmem_killer.h>
 #include <log/log_usertype.h>
 
@@ -234,8 +237,15 @@ kill_selected:
 			continue;
 		}
 
-		/* Bypass D-state process */
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		/*
+		 * Bypass D-state process, but try to kill frozen process, as it will be thawed
+		 * by hwpged after receiving kill signal and then can be killed sucessfully.
+		 */
+		if ((p->state & TASK_UNINTERRUPTIBLE) && !frozen(p)) {
+#else
 		if (p->state & TASK_UNINTERRUPTIBLE) {
+#endif
 			lowmem_print(2,
 				     "lowmem_scan filter D state process: %d (%s) state:0x%lx\n",
 				     p->pid, p->comm, p->state);

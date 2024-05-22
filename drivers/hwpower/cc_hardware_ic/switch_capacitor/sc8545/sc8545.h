@@ -56,8 +56,13 @@ struct sc8545_device_info {
 	int sense_r_config;
 	int dts_scp_support;
 	int dts_fcp_support;
+	int ignore_discharge_flag;
+	int close_regulation;
+	int sc_ibus_ocp;
+	int scp_ack_retry_cycle;
 	u32 ic_role;
 	u32 scp_error_flag;
+	u32 reset_fcp_config;
 	u8 scp_data[SCP_MAX_DATA_LEN];
 	u8 scp_op;
 	u8 scp_op_num;
@@ -164,6 +169,8 @@ struct sc8545_device_info {
 #define SC8545_IBUS_OCP_DIS_SHIFT              6
 #define SC8545_IBUS_UCP_DEGLITCH_MASK          BIT(5)
 #define SC8545_IBUS_UCP_DEGLITCH_SHIFT         5
+#define SC8545_IBUS_UCP_DEGLITCH_5MS           1
+#define SC8545_IBUS_UCP_DEGLITCH_10US          0
 #define SC8545_IBUS_OCP_MASK                   (BIT(3) | BIT(2) | \
 	BIT(1) | BIT(0))
 #define SC8545_IBUS_OCP_SHIFT                  0
@@ -344,6 +351,7 @@ struct sc8545_device_info {
 #define SC8545_IBUS_UCP_FALL_STAT_SHIFT        2
 #define SC8545_ADAPTER_INSERT_STAT_MASK        BIT(1)
 #define SC8545_ADAPTER_INSERT_STAT_SHIFT       1
+#define SC8545_ADAPTER_INSERT_STAT_UVP_MODE    1
 #define SC8545_VBAT_INSERT_STAT_MASK           BIT(0)
 #define SC8545_VBAT_INSERT_STAT_SHIFT          0
 
@@ -481,5 +489,6 @@ struct sc8545_device_info {
 int sc8545_config_vac_ovp_th_mv(void *dev_data, int ovp_th);
 int sc8545_config_vbus_ovp_th_mv(void *dev_data, int ovp_th);
 int sc8545_get_vbus_mv(int *vbus, void *dev_data);
+int sc8545_get_vbus_uvp_status(void *dev_data);
 
 #endif /* _SC8545_H_ */

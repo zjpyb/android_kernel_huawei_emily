@@ -2,7 +2,7 @@
 #include "oal_ext_if.h"
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #include <linux/pm_qos.h>
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #ifdef CONFIG_ARCH_PLATFORM
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 #include <linux/platform_drivers/lpcpu_cpufreq_req.h>
@@ -15,6 +15,7 @@
 #include <linux/cpufreq.h>
 #endif
 #endif
+#include "lpcpu_feature.h"
 #include "oam_ext_if.h"
 #include "frw_ext_if.h"
 #include "wlan_chip_i.h"
@@ -107,6 +108,11 @@
 mac_board_stru g_st_hmac_board;
 oal_wakelock_stru g_st_hmac_wakelock;
 hmac_rxdata_thread_stru g_st_rxdata_thread;
+#if defined(CONFIG_ARCH_HISI) && defined(CONFIG_NR_CPUS)
+#if CONFIG_NR_CPUS > OAL_BUS_HPCPU_NUM
+struct cpumask g_st_fastcpus;
+#endif
+#endif
 hmac_rxdata_thread_stru *hmac_get_rxdata_thread_addr(void)
 {
     return &g_st_rxdata_thread;
@@ -1239,7 +1245,7 @@ int32_t hmac_rxdata_polling(struct napi_struct *pst_napi, int32_t l_weight)
 #if defined(CONFIG_ARCH_HISI) && defined(CONFIG_NR_CPUS)
 #if CONFIG_NR_CPUS > OAL_BUS_HPCPU_NUM
     if (rxdata_thread->uc_allowed_cpus == WLAN_IRQ_AFFINITY_BUSY_CPU) {
-        if (get_cpu() < OAL_BUS_HPCPU_NUM) {
+        if (((1UL << get_cpu()) & ((g_st_fastcpus.bits)[0])) == 0) { // napiÈíÖÐ¶ÏÔÚÐ¡ºË
             l_rx_max = l_weight - 1;
         }
         put_cpu();
@@ -1400,12 +1406,13 @@ OAL_STATIC void hmac_hisi_thread_exit(void)
     hmac_tid_schedule_thread_exit();
 }
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #define MAX_CPU_FREQ_LIMIT 2900000
-
+#endif
 
 uint32_t hisi_cpufreq_get_maxfreq(unsigned int cpu)
 {
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
     struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
     uint32_t ret_freq;
     int32_t idx;
@@ -1425,13 +1432,21 @@ uint32_t hisi_cpufreq_get_maxfreq(unsigned int cpu)
     }
     cpufreq_cpu_put(policy);
     return ret_freq;
+#else
+    return 0;
+#endif
 }
 
 OAL_STATIC uint32_t hmac_hisi_cpufreq_init(void)
 {
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     uint8_t uc_cpuid;
-
+#if defined(CONFIG_ARCH_HISI) && defined(CONFIG_NR_CPUS)
+#if CONFIG_NR_CPUS > OAL_BUS_HPCPU_NUM
+    external_get_fast_cpus(&g_st_fastcpus);
+#endif
+#endif
     if (g_freq_lock_control.uc_lock_max_cpu_freq == OAL_FALSE) {
         return OAL_SUCC;
     }
@@ -1456,10 +1471,18 @@ OAL_STATIC uint32_t hmac_hisi_cpufreq_init(void)
 
     pm_qos_add_request(&g_st_pmqos_requset, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
 #endif
+#else
+#if defined(CONFIG_ARCH_HISI) && defined(CONFIG_NR_CPUS)
+#if CONFIG_NR_CPUS > OAL_BUS_HPCPU_NUM
+        external_get_fast_cpus(&g_st_fastcpus);
+#endif
+#endif
+#endif
     return OAL_SUCC;
 }
 OAL_STATIC uint32_t hmac_hisi_cpufreq_exit(void)
 {
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     uint8_t uc_cpuid;
 
@@ -1481,9 +1504,9 @@ OAL_STATIC uint32_t hmac_hisi_cpufreq_exit(void)
     }
     pm_qos_remove_request(&g_st_pmqos_requset);
 #endif
+#endif
     return OAL_SUCC;
 }
-#endif
 
 #ifdef RND_HUAWEI_LOW_LATENCY_SWITCHING
 /*
@@ -1632,10 +1655,7 @@ int32_t hmac_main_init(void)
 #ifdef _PRE_HOST_PERFORMANCE
     host_time_init();
 #endif
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
     hmac_hisi_cpufreq_init();
-#endif
-
     ret = mac_res_init();
     if (ret != OAL_SUCC) {
         oal_io_print("hmac_main_init: mac_res_init return err code %d\n", ret);
@@ -1689,9 +1709,7 @@ void hmac_main_exit(void)
 
     hmac_hisi_thread_exit();
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
     hmac_hisi_cpufreq_exit();
-#endif
 
     ret = hmac_board_exit(g_pst_mac_board);
     if (oal_unlikely(ret != OAL_SUCC)) {

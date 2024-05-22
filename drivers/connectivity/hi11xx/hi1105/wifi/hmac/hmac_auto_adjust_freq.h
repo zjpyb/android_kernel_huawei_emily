@@ -6,7 +6,7 @@
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 #include "plat_pm_wlan.h"
 #include <linux/pm_qos.h>
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #include <linux/cpufreq.h>
 #ifdef CONFIG_ARCH_PLATFORM
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
@@ -132,7 +132,7 @@ typedef struct {
 extern host_speed_freq_level_stru g_host_speed_freq_level[HOST_SPEED_FREQ_LEVEL_BUTT];
 extern device_speed_freq_level_stru g_device_speed_freq_level[DEV_WORK_FREQ_LVL_NUM]; /* device主频类型数 */
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 extern struct cpufreq_req g_ast_cpufreq[OAL_BUS_MAXCPU_NUM];
 extern hisi_max_cpu_freq g_aul_cpumaxfreq[OAL_BUS_MAXCPU_NUM];
 extern struct pm_qos_request g_st_pmqos_requset;

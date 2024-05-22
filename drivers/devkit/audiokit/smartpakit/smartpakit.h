@@ -24,6 +24,7 @@
 #include <linux/regmap.h>
 #include <linux/time.h>
 #include <linux/timer.h>
+#include <linux/spinlock.h>
 #include "smartpakit_defs.h"
 
 #ifndef unused
@@ -55,6 +56,12 @@ do {\
 
 #define SMARTPAKIT_DELAY_US_TO_MS   1000
 #define I2C_STATUS_B64 64
+
+#define SMARTPAKIT_SIMPLE_PA_ID_MAX 8
+#define SIMPLE_PA_MATCH_CHECK_ID_MAX 256
+#define SIMPLE_PA_MATCH_NUM 2
+#define SIMPLE_PA_LOCK_ENABLE 1
+#define SIMPLE_PA_LOCK_DISABLE 0
 
 struct i2c_err_info {
 	unsigned int regs_num;
@@ -243,6 +250,21 @@ struct smartpakit_switch_node {
 	char name[SMARTPAKIT_NAME_MAX];
 };
 
+struct simple_pa_id_match_check {
+	const char *id_status;
+	const char *chip_model;
+};
+
+struct simple_pa_id_info {
+	int pa_id_enable;
+	unsigned int pa_id_status;
+	int gpio_id_num;
+	bool support_id_pinctrl;
+	struct smartpakit_switch_node *pa_id_ctl;
+	int id_match_check_num;
+	struct simple_pa_id_match_check *pa_id_match_check;
+};
+
 struct smartpa_regulator_reg_ops {
 	int (*spmi_regulator_reg_read)(int i2c_addr, int reg_addr, int *value);
 	int (*spmi_regulator_reg_write)(int i2c_addr, int reg_addr, int mask,
@@ -371,6 +393,9 @@ struct smartpakit_priv {
 	struct workqueue_struct *pa_check_delay_wq;
 	struct delayed_work pa_check_delay_work;
 	struct timer_list *timer;
+	struct simple_pa_id_info simple_pa_id;
+	unsigned int spinlock_support; /* only use for simple pa */
+	spinlock_t simple_pa_ctrl_lock
 };
 
 struct smartpakit_priv *smartpakit_get_misc_priv(void);

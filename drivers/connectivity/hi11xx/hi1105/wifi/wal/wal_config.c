@@ -81,6 +81,7 @@ OAL_STATIC uint32_t wal_config_get_monitor_mode(mac_vap_stru *pst_mac_vap, uint1
 OAL_STATIC uint32_t wal_config_set_monitor_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 OAL_STATIC uint32_t wal_config_set_sniffer(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 #endif
+OAL_STATIC uint32_t wal_config_set_pt_mcast(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 OAL_STATIC uint32_t wal_config_get_prot_mode(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, uint8_t *puc_param);
 OAL_STATIC uint32_t wal_config_set_prot_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 OAL_STATIC uint32_t wal_config_get_auth_mode(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, uint8_t *puc_param);
@@ -335,6 +336,7 @@ OAL_STATIC const wal_wid_op_stru g_ast_board_wid_op[] = {
     { WLAN_CFGID_SNIFFER, OAL_FALSE, { 0 }, NULL, wal_config_set_sniffer },
     { WLAN_CFGID_MONITOR_MODE, OAL_FALSE, { 0 }, wal_config_get_monitor_mode, wal_config_set_monitor_mode },
 #endif
+    { WLAN_CFGID_SET_PT_MCAST, OAL_FALSE, { 0 }, NULL, wal_config_set_pt_mcast },
     { WLAN_CFGID_PROT_MODE,       OAL_FALSE, { 0 }, wal_config_get_prot_mode, wal_config_set_prot_mode },
     { WLAN_CFGID_AUTH_MODE,       OAL_FALSE, { 0 }, wal_config_get_auth_mode, wal_config_set_auth_mode },
     { WLAN_CFGID_BEACON_INTERVAL, OAL_FALSE, { 0 }, wal_config_get_bintval, wal_config_set_bintval },
@@ -751,6 +753,10 @@ OAL_STATIC uint32_t wal_config_get_monitor_mode(mac_vap_stru *pst_mac_vap, uint1
     return hmac_config_get_monitor(pst_mac_vap, pus_len, puc_param);
 }
 #endif
+OAL_STATIC uint32_t wal_config_set_pt_mcast(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param)
+{
+    return hmac_config_set_pt_mcast(pst_mac_vap, us_len, puc_param);
+}
 
 
 OAL_STATIC uint32_t wal_config_set_shortgi20(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param)

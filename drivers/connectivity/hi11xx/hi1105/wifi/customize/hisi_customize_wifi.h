@@ -218,6 +218,7 @@ extern oal_bool_enum_uint8 g_tas_switch_en[HAL_HOST_MAX_RF_NUM];
 extern uint8_t g_wlan_open_cnt;
 extern oal_bool_enum_uint8 g_wlan_cal_intvl_enable;
 extern oal_bool_enum_uint8 g_wlan_cal_disable_switch;
+extern uint8_t g_wlan_priv_dbdc_radio_cap;
 
 /* 判断当前值是否在合理范围 */
 #define cus_val_invalid(val, upper_val, low_val) (((val) > (upper_val)) || ((val) < (low_val)))

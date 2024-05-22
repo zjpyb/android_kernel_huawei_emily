@@ -45,6 +45,7 @@ enum port {
 	ROUTE_AR_PORT = 0x0d,
 	ROUTE_BT_A_PORT = 0x0e,
 	ROUTE_MOTION_PORT = 0x0f,
+	ROUTE_TIMESYNC_PORT = 0x10,
 };
 
 struct wait_resp {
@@ -106,6 +107,7 @@ enum {
 	MAX_READ_LIST_LEN_AR = 5,
 	MAX_READ_LIST_LEN_BT_A = 3,
 	MAX_READ_LIST_LEN_MOTION = 3,
+	MAX_READ_LIST_LEN_TIMESYNC = 3,
 };
 
 struct ext_sensorhub_buf_list {

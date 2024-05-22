@@ -342,7 +342,7 @@ static int ion_seccg_heap_allocate(struct ion_heap *heap,
 	/*init the TA conversion here*/
 	if (!seccg_heap->ta_init &&
 	    (seccg_heap->heap_attr == HEAP_SECURE_TEE)) {
-		ret = secmem_tee_init(seccg_heap->context, seccg_heap->session, TEE_SECMEM_NAME);
+		ret = sec_tee_init(&seccg_heap->context, &seccg_heap->session, ION_SESSIONS_SECMEM);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			goto out;
@@ -603,23 +603,14 @@ struct ion_heap *ion_seccg_heap_create(struct ion_platform_heap *heap_data)
 		goto free_heap;
 	}
 
-	if (seccg_heap->heap_attr == HEAP_SECURE_TEE) {
-		seccg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
-		if (!seccg_heap->context)
-			goto free_heap;
-		seccg_heap->session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
-		if (!seccg_heap->session)
-			goto free_context;
-	} else {
-		seccg_heap->context = NULL;
-		seccg_heap->session = NULL;
-	}
+	seccg_heap->context = NULL;
+	seccg_heap->session = NULL;
 	seccg_heap->ta_init = 0;
 
 	ret = __seccg_create_pool(seccg_heap);
 	if (ret) {
 		pr_err("[%s] pool create failed.\n", __func__);
-		goto free_session;
+		goto free_heap;
 	}
 
 	if (seccg_heap->water_mark &&
@@ -657,12 +648,6 @@ struct ion_heap *ion_seccg_heap_create(struct ion_platform_heap *heap_data)
 		  cma_get_size(seccg_heap->cma));
 
 	return &seccg_heap->heap;
-free_session:
-	if (seccg_heap->session)
-		kfree(seccg_heap->session);
-free_context:
-	if (seccg_heap->context)
-		kfree(seccg_heap->context);
 free_heap:
 	kfree(seccg_heap);
 	return ERR_PTR(-ENOMEM);

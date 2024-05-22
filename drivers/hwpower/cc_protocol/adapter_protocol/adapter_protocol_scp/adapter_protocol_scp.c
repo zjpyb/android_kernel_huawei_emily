@@ -40,6 +40,7 @@ static const struct adapter_protocol_device_data g_scp_protocol_dev_data[] = {
 	{ PROTOCOL_DEVICE_ID_SCHARGER_V600, "scharger_v600" },
 	{ PROTOCOL_DEVICE_ID_FUSB3601, "fusb3601" },
 	{ PROTOCOL_DEVICE_ID_SM5450, "sm5450" },
+	{ PROTOCOL_DEVICE_ID_HL7139, "hl7139" },
 	{ PROTOCOL_DEVICE_ID_SC8545, "sc8545" },
 	{ PROTOCOL_DEVICE_ID_SC200X, "sc200x" },
 };
@@ -685,7 +686,6 @@ static int scp_protocol_check_adp_type(int mode, int value)
 		case SCP_PROTOCOL_ADP_B_TYPE1_65W_1:
 		case SCP_PROTOCOL_ADP_B_TYPE1_65W_2:
 		case SCP_PROTOCOL_ADP_B_TYPE1_XR_65W_PC:
-		case SCP_PROTOCOL_ADP_B_TYPE1_FCR_65W:
 		case SCP_PROTOCOL_ADP_B_TYPE1_PS_C_65W:
 			return ADAPTER_TYPE_20V3P25A;
 		/* check 10v2.25a */
@@ -718,6 +718,9 @@ static int scp_protocol_check_adp_type(int mode, int value)
 			return ADAPTER_TYPE_HHR_20V4P5A;
 		case SCP_PROTOCOL_ADP_B_TYPE1_YLR_100W_CAR:
 			return ADAPTER_TYPE_YLR_20V5A_CAR;
+		case SCP_PROTOCOL_ADP_B_TYPE1_FCR_66W:
+		case SCP_PROTOCOL_ADP_B_TYPE1_FCR_66W_1:
+			return ADAPTER_TYPE_FCR_C_11V6A;
 		default:
 			break;
 		}

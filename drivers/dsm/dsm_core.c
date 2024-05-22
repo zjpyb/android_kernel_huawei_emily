@@ -566,19 +566,6 @@ static char *dsm_strtok(char *string_org, const char *demial)
 		return string_org;
 }
 
-static int copy_int_to_user(void __user *argp, int val)
-{
-	int ret;
-	int size;
-	char buff[UINT_BUF_MAX] = {0};
-
-	size = snprintf(buff, UINT_BUF_MAX, "%d\n", val);
-	ret = copy_to_user(argp, buff, size);
-	dsm_log_debug("%s result %d\n", __func__, ret);
-
-	return ret;
-}
-
 struct dsm_client *dsm_find_client(char *cname)
 {
 	int i;
@@ -829,124 +816,9 @@ static int dsm_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long dsm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	void __user *argp = (void __user *)arg;
-	struct dsm_client *client = (struct dsm_client *)file->private_data;
-	long ret = 0;
-	int error;
-	char buff[CLIENT_NAME_LEN] = {0};
-
-	dsm_log_debug("%s enter,\n", __func__);
-
-	switch (cmd) {
-	case DSM_IOCTL_GET_CLIENT_COUNT:
-		mutex_lock(&g_dsm_server.mtx_lock);
-		error = g_dsm_server.client_count;
-		mutex_unlock(&g_dsm_server.mtx_lock);
-		dsm_log_info("client count :%d\n", error);
-		ret = copy_int_to_user(argp, error);
-		break;
-	case DSM_IOCTL_BIND:
-		if (copy_from_user(buff, argp, CLIENT_NAME_LEN - 1)) {
-			dsm_log_err("copy from user failed\n");
-			ret = -EFAULT;
-			break;
-		}
-		dsm_log_debug("try bind client %s\n", buff);
-		client = dsm_find_client(buff);
-		if (client)
-			file->private_data = (void *)client;
-		else
-			ret = -ENXIO;
-		break;
-	case DSM_IOCTL_POLL_CLIENT_STATE:
-		if (client && client->cops && client->cops->poll_state) {
-			error = client->cops->poll_state();
-			dsm_log_info("poll %s state result :%d\n",
-				     client->client_name,
-				     error);
-			ret = copy_int_to_user(argp, error);
-			break;
-		}
-		dsm_log_err("dsm client not bound or poll not support\n");
-		ret = -ENXIO;
-		break;
-	case DSM_IOCTL_FORCE_DUMP:
-		if (copy_from_user(buff, argp, UINT_BUF_MAX)) {
-			dsm_log_err("copy from user failed\n");
-			ret = -EFAULT;
-			break;
-		}
-		if ((!client) || (!client->cops) || (!client->cops->dump_func)) {
-			dsm_log_err("dsm client not bound or dump not support\n");
-			ret = -ENXIO;
-			break;
-		}
-		if (dsm_client_ocuppy(client)) {
-			dsm_log_info("client %s's buff ocuppy failed\n",
-				     client->client_name);
-			ret = -EBUSY;
-			break;
-		}
-		client->error_no = dsm_atoi(buff);
-		client->used_size = client->cops->dump_func(client->error_no,
-							    (void *)client->dump_buff,
-							    (int)client->buff_size);
-		set_bit(CBUFF_READY_BIT, &client->buff_flag);
-		break;
-	case DSM_IOCTL_GET_CLIENT_ERROR:
-		if (client) {
-			ret = copy_int_to_user(argp, client->error_no);
-			break;
-		}
-		dsm_log_err("dsm find client failed\n");
-		ret = -ENXIO;
-		break;
-	case DSM_IOCTL_GET_DEVICE_NAME:
-		if (client && (strlen(client->device_name) > 0)) {
-			ret = copy_to_user(argp,
-					   client->device_name,
-					   DSM_MAX_DEVICE_NAME_LEN);
-			break;
-		}
-		ret = -ENXIO;
-		break;
-	case DSM_IOCTL_GET_IC_NAME:
-		if (client && (strlen(client->ic_name) > 0)) {
-			ret = copy_to_user(argp,
-					   client->ic_name,
-					   DSM_MAX_IC_NAME_LEN);
-			break;
-		}
-		ret = -ENXIO;
-		break;
-	case DSM_IOCTL_GET_MODULE_NAME:
-		if (client && (strlen(client->module_name) > 0)) {
-			ret = copy_to_user(argp,
-					   client->module_name,
-					   DSM_MAX_MODULE_NAME_LEN);
-			break;
-		}
-		ret = -ENXIO;
-		break;
-	default:
-		dsm_log_err("unknown ioctl command :%d\n", cmd);
-		ret = -EINVAL;
-		break;
-	}
-	dsm_log_debug("%s exit\n", __func__);
-
-	return ret;
-}
-
 static const struct file_operations g_dsm_fops = {
 	.owner		= THIS_MODULE,
 	.llseek		= no_llseek,
-	.unlocked_ioctl	= dsm_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl	= dsm_ioctl,
-#endif
 	.open		= dsm_open,
 	.release	= dsm_close,
 	.read		= dsm_read,

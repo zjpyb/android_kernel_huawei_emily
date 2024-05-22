@@ -294,5 +294,5 @@ void byc_key_func(struct work_struct *work);
 void byc_sn_func(struct work_struct *work);
 void byc_act_sign_func(struct work_struct *work);
 int byc_register_cycles_listener(struct batt_chk_data *drv_data);
-
+int check_sn_binded(struct batt_chk_data *drv_data);
 #endif /* _BATT_AUT_CHECKER_H_ */

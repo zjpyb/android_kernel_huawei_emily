@@ -1033,7 +1033,15 @@ EXPORT_SYMBOL(release_pages);
  */
 void __pagevec_release(struct pagevec *pvec)
 {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	lru_add_drain();
+#else
+	if (!pvec->drained) {
+		lru_add_drain();
+		pvec->drained = true;
+	}
+
+#endif
 	release_pages(pvec->pages, pagevec_count(pvec), pvec->cold);
 	pagevec_reinit(pvec);
 }

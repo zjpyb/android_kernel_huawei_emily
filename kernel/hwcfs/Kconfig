@@ -8,3 +8,9 @@ config HW_VIP_KWORKER
 	default n
 	help
 	  if set, kworker thread is pick first in cfs sched policy
+config HW_VIP_SEMAPHORE
+	bool "iaware vip semaphore"
+	depends on HW_VIP_THREAD
+	default n
+	help
+	  if set, thread(has vip tsk->group_leader) with vip semaphore is pick first in cfs sched policy

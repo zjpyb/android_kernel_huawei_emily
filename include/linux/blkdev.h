@@ -173,35 +173,6 @@ enum requeue_reason_enum {
 	REQ_REQUEUE_IO_HW_PENDING,
 };
 
-#ifdef CONFIG_MAS_UNISTORE_PRESERVE
-#define STREAM_TYPE_RPMB    0xf0
-#define STREAM_TYPE_INVALID 0xff
-#define MAX_WRITE_STREAM_TYPE 4
-#define SECTOR_BYTE 9
-#define SECTION_SECTOR 3
-
-enum stream_type {
-	BLK_STREAM_META = 0,
-	BLK_STREAM_COLD_NODE,
-	BLK_STREAM_COLD_DATA,
-	BLK_STREAM_HOT_NODE,
-	BLK_STREAM_HOT_DATA,
-};
-
-enum bkops_fs_work_result {
-	BKOPS_START_SUC = 0,
-	BKOPS_DEV_NOT_SUPPORT,
-	BKOPS_INPUT_ERR,
-	BKOPS_FUNC_NOT_SUPPORT,
-	BKOPS_STATE_NOT_IDLE,
-	BKOPS_ALREADY_START,
-	BKOPS_QUERY_ERR,
-	BKOPS_NO_NEED_START,
-	BKOPS_NEED_START,
-	BKOPS_START_ERR,
-};
-#endif
-
 #if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 enum blk_ft_rq_sim_mode {
 	BLK_FT_RQ_SIM_NONE = 0, /* The value can't be changed! */
@@ -507,18 +478,77 @@ enum blk_freeze_obj_type {
 	BLK_QUEUE,
 };
 
-#define STREAM_NUM 5
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+#define STREAM_TYPE_RPMB    0xf0
+#define STREAM_TYPE_INVALID 0xff
+#define BLK_ORDER_STREAM_NUM 4
 #define DATA_MOVE_STREAM_NUM 2
+#define MAX_RESCUE_SEG_CNT 240
+#define DATA_MOVE_MAX_NUM 768
+
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+enum reset_debug {
+	RESET_DEBUG_NO = 0,
+	RESET_DEBUG_100E,
+	RESET_DEBUG_700D,
+	RESET_DEBUG_CLOSE,
+};
+#endif
+
+enum stream_type {
+	BLK_STREAM_META = 0,
+	BLK_STREAM_COLD_NODE,
+	BLK_STREAM_COLD_DATA,
+	BLK_STREAM_HOT_NODE,
+	BLK_STREAM_HOT_DATA,
+	BLK_STREAM_HP,
+
+	/* add new stream above */
+	BLK_STREAM_MAX_STRAM,
+};
+
+enum bkops_fs_work_result {
+	BKOPS_START_SUC = 0,
+	BKOPS_DEV_NOT_SUPPORT,
+	BKOPS_INPUT_ERR,
+	BKOPS_FUNC_NOT_SUPPORT,
+	BKOPS_STATE_NOT_IDLE,
+	BKOPS_ALREADY_START,
+	BKOPS_QUERY_ERR,
+	BKOPS_NO_NEED_START,
+	BKOPS_NEED_START,
+	BKOPS_START_ERR,
+};
+
+enum pwron_type {
+	DM_STRAM0_TYPE = 0,
+	DM_STRAM1_TYPE,
+	RECOVERY_TYPE,
+
+	PWRON_MAX_TYPE,
+};
+
+typedef void (stor_dev_pwron_info_done_fn)(int, u8);
+
+struct stor_dev_pwron_info_done_info {
+	stor_dev_pwron_info_done_fn *done;
+	u8 pwron_type;
+};
+
+#define STREAM_SECTION_NUM 5
+
 struct stor_dev_pwron_info {
-	unsigned int dev_stream_addr[STREAM_NUM];
+	unsigned int dev_stream_addr[BLK_STREAM_MAX_STRAM];
 	unsigned int rescue_seg_cnt;
 	unsigned int *rescue_seg;
 	unsigned char pe_limit_status;
 	unsigned int dm_stream_addr[DATA_MOVE_STREAM_NUM];
-	unsigned char stream_lun_info[STREAM_NUM];
+	unsigned char stream_lun_info[BLK_STREAM_MAX_STRAM];
 	unsigned char dm_lun_info[DATA_MOVE_STREAM_NUM];
 	unsigned char io_slc_mode_status;
 	unsigned char dm_slc_mode_status;
+	unsigned int section_info[BLK_ORDER_STREAM_NUM][STREAM_SECTION_NUM];
+	struct stor_dev_pwron_info_done_info done_info;
 };
 
 struct stor_dev_stream_info {
@@ -539,6 +569,14 @@ struct stor_dev_verify_info {
 	unsigned char verify_done_status;
 	unsigned char verify_fail_reason;
 	unsigned int pu_size;
+};
+
+typedef void (stor_dev_data_move_done_fn)(struct stor_dev_verify_info, void *);
+
+struct stor_dev_data_move_done_info {
+	stor_dev_data_move_done_fn *done;
+	void *private_data;
+	sector_t start_addr;
 };
 
 struct stor_dev_data_move_source_addr {
@@ -566,6 +604,7 @@ struct stor_dev_data_move_info {
 	unsigned int source_inode_num;
 	struct stor_dev_data_move_source_inode *source_inode;
 	struct stor_dev_verify_info verify_info;
+	struct stor_dev_data_move_done_info done_info;
 };
 
 struct stor_dev_sync_read_verify_info {
@@ -606,19 +645,14 @@ struct stor_dev_mapping_partition {
 	unsigned int partion_size[PARTITION_TYPE_MAX];
 };
 
-typedef void (*blk_dev_bad_block_notify_fn)(
-		struct stor_dev_bad_block_info, void *);
-
-#ifdef CONFIG_MAS_UNISTORE_PRESERVE
-#define MAX_RESCUE_SEG_CNT 240
-#define DATA_MOVE_MAX_NUM 768
-
-struct unistore_section_info {
-	struct list_head section_list;
-	sector_t section_start_lba;
-	bool slc_mode;
+struct stor_dev_section_info {
+	unsigned int section_start_lba;
+	int flash_mode;
+	unsigned char stream_type;
 };
 
+typedef void (*blk_dev_bad_block_notify_fn)(
+		struct stor_dev_bad_block_info, void *);
 typedef int (*lld_dev_pwron_info_sync_fn)(struct request_queue *,
 		struct stor_dev_pwron_info *, unsigned int rescue_seg_size);
 typedef int (*lld_dev_stream_oob_info_fetch_fn)(
@@ -846,7 +880,10 @@ struct blk_dev_lld {
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 	struct mas_unistore_ops unistore_ops;
 
+	unsigned char lock_map[NR_CPUS];
+
 	unsigned int mas_sec_size;
+	unsigned int mas_pu_size;
 	atomic_t bad_block_atomic;
 	struct work_struct bad_block_work;
 	struct stor_dev_bad_block_info bad_block_info;
@@ -854,20 +891,27 @@ struct blk_dev_lld {
 	bool	fsync_ind;
 	spinlock_t fsync_ind_lock;
 	struct mas_bkops *bkops;
-	spinlock_t expected_lba_lock[MAX_WRITE_STREAM_TYPE];
-	sector_t	expected_lba[MAX_WRITE_STREAM_TYPE];
-	ktime_t expected_refresh_time[MAX_WRITE_STREAM_TYPE];
-	sector_t old_section[MAX_WRITE_STREAM_TYPE];
-	struct list_head section_list[MAX_WRITE_STREAM_TYPE];
+	spinlock_t expected_lba_lock[BLK_ORDER_STREAM_NUM];
+	sector_t	expected_lba[BLK_ORDER_STREAM_NUM];
+	sector_t	expected_pu[BLK_ORDER_STREAM_NUM];
+	sector_t	current_pu_size[BLK_ORDER_STREAM_NUM];
+	ktime_t expected_refresh_time[BLK_ORDER_STREAM_NUM];
+	sector_t old_section[BLK_ORDER_STREAM_NUM];
+	struct list_head section_list[BLK_ORDER_STREAM_NUM];
 
+	atomic_t reset_cnt;
 	atomic_t recovery_flag;
+	atomic_t recovery_pwron_flag;
+	atomic_t recovery_pwron_inprocess_flag;
 	struct rw_semaphore recovery_rwsem;
 	struct mutex recovery_mutex;
-	struct list_head buf_bio_list[MAX_WRITE_STREAM_TYPE + 1];
-	spinlock_t buf_bio_list_lock[MAX_WRITE_STREAM_TYPE + 1];
-	unsigned int buf_bio_size[MAX_WRITE_STREAM_TYPE + 1];
-	unsigned int buf_bio_num[MAX_WRITE_STREAM_TYPE + 1];
-	struct delayed_work clear_buf_bio_work;
+	struct list_head buf_bio_list[BLK_ORDER_STREAM_NUM + 1];
+	spinlock_t buf_bio_list_lock[BLK_ORDER_STREAM_NUM + 1];
+	unsigned int buf_bio_size[BLK_ORDER_STREAM_NUM + 1];
+	unsigned int buf_bio_num[BLK_ORDER_STREAM_NUM + 1];
+	unsigned int buf_page_num[BLK_ORDER_STREAM_NUM + 1];
+	atomic_t replaced_page_cnt[BLK_ORDER_STREAM_NUM + 1];
+	sector_t max_recovery_size;
 
 	unsigned int write_curr_cnt;
 	unsigned int write_pre_cnt;
@@ -2773,11 +2817,11 @@ ssize_t blk_latency_hist_show(char *name, struct io_latency_state *s,
 		char *buf, int buf_size);
 
 #if defined(CONFIG_MAS_BLK) && defined(CONFIG_MAS_UNISTORE_PRESERVE)
+struct request *mas_blk_get_request_reset(
+	struct request_queue *q, unsigned int op, gfp_t gfp_mask);
 void mas_blk_queue_split_for_wop_write(
 	struct request_queue *, struct bio **);
 void mas_blk_fsync_barrier(struct block_device *bdev);
-bool mas_blk_match_expected_lba(
-	struct request_queue *q, struct bio *bio);
 void mas_blk_dump_unistore(struct request_queue *q, unsigned char *prefix);
 int mas_blk_data_move(struct block_device *bi_bdev,
 	struct stor_dev_data_move_info *data_move_info);
@@ -2862,122 +2906,23 @@ void mas_blk_mq_tagset_set_bkops(
 	struct request_queue *q, struct mas_bkops *ufs_bkops);
 void mas_blk_queue_unistore_enable(
 	struct request_queue *q, bool enable);
-void mas_blk_set_up_unistore_env(
-	struct request_queue *q, unsigned int mas_sec_size, bool enable);
+void mas_blk_set_up_unistore_env(struct request_queue *q,
+	unsigned int mas_sec_size, unsigned int mas_pu_size, bool enable);
 bool blk_queue_query_unistore_enable(struct request_queue *q);
 int mas_blk_mq_update_unistore_tags(struct blk_mq_tag_set *set);
 void mas_blk_insert_section_list(struct block_device *bdev,
 	unsigned int start_blkaddr, int stream_type, int flash_mode);
 unsigned int mas_blk_get_sec_size(struct request_queue *q);
+unsigned int mas_blk_get_pu_size(struct request_queue *q);
 int mas_blk_update_buf_bio_page(struct block_device *bdev,
 	struct page *page, struct page *cached_page);
-void mas_blk_add_buf_to_recovery_list(struct request_queue *q,
-	struct stor_dev_pwron_info *stor_info);
+void mas_blk_set_recovery_flag(struct request_queue *q);
+int mas_blk_get_recovery_pages(bool page_anon);
+void mas_blk_recovery_pages_add(struct page *page);
+void mas_blk_recovery_pages_sub(struct page *page);
+void mas_blk_clear_section_list(struct block_device *bdev,
+	unsigned char stream_type);
 #else
-static inline void mas_blk_fsync_barrier(struct block_device *bdev)
-{
-}
-static inline int mas_blk_data_move(struct block_device *bi_bdev,
-	struct stor_dev_data_move_info *data_move_info)
-{
-	return 0;
-}
-static inline int mas_blk_slc_mode_configuration(
-	struct block_device *bi_bdev, int *status)
-{
-	return 0;
-}
-static inline int mas_blk_sync_read_verify(struct block_device *bi_bdev,
-	struct stor_dev_sync_read_verify_info *verify_info)
-{
-	return 0;
-}
-static inline int mas_blk_get_bad_block_info(struct block_device *bi_bdev,
-	struct stor_dev_bad_block_info *bad_block_info)
-{
-	return 0;
-}
-static inline int mas_blk_device_pwron_info_sync(struct block_device *bi_bdev,
-	struct stor_dev_pwron_info *stor_info, unsigned int rescue_seg_size)
-{
-	return 0;
-}
-static inline int mas_blk_stream_oob_info_fetch(struct block_device *bi_bdev,
-	struct stor_dev_stream_info stream_info, unsigned int oob_entry_cnt,
-	struct stor_dev_stream_oob_info *oob_info)
-{
-	return 0;
-}
-static inline int mas_blk_device_read_section(
-	struct block_device *bi_bdev, unsigned int *section_size)
-{
-	return 0;
-}
-static inline int mas_blk_device_config_mapping_partition(
-	struct block_device *bi_bdev,
-	struct stor_dev_mapping_partition *mapping_info)
-{
-	return 0;
-}
-static inline int mas_blk_device_read_mapping_partition(
-	struct block_device *bi_bdev,
-	struct stor_dev_mapping_partition *mapping_info)
-{
-	return 0;
-}
-static inline int mas_blk_device_read_op_size(struct block_device *bi_bdev,
-	int *op_size)
-{
-	return 0;
-}
-static inline int mas_blk_fs_sync_done(struct block_device *bi_bdev)
-{
-	return 0;
-}
-static inline int mas_blk_get_program_size(struct block_device *bi_bdev,
-	struct stor_dev_program_size *program_size)
-{
-	return 0;
-}
-static inline int mas_blk_device_close_section(struct block_device *bi_bdev,
-	struct stor_dev_reset_ftl *reset_ftl_info)
-{
-	return 0;
-}
-static inline int mas_blk_bad_block_error_inject(
-	struct block_device *bi_bdev, unsigned char bad_slc_cnt, unsigned char bad_tlc_cnt)
-{
-	return 0;
-}
-static inline int mas_blk_rescue_block_inject_data(
-	struct block_device *bi_bdev, sector_t sect)
-{
-	return 0;
-}
-static inline void mas_blk_unistor_bad_block_notify_register(
-	struct block_device *bi_bdev, blk_dev_bad_block_notify_fn func, void* param_data)
-{
-}
-static inline int mas_bkops_work_query(struct block_device *bdev)
-{
-	return 0;
-}
-static inline int mas_bkops_work_start(struct block_device *bdev)
-{
-	return 0;
-}
-static inline void mas_bkops_work_stop(struct block_device *bdev)
-{
-}
-static inline void mas_blk_insert_section_list(struct block_device *bdev,
-	unsigned int start_blkaddr, int stream_type, int flash_mode)
-{
-}
-static inline int mas_blk_update_buf_bio_page(struct block_device *bdev,
-	struct page *page, struct page *cached_page)
-{
-	return 1;
-}
 static inline bool blk_queue_query_unistore_enable(struct request_queue *q)
 {
 	return false;

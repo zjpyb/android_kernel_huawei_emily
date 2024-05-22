@@ -30,6 +30,8 @@ int ufshcd_dev_read_lrb_in_use(struct scsi_device *sdev,
 	unsigned long *lrb_in_use);
 int ufshcd_dev_read_section_size_hba(struct ufs_hba *hba,
 	unsigned int *section_size);
+int ufshcd_dev_read_pu_size_hba(struct ufs_hba *hba,
+	unsigned int *pu_size);
 int ufshcd_dev_read_mapping_partition(
 	struct scsi_device *sdev,
 	struct stor_dev_mapping_partition *mapping_info);
@@ -41,5 +43,5 @@ int ufshcd_dev_get_bad_block_info(struct scsi_device *sdev,
 int ufshcd_dev_get_program_size(struct scsi_device *sdev,
 	struct stor_dev_program_size *program_size);
 int ufshcd_dev_read_op_size(struct scsi_device *dev, int *op_size);
-
+void ufshcd_set_read_buffer_device(struct scsi_device *dev);
 #endif

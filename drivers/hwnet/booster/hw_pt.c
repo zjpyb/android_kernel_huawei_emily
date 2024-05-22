@@ -233,7 +233,7 @@ static bool is_socket_belong_fg_app(struct sock *sk)
 	return (g_app_top_uid > MIN_APP_UID) && (uid == g_app_top_uid);
 }
 
-static void do_commands(struct req_msg_head *msg)
+static void do_commands(struct req_msg_head *msg, u32 len)
 {
 	if (!msg) {
 		pr_err("msg is null\n");

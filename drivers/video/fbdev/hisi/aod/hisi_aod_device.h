@@ -256,7 +256,7 @@ typedef struct aod_display_spaces_ap_temp {
 	uint32_t dual_clocks;
 	uint32_t display_type;
 	uint32_t display_space_count;
-	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT];
+	aod_display_space_t display_spaces[MAX_DISPLAY_SPACE_COUNT + DIFF_NUMBER];
 } aod_display_spaces_ap_temp_t;
 
 typedef struct aod_fold_info_config_mcu {

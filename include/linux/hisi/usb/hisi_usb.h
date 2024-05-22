@@ -106,6 +106,7 @@ int chip_usb_otg_use_hifi_ip_first(void);
 int chip_usb_otg_get_typec_orien(void);
 void chip_usb_cancel_bc_again(int sync);
 bool chip_usb_state_is_host(void);
+void chip_usb_set_hifi_ip_first(int flag);
 #else
 static inline int chip_charger_type_notifier_register(
 		struct notifier_block *nb)
@@ -162,6 +163,10 @@ static inline void chip_usb_cancel_bc_again(int sync)
 static inline bool chip_usb_state_is_host(void)
 {
 	return false;
+}
+
+static inline void chip_usb_set_hifi_ip_first(int flag)
+{
 }
 #endif /* CONFIG_USB_DWC3 */
 

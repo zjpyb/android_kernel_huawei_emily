@@ -1403,8 +1403,13 @@ static int subsystem_open(struct inode *inode, struct file *filp)
 		return -ENODEV;
 
 	/* Make sure the system still exists */
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_lock(&event_mutex);
+	mutex_lock(&trace_types_lock);
+#else
 	mutex_lock(&trace_types_lock);
 	mutex_lock(&event_mutex);
+#endif
 	list_for_each_entry(tr, &ftrace_trace_arrays, list) {
 		list_for_each_entry(dir, &tr->systems, list) {
 			if (dir == inode->i_private) {
@@ -1418,8 +1423,13 @@ static int subsystem_open(struct inode *inode, struct file *filp)
 		}
 	}
  exit_loop:
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_unlock(&trace_types_lock);
+	mutex_unlock(&event_mutex);
+#else
 	mutex_unlock(&event_mutex);
 	mutex_unlock(&trace_types_lock);
+#endif
 
 	if (!system)
 		return -ENODEV;
@@ -2305,15 +2315,25 @@ static void __add_event_to_tracers(struct trace_event_call *call);
 int trace_add_event_call(struct trace_event_call *call)
 {
 	int ret;
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_lock(&event_mutex);
+	mutex_lock(&trace_types_lock);
+#else
 	mutex_lock(&trace_types_lock);
 	mutex_lock(&event_mutex);
+#endif
 
 	ret = __register_event(call, NULL);
 	if (ret >= 0)
 		__add_event_to_tracers(call);
 
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_unlock(&trace_types_lock);
+	mutex_unlock(&event_mutex);
+#else
 	mutex_unlock(&event_mutex);
 	mutex_unlock(&trace_types_lock);
+#endif
 	return ret;
 }
 
@@ -2367,13 +2387,23 @@ int trace_remove_event_call(struct trace_event_call *call)
 {
 	int ret;
 
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_lock(&event_mutex);
+	mutex_lock(&trace_types_lock);
+#else
 	mutex_lock(&trace_types_lock);
 	mutex_lock(&event_mutex);
+#endif
 	down_write(&trace_event_sem);
 	ret = probe_remove_event_call(call);
 	up_write(&trace_event_sem);
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_unlock(&trace_types_lock);
+	mutex_unlock(&event_mutex);
+#else
 	mutex_unlock(&event_mutex);
 	mutex_unlock(&trace_types_lock);
+#endif
 
 	return ret;
 }
@@ -2435,8 +2465,13 @@ static int trace_module_notify(struct notifier_block *self,
 {
 	struct module *mod = data;
 
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_lock(&event_mutex);
+	mutex_lock(&trace_types_lock);
+#else
 	mutex_lock(&trace_types_lock);
 	mutex_lock(&event_mutex);
+#endif
 	switch (val) {
 	case MODULE_STATE_COMING:
 		trace_module_add_events(mod);
@@ -2445,8 +2480,13 @@ static int trace_module_notify(struct notifier_block *self,
 		trace_module_remove_events(mod);
 		break;
 	}
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	mutex_unlock(&trace_types_lock);
+	mutex_unlock(&event_mutex);
+#else
 	mutex_unlock(&event_mutex);
 	mutex_unlock(&trace_types_lock);
+#endif
 
 	return 0;
 }
@@ -2966,19 +3006,31 @@ int event_trace_add_tracer(struct dentry *parent, struct trace_array *tr)
 {
 	int ret;
 
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	lockdep_assert_held(&event_mutex);
+#else
 	mutex_lock(&event_mutex);
+#endif
 
 	ret = create_event_toplevel_files(parent, tr);
 	if (ret)
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+		goto out;
+#else
 		goto out_unlock;
+#endif
 
 	down_write(&trace_event_sem);
 	__trace_add_event_dirs(tr);
 	up_write(&trace_event_sem);
 
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+ out:
+#else
  out_unlock:
 	mutex_unlock(&event_mutex);
 
+#endif
 	return ret;
 }
 
@@ -3009,7 +3061,11 @@ early_event_add_tracer(struct dentry *parent, struct trace_array *tr)
 
 int event_trace_del_tracer(struct trace_array *tr)
 {
+#ifdef CONFIG_BACKPORT_TRACE_MUTEX
+	lockdep_assert_held(&event_mutex);
+#else
 	mutex_lock(&event_mutex);
+#endif
 
 	/* Disable any event triggers and associated soft-disabled events */
 	clear_event_triggers(tr);
@@ -3030,7 +3086,9 @@ int event_trace_del_tracer(struct trace_array *tr)
 
 	tr->event_dir = NULL;
 
+#ifndef CONFIG_BACKPORT_TRACE_MUTEX
 	mutex_unlock(&event_mutex);
+#endif
 
 	return 0;
 }

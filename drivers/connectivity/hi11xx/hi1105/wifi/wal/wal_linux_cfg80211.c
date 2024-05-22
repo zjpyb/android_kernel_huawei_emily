@@ -2560,7 +2560,7 @@ OAL_STATIC int32_t wal_cfg80211_sched_scan_start(oal_wiphy_stru *pst_wiphy,
     if (pst_scan_mgmt->pst_request != NULL) {
         oam_warning_log0(0, OAM_SF_CFG, "{wal_cfg80211_sched_scan_start:: device is busy, stop current scan!}");
 
-        wal_force_scan_abort_then_scan_comp(pst_netdev);
+        wal_force_scan_complete(pst_netdev, OAL_TRUE);
     }
 
     /* 检测内核下发的需要匹配的ssid集合的个数是否合法 */

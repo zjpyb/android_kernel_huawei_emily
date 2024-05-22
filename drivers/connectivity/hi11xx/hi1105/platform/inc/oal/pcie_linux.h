@@ -27,6 +27,18 @@
 
 extern int32_t g_kirin_rc_idx;
 #ifdef _PRE_HI375X_PCIE
+#ifdef _PRE_PRODUCT_HI3751_V900
+int pcie_enumerate(u32 rc_idx);
+u32 show_link_state(u32 rc_id);
+int pcie_pm_control(int resume_flag, u32 rc_idx);
+int pcie_lp_ctrl(u32 rc_idx, u32 enable);
+int pcie_power_notifiy_register(u32 rc_idx, int (*poweron)(void* data),
+                                int (*poweroff)(void* data), void* data);
+#define kirin_pcie_enumerate                pcie_enumerate
+#define kirin_pcie_pm_control               pcie_pm_control
+#define kirin_pcie_lp_ctrl                  pcie_lp_ctrl
+#define kirin_pcie_power_notifiy_register   pcie_power_notifiy_register
+#else
 int hipcie_enumerate(u32 rc_idx);
 u32 show_link_state(u32 rc_id);
 int hipcie_pm_control(int resume_flag, u32 rc_idx);
@@ -37,6 +49,7 @@ int hipcie_power_notifiy_register(u32 rc_idx, int (*poweron)(void* data),
 #define kirin_pcie_pm_control               hipcie_pm_control
 #define kirin_pcie_lp_ctrl                  hipcie_lp_ctrl
 #define kirin_pcie_power_notifiy_register   hipcie_power_notifiy_register
+#endif
 
 #else
 #ifdef CONFIG_ARCH_KIRIN_PCIE

@@ -27,9 +27,9 @@ static stk3321_als_para_table stk3321_als_table[] = {
  * middle_als_data, offset_max, offset_min }
  */
 	{ AGS3, V4, STK3321, TS_PANEL_UNKNOWN, BLACK,
-		{ 1000, 3000, 2000, 7002, 7000, 7001, 517, 10000, 200 } },
+		{ 1000, 3000, 3000, 2500, 2500, 3100, 2145, 10000, 200 } },
 	{ AGS3, V4, STK3321, TS_PANEL_UNKNOWN, WHITE,
-		{ 1000, 3000, 2000, 7002, 7000, 7001, 500, 10000, 200 } },
+		{ 1000, 10000, 3000, 1400, 1680, 2200, 2935, 10000, 200 } },
 };
 
 static stk3235_als_para_table stk3235_als_table[] = {
@@ -58,6 +58,14 @@ static als_para_normal_table stk3338_als_para_diff_tp_color_table[] = {
 	 { 1000, 3000, 6000, 135, 188, 280, 8033, 7500, 200} },
 	{ LRA, V3, TS_PANEL_UNKNOWN, STK3338_PARA_SIZE,
 	 { 1000, 6500, 3000, 98, 131, 258, 7250, 5000, 300} },
+	{ JSCH, V3, SAMSUNG_TPLCD, STK3338_PARA_SIZE,
+	 { 1000, 6500, 3000, 75, 100, 220, 8033, 7500, 200} },
+	{ JSCH, V3, EDO_TPLCD, STK3338_PARA_SIZE,
+	 { 1000, 6500, 3000, 70, 92, 220, 8033, 7500, 200} },
+	{ JSCH, V3, TS_PANEL_UNKNOWN, STK3338_PARA_SIZE,
+	 { 1000, 6500, 3000, 70, 92, 220, 8033, 7500, 200} },
+	{ PHONE_TYPE_MEDCH, V3, TS_PANEL_UNKNOWN, STK3338_PARA_SIZE,
+	 { 1000, 3000, 6000, 95, 188, 224, 2000, 5000, 300} },
 };
 
 stk3321_als_para_table *als_get_stk3321_table_by_id(uint32_t id)

@@ -363,8 +363,12 @@ failed_dma_fence_setup:
 	/* undo the loop work */
 	while (res_no-- > 0) {
 		struct kbase_mem_phy_alloc *alloc = katom->extres[res_no].alloc;
-
-		kbase_unmap_external_resource(katom->kctx, NULL, alloc);
+		struct base_external_resource *res = &input_extres[res_no];
+		struct kbase_va_region *reg;
+		reg = kbase_region_tracker_find_region_enclosing_address(
+			katom->kctx,
+			res->ext_resource & ~BASE_EXT_RES_ACCESS_EXCLUSIVE);
+		kbase_unmap_external_resource(katom->kctx, reg, alloc);
 	}
 	kbase_gpu_vm_unlock(katom->kctx);
 

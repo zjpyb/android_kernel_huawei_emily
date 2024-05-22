@@ -111,6 +111,7 @@ extern void hw_110x_dsm_client_notify(int sub_sys, int dsm_id, const char *fmt, 
 #define DTS_PROP_HI110X_GPIO_HOST_WAKEUP_BFGX "hi110x,gpio_host_wakeup_bfgx"
 #define DTS_PROP_HI110X_UART_POART            "hi110x,uart_port"
 #define DTS_PROP_HI110X_UART_PCLK             "hi110x,uart_pclk_normal"
+#define DTS_PROP_HI110X_COLDBOOT_PARTION      "hi110x,coldboot_partion"
 
 /* hisi_me */
 #define DTS_NODE_HI110X_ME            "hisilicon,hisi_me"
@@ -186,7 +187,7 @@ typedef struct bd_init_s {
     int32_t (*check_pmu_clk_share)(void);
     int32_t (*board_get_power_pinctrl)(void);
     int32_t (*get_ini_file_name_from_dts)(char *dts_prop, char *prop_value, uint32_t size);
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
     void (*suspend_board_gpio_in_s4)(void);
     void (*resume_board_gpio_in_s4)(void);
 #endif
@@ -287,6 +288,8 @@ typedef struct {
     int32_t need_power_prepare;
     int32_t tcxo_freq_detect;
     int32_t gpio_tcxo_detect_level;
+    int32_t skb_retry_count;
+    const char *coldboot_partion;
 } hi110x_board_info;
 
 typedef struct _device_vesion_board {
@@ -404,9 +407,9 @@ int32_t get_board_dts_node(struct device_node **np, const char *node_prop);
 #ifdef _PRE_CONFIG_HISI_S3S4_POWER_STATE
 int board_get_bfgx_enable_gpio_val(void);
 int board_get_wlan_enable_gpio_val(void);
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#endif
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 void suspend_board_gpio_in_s4(void);
 void resume_board_gpio_in_s4(void);
-#endif
 #endif
 #endif

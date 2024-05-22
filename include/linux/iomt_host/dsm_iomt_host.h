@@ -216,7 +216,7 @@ static inline unsigned int iomt_get_array_index(const long *array,
 {
 	unsigned int i;
 
-	for (i = 0; i <= array_len - 1; i++) {
+	for (i = 0; i < array_len - 1; i++) {
 		if (number <= (array[i + 1] * unit))
 			break;
 	}

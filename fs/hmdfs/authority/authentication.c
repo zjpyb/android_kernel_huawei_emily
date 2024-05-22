@@ -13,9 +13,10 @@
 
 #include "hmdfs.h"
 
+unsigned long g_recv_uid = AID_MEDIA_RW;
 struct fs_struct *hmdfs_override_fsstruct(struct fs_struct *saved_fs)
 {
-#if (defined CONFIG_HMDFS_ANDROID) && (defined CONFIG_SDCARD_FS)
+#if (defined CONFIG_HMDFS_ANDROID) && (!defined DISABLE_FS_STRUCT_OP)
 	struct fs_struct *copied_fs = copy_fs_struct(saved_fs);
 
 	if (!copied_fs)
@@ -33,7 +34,7 @@ struct fs_struct *hmdfs_override_fsstruct(struct fs_struct *saved_fs)
 void hmdfs_revert_fsstruct(struct fs_struct *saved_fs,
 			   struct fs_struct *copied_fs)
 {
-#if (defined CONFIG_HMDFS_ANDROID) && (defined CONFIG_SDCARD_FS)
+#if (defined CONFIG_HMDFS_ANDROID) && (!defined DISABLE_FS_STRUCT_OP)
 	task_lock(current);
 	current->fs = saved_fs;
 	task_unlock(current);
@@ -41,7 +42,8 @@ void hmdfs_revert_fsstruct(struct fs_struct *saved_fs,
 #endif
 }
 
-const struct cred *hmdfs_override_fsids(bool is_recv_thread)
+const struct cred *hmdfs_override_fsids(struct hmdfs_sb_info *sbi,
+					bool is_recv_thread)
 {
 	struct cred *cred = NULL;
 	const struct cred *old_cred = NULL;
@@ -50,13 +52,33 @@ const struct cred *hmdfs_override_fsids(bool is_recv_thread)
 	if (!cred)
 		return NULL;
 
-	cred->fsuid = MEDIA_RW_UID;
-	cred->fsgid = is_recv_thread ?
-		      KGIDT_INIT((gid_t)AID_EVERYBODY) : MEDIA_RW_GID;
+	cred->fsuid = KUIDT_INIT(sbi->mnt_uid);
+	cred->fsgid = is_recv_thread ? KGIDT_INIT((gid_t)AID_EVERYBODY) :
+				       KGIDT_INIT((gid_t)sbi->mnt_uid);
 
 	old_cred = override_creds(cred);
 
 	return old_cred;
+}
+
+/*
+ * data  : system : media_rw
+ * system: system : media_rw, need authority
+ * other : media_rw : media_rw
+ **/
+static void init_local_dir_cred_perm(struct dentry *dentry, struct cred *cred,
+				     __u16 *perm, __u16 level)
+{
+	if (!strcmp(dentry->d_name.name, PKG_ROOT_NAME)) {
+		cred->fsuid = SYSTEM_UID;
+		*perm = HMDFS_DIR_DATA | level;
+	} else if (!strcmp(dentry->d_name.name, SYSTEM_NAME)) {
+		cred->fsuid = SYSTEM_UID;
+		*perm = AUTH_SYSTEM | HMDFS_DIR_SYSTEM | level;
+	} else {
+		cred->fsuid = MEDIA_RW_UID;
+		*perm = HMDFS_DIR_PUBLIC | level;
+	}
 }
 
 const struct cred *hmdfs_override_dir_fsids(struct inode *dir,
@@ -79,21 +101,7 @@ const struct cred *hmdfs_override_dir_fsids(struct inode *dir,
 		perm = (hii->perm & HMDFS_DIR_TYPE_MASK) | level;
 		break;
 	case HMDFS_PERM_DFS:
-		/*
-		 * data  : system : media_rw
-		 * system: system : media_rw, need authority
-		 * other : media_rw : media_rw
-		 **/
-		if (!strcmp(dentry->d_name.name, PKG_ROOT_NAME)) {
-			cred->fsuid = SYSTEM_UID;
-			perm = HMDFS_DIR_DATA | level;
-		} else if (!strcmp(dentry->d_name.name, SYSTEM_NAME)) {
-			cred->fsuid = SYSTEM_UID;
-			perm = AUTH_SYSTEM | HMDFS_DIR_SYSTEM | level;
-		} else {
-			cred->fsuid = MEDIA_RW_UID;
-			perm = HMDFS_DIR_PUBLIC | level;
-		}
+		init_local_dir_cred_perm(dentry, cred, &perm, level);
 		break;
 	case HMDFS_PERM_PKG:
 		if (is_data_dir(hii->perm)) {
@@ -210,9 +218,16 @@ int hmdfs_persist_perm(struct dentry *dentry, __u16 *perm)
 			     sizeof(*perm), XATTR_CREATE);
 	if (!err)
 		fsnotify_xattr(dentry);
-	else if (err && err != -EEXIST)
+	else if (err && err != -EEXIST && err != -EOPNOTSUPP)
 		hmdfs_err("failed to setxattr, err=%d", err);
 	inode_unlock(minode);
+
+	if (err == -EOPNOTSUPP) {
+		hmdfs_warning("filesystem (%s:%pd) not support setxattr",
+			      dentry->d_sb->s_type->name, dentry);
+		err = 0;
+	}
+
 	return err;
 }
 
@@ -225,8 +240,13 @@ __u16 hmdfs_read_perm(struct inode *inode)
 	if (!dentry)
 		return ret;
 
+#ifndef CONFIG_HMDFS_XATTR_NOSECURITY_SUPPORT
 	size = __vfs_getxattr(dentry, inode, HMDFS_PERM_XATTR, &ret,
 			     sizeof(ret));
+#else
+	size = __vfs_getxattr(dentry, inode, HMDFS_PERM_XATTR, &ret,
+			     sizeof(ret), XATTR_NOSECURITY);
+#endif
 	 /*
 	  * some file may not set setxattr with perm
 	  * eg. files created in sdcard dir by other user
@@ -375,6 +395,10 @@ void check_and_fixup_ownership(struct inode *parent_inode, struct inode *child,
 {
 	uid_t appid;
 	struct hmdfs_inode_info *info = hmdfs_i(child);
+
+	/* Only fixup ownership under lowerfs. Skip external fs. */
+	if (lower_dentry->d_sb != hmdfs_sb(child->i_sb)->lower_sb)
+		return;
 
 	if (info->perm == HMDFS_ALL_MASK)
 		info->perm = hmdfs_perm_inherit(parent_inode, child);

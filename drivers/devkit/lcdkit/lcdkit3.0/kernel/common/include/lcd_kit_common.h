@@ -847,6 +847,7 @@ struct lcd_kit_common_info {
 	u32 panel_type;
 	/* lcd on command */
 	struct lcd_kit_dsi_panel_cmds panel_on_cmds;
+	struct lcd_kit_dsi_panel_cmds display_on_before_backlight_cmds;
 	/* lcd off command */
 	struct lcd_kit_dsi_panel_cmds panel_off_cmds;
 	/* esd check commond */

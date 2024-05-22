@@ -17,6 +17,7 @@
 #include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/net.h>
+#include <linux/string.h>
 #include <linux/tcp.h>
 #include <linux/workqueue.h>
 
@@ -30,6 +31,11 @@
 
 #ifdef CONFIG_HMDFS_CRYPTO
 #include "crypto.h"
+#endif
+
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+int hmdfs_d2dp_force_disable = 0;
+module_param(hmdfs_d2dp_force_disable, int, S_IRUGO | S_IWUSR);
 #endif
 
 #define HMDFS_WAIT_REQUST_END_MIN 20
@@ -131,6 +137,107 @@ static int hs_parse_feature_data(struct connection *conn_impl, __u8 ops,
 	return 0;
 }
 
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+static void hs_fill_d2dp_params_data(struct connection *conn_impl, __u8 ops,
+				     void *data, __u32 len)
+{
+	struct d2dp_params_body *body = NULL;
+
+	if (len < sizeof(struct d2dp_params_body)) {
+		hmdfs_info("d2d params body len %u is err", len);
+		return;
+	}
+
+	body = (struct d2dp_params_body *)data;
+
+	if (conn_impl->type == CONNECT_TYPE_TCP) {
+		struct tcp_handle *tcp = conn_impl->connect_handle;
+
+		body->udp_port = cpu_to_le16(tcp->d2dp_local_udp_port);
+		body->d2dp_version = tcp->d2dp_local_version;
+
+		hmdfs_info("fill d2dp params: udp_port=%u; d2dp_version=%u",
+			   body->udp_port, body->d2dp_version);
+	} else {
+		body->udp_port = 0;
+		body->d2dp_version = 0;
+	}
+}
+
+static int hs_parse_d2dp_params_data(struct connection *conn_impl, __u8 ops,
+				     void *data, __u32 len)
+{
+	struct d2dp_params_body *hs_d2d = NULL;
+
+	/*
+	 * Processing remote side UDP port has the meaning only for
+	 * TCP connections.
+	 */
+	if (conn_impl->type == CONNECT_TYPE_TCP) {
+		struct tcp_handle *tcp = conn_impl->connect_handle;
+
+		if (len < sizeof(struct d2dp_params_body)) {
+			hmdfs_info("handshake msg len error, len=%u", len);
+			return -1;
+		}
+
+		hs_d2d = (struct d2dp_params_body *)data;
+
+		tcp->d2dp_remote_udp_port = le16_to_cpu(hs_d2d->udp_port);
+		tcp->d2dp_remote_version = hs_d2d->d2dp_version;
+
+		hmdfs_info("parse d2dp params: udp_port=%u; d2dp_version=%u",
+			   tcp->d2dp_remote_udp_port, tcp->d2dp_remote_version);
+	}
+	return 0;
+}
+
+static void hs_fill_device_type_params_data(struct connection *conn_impl,
+					    __u8 ops, void *data, __u32 len)
+{
+	struct device_type_params_body *body = NULL;
+	struct tcp_handle *tcp = conn_impl->connect_handle;
+
+	if (len < sizeof(struct device_type_params_body)) {
+		hmdfs_info("device_type params body len %u is err", len);
+		return;
+	}
+
+	body = (struct device_type_params_body *)data;
+
+	if (conn_impl->type == CONNECT_TYPE_TCP) {
+		body->device_type = tcp->local_device_type;
+		hmdfs_info("fill device_type params: device_type=%hhu",
+			   body->device_type);
+	} else {
+		body->device_type = 0;
+	}
+}
+
+static int hs_parse_device_type_params_data(struct connection *conn_impl,
+					    __u8 ops, void *data, __u32 len)
+{
+	struct device_type_params_body *hs_dev_type = NULL;
+	struct tcp_handle *tcp = conn_impl->connect_handle;
+
+	if (conn_impl->type != CONNECT_TYPE_TCP) {
+		return 0;
+	}
+
+	if (len < sizeof(struct device_type_params_body)) {
+		hmdfs_info("handshake msg len error, len=%u", len);
+		return -1;
+	}
+
+	hs_dev_type = (struct device_type_params_body *)data;
+	tcp->remote_device_type = hs_dev_type->device_type;
+
+	hmdfs_info("parse device_type params: device_type=%hhu",
+		   tcp->remote_device_type);
+	return 0;
+}
+#endif
+
 /* should ensure len is small than 0xffff. */
 static const struct conn_hs_extend_reg s_hs_extend_reg[HS_EXTEND_CODE_COUNT] = {
 	[HS_EXTEND_CODE_CRYPTO] = {
@@ -151,12 +258,20 @@ static const struct conn_hs_extend_reg s_hs_extend_reg[HS_EXTEND_CODE_COUNT] = {
 		.filler = hs_fill_feature_data,
 		.parser = hs_parse_feature_data,
 	},
-	[HS_EXTEND_CODE_FEATURE_SUPPORT] = {
-		.len = sizeof(struct feature_body),
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	[HS_EXTEND_CODE_D2DP_PARAMS] = {
+		.len = sizeof(struct d2dp_params_body),
 		.resv = 0,
-		.filler = hs_fill_feature_data,
-		.parser = hs_parse_feature_data,
+		.filler = hs_fill_d2dp_params_data,
+		.parser = hs_parse_d2dp_params_data,
 	},
+	[HS_EXTEND_CODE_DEV_TYPE_PARAMS] = {
+		.len = sizeof(struct device_type_params_body),
+		.resv = 0,
+		.filler = hs_fill_device_type_params_data,
+		.parser = hs_parse_device_type_params_data,
+	},
+#endif
 };
 
 static __u32 hs_get_extend_data_len(void)
@@ -336,8 +451,8 @@ static int connection_handshake_init_tls(struct connection *conn_impl, __u8 ops)
 		memcpy(conn_impl->recv_key, key1, HMDFS_KEY_SIZE);
 	}
 
-	memset(key1, 0, HMDFS_KEY_SIZE);
-	memset(key2, 0, HMDFS_KEY_SIZE);
+	memzero_explicit(key1, HMDFS_KEY_SIZE);
+	memzero_explicit(key2, HMDFS_KEY_SIZE);
 
 	hmdfs_info("hs: ops=%u start set crypto tls", ops);
 	ret = tls_crypto_info_init(conn_impl);
@@ -346,7 +461,53 @@ static int connection_handshake_init_tls(struct connection *conn_impl, __u8 ops)
 
 	return ret;
 }
+
+static int connection_handshake_init_crypto(struct connection *conn, __u8 ops)
+{
+	switch (conn->type) {
+	case CONNECT_TYPE_TCP:
+		return connection_handshake_init_tls(conn, ops);
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	case CONNECT_TYPE_D2DP:
+		/* D2DP crypto has already initialized */
+		return 0;
 #endif
+	default:
+		hmdfs_err("wrong connection type: %d", conn->type);
+		return -EINVAL;
+	}
+}
+#endif /* CONFIG_HMDFS_CRYPTO */
+
+static struct connection_msg_head *hmdfs_init_msg_head(__u8 ops,
+						       __le16 request_id,
+						       __u32 send_len,
+						       __u64 local_iid)
+{
+	struct connection_msg_head *hs_head = NULL;
+
+	hs_head = kzalloc(send_len, GFP_KERNEL);
+	if (!hs_head)
+		return NULL;
+
+	hs_head->magic = HMDFS_MSG_MAGIC;
+	hs_head->version = DFS_2_0;
+	hs_head->flags |= 0x1;
+	hs_head->operations = ops;
+	hs_head->request_id = request_id;
+	hs_head->datasize = cpu_to_le32(send_len);
+	hs_head->source = cpu_to_le64(local_iid);
+	hs_head->msg_id = 0;
+
+	return hs_head;
+}
+
+static inline struct connection_handshake_req *msg_get_data_from_head(
+		struct connection_msg_head *head)
+{
+	return (struct connection_handshake_req*)((uint8_t *)head +
+		  sizeof(struct connection_msg_head));
+}
 
 static int do_send_handshake(struct connection *conn_impl, __u8 ops,
 			     __le16 request_id)
@@ -373,14 +534,11 @@ static int do_send_handshake(struct connection *conn_impl, __u8 ops,
 		send_len += extend_len;
 	}
 
-	hs_head = kzalloc(send_len, GFP_KERNEL);
+	hs_head = hmdfs_init_msg_head(ops, request_id, send_len, local_iid);
 	if (!hs_head)
 		return -ENOMEM;
 
-	hs_data = (struct connection_handshake_req
-			   *)((uint8_t *)hs_head +
-			      sizeof(struct connection_msg_head));
-
+	hs_data = msg_get_data_from_head(hs_head);
 	hs_data->len = cpu_to_le32(len);
 	memcpy(hs_data->dev_id, buf, len);
 
@@ -392,17 +550,8 @@ static int do_send_handshake(struct connection *conn_impl, __u8 ops,
 		hs_fill_extend_data(conn_impl, ops, hs_extend_data, extend_len);
 	}
 
-	hs_head->magic = HMDFS_MSG_MAGIC;
-	hs_head->version = DFS_2_0;
-	hs_head->flags |= 0x1;
 	hmdfs_info("Send handshake message: ops = %d, fd = %d", ops,
-		   ((struct tcp_handle *)(conn_impl->connect_handle))->fd);
-	hs_head->operations = ops;
-	hs_head->request_id = request_id;
-	hs_head->datasize = cpu_to_le32(send_len);
-	hs_head->source = cpu_to_le64(local_iid);
-	hs_head->msg_id = 0;
-
+		   conn_impl->fd);
 	msg.head = hs_head;
 	msg.head_len = sizeof(struct connection_msg_head);
 	msg.data = hs_data;
@@ -563,20 +712,18 @@ static void hmdfs_queue_raw_node_evt(struct hmdfs_peer *node, int evt)
 void connection_send_handshake(struct connection *conn_impl, __u8 ops,
 			       __le16 request_id)
 {
-	struct tcp_handle *tcp = NULL;
 	int err = do_send_handshake(conn_impl, ops, request_id);
-
 	if (likely(err >= 0))
 		return;
 
-	tcp = conn_impl->connect_handle;
-	hmdfs_err("Failed to send handshake: err = %d, fd = %d", err, tcp->fd);
+	hmdfs_err("Failed to send handshake: err = %d, fd = %d",
+		  err, conn_impl->fd);
 	hmdfs_reget_connection(conn_impl);
 }
 
 void connection_handshake_notify(struct hmdfs_peer *node, int notify_type)
 {
-	struct notify_param param;
+	struct notify_param param = { 0 };
 
 	param.notify = notify_type;
 	param.remote_iid = node->iid;
@@ -584,7 +731,6 @@ void connection_handshake_notify(struct hmdfs_peer *node, int notify_type)
 	memcpy(param.remote_cid, node->cid, HMDFS_CID_SIZE);
 	notify(node, &param);
 }
-
 
 void peer_online(struct hmdfs_peer *peer)
 {
@@ -596,6 +742,7 @@ void peer_online(struct hmdfs_peer *peer)
 		return;
 	WRITE_ONCE(peer->conn_time, jif_tmp);
 	WRITE_ONCE(peer->sbi->connections.recent_ol, jif_tmp);
+	wake_up_interruptible_all(&peer->establish_p2p_connection_wq);
 	hmdfs_queue_raw_node_evt(peer, RAW_NODE_EVT_ON);
 	connection_handshake_notify(peer, NOTIFY_HS_DONE);
 }
@@ -603,20 +750,20 @@ void peer_online(struct hmdfs_peer *peer)
 void connection_to_working(struct hmdfs_peer *node)
 {
 	struct connection *conn_impl = NULL;
-	struct tcp_handle *tcp = NULL;
 
 	if (!node)
 		return;
+
 	mutex_lock(&node->conn_impl_list_lock);
 	list_for_each_entry(conn_impl, &node->conn_impl_list, list) {
 		if (conn_impl->type == CONNECT_TYPE_TCP &&
 		    conn_impl->status == CONNECT_STAT_WAIT_RESPONSE) {
-			tcp = conn_impl->connect_handle;
-			hmdfs_info("fd %d to working", tcp->fd);
+			hmdfs_info("fd %d to working", conn_impl->fd);
 			conn_impl->status = CONNECT_STAT_WORKING;
 		}
 	}
 	mutex_unlock(&node->conn_impl_list_lock);
+
 	connection_handshake_notify(node, NOTIFY_HS_DONE);
 	peer_online(node);
 }
@@ -636,86 +783,146 @@ static int connection_check_version(__u8 version)
 	return 0;
 }
 
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+void hmdfs_notify_got_remote_udp_port(struct connection *conn_impl)
+{
+	struct notify_param param = { 0 };
+	struct tcp_handle *tcp = NULL;
+
+	if (WARN_ON(conn_impl->type != CONNECT_TYPE_TCP)) {
+		hmdfs_err("udp port info is available only in TCP connection");
+		return;
+	}
+
+	tcp = conn_impl->connect_handle;
+
+	hmdfs_info("notify userspace about remote D2DP: port=%hu, local dtype=%d, remote dtype=%d",
+		   tcp->d2dp_remote_udp_port, tcp->local_device_type,
+		   tcp->remote_device_type);
+
+	param.notify = NOTIFY_GOT_UDP_PORT;
+	param.remote_iid = conn_impl->node->iid;
+	param.fd = conn_impl->fd;
+	param.remote_udp_port = tcp->d2dp_remote_udp_port;
+	param.remote_device_type = tcp->remote_device_type;
+	memcpy(param.remote_cid, conn_impl->node->cid, HMDFS_CID_SIZE);
+	notify(conn_impl->node, &param);
+}
+#endif
+
+static void connection_recv_handshake_request(struct connection *conn,
+					      struct connection_msg_head *head)
+{
+	hmdfs_info("device_id = %llu, version = %d, head->len = %d, fd = %d",
+		conn->node->device_id, head->version, head->datasize, conn->fd);
+	connection_send_handshake(conn, CONNECT_MESG_HANDSHAKE_RESPONSE,
+				  head->msg_id);
+	if (conn->node->version >= DFS_2_0) {
+		conn->status = CONNECT_STAT_WAIT_ACK;
+		conn->node->status = NODE_STAT_SHAKING;
+	} else {
+		conn->status = CONNECT_STAT_WORKING;
+	}
+}
+
+static int connection_recv_handshake_response(struct connection *conn,
+					      struct connection_msg_head *head,
+					      void *data, __u32 data_len,
+					      __u8 ops)
+{
+	int err = 0;
+	hmdfs_info("device_id = %llu, cmd->status = %d, fd = %d",
+		   conn->node->device_id, conn->status, conn->fd);
+	if (conn->status == CONNECT_STAT_WAIT_REQUEST) {
+		// must be 10.1 device, no need to set ktls
+		connection_to_working(conn->node);
+		return 0;
+	}
+
+	if (conn->node->version >= DFS_2_0) {
+		err = hs_proc_msg_data(conn, ops, data, data_len);
+		if (err)
+			return err;
+		connection_send_handshake(conn, CONNECT_MESG_HANDSHAKE_ACK,
+					  head->msg_id);
+		hmdfs_info("respon rcv handle,conn->crypto=0x%0x",
+			   conn->crypto);
+
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+		if (conn->type == CONNECT_TYPE_TCP)
+			hmdfs_notify_got_remote_udp_port(conn);
+#endif
+
+#ifdef CONFIG_HMDFS_CRYPTO
+		err = connection_handshake_init_crypto(conn, ops);
+		if (err) {
+			hmdfs_err("init_tls_key fail, ops %u", ops);
+			return 0;
+		}
+#endif
+	}
+
+	conn->status = CONNECT_STAT_WORKING;
+	peer_online(conn->node);
+	return 0;
+}
+
+static int connection_recv_handshake_ack(struct connection *conn,
+					 struct connection_msg_head *head,
+					 void *data, __u32 data_len, __u8 ops)
+{
+	int err = 0;
+
+	err = hs_proc_msg_data(conn, ops, data, data_len);
+	if (err)
+		return err;
+	hmdfs_info("ack rcv handle, conn->crypto=0x%0x", conn->crypto);
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	if (conn->type == CONNECT_TYPE_TCP)
+		hmdfs_notify_got_remote_udp_port(conn);
+#endif
+
+#ifdef CONFIG_HMDFS_CRYPTO
+	err = connection_handshake_init_crypto(conn, ops);
+	if (err) {
+		hmdfs_err("init_tls_key fail, ops %u", ops);
+		return 0;
+	}
+#endif
+	conn->status = CONNECT_STAT_WORKING;
+	peer_online(conn->node);
+	return 0;
+}
+
 void connection_handshake_recv_handler(struct connection *conn_impl, void *buf,
 				       void *data, __u32 data_len)
 {
-	__u8 version;
-	__u8 ops;
-	__u8 status;
-	int fd = ((struct tcp_handle *)(conn_impl->connect_handle))->fd;
 	struct connection_msg_head *head = (struct connection_msg_head *)buf;
-	int ret;
+	__u8 ops = head->operations;
+	__u8 version = head->version;
+	int ret = 0;
 
-	version = head->version;
 	conn_impl->node->version = version;
 	if (connection_check_version(version) != 0)
 		goto out;
 	conn_impl->node->iid = le64_to_cpu(head->source);
 	conn_impl->node->conn_operations = hmdfs_get_peer_operation(version);
-	ops = head->operations;
-	status = conn_impl->status;
 	switch (ops) {
 	case CONNECT_MESG_HANDSHAKE_REQUEST:
-		hmdfs_info(
-			"Recved handshake request: device_id = %llu, version = %d, head->len = %d, tcp->fd = %d",
-			conn_impl->node->device_id, version, head->datasize, fd);
-		connection_send_handshake(conn_impl,
-					  CONNECT_MESG_HANDSHAKE_RESPONSE,
-					  head->msg_id);
-		if (conn_impl->node->version >= DFS_2_0) {
-			conn_impl->status = CONNECT_STAT_WAIT_ACK;
-			conn_impl->node->status = NODE_STAT_SHAKING;
-		} else {
-			conn_impl->status = CONNECT_STAT_WORKING;
-		}
+		connection_recv_handshake_request(conn_impl, head);
 		break;
 	case CONNECT_MESG_HANDSHAKE_RESPONSE:
-		hmdfs_info(
-			"Recved handshake response: device_id = %llu, cmd->status = %hhu, tcp->fd = %d",
-			conn_impl->node->device_id, status, fd);
-		if (status == CONNECT_STAT_WAIT_REQUEST) {
-			// must be 10.1 device, no need to set ktls
-			connection_to_working(conn_impl->node);
-			goto out;
-		}
-
-		if (conn_impl->node->version >= DFS_2_0) {
-			ret = hs_proc_msg_data(conn_impl, ops, data, data_len);
-			if (ret)
-				goto nego_err;
-			connection_send_handshake(conn_impl,
-						  CONNECT_MESG_HANDSHAKE_ACK,
-						  head->msg_id);
-			hmdfs_info("respon rcv handle,conn_impl->crypto=0x%0x",
-				   conn_impl->crypto);
-#ifdef CONFIG_HMDFS_CRYPTO
-			ret = connection_handshake_init_tls(conn_impl, ops);
-			if (ret) {
-				hmdfs_err("init_tls_key fail, ops %u", ops);
-				goto out;
-			}
-#endif
-		}
-
-		conn_impl->status = CONNECT_STAT_WORKING;
-		peer_online(conn_impl->node);
+		ret = connection_recv_handshake_response(conn_impl, head, data,
+							 data_len, ops);
+		if (ret)
+			goto nego_err;
 		break;
 	case CONNECT_MESG_HANDSHAKE_ACK:
 		if (conn_impl->node->version >= DFS_2_0) {
-			ret = hs_proc_msg_data(conn_impl, ops, data, data_len);
+			ret = connection_recv_handshake_ack(
+					conn_impl, head, data, data_len, ops);
 			if (ret)
 				goto nego_err;
-			hmdfs_info("ack rcv handle, conn_impl->crypto=0x%0x",
-				   conn_impl->crypto);
-#ifdef CONFIG_HMDFS_CRYPTO
-			ret = connection_handshake_init_tls(conn_impl, ops);
-			if (ret) {
-				hmdfs_err("init_tls_key fail, ops %u", ops);
-				goto out;
-			}
-#endif
-			conn_impl->status = CONNECT_STAT_WORKING;
-			peer_online(conn_impl->node);
 			break;
 		}
 		/* fall-through */
@@ -737,14 +944,14 @@ nego_err:
 	connection_handshake_notify(conn_impl->node,
 				    NOTIFY_OFFLINE);
 	hmdfs_err("protocol negotiation failed, remote device_id = %llu, tcp->fd = %d",
-		  conn_impl->node->device_id, fd);
+		  conn_impl->node->device_id, conn_impl->fd);
 	goto out;
 }
 
 #ifdef CONFIG_HMDFS_CRYPTO
-static void update_tls_crypto_key(struct connection *conn,
-				  struct hmdfs_head_cmd *head, void *data,
-				  __u32 data_len)
+static void hmdfs_update_crypto_key(struct connection *conn,
+				    struct hmdfs_head_cmd *head, void *data,
+				    __u32 data_len)
 {
 	// rekey message handler
 	struct connection_rekey_request *rekey_req = NULL;
@@ -760,7 +967,7 @@ static void update_tls_crypto_key(struct connection *conn,
 	// update send key if requested
 	rekey_req = data;
 	if (le32_to_cpu(rekey_req->update_request) == UPDATE_REQUESTED) {
-		ret = tcp_send_rekey_request(conn);
+		ret = hmdfs_send_rekey_request(conn);
 		if (ret == 0)
 			set_crypto_info(conn, SET_CRYPTO_SEND);
 	}
@@ -768,14 +975,15 @@ out_err:
 	kfree(data);
 }
 
-static bool cmd_update_tls_crypto_key(struct connection *conn,
+static bool hmdfs_key_update_required(struct connection *conn,
 				      struct hmdfs_head_cmd *head)
 {
 	__u8 version = conn->node->version;
-	struct tcp_handle *tcp = conn->connect_handle;
+	void *handle = conn->connect_handle;
 
-	if (version < DFS_2_0 || conn->type != CONNECT_TYPE_TCP || !tcp)
+	if (version < DFS_2_0 || !handle)
 		return false;
+
 	return head->operations.command == F_CONNECT_REKEY;
 }
 #endif
@@ -784,8 +992,8 @@ void connection_working_recv_handler(struct connection *conn_impl, void *buf,
 				     void *data, __u32 data_len)
 {
 #ifdef CONFIG_HMDFS_CRYPTO
-	if (cmd_update_tls_crypto_key(conn_impl, buf)) {
-		update_tls_crypto_key(conn_impl, buf, data, data_len);
+	if (hmdfs_key_update_required(conn_impl, buf)) {
+		hmdfs_update_crypto_key(conn_impl, buf, data, data_len);
 		return;
 	}
 #endif
@@ -794,25 +1002,23 @@ void connection_working_recv_handler(struct connection *conn_impl, void *buf,
 
 static void connection_release(struct kref *ref)
 {
-	struct tcp_handle *tcp = NULL;
 	struct connection *conn = container_of(ref, struct connection, ref_cnt);
 
-	hmdfs_info("connection release");
+	hmdfs_info("connection release: fd = %d", conn->fd);
+
 	memset(conn->master_key, 0, HMDFS_KEY_SIZE);
 	memset(conn->send_key, 0, HMDFS_KEY_SIZE);
 	memset(conn->recv_key, 0, HMDFS_KEY_SIZE);
 	if (conn->close)
 		conn->close(conn);
-	tcp = conn->connect_handle;
+
+	hmdfs_handle_release(conn);
+
+	/* release `tfm` after handle because `tfm` may be used by handle */
 	crypto_free_aead(conn->tfm);
-	// need to check and test: fput(tcp->sock->file);
-	if (tcp && tcp->sock) {
-		hmdfs_info("connection release: fd = %d, refcount %ld", tcp->fd,
-			   file_count(tcp->sock->file));
-		sockfd_put(tcp->sock);
-	}
-	if (tcp && tcp->recv_cache)
-		kmem_cache_destroy(tcp->recv_cache);
+
+	if (conn->recv_cache)
+		kmem_cache_destroy(conn->recv_cache);
 
 	if (!list_empty(&conn->list)) {
 		mutex_lock(&conn->node->conn_impl_list_lock);
@@ -825,7 +1031,6 @@ static void connection_release(struct kref *ref)
 		wake_up_interruptible(&conn->node->deleting_list_wq);
 	}
 
-	kfree(tcp);
 	kfree(conn);
 }
 
@@ -841,6 +1046,11 @@ static void hmdfs_peer_release(struct kref *ref)
 		hmdfs_info("releasing a redundant peer: device_id %llu ",
 			   peer->device_id);
 
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+	hmdfs_latency_remove(&peer->lat_req);
+#endif
+	del_timer_sync(&peer->p2p_timeout);
+	cancel_delayed_work_sync(&peer->p2p_dwork);
 	cancel_delayed_work_sync(&peer->evt_dwork);
 	list_del(&peer->list);
 	idr_destroy(&peer->msg_idr);
@@ -874,14 +1084,12 @@ void peer_put(struct hmdfs_peer *peer)
 static void hmdfs_dump_deleting_list(struct hmdfs_peer *node)
 {
 	struct connection *con = NULL;
-	struct tcp_handle *tcp = NULL;
 	int count = 0;
 
 	mutex_lock(&node->conn_impl_list_lock);
 	list_for_each_entry(con, &node->conn_deleting_list, list) {
-		tcp = con->connect_handle;
-		hmdfs_info("deleting list %d:device_id %llu tcp_fd %d refcnt %d",
-			   count, node->device_id, tcp ? tcp->fd : -1,
+		hmdfs_info("deleting list %d:device_id %llu fd %d type %d refcnt %d",
+			   count, node->device_id, con->fd, con->type,
 			   kref_read(&con->ref_cnt));
 		count++;
 	}
@@ -904,7 +1112,6 @@ void hmdfs_disconnect_node(struct hmdfs_peer *node)
 	LIST_HEAD(local_conns);
 	struct connection *conn_impl = NULL;
 	struct connection *next = NULL;
-	struct tcp_handle *tcp = NULL;
 
 	if (unlikely(!node))
 		return;
@@ -913,7 +1120,10 @@ void hmdfs_disconnect_node(struct hmdfs_peer *node)
 	/* Refer to comments in hmdfs_is_node_offlined() */
 	smp_mb__after_atomic();
 	node->status = NODE_STAT_OFFLINE;
+	node->capability = 0;
 	hmdfs_info("Try to disconnect peer: device_id %llu", node->device_id);
+
+	hmdfs_p2p_fail_for(node, GET_P2P_FAIL_PEER_OFFLINE);
 
 	mutex_lock(&node->conn_impl_list_lock);
 	if (!list_empty(&node->conn_impl_list))
@@ -921,16 +1131,10 @@ void hmdfs_disconnect_node(struct hmdfs_peer *node)
 	mutex_unlock(&node->conn_impl_list_lock);
 
 	list_for_each_entry_safe(conn_impl, next, &local_conns, list) {
-		tcp = conn_impl->connect_handle;
-		if (tcp && tcp->sock) {
-			kernel_sock_shutdown(tcp->sock, SHUT_RDWR);
-			hmdfs_info("shudown sock: fd = %d, refcount %ld",
-				   tcp->fd, file_count(tcp->sock->file));
-		}
-		if (tcp)
-			tcp->fd = INVALID_SOCKET_FD;
+		hmdfs_handle_shutdown(conn_impl);
+		conn_impl->fd = INVALID_SOCKET_FD;
 
-		tcp_close_socket(tcp);
+		hmdfs_stop_thread(conn_impl);
 		list_del_init(&conn_impl->list);
 
 		connection_put(conn_impl);
@@ -996,47 +1200,119 @@ void hmdfs_connections_stop(struct hmdfs_sb_info *sbi)
 	mutex_unlock(&sbi->connections.node_lock);
 }
 
-struct connection *get_conn_impl(struct hmdfs_peer *node, int connect_type)
+void hmdfs_stop_thread(struct connection *conn)
+{
+	if (!conn)
+		return;
+	mutex_lock(&conn->close_mutex);
+	if (conn->recv_task) {
+		kthread_stop(conn->recv_task);
+		conn->recv_task = NULL;
+	}
+	mutex_unlock(&conn->close_mutex);
+}
+
+bool p2p_connection_available(struct hmdfs_peer *node)
 {
 	struct connection *conn_impl = NULL;
 
-	if (!node)
-		return NULL;
 	mutex_lock(&node->conn_impl_list_lock);
 	list_for_each_entry(conn_impl, &node->conn_impl_list, list) {
-		if (conn_impl->type == connect_type &&
-		    conn_impl->status == CONNECT_STAT_WORKING) {
-			connection_get(conn_impl);
+		if (conn_impl->link_type == LINK_TYPE_P2P &&
+		    conn_impl->client == 1) {
 			mutex_unlock(&node->conn_impl_list_lock);
-			return conn_impl;
+			return true;
 		}
 	}
 	mutex_unlock(&node->conn_impl_list_lock);
-	hmdfs_err_ratelimited("device %llu not find connection, type %d",
-			      node->device_id, connect_type);
-	return NULL;
+
+	return false;
+}
+
+struct connection *get_conn_impl(struct hmdfs_peer *node, u8 cmd_flag)
+{
+	struct connection *conn = NULL;
+	struct connection *candidate = NULL;
+
+	if (!node)
+		return NULL;
+
+	mutex_lock(&node->conn_impl_list_lock);
+
+	list_for_each_entry(conn, &node->conn_impl_list, list) {
+		if (conn->status == CONNECT_STAT_WORKING) {
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+			/* ignore D2DP connection when disabled manually */
+			if (unlikely(hmdfs_d2dp_force_disable &&
+				     conn->type == CONNECT_TYPE_D2DP))
+				continue;
+#endif
+			/* save first working connection candidate */
+			if (!candidate)
+				candidate = conn;
+
+			/* return the connection with paired cmd immediately */
+			if (hmdfs_pair_conn_and_cmd_flag(conn, cmd_flag)) {
+				candidate = conn;
+				break;
+			}
+		}
+	}
+
+	if (likely(candidate))
+		connection_get(candidate);
+
+	mutex_unlock(&node->conn_impl_list_lock);
+
+	if (!candidate)
+		hmdfs_err_ratelimited("device %llu not find connection",
+				      node->device_id);
+	return candidate;
+}
+
+static int tcp_set_quickack(struct tcp_handle *tcp)
+{
+	int option = 1;
+
+	return kernel_setsockopt(tcp->sock, SOL_TCP, TCP_QUICKACK,
+				 (char *)&option, sizeof(option));
+
+}
+
+static int hmdfs_set_quickack(struct connection *conn)
+{
+	int type = conn->type;
+	void *handle = conn->connect_handle;
+
+	switch (type) {
+	case CONNECT_TYPE_TCP:
+		return tcp_set_quickack(handle);
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	case CONNECT_TYPE_D2DP:
+		/* D2DP has no support for quickack */
+		return 0;
+#endif
+	default:
+		hmdfs_err("wrong connection type %d", type);
+		return -1;
+	}
 }
 
 void set_conn_sock_quickack(struct hmdfs_peer *node)
 {
-	struct connection *conn_impl = NULL;
-	struct tcp_handle *tcp = NULL;
 	int ret = 0;
-	int option = 1;
+	struct connection *conn_impl = NULL;
 
 	if (!node)
 		return;
+
 	mutex_lock(&node->conn_impl_list_lock);
 	list_for_each_entry(conn_impl, &node->conn_impl_list, list) {
-		if (conn_impl->type == CONNECT_TYPE_TCP &&
-		    conn_impl->status == CONNECT_STAT_WORKING &&
-		    conn_impl->connect_handle) {
-			tcp = (struct tcp_handle *)(conn_impl->connect_handle);
-			ret = kernel_setsockopt(tcp->sock, SOL_TCP, TCP_QUICKACK,
-						(char *)&option, sizeof(option));
+		if (conn_impl->status == CONNECT_STAT_WORKING) {
+			ret = hmdfs_set_quickack(conn_impl);
 			if (ret)
 				hmdfs_err("set socket quickack error %d", ret);
-			}
+		}
 	}
 	mutex_unlock(&node->conn_impl_list_lock);
 }
@@ -1051,7 +1327,7 @@ struct hmdfs_peer *hmdfs_lookup_from_devid(struct hmdfs_sb_info *sbi,
 		return NULL;
 	mutex_lock(&sbi->connections.node_lock);
 	list_for_each_entry(con, &sbi->connections.node_list, list) {
-		if (con->status != NODE_STAT_ONLINE ||
+		if (!hmdfs_is_node_online_or_shaking(con) ||
 		    con->device_id != device_id)
 			continue;
 		lookup = con;
@@ -1117,23 +1393,15 @@ static struct hmdfs_peer *add_peer_unsafe(struct hmdfs_sb_info *sbi,
 	return peer2add;
 }
 
-static struct hmdfs_peer *
-alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
-	   const struct connection_operations *conn_operations)
+static int alloc_peer_wq(struct hmdfs_sb_info *sbi, struct hmdfs_peer *node)
 {
-	struct hmdfs_peer *node = kzalloc(sizeof(*node), GFP_KERNEL);
-
-	if (!node)
-		return NULL;
-
-	node->device_id = (u32)atomic_inc_return(&sbi->connections.conn_seq);
-
 	node->async_wq = alloc_workqueue("dfs_async%u_%llu", WQ_MEM_RECLAIM, 0,
 					 sbi->seq, node->device_id);
 	if (!node->async_wq) {
 		hmdfs_err("Failed to alloc async wq");
 		goto out_err;
 	}
+
 	node->req_handle_wq = alloc_workqueue("dfs_req%u_%llu",
 					      WQ_UNBOUND | WQ_MEM_RECLAIM,
 					      sbi->async_req_max_active,
@@ -1142,6 +1410,7 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 		hmdfs_err("Failed to alloc req wq");
 		goto out_err;
 	}
+
 	node->dentry_wq = alloc_workqueue("dfs_dentry%u_%llu",
 					   WQ_UNBOUND | WQ_MEM_RECLAIM,
 					   0, sbi->seq, node->device_id);
@@ -1149,6 +1418,7 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 		hmdfs_err("Failed to alloc dentry wq");
 		goto out_err;
 	}
+
 	node->retry_wb_wq = alloc_workqueue("dfs_rwb%u_%llu",
 					   WQ_UNBOUND | WQ_MEM_RECLAIM,
 					   HMDFS_RETRY_WB_WQ_MAX_ACTIVE,
@@ -1157,6 +1427,7 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 		hmdfs_err("Failed to alloc retry writeback wq");
 		goto out_err;
 	}
+
 	node->reget_conn_wq = alloc_workqueue("dfs_regetcon%u_%llu",
 					      WQ_UNBOUND, 0,
 					      sbi->seq, node->device_id);
@@ -1164,6 +1435,68 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 		hmdfs_err("Failed to alloc reget conn wq");
 		goto out_err;
 	}
+
+	return 0;
+out_err:
+	return -ENOMEM;
+}
+
+static void free_peer_wq(struct hmdfs_peer *node)
+{
+	if (node->async_wq) {
+		destroy_workqueue(node->async_wq);
+		node->async_wq = NULL;
+	}
+
+	if (node->req_handle_wq) {
+		destroy_workqueue(node->req_handle_wq);
+		node->req_handle_wq = NULL;
+	}
+
+	if (node->dentry_wq) {
+		destroy_workqueue(node->dentry_wq);
+		node->dentry_wq = NULL;
+	}
+
+	if (node->retry_wb_wq) {
+		destroy_workqueue(node->retry_wb_wq);
+		node->retry_wb_wq = NULL;
+	}
+
+	if (node->reget_conn_wq) {
+		destroy_workqueue(node->reget_conn_wq);
+		node->reget_conn_wq = NULL;
+	}
+}
+
+static void init_peer_for_p2p(struct hmdfs_peer *node)
+{
+	node->get_p2p_fail = GET_P2P_IDLE;
+	INIT_DELAYED_WORK(&node->p2p_dwork, hmdfs_p2p_timeout_work_fn);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+	init_timer(&node->p2p_timeout);
+	node->p2p_timeout.data = (unsigned long)(&node->p2p_timeout);
+	node->p2p_timeout.function = &hmdfs_p2p_timeout_fn;
+#else
+	timer_setup(&node->p2p_timeout, &hmdfs_p2p_timeout_fn, 0);
+#endif
+	mutex_init(&node->p2p_get_session_lock);
+	init_waitqueue_head(&node->establish_p2p_connection_wq);
+}
+
+static void init_peer_for_stash(struct hmdfs_peer *node)
+{
+	spin_lock_init(&node->stashed_inode_lock);
+	atomic_set(&node->rebuild_inode_status_nr, 0);
+	init_waitqueue_head(&node->rebuild_inode_status_wq);
+	INIT_LIST_HEAD(&node->stashed_inode_list);
+	node->need_rebuild_stash_list = false;
+}
+
+static void init_peer_comm(struct hmdfs_peer *node, struct hmdfs_sb_info *sbi,
+			   uint8_t *cid, uint64_t iid,
+			   const struct connection_operations *conn_operations)
+{
 	INIT_LIST_HEAD(&node->conn_impl_list);
 	mutex_init(&node->conn_impl_list_lock);
 	INIT_LIST_HEAD(&node->conn_deleting_list);
@@ -1179,11 +1512,9 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 	node->conn_operations = conn_operations;
 	node->sbi = sbi;
 	node->status = NODE_STAT_SHAKING;
-	node->iid = 0;
 	node->conn_time = jiffies;
 	memcpy(node->cid, cid, HMDFS_CID_SIZE);
 	atomic64_set(&node->sb_dirty_count, 0);
-	node->fid_cookie = 0;
 	atomic_set(&node->evt_seq, 0);
 	mutex_init(&node->seq_lock);
 	mutex_init(&node->offline_cb_lock);
@@ -1195,40 +1526,33 @@ alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
 	node->seq_wr_idx = (unsigned char)UINT_MAX;
 	node->seq_rd_idx = node->seq_wr_idx;
 	INIT_DELAYED_WORK(&node->evt_dwork, hmdfs_node_evt_work);
-	node->msg_idr_process = 0;
 	node->offline_start = false;
 	spin_lock_init(&node->wr_opened_inode_lock);
 	INIT_LIST_HEAD(&node->wr_opened_inode_list);
-	spin_lock_init(&node->stashed_inode_lock);
-	node->stashed_inode_nr = 0;
-	atomic_set(&node->rebuild_inode_status_nr, 0);
-	init_waitqueue_head(&node->rebuild_inode_status_wq);
-	INIT_LIST_HEAD(&node->stashed_inode_list);
-	node->need_rebuild_stash_list = false;
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+	hmdfs_latency_create(&node->lat_req);
+#endif
+}
 
+static struct hmdfs_peer *
+alloc_peer(struct hmdfs_sb_info *sbi, uint8_t *cid, uint64_t iid,
+	   const struct connection_operations *conn_operations)
+{
+	struct hmdfs_peer *node = kzalloc(sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return NULL;
+
+	node->device_id = (u32)atomic_inc_return(&sbi->connections.conn_seq);
+	if (alloc_peer_wq(sbi, node))
+		goto out_err;
+
+	init_peer_comm(node, sbi, cid, iid, conn_operations);
+	init_peer_for_p2p(node);
+	init_peer_for_stash(node);
 	return node;
 
 out_err:
-	if (node->async_wq) {
-		destroy_workqueue(node->async_wq);
-		node->async_wq = NULL;
-	}
-	if (node->req_handle_wq) {
-		destroy_workqueue(node->req_handle_wq);
-		node->req_handle_wq = NULL;
-	}
-	if (node->dentry_wq) {
-		destroy_workqueue(node->dentry_wq);
-		node->dentry_wq = NULL;
-	}
-	if (node->retry_wb_wq) {
-		destroy_workqueue(node->retry_wb_wq);
-		node->retry_wb_wq = NULL;
-	}
-	if (node->reget_conn_wq) {
-		destroy_workqueue(node->reget_conn_wq);
-		node->reget_conn_wq = NULL;
-	}
+	free_peer_wq(node);
 	kfree(node);
 	return NULL;
 }

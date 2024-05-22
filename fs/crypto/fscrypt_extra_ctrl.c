@@ -209,7 +209,7 @@ int fscrypt_new_sece_metadata(struct inode *inode, struct fscrypt_info *ci_info,
 	if (unlikely(res)) {
 		pr_err("%s: sece metadata create failed, res:%d\n", __func__,
 		       res);
-		return res;
+		return -EKEYREJECTED;
 	}
 
 	res = inode->i_sb->s_cop->set_ex_metadata_context(inode, fpubkey,

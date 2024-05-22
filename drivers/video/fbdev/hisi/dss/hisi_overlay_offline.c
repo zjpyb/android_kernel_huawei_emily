@@ -480,6 +480,7 @@ static int hisi_get_ov_data_from_user(struct dpu_fb_data_type *dpufd,
 	pov_req->release_fence = -1;
 	if ((pov_req->ov_block_nums <= 0) || (pov_req->ov_block_nums > HISI_DSS_OV_BLOCK_NUMS)) {
 		DPU_FB_ERR("fb%u, ov_block_nums(%d) is out of range!\n", dpufd->index, pov_req->ov_block_nums);
+		pov_req->ov_block_infos_ptr = 0;
 		return -EINVAL;
 	}
 
@@ -1107,6 +1108,7 @@ int hisi_ov_offline_play(struct dpu_fb_data_type *dpufd, const void __user *argp
 
 	dpu_check_and_return(!dpufd, -EINVAL, ERR, "dpufd is nullptr!\n");
 	dpu_check_and_return(!argp, -EINVAL, ERR, "argp is nullptr!\n");
+	dpu_check_and_return((!dpufd->cmdlist_info), -EINVAL, ERR, "cmdlist_info is nullptr!\n");
 
 	dpufb_get_timestamp(&tv0);
 

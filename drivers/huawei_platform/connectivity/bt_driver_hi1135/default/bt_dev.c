@@ -71,7 +71,7 @@ void data_str_printf(int32 len, const uint8 *ptr)
 
 	BT_PRINT_DBG("len = %d\n", len);
 	/* 1: one bytes */
-	if (print_len >= (DEBUG_BUFFER_LEN -1))
+	if (print_len >= (DEBUG_BUFFER_LEN - 1))
 		print_len = DEBUG_BUFFER_LEN - 1;
 
 	for (index = 0; index < print_len; index++)

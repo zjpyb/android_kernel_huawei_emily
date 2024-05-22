@@ -5198,6 +5198,9 @@ int __handle_speculative_fault(struct mm_struct *mm, unsigned long address,
 
 	if (ret != VM_FAULT_RETRY) {
 		check_sync_rss_stat(current);
+#ifdef CONFIG_PM_PEAK
+		update_hiwater_pm(current);
+#endif
 		count_vm_event(SPECULATIVE_PGFAULT);
 		put_vma(vmf.vma);
 		*vma = NULL;
@@ -5264,6 +5267,9 @@ int handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
 	/* do counter updates before entering really critical section. */
 	check_sync_rss_stat(current);
+#ifdef CONFIG_PM_PEAK
+	update_hiwater_pm(current);
+#endif
 
 	if (!arch_vma_access_permitted(vma, flags & FAULT_FLAG_WRITE,
 					    flags & FAULT_FLAG_INSTRUCTION,

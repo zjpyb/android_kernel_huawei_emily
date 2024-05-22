@@ -61,6 +61,8 @@ static uint32_t hisi_calculate_display_addr_wb(bool mmu_enable, dss_wb_layer_t *
 	int top;
 	int bpp;
 
+	void_unused(mmu_enable);
+
 	if (wb_layer->transform & HISI_FB_TRANSFORM_ROT_90) {
 		left = wb_layer->dst_rect.x;
 		top = ov_block_rect->x - wb_layer->dst_rect.x + wb_layer->dst_rect.y;
@@ -71,11 +73,11 @@ static uint32_t hisi_calculate_display_addr_wb(bool mmu_enable, dss_wb_layer_t *
 
 	if (add_type == DSS_ADDR_PLANE0) {
 		stride = wb_layer->dst.stride;
-		dst_addr = mmu_enable ? wb_layer->dst.vir_addr : wb_layer->dst.phy_addr;
+		dst_addr = wb_layer->dst.vir_addr;
 	} else if (add_type == DSS_ADDR_PLANE1) {
 		stride = wb_layer->dst.stride_plane1;
 		offset = wb_layer->dst.offset_plane1;
-		dst_addr = mmu_enable ? (wb_layer->dst.vir_addr + offset) : (wb_layer->dst.phy_addr + offset);
+		dst_addr = wb_layer->dst.vir_addr + offset;
 		top /= 2;  /* half valve of top */
 	} else {
 		DPU_FB_ERR("NOT SUPPORT this add_type[%d].\n", add_type);
@@ -436,8 +438,8 @@ static int prepare_wdma_common_param(dss_wb_layer_t *layer, dss_rect_t aligned_r
 	param->wdma_transform = hisi_transform_hal2dma(layer->transform, layer->chn_idx);
 	dpu_check_and_return((param->wdma_transform < 0), -EINVAL, ERR, "hisi_transform_hal2dma failed!\n");
 
-	param->mmu_enable = (layer->dst.mmu_enable == 1) ? true : false;
-	param->wdma_addr = param->mmu_enable ? layer->dst.vir_addr : layer->dst.phy_addr;
+	param->mmu_enable = true;
+	param->wdma_addr = layer->dst.vir_addr;
 
 	return 0;
 }

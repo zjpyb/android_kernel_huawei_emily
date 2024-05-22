@@ -471,7 +471,6 @@ struct direct_charge_device {
 	struct multi_ic_check_mode_para multi_ic_mode_para;
 	struct dc_comp_para comp_para;
 	struct nty_data *fault_data;
-	bool force_single_path_flag;
 	int time_para_parse_ok;
 	int stage_need_to_jump[2 * DC_VOLT_LEVEL];
 	int cam_flash_stop;
@@ -542,6 +541,7 @@ struct direct_charge_device {
 	int bst_ctrl;
 	int scp_power_en;
 	int compensate_r;
+	int all_stage_compensate_r_en;
 	int compensate_v;
 	u32 cc_protect;
 	int ls_id;
@@ -656,6 +656,7 @@ int direct_charge_get_device_close_status(void);
 int direct_charge_init_adapter_and_device(void);
 int direct_charge_switch_path_to_normal_charging(void);
 int direct_charge_switch_path_to_dc_charging(void);
+void dc_preparation_before_switch_to_singlepath(int working_mode, int ratio, int vdelt);
 int direct_charge_open_charging_path(void);
 bool direct_charge_get_stop_charging_complete_flag(void);
 void direct_charge_set_stop_charging_flag(int value);

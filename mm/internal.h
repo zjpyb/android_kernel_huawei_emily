@@ -277,6 +277,9 @@ struct scan_control {
 	/* the number of blocks that was writebacked */
 	unsigned int nr_writedblock;
 #endif
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	s8 origin_order;
+#endif
 };
 
 struct reclaim_stat {
@@ -428,14 +431,29 @@ extern int user_min_free_kbytes;
 struct compact_control {
 	struct list_head freepages;	/* List of free pages to migrate to */
 	struct list_head migratepages;	/* List of pages being migrated */
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	unsigned int nr_freepages;	/* Number of isolated free pages */
+	unsigned int nr_migratepages;	/* Number of pages to migrate */
+	unsigned long free_pfn;		/* isolate_freepages search base */
+	unsigned long migrate_pfn;	/* isolate_migratepages search base */
+	unsigned long fast_start_pfn;	/* a pfn to start linear scan from */
+#endif
 	struct zone *zone;
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	unsigned long nr_freepages;	/* Number of isolated free pages */
 	unsigned long nr_migratepages;	/* Number of pages to migrate */
+#endif
 	unsigned long total_migrate_scanned;
 	unsigned long total_free_scanned;
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	unsigned long free_pfn;		/* isolate_freepages search base */
 	unsigned long migrate_pfn;	/* isolate_migratepages search base */
 	unsigned long last_migrated_pfn;/* Not yet flushed page being freed */
+#endif
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	unsigned short fast_search_fail;	/* failures to use free list searches */
+	short search_order;		/* order to start a fast search at */
+#endif
 	const gfp_t gfp_mask;		/* gfp mask of a direct compactor */
 	int order;			/* order a direct compactor needs */
 	int migratetype;		/* migratetype of direct compactor */
@@ -443,16 +461,35 @@ struct compact_control {
 	const int classzone_idx;	/* zone index of a direct compactor */
 	enum migrate_mode mode;		/* Async or sync migration mode */
 	bool ignore_skip_hint;		/* Scan blocks even if marked skip */
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	bool no_set_skip_hint;          /* Don't mark blocks for skipping */
+#endif
 	bool ignore_block_suitable;	/* Scan blocks considered unsuitable */
 	bool direct_compaction;		/* False from kcompactd or /proc/... */
 	bool whole_zone;		/* Whole zone should/has been scanned */
 	bool contended;			/* Signal lock or sched contention */
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	bool finishing_block;		/* Finishing current pageblock */
+#endif
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	bool rescan;			/* Rescanning the same pageblock */
+#endif
 #ifdef CONFIG_COMPACTION_SPECIFIED
 	bool force_compact;
 	unsigned long nr_expect;
 #endif
 };
+
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+/*
+ * Used in direct compaction when a page should be taken from the freelists
+ * immediately when one is created during the free path.
+ */
+struct capture_control {
+	struct compact_control *cc;
+	struct page *page;
+};
+#endif
 
 unsigned long
 isolate_freepages_range(struct compact_control *cc,

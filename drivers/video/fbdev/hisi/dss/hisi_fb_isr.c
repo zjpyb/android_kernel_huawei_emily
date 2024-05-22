@@ -386,6 +386,8 @@ irqreturn_t dss_sdp_isr(int irq, void *ptr)
 
 static void adp_isr_wch_ints(struct dpu_fb_data_type *dpufd, uint32_t isr_s1, uint32_t isr_s3_copybit)
 {
+	dpu_check_and_no_retval((!dpufd->cmdlist_info), ISR_INFO, "cmdlist_info is nullptr!\n");
+
 	if (isr_s1 & BIT_OFF_WCH0_INTS) {
 		if (dpufd->cmdlist_info->cmdlist_wb_flag[WB_TYPE_WCH0] == 1) {
 			dpufd->cmdlist_info->cmdlist_wb_done[WB_TYPE_WCH0] = 1;
@@ -410,7 +412,7 @@ static void adp_isr_wch_ints(struct dpu_fb_data_type *dpufd, uint32_t isr_s1, ui
 #if defined(CONFIG_HISI_FB_970) || defined(CONFIG_HISI_FB_V501) || \
 	defined(CONFIG_HISI_FB_V510) || defined(CONFIG_HISI_FB_V600)
 	if (isr_s3_copybit & BIT_OFF_CAM_WCH2_FRMEND_INTS) {
-		if (dpufd->copybit_info->copybit_flag == 1) {
+		if (dpufd->copybit_info && dpufd->copybit_info->copybit_flag == 1) {
 			dpufd->copybit_info->copybit_done = 1;
 			wake_up_interruptible_all(&(dpufd->copybit_info->copybit_wq));
 		}
@@ -471,7 +473,7 @@ irqreturn_t dss_mdc_isr(int irq, void *ptr)
 
 	isr_s1 &= ~((uint32_t)inp32(dpufd->media_common_base + GLB_CPU_OFF_INT_MSK));
 	if (isr_s1 & (BIT_OFF_WCH1_INTS | BIT_OFF_WCH0_INTS)) {
-		if (dpufd->media_common_info->mdc_flag == 1) {
+		if (dpufd->media_common_info && dpufd->media_common_info->mdc_flag == 1) {
 			dpufd->media_common_info->mdc_done = 1;
 			wake_up_interruptible_all(&(dpufd->media_common_info->mdc_wq));
 		}

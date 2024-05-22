@@ -488,6 +488,7 @@ static ssize_t ilitek_proc_debug_switch_read(struct file *pFile, char __user *bu
 
 	memset(g_user_buf, 0, USER_STR_BUFF * sizeof(unsigned char));
 
+	mutex_lock(&ilits->debug_read_mutex);
 	mutex_lock(&ilits->debug_mutex);
 
 	open = !ilits->dnp;
@@ -501,6 +502,7 @@ static ssize_t ilitek_proc_debug_switch_read(struct file *pFile, char __user *bu
 		TS_LOG_ERR("Failed to copy data to user space\n");
 
 	mutex_unlock(&ilits->debug_mutex);
+	mutex_unlock(&ilits->debug_read_mutex);
 	return size;
 }
 
@@ -843,9 +845,12 @@ int ili_tp_data_mode_ctrl(u8* cmd, int length)
 				ret = -ENOTTY;
 			}
 		} else {
-			if (ili_switch_tp_mode(P5_X_FW_AP_MODE) < 0) {
-				TS_LOG_ERR("Failed to switch demo mode\n");
-				ret = -ENOTTY;
+			if (ili_set_tp_data_len(DATA_FORMAT_DEMO, false, NULL) < 0) {
+				TS_LOG_ERR("Failed to swwitch demo mode do reset\n");
+				if (ili_switch_tp_mode(P5_X_FW_AP_MODE) < 0) {
+					TS_LOG_ERR("Failed to switch demo mode\n");
+					ret = -ENOTTY;
+				}
 			}
 		}
 		break;
@@ -1342,27 +1347,27 @@ static long ilitek_node_compat_ioctl(struct file *filp, unsigned int cmd, unsign
 	case ILITEK_COMPAT_IOCTL_TP_PANEL_INFO:
 		TS_LOG_DEBUG("compat_ioctl: convert resolution\n");
 		ret = filp->f_op->unlocked_ioctl(filp,
-			ILITEK_COMPAT_IOCTL_TP_PANEL_INFO, (uintptr_t)compat_ptr(arg));
+			ILITEK_IOCTL_TP_PANEL_INFO, (uintptr_t)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_TP_INFO:
 		TS_LOG_DEBUG("compat_ioctl: convert tp info\n");
 		ret = filp->f_op->unlocked_ioctl(filp,
-			ILITEK_COMPAT_IOCTL_TP_INFO, (uintptr_t)compat_ptr(arg));
+			ILITEK_IOCTL_TP_INFO, (uintptr_t)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_WRAPPER_RW:
 		TS_LOG_DEBUG("compat_ioctl: convert wrapper\n");
 		ret = filp->f_op->unlocked_ioctl(filp,
-			ILITEK_COMPAT_IOCTL_WRAPPER_RW, (uintptr_t)compat_ptr(arg));
+			ILITEK_IOCTL_WRAPPER_RW, (uintptr_t)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_DDI_WRITE:
 		TS_LOG_DEBUG("compat_ioctl: convert ddi write\n");
 		ret = filp->f_op->unlocked_ioctl(filp,
-			ILITEK_COMPAT_IOCTL_DDI_WRITE, (uintptr_t)compat_ptr(arg));
+			ILITEK_IOCTL_DDI_WRITE, (uintptr_t)compat_ptr(arg));
 		return ret;
 	case ILITEK_COMPAT_IOCTL_DDI_READ:
 		TS_LOG_DEBUG("compat_ioctl: convert ddi read\n");
 		ret = filp->f_op->unlocked_ioctl(filp,
-			ILITEK_COMPAT_IOCTL_DDI_READ, (uintptr_t)compat_ptr(arg));
+			ILITEK_IOCTL_DDI_READ, (uintptr_t)compat_ptr(arg));
 		return ret;
 	default:
 		TS_LOG_ERR("no ioctl cmd, return ilitek_node_ioctl\n");

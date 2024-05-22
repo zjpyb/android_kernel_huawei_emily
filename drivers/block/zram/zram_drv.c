@@ -2573,6 +2573,7 @@ static DEVICE_ATTR_RW(noncompress_enable);
 static DEVICE_ATTR_RW(hyperhold_enable);
 #ifdef CONFIG_HISI_DEBUG_FS
 static DEVICE_ATTR_RW(hyperhold_ft);
+static DEVICE_ATTR_RO(hyperhold_discard);
 #endif
 static DEVICE_ATTR_RO(hyperhold_report);
 #endif
@@ -2612,6 +2613,7 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_hyperhold_enable.attr,
 #ifdef CONFIG_HISI_DEBUG_FS
 	&dev_attr_hyperhold_ft.attr,
+    &dev_attr_hyperhold_discard.attr,
 #endif
 	&dev_attr_hyperhold_report.attr,
 #endif

@@ -35,6 +35,9 @@
 #include <linux/hugetlb.h>
 #include <linux/memcontrol.h>
 #include <linux/cleancache.h>
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+#include <linux/shmem_fs.h>
+#endif
 #include <linux/rmap.h>
 #include <linux/hisi/page_tracker.h>
 #include <linux/hisi/pagecache_manage.h>
@@ -159,7 +162,11 @@ static int page_cache_tree_insert(struct address_space *mapping,
 			*shadowp = p;
 	}
 	__radix_tree_replace(&mapping->page_tree, node, slot, page,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 			     workingset_update_node, mapping);
+#else
+			     workingset_lookup_update(mapping));
+#endif
 	mapping->nrpages++;
 	return 0;
 }
@@ -187,8 +194,16 @@ static void page_cache_tree_delete(struct address_space *mapping,
 
 		radix_tree_clear_tags(&mapping->page_tree, node, slot);
 		__radix_tree_replace(&mapping->page_tree, node, slot, shadow,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 				     workingset_update_node, mapping);
 	}
+#else
+				     workingset_lookup_update(mapping));
+	}
+
+	page->mapping = NULL;
+	/* Leave page->index set: truncation lookup relies upon it */
+#endif
 
 	if (shadow) {
 		mapping->nrexceptional += nr;
@@ -203,6 +218,7 @@ static void page_cache_tree_delete(struct address_space *mapping,
 	mapping->nrpages -= nr;
 }
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 /*
  * Delete a page from the page cache and free it. Caller has to make
  * sure the page is locked and that nobody else uses it - or that usage
@@ -214,6 +230,12 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 	int nr = hpage_nr_pages(page);
 
 	trace_mm_filemap_delete_from_page_cache(page);
+#else
+static void unaccount_page_cache_page(struct address_space *mapping,
+				      struct page *page)
+{
+	int nr;
+#endif
 	/*
 	 * if we're uptodate, flush out into the cleancache, otherwise
 	 * invalidate any existing cleancache entries.  We can't leave
@@ -249,14 +271,20 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 		}
 	}
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	page_cache_tree_delete(mapping, page, shadow);
 
 	page->mapping = NULL;
 	/* Leave page->index set: truncation lookup relies upon it */
+#endif
 
 	/* hugetlb pages do not participate in page cache accounting. */
 	if (PageHuge(page))
 		return;
+
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	nr = hpage_nr_pages(page);
+#endif
 
 	__mod_node_page_state(page_pgdat(page), NR_FILE_PAGES, -nr);
 	if (PageSwapBacked(page)) {
@@ -279,6 +307,7 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 		account_page_cleaned(page, mapping, inode_to_wb(mapping->host));
 }
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 /**
  * delete_from_page_cache - delete page from page cache
  * @page: the page which the kernel is trying to remove from page cache
@@ -312,6 +341,144 @@ void delete_from_page_cache(struct page *page)
 	}
 }
 EXPORT_SYMBOL(delete_from_page_cache);
+#else
+/*
+ * Delete a page from the page cache and free it. Caller has to make
+ * sure the page is locked and that nobody else uses it - or that usage
+ * is safe.  The caller must hold the i_pages lock.
+ */
+void __delete_from_page_cache(struct page *page, void *shadow)
+{
+	struct address_space *mapping = page->mapping;
+
+	trace_mm_filemap_delete_from_page_cache(page);
+
+	unaccount_page_cache_page(mapping, page);
+	page_cache_tree_delete(mapping, page, shadow);
+}
+
+static void page_cache_free_page(struct address_space *mapping,
+				struct page *page)
+{
+	void (*freepage)(struct page *);
+
+	freepage = mapping->a_ops->freepage;
+	if (freepage)
+		freepage(page);
+
+	if (PageTransHuge(page) && !PageHuge(page)) {
+		page_ref_sub(page, HPAGE_PMD_NR);
+		VM_BUG_ON_PAGE(page_count(page) <= 0, page);
+	} else {
+		put_page(page);
+	}
+}
+
+/**
+ * delete_from_page_cache - delete page from page cache
+ * @page: the page which the kernel is trying to remove from page cache
+ *
+ * This must be called only on pages that have been verified to be in the page
+ * cache and locked.  It will never put the page into the free list, the caller
+ * has a reference on the page.
+ */
+void delete_from_page_cache(struct page *page)
+{
+	struct address_space *mapping = page_mapping(page);
+	unsigned long flags;
+
+	BUG_ON(!PageLocked(page));
+
+	spin_lock_irqsave(&mapping->tree_lock, flags);
+	__delete_from_page_cache(page, NULL);
+	spin_unlock_irqrestore(&mapping->tree_lock, flags);
+
+	page_cache_free_page(mapping, page);
+}
+EXPORT_SYMBOL(delete_from_page_cache);
+/*
+ * page_cache_tree_delete_batch - delete several pages from page cache
+ * @mapping: the mapping to which pages belong
+ * @pvec: pagevec with pages to delete
+ *
+ * The function walks over mapping->page_tree and removes pages passed in @pvec
+ * from the radix tree. The function expects @pvec to be sorted by page index.
+ * It tolerates holes in @pvec (radix tree entries at those indices are not
+ * modified). The function expects only THP head pages to be present in the
+ * @pvec and takes care to delete all corresponding tail pages from the radix
+ * tree as well.
+ *
+ * The function expects mapping->tree_lock to be held.
+ */
+static void
+page_cache_tree_delete_batch(struct address_space *mapping,
+							struct pagevec *pvec)
+{
+	struct radix_tree_iter iter;
+	void **slot;
+	int total_pages = 0;
+	int i = 0, tail_pages = 0;
+	struct page *page;
+	pgoff_t start;
+
+	start = pvec->pages[0]->index;
+	radix_tree_for_each_slot(slot, &mapping->page_tree, &iter, start) {
+		if (i >= pagevec_count(pvec) && !tail_pages)
+			break;
+		page = radix_tree_deref_slot_protected(slot,
+							&mapping->tree_lock);
+		if (radix_tree_exceptional_entry(page))
+			continue;
+		if (!tail_pages) {
+			/*
+			 * Some page got inserted in our range? Skip it. We
+			 * have our pages locked so they are protected from
+			 * being removed.
+			 */
+			if (page != pvec->pages[i])
+				continue;
+			WARN_ON_ONCE(!PageLocked(page));
+			if (PageTransHuge(page) && !PageHuge(page))
+				tail_pages = HPAGE_PMD_NR - 1;
+			page->mapping = NULL;
+			/*
+			 * Leave page->index set: truncation lookup relies
+			 * upon it
+			 */
+			i++;
+		} else {
+			tail_pages--;
+		}
+		radix_tree_clear_tags(&mapping->page_tree, iter.node, slot);
+		__radix_tree_replace(&mapping->page_tree, iter.node, slot, NULL,
+							workingset_lookup_update(mapping));
+		total_pages++;
+	}
+	mapping->nrpages -= total_pages;
+}
+
+void delete_from_page_cache_batch(struct address_space *mapping,
+								struct pagevec *pvec)
+{
+	int i;
+	unsigned long flags;
+
+	if (!pagevec_count(pvec))
+		return;
+
+	spin_lock_irqsave(&mapping->tree_lock, flags);
+	for (i = 0; i < pagevec_count(pvec); i++) {
+		trace_mm_filemap_delete_from_page_cache(pvec->pages[i]);
+
+		unaccount_page_cache_page(mapping, pvec->pages[i]);
+	}
+	page_cache_tree_delete_batch(mapping, pvec);
+	spin_unlock_irqrestore(&mapping->tree_lock, flags);
+
+	for (i = 0; i < pagevec_count(pvec); i++)
+		page_cache_free_page(mapping, pvec->pages[i]);
+}
+#endif
 
 int filemap_check_errors(struct address_space *mapping)
 {

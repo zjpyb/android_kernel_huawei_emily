@@ -31,6 +31,25 @@
 #define HWLOG_TAG multi_ic_check
 HWLOG_REGIST();
 
+static void multi_ic_parse_thre_para(struct device_node *np,
+	struct multi_ic_thre_para *info, const char *name)
+{
+	int row, col, len;
+	int data[CHARGE_PATH_MAX_NUM * MULTI_IC_THRE_MAX] = { 0 };
+
+	len = power_dts_read_string_array(power_dts_tag(HWLOG_TAG), np,
+		"thre_para", data, CHARGE_PATH_MAX_NUM, MULTI_IC_THRE_MAX);
+	if (len < 0)
+		return;
+
+	for (row = 0; row < len / MULTI_IC_THRE_MAX; row++) {
+		col = row * MULTI_IC_THRE_MAX + MULTI_IC_THRE_IBUS_LTH;
+		info[row].ibus_lth = data[col];
+		col = row * MULTI_IC_THRE_MAX + MULTI_IC_THRE_VBAT_HTH;
+		info[row].vbat_hth = data[col];
+	}
+}
+
 static void multi_ic_parse_current_ratio_para(struct device_node *np,
 	struct multi_ic_check_para *info)
 {
@@ -111,6 +130,7 @@ void multi_ic_parse_check_para(struct device_node *np,
 	if (!np || !info)
 		return;
 
+	multi_ic_parse_thre_para(np, info->thre_para, "thre_para");
 	multi_ic_parse_current_ratio_para(np, info);
 	multi_ic_parse_vbat_error_para(np, info);
 	multi_ic_parse_tbat_error_para(np, info);
@@ -186,6 +206,35 @@ static void multi_ic_check_update_limit_curr(struct multi_ic_check_para *info,
 {
 	if ((limit_current != 0) && (info->limit_current > limit_current))
 		info->limit_current = limit_current;
+}
+
+static int multi_ic_check_threshold(int working_mode, struct multi_ic_check_para *info,
+	int volt_ratio)
+{
+	int i;
+	int vbat[CHARGE_PATH_MAX_NUM];
+	int ibus[CHARGE_PATH_MAX_NUM];
+	int tmp_ibat = 0;
+
+	if (!info || !volt_ratio)
+		return -EINVAL;
+
+	for (i = 0; i < CHARGE_PATH_MAX_NUM; i++) {
+		if (info->thre_para[i].vbat_hth && (vbat[i] > info->thre_para[i].vbat_hth))
+			goto end;
+		dcm_get_ic_ibus(working_mode, BIT(i), &ibus[i]);
+		dcm_get_path_max_ibat(working_mode, BIT(i), &tmp_ibat);
+		if (info->thre_para[i].ibus_lth && (ibus[i] < info->thre_para[i].ibus_lth))
+			goto end;
+		if (tmp_ibat && (ibus[i] > tmp_ibat / volt_ratio))
+			goto end;
+	}
+
+	return 0;
+end:
+	hwlog_info("set force_single_path_flag true\n");
+	info->force_single_path_flag = true;
+	return 0;
 }
 
 static void multi_ic_check_info(int working_mode, struct multi_ic_check_para *info)
@@ -400,7 +449,8 @@ int mulit_ic_check(int working_mode, int mode,
 
 	if (cur_time - info->multi_ic_start_time < MULTI_IC_CHECK_TIMEOUT)
 		return 0;
-
+	if (multi_ic_check_threshold(working_mode, info, volt_ratio) < 0)
+		return -EPERM;
 	multi_ic_check_info(working_mode, info);
 	multi_ic_check_ibus(working_mode, info);
 	multi_ic_check_vbat(working_mode, info);
@@ -472,6 +522,15 @@ int multi_ic_check_select_init_mode(struct multi_ic_check_mode_para *para, int *
 	multi_check_btb_result(BTB_VOLT_CHECK, para);
 	multi_check_btb_result(BTB_TEMP_CHECK, para);
 	/* 2nd: check ic error cnt */
+	if (para->use_buck_as_aux_sc) {
+		if (para->ic_error_cnt[CHARGE_IC_TYPE_MAIN] + para->ic_error_cnt[CHARGE_IC_TYPE_AUX] >=
+			MULTI_IC_CHECK_ERR_CNT_MAX * 2) { /* 2: number of sc chargers */
+			hwlog_err("main ic error, aux sc is buck, can not enter direct charge\n");
+			return -EPERM;
+		}
+		return 0;
+	}
+
 	for (i = 0; i < CHARGE_PATH_MAX_NUM; i++) {
 		if (para->ic_error_cnt[i] < MULTI_IC_CHECK_ERR_CNT_MAX) {
 			*mode = BIT(i);
@@ -490,12 +549,10 @@ void multi_ic_check_set_ic_error_flag(int flag, struct multi_ic_check_mode_para 
 
 	switch (flag) {
 	case CHARGE_IC_MAIN:
-		if (para->ic_error_cnt[CHARGE_IC_TYPE_MAIN] < MULTI_IC_CHECK_ERR_CNT_MAX)
-			para->ic_error_cnt[CHARGE_IC_TYPE_MAIN]++;
+		para->ic_error_cnt[CHARGE_IC_TYPE_MAIN]++;
 		break;
 	case CHARGE_IC_AUX:
-		if (para->ic_error_cnt[CHARGE_IC_TYPE_AUX] < MULTI_IC_CHECK_ERR_CNT_MAX)
-			para->ic_error_cnt[CHARGE_IC_TYPE_AUX]++;
+		para->ic_error_cnt[CHARGE_IC_TYPE_AUX]++;
 		break;
 	default:
 		break;

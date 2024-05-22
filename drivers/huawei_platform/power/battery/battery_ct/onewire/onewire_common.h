@@ -38,7 +38,7 @@
 #include <asm/arch_timer.h>
 #include <generated/uapi/linux/version.h>
 
-#include <gpio/hisi_gpio.h>
+#include <hisi_gpio.h>
 #include <huawei_platform/log/hw_log.h>
 
 /* PL061 */

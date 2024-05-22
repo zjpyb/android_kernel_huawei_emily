@@ -42,6 +42,9 @@
 #define SMALL_CAPACITY_SEGS	80000
 
 #define GC_LEVEL_INTERVAL	4
+
+#define DM_RETRY_TIMES	10 /* max retry times when datamove fails */
+#define DM_MIN_WT	1000 /* time of datamove resubmit, unit: ms */
 /* GC preferences */
 enum {
 	GC_LIFETIME = 0,

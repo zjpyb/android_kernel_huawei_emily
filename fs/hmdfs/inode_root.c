@@ -14,7 +14,7 @@
 
 #include "authority/authentication.h"
 #include "comm/socket_adapter.h"
-#include "comm/transport.h"
+#include "comm/device_node.h"
 #include "hmdfs_dentryfile.h"
 #include "hmdfs_device_view.h"
 #include "hmdfs_merge_view.h"
@@ -24,43 +24,86 @@
 #include "DFS_1_0/dentry_syncer.h"
 #endif
 
+int hmdfs_generic_get_inode(struct super_block *sb, uint64_t root_ino,
+			    struct inode *lo_i, struct inode **inode,
+			    struct hmdfs_peer *peer, bool is_inode_local)
+{
+	if (lo_i && !igrab(lo_i)) {
+		*inode = ERR_PTR(-ESTALE);
+		return -ESTALE;
+	}
+
+	if (is_inode_local)
+		*inode = hmdfs_iget5_locked_local(sb, lo_i);
+	else
+		*inode = hmdfs_iget_locked_root(sb, root_ino, lo_i, peer);
+	if (!(*inode)) {
+		hmdfs_err("iget5_locked get inode NULL");
+		iput(lo_i);
+		*inode = ERR_PTR(-ENOMEM);
+		return -ENOMEM;
+	}
+	if (!((*inode)->i_state & I_NEW)) {
+		iput(lo_i);
+		return -ESTALE;
+	}
+	return 0;
+}
+
+void hmdfs_generic_fill_inode(struct inode *inode, struct inode *lower_inode,
+			      int inode_type, bool is_inode_local)
+{
+	struct hmdfs_inode_info *info = NULL;
+
+	info = hmdfs_i(inode);
+	info->inode_type = inode_type;
+	inode->i_uid = KUIDT_INIT((uid_t)1000);
+	inode->i_gid = KGIDT_INIT((gid_t)1000);
+
+	if (is_inode_local) {
+		if (S_ISDIR(lower_inode->i_mode))
+			inode->i_mode = (lower_inode->i_mode & S_IFMT) |
+					S_IRWXU | S_IRWXG | S_IXOTH;
+		else if (S_ISREG(lower_inode->i_mode))
+			inode->i_mode = (lower_inode->i_mode & S_IFMT) |
+					S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+		else if (S_ISLNK(lower_inode->i_mode))
+			inode->i_mode =
+				S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+		inode->i_generation = lower_inode->i_generation;
+#ifdef CONFIG_HMDFS_ANDROID
+		inode->i_uid = lower_inode->i_uid;
+		inode->i_gid = lower_inode->i_gid;
+#endif
+	} else if (lower_inode && !is_inode_local) {
+		inode->i_mode = (lower_inode->i_mode & S_IFMT) | S_IRWXU |
+				S_IRWXG | S_IXOTH;
+	} else {
+		inode->i_mode = S_IRWXU | S_IRWXG | S_IXOTH;
+	}
+	if (lower_inode) {
+		inode->i_atime = lower_inode->i_atime;
+		inode->i_ctime = lower_inode->i_ctime;
+		inode->i_mtime = lower_inode->i_mtime;
+	}
+}
+
 static struct inode *fill_device_local_inode(struct super_block *sb,
 					     struct inode *lower_inode)
 {
 	struct inode *inode = NULL;
-	struct hmdfs_inode_info *info = NULL;
+	int err = 0;
 
-	if (!igrab(lower_inode))
-		return ERR_PTR(-ESTALE);
-
-	inode = hmdfs_iget_locked_root(sb, HMDFS_ROOT_DEV_LOCAL, lower_inode,
-				       NULL);
-	if (!inode) {
-		hmdfs_err("iget5_locked get inode NULL");
-		iput(lower_inode);
-		return ERR_PTR(-ENOMEM);
-	}
-	if (!(inode->i_state & I_NEW)) {
-		iput(lower_inode);
+	err = hmdfs_generic_get_inode(sb, HMDFS_ROOT_DEV_LOCAL, lower_inode,
+				      &inode, NULL, false);
+	if (err)
 		return inode;
-	}
 
-	info = hmdfs_i(inode);
-	info->inode_type = HMDFS_LAYER_SECOND_LOCAL;
-
-	inode->i_mode =
-		(lower_inode->i_mode & S_IFMT) | S_IRWXU | S_IRWXG | S_IXOTH;
-
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
-
-	inode->i_atime = lower_inode->i_atime;
-	inode->i_ctime = lower_inode->i_ctime;
-	inode->i_mtime = lower_inode->i_mtime;
+	hmdfs_generic_fill_inode(inode, lower_inode, HMDFS_LAYER_SECOND_LOCAL,
+				 false);
 
 	inode->i_op = &hmdfs_dir_inode_ops_local;
 	inode->i_fop = &hmdfs_dir_ops_local;
-
 	fsstack_copy_inode_size(inode, lower_inode);
 	unlock_new_inode(inode);
 	return inode;
@@ -70,29 +113,20 @@ static struct inode *fill_device_inode_remote(struct super_block *sb,
 					      uint64_t dev_id)
 {
 	struct inode *inode = NULL;
-	struct hmdfs_inode_info *info = NULL;
 	struct hmdfs_peer *con = NULL;
+	int err;
 
 	con = hmdfs_lookup_from_devid(sb->s_fs_info, dev_id);
 	if (!con)
 		return ERR_PTR(-ENOENT);
-
-	inode = hmdfs_iget_locked_root(sb, HMDFS_ROOT_DEV_REMOTE, NULL, con);
-	if (!inode) {
-		hmdfs_err("get inode NULL");
-		inode = ERR_PTR(-ENOMEM);
-		goto out;
-	}
-	if (!(inode->i_state & I_NEW))
+	err = hmdfs_generic_get_inode(sb, HMDFS_ROOT_DEV_REMOTE, NULL, &inode,
+				      con, false);
+	if (err)
 		goto out;
 
-	info = hmdfs_i(inode);
-	info->inode_type = HMDFS_LAYER_SECOND_REMOTE;
+	hmdfs_generic_fill_inode(inode, NULL, HMDFS_LAYER_SECOND_REMOTE, false);
 
-	inode->i_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IXOTH;
-
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
+	inode->i_mode |= S_IFDIR;
 	inode->i_op = &hmdfs_dev_dir_inode_ops_remote;
 	inode->i_fop = &hmdfs_dev_dir_ops_remote;
 
@@ -101,6 +135,23 @@ static struct inode *fill_device_inode_remote(struct super_block *sb,
 out:
 	peer_put(con);
 	return inode;
+}
+
+static int hmdfs_check_connect_status(struct hmdfs_peer *peer)
+{
+	struct connection *connect = get_conn_impl(peer, C_REQUEST);
+	if (connect) {
+		if (connect->link_type == LINK_TYPE_WLAN) {
+			connection_put(connect);
+			return 0;
+		}
+		if (!hmdfs_pair_conn_and_cmd_flag(connect, C_REQUEST))
+			hmdfs_try_get_p2p_session_async(peer);
+		connection_put(connect);
+		return 0;
+	}
+
+	return hmdfs_try_get_p2p_session_sync(peer);
 }
 
 struct dentry *hmdfs_device_lookup(struct inode *parent_inode,
@@ -113,7 +164,7 @@ struct dentry *hmdfs_device_lookup(struct inode *parent_inode,
 	struct hmdfs_sb_info *sbi = sb->s_fs_info;
 	struct dentry *ret_dentry = NULL;
 	int err = 0;
-	struct hmdfs_peer *con = NULL;
+	struct hmdfs_peer *peer = NULL;
 	struct hmdfs_dentry_info *di = NULL;
 	uint8_t *cid = NULL;
 	struct path *root_lower_path = NULL;
@@ -160,16 +211,23 @@ struct dentry *hmdfs_device_lookup(struct inode *parent_inode,
 			ret_dentry = ERR_PTR(err);
 			goto out;
 		}
-		memcpy(cid, d_name, HMDFS_CID_SIZE);
+		strncpy(cid, d_name, HMDFS_CID_SIZE);
 		cid[HMDFS_CID_SIZE] = '\0';
-		con = hmdfs_lookup_from_cid(sbi, cid);
-		if (!con) {
+		peer = hmdfs_lookup_from_cid(sbi, cid);
+		if (!peer || !hmdfs_is_node_online_or_shaking(peer)) {
 			kfree(cid);
 			err = -ENOENT;
 			ret_dentry = ERR_PTR(err);
 			goto out;
 		}
-		di->device_id = con->device_id;
+		err = hmdfs_check_connect_status(peer);
+		if (err) {
+			kfree(cid);
+			err = -ENOENT;
+			ret_dentry = ERR_PTR(err);
+			goto out;
+		}
+		di->device_id = peer->device_id;
 		root_inode = fill_device_inode_remote(sb, di->device_id);
 		if (IS_ERR(root_inode)) {
 			kfree(cid);
@@ -185,8 +243,8 @@ struct dentry *hmdfs_device_lookup(struct inode *parent_inode,
 	if (!err)
 		hmdfs_set_time(child_dentry, jiffies);
 out:
-	if (con)
-		peer_put(con);
+	if (peer)
+		peer_put(peer);
 	trace_hmdfs_device_lookup_end(parent_inode, child_dentry, err);
 	return ret_dentry;
 }
@@ -241,27 +299,16 @@ struct inode *fill_device_inode(struct super_block *sb,
 				struct inode *lower_inode)
 {
 	struct inode *inode = NULL;
-	struct hmdfs_inode_info *info = NULL;
+	int err;
 
-	inode = hmdfs_iget_locked_root(sb, HMDFS_ROOT_DEV, NULL, NULL);
-	if (!inode) {
-		hmdfs_err("iget5_locked get inode NULL");
-		return ERR_PTR(-ENOMEM);
-	}
-	if (!(inode->i_state & I_NEW))
+	err = hmdfs_generic_get_inode(sb, HMDFS_ROOT_DEV, NULL, &inode,
+				      NULL, false);
+	if (err)
 		return inode;
 
-	info = hmdfs_i(inode);
-	info->inode_type = HMDFS_LAYER_FIRST_DEVICE;
+	hmdfs_generic_fill_inode(inode, lower_inode, HMDFS_LAYER_FIRST_DEVICE,
+				 false);
 
-	inode->i_atime = lower_inode->i_atime;
-	inode->i_ctime = lower_inode->i_ctime;
-	inode->i_mtime = lower_inode->i_mtime;
-
-	inode->i_mode = (lower_inode->i_mode & S_IFMT) | S_IRUSR | S_IXUSR |
-			S_IRGRP | S_IXGRP | S_IXOTH;
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
 	inode->i_op = &hmdfs_device_ops;
 	inode->i_fop = &hmdfs_device_fops;
 
@@ -269,46 +316,24 @@ struct inode *fill_device_inode(struct super_block *sb,
 	unlock_new_inode(inode);
 	return inode;
 }
-
 struct inode *fill_root_inode(struct super_block *sb, struct inode *lower_inode)
 {
+	int err;
 	struct inode *inode = NULL;
 	struct hmdfs_inode_info *info = NULL;
 
-	if (!igrab(lower_inode))
-		return ERR_PTR(-ESTALE);
-
-	inode = hmdfs_iget_locked_root(sb, HMDFS_ROOT_ANCESTOR, lower_inode,
-				       NULL);
-	if (!inode) {
-		hmdfs_err("iget5_locked get inode NULL");
-		iput(lower_inode);
-		return ERR_PTR(-ENOMEM);
-	}
-	if (!(inode->i_state & I_NEW)) {
-		iput(lower_inode);
+	err = hmdfs_generic_get_inode(sb, HMDFS_ROOT_ANCESTOR, lower_inode,
+				      &inode, NULL, false);
+	if (err)
 		return inode;
-	}
+
+	hmdfs_generic_fill_inode(inode, lower_inode, HMDFS_LAYER_ZERO, false);
 
 	info = hmdfs_i(inode);
-	info->inode_type = HMDFS_LAYER_ZERO;
 #ifdef CONFIG_HMDFS_1_0
 	info->file_no = INVALID_FILE_ID;
 	info->adapter_dentry_flag = ADAPTER_OTHER_DENTRY_FLAG;
 #endif
-	inode->i_mode = (lower_inode->i_mode & S_IFMT) | S_IRUSR | S_IXUSR |
-			S_IRGRP | S_IXGRP | S_IXOTH;
-
-#ifdef CONFIG_HMDFS_ANDROID
-	inode->i_uid = lower_inode->i_uid;
-	inode->i_gid = lower_inode->i_gid;
-#else
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
-#endif
-	inode->i_atime = lower_inode->i_atime;
-	inode->i_ctime = lower_inode->i_ctime;
-	inode->i_mtime = lower_inode->i_mtime;
 
 	inode->i_op = &hmdfs_root_ops;
 	inode->i_fop = &hmdfs_root_fops;

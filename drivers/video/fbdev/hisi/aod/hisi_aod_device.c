@@ -59,7 +59,7 @@
 #define IPC_MAX_SIZE 128
 #define MAX_AOD_GEN_EVENT 100
 #define MAX_ALLOC_SIZE 100000
-#define MIN_ALLOC_SIZE 0
+#define PAUSE_DATA_SIZE 12
 #define DEFAULT_PAUSE_DATA_NUM 3
 #define MAX_MULTI_GMP_SIZE 3
 
@@ -297,8 +297,6 @@ static void aod_gmp_data(void)
 	pkg_ap.wr_buf = (const void *)(g_aod_gmp_data->data);
 	pkg_ap.wr_len = len;
 	ret = hisi_aod_send_cmd_to_sensorhub(&pkg_ap, NULL, 1);
-	if (ret)
-		HISI_AOD_ERR("tag is %d, cmd is %d\n", pkg_ap.tag, pkg_ap.cmd);
 }
 
 static void aod_gen_data(void)
@@ -359,6 +357,8 @@ static int hisi_aod_start_recovery_req(struct aod_data_t *aod_data)
 		return 0;
 	}
 	up(&(aod_data->aod_status_sem));
+
+	mutex_lock(&aod_data->ioctl_lock);
 	aod_ion_fb_config();
 #ifdef SHMEM_START_CONFIG
 	if (g_aod_common_data != NULL) {
@@ -376,6 +376,8 @@ static int hisi_aod_start_recovery_req(struct aod_data_t *aod_data)
 	aod_gmp_data();
 	aod_multi_gmp_data_to_sensorhub();
 	aod_gen_data();
+	mutex_unlock(&aod_data->ioctl_lock);
+
 	ret = hisi_aod_start_req(&aod_data->start_config_mcu);
 	if(ret) {
 		HISI_AOD_ERR("hisi_aod_start_req fail\n");
@@ -440,7 +442,7 @@ static ssize_t hisi_aod_read(struct file *file, char __user *buf, size_t count, 
 	unsigned long totol_size = 0;
 	ssize_t cnt = 0;
 	struct aod_data_t *aod_data = NULL;
-	aod_notif_t notify_data;
+	aod_notif_t notify_data = { 0 };
 
 	if((NULL == file)||(NULL == buf)||(NULL == ppos))
 	{
@@ -487,7 +489,7 @@ static ssize_t hisi_aod_read(struct file *file, char __user *buf, size_t count, 
 /*
  *	Frame buffer device initialization and setup routines
  */
-static unsigned long hisi_aod_fb_alloc(struct aod_data_t *aod_data)
+static unsigned long hisi_aod_fb_alloc(struct aod_data_t *aod_data, unsigned long new_size)
 {
 	unsigned long buf_addr = 0;
 
@@ -496,13 +498,14 @@ static unsigned long hisi_aod_fb_alloc(struct aod_data_t *aod_data)
 		return 0;
 	}
 
-	HISI_AOD_INFO("smem_size is %lu, max_buf_size is %u\n", aod_data->smem_size, aod_data->max_buf_size);
+	HISI_AOD_INFO("smem_size is %lu, max_buf_size is %u\n", new_size, aod_data->max_buf_size);
 
-	if((aod_data->smem_size <= 0) || (aod_data->smem_size > aod_data->max_buf_size)) {
-		HISI_AOD_ERR("buf len is invalid: %lu, max_buf_size is %u\n", aod_data->smem_size, aod_data->max_buf_size);
+	if ((new_size <= 0) || (new_size > aod_data->max_buf_size)) {
+		HISI_AOD_ERR("buf len is invalid: %lu, max_buf_size is %u\n", new_size, aod_data->max_buf_size);
 		return 0;
 	}
 	(void)hisi_free_buffer(aod_data, NULL);
+	aod_data->smem_size = new_size;
 
 	aod_data->buff_virt = (void *)dma_alloc_coherent(aod_data->cma_device, aod_data->smem_size, &aod_data->buff_phy, GFP_KERNEL);
 	if (aod_data->buff_virt == NULL) {
@@ -1398,7 +1401,7 @@ static int hisi_display_spaces_valid(aod_display_spaces_ap_temp_t spaces_temp)
 		return -EINVAL;
 	}
 
-	for (i = 0; i < display_space_count; i++)
+	for (i = 0; i < spaces_temp.display_space_count; i++)
 		HISI_AOD_INFO("display_space%d:x_size=%d, x_start=%d, y_size=%d, y_start=%d\n",
 			i, spaces_temp.display_spaces[i].x_size,
 			spaces_temp.display_spaces[i].x_start,
@@ -1437,10 +1440,7 @@ static int hisi_set_display_space(struct aod_data_t *aod_data,
 		return ret;
 
 	display_space_count = (unsigned char)display_spaces_temp.display_space_count - DIFF_NUMBER;
-	if (display_space_count > MAX_DISPLAY_SPACE_COUNT) {
-		HISI_AOD_ERR("display_space_count is too big\n");
-		return ret;
-	}
+
 	/* unsafe_function_ignore: memcpy */
 	memcpy(aod_data->display_spaces_mcu.display_spaces,
 		display_spaces_temp.display_spaces,
@@ -1565,7 +1565,7 @@ static void aod_mem_free()
 static int hisi_aod_pause(struct aod_data_t *aod_data, void __user* arg)
 {
 	int ret = 0;
-	aod_pause_pos_data_t pause_display_pos;
+	aod_pause_pos_data_t pause_display_pos = { 0 };
 
 	HISI_AOD_INFO("+.\n");
 
@@ -1620,8 +1620,8 @@ static int aod_pause_data_receive(uint32_t *len, void __user *arg)
 		g_aod_pause_data = NULL;
 	}
 	HISI_AOD_INFO("receive ap length = %u\n", *len);
-	if ((*len < sizeof(struct aod_general_data)) || (*len > MAX_ALLOC_SIZE)) {
-		HISI_AOD_ERR("len < 4 or > MAX_ALLOC_SIZE\n");
+	if ((*len < PAUSE_DATA_SIZE) || (*len > MAX_ALLOC_SIZE)) {
+		HISI_AOD_ERR("len < 12 or > MAX_ALLOC_SIZE\n");
 		return HISI_AOD_FAIL;
 	}
 	g_aod_pause_data = kzalloc(*len, GFP_KERNEL);
@@ -1701,7 +1701,7 @@ static int hisi_aod_pos_data_req(void)
 
 	HISI_AOD_INFO("+\n");
 	if (!g_aod_pos_data) {
-		HISI_AOD_ERR("g_aod_pause_data is NULL Pointer\n");
+		HISI_AOD_ERR("g_aod_pos_data is NULL Pointer\n");
 		return HISI_AOD_FAIL;
 	}
 	memset(&pkg_ap, 0, sizeof(pkg_ap));
@@ -1785,12 +1785,12 @@ static int hisi_aod_get_pos(struct aod_data_t *aod_data, void __user *arg)
 	}
 	ret = aod_pos_data_receive(&length, arg);
 	if (ret) {
-		HISI_AOD_ERR("aod_pause_data_receive fail!\n");
+		HISI_AOD_ERR("aod_pos_data_receive fail!\n");
 		return ret;
 	}
 	ret = hisi_aod_pos_data_req();
 	if (ret) {
-		HISI_AOD_ERR("hisi_aod_pause_new_req fail\n");
+		HISI_AOD_ERR("hisi_aod_pos_data_req fail\n");
 		kfree(g_aod_pos_data);
 		g_aod_pos_data = NULL;
 		return ret;
@@ -2003,10 +2003,6 @@ static int dynamic_fb_data_check(struct aod_data_t *aod_data,
 {
 	uint32_t max_count;
 
-	if ((arg == NULL) || (aod_data == NULL)) {
-		HISI_AOD_ERR("arg or aod_data is NULL Pointer!\n");
-		return -EINVAL;
-	}
 	if (copy_from_user(len, arg, sizeof(uint32_t))) {
 		HISI_AOD_ERR("copy_from_user failed\n");
 		return -EFAULT;
@@ -2093,15 +2089,22 @@ static int hisi_aod_get_dynamic_fb_new(struct aod_data_t *aod_data,
 	uint32_t count;
 	uint32_t len;
 
-	ret = dynamic_fb_data_check(aod_data, arg, &len);
-	if (ret)
-		return ret;
-	count = g_ion_fb_config->dynamic_fb_count;
-	HISI_AOD_INFO("count is %d\n", count);
+	if ((arg == NULL) || (aod_data == NULL)) {
+		HISI_AOD_ERR("arg or aod_data is NULL Pointer!\n");
+		return -EINVAL;
+	}
+
 	if (aod_data->ion_dynamic_alloc_flag != false) {
 		HISI_AOD_ERR("Memory has been allocated!\n");
 		return -EINVAL;
 	}
+
+	ret = dynamic_fb_data_check(aod_data, arg, &len);
+	if (ret)
+		return ret;
+
+	count = g_ion_fb_config->dynamic_fb_count;
+	HISI_AOD_INFO("count is %d\n", count);
 	for (i = 0; i < count; i++) {
 		ret = hisif_aod_ion_phys(g_ion_fb_config->fb[i].addr,
 			aod_data->dev, &buf_addr);
@@ -2121,8 +2124,8 @@ static int hisi_aod_get_dynamic_fb_new(struct aod_data_t *aod_data,
 		HISI_AOD_INFO("phys addr(0x%lx), ion_buf_fb %u, size %u, index %u!\n",
 				buf_addr, g_ion_fb_config->fb[i].addr,
 				g_ion_fb_config->fb[i].size, i);
-		aod_data->ion_dynamic_alloc_flag = true;
 	}
+	aod_data->ion_dynamic_alloc_flag = true;
 	ret = ion_fb_config_send(len);
 	return ret;
 }
@@ -2130,7 +2133,6 @@ static int hisi_aod_get_dynamic_fb_new(struct aod_data_t *aod_data,
 static int hisi_aod_free_dynamic_fb_new(struct aod_data_t *aod_data, void __user *arg)
 {
 	uint32_t i;
-	uint32_t count;
 
 	if (aod_data == NULL) {
 		HISI_AOD_ERR("aod_data NULL Pointer!\n");
@@ -2140,8 +2142,12 @@ static int hisi_aod_free_dynamic_fb_new(struct aod_data_t *aod_data, void __user
 		HISI_AOD_ERR("Memory has been released!\n");
 		return -EINVAL;
 	}
-	count = g_ion_fb_config->dynamic_fb_count;
-	for (i = 0; i < count; i++) {
+	if (g_ion_fb_config == NULL) {
+		HISI_AOD_ERR("Memory has been released!\n");
+		aod_data->ion_dynamic_alloc_flag = false;
+		return -EINVAL;
+	}
+	for (i = 0; i < MAX_DYNAMIC_ALLOC_FB_COUNT; i++) {
 		if (aod_data->ion_dyn_handle[i] == NULL)
 			continue;
 		aod_data->ion_dyn_handle[i] = NULL;
@@ -2258,7 +2264,7 @@ static int hisi_aod_resume(struct aod_data_t *aod_data, const void __user* arg)
 static int hisi_start_updating(struct aod_data_t *aod_data, void __user* arg)
 {
 	int ret = 0;
-	aod_start_updating_pos_data_t start_updating_pos;
+	aod_start_updating_pos_data_t start_updating_pos = { 0 };
 
 	HISI_AOD_DEBUG("+\n");
 
@@ -2348,7 +2354,7 @@ static int hisi_end_updating(struct aod_data_t *aod_data, const void __user* arg
 static int hisi_aod_stop(struct aod_data_t *aod_data, void __user* arg)
 {
 	int ret = 0;
-	aod_stop_pos_data_t stop_disp_pos;
+	aod_stop_pos_data_t stop_disp_pos = { 0 };
 
 	HISI_AOD_INFO("+.\n");
 
@@ -2392,7 +2398,7 @@ static int hisi_aod_stop(struct aod_data_t *aod_data, void __user* arg)
 
 static int hisi_get_panel_info(struct aod_data_t *aod_data, void __user* arg)
 {
-	aod_screen_info_t st_screen_info;
+	aod_screen_info_t st_screen_info = { 0 };
 
 	HISI_AOD_INFO("+.\n");
 
@@ -2433,7 +2439,6 @@ static int hisi_free_buffer(struct aod_data_t *aod_data, void __user* arg)
 	}
 
 	HISI_AOD_INFO("-.\n");
-
 	return 0;
 }
 
@@ -2625,10 +2630,6 @@ static int aod_gen_data_process(struct aod_general_data *aod_gen_data,
 		kfree(g_aod_gen_data[cmd_type]);
 		g_aod_gen_data[cmd_type] = NULL;
 	}
-	if ((length <= MIN_ALLOC_SIZE) || (length > MAX_ALLOC_SIZE)) {
-		HISI_AOD_ERR("length <= 0 or > MAX_ALLOC_SIZE\n");
-		return HISI_AOD_FAIL;
-	}
 	g_aod_gen_data[cmd_type] = kzalloc(length, GFP_KERNEL);
 	if (!(g_aod_gen_data[cmd_type])) {
 		HISI_AOD_ERR("alloc memory failed\n");
@@ -2653,8 +2654,10 @@ static int hisi_aod_set_gen_info(struct aod_data_t *aod_data,
 		HISI_AOD_ERR("copy_from_user failed\n");
 		return -EFAULT;
 	}
-	if ((length < sizeof(struct aod_general_data)) || (length > MAX_ALLOC_SIZE)) {
-		HISI_AOD_ERR("length < 4 or > MAX_ALLOC_SIZE\n");
+	if ((length < (sizeof(struct aod_general_data) +
+			sizeof(((struct aod_general_data*)0)->data[0]))) ||
+		(length > MAX_ALLOC_SIZE)) {
+		HISI_AOD_ERR("length < 8 or > MAX_ALLOC_SIZE\n");
 		return HISI_AOD_FAIL;
 	}
 	aod_gen_data = kzalloc(length, GFP_KERNEL);
@@ -2892,9 +2895,6 @@ static long hisi_aod_ioctl(struct file* file, unsigned int cmd, unsigned long ar
 	case AOD_IOCTL_AOD_GET_PANEL_INFO:
 		ret = hisi_get_panel_info(aod_data, argp);
 		break;
-	case AOD_IOCTL_AOD_FREE_BUF:
-		ret = hisi_free_buffer(aod_data, argp);
-		break;
 	case AOD_IOCTL_AOD_SET_FINGER_STATUS:
 		ret = hisi_aod_set_finger_status(aod_data, argp);
 		break;
@@ -2986,9 +2986,7 @@ static int hisi_aod_mmap(struct file *file, struct vm_area_struct * vma)
 		return -EINVAL;
 	}
 
-	aod_data->smem_size = vma->vm_end - vma->vm_start;
-
-	if (!hisi_aod_fb_alloc(aod_data)) {
+	if (!hisi_aod_fb_alloc(aod_data, size)) {
 		HISI_AOD_ERR("hisi_aod_fb_alloc failed!\n");
 		mutex_unlock(&aod_data->mm_lock);
 		return -ENOMEM;
@@ -3200,7 +3198,9 @@ static int hisi_aod_release(struct inode* inode, struct file* file)
 		(void)hisi_send_aod_stop();
 		(void)hisi_aod_sensorhub_cmd_req(CMD_CMN_CLOSE_REQ);
 		(void)hisi_aod_free_dynamic_fb(aod_data, NULL);
+		mutex_lock(&aod_data->mm_lock);
 		(void)hisi_free_buffer(aod_data, NULL);
+		mutex_unlock(&aod_data->mm_lock);
 		mutex_unlock(&aod_data->ioctl_lock);
 		HISI_AOD_INFO("release ioctl_lock.\n");
 	}
@@ -3314,9 +3314,7 @@ static int hisi_aod_probe(struct platform_device *pdev)
 		HISI_AOD_ERR("not found device node huawei,aod!\n");
 		ret = -ENOMEM;
 		goto alloc_fb_fail;
-	}
-	else
-	{
+	} else {
 		aod_support = 1;
 	}
 
@@ -3415,13 +3413,11 @@ static int __init aod_driver_init(void)
 {
 	int ret = 0;
 
-	HISI_AOD_ERR("%s\n", __func__);
+	HISI_AOD_INFO("%s\n", __func__);
 
 	ret = platform_driver_register(&hisi_aod_driver);
-	if(ret) {
+	if(ret)
 		HISI_AOD_ERR("platform aod driver register failed\n");
-		return ret;
-	}
 
 	return ret;
 }

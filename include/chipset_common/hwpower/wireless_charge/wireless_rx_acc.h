@@ -50,6 +50,7 @@ bool wlrx_is_fac_tx(int type);
 bool wlrx_is_car_tx(int type);
 bool wlrx_is_rvs_tx(int type);
 void wlrx_acc_det(struct wlrx_acc_det_para *acc);
+int wlrx_acc_get_tx_eff(unsigned int drv_type);
 #else
 static inline struct tx_dft_prop *wlrx_get_dft_tx_prop(int type)
 {
@@ -82,6 +83,10 @@ static inline bool wlrx_is_rvs_tx(int type)
 }
 
 static inline void wlrx_acc_det(struct wlrx_acc_det_para *acc)
+{
+}
+
+static inline int wlrx_acc_get_tx_eff(unsigned int drv_type)
 {
 }
 #endif /* CONFIG_WIRELESS_CHARGER */

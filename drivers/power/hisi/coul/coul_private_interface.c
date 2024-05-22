@@ -1430,7 +1430,7 @@ void clear_moved_battery_data(struct smartstar_coul_device *di)
 		coul_core_info("mask battery removed\n");
 		return;
 	}
-	di->batt_changed_flag = 1;
+	di->batt_removed_flag = 1;
 	coul_core_info("battery is completely pulled out and inserted once\n");
 
 #ifdef CONFIG_HUAWEI_BATTERY_INFORMATION
@@ -1438,7 +1438,7 @@ void clear_moved_battery_data(struct smartstar_coul_device *di)
 #endif
 	if (batt_sn_changed_flag) {
 		di->batt_chargecycles = 0;
-		di->batt_reset_flag = 1;
+		di->batt_changed_flag = 1;
 		di->batt_limit_fcc = 0;
 		di->batt_report_full_fcc_real = 0;
 		di->adjusted_fcc_temp_lut = NULL;
@@ -1488,7 +1488,7 @@ int check_batt_data(struct smartstar_coul_device *di)
 			__func__);
 		di->batt_data = get_battery_data(di->batt_id_vol);
 		di->batt_exist = 0;
-		di->batt_reset_flag = 1;
+		di->batt_removed_flag = 1;
 		return -EINVAL;
 	}
 	di->batt_exist = 1;

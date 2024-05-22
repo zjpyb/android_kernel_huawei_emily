@@ -173,8 +173,12 @@ static int write_skytone_key_to_modem(int data_len)
 		ret = BSP_ERR_MCSKYTONE_SEND_NULL_DATA;
 	} else {
 		if (g_buf_send->len > MCSKYTONE_MAX_DATA_LEN) {
+			if (g_buf_send != NULL) {
+				kfree(g_buf_send);
+				g_buf_send = NULL;
+			}
 			ret = BSP_ERR_MCSKYTONE_DATA_LENGTH_ERR;
-			return;
+			return ret;
 		}
 		len = g_buf_send->len + MCSKYTONE_FILE_HEAD_LEN;
 		hwlog_info("%s, actually data Len to send = %d\n", __func__, len);
@@ -362,7 +366,7 @@ ssize_t mcskytone_dev_read(struct file *file, char __user *buf, size_t len, loff
 
 		g_time_data_received = MCSKYTONE_DATA_UNAVAILABLE;
 		hwlog_info("%s, g_time_data_received over\n", __func__);
-	} else if (g_buf_recv != NULL) {
+	} else if (g_buf_recv != NULL && (g_buf_recv->len + MCSKYTONE_FILE_HEAD_LEN) < MCSKYTONE_MAX_DATA_LEN) {
 		data_len = g_buf_recv->len + MCSKYTONE_FILE_HEAD_LEN;
 		if ((len < data_len) || (copy_to_user(buf, g_buf_recv, data_len))) {
 			hwlog_err("%s, copy_to_user failed!\n", __func__);

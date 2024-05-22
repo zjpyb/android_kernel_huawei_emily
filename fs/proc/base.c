@@ -115,6 +115,10 @@
 #include "hwrtg/iaware_rtg.h"
 #endif
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+#include <linux/huawei_check_mmap_sem.h>
+#endif
+
 #ifdef CONFIG_HP_CORE
 #include <linux/hyperhold_inf.h>
 #endif
@@ -257,7 +261,11 @@ static ssize_t proc_pid_cmdline_read(struct file *file, char __user *buf,
 		goto out_mmput;
 	}
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	get_mmap_sem_debug(mm, down_read);
+#else
 	down_read(&mm->mmap_sem);
+#endif
 	arg_start = mm->arg_start;
 	arg_end = mm->arg_end;
 	env_start = mm->env_start;
@@ -2165,7 +2173,8 @@ int pid_getattr(const struct path *path, struct kstat *stat,
 	return 0;
 }
 
-#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HISI_SWAP_ZDATA) || defined(CONFIG_HW_RTG_SCHED)
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HISI_SWAP_ZDATA) ||\
+    defined(CONFIG_HW_RTG_SCHED) || defined(CONFIG_HUAWEI_SCHED_VIP)
 bool is_special_entry(struct dentry *dentry, const char* special_proc)
 {
 	const unsigned char *name;
@@ -2225,8 +2234,9 @@ int pid_revalidate(struct dentry *dentry, unsigned int flags)
 		}
 #endif
 
-#if defined(CONFIG_HW_RTG_SCHED)
-		if (is_special_entry(dentry, "rtg")) {
+#if defined(CONFIG_HW_RTG_SCHED) || defined(CONFIG_HUAWEI_SCHED_VIP)
+		if (is_special_entry(dentry, "rtg") ||
+		    is_special_entry(dentry, "hisi_vip_prio")) {
 			const struct cred *cr;
 			rcu_read_lock();
 			cr = __task_cred(task);

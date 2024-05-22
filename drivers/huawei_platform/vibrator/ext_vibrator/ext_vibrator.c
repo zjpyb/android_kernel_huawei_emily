@@ -451,18 +451,11 @@ static struct platform_driver hisi_pmic_vibrator_driver = {
 
 static int __init hisi_pmic_vibrator_init(void)
 {
-	int ret;
-	ret = register_pm_notifier(&g_vibrator_notify);
-	if (ret < 0) {
-		hwlog_err("[%s]:register vibrator_notifier failed, ret = %d!",
-			__func__, ret);
-	}
 	return platform_driver_register(&hisi_pmic_vibrator_driver);
 }
 
 static void __exit hisi_pmic_vibrator_exit(void)
 {
-	unregister_pm_notifier(&g_vibrator_notify);
 	platform_driver_unregister(&hisi_pmic_vibrator_driver);
 }
 

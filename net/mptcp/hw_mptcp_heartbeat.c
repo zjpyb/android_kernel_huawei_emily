@@ -333,7 +333,7 @@ static void insert_msg(int msg_type, const void* para, int size, bool prior)
 			HB_LOGD("inserted a msg %d to the head of the queue", msg_type);
 			return;
 		} else {
-			msg->next = g_msg_queue->next;
+			msg->next = g_msg_queue;
 			g_msg_queue = msg;
 			spin_unlock_bh(&g_msg_queue_lock);
 			up(&g_msg_queue_sema); // remeber to trigger the sema

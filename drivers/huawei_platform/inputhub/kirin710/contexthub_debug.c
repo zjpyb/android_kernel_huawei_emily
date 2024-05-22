@@ -955,45 +955,6 @@ static int sar_init_sx9323_reg_value(int argv[], int argc)
 	return 0;
 }
 
-static int sar_init_aw9610x_reg_value(int argv[], int argc)
-{
-	int i;
-
-	if (argv[0] == SAR_SET_REGISTER) {
-		if ((argc - 1) > SEMTECH_SAR_INIT_REG_VAL_LENGTH) {
-			hwlog_err("%s:input big than init_reg_val\n",
-				__func__);
-			return -1;
-		}
-		for (i = 1; i < argc; i++)
-			sar_pdata.sar_datas.aw9610_data.init_reg_val[i - 1] = argv[i];
-	}
-	if (argv[0] == SAR_SET_THRESHOLD) {
-		if ((argc - 1) > SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH) {
-			hwlog_err("%s:input big than modom array\n",
-				__func__);
-			return -1;
-		}
-		for (i = 1; i < argc; i++)
-			sar_pdata.sar_datas.aw9610_data.threshold_to_modem[i - 1] = argv[i];
-	}
-	if (argv[0] == SAR_SET_THRESHOLD_AND_REGISTER) {
-		if ((argc - 1) > SEMTECH_SAR_INIT_REG_VAL_LENGTH +
-			SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH) {
-			hwlog_err("%s input data size too larged\n",
-				__func__);
-			return -1;
-		}
-		for (i = 1; i < SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH + 1; i++)
-			sar_pdata.sar_datas.aw9610_data.threshold_to_modem[i - 1] = argv[i];
-		for (i = SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH + 1; i < argc; i++)
-			sar_pdata.sar_datas.aw9610_data.init_reg_val[i - 1 -
-				SEMTECH_SAR_THRESHOLD_TO_MODEM_LENGTH] = argv[i];
-	}
-
-	return 0;
-}
-
 static int sar_param_write(int tag, int argv[], int argc)
 {
 	int i;
@@ -1010,10 +971,6 @@ static int sar_param_write(int tag, int argv[], int argc)
 	if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,semtech-sx9323",
 		strlen("huawei,semtech-sx9323"))) {
 		if (sar_init_sx9323_reg_value(argv, argc))
-			return -1;
-	} else if (!strncmp(sensor_chip_info[CAP_PROX], "huawei,awi-aw9610x",
-		strlen("huawei,awi-aw9610x"))) {
-		if (sar_init_aw9610x_reg_value(argv, argc))
 			return -1;
 	} else {
 		hwlog_err("%s:sar not support the operate\n", __func__);

@@ -58,6 +58,22 @@
 #define RT1711H_REG_DRP_DUTY_CTRL			(0xA3)
 #define RT1711H_REG_BMCIO_RXDZEN			(0xAF)
 
+#define RT1711H_REG_CMD_REG1				(0xF0)
+#define RT1711H_REG_CMD_REG2				(0xF1)
+#define RT1711H_REG_ADJ_VSWING				(0xF3)
+
+/* richtek serial */
+#define RICHTEK_1711_VID	0x29cf
+#define RICHTEK_1711_PID	0x1711
+
+/* etek serial */
+#define ETEK_ET7303_VID		0x6dcf
+#define ETEK_ET7303_PID		0x1711
+
+#define VID_MASK	0x0ffff
+#define DID_MASK	0x0ffff
+#define SHIFT_16	16
+
 /*
  * Device ID
  */
@@ -113,6 +129,7 @@
 
 #define RT1711H_REG_BMCIO_SOFTSTART_TIME_MASK		((1<<5) | (1<<4) | (1<<3))
 #define RT1711H_REG_BMCIO_SOFTSTART_TIME		((1<<5) | (1<<4))
+#define RT1711H_REG_ADJ_VBUS_MEASURE		(1<<6)
 
 /*
  * RT1711H_REG_BMCIO_RXDZSEL                         (0x93)
@@ -189,6 +206,27 @@
 /* timeout = (tout+1) * 12.5ms */
 #define RT1711H_REG_I2CRST_SET(en, tout)	\
 	((en << 7) | (tout & 0x0f))
+
+/*
+ * RT1711H_REG_CMD_REG1		(0xF0)
+ */
+
+#define RT1711H_REG_CMD_REG1_ENABLE ((1<<7) | (1<<6) | (1<<1))
+#define RT1711H_REG_CMD_REG1_CLEAN (0x00)
+
+/*
+ * RT1711H_REG_CMD_REG2		(0xF1)
+ */
+
+#define RT1711H_REG_CMD_REG2_ENABLE ((1<<5) | (1<<2) | (1<<1))
+#define RT1711H_REG_CMD_REG2_CLEAN	(0x00)
+
+/*
+ * RT1711H_REG_ADJ_VSWING	(0xF3)
+ */
+
+#define RT1711H_REG_SETTING_VSWING_MASK	((1<<2) | (1<<1) | (1<<0))
+#define RT1711H_REG_SETTING_VSWING ((1<<2) | (1<<0))
 
 #if ENABLE_RT1711_DBG
 #define RT1711H_INFO(format, args...) \

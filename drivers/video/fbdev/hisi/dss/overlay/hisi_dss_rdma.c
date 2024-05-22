@@ -433,6 +433,10 @@ static int hisi_dss_rdma_set_dpp_and_dma(struct dpu_fb_data_type *dpufd, dss_lay
 	if (is_pixel_10bit)
 		bpp = layer->img.bpp;
 
+	if (bpp == 0) {
+		DPU_FB_ERR("bpp is 0!\n");
+		return -EINVAL;
+	}
 	*aligned_pixel = DMA_ALIGN_BYTES / bpp;
 
 	*src_rect_mask_enable = is_src_rect_masked(layer, *aligned_pixel);
@@ -454,7 +458,8 @@ static int hisi_dss_rdma_set_dpp_and_dma(struct dpu_fb_data_type *dpufd, dss_lay
 static int hisi_dss_rdma_addr_aligned(dss_layer_t *layer, uint32_t *l2t_interleave_n,
 	uint32_t *rdma_addr, bool mmu_enable)
 {
-	*rdma_addr = mmu_enable ? layer->img.vir_addr : layer->img.phy_addr;
+	void_unused(mmu_enable);
+	*rdma_addr = layer->img.vir_addr;
 	if (*rdma_addr & (DMA_ADDR_ALIGN - 1)) {
 		DPU_FB_ERR("layer%d rdma_addr[0x%x] is not %d bytes aligned.\n",
 			layer->layer_idx, *rdma_addr, DMA_ADDR_ALIGN);
@@ -648,7 +653,8 @@ static uint32_t get_display_addr(dss_layer_t *layer, struct hisi_dss_addr_config
 static void get_addr_config_param(struct hisi_dss_addr_config *add_config, bool mmu_enable,
 	dss_layer_t *layer, uint32_t offset, bool is_pixel_10bit)
 {
-	add_config->src_addr = mmu_enable ? (layer->img.vir_addr + offset) : (layer->img.phy_addr + offset);
+	void_unused(mmu_enable);
+	add_config->src_addr = layer->img.vir_addr + offset;
 	add_config->bpp = 1;  /* Bit Per Pixel */
 	if (is_pixel_10bit)
 		add_config->bpp = layer->img.bpp;
@@ -677,7 +683,7 @@ static uint32_t hisi_calculate_display_addr(bool mmu_enable, dss_layer_t *layer,
 
 	if (add_type == DSS_ADDR_PLANE0) {
 		add_config.stride = layer->img.stride;
-		add_config.src_addr = mmu_enable ? layer->img.vir_addr : layer->img.phy_addr;
+		add_config.src_addr = layer->img.vir_addr;
 		add_config.bpp = layer->img.bpp;
 		if (layer->is_cld_layer == 1)
 			add_config.src_addr += layer->cld_data_offset;

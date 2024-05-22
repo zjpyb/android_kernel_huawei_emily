@@ -783,17 +783,17 @@ OAL_STATIC OAL_INLINE uint64_t oal_get_monotonic_boottime(void)
 OAL_STATIC OAL_INLINE struct sk_buff *oal_alloc_skb(uint16_t len, gfp_t priority, uint16_t retry)
 {
     struct sk_buff *skb = NULL;
-    uint16_t tmp = 0;
+    uint32_t step = 1;
 
     do {
         skb = alloc_skb(len, priority);
         if (likely(skb != NULL)) {
             return skb;
         } else {
-            oal_io_print("can't atomic allocate mem for new skb, len = %d\n", len);
+            oal_io_print("alloc skb fail, len = %d, retry = %d, max = %d\n", len, step, retry);
         }
-        tmp++;
-    } while (tmp < retry); /* 重试retry次 */
+        step++;
+    } while (step <= retry); /* 重试retry次 */
 
     return NULL;
 }

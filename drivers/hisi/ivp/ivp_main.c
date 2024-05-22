@@ -54,6 +54,7 @@ static void ivp_mutex_init(struct ivp_device *pdev)
 {
 	mutex_init(&pdev->ivp_comm.ivp_wake_lock_mutex);
 	mutex_init(&pdev->ivp_comm.ivp_load_image_mutex);
+	mutex_init(&pdev->ivp_comm.ivp_ioctl_mutex);
 	mutex_init(&pdev->ivp_comm.ivp_power_up_off_mutex);
 	mutex_init(&pdev->ivp_comm.ivp_open_release_mutex);
 }
@@ -62,6 +63,7 @@ static void ivp_mutex_deinit(struct ivp_device *pdev)
 {
 	mutex_destroy(&pdev->ivp_comm.ivp_open_release_mutex);
 	mutex_destroy(&pdev->ivp_comm.ivp_power_up_off_mutex);
+	mutex_destroy(&pdev->ivp_comm.ivp_ioctl_mutex);
 	mutex_destroy(&pdev->ivp_comm.ivp_load_image_mutex);
 	mutex_destroy(&pdev->ivp_comm.ivp_wake_lock_mutex);
 }

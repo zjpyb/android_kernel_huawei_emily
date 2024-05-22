@@ -51,6 +51,7 @@
 #define PANEL_190_C00_6P45           "190_c00_6p45"
 #define PANEL_191_C00_8P01           "191_c00_8p01"
 #define PANEL_350_C00_12P6           "350_c00_12p6"
+#define PANEL_350_C01_12P6           "350_c01_12p6"
 
 /*
  * struct

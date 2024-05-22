@@ -342,6 +342,8 @@ static int mctl_ch_config_wb_layer(struct dpu_fb_data_type *dpufd, dss_overlay_t
 				mctl_sys->wchn_ov_sel[1] = set_bits32(mctl_sys->wchn_ov_sel[1], 3, 32, 0);
 				mctl_sys->wch_ov_sel_used[1] = 1;
 			} else {
+				dpu_check_and_return(((ovl_idx < DSS_OVL2) || (ovl_idx >= DSS_OVL_IDX_MAX)),
+					-EINVAL, ERR, "ovl_idx %d is invalid!\n", ovl_idx);
 				mctl_sys->wchn_ov_sel[ovl_idx - DSS_OVL2] =
 					set_bits32(mctl_sys->wchn_ov_sel[ovl_idx - DSS_OVL2],
 						(chn_idx - DSS_WCHN_W0 + 1), 32, 0);

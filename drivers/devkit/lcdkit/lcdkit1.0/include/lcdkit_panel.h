@@ -557,6 +557,8 @@ struct lcdkit_panel_infos
 	u8 dither_support;
 	u32 effect_support_mode;
 	u8 tp_gesture_sequence_flag;
+	u8 bl_poweron_after_dsi_cmd;
+	u8 bl_disable_before_lcd_suspend;
 
 	/* if need dsi1 send cmd to panel */
 	u8 dsi1_snd_cmd_panel_support;
@@ -602,6 +604,10 @@ struct lcdkit_panel_infos
 	/* Fp Delay Threshold */
 	int64_t left_time_to_te_us;
 	uint64_t right_time_to_te_us;
+
+	/* DC Delay Threshold */
+	uint8_t dcdelay_support;
+	uint64_t dc_time_to_te_us;
 
 	/* display parameter config */
 	bool mipi_clk_config_support;
@@ -744,22 +750,30 @@ struct lcdkit_panel_infos
 	struct lcdkit_int_array_data esd_value;
 	struct lcdkit_dsi_panel_cmds esd_dbg_cmds;
 	struct lcdkit_dsi_panel_cmds esd_bl_ctrl_cmds;
+	struct lcdkit_dsi_panel_cmds esd_main_curic_cmds;
+	struct lcdkit_dsi_panel_cmds esd_main_oriic_cmds;
 	struct lcdkit_dsi_panel_cmds esd_curic_cmds;
 	struct lcdkit_dsi_panel_cmds esd_oriic_cmds;
 	u8 esd_support;
 	u8 tp_esd_event;
+	u8 send_tp_esd_event;
 	u8 esd_gpio_detect_support;
+	u8 esd_gpio_recovery;
 	u32 esd_gpio_detect_num;
 	u8 esd_gpio_normal_value;
 	u8 fac_esd_support;
 	u8 esd_check_num;
 	u8 esd_expect_value_type;
 	u8 use_second_ic;
+	u8 use_dual_ic;
 
 	/* running test check reg */
 	struct lcdkit_dsi_panel_cmds check_reg_cmds;
 	struct lcdkit_array_data check_reg_value;
 	u8 check_reg_support;
+
+	/* 2DBarcode AT read */
+	u8 barcode_at_read_support;
 
 	/* mipi check commond */
 	struct lcdkit_dsi_panel_cmds mipi_check_cmds;
@@ -1000,6 +1014,8 @@ struct lcdkit_panel_infos
 	u8 reset_step2_H;
 	/* otm1906c ic is need reset after iovcc power on */
 	u8 first_reset;
+	u8 vsp_on_is_need_reset;
+	u8 reset_low_after_vsn_on;
 	u8 second_reset;
 	u8 reset_pull_high_flag;
 	u8 tprst_before_lcdrst;
@@ -1012,7 +1028,10 @@ struct lcdkit_panel_infos
 
 	/* for tp reset when prox enable on lcd power on */
 	u8 prox_not_need_lcd_reset;
+	u8 power_off_not_need_reset;
+	u8 power_iovcc_not_need_low;
 	u8 delay_af_reset_prox;
+	u8 mipi_rx_have_tx_cmd;
 	/* control reset shutdown timing */
 	u8 reset_shutdown_later;
 
@@ -1094,6 +1113,7 @@ struct lcdkit_panel_infos
 	struct lcdkit_dsi_panel_cmds panel_exit_aod_cmds;
 	u8 ramless_aod;
 	u8 watch_aod;
+	u8 watch_aod_send_frame;
 	u8 watch_aod_normal_brightness;
 	u8 watch_aod_low_brightness;
 	u8 watch_aod_ultralow_brightness;
@@ -1109,6 +1129,8 @@ struct lcdkit_panel_infos
 	uint32_t delay_af_vsn_on;
 	uint32_t delay_af_LP11;
 	uint32_t delay_af_tp_reset;
+	uint32_t delay_bf_esd_sec_read;
+	uint32_t delay_af_dsi_cmd;
 	uint32_t delay_af_tp_after_resume;
 	uint32_t delay_af_tp_before_suspend;
 	u8 rst_after_vbat_flag;
@@ -1139,6 +1161,7 @@ struct lcdkit_panel_infos
 
 	/* tp suspend */
 	u8 tp_suspend_after_lcd_sleep;
+	u32 lcd_support_tp_driver_type;
 };
 
 struct lcdkit_panel_data
@@ -1291,6 +1314,8 @@ int lcdkit_hbm_set_handle(struct hisi_fb_data_type* hisifd);
 #endif
 void lcdkit_fps_timer_adaptor_init(void);
 int lcdkit_lread_reg(void *pdata, uint32_t *out, struct lcdkit_dsi_cmd_desc* cmds, uint32_t len);
+bool lcdkit_cmd_is_write(const struct lcdkit_dsi_cmd_desc *cmd);
+void lcdkit_single_cmd_tx(const struct lcdkit_dsi_cmd_desc *cmd, const struct hisi_fb_data_type *hisifd);
 ssize_t host_panel_oem_info_show(void* pdata, char *buf);
 ssize_t host_panel_oem_info_store(void* pdata, char *buf);
 void lcdkit_fps_adaptor_ts_callback(void);

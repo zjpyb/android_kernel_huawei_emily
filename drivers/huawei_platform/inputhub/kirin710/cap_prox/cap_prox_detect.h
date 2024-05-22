@@ -14,7 +14,6 @@
 #define CALIBRATE_THRED_1        1
 #define CALIBRATE_THRED_2        2
 #define CALIBRATE_THRED_3        3
-#define INIT_REG_VALUE_COUNT     17
 
 char *cap_prox_get_calibrate_order_string(void);
 void read_capprox_data_from_dts(struct device_node *dn,

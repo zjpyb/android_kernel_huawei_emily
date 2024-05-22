@@ -51,6 +51,23 @@
 #include <chipset_common/hwpower/hardware_monitor/uscp.h>
 #include "bq2560x_charger.h"
 #include <chipset_common/hwpower/battery/battery_temp.h>
+#include <chipset_common/hwpower/common_module/power_log.h>
+#include <chipset_common/hwpower/hardware_channel/vbus_channel_charger.h>
+#include <chipset_common/hwpower/common_module/power_gpio.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
+#include <huawei_platform/hwpower/common_module/power_platform.h>
+#include <huawei_platform/usb/switch/usbswitch_common.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
+#include <chipset_common/hwpower/common_module/power_delay.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_ic.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_error_handle.h>
+#include <huawei_platform/hwpower/common_module/power_platform.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_device_id.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_adapter.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_ic_manager.h>
+#include <chipset_common/hwpower/common_module/power_delay.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -66,28 +83,35 @@ static int hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 static int g_cv_flag;
 static int g_cv_policy;
 static int g_bq2560x_cv;
+static int g_bq2560x_ovp;
 static bool g_shutdown_flag;
 static int g_safe_time_cnt;
 static time64_t g_safe_pre_time = SAFE_TIME_RESET;
 static time64_t g_boot_time;
 static int g_sgm41511_exist;
+static int g_sgm41513_exist;
 
 #define TERM_CURR                    840
 #define LIMIT_CURR                   840
 
 #define BUF_LEN                      26
 
-#define GPIO_LOW                     0
-#define GPIO_HIGH                    1
-#define DELAY_10MS                   10
-#define DELAY_50MS                   50
-#define DELAY_100MS                  100
-#define DELAY_1500MS                 1500
-#define RETRY_MAX3                   3
-#define MIN_CV                       4350
-#define RETRY_TIMES                  3
+#define GPIO_LOW                      0
+#define GPIO_HIGH                     1
+#define DELAY_10MS                    10
+#define DELAY_50MS                    50
+#define DELAY_100MS                   100
+#define DELAY_1500MS                  1500
+#define RETRY_MAX3                    3
+#define MIN_CV                        4350
+#define RETRY_TIMES                   3
+#define DEFAULT_FAKE_DEVICE_TEMP      30
+#define DEFAULT_SC_MAX_INPUT_CURRENT  2200
+#define DEFAULT_SC_MAX_CHARGE_CURRENT 3000
 
 static int bq2560x_fcp_reset(void *dev_data);
+
+static int bq2560x_set_ovpthreshold(int threshld);
 
 static int bq2560x_write_byte(u8 reg, u8 value)
 {
@@ -147,22 +171,42 @@ static int bq2560x_read_mask(u8 reg, u8 mask, u8 shift, u8 *value)
 static int bq2560x_device_check(void)
 {
 	u8 reg = 0;
+	u8 pn_value;
 	int ret;
 
+	/*
+	* these chips has the same chip pins and different slave addresses,
+	* but they are sharing a set of codes.
+	*/
 	ret = bq2560x_read_byte(BQ2560X_REG_VPRS, &reg);
-	if (ret)
-		return CHARGE_IC_BAD;
+	if (ret) {
+		g_bq2560x_dev->client->addr = SGM41513_SLAVE_ADDR;
+		ret = bq2560x_read_byte(BQ2560X_REG_VPRS, &reg);
+		if (ret)
+			return CHARGE_IC_BAD;
+	}
 
 	hwlog_info("device_check [%x]=0x%x\n", BQ2560X_REG_VPRS, reg);
 
-	if (((reg & BQ2560X_REG_VPRS_PN_MASK) >>
-		BQ2560X_REG_VPRS_PN_SHIFT) == VENDOR_ID) {
+	pn_value = (reg & BQ2560X_REG_VPRS_PN_MASK) >> BQ2560X_REG_VPRS_PN_SHIFT;
+	switch (pn_value) {
+	case VENDOR_ID:
 		hwlog_info("bq2560x is good\n");
 		return CHARGE_IC_GOOD;
+	case SGM41512H_VENDOR_ID:
+		hwlog_info("sgm41512H is good\n");
+		return CHARGE_IC_GOOD;
+	case SGM41513H_VENDOR_ID:
+		hwlog_info("sgm41513H is good\n");
+		g_sgm41513_exist = true;
+		return CHARGE_IC_GOOD;
+	case ETA6963_VENDOR_ID:
+		hwlog_info("ETA6963 is good\n");
+		return CHARGE_IC_GOOD;
+	default:
+		hwlog_err("no chip match, return ic bad\n");
+		return CHARGE_IC_BAD;
 	}
-
-	hwlog_err("bq2560x is bad\n");
-	return CHARGE_IC_BAD;
 }
 
 static int sgm41511_device_check(void)
@@ -204,7 +248,10 @@ static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 		hwlog_err("init wdt time fail\n");
 
 	/* iprechg = 256ma,iterm current = 128ma */
-	ret = bq2560x_write_byte(BQ2560X_REG_PCTCC, 0x42);
+	if (g_sgm41513_exist)
+		ret = bq2560x_write_byte(BQ2560X_REG_PCTCC, 0xAF);
+	else
+		ret = bq2560x_write_byte(BQ2560X_REG_PCTCC, 0x42);
 	if (ret < 0)
 		hwlog_err("init pre_chg_cur fail\n");
 
@@ -215,10 +262,7 @@ static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 	if (ret < 0)
 		hwlog_err("disable auto vdpm fail\n");
 
-	ret = bq2560x_write_mask(BQ2560X_REG_REG_BVTRC,
-		BQ2560X_REG_REG_BVTRC_OVP_MASK,
-		BQ2560X_REG_REG_BVTRC_OVP_SHIFT,
-		REG06_OVP_10P5V);
+	ret = bq2560x_set_ovpthreshold(g_bq2560x_ovp);
 	if (ret < 0)
 		hwlog_err("init acov threshold fail\n");
 
@@ -288,6 +332,39 @@ static int bq2560x_set_input_current(int value)
 		val);
 }
 
+static int sgm41513_convert_to_charge_current_reg_val(int value)
+{
+	u8 reg = 0;
+
+	/*
+	* For sgm41513, REG02 The steps for setting the
+	* current in different current ranges are different,
+	*  and the sizes of the ranges are also different.
+	*  first interval less than 40ma, step 5ma, Interval Size 8,
+	*  second         less than 130ma, step 10ma, Interval Size 8,
+	*  third          less than 300ma, step 20ma, Interval Size 16,
+	*  fourth         less than 540ma, step 30ma, Interval Size 24,
+	*  fifth          less than 1500ma, step 60ma, Interval Size 32,
+	*  sixth          less or equal to 3000ma, step 120ma, Interval Size 48,
+	*/
+	if (value < 40)
+		reg = value / 5;
+	else if (value < 130)
+		reg = (value - 40) / 10 + 8;
+	else if (value < 300)
+		reg = (value - 130) / 20 + 16;
+	else if (value < 540)
+		reg = (value - 300) / 30 + 24;
+	else if (value < 1500)
+		reg = (value - 540) / 60 + 32;
+	else if (value <= 3000)
+		reg = (value - 1500) / 120 + 48;
+	else
+	       hwlog_info("sgm41513 convert charge current fail\n");
+
+	return reg;
+}
+
 static int bq2560x_set_charge_current(int value)
 {
 	int val;
@@ -307,8 +384,10 @@ static int bq2560x_set_charge_current(int value)
 			hwlog_info("set reduced charge current = %d\n", value);
 		}
 	}
-
-	val = (value - REG02_ICHG_BASE) / REG02_ICHG_LSB;
+	if (g_sgm41513_exist)
+		val = sgm41513_convert_to_charge_current_reg_val(value);
+	else
+		val = (value - REG02_ICHG_BASE) / REG02_ICHG_LSB;
 
 	hwlog_info("set_charge_current [%x]=0x%x\n", BQ2560X_REG_CCC, val);
 
@@ -396,8 +475,16 @@ static int bq2560x_set_terminal_current(int value)
 {
 	int ret;
 	int ichg = -coul_drv_battery_current();
+	struct bq2560x_device_info *di = g_bq2560x_dev;
 
-	if (ichg > LIMIT_CURR) {
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -1;
+	}
+
+	hwlog_info("ffc_support = %d\n", di->ffc_support);
+
+	if ((ichg > LIMIT_CURR) && (di->ffc_support == 1)) {
 		ret = bq2560x_reused_set_cv(g_cv_policy + REG04_VREG_LSB);
 		if (ret) {
 			hwlog_err("set high v_term fail, reset to g_cv_policy\n");
@@ -529,6 +616,38 @@ static int bq2560x_get_charge_state(unsigned int *state)
 	if ((reg & BQ2560X_REG_F_FAULT_BAT_MASK) ==
 		BQ2560X_REG_F_FAULT_BAT_MASK)
 		*state |= CHAGRE_STATE_BATT_OVP;
+
+	return ret;
+}
+
+static int bq2560x_get_vbus_mv(unsigned int *vbus_mv)
+{
+	int ret;
+	u32 state = 0;
+
+	ret = bq2560x_get_charge_state(&state);
+	if (ret) {
+		hwlog_err("get_charge_state fail,ret:%d\n", ret);
+		*vbus_mv = 0; /* fake voltage value for CTS */
+		return -1;
+	}
+	if (CHAGRE_STATE_NOT_PG & state) {
+		hwlog_info("get_charge_state,state:%u\n", state);
+		*vbus_mv = 0; /* fake voltage value for CTS */
+		return 0;
+	}
+	/*
+	 * this chip do not support get-vbus function,
+	 * for CTS, we return a fake vulue
+	 */
+
+	if (!g_bq2560x_dev)
+		return -1;
+
+	if (g_bq2560x_dev->vbus == ADAPTER_5V)
+		*vbus_mv = 5000; /* 5000: fake voltage value for CTS */
+	else if (g_bq2560x_dev->vbus == ADAPTER_9V)
+		*vbus_mv = 9000; /* 9000: fake voltage value for CTS */
 
 	return ret;
 }
@@ -836,6 +955,193 @@ static struct charger_otg_device_ops bq2560x_otg_ops = {
 	.otg_reset_watchdog_timer = bq2560x_reset_watchdog_timer,
 };
 
+static int bq2560x_batinfo_exit(void *dev_data)
+{
+	hwlog_info("bq2560x batinfo exit\n");
+
+	return 0;
+}
+
+static int bq2560x_batinfo_init(void *dev_data)
+{
+	hwlog_info("bq2560x batinfo init\n");
+
+	return 0;
+}
+
+static int bq2560x_get_vbat_mv(void *dev_data)
+{
+	hwlog_info("bq2560x get vbat from batt psy\n");
+
+	return coul_drv_battery_voltage();
+}
+
+static int bq2560x_aux_sc_get_vbus_mv(int *vbus, void *dev_data)
+{
+	return bq2560x_get_vbus_mv(vbus);
+}
+
+static int bq2560x_get_ibat_ma(int *ibat, void *dev_data)
+{
+	hwlog_info("bq2560x get ibat from batt psy\n");
+
+	return power_platform_get_battery_current();
+}
+
+static int bq2560x_get_ibus_ma(int *ibus, void *dev_data)
+{
+	int total_ibus = 0;
+	int main_sc_ibus = 0;
+	int ret;
+
+	if (direct_charge_get_stage_status() != DC_STAGE_CHARGING)
+		return 0;
+
+	ret = adapter_get_output_current(ADAPTER_PROTOCOL_SCP, &total_ibus);
+	hwlog_info("total_ibus=%d\n", total_ibus);
+	ret += dcm_get_ic_ibus(SC_MODE, CHARGE_IC_MAIN, &main_sc_ibus);
+	if (ret < 0)
+		hwlog_err(" %s error\n", __func__);
+	*ibus = total_ibus - main_sc_ibus;
+	hwlog_info("bq2560x_ibus=%d\n", *ibus);
+
+	return 0;
+}
+static int bq2560x_get_device_temp(int *temp, void *dev_data)
+{
+	hwlog_info("bq2560x get temp, return fake value\n");
+
+	return DEFAULT_FAKE_DEVICE_TEMP;
+}
+
+static int bq2560x_get_vusb_mv(int *vusb, void *dev_data)
+{
+	hwlog_err("bq2560x not support read vusb, return err\n");
+
+	return -EPERM;
+}
+
+static int bq2560x_get_vout_mv(int *vout, void *dev_data)
+{
+	hwlog_err("bq2560x not support read vout, return err\n");
+
+	return -EPERM;
+}
+
+static int bq2560x_sc_charge_init(void *dev_data)
+{
+	struct bq2560x_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	hwlog_info("%s enter\n", __func__);
+	return bq2560x_5v_chip_init(di);
+}
+
+static int bq2560x_sc_charge_exit(void *dev_data)
+{
+	return 0;
+}
+
+static int bq2560x_charge_enable(int enable, void *dev_data)
+{
+	struct bq2560x_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	hwlog_info("%s enter, enable = %d\n", __func__, enable);
+
+	if (enable == 1)
+		charge_set_hiz_enable(HIZ_MODE_DISABLE);
+	else
+		return charge_set_hiz_enable(HIZ_MODE_ENABLE);
+
+	power_msleep(DT_MSLEEP_500MS, 0, NULL);
+
+	bq2560x_set_input_current(di->sc_max_input_current);
+	bq2560x_set_charge_current(di->sc_max_charge_current);
+
+	bq2560x_set_charge_enable(enable);
+	power_usleep(DT_USLEEP_10MS);
+
+	return 0;
+}
+
+static int bq2560x_irq_enable(int enable, void *dev_data)
+{
+	return 0;
+}
+
+static int bq2560x_enable_adc(int enable, void *dev_data)
+{
+	return 0;
+}
+
+static int bq2560x_discharge(int enable, void *dev_data)
+{
+	return 0;
+}
+
+static int bq2560x_is_device_close(void *dev_data)
+{
+	return 0;
+}
+
+static int bq2560x_get_device_id(void *dev_data)
+{
+	struct bq2560x_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	return di->device_id;
+}
+
+static int bq2560x_config_watchdog_ms(int time, void *dev_data)
+{
+	 return bq2560x_set_watchdog_timer(time);
+}
+
+static int bq2560x_kick_watchdog_ms(void *dev_data)
+{
+	return bq2560x_reset_watchdog_timer();
+}
+
+static struct dc_batinfo_ops bq2560x_batinfo_ops = {
+	.init = bq2560x_batinfo_init,
+	.exit = bq2560x_batinfo_exit,
+	.get_bat_btb_voltage = bq2560x_get_vbat_mv,
+	.get_bat_package_voltage = bq2560x_get_vbat_mv,
+	.get_vbus_voltage = bq2560x_aux_sc_get_vbus_mv,
+	.get_bat_current = bq2560x_get_ibat_ma,
+	.get_ic_ibus = bq2560x_get_ibus_ma,
+	.get_ic_temp = bq2560x_get_device_temp,
+	.get_ic_vusb = bq2560x_get_vusb_mv,
+	.get_ic_vout = bq2560x_get_vout_mv,
+};
+
+static struct dc_ic_ops bq2560x_sysinfo_ops = {
+	.dev_name = "bq2560x",
+	.ic_init = bq2560x_sc_charge_init,
+	.ic_exit = bq2560x_sc_charge_exit,
+	.ic_enable = bq2560x_charge_enable,
+	.irq_enable = bq2560x_irq_enable,
+	.ic_adc_enable = bq2560x_enable_adc,
+	.ic_discharge = bq2560x_discharge,
+	.is_ic_close = bq2560x_is_device_close,
+	.get_ic_id = bq2560x_get_device_id,
+	.config_ic_watchdog = bq2560x_config_watchdog_ms,
+	.kick_ic_watchdog = bq2560x_kick_watchdog_ms,
+};
+
 static int bq2560x_fcp_init(struct bq2560x_device_info *info)
 {
 	struct device_node *np = NULL;
@@ -876,9 +1182,10 @@ static int bq2560x_set_ovpthreshold(int threshld)
 			BQ2560X_REG_REG_BVTRC_OVP_MASK,
 			BQ2560X_REG_REG_BVTRC_OVP_SHIFT,
 			threshld);
-		if (!ret)
+		if (!ret) {
+			hwlog_info("set ovp = %d success\n", threshld);
 			return ret;
-
+		}
 		msleep(DELAY_10MS);
 	}
 
@@ -1072,6 +1379,33 @@ static irqreturn_t bq2560x_interrupt(int irq, void *_di)
 	return IRQ_HANDLED;
 }
 
+static void bq2560x_init_ops_dev_data(struct bq2560x_device_info *di)
+{
+	memcpy(&di->sc_ops, &bq2560x_sysinfo_ops, sizeof(struct dc_ic_ops));
+	di->sc_ops.dev_data = (void *)di;
+	memcpy(&di->batinfo_ops, &bq2560x_batinfo_ops, sizeof(struct dc_batinfo_ops));
+	di->batinfo_ops.dev_data = (void *)di;
+
+	if (!di->ic_role) {
+		snprintf(di->name, CHIP_DEV_NAME_LEN, "bq2560x");
+	} else {
+		snprintf(di->name, CHIP_DEV_NAME_LEN, "bq2560x_%d", di->ic_role);
+		di->sc_ops.dev_name = di->name;
+	}
+}
+
+static void bq2560x_ops_register(struct bq2560x_device_info *di)
+{
+	int ret;
+
+	bq2560x_init_ops_dev_data(di);
+
+	ret = dc_ic_ops_register(SC_MODE, di->ic_role, &di->sc_ops);
+	ret += dc_batinfo_ops_register(SC_MODE, di->ic_role, &di->batinfo_ops);
+	if (ret)
+		hwlog_err("sc ops or sysinfo ops register fail\n");
+}
+
 static int bq2560x_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
@@ -1106,11 +1440,28 @@ static int bq2560x_probe(struct i2c_client *client,
 	if (sgm41511_device_check())
 		g_sgm41511_exist = 1;
 
+	di->device_id = BUCK_BQ2560X;
+
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"hiz_iin_limit", &(di->hiz_iin_limit), 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"custom_cv", &g_bq2560x_cv, 0);
-
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ffc_support", &di->ffc_support, 1);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ovp_th", &g_bq2560x_ovp, REG06_OVP_10P5V);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"support_sc", &di->support_sc, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ic_role", &di->ic_role, IC_TWO);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc_max_input_current", &di->sc_max_input_current, DEFAULT_SC_MAX_INPUT_CURRENT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc_max_charge_current", &di->sc_max_charge_current, DEFAULT_SC_MAX_CHARGE_CURRENT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"init_clear_hiz", &di->init_clear_hiz, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"shipmode_clear_hiz", &di->shipmode_clear_hiz, 0);
 	/* set gpio to control CD pin to disable/enable bq2560x IC */
 	ret = power_gpio_config_output(np,
 		"gpio_cd", "charger_cd", &di->gpio_cd, 0);
@@ -1162,6 +1513,22 @@ static int bq2560x_probe(struct i2c_client *client,
 
 	bq2560x_log_ops.dev_data = (void *)di;
 	power_log_ops_register(&bq2560x_log_ops);
+	if (di->support_sc)
+		bq2560x_ops_register(di);
+
+	if (di->init_clear_hiz) {
+		if (g_sgm41511_exist) {
+			ret = bq2560x_set_charger_hiz(0);
+			if (ret)
+				hwlog_err("set bq2560x set hiz fail\n");
+		}
+	}
+
+	if (di->shipmode_clear_hiz) {
+		ret = bq2560x_set_charger_hiz(0);
+		if (ret)
+			hwlog_err("shipmode set bq2560x set hiz fail\n");
+	}
 	return 0;
 
 bq2560x_fail_3:

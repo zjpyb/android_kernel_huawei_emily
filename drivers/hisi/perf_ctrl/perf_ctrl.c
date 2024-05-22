@@ -31,6 +31,12 @@ static unsigned long get_dev_cap(void)
 	unsigned long cap = 0;
 
 	cap |= BIT(CAP_AI_SCHED_COMM_CMD);
+#ifdef CONFIG_SCHED_RTG
+	cap |= BIT(CAP_RTG_CMD);
+#endif
+#ifdef CONFIG_RENDER_RT
+	cap |= BIT(CAP_RENDER_RT_CMD);
+#endif
 
 	return cap;
 }

@@ -275,8 +275,23 @@ static void stmvl53l1_nl_recv_msg(struct sk_buff *skb_in)
 	struct ipp_work_t *pwork;
 
 	ipp_dbg("Entering");
-
-	nlh = (struct nlmsghdr *)skb_in->data;
+	if (!skb_in) {
+	               ipp_err("skb_in null error");
+	               return;
+	}
+	if (skb_in->len < NLMSG_HDRLEN) {
+	               ipp_err("skb_in->len: %d < %d error", skb_in->len, NLMSG_HDRLEN);
+	               return;
+	}
+	nlh = nlmsg_hdr(skb_in);
+	if (!nlh) {
+	               ipp_err("skb_in nlmsg_hdr null");
+	               return;
+	}
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct ipp_work_t))) {
+	               ipp_err("invalid nlh.nlmsg_len: %d < %d error", nlh->nlmsg_len, NLMSG_LENGTH(sizeof(struct ipp_work_t)));
+	               return;
+	}
 	pid = nlh->nlmsg_pid; /*pid of sending process */
 
 	pwork = nlmsg_data(nlh);

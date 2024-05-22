@@ -24,6 +24,7 @@ enum wlrx_scene {
 	WLRX_SCN_BEGIN = 0, /* must be zero here */
 	WLRX_SCN_NORMAL = WLRX_SCN_BEGIN,
 	WLRX_SCN_LIGHTSTRAP,
+	WLRX_SCN_UEM,
 	/* new scene must be appended */
 	WLRX_SCN_END,
 };

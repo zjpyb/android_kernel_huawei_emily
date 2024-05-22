@@ -1,5 +1,5 @@
 /*
-* Copyright (c) Huawei Technologies Co., Ltd. 2018-2020. All rights reserved.
+* Copyright (c) Huawei Technologies Co., Ltd. 2018-2022. All rights reserved.
 * Description: 在mptcp开源代码中添加华为私有业务逻辑
 * Author: songqiubin songqiubin@huawei.com
 * Create: 2018-10-13
@@ -759,8 +759,6 @@ static int mptcp_hw_ext_set_config_by_pid_fd(struct mptcp_hw_ext *config,
 		return ret;
 	}
 
-	write_unlock_bh(&mptcp_hw_ext_lock);
-
 	local_bh_disable();
 	bh_lock_sock(sk);
 	tp = tcp_sk(sk);
@@ -786,11 +784,9 @@ static int mptcp_hw_ext_set_config_by_pid_fd(struct mptcp_hw_ext *config,
 			struct mptcp_hw_ext_uid *uid_node = NULL;
 
 			tp->mptcp_cap_flag = MPTCP_CAP_PID_FD;
-			read_lock_bh(&mptcp_hw_ext_lock);
 			uid_node = mptcp_hw_ext_uid_in_list(sock_i_uid(sk).val, 0);
 			if (uid_node)
 				tp->user_switch = uid_node->usr_switch;
-			read_unlock_bh(&mptcp_hw_ext_lock);
 		} else {
 			tp->mptcp_cap_flag = 0;
 		}
@@ -867,7 +863,6 @@ static int mptcp_hw_ext_set_config_by_pid_fd(struct mptcp_hw_ext *config,
 exit:
 	bh_unlock_sock(sk);
 	local_bh_enable();
-	write_lock_bh(&mptcp_hw_ext_lock);
 	sock_put(sk);
 	fput_by_pid(pid, file);
 
@@ -1019,12 +1014,24 @@ static int mptcp_hw_ext_pid_fd_get_mptcp_info(pid_t pid, int fd,
 		return err;
 	}
 
+	if (sock->type != SOCK_STREAM) {
+		pr_err("%s not tcp sock\n", __func__);
+		fput_by_pid(pid, file);
+		return -EINVAL;
+	}
+
 	sk = sock->sk;
 	if (!sk) {
 		pr_err("%s can't get sock by pid_fd:%d_%d\n",
 			__func__, pid, fd);
 		fput_by_pid(pid, file);
 		return -EBADF;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		pr_err("%s sk_protocol error\n", __func__);
+		fput_by_pid(pid, file);
+		return -EINVAL;
 	}
 
 	local_bh_disable();
@@ -1623,7 +1630,6 @@ static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *p
 	struct tcp_sock *meta_tp = NULL;
 	int32_t i;
 
-	write_unlock_bh(&mptcp_hw_ext_lock);
 	for (i = 0; i < MPTCP_HASH_SIZE; i++) {
 		rcu_read_lock_bh();
 		hlist_nulls_for_each_entry_rcu(meta_tp, node, &tk_hashtable[i],
@@ -1661,7 +1667,6 @@ static void mptcp_hw_user_switch_sock_update(int32_t uid, bool on, const char *p
 		}
 		rcu_read_unlock_bh();
 	}
-	write_lock_bh(&mptcp_hw_ext_lock);
 }
 
 
@@ -2163,7 +2168,7 @@ static void mptcp_set_sec_addr_for_sk(struct sock *sk, int32_t uid,
 }
 
 
-void mptcp_add_rem_addr_for_sk(struct sock *meta_sk)
+void mptcp_add_rem_addr_for_sk(struct sock *meta_sk, bool is_mptcp_hw_ext_lock)
 {
 	struct tcp_sock *meta_tp = tcp_sk(meta_sk);
 	struct mptcp_hw_ext_dip_node *dip_node = NULL;
@@ -2173,11 +2178,13 @@ void mptcp_add_rem_addr_for_sk(struct sock *meta_sk)
 	if (meta_tp->mptcp_cap_flag != MPTCP_CAP_UID_DIP_DPORT)
 		return;
 
-	read_lock_bh(&mptcp_hw_ext_lock);
+	if (!is_mptcp_hw_ext_lock)
+		read_lock_bh(&mptcp_hw_ext_lock);
 	dip_node = mptcp_hw_ext_get_node_by_uid_dip(sock_i_uid(meta_sk).val,
 		meta_sk->sk_daddr);
 	if (dip_node == NULL) {
-		read_unlock_bh(&mptcp_hw_ext_lock);
+		if (!is_mptcp_hw_ext_lock)
+			read_unlock_bh(&mptcp_hw_ext_lock);
 		return;
 	}
 
@@ -2190,7 +2197,8 @@ void mptcp_add_rem_addr_for_sk(struct sock *meta_sk)
 			break;
 		}
 	}
-	read_unlock_bh(&mptcp_hw_ext_lock);
+	if (!is_mptcp_hw_ext_lock)
+		read_unlock_bh(&mptcp_hw_ext_lock);
 }
 
 

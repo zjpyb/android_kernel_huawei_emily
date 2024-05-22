@@ -11,6 +11,8 @@
 #ifndef __HISI_USB_PHY_CHIP_H__
 #define __HISI_USB_PHY_CHIP_H__
 
+#include <linux/phy/phy.h>
+
 enum upc_chip_type {
 	HISI_USB_PHY_CHIP = 0xAAAA,
 	SNOPSYS_USB_PHY_CHIP = 0xFFFF,
@@ -29,5 +31,6 @@ void upc_set_usb_ioc(unsigned int snopsys_data, unsigned int snopsys_stp,
 	unsigned int hisi_data, unsigned int hisi_stp);
 void upc_open(void);
 void upc_close(void);
+void override_usb_trim(enum phy_mode mode);
 
 #endif /* __HISI_USB_PHY_CHIP_H__ */

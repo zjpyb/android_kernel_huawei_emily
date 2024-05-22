@@ -117,6 +117,10 @@ static struct ext_sensorhub_route ext_route_tbl[] = {
 		NULL, NULL, NULL,
 		MAX_READ_LIST_LEN_MOTION, 0
 	},
+	{   ROUTE_TIMESYNC_PORT, NULL,
+		NULL, NULL, NULL,
+		MAX_READ_LIST_LEN_TIMESYNC, 0
+	},
 };
 
 static struct ext_sensorhub_buf_list *idle_buf_head;

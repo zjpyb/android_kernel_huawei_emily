@@ -39,7 +39,7 @@ extern struct dsm_client* lcd_dclient;
 /* lcd btb check */
 int btb_floating_times = 0;
 int btb_highlever_times = 0;
-struct lcdkit_btb_info lcdkit_btb_inf = {0, 0, 0};
+struct lcdkit_btb_info lcdkit_btb_inf = {0, 0, 0, 0, {0, 0}};
 
 static int btb_check_state(void)
 {
@@ -134,6 +134,28 @@ int mipi_lcdkit_btb_check(void)
 	}
 
 	return btb_check_state();
+}
+
+int lcdkit_btb_check(void)
+{
+	int btb_status = 0;
+	int btb_gpio;
+	struct lcdkit_btb_info *btb_info_pr = &lcdkit_btb_inf;
+	if (!btb_info_pr->btb_check_support) {
+		LCDKIT_INFO("not support btb check\n");
+		return CHECK_SKIPPED;
+	}
+	for (int i = 0; i < btb_info_pr->btb_gpio.cnt; i++) {
+		btb_gpio = btb_info_pr->btb_gpio.buf[i];
+		btb_status += gpio_get_value(btb_gpio);
+	}
+	if (btb_status > 0) {
+		LCDKIT_ERR("LCD BTB check ERROR = %d\n", btb_status);
+		return CHECKED_ERROR;
+	} else {
+		LCDKIT_INFO("LCD BTB check OK\n");
+		return CHECKED_OK;
+	}
 }
 
 #define MAX_ERROR_TIMES 100000000

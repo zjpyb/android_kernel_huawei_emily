@@ -40,13 +40,16 @@ unsigned long hmdfs_get_time(struct dentry *dentry)
 	return 0;
 }
 
-static int hmdfs_d_remote_revalidate(struct hmdfs_peer *conn,
+static int hmdfs_remote_d_revalidate(struct hmdfs_peer *conn,
 				     struct dentry *target,
 				     struct dentry *parent)
 {
 	unsigned int timeout = hmdfs_sb(target->d_sb)->dcache_timeout;
 	unsigned long dentry_time = hmdfs_get_time(target);
-	struct clearcache_item *item;
+	struct clearcache_item *item = NULL;
+
+	if (conn->sbi->s_external_fs)
+		return 0;
 
 	item = hmdfs_find_cache_item(conn->device_id, parent);
 	if (!item)
@@ -79,7 +82,7 @@ static inline void unlock_for_dname_cmp(struct dentry *dentry,
 	spin_unlock(&lower_dentry->d_lock);
 }
 
-static int hmdfs_dev_d_revalidate(struct dentry *direntry, unsigned int flags)
+static int hmdfs_dev_d_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	struct inode *dinode = NULL;
 	struct hmdfs_inode_info *info = NULL;
@@ -87,14 +90,14 @@ static int hmdfs_dev_d_revalidate(struct dentry *direntry, unsigned int flags)
 #ifdef CONFIG_HMDFS_1_0
 	dentry_syncer_wakeup();
 #endif
-	spin_lock(&direntry->d_lock);
-	if (IS_ROOT(direntry)) {
-		spin_unlock(&direntry->d_lock);
+	spin_lock(&dentry->d_lock);
+	if (IS_ROOT(dentry)) {
+		spin_unlock(&dentry->d_lock);
 		return 1;
 	}
-	spin_unlock(&direntry->d_lock);
+	spin_unlock(&dentry->d_lock);
 
-	dinode = d_inode(direntry);
+	dinode = d_inode(dentry);
 	if (!dinode)
 		return 0;
 
@@ -103,51 +106,26 @@ static int hmdfs_dev_d_revalidate(struct dentry *direntry, unsigned int flags)
 	    info->inode_type == HMDFS_LAYER_FIRST_DEVICE) {
 		return 1;
 	}
-	if (info->conn && info->conn->status == NODE_STAT_ONLINE)
+	if (info->conn && hmdfs_is_node_online(info->conn))
 		return 1;
 
 	return 0;
 }
 
-static int hmdfs_d_revalidate(struct dentry *direntry, unsigned int flags)
+static int hmdfs_local_d_revalidate(struct dentry *dentry,
+				    struct dentry *pdentry,
+				    unsigned int flags)
 {
-	struct inode *dinode = NULL;
-	struct hmdfs_inode_info *info = NULL;
 	struct path lower_path, parent_lower_path;
-	struct dentry *parent_dentry = NULL;
+	struct dentry *lower_dentry = NULL;
 	struct dentry *parent_lower_dentry = NULL;
 	struct dentry *lower_cur_parent_dentry = NULL;
-	struct dentry *lower_dentry = NULL;
-	int ret;
+	int ret = 0;
 
-#ifdef CONFIG_HMDFS_1_0
-	dentry_syncer_wakeup();
-#endif
-
-	if (flags & LOOKUP_RCU)
-		return -ECHILD;
-
-	if (flags & (LOOKUP_CREATE | LOOKUP_RENAME_TARGET | LOOKUP_REVAL))
-		return 0;
-
-	dinode = d_inode(direntry);
-	if (!dinode)
-		return 0;
-
-	/* remote dentry timeout */
-	info = hmdfs_i(dinode);
-	parent_dentry = dget_parent(direntry);
-	if (info->conn) {
-		ret = hmdfs_d_remote_revalidate(info->conn, direntry,
-						parent_dentry);
-		dput(parent_dentry);
-		return ret;
-	}
-
-	hmdfs_get_lower_path(direntry, &lower_path);
+	hmdfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	lower_cur_parent_dentry = dget_parent(lower_dentry);
-	hmdfs_get_lower_path(parent_dentry, &parent_lower_path);
+	hmdfs_get_lower_path(pdentry, &parent_lower_path);
 	parent_lower_dentry = parent_lower_path.dentry;
 	if ((lower_dentry->d_flags & DCACHE_OP_REVALIDATE)) {
 		ret = lower_dentry->d_op->d_revalidate(lower_dentry, flags);
@@ -169,16 +147,46 @@ static int hmdfs_d_revalidate(struct dentry *direntry, unsigned int flags)
 	}
 
 	ret = 1;
-	lock_for_dname_cmp(direntry, lower_dentry);
-	if (!qstr_case_eq(&direntry->d_name, &lower_dentry->d_name))
+	lock_for_dname_cmp(dentry, lower_dentry);
+	if (!qstr_case_eq(&dentry->d_name, &lower_dentry->d_name))
 		ret = 0;
-	unlock_for_dname_cmp(direntry, lower_dentry);
+	unlock_for_dname_cmp(dentry, lower_dentry);
 
 out:
 	hmdfs_put_lower_path(&parent_lower_path);
 	dput(lower_cur_parent_dentry);
 	hmdfs_put_lower_path(&lower_path);
-	dput(parent_dentry);
+	return ret;
+}
+
+static int hmdfs_d_revalidate(struct dentry *dentry, unsigned int flags)
+{
+	struct inode *dinode = d_inode(dentry);
+	struct hmdfs_inode_info *info = NULL;
+	struct dentry *pdentry = NULL;
+	int ret;
+
+#ifdef CONFIG_HMDFS_1_0
+	dentry_syncer_wakeup();
+#endif
+
+	if (flags & LOOKUP_RCU)
+		return -ECHILD;
+
+	if (flags & (LOOKUP_CREATE | LOOKUP_RENAME_TARGET | LOOKUP_REVAL))
+		return 0;
+
+	if (!dinode)
+		return 0;
+
+	info = hmdfs_i(dinode);
+	pdentry = dget_parent(dentry);
+	if (info->conn)
+		ret = hmdfs_remote_d_revalidate(info->conn, dentry, pdentry);
+	else
+		ret = hmdfs_local_d_revalidate(dentry, pdentry, flags);
+
+	dput(pdentry);
 	return ret;
 }
 
@@ -285,7 +293,7 @@ void clear_comrades(struct dentry *dentry)
  * Always return 0 to invalidate a dentry for fault-tolerance.
  * The cost is acceptable for a overlay filesystem.
  */
-static int d_revalidate_merge(struct dentry *direntry, unsigned int flags)
+static int d_revalidate_merge(struct dentry *dentry, unsigned int flags)
 {
 #ifdef CONFIG_HMDFS_1_0
 	dentry_syncer_wakeup();

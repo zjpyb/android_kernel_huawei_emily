@@ -1124,9 +1124,10 @@ static void watch_get_charge_info_work(struct work_struct *work)
 {
 	int get_capacity = watch_send_cmd_to_mcu_charge(GET_BAT_CAP, DEFAULT_CMD);
 	int get_temp = watch_send_cmd_to_mcu_charge(GET_BAT_TEMP, DEFAULT_CMD);
+	int get_info = watch_send_cmd_to_mcu_charge(GET_BAT_INFO, DEFAULT_CMD);
 
-	hwlog_info("%s send command to get mcu charge info\n", __func__);
-	if ((get_capacity < 0) || (get_temp < 0)) {
+	hwlog_info("%s send command to get all mcu charge info\n", __func__);
+	if ((get_capacity < 0) || (get_temp < 0) || (get_info < 0)) {
 		g_get_charge_info_timer.expires = jiffies +
 			GET_CHARGE_INFO_PERIOD * HZ;
 		add_timer(&g_get_charge_info_timer);

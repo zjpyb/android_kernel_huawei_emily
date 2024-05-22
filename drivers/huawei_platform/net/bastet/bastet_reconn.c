@@ -172,6 +172,17 @@ int bastet_reconn_proxyid_set(struct reconn_id id)
 			id.guide.fd, id.guide.pid);
 		return -ENOENT;
 	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
 	rc = sk->reconn;
 	if (rc == NULL) {
 		bastet_loge("bastet_reconn is NULL");

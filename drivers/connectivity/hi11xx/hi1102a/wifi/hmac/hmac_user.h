@@ -288,7 +288,7 @@ typedef struct {
     oal_bool_enum_uint8 en_user_bw_limit;              /* 该用是否有限速 */
     oal_bool_enum_uint8 en_user_epigram_vht_capable;   /* epigram私有vht 2G 11ac使能标志 */
     oal_bool_enum_uint8 en_user_epigram_novht_capable; /* epigram私有5G 11ac 20M mcs9使能标志 */
-    oal_uint8 auc_resv1[1];
+    oal_bool_enum_uint8 assoc_ap_up_tx_auth_req;                /* APUT下关联user是否在关联状态下回复过auth */
 
 #ifdef _PRE_WLAN_FEATURE_EDCA_OPT_AP
     oal_uint32 aaul_txrx_data_stat[WLAN_WME_AC_BUTT][WLAN_TXRX_DATA_BUTT]; /* 发送/接收 tcp/udp be,bk,vi,vo报文 */

@@ -31,6 +31,10 @@
 #include <linux/time.h>
 #include <linux/syscalls.h>
 
+#if (defined(CONFIG_HUAWEI_DSM) && defined(CONFIG_THP_IRQ_STATISTIC_AQ))
+#include <dsm/dsm_pub.h>
+#endif
+
 #define NO_ERR 0
 #define ENABLE 1
 
@@ -42,6 +46,11 @@
 #define FW_INFO_READ_RETRY 3
 #define SEND_COMMAND_RETRY 3
 #define CHECK_COMMAND_RETRY 3
+
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+#define INVALID_EVENT_COUNT_LIMIT 15
+#define STATISTIC_TIEMOUT_MS 2000
+#endif
 
 #define GOODIX_FRAME_ADDR_DEFAULT 0x8C05
 #define GOODIX_CMD_ADDR_DEFAULT 0x58BF
@@ -2161,6 +2170,62 @@ static int touch_driver_wrong_touch(struct thp_device *tdev)
 	return 0;
 }
 
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+static int protect_for_invalid_irq(int count)
+{
+	struct timeval end_time;
+	static struct timeval invalid_irq_start_time;
+	long delta_time;
+
+	if (count == 0) {
+		do_gettimeofday(&invalid_irq_start_time);
+		return 0;
+	}
+	if (count == INVALID_EVENT_COUNT_LIMIT) {
+		do_gettimeofday(&end_time);
+		delta_time = ((end_time.tv_sec - invalid_irq_start_time.tv_sec) *
+				1000000) + end_time.tv_usec -
+				invalid_irq_start_time.tv_usec;
+
+		/* divide 1000 to transfor sec to us to ms */
+		delta_time /= 1000;
+		thp_log_info("%s:delta_time = %ld ms\n", __func__, delta_time);
+		return delta_time <= STATISTIC_TIEMOUT_MS ? -EINVAL : 0;
+	}
+
+	return 0;
+}
+
+static void report_irq_exception(u8 event_type)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+	static int invalid_gesture_count = 0;
+	int retval;
+
+	if (!cd->statistic_invalid_irq)
+		return;
+
+	if (event_type == IRQ_EVENT_TYPE_GESTURE) {
+		invalid_gesture_count = 0;
+		return;
+	}
+	retval = protect_for_invalid_irq(invalid_gesture_count);
+	if (invalid_gesture_count < INVALID_EVENT_COUNT_LIMIT) {
+		invalid_gesture_count++;
+		return;
+	}
+	invalid_gesture_count = 0;
+	if (retval) {
+#if defined(CONFIG_HUAWEI_DSM)
+		thp_dmd_report(DSM_TP_DEV_STATUS_ERROR_NO,
+			"gt ic's continuously reporting event type: 0x%02x\n",
+			event_type);
+#endif
+		cd->statistic_invalid_irq = 0;
+	}
+}
+#endif
+
 /* call this founction when TPIC in gesture mode
  *  return: if get valied gesture type 0 is returened
  */
@@ -2206,6 +2271,9 @@ static int touch_driver_gesture_event(struct thp_device *tdev,
 	if (gesture_event_head[0] != IRQ_EVENT_TYPE_GESTURE) {
 		thp_log_err("%s: not gesture irq event, event_type 0x%x\n",
 			__func__, gesture_event_head[0]);
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+		report_irq_exception(gesture_event_head[0]);
+#endif
 		retval = -EINVAL;
 		goto err_out;
 	}
@@ -2220,6 +2288,9 @@ static int touch_driver_gesture_event(struct thp_device *tdev,
 			gesture_event_head[2];
 	if (gesture_type == GESTURE_TYPE_DOUBLE_TAP) {
 		thp_log_info("found valid gesture type\n");
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+		report_irq_exception(IRQ_EVENT_TYPE_GESTURE);
+#endif
 		mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 		if (tdev->thp_core->easy_wakeup_info.off_motion_on == true) {
 			tdev->thp_core->easy_wakeup_info.off_motion_on = false;

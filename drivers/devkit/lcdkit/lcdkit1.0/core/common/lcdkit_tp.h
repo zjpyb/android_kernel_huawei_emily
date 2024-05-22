@@ -39,6 +39,7 @@ void lcd_huawei_thp_register(struct tp_thp_device_ops *tp_thp_device_ops);
 char *trans_lcd_panel_name_to_tskit(void);
 int lcdkit_get_panel_version(unsigned int *pversion);
 int thp_send_esd_event(unsigned int status);
+unsigned int lcdkit_get_tp_driver_type(void);
 extern struct tp_synaptics_dev_ops *tp_synaptics_ops;
 extern struct tp_kit_device_ops *tp_kit_ops;
 extern struct tp_thp_device_ops *tp_thp_ops;

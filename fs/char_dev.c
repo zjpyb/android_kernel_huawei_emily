@@ -29,6 +29,8 @@ static struct kobj_map *cdev_map;
 
 static DEFINE_MUTEX(chrdevs_lock);
 
+DEFINE_MUTEX(evdevs_lock);
+
 #define CHRDEV_MAJOR_HASH_SIZE 255
 
 static struct char_device_struct {
@@ -376,18 +378,6 @@ void cdev_put(struct cdev *p)
 	}
 }
 
-static bool cdev_tryget(struct cdev *cdev)
-{
-	if (!kobject_get_unless_zero(&cdev->kobj))
-		return false;
-
-	if (try_module_get(cdev->owner))
-		return true;
-
-	kobject_put(&cdev->kobj);
-	return false;
-}
-
 /*
  * Called every time a character special file is opened
  */
@@ -398,6 +388,7 @@ static int chrdev_open(struct inode *inode, struct file *filp)
 	struct cdev *new = NULL;
 	int ret = 0;
 
+	mutex_lock(&evdevs_lock);
 	spin_lock(&cdev_lock);
 	p = inode->i_cdev;
 	if (!p) {
@@ -405,8 +396,10 @@ static int chrdev_open(struct inode *inode, struct file *filp)
 		int idx;
 		spin_unlock(&cdev_lock);
 		kobj = kobj_lookup(cdev_map, inode->i_rdev, &idx);
-		if (!kobj)
+		if (!kobj) {
+			mutex_unlock(&evdevs_lock);
 			return -ENXIO;
+		}
 		new = container_of(kobj, struct cdev, kobj);
 		spin_lock(&cdev_lock);
 		/* Check i_cdev again in case somebody beat us to it while
@@ -416,11 +409,13 @@ static int chrdev_open(struct inode *inode, struct file *filp)
 			inode->i_cdev = p = new;
 			list_add(&inode->i_devices, &p->list);
 			new = NULL;
-		} else if (!cdev_tryget(p))
+		} else if (!cdev_get(p))
 			ret = -ENXIO;
-	} else if (!cdev_tryget(p))
+	} else if (!cdev_get(p)) {
 		ret = -ENXIO;
+	}
 	spin_unlock(&cdev_lock);
+	mutex_unlock(&evdevs_lock);
 	cdev_put(new);
 	if (ret)
 		return ret;

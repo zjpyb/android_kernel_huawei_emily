@@ -808,6 +808,10 @@ EXPORT_SYMBOL(blk_alloc_queue);
 
 int blk_queue_enter(struct request_queue *q, bool nowait)
 {
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+	int orig_preempt_cnt = preempt_count();
+	bool unlock = false;
+#endif
 	while (true) {
 
 		if (percpu_ref_tryget_live(&q->q_usage_counter))
@@ -815,9 +819,13 @@ int blk_queue_enter(struct request_queue *q, bool nowait)
 
 		if (nowait)
 			return -EBUSY;
+
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
-		if (blk_queue_query_unistore_enable(q))
+		if (blk_queue_query_unistore_enable(q)) {
 			blk_flush_plug(current);
+			if (orig_preempt_cnt)
+				unlock = mas_blk_unlock(q);
+		}
 #endif
 		/*
 		 * read pair of barrier in blk_freeze_queue_start(),
@@ -831,6 +839,10 @@ int blk_queue_enter(struct request_queue *q, bool nowait)
 		wait_event(q->mq_freeze_wq,
 			   !atomic_read(&q->mq_freeze_depth) ||
 			   blk_queue_dying(q)); /*lint !e666*/
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		if (blk_queue_query_unistore_enable(q) && unlock)
+			mas_blk_lock(q);
+#endif
 		if (blk_queue_dying(q))
 			return -ENODEV;
 	}
@@ -2437,6 +2449,11 @@ EXPORT_SYMBOL(generic_make_request);
  */
 blk_qc_t submit_bio(struct bio *bio)
 {
+	blk_qc_t ret;
+#ifdef CONFIG_MAS_UNISTORE_PRESERV
+	struct request_queue *q = bio->bi_disk->queue;
+	mas_blk_lock_by_op(q, bio_op(bio));
+#endif
 	/*
 	 * If it's a regular read/write or a barrier with data attached,
 	 * go through the normal accounting stuff before submission.
@@ -2465,8 +2482,11 @@ blk_qc_t submit_bio(struct bio *bio)
 				bio_devname(bio, b), count);
 		}
 	}
-
-	return generic_make_request(bio);
+	ret = generic_make_request(bio);
+#ifdef CONFIG_MAS_UNISTORE_PRESERV
+	(void)mas_blk_unlock(q);
+#endif
+	return ret;
 }
 EXPORT_SYMBOL(submit_bio);
 

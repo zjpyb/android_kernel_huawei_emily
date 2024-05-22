@@ -16,6 +16,7 @@
 
 #define REG_RAW_BUF0			0x6A
 #define REG_CB_BUF0			0x6E
+#define REG_OPEN_BUF0 0xCF
 
 #define REG_5X46_RAW_BUF0  0x36
 #define REG_5X46_CB_BUF0  0x4E
@@ -75,6 +76,8 @@
 #define MAX_ADC_NUM_FT8006U	    4095
 #define MIN_ADC_NUM_FT8006U	    170
 #define MIN_ADC_NUM_FT8719			200
+#define MAX_ADC_NUM_FT8201AB 4003
+#define MAX_ADC_NUM_FT8201AB_MAX 4096
 #define ADC_EX_RESIS_1_FT8719			252000
 #define ADC_EX_RESIS_2_FT8719			120
 #define ADC_EX_RESIS_3_FT8719			60
@@ -92,6 +95,8 @@
 #define REG_GIP			     	0x20
 #define MAX_CB_VALUE			200
 #define TP_TEST_FAILED_REASON_LEN			20
+#define MAX_OPEN_VALUE 1000000
+#define OPEN_TEST_MAX_TIME 50
 
 #define ERROR_CODE_OK			0x00
 #define DELAY_TIME_OF_CALIBRATION		30
@@ -127,6 +132,13 @@
 #define OFFSET_RES						3
 #define PANEL_DIFF_FACTOR				10
 
+#define ADC_EX_RESIS_1_FT8201AB 65
+#define ADC_EX_RESIS_2_FT8201AB 20480
+#define ADC_EX_RESIS_3_FT8201AB 4096
+#define OPEN_TEST_REG_8756 0x15
+#define OPEN_TEST_REG_STOP_8756 0x16
+#define OPEN_TEST_DATA_READY 0xAA
+
 #define GET_RAW_DATA_FORMAT "get_rawdata_format"
 #define GET_RAW_DATA "get_raw_data"
 #define ENTER_WORK "enter_work"
@@ -153,6 +165,7 @@ static char tp_test_failed_reason[TP_TEST_FAILED_REASON_LEN + 1] =
 	"-software_reason";
 struct focal_test_params *params = NULL;
 static int focal_write_flag = false;
+static int focal_read_open_data_16 = false;
 static int  tp_cap_test_status =TEST_SUCCESS;
 static u8 judge_ic_type = FTS_INIT_VALUE;
 static int focal_start_scan(void);
@@ -243,7 +256,8 @@ static int focal_enter_work(void)
 			ret = focal_write_reg(DEVICE_MODE_ADDR, DEVICE_MODE_WORK);
 			if (!ret) {
 				if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-					(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+					(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+					(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 					msleep(200);
 				}else{
 					msleep(50);
@@ -287,8 +301,9 @@ static int focal_enter_factory(void)
 			ret = focal_write_reg(DEVICE_MODE_ADDR,
 				DEVICE_MODE_FACTORY);
 			if (!ret) {
-				if (g_focal_dev_data->ic_type == FOCAL_FT8719 ||
-					g_focal_dev_data->ic_type == FOCAL_FT8756) {
+				if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
+					(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+					(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 					msleep(200);
 				}else{
 					msleep(50);
@@ -475,7 +490,8 @@ int  focal_start_test_tp(
 		FTS_FT8716_PRODUCT_NAME) == 0)) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8719) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_ft8716_lcd_noise_test(params, &test_results[cap_test_num],cap_test_num+1);
 		if(ret){
 			tp_cap_test_status = SOFTWARE_REASON;
@@ -493,7 +509,8 @@ int  focal_start_test_tp(
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8716) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8719) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		/* open test */
 		ret = focal_open_test(params, &test_results[cap_test_num],cap_test_num+1);
 		if(ret){
@@ -637,7 +654,8 @@ static int focal_read_raw_data(u8 data_type, u8 *raw_data, size_t size)
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		if (true != focal_write_flag){
 			ret = focal_write_reg(FTS_REG_DATA_TYPE, data_type);
 			if (ret) {
@@ -661,6 +679,11 @@ static int focal_read_raw_data(u8 data_type, u8 *raw_data, size_t size)
 	}
 	else{
 		cmd = REG_RAW_BUF0;
+	}
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8201_AB) &&
+		focal_read_open_data_16) {
+		cmd = REG_OPEN_BUF0;
+		TS_LOG_INFO("%s:read open data\n", __func__);
 	}
 	for (i = 0; i < pkg_count; i++) {
 		/*
@@ -921,6 +944,8 @@ int focal_get_channel_num(u8 *channel_x, u8 *channel_y)
 	int ret = 0;
 	u8 chl_x = 0;
 	u8 chl_y = 0;
+	u8 rx_max_chl_num;
+	u8 tx_max_chl_num;
 
 	/* get channel x num */
 	ret = focal_read_channel_x(&chl_x);
@@ -938,13 +963,20 @@ int focal_get_channel_num(u8 *channel_x, u8 *channel_y)
 		return ret;
 	}
 
-	if (chl_x <= 0 || chl_x > TX_NUM_MAX) {
+	if (g_focal_pdata->support_dual_chip_arch) {
+		rx_max_chl_num = DUAL_CHIP_RX_NUM_MAX;
+		tx_max_chl_num = DUAL_CHIP_TX_NUM_MAX;
+	} else {
+		rx_max_chl_num = RX_NUM_MAX;
+		tx_max_chl_num = TX_NUM_MAX;
+	}
+	if (chl_x <= 0 || chl_x > tx_max_chl_num) {
 		TS_LOG_ERR("%s:channel x value out of range, value = %d\n",
 			__func__, chl_x);
 		return -EINVAL;
 	}
 
-	if (chl_y <= 0 || chl_y > RX_NUM_MAX) {
+	if (chl_y <= 0 || chl_y > rx_max_chl_num) {
 		TS_LOG_ERR("%s:channel y value out of range, value = %d\n",
 			__func__, chl_y);
 		return -EINVAL;
@@ -2128,7 +2160,8 @@ static int focal_raw_data_test(
 	}
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_write_reg(RAWDATA_TEST_REG, 0x01);
 		if(ret){
 			TS_LOG_ERR("%s:write rawdata test fail, ret=%d\n",
@@ -2223,7 +2256,8 @@ static int focal_raw_data_test(
 
 test_finish:
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_write_reg(RAWDATA_TEST_REG, 0x0);
 		if(ret){
 			TS_LOG_ERR("%s:restore rawdata test fail, ret=%d\n",
@@ -2827,7 +2861,8 @@ static int focal_cb_test(
 	}
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_write_reg(CB_TEST_REG, 0x01);
 		if(ret){
 			TS_LOG_ERR("%s:write cb test fail, ret=%d\n",
@@ -2916,7 +2951,8 @@ static int focal_cb_test(
 
 test_finish:
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_write_reg(CB_TEST_REG, 0x0);
 		if(ret){
 			TS_LOG_ERR("%s:restore cb test fail, ret=%d\n",
@@ -2963,6 +2999,39 @@ static int focal_get_open_test_data(struct focal_test_params *params,int *data, 
 	if(!data||(0 == size) ||(0 == chl_x) ||(0 == chl_y)){
 		TS_LOG_ERR("%s: parameters invalid !\n", GET_OPEN_TEST_DATA);
 		return -EINVAL;
+	}
+
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		ret = focal_write_reg(OPEN_TEST_REG_8756, 0x01);
+		if (ret < 0) {
+			TS_LOG_ERR("start open test fail\n");
+			return -EIO;
+		}
+		for (i = 0; i < OPEN_TEST_MAX_TIME; i++) {
+			msleep(100);
+			ret = focal_read_reg(OPEN_TEST_REG_STOP_8756, &StateValue);
+			if ((ret >= 0) && (StateValue == OPEN_TEST_DATA_READY))
+				break;
+			else
+				TS_LOG_ERR("reg%x=%x,retry:%d\n",
+					OPEN_TEST_REG_STOP_8756, StateValue, i);
+		}
+		if (i >= OPEN_TEST_MAX_TIME) {
+			TS_LOG_ERR("open test timeout\n");
+			return -EIO;
+		}
+		msleep(50);
+
+		focal_read_open_data_16 = true;
+		focal_write_flag = true;
+		focal_get_raw_data_format(chl_x, chl_y, data, size);
+		if (ret)
+			TS_LOG_ERR("%s:get raw data fail, ret=%d\n",
+				GET_OPEN_TEST_DATA, ret);
+
+		focal_read_open_data_16 = false;
+		focal_write_flag = false;
+		return ret;
 	}
 
 	if (judge_ic_type == FTS_8716_VALUE) {
@@ -3325,7 +3394,10 @@ static int focal_open_test(
 
 	panel_data = test_result->values;
 	panel_data_min = params->threshold.open_test_cb_min;
-	panel_data_max = MAX_CB_VALUE;
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB)
+		panel_data_max = params->threshold.open_test_cb_max;
+	else
+		panel_data_max = MAX_CB_VALUE;
 	if(OPEN_TEST_POINT_BY_POINT ==  params->open_test_cb_point_by_point) {
 		TS_LOG_INFO("%s: open_data_size is %lu\n",
 			OPEN_TEST, test_result->size);
@@ -3376,13 +3448,15 @@ test_finish:
 		}
 	}
 	/* auto clb */
-	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
-		ret = focal_chip_clb();
-		if (ret) {
-			TS_LOG_ERR("clb fail, ret=%d\n", ret);
-			test_result->result = false;
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
+		if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB) {
+			ret = focal_chip_clb();
+			if (ret) {
+				TS_LOG_ERR("clb fail, ret=%d\n", ret);
+				test_result->result = false;
+			}
 		}
-
 		ret = focal_write_reg(OPEN_TEST_REG_STOP_8756, 0x03);
 		if (ret) {
 			TS_LOG_ERR("restore open test fail, ret=%d\n",
@@ -3462,6 +3536,13 @@ static int focal_get_short_circuit_data(int *data, size_t size,unsigned int chl_
 					"adc data out of range", i, data[i]);
 				data[i] = MAX_ADC_NUM_FT8006U;
 			}
+		} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+			if ((data[i] >= MAX_ADC_NUM_FT8201AB) &&
+				(data[i] <= MAX_ADC_NUM_FT8201AB_MAX)) {
+				TS_LOG_DEBUG("%s:%s,adc_data[%d]=%d\n", __func__,
+					"adc data out of range", i, data[i]);
+				data[i] = MAX_ADC_NUM_FT8201AB;
+			}
 		}
 		else{
 			if (MAX_ADC_NUM <= data[i]) {
@@ -3488,7 +3569,13 @@ static int focal_get_short_circuit_data(int *data, size_t size,unsigned int chl_
 				ADC_EX_RESIS_5_FT8756 * data[i]);
 			data[i] = adc_data_tmp;
 		}
-	}else{
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		for (i = 0; i < size; i++) {
+			adc_data_tmp = (ADC_EX_RESIS_2_FT8201AB + ADC_EX_RESIS_1_FT8201AB * data[i]) /
+				(ADC_EX_RESIS_3_FT8201AB - data[i]);
+			data[i] = adc_data_tmp;
+		}
+	} else {
 		for (i = 0; i < size; i++) {
 			adc_data_tmp = data[i] * 100 / (MAX_ADC_NUM - data[i]);
 			data[i] = adc_data_tmp;
@@ -3892,7 +3979,8 @@ static int focal_ft8716_lcd_noise_test(
 		goto test_finish;
 	}
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		/*clean counter*/
 		ret = focal_write_reg(FTS_REG_DATA_TYPE, DATA_TYPE_RAW_DATA);
 		if (ret) {
@@ -3949,7 +4037,8 @@ static int focal_ft8716_lcd_noise_test(
 				break;
 			}
 		}
-	} else if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+	} else if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		focal_write_flag = true;
 		msleep(LCD_TEST_FRAMENUM * 8);
 		for (i = 0; i <= TEST_TIMEOUT; i++) {
@@ -4011,7 +4100,8 @@ static int focal_ft8716_lcd_noise_test(
 	}
 
 	if (TEST_TIMEOUT == i) {
-		if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+		if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+			(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 			ret = focal_write_reg(REG_8716_LCD_NOISE_START, 0x00);
 			ret = focal_write_reg(REG_LCD_NOISE_NUMBER, 0x03);
 		} else {
@@ -4037,11 +4127,13 @@ static int focal_ft8716_lcd_noise_test(
 	}
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756))
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB))
 		focal_write_flag = false;
 
 	TS_LOG_INFO("%s: read raw data  success\n", FT8716_LCD_NOISE_TEST);
-	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_write_reg(REG_8716_LCD_NOISE_START, 0x00);
 		ret = focal_write_reg(REG_LCD_NOISE_NUMBER, 0x03);
 	} else {
@@ -4069,7 +4161,8 @@ static int focal_ft8716_lcd_noise_test(
 		goto test_finish;
 	}
 
-	if (g_focal_dev_data->ic_type == FOCAL_FT8719) {
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		lcd_value = g_focal_pdata->lcd_noise_threshold;
 		TS_LOG_INFO("get lcd reg value from FOCAL_FT8719 lcd_noise_threshold: %d\n",
 			lcd_value);
@@ -4134,7 +4227,8 @@ test_finish:
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
 		(g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756))
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB))
 		msleep(FTS_50MS_MSLEEP_VALUE);
 
 	return ret;
@@ -4622,7 +4716,8 @@ static int focal_adc_scan(void)
 	}
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		test_finish = REG_8719_LCD_NOISE_READY;
 		msleep(1000);
 	} else {
@@ -5149,6 +5244,28 @@ void focal_prase_threshold_for_csv(const char *project_id,
 		threshold->raw_data_min = data_buf[0];
 		threshold->raw_data_max = data_buf[1];
 	}
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		ret = ts_kit_parse_csvfile(file_path, FTS_OPEN_TEST_CSV,
+			data_buf, 1, 2);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+				FTS_CB_TEST_CSV);
+			ret = 0;
+		} else {
+			threshold->open_test_cb_min = data_buf[0];
+			threshold->open_test_cb_max = data_buf[1];
+		}
+		ret = ts_kit_parse_csvfile(file_path, FTS_RAWDATA_TEST_CSV,
+			data_buf, 1, 2);
+		if (ret) {
+			TS_LOG_INFO("%s: Failed get %s\n", __func__,
+				FTS_RAWDATA_TEST_CSV);
+			ret = 0;
+		} else {
+			threshold->raw_data_min = data_buf[0];
+			threshold->raw_data_max = data_buf[1];
+		}
+	}
 	/*because cb data only have max/min data, so columns is 2/rows is 1*/
 	if(CB_TEST_POINT_BY_POINT ==  params->cb_test_point_by_point) {
 		ret = ts_kit_parse_csvfile(file_path, DTS_CB_TEST_MIN_ARRAY, threshold->cb_test_min_array,
@@ -5176,10 +5293,12 @@ void focal_prase_threshold_for_csv(const char *project_id,
 			TS_LOG_INFO("%s: Failed get %s\n",
 				PRASE_THRESHOLD_FOR_CSV,
 				FTS_CB_TEST_CSV);
-			return;
+			if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+				return;
+		} else {
+			threshold->cb_test_min = data_buf[0];
+			threshold->cb_test_max = data_buf[1];
 		}
-		threshold->cb_test_min = data_buf[0];
-		threshold->cb_test_max = data_buf[1];
 	}
 	if(FOCAL_FT3528 == g_focal_dev_data->ic_type) {
 		ret = ts_kit_parse_csvfile(file_path, DTS_PANEL_DIFFER_MIN_ARRAY, threshold->panel_differ_min_array,
@@ -5207,11 +5326,12 @@ void focal_prase_threshold_for_csv(const char *project_id,
 	if (ret && (g_focal_dev_data->ic_type != FOCAL_FT8756)) {
 		TS_LOG_INFO("%s: Failed get %s\n",
 			PRASE_THRESHOLD_FOR_CSV, FTS_SCAP_RAW_FATA_CSV);
-		return;
+		if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+			return;
+	} else {
+		threshold->scap_raw_data_min = data_buf[0];
+		threshold->scap_raw_data_max = data_buf[1];
 	}
-	threshold->scap_raw_data_min = data_buf[0];
-	threshold->scap_raw_data_max = data_buf[1];
-
 	/*because short data only have min data, so columns is 1/rows is 1*/
 	if(SHORT_TEST_POINT_BY_POINT == params->short_test_point_by_point) {
 		ret = ts_kit_parse_csvfile(file_path, DTS_SHORT_CIRCUIT_RES_MIN_ARRAY,
@@ -5229,10 +5349,11 @@ void focal_prase_threshold_for_csv(const char *project_id,
 			TS_LOG_INFO("%s: Failed get %s\n",
 				PRASE_THRESHOLD_FOR_CSV,
 				DTS_SHORT_CIRCUIT_RES_MIN);
-			return;
+			if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+				return;
+		} else {
+			threshold->short_circuit_min = data_buf[0];
 		}
-		threshold->short_circuit_min = data_buf[0];
-
 	}
 	/* get open_test_cb_point_by_point data from csv  */
 	if(OPEN_TEST_POINT_BY_POINT ==  params->open_test_cb_point_by_point) {
@@ -5267,7 +5388,8 @@ void focal_prase_threshold_for_csv(const char *project_id,
 			TS_LOG_INFO("%s: Failed get %s\n",
 				PRASE_THRESHOLD_FOR_CSV,
 				DTS_ROW_COLUMN_DELTA_MAX_ARRAY);
-			return;
+			if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+				return;
 		}
 	} else {
 		ret = ts_kit_parse_csvfile(file_path, DTS_ROW_COLUMN_DELTA_TEST, data_buf, 1, 1);
@@ -5275,9 +5397,11 @@ void focal_prase_threshold_for_csv(const char *project_id,
 			TS_LOG_INFO("%s: Failed get %s\n",
 				PRASE_THRESHOLD_FOR_CSV,
 				DTS_ROW_COLUMN_DELTA_TEST);
-			return;
+			if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+				return;
+		} else {
+			threshold->row_column_delta_max = data_buf[0];
 		}
-		threshold->row_column_delta_max = data_buf[0];
 	}
 
 	/*because lcd noise data only have max data, so columns is 1/rows is 1*/
@@ -5286,10 +5410,11 @@ void focal_prase_threshold_for_csv(const char *project_id,
 		TS_LOG_INFO("%s: Failed get %s\n",
 			PRASE_THRESHOLD_FOR_CSV,
 			DTS_LCD_NOISE_MAX);
-		return;
+		if (g_focal_dev_data->ic_type != FOCAL_FT8201_AB)
+			return;
+	} else {
+		threshold->lcd_noise_max = data_buf[0];
 	}
-	threshold->lcd_noise_max = data_buf[0];
-
 	ret = ts_kit_parse_csvfile(file_path, DTS_RAW_DATA_MIN_ARRAY, threshold->raw_data_min_array,
 			params->channel_y_num, params->channel_x_num);
 	if (ret) {
@@ -5434,7 +5559,8 @@ int focal_get_raw_dataNewformat(
 
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		for (i = 0; i < MAX_RETRY_TIMES; i++) {
 			ret = focal_read_reg(REG_8716_LCD_NOISE_VALUE, &g_focal_pdata->lcd_noise_threshold);
 			if (ERROR_CODE_OK != ret) {
@@ -5547,7 +5673,10 @@ int focal_get_raw_data(
 
 	 memset(tp_test_failed_reason, 0, TP_TEST_FAILED_REASON_LEN);
 	 if (!params) {
-		params = kzalloc(sizeof(struct focal_test_params), GFP_KERNEL);
+		if (pdata->supported_vamalloc_fortest)
+			params = vmalloc(sizeof(struct focal_test_params));
+		else
+			params = kzalloc(sizeof(struct focal_test_params), GFP_KERNEL);
 		if (!params) {
 			TS_LOG_ERR("%s:alloc mem for params fail\n",
 				GET_RAW_DATA);
@@ -5560,12 +5689,14 @@ int focal_get_raw_data(
 		TS_LOG_ERR("read Reg 0xa0 fail\n");
 		goto free_mem;
 	}
-	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB))
 		judge_ic_type = FTS_INIT_VALUE;
 	TS_LOG_INFO("judge_ic_type is %d\n",judge_ic_type);
 
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8719) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		ret = focal_read_reg(REG_8716_LCD_NOISE_VALUE, &g_focal_pdata->lcd_noise_threshold);
 		if (ERROR_CODE_OK != ret) {
 			TS_LOG_ERR("read Reg REG_8716_LCD_NOISE_VALUE fail\n");
@@ -5621,8 +5752,10 @@ int focal_get_raw_data(
 	return ret;
 
 free_mem:
-
-	kfree(params);
+	if (pdata->supported_vamalloc_fortest)
+		vfree(params);
+	else
+		kfree(params);
 	params = NULL;
 	pdata->open_threshold_status = true;
     ret = focal_enter_work();

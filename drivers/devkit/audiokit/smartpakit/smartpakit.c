@@ -1557,14 +1557,18 @@ int smartpakit_gpio_node_ctl(void *priv, struct smartpakit_param_node *reg)
 
 	gpio = pakit_priv->switch_ctl[reg->index].gpio;
 	gpio_direction_output((unsigned int)gpio, (int)reg->value);
-	if (reg->delay > SMARTPAKIT_DELAY_US_TO_MS)
+	if (reg->delay == 0)
+		goto smartpakit_gpio_node_ctl_exit;
+
+	if (reg->delay > SMARTPAKIT_DELAY_US_TO_MS) {
 		msleep(reg->delay / SMARTPAKIT_DELAY_US_TO_MS);
-	else
+		hwlog_info("%s: gpio %d set %u, delay %u\n", __func__, gpio,
+			reg->value, reg->delay);
+	} else {
 		udelay(reg->delay);
+	}
 
-	hwlog_info("%s: gpio %d set %u, delay %u\n", __func__, gpio,
-		reg->value, reg->delay);
-
+smartpakit_gpio_node_ctl_exit:
 	return 0;
 }
 EXPORT_SYMBOL_GPL(smartpakit_gpio_node_ctl);
@@ -1601,6 +1605,9 @@ static int smartpakit_ctrl_simple_pa(struct smartpakit_priv *pakit_priv,
 	struct smartpakit_param_node *node = NULL;
 	int ret;
 	int i;
+	unsigned long flags;
+	unsigned int spinlock_status = SIMPLE_PA_LOCK_ENABLE;
+	unsigned int delay_sum = 0;
 
 	unused(id);
 	hwlog_info("%s: enter\n", __func__);
@@ -1615,7 +1622,21 @@ static int smartpakit_ctrl_simple_pa(struct smartpakit_priv *pakit_priv,
 	ret = smartpakit_parse_params(&sequence, arg, compat_mode);
 	if (ret < 0) {
 		hwlog_err("%s: parse gpio_state failed\n", __func__);
+		spinlock_status = SIMPLE_PA_LOCK_DISABLE;
 		goto err_out;
+	}
+
+	if (pakit_priv->spinlock_support) {
+		for (i = 0; i < (int)sequence.param_num; i++) {
+			node = &sequence.node[i];
+			delay_sum += node->delay;
+			if (node->node_type || (delay_sum >= SMARTPAKIT_DELAY_US_TO_MS))
+				spinlock_status = SIMPLE_PA_LOCK_DISABLE;
+		}
+		if (spinlock_status) {
+			spin_lock_irqsave(&pakit_priv->simple_pa_ctrl_lock, flags);
+			hwlog_info("%s: get spinklock\n", __func__);
+		}
 	}
 
 	for (i = 0; i < (int)sequence.param_num; i++) {
@@ -1628,6 +1649,11 @@ static int smartpakit_ctrl_simple_pa(struct smartpakit_priv *pakit_priv,
 	}
 
 err_out:
+	if (pakit_priv->spinlock_support && spinlock_status) {
+		spin_unlock_irqrestore(&pakit_priv->simple_pa_ctrl_lock, flags);
+		hwlog_info("%s: release spinklock\n", __func__);
+	}
+
 	smartpakit_kfree_ops(sequence.node);
 	return ret;
 }
@@ -1979,6 +2005,11 @@ static void smartpakit_simple_pa_power_off(struct platform_device *pdev)
 	ctl = pakit_priv->switch_ctl;
 
 	for (i = 0; i < (int)pakit_priv->switch_num; i++) {
+		if (ctl[i].state < 0) {
+			hwlog_warn("%s: pa %d, state %d is illegal, ignored\n",
+				__func__, i, ctl[i].state);
+			continue;
+		}
 		/* set gpio default state, for AW8737 shutdown sequence */
 		gpio_direction_output((unsigned int)ctl[i].gpio, ctl[i].state);
 		mdelay(1);
@@ -2131,6 +2162,37 @@ static void smartpakit_free_switch_ctl_gpio(unsigned int ctl_num,
 	ctl = NULL;
 }
 
+static void smartpakit_free_simple_pa_id_gpio(struct smartpakit_priv *pakit_priv)
+{
+	int i;
+	struct smartpakit_switch_node *pa_id_ctl =
+		pakit_priv->simple_pa_id.pa_id_ctl;
+	unsigned int gpio_id_num = pakit_priv->simple_pa_id.gpio_id_num;
+
+	if (gpio_id_num == 0 || !pa_id_ctl)
+		return;
+
+	for (i = 0; i < (int)gpio_id_num; i++) {
+		if (gpio_is_valid(pa_id_ctl[i].gpio)) {
+			gpio_free((unsigned int)pa_id_ctl[i].gpio);
+			pa_id_ctl[i].gpio = -EINVAL;
+		}
+	}
+
+	smartpakit_kfree_ops(pakit_priv->simple_pa_id.pa_id_ctl);
+	pakit_priv->simple_pa_id.pa_id_ctl = NULL;
+}
+
+static void smartpakit_free_simple_pa_id_info(struct smartpakit_priv *pakit_priv)
+{
+	if (!pakit_priv->simple_pa_id.pa_id_enable)
+		return;
+
+	smartpakit_free_simple_pa_id_gpio(pakit_priv);
+	smartpakit_kfree_ops(pakit_priv->simple_pa_id.pa_id_match_check);
+	pakit_priv->simple_pa_id.pa_id_match_check = NULL;
+}
+
 static int smartpakit_init_switch_ctl_gpio(struct smartpakit_priv *pakit_priv)
 {
 	struct smartpakit_switch_node *ctl = NULL;
@@ -2231,6 +2293,31 @@ static int smartpakit_parse_dt_switch_ctl_cfg(struct device *dev,
 		hwlog_err("%s: get switch ctl config err\n", __func__);
 
 	return ret;
+}
+
+static int smartpakit_pinctrl_select_state(struct pinctrl *p, const char *name)
+{
+	struct pinctrl_state *pinctrl = NULL;
+	int ret;
+
+	if (!p || !name) {
+		hwlog_err("%s: pinctrl or name is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	pinctrl = pinctrl_lookup_state(p, name);
+	if (IS_ERR_OR_NULL(pinctrl)) {
+		hwlog_err("%s: could not get %s\n", __func__, name);
+		return -ENOENT;
+	}
+
+	ret = pinctrl_select_state(p, pinctrl);
+	if (ret) {
+		hwlog_err("%s: can not set pins to %s state\n", __func__, name);
+		return -ENOENT;
+	}
+
+	return 0;
 }
 
 static int smartpakit_parse_dt_irq_pinctrl(struct device *dev,
@@ -2380,6 +2467,327 @@ err_out:
 	return ret;
 }
 
+static void smartpakit_simple_pa_id_save_match_cfg(
+	struct smartpakit_priv *pakit_priv)
+{
+	int i;
+	unsigned int val;
+	unsigned int pa_id_status = pakit_priv->simple_pa_id.pa_id_status;
+	int id_match_check_num = pakit_priv->simple_pa_id.id_match_check_num;
+	struct simple_pa_id_match_check *pa_id_match_check =
+		pakit_priv->simple_pa_id.pa_id_match_check;
+
+	for (i = 0; i < id_match_check_num; i++) {
+		val = (unsigned int)simple_strtoul(
+			pa_id_match_check[i].id_status, NULL, 0);
+		hwlog_info("%s:val %u, id_status:%s, chip_model:%s\n",
+			__func__, val,
+			pa_id_match_check[i].id_status,
+			pa_id_match_check[i].chip_model);
+		if (pa_id_status == val) {
+			hwlog_info("%s:chip_model:%s match\n",
+				__func__, pa_id_match_check[i].chip_model);
+			pakit_priv->chip_model = pa_id_match_check[i].chip_model;
+			return;
+		}
+	}
+
+	hwlog_info("%s: pa_id_status not match, use defult chip_model\n",
+		__func__);
+}
+
+static int smartpakit_parse_simple_pa_id_match_vendor(struct device_node *node,
+	const char *propname,
+	struct simple_pa_id_match_check *id_match,
+	int id_match_check_num)
+{
+	int i;
+	int ret;
+
+	for (i = 0; i < id_match_check_num; i++) {
+		ret = of_property_read_string_index(node, propname,
+			SIMPLE_PA_MATCH_NUM * i, &id_match[i].id_status);
+		if (ret) {
+			hwlog_err("%s: %s index %d could not be read: %d\n",
+				__func__, propname,
+				SIMPLE_PA_MATCH_NUM * i, ret);
+			return -EINVAL;
+		}
+		ret = of_property_read_string_index(node, propname,
+			(SIMPLE_PA_MATCH_NUM * i) + 1, &id_match[i].chip_model);
+		if (ret) {
+			hwlog_err("%s: %s index %d could not be read: %d\n",
+				__func__, propname,
+				(SIMPLE_PA_MATCH_NUM * i) + 1, ret);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+static int smartpakit_parse_simple_pa_id_match_tab(struct device_node *node,
+	const char *propname,
+	struct smartpakit_priv *pakit_priv)
+{
+	int id_match_check_num;
+	struct simple_pa_id_match_check *id_match = NULL;
+	int ret;
+	int count = sizeof(struct simple_pa_id_match_check) /
+		sizeof(const char *);
+
+	if (count != SIMPLE_PA_MATCH_NUM) {
+		hwlog_err("%s:  count:%d is not right\n", __func__, count);
+		return -EINVAL;
+	}
+	id_match_check_num = of_property_count_strings(node, propname);
+	if (id_match_check_num <= 1 ||
+		id_match_check_num > SIMPLE_PA_MATCH_CHECK_ID_MAX) {
+		hwlog_err("%s: %s not exist or length is not right\n",
+			__func__, propname);
+		return -EINVAL;
+	}
+	id_match_check_num /= SIMPLE_PA_MATCH_NUM;
+	if (!id_match_check_num) {
+		hwlog_err("%s: property %s length is zero\n", __func__,
+			propname);
+		return -EINVAL;
+	}
+	pakit_priv->simple_pa_id.id_match_check_num = id_match_check_num;
+	hwlog_info("%s: id_match_check_num:%d\n", __func__, id_match_check_num);
+	id_match = kzalloc(id_match_check_num * sizeof(*id_match), GFP_KERNEL);
+	if (!id_match) {
+		hwlog_err("%s: calloc id_match failed\n", __func__);
+		return -EINVAL;
+	}
+	ret = smartpakit_parse_simple_pa_id_match_vendor(node, propname,
+		id_match, id_match_check_num);
+	if (ret < 0)
+		goto parse_simple_pa_id_match_tab_err;
+
+	pakit_priv->simple_pa_id.pa_id_match_check = id_match;
+	return 0;
+
+parse_simple_pa_id_match_tab_err:
+	smartpakit_kfree_ops(id_match);
+	pakit_priv->simple_pa_id.pa_id_match_check = NULL;
+	return -EINVAL;
+}
+
+static void smartpakit_get_simple_pa_id_status_delay(struct device_node *node)
+{
+	unsigned int delay = 0;
+
+	if (!of_property_read_u32(node, "get_id_status_delay", &delay)
+		&& delay > 0) {
+		hwlog_info("%s: delay:%d us\n", __func__, delay);
+		if (delay > SMARTPAKIT_DELAY_US_TO_MS)
+			msleep(delay / SMARTPAKIT_DELAY_US_TO_MS);
+		else
+			udelay(delay);
+	}
+}
+
+static int smartpakit_get_simple_pa_id_status(struct device *dev,
+	struct device_node *node,
+	struct smartpakit_priv *pakit_priv)
+{
+	struct pinctrl *pinctrl = NULL;
+	int ret;
+	int i;
+	unsigned int id_status = 0;
+	struct smartpakit_switch_node *pa_id_ctl =
+		pakit_priv->simple_pa_id.pa_id_ctl;
+	unsigned int gpio_id_num = pakit_priv->simple_pa_id.gpio_id_num;
+
+	pakit_priv->simple_pa_id.support_id_pinctrl = of_property_read_bool(
+		node, "simple_pa_id_pinctrl");
+	if (!pakit_priv->simple_pa_id.support_id_pinctrl)
+		goto get_simple_pa_id_status_phase1;
+
+	pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR_OR_NULL(pinctrl)) {
+		hwlog_err("%s: get pinctrl fail %d\n",
+			__func__, IS_ERR(pinctrl));
+		return -EINVAL;
+	}
+
+	ret = smartpakit_pinctrl_select_state(pinctrl, "default");
+	if (ret)
+		return -ENOENT;
+
+get_simple_pa_id_status_phase1:
+	smartpakit_get_simple_pa_id_status_delay(node);
+	for (i = 0; i < gpio_id_num; i++) {
+		pa_id_ctl[i].state = gpio_get_value(pa_id_ctl[i].gpio);
+		hwlog_info("%s: get pa_id[%d]:%d state:%d\n",
+			__func__, i, pa_id_ctl[i].gpio, pa_id_ctl[i].state);
+		id_status |= (pa_id_ctl[i].state << i);
+	}
+	hwlog_info("%s: pa_id_status:0x%x\n", __func__, id_status);
+	if (!pakit_priv->simple_pa_id.support_id_pinctrl)
+		goto get_simple_pa_id_status_phase2;
+
+	ret = smartpakit_pinctrl_select_state(pinctrl, "idle");
+	if (ret)
+		return -ENOENT;
+
+get_simple_pa_id_status_phase2:
+	pakit_priv->simple_pa_id.pa_id_status = id_status;
+	return 0;
+}
+
+static int smartpakit_simple_pa_parse_id_gpio(struct device_node *node,
+	struct smartpakit_switch_node *ctl, struct property *pp)
+{
+	int ret;
+
+	ctl->gpio = of_get_named_gpio(node, pp->name, 0);
+	if (ctl->gpio < 0) {
+		hwlog_info("%s: %s of_get_named_gpio failed, %d\n",
+			__func__, pp->name, ctl->gpio);
+		ret = of_property_read_u32(node, pp->name,
+			(u32 *)&(ctl->gpio));
+		if (ret < 0) {
+			hwlog_err("%s: %s read gpio prop failed, %d\n",
+				__func__, pp->name, ret);
+			goto simple_pa_parse_id_gpio_err1;
+		}
+	}
+
+	if (!gpio_is_valid(ctl->gpio)) {
+		hwlog_err("%s: gpio:%d is invalid\n",
+			__func__, ctl->gpio);
+		goto simple_pa_parse_id_gpio_err1;
+	}
+	if (gpio_request((unsigned int)ctl->gpio, ctl->name) < 0) {
+		hwlog_err("%s: request gpio %d failed\n",
+			__func__, ctl->gpio);
+		goto simple_pa_parse_id_gpio_err1;
+	}
+	hwlog_info("%s: pa_id_gpio: %d\n", __func__, ctl->gpio);
+	ret = gpio_direction_input(ctl->gpio);
+	if (ret) {
+		hwlog_err("%s: set gpio:%d to input error, ret:%d\n",
+			__func__, ctl->gpio, ret);
+		goto simple_pa_parse_id_gpio_err2;
+	}
+	return 0;
+
+simple_pa_parse_id_gpio_err2:
+	gpio_free(ctl->gpio);
+simple_pa_parse_id_gpio_err1:
+	ctl->gpio = -EINVAL;
+	ret = -EFAULT;
+	return ret;
+}
+
+static int smartpakit_save_simple_pa_id_node(struct device_node *node,
+	struct smartpakit_switch_node **pa_id_ctl, unsigned int gpio_id_num)
+{
+	struct smartpakit_switch_node *ctl = NULL;
+	struct property *pp = NULL;
+	const char *pa_id_str = "gpio_pa_id";
+	int i;
+	int ret;
+	unsigned int pa_id_node_size;
+
+	pa_id_node_size = sizeof(*ctl) * gpio_id_num;
+	ctl = kzalloc(pa_id_node_size, GFP_KERNEL);
+	if (!ctl)
+		return -ENOMEM;
+
+	for (i = 0; i < gpio_id_num; i++)
+		ctl[i].gpio = -EINVAL;
+
+	i = 0;
+	for_each_property_of_node(node, pp) {
+		if (strncmp(pp->name, pa_id_str, strlen(pa_id_str)) != 0)
+			continue;
+
+		ret = snprintf_s(ctl[i].name, (unsigned long)SMARTPAKIT_NAME_MAX,
+			(unsigned long)SMARTPAKIT_NAME_MAX - 1,
+			"simple_pa_id_%d", i);
+		if (ret < 0) {
+			hwlog_err("%s: set gpio name failed\n", __func__);
+			ret = -EFAULT;
+			goto save_simple_pa_id_err;
+		}
+		ret = smartpakit_simple_pa_parse_id_gpio(node, &ctl[i], pp);
+		if (ret < 0)
+			goto save_simple_pa_id_err;
+
+		i++;
+	}
+	*pa_id_ctl = ctl;
+	return 0;
+
+save_simple_pa_id_err:
+	ret = -EFAULT;
+	kfree(ctl);
+	return ret;
+}
+
+static int smartpakit_parse_simple_pa_id_gpio(struct device_node *node,
+	struct smartpakit_priv *pakit_priv)
+{
+	const char *gpio_id_str = "gpio_pa_id";
+	int ret;
+	unsigned int gpio_id_num;
+
+	gpio_id_num = (unsigned int)smartpakit_get_prop_num(node, gpio_id_str);
+	if (gpio_id_num == 0 || gpio_id_num > SMARTPAKIT_SIMPLE_PA_ID_MAX) {
+		hwlog_err("%s: pa id gpio num is 0\n", __func__);
+		return -EINVAL;
+	}
+
+	pakit_priv->simple_pa_id.gpio_id_num = gpio_id_num;
+	ret = smartpakit_save_simple_pa_id_node(node,
+		&(pakit_priv->simple_pa_id.pa_id_ctl),
+		gpio_id_num);
+	if (ret < 0) {
+		hwlog_err("%s: save switch ctl node err\n", __func__);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int smartpakit_parse_simple_pa_id_cfg(struct device *dev,
+	struct smartpakit_priv *pakit_priv)
+{
+	const char *simple_pa_id_str = "simple_pa_gpio_id";
+	struct device_node *node = NULL;
+	int ret;
+
+	node = of_get_child_by_name(dev->of_node, simple_pa_id_str);
+	if (!node) {
+		pakit_priv->simple_pa_id.pa_id_enable = false;
+		hwlog_info("%s: node not existed, skip\n", __func__);
+		return 0;
+	}
+	ret = smartpakit_parse_simple_pa_id_gpio(node, pakit_priv);
+	if (ret < 0)
+		return ret;
+
+	ret = smartpakit_get_simple_pa_id_status(dev, node, pakit_priv);
+	if (ret < 0)
+		goto parse_simple_pa_id_cfg_err;
+
+	ret = smartpakit_parse_simple_pa_id_match_tab(node,
+		"pa_id_match_check_tab", pakit_priv);
+	if (ret < 0)
+		goto parse_simple_pa_id_cfg_err;
+
+	smartpakit_simple_pa_id_save_match_cfg(pakit_priv);
+	pakit_priv->simple_pa_id.pa_id_enable = true;
+	return 0;
+
+parse_simple_pa_id_cfg_err:
+	smartpakit_free_simple_pa_id_gpio(pakit_priv);
+	pakit_priv->simple_pa_id.pa_id_enable = false;
+	return ret;
+}
+
 static int smartpakit_parse_dt_info(struct platform_device *pdev,
 	struct smartpakit_priv *pakit_priv)
 {
@@ -2394,6 +2802,7 @@ static int smartpakit_parse_dt_info(struct platform_device *pdev,
 	const char *product_name_str  = "product_name";
 	const char *cali_data_update_mode_str = "cali_data_update_mode";
 	const char *need_pa_check_str = "need_pa_check";
+	const char *spinlock_support_str = "spinlock_support_for_simple_pa";
 	int ret;
 
 	if ((pdev == NULL) || (pakit_priv == NULL)) {
@@ -2414,6 +2823,8 @@ static int smartpakit_parse_dt_info(struct platform_device *pdev,
 	ret += smartpakit_get_prop_of_u32_type(pdev->dev.of_node,
 		cali_data_update_mode_str,
 		&pakit_priv->cali_data_update_mode, false);
+	ret += smartpakit_get_prop_of_u32_type(pdev->dev.of_node,
+		spinlock_support_str, &pakit_priv->spinlock_support, false);
 
 	ret += smartpakit_get_prop_of_str_type(pdev->dev.of_node,
 		chip_model_str, &pakit_priv->chip_model);
@@ -2435,6 +2846,10 @@ static int smartpakit_parse_dt_info(struct platform_device *pdev,
 	if (ret < 0)
 		return ret;
 
+	ret = smartpakit_parse_simple_pa_id_cfg(&pdev->dev, pakit_priv);
+	if (ret < 0)
+		return ret;
+
 	ret = smartpakit_get_prop_of_u32_type(pdev->dev.of_node,
 		need_pa_check_str, &pakit_priv->need_pa_check, true);
 	if (ret < 0) {
@@ -2453,6 +2868,7 @@ static void smartpakit_free(struct smartpakit_priv *pakit_priv)
 	}
 	smartpakit_free_switch_ctl_gpio(pakit_priv->switch_num,
 		pakit_priv->switch_ctl);
+	smartpakit_free_simple_pa_id_info(pakit_priv);
 
 	kfree(pakit_priv);
 }
@@ -2645,6 +3061,7 @@ static int smartpakit_probe(struct platform_device *pdev)
 	mutex_init(&pakit_priv->i2c_ops_lock);
 	mutex_init(&pakit_priv->do_ioctl_lock);
 	mutex_init(&pakit_priv->resume_sequence_lock);
+	spin_lock_init(&pakit_priv->simple_pa_ctrl_lock);
 
 	ret = misc_register(&smartpakit_ctrl_miscdev);
 	if (ret != 0) {

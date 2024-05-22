@@ -128,6 +128,7 @@ struct bci_device_info {
 	int bat_rm;
 	int bat_fcc;
 	int bci_soc_at_term;
+	int ui_cap_zero_offset;
 	int bat_current;
 	unsigned int bat_err;
 	int charge_status;
@@ -138,6 +139,7 @@ struct bci_device_info {
 	u16 monitoring_interval;
 	int watchdog_timer_status;
 	int capacity;
+	int batt_volt_overhigh;
 	unsigned long event;
 	unsigned int capacity_filter_count;
 	unsigned int prev_capacity;
@@ -600,12 +602,14 @@ static int capacity_changed(struct bci_device_info *di)
 	} else {
 		cap = bci_capacity();
 		if (di->charge_status == POWER_SUPPLY_STATUS_CHARGING)
-			curr_capacity = DIV_ROUND_CLOSEST((cap * PERCENT),
-				di->bci_soc_at_term); /* multiplier */
+			curr_capacity = DIV_ROUND_CLOSEST(((cap - di->ui_cap_zero_offset) * PERCENT),
+				di->bci_soc_at_term - di->ui_cap_zero_offset); /* multiplier */
 		else
 			curr_capacity = cap;
 		if (curr_capacity > CAPACITY_FULL)
 			curr_capacity = CAPACITY_FULL;
+		if (curr_capacity < 0)
+			curr_capacity = 0;
 	}
 
 	ret = check_curr_capacity(curr_capacity, di);
@@ -768,17 +772,23 @@ static int check_batt_temp_overlow(char *buf)
 
 static int check_batt_volt_overhigh(char *buf)
 {
+	struct bci_device_info *di = g_bci_dev;
 	int volt, check_cnt, avg_volt, ret;
 
+	if (!di) {
+		bci_info("NULL point in [%s]\n", __func__);
+		return -EINVAL;
+	}
+
 	volt = coul_drv_battery_voltage();
-	if (volt > BATT_VOLT_OVERHIGH_TH) {
+	if (volt > di->batt_volt_overhigh) {
 		for (check_cnt = 0;
 			check_cnt < MAX_CONFIRM_CNT - 1; check_cnt++) {
 			msleep(CONFIRM_INTERVAL);
 			volt += coul_drv_battery_voltage();
 		}
 		avg_volt = (int)(volt / (MAX_CONFIRM_CNT));
-		if (avg_volt > BATT_VOLT_OVERHIGH_TH) {
+		if (avg_volt > di->batt_volt_overhigh) {
 			ret = snprintf_s(buf,
 				DSM_BATTERY_MAX_SIZE, DSM_BATTERY_MAX_SIZE - 1,
 				"avg_batt_volt = %dmV\n", avg_volt);
@@ -2034,6 +2044,12 @@ static int bci_parse_dts(const struct device_node *np,
 		bci_err("error:get bci_soc_at_term value failed, no early term in bci !\n");
 	}
 	bci_info("bci_soc_at_term =%d", di->bci_soc_at_term);
+	if (of_property_read_u32(np, "ui_cap_zero_offset",
+		(u32 *)&di->ui_cap_zero_offset)) {
+		di->ui_cap_zero_offset = 0;
+		bci_err("error:get ui_cap_zero_offset value failed, no offset !\n");
+	}
+	bci_info("ui_cap_zero_offset =%d", di->ui_cap_zero_offset);
 
 	if (of_property_read_u32(np, "battery_is_removable",
 		(u32 *)&g_removable_batt_flag)) {
@@ -2071,6 +2087,11 @@ static int bci_parse_dts(const struct device_node *np,
 	if (of_property_read_u32(np, "sc_uisoc_update_speed", &di->sc_uisoc_update_speed))
 		di->sc_uisoc_update_speed = WORK_INTERVAL_REACH_FULL;
 	bci_info("sc_uisoc_update_speed:%u\n", di->sc_uisoc_update_speed);
+
+	if (of_property_read_u32(np, "batt_volt_overhigh",
+		(u32 *)&di->batt_volt_overhigh))
+		di->batt_volt_overhigh = BATT_VOLT_OVERHIGH_TH;
+	bci_info("batt_volt_overhigh = %d\n", di->batt_volt_overhigh);
 
 	parse_work_inter_dts(np, di);
 	ret |= parse_vth_correct_dts(np, di);

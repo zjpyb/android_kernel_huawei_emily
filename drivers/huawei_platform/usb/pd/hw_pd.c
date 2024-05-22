@@ -47,6 +47,7 @@
 #include <huawei_platform/usb/hw_pogopin.h>
 #include <huawei_platform/usb/pd/richtek/tcpm.h>
 #include <huawei_platform/usb/switch/switch_fsa9685.h>
+#include <huawei_platform/usb/usb_extra_modem.h>
 
 #ifdef CONFIG_BOOST_5V
 #include <chipset_common/hwpower/hardware_ic/boost_5v.h>
@@ -139,6 +140,7 @@ static struct delayed_work cc_short_work;
 static struct work_struct g_uvdm_work;
 static unsigned int g_uvdm_work_cnt;
 #endif /* CONFIG_UVDM_CHARGER */
+static int g_rt1711_water_count;
 
 void reinit_typec_completion(void);
 void typec_complete(enum pd_wait_typec_complete typec_completion);
@@ -172,6 +174,11 @@ static struct abnomal_change_info abnomal_change[] = {
 	{PD_DPM_ABNORMAL_CC_CHANGE, true, 0, 0, {0}, {0}, {0}, {0}},
 	{PD_DPM_UNATTACHED_VBUS_ONLY, true, 0, 0, {0}, {0}, {0}, {0}},
 };
+
+void pd_dpm_set_emark_detect_enable(int flag)
+{
+	emark_detect_enable = flag;
+}
 
 int pd_dpm_get_emark_detect_enable(void)
 {
@@ -275,6 +282,14 @@ int pd_dpm_cable_vdo_ops_register(struct cable_vdo_ops *ops)
 }
 #endif /* CONFIG_TYPEC_CAP_CUSTOM_SRC2 */
 
+void pd_dpm_start_data_role_swap(void)
+{
+	if (!g_ops || !g_ops->data_role_swap || !g_client)
+		return;
+
+	g_ops->data_role_swap(g_client);
+}
+
 void pd_dpm_detect_emark_cable(void)
 {
 	hwlog_err("%s\n", __func__);
@@ -301,6 +316,9 @@ void pd_dpm_detect_emark_cable_finish(void)
 int pd_dpm_disable_pd(bool disable)
 {
 	hwlog_info("%s\n", __func__);
+
+	if (uem_check_online_status())
+		return -EPERM;
 
 	if (!g_ops) {
 		hwlog_err("%s g_ops is NULL\n", __func__);
@@ -738,6 +756,8 @@ void pd_set_product_id_info(unsigned int vid,
 			    unsigned int bcd)
 {
 	int pd_product_type;
+
+	uem_set_product_id_info(vid, pid);
 
 	if (bcd == PD_PID_COVER_ONE)
 		pd_product_type = PD_PDT_WIRELESS_COVER;
@@ -1354,6 +1374,33 @@ int unregister_pd_dpm_portstatus_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL(unregister_pd_dpm_portstatus_notifier);
 
+void pd_dpm_usb_host_on(void)
+{
+#ifdef CONFIG_CONTEXTHUB_PD
+	struct pd_dpm_combphy_event event;
+
+	event.dev_type = TCA_ID_FALL_EVENT;
+	event.irq_type = TCA_IRQ_HPD_IN;
+	event.mode_type = TCPC_USB31_CONNECTED;
+	event.typec_orien = pd_dpm_get_cc_orientation();
+	pd_dpm_handle_combphy_event(event);
+#endif /* CONFIG_CONTEXTHUB_PD */
+}
+
+void pd_dpm_usb_host_off(void)
+{
+#ifdef CONFIG_CONTEXTHUB_PD
+	struct pd_dpm_combphy_event event;
+
+	event.typec_orien = pd_dpm_get_cc_orientation();
+	event.dev_type = TCA_ID_RISE_EVENT;
+	event.irq_type = TCA_IRQ_HPD_OUT;
+	event.mode_type = TCPC_NC;
+	pd_dpm_set_combphy_status(TCPC_NC);
+	pd_dpm_handle_combphy_event(event);
+#endif /* CONFIG_CONTEXTHUB_PD */
+}
+
 static inline void pd_dpm_report_device_attach(void)
 {
 #ifdef CONFIG_CONTEXTHUB_PD
@@ -1561,6 +1608,17 @@ void pd_dpm_handle_abnomal_change(int event)
 	ts64_dmd_interval.tv_nsec = 0;
 
 	ts64_now = current_kernel_time64();
+
+/*
+ * in ESD test,cc pin will reported larges number of interrupt,
+ * this will trigger an water_check event, result in OTG device cannot be identified.
+ * There is a high probability that the fault cannot be rectified.
+ * we found that kind of interrupt made by ESD can't last so many times, so we Increase
+ * the detection times threshold as dts config.
+ */
+	if (g_rt1711_water_count)
+		change_counter_threshold = g_rt1711_water_count;
+
 	if (abnomal_change[event].first_enter) {
 		abnomal_change[event].first_enter = false;
 	} else {
@@ -1900,6 +1958,7 @@ int pd_dpm_handle_pe_event(unsigned long event, void *data)
 				pd_set_product_type(PD_DPM_INVALID_VAL);
 				g_pd_di->cable_vdo.cable_vdo = 0;
 				g_pd_di->cable_vdo.cable_vdo_ext = 0;
+				uem_handle_detach_event();
 				break;
 
 			case PD_DPM_TYPEC_ATTACHED_AUDIO:
@@ -2063,6 +2122,7 @@ int pd_dpm_handle_pe_event(unsigned long event, void *data)
 		break;
 
 	case PD_DPM_PE_EVT_PR_SWAP:
+		uem_handle_pr_swap_end();
 		break;
 
 	case PD_DPM_PE_CABLE_VDO:
@@ -2303,6 +2363,8 @@ static void pd_cc_protection_dts_parser(struct pd_dpm_info *di, struct device_no
 		"cc_moisture_status_report", &cc_moisture_status_report, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"cc_abnormal_dmd_report_enable", &g_cc_abnormal_dmd_report_enable, 1);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"rt1711_water_count", &g_rt1711_water_count, PD_DPM_CC_CHANGE_COUNTER_THRESHOLD);
 }
 
 static void pd_misc_dts_parser(struct pd_dpm_info *di, struct device_node *np)

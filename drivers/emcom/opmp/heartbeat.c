@@ -319,6 +319,11 @@ void opmp_event_process(int32_t event, uint8_t* pdata, uint16_t len)
 #ifdef CONFIG_MPTCP_HEARTBEAT
 	switch (event) {
 	case NETLINK_EMCOM_DK_OPMP_INIT_HEARTBEAT:
+		if (pdata == NULL || len < sizeof(struct heartbeat_init_info)) {
+			loge("opmp received unsupported message, length: %u, expect: %zu",
+				len, sizeof(struct heartbeat_init_info));
+			return;
+		}
 		logd(" : received NETLINK_EMCOM_DK_OPMP_INIT_HEARTBEAT");
 		handle_init_info((struct heartbeat_init_info*)pdata);
 		break;

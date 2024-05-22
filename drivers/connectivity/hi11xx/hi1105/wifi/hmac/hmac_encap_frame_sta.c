@@ -461,6 +461,7 @@ static uint16_t hmac_set_assoc_req_frame_vendor_ie(mac_vap_stru *mac_vap, uint8_
 {
     uint8_t ie_len = 0;
     uint16_t out_ie_len = 0;
+    uint8_t support_1024qam;
 #ifdef _PRE_WLAN_FEATURE_1024QAM
     if (scaned_bss->st_bss_dscr_info.en_support_1024qam == OAL_TRUE) {
         mac_set_1024qam_vendor_ie(mac_vap, req_frame, &ie_len);
@@ -487,9 +488,10 @@ static uint16_t hmac_set_assoc_req_frame_vendor_ie(mac_vap_stru *mac_vap, uint8_
         mac_set_vendor_vht_ie(mac_vap, req_frame + out_ie_len, &ie_len);
         out_ie_len += ie_len;
     }
+    support_1024qam = (mac_vap->st_cap_flag.bit_1024qam == OAL_TRUE) ?
+        scaned_bss->st_bss_dscr_info.en_vendor_1024qam_capable : OAL_FALSE;
     if (scaned_bss->st_bss_dscr_info.en_vendor_novht_capable == OAL_TRUE) {
-        mac_set_vendor_novht_ie(mac_vap, req_frame + out_ie_len, &ie_len,
-                                scaned_bss->st_bss_dscr_info.en_vendor_1024qam_capable);
+        mac_set_vendor_novht_ie(mac_vap, req_frame + out_ie_len, &ie_len, support_1024qam);
         out_ie_len += ie_len;
     }
 

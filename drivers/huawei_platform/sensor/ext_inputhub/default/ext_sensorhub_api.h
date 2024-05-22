@@ -39,6 +39,7 @@ enum ext_channel_id {
 	AR_CHANNEL = 0x0d,
 	BT_A_CAHNNEL = 0x0e,
 	MOTION_CHANNEL = 0x0f,
+	TIMESYNC_CHANNEL = 0x10,
 };
 
 struct command {

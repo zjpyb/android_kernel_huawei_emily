@@ -20,6 +20,8 @@
 #include "lcdkit_dbg.h"
 #include "lcdkit_panel.h"
 #include "lcdkit_parse.h"
+#include "lcdkit_backlight_ic_common.h"
+#include "securec.h"
 #ifdef CONFIG_HUAWEI_THP
 #include "lcdkit_tp.h"
 #endif
@@ -233,6 +235,8 @@ static ssize_t lcdkit_panel_info_show(char* buf)
 {
 	ssize_t ret = 0;
 	u32 bl_max_nit = 0;
+	struct lcdkit_bl_ic_info *bl_ops = NULL;
+	char *bl_type = NULL;
 
 	lcdkit_update_lcd_brightness_info();
 	if (lcdkit_info.panel_infos.get_blmaxnit_type == GET_BLMAXNIT_FROM_DDIC && lcdkit_brightness_ddic_info > BL_MIN && lcdkit_brightness_ddic_info < BL_MAX){
@@ -249,15 +253,22 @@ static ssize_t lcdkit_panel_info_show(char* buf)
 	if (lcdkit_is_lcd_panel())
 	{
 		LCDKIT_INFO("is lcd panel!\n");
-		ret = snprintf(buf, PAGE_SIZE, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,\n",
-					   lcdkit_info.panel_infos.bl_level_max, lcdkit_info.panel_infos.bl_level_min,\
-					   bl_max_nit, lcdkit_info.panel_infos.bl_max_nit,"LCD");
+		bl_ops = lcdkit_get_lcd_backlight_ic_info();
+		if ((bl_ops != NULL) && (bl_ops->name != NULL))
+			bl_type = bl_ops->name;
+		ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,bl_type:%s\n",
+			lcdkit_info.panel_infos.bl_level_max, lcdkit_info.panel_infos.bl_level_min, bl_max_nit,\
+			lcdkit_info.panel_infos.bl_max_nit, "LCD", bl_type);
+		if (ret < 0)
+			LCDKIT_ERR("lcdkit_panel_info_show LCD error!\n");
 	}
 	else if (lcdkit_is_oled_panel())
 	{
-		ret = snprintf(buf, PAGE_SIZE, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,\n",
-					   lcdkit_info.panel_infos.bl_level_max,lcdkit_info.panel_infos.bl_level_min,\
-					   bl_max_nit, lcdkit_info.panel_infos.bl_max_nit,  "AMOLED");
+		ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,\n",
+			lcdkit_info.panel_infos.bl_level_max, lcdkit_info.panel_infos.bl_level_min, bl_max_nit,\
+			lcdkit_info.panel_infos.bl_max_nit, "AMOLED");
+		if (ret < 0)
+			LCDKIT_ERR("lcdkit_panel_info_show AMOLED error!\n");
 	}
 
 	return ret;
@@ -520,6 +531,13 @@ static int lcd_kit_judge_esd(unsigned char type, unsigned char read_val, unsigne
 	return ret;
 }
 
+static void lcdkit_gpio_record_esd_error(int read_reg_index, int read_val, int expect_val)
+{
+	lcdkit_clear_esd_error_info();
+	lcdkit_record_esd_error_info(read_reg_index, read_val, expect_val);
+	LCDKIT_INFO("read_gpio_value = %d, but expect_gpio_ptr = %d!\n", read_val, expect_val);
+}
+
 #ifdef CONFIG_HUAWEI_THP
 static int lcdkit_gpio_detect_event(void)
 {
@@ -560,6 +578,11 @@ static int lcdkit_gpio_detect_event(void)
 			ret = thp_send_esd_event(gpio_detect_value);
 			if (ret)
 				LCDKIT_ERR("thp_send_esd_event fail\n");
+			if (lcdkit_info.panel_infos.esd_gpio_recovery) {
+				lcdkit_gpio_record_esd_error (i, gpio_detect_value,
+					lcdkit_info.panel_infos.esd_gpio_normal_value);
+				ret = 1;
+			}
 		}
 	}
 
@@ -628,7 +651,12 @@ static ssize_t lcdkit_check_esd(void* pdata)
 
 	expect_ptr = lcdkit_info.panel_infos.esd_value.buf;
 
+	if (lcdkit_info.panel_infos.use_dual_ic)
+		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.esd_main_curic_cmds);
 	ret = lcdkit_dsi_rx(pdata, read_value, 1, &lcdkit_info.panel_infos.esd_cmds);
+	if (lcdkit_info.panel_infos.use_dual_ic)
+		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.esd_main_oriic_cmds);
+
 	if (!ret)
 	{
 		for (i = 0; i < lcdkit_info.panel_infos.esd_cmds.cmd_cnt; i++)
@@ -650,7 +678,8 @@ static ssize_t lcdkit_check_esd(void* pdata)
 
 	if((!ret) && lcdkit_info.panel_infos.use_second_ic){
 		expect_ptr = lcdkit_info.panel_infos.esd_value.buf;
-
+		if (lcdkit_info.panel_infos.delay_bf_esd_sec_read > 0)
+			mdelay(lcdkit_info.panel_infos.delay_bf_esd_sec_read);
 		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.esd_curic_cmds);
 		ret = lcdkit_dsi_rx(pdata, read_value, 1, &lcdkit_info.panel_infos.esd_cmds);
 		lcdkit_dsi_tx(pdata, &lcdkit_info.panel_infos.esd_oriic_cmds);
@@ -666,7 +695,7 @@ static ssize_t lcdkit_check_esd(void* pdata)
 						clear_esd_info_flag = TRUE;
 					}
 					lcdkit_record_esd_error_info(i, (int)read_value[i], expect_ptr[i]);
-					LCDKIT_INFO("read_value[%u] = %d, but expect_ptr[%u] = %d!\n", i, read_value[i], i, expect_ptr[i]);
+					LCDKIT_INFO("second ic read_value[%u] = %d, but expect_ptr[%u] = %d!\n", i, read_value[i], i, expect_ptr[i]);
 					ret = 1;
 					break;
 				}
@@ -1281,7 +1310,10 @@ static ssize_t lcdkit_amoled_hbm_ctrl_store(void* pdata, const char* buf)
 
 static ssize_t lcdkit_support_mode_show(char* buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%u\n", lcdkit_info.panel_infos.effect_support_mode);
+	if (lcdkit_info.panel_infos.barcode_at_read_support)
+		return snprintf(buf, PAGE_SIZE, "%u\n", BITS(31));
+	else
+		return snprintf(buf, PAGE_SIZE, "%u\n", lcdkit_info.panel_infos.effect_support_mode);
 }
 
 static ssize_t lcdkit_support_mode_store(const char* buf)

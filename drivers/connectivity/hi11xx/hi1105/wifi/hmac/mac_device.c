@@ -42,6 +42,7 @@ mac_mcast_ampdu_cfg_stru g_mcast_ampdu_cfg = {
     .mcast_ampdu_retry = 1, /* 默认重传1次 */
 };
 #endif
+oal_bool_enum_uint8 g_pt_mcast_enable = OAL_FALSE;
 #ifdef _PRE_WLAN_CHBA_MGMT
 int32_t g_d2h_rate_complete = 0;
 #endif

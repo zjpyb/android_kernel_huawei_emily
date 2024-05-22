@@ -229,4 +229,5 @@ void get_device_ram_test_result(int32_t is_wcpu, uint32_t *cost);
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 int32_t get_device_test_mem(bool is_wifi);
 #endif
+int32_t parse_file_cmd(uint8_t *string, unsigned long *addr, char **file_path);
 #endif /* end of plat_firmware.h */

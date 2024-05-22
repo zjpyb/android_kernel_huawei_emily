@@ -19,6 +19,7 @@
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include <huawei_platform/power/direct_charger/direct_charger.h>
 #include <huawei_platform/power/battery_voltage.h>
+#include <huawei_platform/hwpower/common_module/power_platform.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 
 #define HWLOG_TAG direct_charge_cable
@@ -31,6 +32,8 @@ struct dc_cable_ops *g_cable_ops;
 #define SEC_RESIST_IBUS_TH        4000
 #define CTC_EMARK_CURR_5A         5000
 #define CTC_EMARK_CURR_6A         6000
+#define MAX_RPATH                 1000
+#define MIN_RPATH                 (-1000)
 
 int dc_cable_ops_register(struct dc_cable_ops *ops)
 {
@@ -184,9 +187,23 @@ int dc_calculate_path_resistance(int *rpath)
 {
 	struct resist_data tmp;
 	int sum = 0;
-	int i;
+	int i, ruem;
 	int retry = 3; /* 3 : retry times */
+	bool flags = false;
+	int adp_type;
+	enum cur_cap c_cap;
+	int rpath_min = MAX_RPATH;
+	int rpath_max = MIN_RPATH;
 
+	int bat_num = hw_battery_get_series_num();
+	adp_type = dc_get_adapter_type();
+	c_cap = pd_dpm_get_cvdo_cur_cap();
+
+	if ((adp_type == ADAPTER_TYPE_FCR_C_11V6A)
+		&& (c_cap > PD_DPM_CURR_3A) && (bat_num == HW_TWO_SERIES_BAT)) {
+		retry = 5;/* 5 : FCR retry times */
+		flags = true;
+	}
 	g_resist_base_data.iadapt = 0;
 	g_resist_base_data.vadapt = 0;
 	g_resist_base_data.ibus = 0;
@@ -204,6 +221,7 @@ int dc_calculate_path_resistance(int *rpath)
 		if (dc_get_adapter_current(&tmp.iadapt))
 			return -1;
 
+		tmp.ibus += (int)power_platform_get_uem_leak_current();
 		if (tmp.ibus == 0) {
 			hwlog_err("ibus is zero\n");
 			return -1;
@@ -211,6 +229,10 @@ int dc_calculate_path_resistance(int *rpath)
 
 		/* r = v/i, 1000mohm */
 		*rpath = (tmp.vadapt - tmp.vbus) * 1000 / tmp.ibus;
+		if (flags) {
+			rpath_min = min(rpath_min, *rpath);
+			rpath_max = max(rpath_max, *rpath);
+		}
 		sum += *rpath;
 
 		g_resist_base_data.ibus += tmp.ibus;
@@ -225,11 +247,19 @@ int dc_calculate_path_resistance(int *rpath)
 	g_resist_base_data.vadapt /= retry;
 	g_resist_base_data.vbus /= retry;
 
-	*rpath = sum / retry;
+	if (flags) {
+		*rpath = (sum - rpath_min - rpath_max) / (retry - 2);
+	} else {
+		*rpath = sum / retry;
+	}
 	*rpath = *rpath > 0 ? *rpath : -*rpath;
-
 	hwlog_info("Rpath=%d, Vapt=%d, Vbus=%d, Ibus=%d\n",
 		*rpath, g_resist_base_data.vadapt, g_resist_base_data.vbus, g_resist_base_data.ibus);
+
+	ruem = (int)power_platform_get_uem_resistance();
+	*rpath -= ruem;
+	if (ruem)
+		hwlog_info("Ruem=%d, new Rpath=%d\n", ruem, *rpath);
 
 	return 0;
 }
@@ -238,8 +268,7 @@ int dc_calculate_second_path_resistance(void)
 {
 	struct resist_data tmp;
 	struct resist_data resist = { 0 };
-	int i;
-	int rpath;
+	int i, rpath, ruem;
 	int retry = 5; /* 5 : retry times */
 	struct direct_charge_device *l_di = direct_charge_get_di();
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
@@ -260,6 +289,7 @@ int dc_calculate_second_path_resistance(void)
 		if (dc_get_adapter_current(&tmp.iadapt))
 			return -1;
 
+		tmp.ibus += (int)power_platform_get_uem_leak_current();
 		if (tmp.ibus == 0) {
 			hwlog_err("ibus is zero\n");
 			return -1;
@@ -293,6 +323,11 @@ int dc_calculate_second_path_resistance(void)
 		dc_get_adapter_type(), pd_dpm_get_ctc_cable_flag());
 
 	hwlog_info("%s\n", tmp_buf);
+
+	ruem = (int)power_platform_get_uem_resistance();
+	rpath -= ruem;
+	if (ruem)
+		hwlog_info("Ruem=%d, new S_Rpath=%d\n", ruem, rpath);
 
 	if (rpath >= l_di->second_path_res_report_th)
 		power_dsm_report_dmd(POWER_DSM_BATTERY,

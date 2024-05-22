@@ -37,11 +37,19 @@ hmdfs-$(CONFIG_HMDFS_ANDROID) += \
 # For fault_inject
 hmdfs-$(CONFIG_FAULT_INJECTION_DEBUG_FS) += comm/fault_inject.o
 
+# Low-latency networking solution
+hmdfs-$(CONFIG_HMDFS_LOW_LATENCY) += \
+	comm/low_latency.o
+
+# For D2DP transport
+obj-$(CONFIG_HMDFS_D2DP_TRANSPORT) += d2dp/
+
 ccflags-y += -I$(src) -Werror -Wall
 ccflags-$(CONFIG_HMDFS_1_0) += -DCONFIG_HMDFS_1_0
 ccflags-$(CONFIG_HMDFS_CRYPTO) += -DCONFIG_HMDFS_CRYPTO
 ccflags-$(CONFIG_HMDFS_ANDROID) += -DCONFIG_HMDFS_ANDROID
-ccflags-$(ENABLE_SYMBOL) += -g
+ccflags-$(UBUNTU_KERNEL_MODULE) += -g -DDISABLE_FS_STRUCT_OP
+
 # For external module build
 ifeq ($(KERNELRELEASE),)
 
@@ -53,7 +61,7 @@ export CONFIG_HMDFS_FS := m
 export CONFIG_HMDFS_ANDROID := y
 export CONFIG_HMDFS_1_0 := y
 export CONFIG_HMDFS_CRYPTO := y
-export ENABLE_SYMBOL := y
+export UBUNTU_KERNEL_MODULE := y
 
 all: hmdfs
 

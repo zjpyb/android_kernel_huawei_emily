@@ -1403,6 +1403,17 @@ static void hmac_ap_check_sta_fail(hmac_vap_stru *hmac_vap, hmac_user_stru *hmac
         hmac_user_del(&hmac_vap->st_vap_base_info, hmac_user);
     }
 }
+OAL_STATIC void hmac_ap_up_rx_asoc_req_change_user_state_to_auth(hmac_vap_stru *hmac_vap,
+    hmac_user_stru *hmac_user)
+{
+    if (hmac_user->assoc_ap_up_tx_auth_req) {
+        oam_warning_log0(hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+                         "{hmac_ap_up_rx_asoc_req::RX (re)assoc req, change user to auth.}");
+        hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
+        hmac_user_set_asoc_state(&(hmac_vap->st_vap_base_info), &hmac_user->st_user_base_info,
+            MAC_USER_STATE_AUTH_COMPLETE);
+    }
+}
 #ifdef _PRE_WLAN_FEATURE_PMF
 OAL_STATIC uint32_t hmac_ap_up_rx_asoc_req_pmf_process(hmac_vap_stru *hmac_vap,
     hmac_user_stru *hmac_user, mac_status_code_enum_uint16 *status_code)
@@ -1426,7 +1437,6 @@ OAL_STATIC uint32_t hmac_ap_up_rx_asoc_req_pmf_process(hmac_vap_stru *hmac_vap,
 }
 #endif
 
-
 OAL_STATIC uint32_t hmac_ap_up_rx_asoc_req(hmac_vap_stru *hmac_vap, uint8_t mgmt_frm_type, uint8_t *mac_hdr,
                                            uint32_t mac_hdr_len, uint32_t payload_len)
 {
@@ -1448,7 +1458,7 @@ OAL_STATIC uint32_t hmac_ap_up_rx_asoc_req(hmac_vap_stru *hmac_vap, uint8_t mgmt
     if (hmac_user == NULL) {
         return OAL_FAIL;
     }
-
+    hmac_ap_up_rx_asoc_req_change_user_state_to_auth(hmac_vap, hmac_user);
     status_code = MAC_SUCCESSFUL_STATUSCODE;
     /* 是否符合触发SA query流程的条件 */
 #ifdef _PRE_WLAN_FEATURE_PMF
@@ -1465,8 +1475,7 @@ OAL_STATIC uint32_t hmac_ap_up_rx_asoc_req(hmac_vap_stru *hmac_vap, uint8_t mgmt
                          sta_addr[0], sta_addr[MAC_ADDR_3], sta_addr[MAC_ADDR_4], sta_addr[MAC_ADDR_5]);
 
         if (hmac_user->st_user_base_info.en_user_asoc_state == MAC_USER_STATE_ASSOC) {
-            oam_warning_log0(hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
-                             "{hmac_ap_up_rx_asoc_req::user associated, unexpected (re)assoc req no handle!}");
+            oam_warning_log0(0, 0, "{hmac_ap_up_rx_asoc_req::user associated, unexpected (re)assoc req no handle!}");
             return OAL_FAIL;
         }
         rslt = hmac_ap_up_update_sta_user(hmac_vap, mac_hdr, payload, payload_len, hmac_user, &status_code);

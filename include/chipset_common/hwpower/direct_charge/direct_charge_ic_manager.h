@@ -19,6 +19,7 @@
 #ifndef _DIRECT_CHARGE_IC_MANAGER_H_
 #define _DIRECT_CHARGE_IC_MANAGER_H_
 
+#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/bitops.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_ic.h>
@@ -53,6 +54,8 @@ int dcm_get_ic_max_vbtb_with_comp(int mode, const int *vbat_comp);
 int dcm_get_ic_vbus(int mode, unsigned int path, int *vbus);
 int dcm_get_ic_ibat(int mode, unsigned int path, int *ibat);
 int dcm_get_total_ibat(int mode, unsigned int path, int *ibat);
+int dcm_get_path_max_ibat(int mode, unsigned int path, int *ibat);
+int dcm_get_ic_max_ibat(int mode, unsigned int path, int *ibat);
 int dcm_get_ic_ibus(int mode, unsigned int path, int *ibus);
 int dcm_get_ic_temp(int mode, unsigned int path, int *temp);
 int dcm_get_ic_vusb(int mode, unsigned int path, int *vusb);
@@ -184,6 +187,16 @@ static inline int dcm_get_ic_ibat(int mode, unsigned int path, int *ibat)
 }
 
 static inline int dcm_get_total_ibat(int mode, unsigned int path, int *ibat)
+{
+	return -1;
+}
+
+static inline int dcm_get_path_max_ibat(int mode, unsigned int path, int *ibat)
+{
+	return -1;
+}
+
+static inline int dcm_get_ic_max_ibat(int mode, unsigned int path, int *ibat)
 {
 	return -1;
 }

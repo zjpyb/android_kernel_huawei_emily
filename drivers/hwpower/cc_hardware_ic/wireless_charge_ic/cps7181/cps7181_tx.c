@@ -433,6 +433,7 @@ static int cps7181_tx_clear_ept_src(struct cps7181_dev_info *di)
 static void cps7181_tx_ept_handler(struct cps7181_dev_info *di)
 {
 	int ret;
+	u8 rx_ept_value = 0;
 
 	ret = cps7181_tx_get_ept_type(di, &di->ept_type);
 	ret += cps7181_tx_clear_ept_src(di);
@@ -440,17 +441,27 @@ static void cps7181_tx_ept_handler(struct cps7181_dev_info *di)
 		return;
 
 	switch (di->ept_type) {
-	case CPS7181_TX_EPT_SRC_CEP_TIMEOUT:
 	case CPS7181_TX_EPT_SRC_RX_EPT:
+		ret = cps7181_read_byte(di, CPS7181_TX_RCVD_RX_EPT_ADDR, &rx_ept_value);
+		ret += cps7181_write_byte(di, CPS7181_TX_RCVD_RX_EPT_ADDR,
+			CPS7181_TX_RCVD_RX_EPT_CLEAR);
+		hwlog_info("[ept_handler] type=0x%02x, ret=%d\n", rx_ept_value, ret);
+		/* fall-through */
+	case CPS7181_TX_EPT_SRC_CEP_TIMEOUT:
 		di->ept_type &= ~(CPS7181_TX_EPT_SRC_CEP_TIMEOUT |
 			CPS7181_TX_EPT_SRC_RX_EPT);
 		power_event_bnc_notify(cps7181_tx_get_bnt_wltx_type(di->ic_type),
 			POWER_NE_WLTX_CEP_TIMEOUT, NULL);
 		break;
-	case CPS7181_TX_EPT_SRC_POCP:
 	case CPS7181_TX_EPT_SRC_FOD:
-		di->ept_type &= ~(CPS7181_TX_EPT_SRC_POCP | CPS7181_TX_EPT_SRC_FOD);
+		di->ept_type &= ~CPS7181_TX_EPT_SRC_FOD;
 		power_event_bnc_notify(cps7181_tx_get_bnt_wltx_type(di->ic_type),
+			POWER_NE_WLTX_TX_FOD, NULL);
+		break;
+	case CPS7181_TX_EPT_SRC_POCP:
+		di->ept_type &= ~CPS7181_TX_EPT_SRC_POCP;
+		power_event_bnc_notify(cps7181_tx_get_bnt_wltx_type(di->ic_type),
+			(di->ic_type == WLTRX_IC_AUX) ? POWER_NE_WLTX_TX_PING_OCP :
 			POWER_NE_WLTX_TX_FOD, NULL);
 		break;
 	case CPS7181_TX_EPT_SRC_OCP:

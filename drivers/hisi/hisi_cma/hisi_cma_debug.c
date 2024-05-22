@@ -125,6 +125,7 @@ struct cma_alloc_time_tracer {
 	struct cma_work_info work[WORK_BUFFER_SIZE];
 };
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 /* record work exec info during cma_alloc */
 static struct cma_work_info drain_work[NR_CPUS];
 
@@ -530,6 +531,23 @@ static void __show_record_alloc_time_info(void)
 	pr_info("the cma trace framework total cost time=%lld us\n",
 		ktime_to_us(cma_alloc_time_tracer.trace_cost));
 }
+#else
+static void __show_record_alloc_time_info(void) { }
+void cma_init_record_alloc_time(ktime_t *time) { }
+void cma_record_alloc_stime(ktime_t *time) { }
+void cma_record_alloc_etime_with_func(ktime_t stime, const void *func) { }
+void cma_record_alloc_etime_with_log(ktime_t stime, enum LOG_TRACE_TAG flag) { }
+void cma_record_alloc_stime_with_log_loop(ktime_t *stime,
+	enum LOOP_TRACE_POS loop_trace_count) { }
+void cma_record_alloc_stime_trace_loop(ktime_t *loop_stime) { }
+void cma_record_alloc_etime_trace_loop(ktime_t loop_stime,
+	enum LOOP_TRACE_POS pos, enum LOG_TRACE_TAG flag) { }
+void cma_record_alloc_etime_with_log_loop(ktime_t stime,
+	enum LOG_TRACE_TAG flag) { }
+void cma_end_alloc_time_record(ktime_t stime, const void *func) { }
+void cma_work_record_start(int cpu) { }
+void cma_work_record_exec_time(cpumask_t *cpus) { }
+#endif /* CONFIG_OPTIMIZE_MM_AQ */
 
 
 static void __dump_cma_mem_info(void)

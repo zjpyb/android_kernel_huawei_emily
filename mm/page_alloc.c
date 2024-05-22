@@ -95,6 +95,10 @@
 #include <linux/hisi/lowmem_killer.h>
 #endif
 
+#if defined(CONFIG_HISI_LOWMEM_DBG) && defined(CONFIG_OPTIMIZE_MM_AQ)
+#include <linux/hisi/lowmem_killer.h>
+#endif
+
 #ifdef CONFIG_HISI_PAGE_TRACE
 #include <linux/hisi/mem_trace.h>
 #endif
@@ -837,6 +841,56 @@ static inline int page_is_buddy(struct page *page, struct page *buddy,
 	return 0;
 }
 
+#if defined(CONFIG_COMPACTION) && defined(CONFIG_HARMONY_PERFORMANCE_AQ)
+static inline struct capture_control *task_capc(struct zone *zone)
+{
+	struct capture_control *capc = current->capture_control;
+
+	return unlikely(capc) &&
+		!(current->flags & PF_KTHREAD) &&
+		!capc->page &&
+		capc->cc->zone == zone ? capc : NULL;
+}
+
+static inline bool
+compaction_capture(struct capture_control *capc, struct page *page,
+		   int order, int migratetype)
+{
+	if (!capc || order != capc->cc->order)
+		return false;
+
+	/* Do not accidentally pollute CMA or isolated regions*/
+	if (is_migrate_cma(migratetype) ||
+	    is_migrate_isolate(migratetype))
+		return false;
+
+	/*
+	 * Do not let lower order allocations polluate a movable pageblock.
+	 * This might let an unmovable request use a reclaimable pageblock
+	 * and vice-versa but no more than normal fallback logic which can
+	 * have trouble finding a high-order free page.
+	 */
+	if (order < pageblock_order && migratetype == MIGRATE_MOVABLE)
+		return false;
+
+	capc->page = page;
+	return true;
+}
+
+#else
+static inline struct capture_control *task_capc(struct zone *zone)
+{
+	return NULL;
+}
+
+static inline bool
+compaction_capture(struct capture_control *capc, struct page *page,
+		   int order, int migratetype)
+{
+	return false;
+}
+#endif /* CONFIG_COMPACTION */
+
 /*
  * Freeing function for a buddy system allocator.
  *
@@ -871,6 +925,9 @@ static inline void __free_one_page(struct page *page,
 	unsigned long uninitialized_var(buddy_pfn);
 	struct page *buddy;
 	unsigned int max_order;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	struct capture_control *capc = task_capc(zone);
+#endif
 
 	max_order = min_t(unsigned int, MAX_ORDER, pageblock_order + 1);
 
@@ -886,6 +943,13 @@ static inline void __free_one_page(struct page *page,
 
 continue_merging:
 	while (order < max_order - 1) {
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+		if (compaction_capture(capc, page, order, migratetype)) {
+			__mod_zone_freepage_state(zone, -(1 << order),
+								migratetype);
+			return;
+		}
+#endif
 		buddy_pfn = __find_buddy_pfn(pfn, order);
 		buddy = page + (buddy_pfn - pfn);
 
@@ -2563,6 +2627,16 @@ void drain_all_pages(struct zone *zone)
 	 */
 	static cpumask_t cpus_with_pcps;
 
+	/* Do not drain if one is already in progress unless it's specific to
+	* a zone. Such callers are primarily CMA and memory hotplug and need
+	* the drain to be complete when the call returns.
+	*/
+	if (unlikely(!mutex_trylock(&pcpu_drain_mutex))) {
+		if (!zone)
+			return;
+		mutex_lock(&pcpu_drain_mutex);
+	}
+
 	/*
 	 * We don't care about racing with CPU hotplug event
 	 * as offline notification will cause the notified
@@ -2594,6 +2668,7 @@ void drain_all_pages(struct zone *zone)
 			cpumask_clear_cpu(cpu, &cpus_with_pcps);
 	}
 	on_each_cpu_mask(&cpus_with_pcps, cfi_drain_local_pages, zone, 1);
+	mutex_unlock(&pcpu_drain_mutex);
 }
 
 #ifdef CONFIG_HIBERNATION
@@ -2651,6 +2726,7 @@ void mark_free_pages(struct zone *zone)
 }
 #endif /* CONFIG_PM */
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 /*
  * Free a 0-order page
  * cold == true ? free a cold page : free a hot page
@@ -2714,6 +2790,112 @@ void free_hot_cold_page_list(struct list_head *list, bool cold)
 		free_hot_cold_page(page, cold);
 	}
 }
+#else
+static bool free_hot_cold_page_prepare(struct page *page, unsigned long pfn)
+{
+	int migratetype;
+
+	if (!free_pcp_prepare(page))
+		return false;
+
+	migratetype = get_pfnblock_migratetype(page, pfn);
+	set_pcppage_migratetype(page, migratetype);
+	return true;
+}
+
+static void free_hot_cold_page_commit(struct page *page, unsigned long pfn,
+								bool cold)
+{
+	struct zone *zone = page_zone(page);
+	struct per_cpu_pages *pcp;
+	int migratetype;
+
+	migratetype = get_pcppage_migratetype(page);
+	__count_vm_event(PGFREE);
+
+	/*
+	 * Track unmovable, reclaimable movable and cma on pcp lists.
+	 * Free ISOLATE pages back to the allocator because they are being
+	 * offlined but treat HIGHATOMIC as movable pages so we can get those
+	 * areas back if necessary. Otherwise, we may have to free
+	 * excessively into the page allocator
+	 */
+	if (migratetype >= MIGRATE_PCPTYPES) {
+		if (unlikely(is_migrate_isolate(migratetype))) {
+			free_one_page(zone, page, pfn, 0, migratetype);
+			return;
+		}
+		migratetype = MIGRATE_MOVABLE;
+	}
+
+	pcp = &this_cpu_ptr(zone->pageset)->pcp;
+	if (!cold)
+		list_add(&page->lru, &pcp->lists[migratetype]);
+	else
+		list_add_tail(&page->lru, &pcp->lists[migratetype]);
+	pcp->count++;
+	if (pcp->count >= pcp->high) {
+		unsigned long batch = READ_ONCE(pcp->batch);
+		free_pcppages_bulk(zone, batch, pcp);
+		pcp->count -= batch;
+	}
+}
+
+/*
+ * Free a 0-order page
+ * cold == true ? free a cold page : free a hot page
+ */
+void free_hot_cold_page(struct page *page, bool cold)
+{
+	unsigned long flags;
+	unsigned long pfn = page_to_pfn(page);
+
+	if (!free_hot_cold_page_prepare(page, pfn))
+		return;
+
+	local_irq_save(flags);
+	free_hot_cold_page_commit(page, pfn, cold);
+	local_irq_restore(flags);
+}
+
+/*
+ * Free a list of 0-order pages
+ */
+void free_hot_cold_page_list(struct list_head *list, bool cold)
+{
+	struct page *page, *next;
+	unsigned long flags, pfn;
+	int batch_count = 0;
+
+	/* Prepare pages for freeing */
+	list_for_each_entry_safe(page, next, list, lru) {
+		pfn = page_to_pfn(page);
+		if (!free_hot_cold_page_prepare(page, pfn))
+			list_del(&page->lru);
+		set_page_private(page, pfn);
+	}
+
+	local_irq_save(flags);
+	list_for_each_entry_safe(page, next, list, lru) {
+		unsigned long pfn = page_private(page);
+
+		set_page_private(page, 0);
+		trace_mm_page_free_batched(page, cold);
+		free_hot_cold_page_commit(page, pfn, cold);
+
+		/*
+		 * Guard against excessive IRQ disabled times when we get
+		 * a large list of pages to free.
+		 */
+		if (++batch_count == SWAP_CLUSTER_MAX) {
+			local_irq_restore(flags);
+			batch_count = 0;
+			local_irq_save(flags);
+		}
+	}
+	local_irq_restore(flags);
+}
+#endif
 
 /*
  * split_page takes a non-compound higher-order page, and splits it into
@@ -3280,6 +3462,11 @@ static void warn_alloc_show_mem(gfp_t gfp_mask, nodemask_t *nodemask)
 	if (should_suppress_show_mem() || !__ratelimit(&show_mem_rs))
 		return;
 
+#if defined(CONFIG_HISI_LOWMEM_DBG) && defined(CONFIG_OPTIMIZE_MM_AQ)
+	hisi_lowmem_dbg(0); /* 0 means verbose log */
+	return;
+#endif
+
 	/*
 	 * This documents exceptions given to allocations in certain
 	 * contexts that are allowed to allocate outside current's set
@@ -3450,7 +3637,11 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
 		enum compact_priority prio, enum compact_result *compact_result)
 {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct page *page;
+#else
+	struct page *page = NULL;
+#endif
 	unsigned long pflags;
 	unsigned int noreclaim_flag;
 
@@ -3461,21 +3652,36 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	noreclaim_flag = memalloc_noreclaim_save();
 
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 									prio);
+#else
+															prio, &page);
+#endif
 
 	memalloc_noreclaim_restore(noreclaim_flag);
 	psi_memstall_leave(&pflags);
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	if (*compact_result <= COMPACT_INACTIVE)
 		return NULL;
-
+#endif
 	/*
 	 * At least in one zone compaction wasn't deferred or skipped, so let's
 	 * count a compaction stall
 	 */
 	count_vm_event(COMPACTSTALL);
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+#else
+	/* Prep a captured page if available */
+	if (page)
+		prep_new_page(page, order, gfp_mask, alloc_flags);
+
+	/* Try get a page from the freelist if available */
+	if (!page)
+		page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+#endif
 
 	if (page) {
 		struct zone *zone = page_zone(page);
@@ -3523,6 +3729,7 @@ should_compact_retry(struct alloc_context *ac, int order, int alloc_flags,
 	if (compaction_failed(compact_result))
 		goto check_priority;
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	/*
 	 * make sure the compaction wasn't deferred or didn't bail out early
 	 * due to locks contention before we declare that we should give up.
@@ -3533,6 +3740,25 @@ should_compact_retry(struct alloc_context *ac, int order, int alloc_flags,
 		ret = compaction_zonelist_suitable(ac, order, alloc_flags);
 		goto out;
 	}
+#else
+	/*
+	 * compaction was skipped because there are not enough order-0 pages
+	 * to work with, so we retry only if it looks like reclaim can help.
+	 */
+	if (compaction_needs_reclaim(compact_result)) {
+		ret = compaction_zonelist_suitable(ac, order, alloc_flags);
+		goto out;
+	}
+
+	/*
+	 * make sure the compaction wasn't deferred or didn't bail out early
+	 * due to locks contention before we declare that we should give up.
+	 * But the next retry should use a higher priority if allowed, so
+	 * we don't just keep bailing out endlessly.
+	 */
+	if (compaction_withdrawn(compact_result))
+		goto check_priority;
+#endif
 
 	/*
 	 * !costly requests are much more important than __GFP_RETRY_MAYFAIL
@@ -3949,6 +4175,13 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 	return false;
 }
 
+static atomic64_t g_dr_num = ATOMIC_LONG_INIT(0);
+
+bool is_in_direct_reclaim(void)
+{
+	return atomic64_read(&g_dr_num) > 0;
+}
+
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
@@ -3972,7 +4205,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	if (WARN_ON_ONCE((gfp_mask & (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)) ==
 				(__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)))
 		gfp_mask &= ~__GFP_ATOMIC;
-
+	atomic64_inc(&g_dr_num);
 #ifdef CONFIG_HW_MEMORY_MONITOR
 	delayacct_allocpages_start();
 #endif
@@ -4092,8 +4325,10 @@ retry:
 		goto nopage;
 
 	/* Try direct reclaim and then allocating */
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
 	pgalloc_count_inc(1, order);
+#endif
 #endif
 #ifdef CONFIG_HW_RECLAIM_ACCT
 	reclaimacct_directreclaim_start();
@@ -4222,6 +4457,7 @@ got_pg:
 #ifdef CONFIG_HW_MEMORY_MONITOR
 	delayacct_allocpages_end(order);
 #endif
+	atomic64_dec(&g_dr_num);
 	return page;
 }
 
@@ -4255,8 +4491,10 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 
 	fs_reclaim_acquire(gfp_mask);
 	fs_reclaim_release(gfp_mask);
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
 	pgalloc_count_inc(0, order);
+#endif
 #endif
 
 	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
@@ -4900,7 +5138,12 @@ void show_free_areas(unsigned int filter, nodemask_t *nodemask)
 #else
 		" mapped:%lu shmem:%lu pagetables:%lu bounce:%lu\n"
 #endif
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		" free:%lu free_pcp:%lu free_cma:%lu ion_cache:%lu"
+		" ion_used:%lu(bytes)\n",
+#else
 		" free:%lu free_pcp:%lu free_cma:%lu ion_used:%lu\n",
+#endif
 		global_node_page_state(NR_ACTIVE_ANON),
 		global_node_page_state(NR_INACTIVE_ANON),
 		global_node_page_state(NR_ISOLATED_ANON),
@@ -4931,6 +5174,9 @@ void show_free_areas(unsigned int filter, nodemask_t *nodemask)
 		global_zone_page_state(NR_FREE_PAGES),
 		free_pcp,
 		global_zone_page_state(NR_FREE_CMA_PAGES),
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		global_zone_page_state(NR_IONCACHE_PAGES),
+#endif
 		mm_ion_total());
 
 	for_each_online_pgdat(pgdat) {
@@ -5812,16 +6058,27 @@ static int zone_batchsize(struct zone *zone)
 {
 #ifdef CONFIG_MMU
 	int batch;
+	int page_num;
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	/*
+	 * The per-cpu-pages pools are set to around 1000th of the
+	 * size of the zone.
+	 */
+	/* But no more than a meg. */
+	page_num = 1024;
+#else
 	/*
 	 * The per-cpu-pages pools are set to around 1000th of the
 	 * size of the zone.  But no more than 1/2 of a meg.
 	 *
 	 * OK, so we don't know how big the cache is.  So guess.
 	 */
+	page_num = 512;
+#endif
 	batch = zone->managed_pages / 1024;
-	if (batch * PAGE_SIZE > 512 * 1024)
-		batch = (512 * 1024) / PAGE_SIZE;
+	if (batch * PAGE_SIZE > page_num * 1024)
+		batch = (page_num * 1024) / PAGE_SIZE;
 	batch /= 4;		/* We effectively *= 4 below */
 	if (batch < 1)
 		batch = 1;
@@ -8038,6 +8295,9 @@ int alloc_contig_range(unsigned long start, unsigned long end,
 		.zone = page_zone(pfn_to_page(start)), /*lint !e446*/
 		.mode = MIGRATE_SYNC,
 		.ignore_skip_hint = true,
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+		.no_set_skip_hint = true,
+#endif
 		.gfp_mask = current_gfp_context(gfp_mask),
 	};
 	INIT_LIST_HEAD(&cc.migratepages);

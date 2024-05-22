@@ -336,6 +336,10 @@
 /* tx_chip_temp register, in degC */
 #define CPS4029_TX_CHIP_TEMP_ADDR             0x1E94
 #define CPS4029_TX_CHIP_TEMP_LEN              2
+/* tx_receive_rx_ept_type register */
+#define CPS4029_TX_RCVD_RX_EPT_ADDR           0x1E96
+#define CPS4029_TX_RCVD_RX_EPT_CLEAR          0
+#define CPS4029_TX_RCVD_RX_EPT_LEN            1
 /* rx_power value register, in mw */
 #define CPS4029_TX_PRX_ADDR                   0x1E98
 #define CPS4029_TX_PRX_LEN                    2

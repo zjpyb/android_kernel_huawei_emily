@@ -74,56 +74,11 @@ static inline void set_symlink_flag(struct hmdfs_dentry_info *gdi)
 	gdi->file_type = HM_SYMLINK;
 }
 
-struct inode *fill_inode_local(struct super_block *sb,
-			       struct inode *lower_inode)
+static void hmdfs_fill_local_inode(struct inode *lower_inode,
+				   struct inode *inode)
 {
-	struct inode *inode;
-	struct hmdfs_inode_info *info;
-
-	if (!igrab(lower_inode))
-		return ERR_PTR(-ESTALE);
-
-	inode = hmdfs_iget5_locked_local(sb, lower_inode);
-	if (!inode) {
-		hmdfs_err("iget5_locked get inode NULL");
-		iput(lower_inode);
-		return ERR_PTR(-ENOMEM);
-	}
-	if (!(inode->i_state & I_NEW)) {
-		iput(lower_inode);
-		return inode;
-	}
-
-	info = hmdfs_i(inode);
-#ifdef CONFIG_HMDFS_1_0
-	info->file_no = hmdfs_read_file_id(lower_inode);
-	info->adapter_dentry_flag = hmdfs_adapter_read_dentry_flag(lower_inode);
-#endif
-#ifdef CONFIG_HMDFS_ANDROID
-	info->perm = hmdfs_read_perm(lower_inode);
-#endif
-	if (S_ISDIR(lower_inode->i_mode))
-		inode->i_mode = (lower_inode->i_mode & S_IFMT) | S_IRWXU |
-				S_IRWXG | S_IXOTH;
-	else if (S_ISREG(lower_inode->i_mode))
-		inode->i_mode = (lower_inode->i_mode & S_IFMT) | S_IRUSR |
-				S_IWUSR | S_IRGRP | S_IWGRP;
-	else if (S_ISLNK(lower_inode->i_mode))
-		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-
-#ifdef CONFIG_HMDFS_ANDROID
-	inode->i_uid = lower_inode->i_uid;
-	inode->i_gid = lower_inode->i_gid;
-#else
-	inode->i_uid = KUIDT_INIT((uid_t)1000);
-	inode->i_gid = KGIDT_INIT((gid_t)1000);
-#endif
-	inode->i_atime = lower_inode->i_atime;
-	inode->i_ctime = lower_inode->i_ctime;
-	inode->i_mtime = lower_inode->i_mtime;
-	inode->i_generation = lower_inode->i_generation;
-
-	info->inode_type = HMDFS_LAYER_OTHER_LOCAL;
+	hmdfs_generic_fill_inode(inode, lower_inode, HMDFS_LAYER_OTHER_LOCAL,
+				 true);
 	if (S_ISDIR(lower_inode->i_mode)) {
 		inode->i_op = &hmdfs_dir_inode_ops_local;
 		inode->i_fop = &hmdfs_dir_ops_local;
@@ -137,6 +92,28 @@ struct inode *fill_inode_local(struct super_block *sb,
 	}
 
 	fsstack_copy_inode_size(inode, lower_inode);
+}
+
+struct inode *fill_inode_local(struct super_block *sb,
+			       struct inode *lower_inode)
+{
+	struct inode *inode = NULL;
+	struct hmdfs_inode_info *info = NULL;
+	int err;
+
+	err = hmdfs_generic_get_inode(sb, 0, lower_inode, &inode, NULL, true);
+	if (err)
+		return inode;
+
+	info = hmdfs_i(inode);
+#ifdef CONFIG_HMDFS_1_0
+	info->file_no = hmdfs_read_file_id(lower_inode);
+	info->adapter_dentry_flag = hmdfs_adapter_read_dentry_flag(lower_inode);
+#endif
+#ifdef CONFIG_HMDFS_ANDROID
+	info->perm = hmdfs_read_perm(lower_inode);
+#endif
+	hmdfs_fill_local_inode(lower_inode, inode);
 	unlock_new_inode(inode);
 	return inode;
 }
@@ -811,13 +788,10 @@ int hmdfs_rename_local(struct inode *old_dir, struct dentry *old_dentry,
 		goto out_err;
 	}
 
-	if (hmdfs_i(d_inode(old_dentry))->adapter_dentry_flag ==
-	    ADAPTER_PHOTOKIT_DENTRY_FLAG) {
-		if (err == 0)
-			hmdfs_adapter_rename(sbi, relative_old_dir_path,
-					     old_dentry, relative_new_dir_path,
-					     new_dentry);
-	}
+	if (err == 0 && hmdfs_i(d_inode(old_dentry))->adapter_dentry_flag ==
+			ADAPTER_PHOTOKIT_DENTRY_FLAG)
+		hmdfs_adapter_rename(sbi, relative_old_dir_path, old_dentry,
+				     relative_new_dir_path, new_dentry);
 out_err:
 	kfree(relative_old_dir_path);
 	kfree(relative_new_dir_path);
@@ -870,11 +844,13 @@ int hmdfs_symlink_local(struct inode *dir, struct dentry *dentry,
 	struct inode *child_inode = NULL;
 	struct inode *lower_dir_inode = hmdfs_i(dir)->lower_inode;
 	struct hmdfs_dentry_info *gdi = hmdfs_d(dentry);
+	struct path src_path;
 	kuid_t tmp_uid;
 #ifdef CONFIG_HMDFS_1_0
 	struct super_block *sb = dir->i_sb;
 	struct hmdfs_sb_info *sbi = sb->s_fs_info;
 	char *relative_dir_path = NULL;
+	int symlink_flag;
 #endif
 #ifdef CONFIG_HMDFS_ANDROID
 	const struct cred *saved_cred = NULL;
@@ -889,11 +865,14 @@ int hmdfs_symlink_local(struct inode *dir, struct dentry *dentry,
 	/* With the help of xattr info(storage src in photokit secne)
 	 * by device_view dentry info,
 	 * not support symlink in merge_view except xxc/photokit dir. also,
-	 * old PC Collaboration path need to be confirmed
+	 * old PC Collaboration path need to be confirmed.
+         * Add Office collaboration source dir in pc-access-phone secne.
 	 */
 #ifdef CONFIG_HMDFS_1_0
-	if (hmdfs_adapter_read_dentry_flag(hmdfs_i(dir)->lower_inode) !=
-	    ADAPTER_PHOTOKIT_DENTRY_FLAG) {
+	symlink_flag =
+		hmdfs_adapter_read_dentry_flag(hmdfs_i(dir)->lower_inode);
+	if (symlink_flag != ADAPTER_PHOTOKIT_DENTRY_FLAG &&
+	    symlink_flag != OFFICE_COLLOBORATION_DENTRY_FLAG) {
 		err = -EPERM;
 		goto path_err;
 	}
@@ -922,6 +901,11 @@ int hmdfs_symlink_local(struct inode *dir, struct dentry *dentry,
 	unlock_dir(lower_parent_dentry);
 	if (err)
 		goto out_err;
+	if (!kern_path(symname, LOOKUP_FOLLOW, &src_path)) {
+		d_inode(lower_dentry)->i_size =
+				(__u64)i_size_read(src_path.dentry->d_inode);
+		path_put(&src_path);
+	}
 	set_symlink_flag(gdi);
 #ifdef CONFIG_HMDFS_ANDROID
 	err = hmdfs_persist_perm(lower_dentry, &child_perm);

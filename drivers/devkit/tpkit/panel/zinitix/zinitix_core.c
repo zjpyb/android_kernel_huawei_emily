@@ -202,6 +202,7 @@ int ext_reset_command(void)
 
 	return ret;
 }
+EXPORT_SYMBOL(ext_reset_command);
 
 void zinitix_set_rate()
 {
@@ -2705,6 +2706,32 @@ esd_check_reset:
 
 static int zinitix_set_info_flag(struct ts_kit_platform_data *info)
 {
+	int ret;
+	struct ts_kit_platform_data *ts_platform_data = NULL;
+
+	ts_platform_data = g_zinitix_dev_data->ts_platform_data;
+	if (ts_platform_data && ts_platform_data->get_info_flag == 0
+		&& g_zinitix_pdata->ts_pinctrl) {
+		ret = pinctrl_select_state(g_zinitix_pdata->ts_pinctrl,
+			g_zinitix_pdata->pinctrl_state_suspend);
+		if (ret < 0)
+			TS_LOG_ERR("%s:set pinctrl suspend fail\n", __func__);
+		TS_LOG_INFO("%s: pinctrl_select_state suspend\n", __func__);
+	}
+
+	if (ts_platform_data && ts_platform_data->get_info_flag == 1
+		&& g_zinitix_pdata->ts_pinctrl) {
+		ret = pinctrl_select_state(g_zinitix_pdata->ts_pinctrl,
+			g_zinitix_pdata->pinctrl_state_active);
+		if (ret < 0)
+			TS_LOG_ERR("%s:set pinctrl active fail\n", __func__);
+		TS_LOG_INFO("%s: pinctrl_select_state active\n", __func__);
+	}
+
+	if (ts_platform_data && ts_platform_data->get_info_flag != 0
+		&& ts_platform_data->get_info_flag != 1)
+		TS_LOG_INFO("%s: get other info flag !\n", __func__);
+
 	return NO_ERR;
 }
 
@@ -3143,6 +3170,11 @@ static int zinitix_resume(void)
 		return NO_ERR;
 	}
 
+	if (!gpio_get_value(g_zinitix_pdata->i2c_switch)) {
+		TS_LOG_INFO("%s:i2c not at AP!\n", __func__);
+		return -EINVAL;
+	}
+
 	TS_LOG_INFO("%s:resume enter\n", __func__);
 	reset_gpio = g_zinitix_dev_data->ts_platform_data->reset_gpio;
 	g_zinitix_pdata->suspend_state = false;
@@ -3172,6 +3204,10 @@ static int zinitix_resume(void)
 
 static int zinitix_after_resume(void *feature_info)
 {
+	if (g_zinitix_pdata->suspend_state) {
+		TS_LOG_ERR("%s: resume failed, continue resume\n", __func__);
+		zinitix_resume();
+	}
 	return 0;
 }
 
@@ -3413,6 +3449,7 @@ static int zinitix_init_chip(void)
 	zinitix_dev_data->easy_wakeup_info.palm_cover_flag = true;
 	zinitix_dev_data->easy_wakeup_info.palm_cover_control = true;
 	ts_platform_data->feature_info.wakeup_gesture_enable_info.switch_value = true;
+	ts_platform_data->get_info_flag = -1;
 #endif
 	zinitix_dev_data->easy_wakeup_info.off_motion_on = false;
 	g_zinitix_dev_data->ts_platform_data->chip_data->need_drop_point = 0;

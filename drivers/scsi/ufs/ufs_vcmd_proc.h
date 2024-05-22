@@ -69,6 +69,7 @@ struct ufs_rw_buffer_vcmd {
 	u8 reserved_2nd[RW_BUFFER_2ND_RESERVED_LEN];
 	u16 buffer_len;
 	u8 *buffer;
+	rq_end_io_fn *done;
 };
 #endif
 

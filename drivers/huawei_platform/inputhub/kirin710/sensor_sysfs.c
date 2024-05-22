@@ -45,6 +45,9 @@
 #define GYRO_RANGE_FROM_2000DPS_TO_1000DPS 2
 #define GYRO_PERIOD_MAX                    10
 #define ALS_PERIOD_MAX                     100
+#define HOLSTER_DOUBLE_HALL_MODE           2
+#define DOUBLE_HALL_BIT_0                  0x01
+#define DOUBLE_HALL_BIT_3                  0x08
 
 #define MID_PS          1
 #define NEAR_PS         2
@@ -1719,7 +1722,8 @@ static ssize_t attr_als_calibrate_write(struct device *dev,
 		t != ALS_CHIP_LITEON_LTR582 && dev_info->is_cali_supported != 1 &&
 		t != ALS_CHIP_APDS9999_RGB && t != ALS_CHIP_AMS_TMD3702_RGB &&
 		t != ALS_CHIP_APDS9253_RGB && t != ALS_CHIP_VISHAY_VCNL36658 &&
-		t != ALS_CHIP_BU27006 && t != ALS_CHIP_TCS3707) {
+		t != ALS_CHIP_BU27006 && t != ALS_CHIP_TCS3707 &&
+		t != ALS_CHIP_TMD2755 && t != ALS_CHIP_STK33562 && t != ALS_CHIP_MN78911) {
 		hwlog_info("als sensor is not rohm_bh1745 or avago apds9251 or ams_tmd3725 or liteon_ltr582 , is_cali_supported = %d, no need calibrate\n",
 			dev_info->is_cali_supported);
 		return count;
@@ -2297,7 +2301,13 @@ static ssize_t attr_fingersense_req_data(struct device *dev,
 	spinlock_t *lock = get_fsdata_lock();
 
 #if defined(CONFIG_HISI_VIBRATOR)
-	if ((vibrator_shake == 1) || (HALL_COVERD & hall_value)) {
+	if (get_hall_number() == HOLSTER_DOUBLE_HALL_MODE) {
+		if ((vibrator_shake == 1) || ((hall_value & DOUBLE_HALL_BIT_0)
+			&& (hall_value & DOUBLE_HALL_BIT_3))) {
+			hwlog_err("coverd, vibrator shaking, not send fingersense req data cmd to mcu\n");
+			return -1;
+		}
+	} else if ((vibrator_shake == 1) || (HALL_COVERD & hall_value)) {
 		hwlog_err("coverd, vibrator shaking, not send fingersense req data cmd to mcu\n");
 		return -1;
 	}

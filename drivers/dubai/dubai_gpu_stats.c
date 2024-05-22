@@ -12,6 +12,7 @@
 static int dubai_set_gpu_enable(void __user *argp);
 static int dubai_get_gpu_info(void __user *argp);
 
+static DEFINE_MUTEX(dubai_gpu_lock);
 static int freq_num = 0;
 static struct dubai_gpu_freq_info *freq_stats = NULL;
 static struct dubai_gpu_stats_ops *stats_op = NULL;
@@ -37,10 +38,12 @@ long dubai_ioctl_gpu(unsigned int cmd, void __user *argp)
 
 static void dubai_reset_gpu_stats(void)
 {
+	mutex_lock(&dubai_gpu_lock);
 	if (freq_stats) {
 		kfree(freq_stats);
 		freq_stats = NULL;
 	}
+	mutex_unlock(&dubai_gpu_lock);
 	freq_num = 0;
 	stats_op = NULL;
 }
@@ -125,6 +128,7 @@ static int dubai_get_gpu_info(void __user *argp)
 		return -EFAULT;
 	}
 
+	mutex_lock(&dubai_gpu_lock);
 	memset(&delta_stats, 0, sizeof(struct dubai_gpu_stats));
 	for (i = 0; i < freq_num; i++) {
 		if (new_stats[i].freq <= 0)
@@ -143,6 +147,7 @@ static int dubai_get_gpu_info(void __user *argp)
 		kfree(freq_stats);
 	}
 	freq_stats = new_stats;
+	mutex_unlock(&dubai_gpu_lock);
 
 	if (delta_stats.num > 0) {
 		if (unlikely(copy_to_user(argp, &delta_stats, sizeof(struct dubai_gpu_stats))))

@@ -530,6 +530,7 @@ static int decress_vol_clear_battery_data(
 	if (di == NULL)
 		return 0;
 	di->batt_chargecycles = 0;
+	/* just clear the dec_vol data */
 	di->batt_changed_flag = 1;
 	di->batt_limit_fcc = 0;
 	di->adjusted_fcc_temp_lut = NULL; /* enable it when test ok */

@@ -23,6 +23,8 @@
 #define FI_FLOW_TABLE_SIZE	0x10
 #define FI_FLOW_NODE_LIMIT	512
 #define FI_FLOW_AGING_TIME	60000
+#define FI_FLOW_PRINT_LOG_PERIOD 5000
+#define FI_IFACE_PRINT_LOG_INTERVAL 10
 
 #define FI_NETLINK_BUF_MAX_SIZE 2048
 #define FI_NETLINK_REPORT_MAX_NUM 64
@@ -257,6 +259,8 @@ struct fi_flow_node {
 	__be16			sport;
 	__be16			dport;
 	uint32_t		updatetime;
+	uint32_t		ip_flow_print_log_time;
+	uint32_t		flow_qos_print_log_time;
 	int32_t			uid;
 	struct fi_flow_ctx flow_ctx;
 	fi_flow_cb			flow_cb;

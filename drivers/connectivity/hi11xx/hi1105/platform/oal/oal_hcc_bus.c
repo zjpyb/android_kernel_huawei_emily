@@ -1668,7 +1668,7 @@ OAL_STATIC void hcc_bus_sched_gpio_task(hcc_bus *pst_bus, int32_t irq)
  * Description  : wlan irq process function
  * Return Value : OAL_STATIC irqreturn_t
  */
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 irqreturn_t hcc_bus_wlan_gpio_irq(int32_t irq, void *dev_id)
 #else
 OAL_STATIC irqreturn_t hcc_bus_wlan_gpio_irq(int32_t irq, void *dev_id)

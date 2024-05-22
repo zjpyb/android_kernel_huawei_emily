@@ -35,6 +35,8 @@
 #include <linux/hisi/usb/hisi_usb.h>
 #include "usbaudio_dsp_client.h"
 #include "usbaudio_ioctl.h"
+#include <huawei_platform/usb/usb_extra_modem.h>
+#include <linux/of_platform.h>
 
 #include "usbaudio.h"
 #include "card.h"
@@ -1065,10 +1067,30 @@ static void _customsized_headset_volume_set(struct usb_device *dev, u32 usb_id)
 	}
 }
 
+static bool get_suport_usbvoice(void)
+{
+	struct device_node *node = NULL;
+	const char *value = NULL;
+
+	node = of_find_node_by_path("/audio_hw_config");
+	if ((node) && (of_property_read_string(node, "usbvoice_suport_switch", &value) == 0)) {
+		pr_info("%s: usbvoice_suport_switch: %s", __func__, value);
+		return (strncmp(value, "true", strlen(value)) == 0);
+	}
+	return false;
+}
+
 bool controller_switch(struct usb_device *dev, u32 usb_id, struct usb_host_interface *ctrl_intf, int ctrlif, struct usbaudio_pcms *pcms)
 {
 	int ret = 0;
-	if (is_usbaudio_device(dev) && !is_forced_match_arm_usbid(usb_id) && is_match_hifi_format(dev, usb_id, ctrl_intf, ctrlif, pcms)) {
+	bool suport_usbvoice_status = false;
+
+	if (get_suport_usbvoice() && uem_check_online_status())
+		suport_usbvoice_status = true;
+
+	pr_info("suport_usbvoice_status = %d\n", suport_usbvoice_status);
+	if (is_usbaudio_device(dev) && !is_forced_match_arm_usbid(usb_id) &&
+		is_match_hifi_format(dev, usb_id, ctrl_intf, ctrlif, pcms) && !suport_usbvoice_status) {
 		if (!usb_using_hifi_usb(dev)) {
 			ret = usbaudio_nv_check();
 			if (ret == 0) {

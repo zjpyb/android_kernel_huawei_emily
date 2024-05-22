@@ -79,8 +79,9 @@ int hisi_dss_aif_handler(struct dpu_fb_data_type *dpufd, dss_overlay_t *pov_req,
 		for (k = 0; k < pov_req->wb_layer_nums; k++) {
 			wb_layer = &(pov_req->wb_layer_infos[k]);
 			chn_idx = wb_layer->chn_idx;
+			dpu_check_and_return((chn_idx < 0) || (chn_idx >= DSS_CHN_MAX_DEFINE),
+				-EINVAL, ERR, "wb_layer->chn_idx exceeds array limit\n");
 
-			//
 			aif_bw = &(dpufd->dss_module.aif_bw[chn_idx]);
 			aif_bw->bw = (uint64_t)wb_layer->dst.buf_size *
 				(wb_layer->src_rect.w * wb_layer->src_rect.h) / (wb_layer->dst.width * wb_layer->dst.height); //lint !e647
@@ -98,6 +99,9 @@ int hisi_dss_aif_handler(struct dpu_fb_data_type *dpufd, dss_overlay_t *pov_req,
 			for (i = 0; i < pov_h_block->layer_nums; i++) {
 				layer = &pov_h_block->layer_infos[i];
 				chn_idx = layer->chn_idx;
+				dpu_check_and_return((chn_idx < 0) || (chn_idx >= DSS_CHN_MAX_DEFINE),
+					-EINVAL, ERR, "layer->chn_idx exceeds array limit\n");
+
 				aif_bw_tmp[i].chn_idx = chn_idx;
 				aif_bw_tmp[i].axi_sel = AXI_CHN0;
 				aif_bw_tmp[i].is_used = 1;
@@ -111,6 +115,8 @@ int hisi_dss_aif_handler(struct dpu_fb_data_type *dpufd, dss_overlay_t *pov_req,
 	for (i = 0; i < pov_h_block->layer_nums; i++) {
 		layer = &pov_h_block->layer_infos[i];
 		chn_idx = layer->chn_idx;
+		dpu_check_and_return((chn_idx < 0) || (chn_idx >= DSS_CHN_MAX_DEFINE),
+			-EINVAL, ERR, "layer->chn_idx exceeds array limit\n");
 
 		if (layer->need_cap & (CAP_BASE | CAP_DIM | CAP_PURE_COLOR))
 			continue;
@@ -2738,6 +2744,8 @@ static int hisi_dss_check_wblayer_rect(struct dpu_fb_data_type *dpufd, dss_wb_la
 static int hisi_dss_check_userdata_base(struct dpu_fb_data_type *dpufd,
 	dss_overlay_t *pov_req, dss_overlay_block_t *pov_h_block_infos)
 {
+	uint32_t i;
+
 	if (dpufd == NULL) {
 		DPU_FB_ERR("invalid dpufd!");
 		return -EINVAL;
@@ -2760,11 +2768,13 @@ static int hisi_dss_check_userdata_base(struct dpu_fb_data_type *dpufd,
 		return -EINVAL;
 	}
 
-	if ((pov_h_block_infos->layer_nums <= 0)
-		|| (pov_h_block_infos->layer_nums > OVL_LAYER_NUM_MAX)) {
-		DPU_FB_ERR("fb%d, invalid layer_nums=%d!",
-			dpufd->index, pov_h_block_infos->layer_nums);
-		return -EINVAL;
+	for (i = 0; i < pov_req->ov_block_nums; ++i) {
+		if (pov_h_block_infos[i].layer_nums <= 0 ||
+			pov_h_block_infos[i].layer_nums > OVL_LAYER_NUM_MAX) {
+			DPU_FB_ERR("fb%d, invalid layer_nums=%d!",
+				dpufd->index, pov_h_block_infos[i].layer_nums);
+			return -EINVAL;
+		}
 	}
 
 	if ((pov_req->ovl_idx < 0) ||
@@ -2932,7 +2942,11 @@ int hisi_dss_check_userdata(struct dpu_fb_data_type *dpufd,
 			}
 		}
 	} else {
-		;
+		if (pov_req->wb_layer_nums > MAX_DSS_DST_NUM) {
+			DPU_FB_ERR("fb%d, invalid wb_layer_nums=%d!\n",
+				dpufd->index, pov_req->wb_layer_nums);
+			 return -EINVAL;
+		}
 	}
 
 	return 0;
@@ -3625,7 +3639,6 @@ int hisi_dss_hfbce_config(struct dpu_fb_data_type *dpufd, dss_wb_layer_t *layer,
 	uint32_t wdma_addr = 0;
 	dss_rect_t in_rect;
 	int aligned_pixel = 0;
-	bool mmu_enable = false;
 
 	bool is_pixel_10bit = false;
 	dss_rect_ltrb_t hfbce_header_rect = {0};
@@ -3671,8 +3684,7 @@ int hisi_dss_hfbce_config(struct dpu_fb_data_type *dpufd, dss_wb_layer_t *layer,
 	}
 
 	is_pixel_10bit = is_pixel_10bit2dma(wdma_format);
-	mmu_enable = (layer->dst.mmu_enable == 1) ? true : false;
-	wdma_addr = mmu_enable ? layer->dst.vir_addr : layer->dst.phy_addr;
+	wdma_addr = layer->dst.vir_addr;
 
 	if (layer->transform & HISI_FB_TRANSFORM_ROT_90) {
 		hfbce_block_width_align = HFBC_BLOCK1_WIDTH_ALIGN;
@@ -3781,7 +3793,7 @@ int hisi_dss_hfbce_config(struct dpu_fb_data_type *dpufd, dss_wb_layer_t *layer,
 
 	wdma->hfbce_used = 1;
 	wdma->ctrl = set_bits32(wdma->ctrl, wdma_format, 5, 3);
-	wdma->ctrl = set_bits32(wdma->ctrl, (mmu_enable ? 0x1 : 0x0), 1, 8);
+	wdma->ctrl = set_bits32(wdma->ctrl, 0x1, 1, 8);
 	wdma->ctrl = set_bits32(wdma->ctrl, wdma_transform, 3, 9);
 	if (last_block) {
 		wdma->ch_ctl = set_bits32(wdma->ch_ctl, 0x1d, 5, 0);

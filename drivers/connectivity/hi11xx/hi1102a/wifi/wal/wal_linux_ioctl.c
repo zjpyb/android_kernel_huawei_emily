@@ -3067,13 +3067,14 @@ oal_int32 hwifi_config_init_ini_priv(oal_net_device_stru *pst_cfg_net_dev)
     }
     pst_customize_priv->uc_i3c_switch = hwifi_get_gnss_scan_by_i3c();
 
+    l_ret = hwifi_get_init_priv_value(WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH, &l_priv_value);
+    if (l_ret == OAL_SUCC) {
+        pst_customize_priv->close_filter_switch = (oal_uint8)l_priv_value;
+    }
     /* 如果所有参数都在有效范围内，则下发配置值 */
-    l_ret = wal_send_cfg_event(pst_cfg_net_dev,
-                               WAL_MSG_TYPE_WRITE,
+    l_ret = wal_send_cfg_event(pst_cfg_net_dev, WAL_MSG_TYPE_WRITE,
                                WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(wlan_cfg_customize_priv),
-                               (oal_uint8 *)&st_write_msg,
-                               OAL_FALSE,
-                               OAL_PTR_NULL);
+                               (oal_uint8 *)&st_write_msg, OAL_FALSE, OAL_PTR_NULL);
     if (oal_unlikely(l_ret != OAL_SUCC)) {
         OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hwifi_config_init_ini_rf::wal_send_cfg_event failed, err code [%d]", l_ret);
         return OAL_FAIL;
@@ -3297,13 +3298,12 @@ OAL_STATIC oal_uint32 hwifi_config_init_dts_cali(oal_net_device_stru *pst_cfg_ne
         }
     }
     if (mac_get_band_5g_enabled()) {
-        oal_int16 *ps_ref_5g = &st_cus_cali.us_cali_txpwr_pa_dc_ref_5g_val_band1;
         /* 5G REF: 分7个band */
         for (uc_idx = 0; uc_idx < 7; ++uc_idx) {
             oal_int16 s_ref_val =
                 (oal_int16)hwifi_get_init_value(CUS_TAG_DTS, WLAN_CFG_DTS_CALI_TXPWR_PA_DC_REF_5G_START + uc_idx);
             if ((s_ref_val >= 0) && (s_ref_val <= CALI_TXPWR_PA_DC_REF_MAX)) {
-                *(ps_ref_5g + uc_idx) = s_ref_val;
+                st_cus_cali.us_cali_txpwr_pa_dc_ref_5g_val_band[uc_idx] = s_ref_val;
             } else {
                 /* 值超出有效范围，标记置为TRUE */
                 uc_error_param = OAL_TRUE;

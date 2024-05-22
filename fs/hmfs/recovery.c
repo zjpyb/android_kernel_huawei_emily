@@ -133,8 +133,7 @@ void hmfs_log_oob_extent(struct f2fs_sb_info *sbi,
 
 		if (stor_info->dev_stream_addr[i] != 0) {
 			curseg = CURSEG_I(sbi, CURSEG_T(i));
-			cp_blkaddr = START_BLOCK(sbi, curseg->segno) +
-				curseg->next_blkoff;
+			cp_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
 			dev_blkaddr = stor_info->dev_stream_addr[i];
 
 			if (dev_blkaddr == cp_blkaddr) {
@@ -320,7 +319,7 @@ void hmfs_free_oob_rsvd_space(struct f2fs_sb_info *sbi)
 			sbi->oob_ctrl[i].recover_ext[j].rsvd_space = false;
 
 			start_lba = sbi->oob_ctrl[i].recover_ext[j].start_lba;
-			__set_free(sbi, start_lba);
+			__set_free(sbi, GET_SEGNO(sbi, start_lba));
 		}
 	}
 }
@@ -369,6 +368,7 @@ static struct fsync_inode_entry *add_fsync_inode(struct f2fs_sb_info *sbi,
 
 	entry = f2fs_kmem_cache_alloc(fsync_entry_slab, GFP_F2FS_ZERO);
 	entry->inode = inode;
+	entry->oob_last_fsync_idx = INT_MAX;
 	list_add_tail(&entry->list, head);
 
 	return entry;
@@ -651,11 +651,11 @@ static int find_fsync_dnodes(struct f2fs_sb_info *sbi, struct list_head *head,
 
 		entry = get_fsync_inode(head, ino_of_node(page));
 		if (!entry) {
+			bool quota_inode = false;
 			hmfs_msg(sbi->sb, KERN_INFO,
 				"find node[%d, %d, %d] to recover",
 				ino_of_node(page), nid_of_node(page),
 				is_dent_dnode(page));
-			bool quota_inode = false;
 
 			if (!check_only &&
 				IS_INODE(page) && is_dent_dnode(page)) {
@@ -1065,11 +1065,16 @@ static int find_fsync_oobs(struct f2fs_sb_info *sbi, struct list_head *head)
 				entry = add_fsync_inode(sbi, head, ino, false);
 				if (IS_ERR(entry)) {
 					err = PTR_ERR(entry);
+					if (err == -ENOENT) {
+						err = 0;
+						continue;
+					}
 					hmfs_msg(sbi->sb, KERN_NOTICE,
 						"add ino[%u] fail[%d]", ino, err);
 					break;
 				}
 			}
+			entry->oob_last_fsync_idx = j;
 		}
 	}
 	return err;
@@ -1191,7 +1196,7 @@ out:
 }
 
 static int recover_file_ftl(struct f2fs_sb_info *sbi,
-		struct list_head *inode_list)
+		struct list_head *inode_list, struct list_head *tmp_inode_list)
 {
 	int i, j, k;
 	int err = 0;
@@ -1229,6 +1234,13 @@ static int recover_file_ftl(struct f2fs_sb_info *sbi,
 					goto out;
 				}
 				sbi->oob_ctrl[i].recover_ext[j].rsvd_space = false;
+
+				if (entry->oob_last_fsync_idx == k) {
+					list_move_tail(&entry->list, tmp_inode_list);
+					hmfs_msg(sbi->sb, KERN_INFO,
+						"ino[%u] oob recover stop at[%lu] but end lba at[%lu]",
+						ino, blkaddr, end_lba);
+				}
 			}
 		}
 	}
@@ -1240,6 +1252,7 @@ out:
 static int __do_oob_recover(struct f2fs_sb_info *sbi, bool check_only,
 		unsigned long s_flags,
 		struct list_head *inode_list,
+		struct list_head *tmp_inode_list,
 		int *ret, bool *need_writecp)
 {
 	int err = get_oob_info(sbi);
@@ -1256,7 +1269,7 @@ static int __do_oob_recover(struct f2fs_sb_info *sbi, bool check_only,
 	}
 	*need_writecp = true;
 
-	err = recover_file_ftl(sbi, inode_list);
+	err = recover_file_ftl(sbi, inode_list, tmp_inode_list);
 	if (err) {
 		/* restore s_flags to let iput() trash data */
 		sbi->sb->s_flags = s_flags;
@@ -1270,7 +1283,7 @@ skip_oob:
 int hmfs_recover_fsync_data(struct f2fs_sb_info *sbi, bool check_only,
 		bool *need_cp)
 {
-	struct list_head inode_list, tmp_inode_list;
+	struct list_head inode_list, oob_inode_list;
 	struct list_head dir_list;
 	int err;
 	int ret = 0;
@@ -1301,7 +1314,7 @@ int hmfs_recover_fsync_data(struct f2fs_sb_info *sbi, bool check_only,
 	}
 
 	INIT_LIST_HEAD(&inode_list);
-	INIT_LIST_HEAD(&tmp_inode_list);
+	INIT_LIST_HEAD(&oob_inode_list);
 	INIT_LIST_HEAD(&dir_list);
 
 	/* prevent checkpoint */
@@ -1320,7 +1333,7 @@ int hmfs_recover_fsync_data(struct f2fs_sb_info *sbi, bool check_only,
 	need_writecp = true;
 
 	/* step #2: recover data */
-	err = recover_data(sbi, &inode_list, &tmp_inode_list, &dir_list);
+	err = recover_data(sbi, &inode_list, &oob_inode_list, &dir_list);
 	if (!err)
 		f2fs_bug_on(sbi, !list_empty(&inode_list));
 	else {
@@ -1337,15 +1350,15 @@ skip:
 		 * recovery inode from 2 source:
 		 * 1) ino in oob info of data stream by fsync
 		 * 2) ino in node footer that has fsync_mark
-		 * so use tmp_inode_list(already had these inodes before)
+		 * so use oob_inode_list(already had these inodes before)
 		 */
-		err = __do_oob_recover(sbi, check_only, s_flags,
-				&tmp_inode_list, &ret, &need_writecp);
+		err = __do_oob_recover(sbi, check_only, s_flags, &oob_inode_list,
+				&inode_list, &ret, &need_writecp);
 	}
 	hmfs_free_oob_rsvd_space(sbi);
 
 	destroy_fsync_dnodes(&inode_list, err);
-	destroy_fsync_dnodes(&tmp_inode_list, err);
+	destroy_fsync_dnodes(&oob_inode_list, err);
 
 	/* truncate meta pages to be used by the recovery */
 	truncate_inode_pages_range(META_MAPPING(sbi),

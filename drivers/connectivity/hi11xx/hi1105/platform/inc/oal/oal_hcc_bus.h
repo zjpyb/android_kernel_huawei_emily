@@ -425,7 +425,7 @@ extern void hcc_bus_sched_flowctrl_gpio_task(hcc_bus* pst_bus, int32_t l_irq);
 extern int32_t hi110x_hcc_ip_pm_ctrl(uint32_t enable);
 extern hcc_bus *hcc_find_bus_by_devid(uint32_t dev_id, uint32_t bus_type);
 extern int32_t hcc_bus_isvalid(hcc_bus *pst_bus);
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 extern void oal_free_irq_in_s4(void);
 extern void oal_request_irq_in_s4(void);
 extern irqreturn_t hcc_bus_wlan_gpio_irq(int32_t irq, void *dev_id);

@@ -338,7 +338,7 @@ static long ioctl_power_up(struct file *fd, unsigned long args)
 		ivp_err("invalid input args or pdev");
 		return -EINVAL;
 	}
-
+	mutex_lock(&pdev->ivp_comm.ivp_ioctl_mutex);
 	mutex_lock(&pdev->ivp_comm.ivp_power_up_off_mutex);
 	if (copy_from_user(&info, (void *)(uintptr_t)args, sizeof(info)) != 0) {
 		ivp_err("invalid input param size");
@@ -356,11 +356,12 @@ static long ioctl_power_up(struct file *fd, unsigned long args)
 
 	ret = ivp_poweron(pdev, &info);
 	mutex_unlock(&pdev->ivp_comm.ivp_power_up_off_mutex);
-
+	mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
 	return ret;
 
 power_up_err:
 	mutex_unlock(&pdev->ivp_comm.ivp_power_up_off_mutex);
+	mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
 	return -EINVAL;
 }
 
@@ -1100,6 +1101,7 @@ static ivp_ioctl_func_t ivp_get_ioctl_func(unsigned int cmd,
 
 long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 {
+	long ret;
 	ivp_ioctl_func_t func = NULL;
 	struct ivp_device *pdev = NULL;
 	if (!fd) {
@@ -1118,16 +1120,23 @@ long ivp_ioctl(struct file *fd, unsigned int cmd, unsigned long args)
 		ivp_err("invalid param pdev");
 		return -EINVAL;
 	}
+	mutex_lock(&pdev->ivp_comm.ivp_ioctl_mutex);
 	if (atomic_read(&pdev->ivp_comm.poweron_success) != 0) {
+		mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
 		ivp_err("ioctl cmd is error %u since ivp not power", cmd);
 		return -EINVAL;
 	}
 	func = ivp_get_ioctl_func(cmd, ioctl_actived_ops,
 		ARRAY_SIZE(ioctl_actived_ops));
-	if (func) {
-		return func(fd, args);
+	if (!func) {
+		ivp_err("invalid ioctl command(0x%08x) received", cmd);
+		mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
+		return -EINVAL;
 	}
-
-	ivp_err("invalid ioctl command(0x%08x) received", cmd);
-	return -EINVAL;
+	if (cmd == IVP_IOCTL_WATCHDOG)
+		mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
+	ret = func(fd, args);
+	if (cmd != IVP_IOCTL_WATCHDOG)
+		mutex_unlock(&pdev->ivp_comm.ivp_ioctl_mutex);
+	return ret;
 }

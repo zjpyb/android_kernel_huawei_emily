@@ -143,7 +143,7 @@ static void notify_tcp_collec_event(void)
 	notifier((struct res_msg_head *)event);
 }
 
-static void cmd_process(struct req_msg_head *msg)
+static void cmd_process(struct req_msg_head *msg, u32 len)
 {
 	if (!msg) {
 		pr_err("msg is null\n");

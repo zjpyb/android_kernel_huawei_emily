@@ -7,6 +7,7 @@
 
 #define CHIP_TYPE_HI110X "hisi"
 #define CHIP_TYPE_BCM "bcm43xx"
+#define CHIP_TYPE_SYNA "syna"
 #define NFC_CHIP_TYPE_HI110X "hisi_nfc"
 #define NFC_CHIP_TYPE_NXP "nxp_nfc"
 #ifdef CONFIG_HWCONNECTIVITY

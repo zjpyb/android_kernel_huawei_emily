@@ -171,6 +171,20 @@ static als_para_normal_table ltr2568_als_para_diff_tp_color_table[] = {
 	 { 230, 50, 512, 514, 418, 0, 10000, 1660, 7500, 200} },
 	{ LRA, V3, TS_PANEL_UNKNOWN, LTR2568_PARA_SIZE,
 	 { 500, 200, 755, 710, 424, 0, 8280, 1110, 5000, 300} },
+	{ JSCH, V3, SAMSUNG_TPLCD, LTR2568_PARA_SIZE,
+	 { 230, 50, 680, 683, 530, 0, 10000, 1660, 7500, 200} },
+	{ JSCH, V3, EDO_TPLCD, LTR2568_PARA_SIZE,
+	 { 450, 100, 505, 540, 530, 0, 10000, 1660, 7500, 200} },
+	{ JSCH, V3, TS_PANEL_UNKNOWN, LTR2568_PARA_SIZE,
+	 { 230, 50, 978, 683, 647, 0, 10000, 1660, 7500, 200} },
+	{ PHONE_TYPE_MEDCH, V3, TS_PANEL_UNKNOWN, LTR2568_PARA_SIZE,
+	 { 230, 50, 512, 514, 418, 0, 1977, 289, 5000, 300} },
+};
+
+static als_para_normal_table ltr311_als_para[] = {
+	{ CHL, V3, TS_PANEL_UNKNOWN, LTR311_PARA_SIZE,
+	 { 270, 50, 526, 588, 926, 0, 28283, 28284, 1000,
+		10000, 100, 600, 155, 25 } },
 };
 
 ltr582_als_para_table *als_get_ltr582_table_by_id(uint32_t id)
@@ -239,4 +253,22 @@ als_para_normal_table *als_get_ltr2568_first_table(void)
 uint32_t als_get_ltr2568_table_count(void)
 {
 	return ARRAY_SIZE(ltr2568_als_para_diff_tp_color_table);
+}
+
+als_para_normal_table *als_get_ltr311_table_by_id(uint32_t id)
+{
+	if (id >= ARRAY_SIZE(ltr311_als_para))
+		return NULL;
+	return &(ltr311_als_para[id]);
+}
+
+als_para_normal_table *als_get_ltr311_first_table(void)
+{
+	hwlog_info("als_get_ltr311_first_table enter\n");
+	return &(ltr311_als_para[0]);
+}
+
+uint32_t als_get_ltr311_table_count(void)
+{
+	return ARRAY_SIZE(ltr311_als_para);
 }

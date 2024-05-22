@@ -106,6 +106,10 @@ static inline struct blk_mq_ctx *__blk_mq_get_ctx(struct request_queue *q,
  */
 static inline struct blk_mq_ctx *blk_mq_get_ctx(struct request_queue *q)
 {
+#ifdef CONFIG_MAS_BLK
+	if (q->mas_queue_ops && q->mas_queue_ops->mq_ctx_get_fn)
+		return q->mas_queue_ops->mq_ctx_get_fn(q);
+#endif
 	return __blk_mq_get_ctx(q, get_cpu());
 }
 
@@ -113,7 +117,7 @@ static inline void blk_mq_put_ctx(struct blk_mq_ctx *ctx)
 {
 #ifdef CONFIG_MAS_BLK
 	if (ctx->queue->mas_queue_ops && ctx->queue->mas_queue_ops->mq_ctx_put_fn)
-		ctx->queue->mas_queue_ops->mq_ctx_put_fn();
+		ctx->queue->mas_queue_ops->mq_ctx_put_fn(ctx->queue);
 	else
 #endif /* CONFIG_MAS_BLK */
 		put_cpu();

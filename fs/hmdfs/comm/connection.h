@@ -17,9 +17,14 @@
 #endif
 
 #include <crypto/aead.h>
+#include <linux/atomic.h>
 #include <net/sock.h>
 #include "protocol.h"
 #include "node_cb.h"
+
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+#include "low_latency.h"
+#endif
 
 #define HMDFS_KEY_SIZE	  32
 #define HMDFS_IV_SIZE	  12
@@ -45,14 +50,25 @@ enum {
 
 enum {
 	CONNECT_TYPE_TCP = 0,
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	CONNECT_TYPE_D2DP,
+#endif
 	CONNECT_TYPE_UNSUPPORT,
 };
 
+enum {
+	GET_P2P_IDLE = 0,
+	GET_P2P_WAITING,
+	GET_P2P_FAIL_SOFTBUS,
+	GET_P2P_FAIL_PEER_OFFLINE,
+	GET_P2P_FAIL_NO_CAPABILITY,
+};
+
 struct connection_stat {
-	int64_t send_bytes;
-	int64_t recv_bytes;
-	int send_message_count;
-	int recv_message_count;
+	atomic64_t send_bytes;
+	atomic64_t recv_bytes;
+	atomic64_t send_messages;
+	atomic64_t recv_messages;
 	unsigned long rekey_time;
 };
 
@@ -62,6 +78,7 @@ struct connection {
 	struct mutex ref_lock;
 	struct hmdfs_peer *node;
 	int type;
+	unsigned int priority;
 	int status;
 	void *connect_handle;
 	struct crypto_aead *tfm;
@@ -78,6 +95,18 @@ struct connection {
 	int (*send_message)(struct connection *connect,
 			    struct hmdfs_send_data *msg);
 	uint32_t crypto;
+
+	/* some transport-related data common for all protocols */
+	int fd;
+	struct mutex close_mutex;
+	size_t recvbuf_maxsize;
+	struct kmem_cache *recv_cache;
+	struct task_struct *recv_task;
+
+	uint32_t link_type;
+	struct list_head p2p_disconnect_list;
+	unsigned long p2p_deadline;
+	int client;
 };
 
 enum {
@@ -88,9 +117,11 @@ enum {
 
 struct hmdfs_async_work {
 	struct hmdfs_msg_idr_head head;
-	struct page *page;
 	struct delayed_work d_work;
+	u8 cmd;
+	unsigned int pages_nr;
 	unsigned long start;
+	struct page *pages[0];
 };
 
 enum {
@@ -151,6 +182,9 @@ struct hmdfs_peer {
 	unsigned long conn_time;
 	uint8_t version;
 	u8 status;
+	u8 get_p2p_fail;
+	u8 pending_async_p2p_try;
+	u64 capability;
 	u64 features;
 	long long old_sb_dirty_count;
 	atomic64_t sb_dirty_count;
@@ -204,6 +238,9 @@ struct hmdfs_peer {
 	bool offline_start;
 	spinlock_t wr_opened_inode_lock;
 	struct list_head wr_opened_inode_list;
+	struct timer_list p2p_timeout;
+	struct delayed_work p2p_dwork;
+	unsigned long last_active;
 	/*
 	 * protect @stashed_inode_list and @stashed_inode_nr in stash process
 	 * and fill_inode_remote->hmdfs_remote_init_stash_status process
@@ -215,10 +252,16 @@ struct hmdfs_peer {
 	/* how many inodes are rebuilding statsh status */
 	atomic_t rebuild_inode_status_nr;
 	wait_queue_head_t rebuild_inode_status_wq;
+	struct mutex p2p_get_session_lock;
+	wait_queue_head_t establish_p2p_connection_wq;
 	struct hmdfs_peer_statistics stats;
 	/* sysfs */
 	struct kobject kobj;
 	struct completion kobj_unregister;
+	uint32_t devsl;
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+	struct hmdfs_latency_request lat_req;
+#endif
 };
 
 #define HMDFS_DEVID_LOCAL 0
@@ -249,6 +292,10 @@ enum {
 	HS_EXTEND_CODE_CRYPTO = 0,
 	HS_EXTEND_CODE_CASE_SENSE,
 	HS_EXTEND_CODE_FEATURE_SUPPORT,
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	HS_EXTEND_CODE_D2DP_PARAMS,
+	HS_EXTEND_CODE_DEV_TYPE_PARAMS,
+#endif
 	HS_EXTEND_CODE_COUNT
 };
 
@@ -284,12 +331,28 @@ struct feature_body {
 	__u64 reserved;
 } __packed;
 
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+struct d2dp_params_body {
+	__le16 udp_port;
+	__u8 d2dp_version;
+} __packed;
+
+struct device_type_params_body {
+	__u8 device_type;
+} __packed;
+#endif
+
 #define HMDFS_HS_CRYPTO_KTLS_AES128 0x00000001
 #define HMDFS_HS_CRYPTO_KTLS_AES256 0x00000002
 
 static inline bool hmdfs_is_node_online(const struct hmdfs_peer *node)
 {
 	return READ_ONCE(node->status) == NODE_STAT_ONLINE;
+}
+
+static inline bool hmdfs_is_node_online_or_shaking(const struct hmdfs_peer *node)
+{
+	return READ_ONCE(node->status) != NODE_STAT_OFFLINE;
 }
 
 static inline unsigned int hmdfs_node_inc_evt_seq(struct hmdfs_peer *node)
@@ -303,7 +366,14 @@ static inline unsigned int hmdfs_node_evt_seq(const struct hmdfs_peer *node)
 	return atomic_read(&node->evt_seq);
 }
 
-struct connection *get_conn_impl(struct hmdfs_peer *node, int connect_type);
+static inline void hmdfs_p2p_fail_for(struct hmdfs_peer *node, uint8_t reason)
+{
+	if (cmpxchg(&node->get_p2p_fail, GET_P2P_WAITING, reason) == GET_P2P_WAITING)
+		wake_up_interruptible_all(&node->establish_p2p_connection_wq);
+}
+
+struct connection *get_conn_impl(struct hmdfs_peer *node, u8 cmd_flag);
+bool p2p_connection_available(struct hmdfs_peer *node);
 
 void set_conn_sock_quickack(struct hmdfs_peer *node);
 
@@ -331,11 +401,19 @@ static inline void peer_get(struct hmdfs_peer *peer)
 	kref_get(&peer->ref_cnt);
 }
 
+static inline bool hmdfs_pair_conn_and_cmd_flag(struct connection *conn,
+						u8 cmd_flag)
+{
+	return (cmd_flag == C_REQUEST && conn->client == 1) ||
+	       (cmd_flag == C_RESPONSE && conn->client == 0);
+}
+
 void peer_put(struct hmdfs_peer *peer);
 
 int hmdfs_sendmessage(struct hmdfs_peer *node, struct hmdfs_send_data *msg);
 void hmdfs_connections_stop(struct hmdfs_sb_info *sbi);
 
+void hmdfs_stop_thread(struct connection *conn);
 void hmdfs_disconnect_node(struct hmdfs_peer *node);
 void connection_send_echo_async_cb(struct hmdfs_peer *peer,
 				   const struct hmdfs_req *req,

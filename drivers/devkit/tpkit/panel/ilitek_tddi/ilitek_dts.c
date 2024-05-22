@@ -170,6 +170,19 @@ int ilitek_parse_dts(struct device_node *np)
 		ts_dev_data->use_lcdkit_power_notify = 0;
 		TS_LOG_INFO("get use_lcdkit_power_notify fail,use default\n");
 	}
+	ret = of_property_read_u32(dts_np, ILITEK_HEAD_ROI, &ilits->head_roi);
+	if (ret) {
+		TS_LOG_INFO("get support_roi failed, use default: %d\n",
+			ILITEK_DTS_DEF_HEAD_ROI);
+		ilits->head_roi = ILITEK_DTS_DEF_HEAD_ROI;
+	}
+	TS_LOG_INFO("HEAD_ROI = %d\n", ilits->head_roi);
+	ret = of_property_read_u32(dts_np, "ic_hardware_type", &ilits->ic_hardware_type);
+	if (ret) {
+		TS_LOG_INFO("get ic_hardware_type failed, use default: %d\n", 0);
+		ilits->ic_hardware_type = 0;
+	}
+	TS_LOG_INFO("ic_hardware_type = %d\n", ilits->ic_hardware_type);
 	ret = of_property_read_u32(dts_np, "hide_fw_name",
 		&ts_dev_data->hide_fw_name);
 	if (ret) {

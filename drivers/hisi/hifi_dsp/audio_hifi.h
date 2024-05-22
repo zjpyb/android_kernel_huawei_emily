@@ -337,6 +337,7 @@ struct voice_bsd_param_hsm {
 #define HIFI_MISC_IOCTL_KCOV_FAKE_MSG  _IOWR('A', 0x81, struct misc_io_dump_buf_param)
 #define HIFI_MISC_IOCTL_KCOV_FAKE_WTD  _IOW('A', 0x82, uint32_t)
 #define HIFI_MISC_IOCTL_WAKEUP_PARA_WRITE_THREAD     _IOW('A',  0x83, unsigned int)
+#define HIFI_MISC_IOCTL_SOUND_ENHANCE_PARAMS         _IOW('A',  0x84, struct misc_io_sync_param)
 
 #define HIFI_MISC_IOCTL_GET_VOICE_BSD_PARAM _IOWR('A', 0x7c, struct voice_bsd_param_hsm)
 #define INT_TO_ADDR(low, high) (void *)(uintptr_t)((unsigned long long)(low) | ((unsigned long long)(high) << 32))

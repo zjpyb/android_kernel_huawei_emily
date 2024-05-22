@@ -563,6 +563,7 @@ hisifb-objs += backlight/rt4831.o
 hisifb-objs += backlight/nt50356.o
 hisifb-objs += backlight/rt4539.o
 hisifb-objs += voltage/icn68116.o
+hisifb-objs += voltage/aw37503.o
 endif
 
 ifeq ($(CONFIG_HUAWEI_DEVKIT_HISI),y)

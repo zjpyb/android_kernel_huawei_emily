@@ -56,6 +56,7 @@ static const char * const g_power_log_device_id_table[] = {
 	[POWER_LOG_DEVICE_ID_MT6360] = "mt6360",
 	[POWER_LOG_DEVICE_ID_RT9426] = "rt9426",
 	[POWER_LOG_DEVICE_ID_SC8545] = "sc8545",
+	[POWER_LOG_DEVICE_ID_HL7139] = "hl7139",
 	[POWER_LOG_DEVICE_ID_SC8545_AUX] = "sc8545_aux",
 	[POWER_LOG_DEVICE_ID_BQ27Z561] = "bq27z561",
 	[POWER_LOG_DEVICE_ID_BQ40Z50] = "bq40z50",

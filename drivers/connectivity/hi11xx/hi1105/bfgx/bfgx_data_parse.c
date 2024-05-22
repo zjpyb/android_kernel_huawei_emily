@@ -141,7 +141,7 @@ int32_t ps_push_skb_queue(struct ps_core_s *ps_core_d, uint8_t *buf_ptr, uint16_
         return -EINVAL;
     }
 
-    skb = oal_alloc_skb(pkt_len, GFP_ATOMIC, 3); /* alloc_skb Ê§°ÜÊ±£¬³¢ÊÔ3´Î */
+    skb = oal_alloc_skb(pkt_len, GFP_ATOMIC, ps_core_d->skb_retry_count);
     if (unlikely(skb == NULL)) {
         ps_print_err("can't allocate mem for new skb, len=%d\n", pkt_len);
         return -EINVAL;

@@ -402,6 +402,7 @@ enum ts_cmd {
 	TS_REPORT_PEN,
 	TS_FREEBUFF,
 	TS_PALM_KEY,
+	TS_HORIZON_SWITCH,
 	TS_INVAILD_CMD = 255,
 };
 
@@ -770,6 +771,15 @@ struct ts_charger_info {
 };
 #endif
 
+struct ts_horizon_info {
+	u8 horizon_supported;
+	u8 horizon_switch;
+	int op_action;
+	int status;
+	u16 horizon_switch_addr;
+	u16 horizon_switch_bit;
+};
+
 struct ts_special_hardware_test_info {
 	u8 switch_value;
 	int op_action;
@@ -884,6 +894,7 @@ struct ts_feature_info {
 #if defined(HUAWEI_CHARGER_FB)
 	struct ts_charger_info charger_info;
 #endif
+	struct ts_horizon_info horizon_info;
 	struct ts_special_hardware_test_info hardware_test_info;
 	struct ts_pen_info pen_info;
 };
@@ -1002,6 +1013,7 @@ struct ts_device_ops {
 	int (*chip_wakeup_gesture_enable_switch)(
 		struct ts_wakeup_gesture_enable_info *info);
 	int (*chip_charger_switch)(struct ts_charger_info *info);
+	int (*chip_horizon_switch)(struct ts_horizon_info *info);
 	int (*chip_holster_switch)(struct ts_holster_info *info);
 	int (*chip_roi_switch)(struct ts_roi_info *info);
 	unsigned char *(*chip_roi_rawdata)(void);
@@ -1245,11 +1257,13 @@ struct ts_kit_platform_data {
 	int fpga_flag;
 	u32 watch_tp_recovery;
 	u32 fp_tp_enable;
+	u32 change_game_mode;
 	u32 register_charger_notifier;
 	u32 hide_plain_id;
 	u32 glove_mode_rw_disable;
 	u32 touch_switch_need_process;
 	u8 panel_id;
+	u32 thp_compatible_tskit;  /* 0 -- not support, 1 -- supprot */
 	unsigned int udfp_enable_flag;
 	unsigned int spi_max_frequency;
 	unsigned int spi_mode;
@@ -1293,6 +1307,14 @@ struct ts_kit_platform_data {
 	struct ts_dsm_info dsm_info;
 #endif
 };
+
+#ifdef CONFIG_LCDKIT_DRIVER
+#define TP_DRIVER_TYPE_MATCH_FAIL (-1)
+enum tp_driver_type {
+	THP = 0,
+	TS_KIT_1_0,
+};
+#endif
 
 bool tp_get_prox_status(void);
 int ts_kit_power_control_notify(enum ts_pm_type pm_type,  int timeout);

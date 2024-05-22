@@ -725,24 +725,25 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct logger_reader *reader = NULL;
 	long ret = -EINVAL;
 
+	if (!strcmp(log->misc.name, LOGGER_LOG_EXCEPTION)) {
 #ifdef CONFIG_HW_ZEROHUNG
-	ret = zrhung_ioctl(file, cmd, arg);
-	if (ret != ZRHUNG_CMD_INVALID)
-		return ret;
+		ret = zrhung_ioctl(file, cmd, arg);
+		if (ret != ZRHUNG_CMD_INVALID)
+			return ret;
 #endif
 #ifdef CONFIG_HW_FDLEAK
-	ret = fdleak_ioctl(file, cmd, arg);
-	if (ret != FDLEAK_CMD_INVALID)
-		return ret;
+		ret = fdleak_ioctl(file, cmd, arg);
+		if (ret != FDLEAK_CMD_INVALID)
+			return ret;
 #endif
 #ifdef CONFIG_HW_ERECOVERY
-	ret = erecovery_ioctl(file, cmd, arg);
-	if (ret != ERECOVERY_CMD_INVALID)
-		return ret;
+		ret = erecovery_ioctl(file, cmd, arg);
+		if (ret != ERECOVERY_CMD_INVALID)
+			return ret;
 #endif
-	ret = memcheck_ioctl(file, cmd, arg);
-	if(ret != MEMCHECK_CMD_INVALID) {
-		return ret;
+		ret = memcheck_ioctl(file, cmd, arg);
+		if (ret != MEMCHECK_CMD_INVALID)
+			return ret;
 	}
 	mutex_lock(&log->mutex);
 

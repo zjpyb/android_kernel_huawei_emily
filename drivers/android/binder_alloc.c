@@ -35,6 +35,10 @@
 #include <huawei_platform/power/hw_kcollect.h>
 #endif
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+#include <linux/huawei_check_mmap_sem.h>
+#endif
+
 struct list_lru binder_alloc_lru;
 
 static DEFINE_MUTEX(binder_alloc_mmap_lock);
@@ -222,7 +226,11 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 		mm = alloc->vma_vm_mm;
 
 	if (mm) {
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+		get_mmap_sem_debug(mm, down_read);
+#else
 		down_read(&mm->mmap_sem);
+#endif
 		if (!mmget_still_valid(mm)) {
 			if (allocate == 0)
 				goto free_range;
@@ -644,7 +652,7 @@ static void binder_free_buf_locked(struct binder_alloc *alloc,
 	BUG_ON(buffer->data > alloc->buffer + alloc->buffer_size);
 
 	if (buffer->async_transaction) {
-		alloc->free_async_space += size + sizeof(struct binder_buffer);
+		alloc->free_async_space += buffer_size + sizeof(struct binder_buffer);
 
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC_ASYNC,
 			     "%d: binder_free_buf size %zd async free %zd\n",

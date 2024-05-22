@@ -323,6 +323,7 @@ static int soc_ctrl_sysfs_store_control(struct soc_ctrl_dev *l_dev,
 	const char *buf)
 {
 	char user[SOC_CTRL_RW_BUF_SIZE] = { 0 };
+	static int mdm_already_set = 0;
 	int enable;
 	unsigned int min_soc;
 	unsigned int max_soc;
@@ -341,6 +342,22 @@ static int soc_ctrl_sysfs_store_control(struct soc_ctrl_dev *l_dev,
 	if ((enable < 0) || (enable > 1)) {
 		hwlog_err("invalid enable=%d\n", enable);
 		return -EINVAL;
+	}
+
+	/* mdm apk call soc_control as cust user */
+	if (strncmp(user, "cust", strlen(user)) == 0) {
+		if (enable) {
+			mdm_already_set = 1;
+			hwlog_err("MDM set soc control\n");
+		} else {
+			mdm_already_set = 0;
+			hwlog_err("MDM cancel soc control\n");
+		}
+	} else {
+		if (mdm_already_set) {
+			hwlog_err("MDM had set soc control, disable others\n");
+			return -EINVAL;
+		}
 	}
 
 	/* soc must be (0, 100) and (max_soc - min_soc) >= 5 */

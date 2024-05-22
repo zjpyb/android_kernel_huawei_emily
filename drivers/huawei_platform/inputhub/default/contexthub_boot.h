@@ -51,6 +51,7 @@
 #define VISI_TPLCD 17
 #define BOE_TPLCD2 18
 #define EDO_TPLCD 19
+#define BOE_RUIDING_TPLCD 20
 
 #define DTS_COMP_LG_ER69006A "hisilicon,mipi_lg_eR69006A"
 #define DTS_COMP_JDI_NT35695_CUT3_1 "hisilicon,mipi_jdi_NT35695_cut3_1"
@@ -146,6 +147,7 @@
 #define DTS_COMP_EDO_NAME "edo"
 #define DTS_COMP_EDO "350"
 
+#define DTS_COMP_BOE_RUIDING "190_c06"
 #define DTS_COMP_BOE "190"
 #define DTS_COMP_BOE_B11 "191"
 #define DTS_COMP_VISI "310"

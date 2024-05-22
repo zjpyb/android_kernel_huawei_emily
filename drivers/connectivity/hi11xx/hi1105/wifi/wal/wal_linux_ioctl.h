@@ -536,10 +536,6 @@ uint32_t wal_hipriv_set_m2s_switch(oal_net_device_stru *pst_net_dev, int8_t *pc_
 #endif
 int32_t wal_register_ip_filter(wal_hw_wlan_filter_ops *pg_st_ip_filter_ops);
 int32_t wal_unregister_ip_filter(void);
-int32_t wlan_enter_light_suspend(void);
-int32_t wlan_exit_light_suspend(void);
-void wal_register_lights_suspend(void);
-void wal_unregister_lights_suspend(void);
 
 uint32_t wal_hipriv_dyn_cali_cfg(oal_net_device_stru *pst_net_dev, int8_t *puc_param);
 

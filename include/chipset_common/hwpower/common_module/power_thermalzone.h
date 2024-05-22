@@ -45,6 +45,7 @@ enum power_tz_ntc_index {
 	NTC_PULLUP_22K_VT = 6, /* Thermitor 100K, pullup 22K */
 	NTC_PULLUP_10K_RT = 7, /* Thermitor 10K, pullup 22K */
 	NTC_PULLUP_100K_VT = 8, /* Thermitor 100K, pullup 100K */
+	NTC_PULLUP_100K_100K_VT = 9, /* Thermitor 100K, pullup 100K */
 	NTC_END,
 };
 

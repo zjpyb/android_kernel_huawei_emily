@@ -13,8 +13,11 @@
 
 #include <linux/fs.h>
 
-#define ADAPTER_PHOTOKIT_DENTRY_FLAG 1
-#define ADAPTER_OTHER_DENTRY_FLAG    0
+enum {
+	ADAPTER_OTHER_DENTRY_FLAG = 0,
+	ADAPTER_PHOTOKIT_DENTRY_FLAG = 1,
+	OFFICE_COLLOBORATION_DENTRY_FLAG = 2,
+};
 
 uint8_t hmdfs_adapter_read_dentry_flag(struct inode *inode);
 int hmdfs_adapter_persist_dentry_flag(struct dentry *dentry,

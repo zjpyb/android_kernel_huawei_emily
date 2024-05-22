@@ -348,10 +348,41 @@ extern int g_ram_test_detail_tsensor_dump;
 extern int g_ram_test_run_voltage_bias_sel;
 
 #ifdef _PRE_CONFIG_HISI_S3S4_POWER_STATE
+#define POWER_OFF 0
+#define POWER_ON 1
+#define BT_IOCTL_HCISETPROTO 101
+#define BT_IOCTL_HCIUNSETPROTO 102
+typedef enum {
+    PM_S3S4_CHR_WIFI_RESUME_HANDLE_NULL = 1,
+    PM_S3S4_CHR_WIFI_SUSPEND_HANDLE_NULL = 2,
+    PM_S3S4_CHR_BT_RESUME_HANDLE_NULL = 3,
+    PM_S3S4_CHR_BT_SUSPEND_HANDLE_NULL = 4,
+    PM_S3S4_CHR_WIFI_RESUME_FAIL = 5,
+    PM_S3S4_CHR_WIFI_SUSPEND_FAIL = 6,
+    PM_S3S4_CHR_BT_RESUME_FAIL = 7,
+    PM_S3S4_CHR_BT_SUSPEND_FAIL = 8,
+    PM_S3S4_CHR_BUTT
+} pm_s3s4_status_enum;
 typedef uint32_t (*work_cb)(void);
+struct s_pm_wal_host_handler {
+    work_cb pf_wal_host_resume_work_func;
+    work_cb pf_wal_host_suspend_work_func;
+};
+typedef struct tag_pm_s3s4_chr_info {
+    uint16_t us_s3s4_status;
+    uint8_t resv[2]; // 2×Ö½Ú±£Áô
+} pm_s3s4_chr_info_stru;
+#ifdef _PRE_CONFIG_S3_HCI_DEV_OPT
+#ifdef _PRE_PRODUCT_ARMPC
+int hisi_hci_dev_do_open(struct hci_dev *hdev);
+#else
+int extend_hci_dev_do_open(struct hci_dev *hdev);
+#endif
+#endif
 void pm_host_walcb_register(work_cb suspend_cb, work_cb resume_cb);
 #endif
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 irqreturn_t bfg_wake_host_isr(int irq, void *dev_id);
 #endif
 

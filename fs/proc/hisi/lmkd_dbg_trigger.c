@@ -18,6 +18,7 @@
 
 /* Worst case buffer size needed for holding an integer. */
 #define PROC_NUMBUF 8
+#define POWER_MONITOR 1234
 
 static int lmkd_oom_score_adj;
 static atomic64_t lmkd_no_cma_cnt = ATOMIC64_INIT(0);
@@ -77,6 +78,11 @@ static ssize_t lmkd_dbg_trigger_write(struct file *file, const char __user *buf,
 	err = kstrtoint(strstrip(buffer), 0, &oom_score_adj);
 	if (err)
 		goto out;
+	if (oom_score_adj == POWER_MONITOR) {
+		pr_err("%s: k/zswapd is running too frequent!\n", __func__);
+		oom_score_adj = 0;
+		goto trigger_lowmem_dbg;
+	}
 
 	if (oom_score_adj < OOM_SCORE_ADJ_MIN ||
 	    oom_score_adj > OOM_SCORE_ADJ_MAX) {
@@ -85,6 +91,8 @@ static ssize_t lmkd_dbg_trigger_write(struct file *file, const char __user *buf,
 	}
 
 	lmkd_oom_score_adj = oom_score_adj;
+
+trigger_lowmem_dbg:
 	hisi_lowmem_dbg(oom_score_adj);
 
 out:

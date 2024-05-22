@@ -29,7 +29,7 @@ void hmdfs_destroy_debugfs_root(void)
 }
 
 void hmdfs_fault_inject_init(struct hmdfs_fault_inject *fault_inject,
-			     const char *name)
+			     const char *name, int namelen)
 {
 	struct dentry *dir = NULL;
 	struct dentry *parent = NULL;

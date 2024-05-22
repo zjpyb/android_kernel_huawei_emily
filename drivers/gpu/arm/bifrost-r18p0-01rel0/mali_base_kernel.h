@@ -1312,8 +1312,9 @@ typedef enum base_jd_event_code {
  * @li ::BASE_JD_SW_EVENT_INFO : base_jd_event::data not used
  */
 typedef struct base_jd_event_v2 {
-	base_jd_event_code event_code;  /**< event code */
+	u32 event_code;  /**< event code of type @ref base_jd_event_code */
 	base_atom_id atom_number;       /**< the atom number that has completed */
+	u8 padding[3]; /**< padding */
 	struct base_jd_udata udata;     /**< user data */
 } base_jd_event_v2;
 

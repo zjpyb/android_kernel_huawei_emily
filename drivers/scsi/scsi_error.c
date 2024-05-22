@@ -1806,6 +1806,11 @@ int scsi_decide_disposition(struct scsi_cmnd *scmd)
 		return SUCCESS;
 	}
 
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+	if (scsi_unistore_is_datamove(scmd))
+		return SUCCESS;
+#endif
+
 	/*
 	 * first check the host byte, to see if there is anything in there
 	 * that would indicate what we need to do.

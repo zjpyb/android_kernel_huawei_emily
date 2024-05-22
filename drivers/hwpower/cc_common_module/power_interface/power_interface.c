@@ -48,6 +48,7 @@ static const char * const g_power_if_op_user_table[POWER_IF_OP_USER_END] = {
 	[POWER_IF_OP_USER_BSOH] = "bsoh",
 	[POWER_IF_OP_USER_BMS_HEATING] = "bms_heating",
 	[POWER_IF_OP_USER_BMS_AUTH] = "bms_auth",
+	[POWER_IF_OP_USER_RF] = "rf",
 };
 
 static const char * const g_power_if_op_type_table[POWER_IF_OP_TYPE_END] = {

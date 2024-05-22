@@ -244,7 +244,7 @@ oal_uint32  hmac_user_init(hmac_user_stru *pst_hmac_user)
     /* 清除usr统计信息 */
     oam_stats_clear_user_stat_info(pst_hmac_user->st_user_base_info.us_assoc_id);
 #endif
-
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     pst_hmac_user->ul_first_add_time = (oal_uint32)OAL_TIME_GET_STAMP_MS();
 
     return OAL_SUCC;
@@ -433,12 +433,12 @@ oal_uint32  hmac_user_del(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_hmac_us
     oal_uint16                      us_len;
 #endif
 
-    if (OAL_UNLIKELY((OAL_PTR_NULL == pst_mac_vap) || (OAL_PTR_NULL == pst_hmac_user)))
-    {
+    if (OAL_UNLIKELY((OAL_PTR_NULL == pst_mac_vap) || (OAL_PTR_NULL == pst_hmac_user))) {
         OAM_ERROR_LOG2(0, OAM_SF_UM, "{hmac_user_del::param null,%d %d.}", pst_mac_vap, pst_hmac_user);
         return OAL_ERR_CODE_PTR_NULL;
     }
 
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     pst_mac_user = (mac_user_stru*)(&pst_hmac_user->st_user_base_info);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mac_user))
     {

@@ -24,6 +24,11 @@
  */
 void __sched down_read(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM_DBG
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
+#endif
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
@@ -31,6 +36,9 @@ void __sched down_read(struct rw_semaphore *sem)
 	rwsem_set_reader_owned(sem);
 
 #ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM_DBG
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	clear_remote_mm();
+#endif
 	mmap_sem_debug(sem);
 #endif
 }
@@ -58,6 +66,11 @@ EXPORT_SYMBOL(down_read_trylock);
  */
 void __sched down_write(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM_DBG
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
+#endif
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 
@@ -65,6 +78,9 @@ void __sched down_write(struct rw_semaphore *sem)
 	rwsem_set_owner(sem);
 
 #ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM_DBG
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	clear_remote_mm();
+#endif
 	mmap_sem_debug(sem);
 #endif
 }

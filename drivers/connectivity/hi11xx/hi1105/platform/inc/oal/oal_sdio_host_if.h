@@ -93,7 +93,8 @@ struct oal_sdio {
 
     /* used to sg list sdio block align */
     uint8_t *sdio_align_buff;
-
+    /* sdio source buffer for send */
+    uint8_t *sdio_send_buff;
     uint64_t sdio_int_count;
 
     uint32_t sdio_suspend;

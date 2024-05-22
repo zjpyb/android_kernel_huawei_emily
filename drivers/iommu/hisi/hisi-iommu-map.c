@@ -374,10 +374,9 @@ static int mm_iommu_get_dmabuf_iova(struct device *dev,
 		return 0;
 	}
 	atomic64_inc(&iova_dom->ref);
-	spin_unlock(&cookie->iova_lock);
 	*out_size = iova_dom->size;
 	*iova = iova_dom->iova;
-
+	spin_unlock(&cookie->iova_lock);
 	return 0;
 }
 

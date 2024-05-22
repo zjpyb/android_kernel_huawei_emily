@@ -467,9 +467,14 @@ void ili_set_gesture_symbol(void)
 
 int ili_move_gesture_code_iram(int mode)
 {
-	int i, ret = 0, timeout = 10;
+	int i;
+	int ret = 0;
+	int timeout = 10;
 	u8 cmd[2] = {0};
 	u8 cmd_write[3] = {0x01,0x0A,0x05};
+
+	if (ilits->ic_hardware_type == ILI9883)
+		timeout = 100;
 
 	/*
 	 * NOTE: If functions need to be added during suspend,
@@ -645,8 +650,14 @@ int ili_touch_esd_gesture_iram(void)
 	u32 answer = 0;
 	int ges_pwd_addr = SPI_ESD_GESTURE_CORE146_PWD_ADDR;
 	int ges_pwd = ESD_GESTURE_CORE146_PWD;
-	int ges_run = SPI_ESD_GESTURE_CORE146_RUN;
+	int ges_run;
 	int pwd_len = 2;
+
+	if (ilits->ic_hardware_type == ILI9883) {
+		ges_run = SPI_ESD_GESTURE_CORE146_RUN_ILI9883;
+	} else {
+		ges_run = SPI_ESD_GESTURE_CORE146_RUN;
+	}
 
 	if (ilits->chip->core_ver < CORE_VER_1460) {
 		if (ilits->chip->core_ver >= CORE_VER_1420)
@@ -815,7 +826,11 @@ void ili_demo_debug_info_mode(struct ts_fingers *ap_info,u8 *buf, size_t len)
 
 	TS_LOG_INFO("info len = %d ,id = %d\n", info_len, info_id);
 
-	ilits->demo_debug_info[info_id](&info_ptr[1] , info_len);
+	if (info_id == 0) {
+		ilits->demo_debug_info[info_id](&info_ptr[1], info_len);
+	} else {
+		TS_LOG_ERR("Not support this id %d\n", info_id);
+	}
 }
 
 static void ilitek_tddi_touch_send_debug_data(u8 *buf, int len)

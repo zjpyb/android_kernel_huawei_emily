@@ -144,11 +144,9 @@
     do {                                                                                                 \
         (_s_pow_par0) = (((int32_t)(_s_delt_power) * (_s_delt_power) * (_s_pow_par2)) +                \
                             (((int32_t)(_s_pow_par1) << DY_CALI_FIT_PRECISION_A1) * (_s_delt_power)) + \
-                            ((int32_t)(_s_pow_par0) << DY_CALI_FIT_PRECISION_A0)) >>                   \
-                        DY_CALI_FIT_PRECISION_A0;                                                        \
+                            ((int32_t)(_s_pow_par0) << DY_CALI_FIT_PRECISION_A0)) >> DY_CALI_FIT_PRECISION_A0; \
         (_s_pow_par1) = (((int32_t)(_s_delt_power) * (_s_pow_par2)*2) +                                \
-                            ((int32_t)(_s_pow_par1) << DY_CALI_FIT_PRECISION_A1)) >>                   \
-                        DY_CALI_FIT_PRECISION_A1;                                                        \
+                            ((int32_t)(_s_pow_par1) << DY_CALI_FIT_PRECISION_A1)) >> DY_CALI_FIT_PRECISION_A1; \
     } while (0)
 
 
@@ -401,11 +399,17 @@ typedef enum {
     WLAN_CFG_PRIV_FTM_CAP,
     /* TV miracast定制化 */
     WLAN_CFG_PRIV_MIRACAST_SINK,
+    /* 去掉W58信道 */
+    WLAN_CFG_PRIV_DISABLE_W58_CHANNEL,
+    /* 作为P2P GO 允许关联最大用户数 */
+    WLAN_CFG_PRIV_P2P_GO_ASSOC_USER_MAX_NUM,
 
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
     /* 组播聚合定制化 */
     WLAN_CFG_PRIV_MCAST_AMPDU_ENABLE,
 #endif
+    WLAN_CFG_PRIV_PT_MCAST_ENABLE,
+    WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH,
 
     WLAN_CFG_PRIV_BUTT,
 } wlan_cfg_priv;
@@ -738,7 +742,7 @@ typedef enum {
     /* 组播聚合参数配置 */
     WLAN_CFG_INIT_MCAST_AMPDU_ENABLE,
 #endif
-
+    WLAN_CFG_INIT_PT_MCAST_ENABLE,
     WLAN_CFG_INIT_BUTT,
 } wlan_cfg_init;
 

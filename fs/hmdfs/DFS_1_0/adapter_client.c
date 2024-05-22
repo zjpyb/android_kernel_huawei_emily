@@ -44,7 +44,7 @@ void client_recv_read(struct sendmsg_wait_queue *msg_info, void *buf,
 	struct adapter_read_ack *recv = buf;
 	struct hmdfs_async_work *async_work =
 		(struct hmdfs_async_work *)msg_info;
-	struct page *page = async_work->page;
+	struct page *page = async_work->pages[0];
 	void *addr;
 
 	if (recv->size == 0)
@@ -201,21 +201,12 @@ int client_sendpage_request(struct hmdfs_peer *con, struct adapter_sendmsg *sm)
 		return -EINVAL;
 	}
 
-	head.magic = HMDFS_MSG_MAGIC;
-	head.version = DFS_2_0;
-	head.operations = sm->operations;
-	head.datasize = outlen;
-	head.source = con->sbi->local_info.iid;
-	head.flags |= HMDFS_FLAG_ENCRYPTED;
+	fill_ack_header(&head, sm->operations, outlen,
+			con->sbi->local_info.iid, 0, 0);
+	fill_msg(&msg, &head, sizeof(struct hmdfs_adapter_head),
+		 NULL, 0, sm->data, sm->len);
 
-	msg.data = sm->data;
-	msg.len = sm->len;
-	msg.head = &head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
-
-	async_work = kzalloc(sizeof(*async_work), GFP_KERNEL);
+	async_work = hmdfs_alloc_asw(1);
 	if (!async_work) {
 		err = -ENOMEM;
 		goto unlock;
@@ -226,7 +217,9 @@ int client_sendpage_request(struct hmdfs_peer *con, struct adapter_sendmsg *sm)
 		goto unlock;
 	}
 	head.msg_id = async_work->head.msg_id;
-	async_work->page = sm->outmsg;
+	async_work->pages[0] = sm->outmsg;
+	async_work->pages_nr = 1;
+	async_work->cmd = head.operations;
 	asw_get(async_work);
 	INIT_DELAYED_WORK(&async_work->d_work, hmdfs_recv_page_work_fn);
 	err = queue_delayed_work(con->async_wq, &async_work->d_work,
@@ -274,6 +267,7 @@ int client_sendmessage_request(struct hmdfs_peer *con,
 	size_t outlen = sm->len + sizeof(struct hmdfs_adapter_head);
 	struct hmdfs_adapter_head head = {0};
 	bool dec = false;
+	__u16 msg_id;
 
 	if (sm->timeout == 0) {
 		idr_head = kzalloc(sizeof(*idr_head), GFP_KERNEL);
@@ -292,7 +286,7 @@ int client_sendmessage_request(struct hmdfs_peer *con,
 			hmdfs_err("id alloc failed, err=%d", err);
 			goto out;
 		}
-		head.msg_id = idr_head->msg_id;
+		msg_id = idr_head->msg_id;
 	} else {
 		msg_wq = kzalloc(sizeof(*msg_wq), GFP_KERNEL);
 		if (!msg_wq) {
@@ -307,23 +301,14 @@ int client_sendmessage_request(struct hmdfs_peer *con,
 		}
 		if (sm->operations == CLOSE_REQUEST)
 			msg_wq->buf = sm->outmsg;
-		head.msg_id = msg_wq->head.msg_id;
+		msg_id = msg_wq->head.msg_id;
 	}
 
 	dec = true;
-	head.magic = HMDFS_MSG_MAGIC;
-	head.version = DFS_2_0;
-	head.operations = sm->operations;
-	head.datasize = outlen;
-	head.source = con->sbi->local_info.iid;
-	head.flags |= HMDFS_FLAG_ENCRYPTED;
-
-	msg.data = sm->data;
-	msg.len = sm->len;
-	msg.head = &head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_ack_header(&head, sm->operations, (__u32)outlen,
+			con->sbi->local_info.iid, msg_id, 0);
+	fill_msg(&msg, &head, sizeof(struct hmdfs_adapter_head),
+		 NULL, 0, sm->data, sm->len);
 
 	err = hmdfs_sendmessage(con, &msg);
 	if (err) {

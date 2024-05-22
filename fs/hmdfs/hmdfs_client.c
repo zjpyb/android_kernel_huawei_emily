@@ -141,13 +141,39 @@ int hmdfs_client_readpage(struct hmdfs_peer *con, const struct hmdfs_fid *fid,
 		return -ENOMEM;
 	}
 
-	sm.out_buf = page;
 	read_data->file_ver = cpu_to_le64(fid->ver);
 	read_data->file_id = cpu_to_le32(fid->id);
 	read_data->size = cpu_to_le32(HMDFS_PAGE_SIZE);
 	read_data->index = cpu_to_le64(page->index);
-	ret = hmdfs_sendpage_request(con, &sm);
+	ret = hmdfs_sendpage_request(con, &sm, &page, 1);
 	kfree(read_data);
+	return ret;
+}
+
+int hmdfs_client_readpages(struct hmdfs_peer *con, const struct hmdfs_fid *fid,
+			   struct page **pages, unsigned int nr)
+{
+	int ret;
+	size_t send_len = sizeof(struct readpages_request);
+	struct readpages_request *readpages_req = kzalloc(send_len, GFP_KERNEL);
+	struct hmdfs_send_command sm = {
+		.data = readpages_req,
+		.len = send_len,
+	};
+
+	if (!readpages_req) {
+		hmdfs_put_pages(pages, nr);
+		return -ENOMEM;
+	}
+
+	hmdfs_init_cmd(&sm.operations, F_READPAGES);
+	readpages_req->file_ver = cpu_to_le64(fid->ver);
+	readpages_req->file_id = cpu_to_le32(fid->id);
+	readpages_req->size = cpu_to_le32(nr * HMDFS_PAGE_SIZE);
+	readpages_req->index = cpu_to_le64(pages[0]->index);
+	ret = hmdfs_sendpage_request(con, &sm, pages, nr);
+	kfree(readpages_req);
+
 	return ret;
 }
 
@@ -387,29 +413,6 @@ int hmdfs_client_writepage(struct hmdfs_peer *con,
 	if (unlikely(ret))
 		kfree(write_data);
 	return ret;
-}
-
-void hmdfs_client_recv_readpage(struct hmdfs_head_cmd *head, int err,
-				struct hmdfs_async_work *async_work)
-{
-	struct page *page = async_work->page;
-	int ret = le32_to_cpu(head->ret_code);
-	struct hmdfs_inode_info *info = hmdfs_i(page->mapping->host);
-	unsigned long page_index = page->index;
-
-	if (!err)
-		SetPageUptodate(page);
-	else if (err == -EBADF)
-		/* There may be a stale fd caused by fid version, need reopen */
-		set_bit(HMDFS_FID_NEED_OPEN, &info->fid_flags);
-
-	hmdfs_client_resp_statis(async_work->head.peer->sbi, F_READPAGE,
-				 HMDFS_RESP_NORMAL, async_work->start, jiffies);
-
-	trace_hmdfs_client_recv_readpage(async_work->head.peer,
-					 info->remote_ino, page_index, ret);
-
-	asw_done(async_work);
 }
 
 /* read cache dentry file at path and write them into filp */
@@ -1017,9 +1020,19 @@ void hmdfs_send_drop_push(struct hmdfs_peer *con, const char *path)
 		.len = send_len,
 	};
 
-	hmdfs_init_cmd(&sm.operations, F_DROP_PUSH);
 	if (!dp_req)
 		return;
+	/*
+	 * There is no need to send drop_push message when peer not online.
+	 * The notify() function to get p2p connection need kernfs_mutex,
+	 * which could be held by the process calling memory shrink.
+	 */
+	if (!hmdfs_is_node_online(con)) {
+		kfree(dp_req);
+		return;
+	}
+
+	hmdfs_init_cmd(&sm.operations, F_DROP_PUSH);
 
 	dp_req->path_len = cpu_to_le32(path_len);
 	strncpy(dp_req->path, path, path_len);

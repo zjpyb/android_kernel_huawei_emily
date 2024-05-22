@@ -428,6 +428,13 @@ int dcm_get_total_ibat(int mode, unsigned int path, int *ibat)
 
 	if (!ibat || (num <= 0))
 		return -1;
+	if (dc_ic_get_ibat_from_coul(ibat)) {
+		hwlog_info("get ibat from coul ibat=%d\n", *ibat);
+		return 0;
+	}
+
+	if (dc_ic_get_ibat_from_coul(ibat))
+		return 0;
 
 	for (i = 0; i < num; i++) {
 		if (dc_get_ic_ibat(mode, index[i], &tmp_ibat))
@@ -438,6 +445,55 @@ int dcm_get_total_ibat(int mode, unsigned int path, int *ibat)
 
 	*ibat = total_ibat;
 	hwlog_info("total ibat is %d\n", *ibat);
+	return 0;
+}
+
+int dcm_get_path_max_ibat(int mode, unsigned int path, int *ibat)
+{
+	unsigned int index[CHARGE_IC_MAX_NUM] = { 0 };
+	int num = dc_ic_get_ic_index(mode, path, index, CHARGE_IC_MAX_NUM);
+	int i;
+	int tmp_ibat = 0;
+	int total_ibat = 0;
+
+	if (!ibat || (num <= 0))
+		return -1;
+
+	for (i = 0; i < num; i++) {
+		if (dc_ic_get_ic_max_ibat(mode, index[i], &tmp_ibat) < 0)
+			return -1;
+		hwlog_info("ic[%u] max ibat is %d\n", index[i], tmp_ibat);
+		total_ibat += tmp_ibat;
+	}
+
+	*ibat = total_ibat;
+	return 0;
+}
+
+int dcm_get_ic_max_ibat(int mode, unsigned int path, int *ibat)
+{
+	int i;
+	unsigned int index[CHARGE_IC_MAX_NUM] = { 0 };
+	int num = dc_ic_get_ic_index(mode, path, index, CHARGE_IC_MAX_NUM);
+	int min_ibat = 0;
+	int tmp_ibat = 0;
+
+	if (!ibat || (num <= 0))
+		return -EINVAL;
+
+	if (dc_ic_get_ic_max_ibat(mode, index[0], &min_ibat) < 0)
+		return -1;
+
+	hwlog_info("ic[%u] max ibat is %d\n", index[0], min_ibat);
+	for (i = 1; i < num; i++) {
+		if (dc_ic_get_ic_max_ibat(mode, index[i], &tmp_ibat) < 0)
+			return -1;
+		hwlog_info("ic[%u] max ibat is %d\n", index[i], tmp_ibat);
+		if (tmp_ibat && tmp_ibat < min_ibat)
+			min_ibat = tmp_ibat;
+	}
+
+	*ibat = min_ibat;
 	return 0;
 }
 

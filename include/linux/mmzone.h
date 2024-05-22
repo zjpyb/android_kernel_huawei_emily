@@ -570,6 +570,10 @@ struct zone {
 	unsigned long		compact_cached_free_pfn;
 	/* pfn where async and sync compaction migration scanner should start */
 	unsigned long		compact_cached_migrate_pfn[2];
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	unsigned long		compact_init_migrate_pfn;
+	unsigned long		compact_init_free_pfn;
+#endif
 #endif
 
 #ifdef CONFIG_COMPACTION

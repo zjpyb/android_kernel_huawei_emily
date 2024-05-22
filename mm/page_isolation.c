@@ -33,6 +33,15 @@ static int set_migratetype_isolate(struct page *page,
 
 	spin_lock_irqsave(&zone->lock, flags);
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	/*
+	 * We assume we are the only ones trying to isolate this block.
+	 * If MIGRATE_ISOLATE already set, return -EBUSY
+	 */
+	if (is_migrate_isolate_page(page))
+		goto out;
+#endif
+
 	pfn = page_to_pfn(page);
 	arg.start_pfn = pfn;
 	arg.nr_pages = pageblock_nr_pages;

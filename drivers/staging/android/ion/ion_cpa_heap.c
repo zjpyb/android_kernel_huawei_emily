@@ -486,13 +486,11 @@ static int cpa_propare_session(struct ion_cpa_heap *cpa_heap)
 	int ret = 0;
 
 	if (!cpa_heap->ta_init) {
-		ret = secmem_tee_init(cpa_heap->context,
-				      cpa_heap->session, TEE_SECMEM_NAME);
+		ret = sec_tee_init(&cpa_heap->context, &cpa_heap->session, ION_SESSIONS_SECMEM);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			goto err;
 		}
-
 		cpa_heap->ta_init = 1;
 	}
 
@@ -1084,13 +1082,6 @@ struct ion_heap *ion_cpa_heap_create(struct ion_platform_heap *data)
 	if (ion_cpa_heap_create_pools(cpa_heap->pools))
 		goto free_heap;
 
-	cpa_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
-	if (!cpa_heap->context)
-		goto destroy_pools;
-	cpa_heap->session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
-	if (!cpa_heap->session)
-		goto free_context;
-
 	pr_err("cpa heap info %s:\n"
 		  "\t\t\t\t heap id : %u\n"
 		  "\t\t\t\t heap size : %lu MB\n",
@@ -1103,11 +1094,6 @@ struct ion_heap *ion_cpa_heap_create(struct ion_platform_heap *data)
 
 	return &cpa_heap->heap;
 
-free_context:
-	if (cpa_heap->context)
-		kfree(cpa_heap->context);
-destroy_pools:
-	ion_cpa_heap_destroy_pools(cpa_heap->pools);
 free_heap:
 	mutex_destroy(&cpa_heap->mutex);
 	kfree(cpa_work_data);

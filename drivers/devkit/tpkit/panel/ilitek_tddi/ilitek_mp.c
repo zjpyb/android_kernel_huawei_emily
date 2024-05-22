@@ -160,7 +160,17 @@ static struct open_test_spec {
 	int tvch;
 	int tvcl;
 	int gain;
+	int cbk_step;
+	int cint;
 } open_spec;
+
+static struct shor_test_para {
+	int tvch;
+	int tvcl;
+	int variation;
+	int rinternal;
+	int cint;
+} short_para;
 
 static struct core_mp_test_data {
 	u32 chip_pid;
@@ -221,6 +231,7 @@ static struct core_mp_test_data {
 	int busy_cdc;
 	bool ctrl_lcm;
 	bool lost_benchmark;
+	bool lost_parameter;
 } core_mp = {0};
 
 struct mp_test_items {
@@ -693,7 +704,6 @@ static char *parser_ini_str_trim_r(char *buf)
 	char *empty = "";
 
 	len = strlen(buf);
-
 	if (len < sizeof(x)) {
 		tmp = x;
 		goto copy;
@@ -1220,8 +1230,13 @@ static void mp_print_csv_cdc_cmd(char *csv, int *csv_len, int index, int file_si
 			tmp_len += snprintf(csv + tmp_len, (file_size - tmp_len), "CDC command = ,%s\n", str);
 
 		/* Print short parameters */
-		if (ipio_strcmp(name, "short test") == 0)
-			tmp_len += snprintf(csv + tmp_len, (file_size - tmp_len), "Variation = ,%d\n", core_mp.short_varia);
+		if (ipio_strcmp(name, "short test") == 0) {
+			if (ilits->ic_hardware_type == ILI9883) {
+				tmp_len += snprintf(csv + tmp_len, (file_size - tmp_len), "Variation = ,%d\n", short_para.variation);
+			} else {
+				tmp_len += snprintf(csv + tmp_len, (file_size - tmp_len), "Variation = ,%d\n", core_mp.short_varia);
+			}
+		}
 
 		/* Print td second command */
 		if (core_mp.td_retry && (ipio_strcmp(name, "peak to peak_td (lcm off)") == 0)) {
@@ -1384,6 +1399,73 @@ static s32 open_sp_formula(int dac, int raw, int tvch, int tvcl)
 	return ret;
 }
 
+static s32 open_c_formula_ili9883(int in_cap1_dac, int in_cap1_raw, int accuracy)
+{
+	s32 in_cap1_value = 0;
+	u16 id = core_mp.chip_id;
+	u16 type = core_mp.chip_type;
+
+	const int in_fout_range = 16384;
+	const int in_fout_range_half = 8192;
+	const int in_vadc_range = 36;
+	int in_vbk = 39;
+	int in_cbk_step = open_spec.cbk_step; /* from mp.ini */
+	int in_cint = open_spec.cint; /* from mp.ini */
+	int in_vdrv = open_spec.tvch - open_spec.tvcl; /* from mp.ini */
+	int in_gain = open_spec.gain; /*  from mp.ini */
+	const int in_magnification = 10;
+	int in_part_dac = 0;
+	int in_part_raw = 0;
+
+	if ((in_cbk_step == 0) || (in_cint == 0)) {
+		if (id == ILI9881_CHIP) {
+			if ((type == ILI_N) || (type == ILI_O)) {
+				in_cbk_step = 32;
+				in_cint = 70;
+			}
+		} else if (id == ILI9882_CHIP) {
+			if (type == ILI_N) {
+				in_cbk_step = 42;
+				in_cint = 70;
+			} else if (type == ILI_H) {
+				in_cbk_step = 42;
+				in_cint = 69;
+			}
+		} else if (id == ILI7807_CHIP) {
+			if (type == ILI_Q) {
+				in_cbk_step = 28;
+				in_cint = 70;
+			} else if (type == ILI_S) {
+				in_cbk_step = 38;
+				in_cint = 66;
+				in_vbk = 42;
+				in_vdrv = in_vdrv / 10;
+				in_gain = in_gain / 10;
+
+			} else if (type == ILI_V) {
+				in_cbk_step = 42;
+				in_cint = 69;
+			}
+		} else if (id == ILI9883_CHIP) {
+			if (type == ILI_A) {
+				in_cbk_step = 42;
+				in_cint = 70;
+			}
+		}
+	}
+
+	in_part_dac = (in_cap1_dac * in_cbk_step * in_vbk / 2);
+	in_part_raw = ((in_cap1_raw - in_fout_range_half) * in_vadc_range * in_cint * 10 / in_fout_range);
+
+	if (accuracy) {
+		in_cap1_value = ((in_part_dac + in_part_raw) * 10) / in_vdrv / in_magnification / in_gain;
+	} else {
+		in_cap1_value = (in_part_dac + in_part_raw) / in_vdrv / in_magnification / in_gain;
+	}
+
+	return in_cap1_value;
+}
+
 static s32 open_c_formula(int dac, int raw, int tvch, int gain, int accuracy)
 {
 	s32 ret = 0;
@@ -1433,9 +1515,89 @@ static void allnode_open_cdc_result(int index, int *buf, int *dac, int *raw)
 		if (parser_get_int_data(desp, "accuracy", str, sizeof(str)) > 0)
 			accuracy = ili_katoi(str, g_katoi_len);
 
-		for (i = 0; i < core_mp.frame_len; i++)
-			buf[i] = open_c_formula(dac[i], raw[i], open_spec.tvch - open_spec.tvcl, open_spec.gain, accuracy);
+		for (i = 0; i < core_mp.frame_len; i++) {
+			if (ilits->ic_hardware_type == ILI9883) {
+				buf[i] = open_c_formula_ili9883(dac[i], raw[i], accuracy);
+			} else {
+				buf[i] = open_c_formula(dac[i], raw[i], open_spec.tvch - open_spec.tvcl, open_spec.gain, accuracy);
+			}
+		}
 	}
+}
+
+static int code_to_ohm_ili9883(s32 *ohm, s32 *code, u16 *v_tdf, int v_len, u16 *h_tdf, int h_len)
+{
+	u16 id = core_mp.chip_id;
+	u8 type = core_mp.chip_type;
+
+	int in_tvch = short_para.tvch;
+	int in_tvcl = short_para.tvcl;
+	int in_variation = short_para.variation;
+	int in_tdf1 = 0;
+	int in_tdf2 = 0;
+	int in_cint = short_para.cint;
+	int in_rinternal = short_para.rinternal;
+	s32 temp = 0;
+	int j = 0;
+
+	if (core_mp.is_longv) {
+		in_tdf1 = *v_tdf;
+		in_tdf2 = *(v_tdf + 1);
+	} else {
+		in_tdf1 = *h_tdf;
+		in_tdf2 = *(h_tdf + 1);
+	}
+
+	if (in_variation == 0)
+		in_variation = 100;
+
+	if ((in_cint == 0) ||  (in_rinternal == 0)) {
+		if (id == ILI9881_CHIP) {
+			if ((type == ILI_N) || (type == ILI_O)) {
+				in_rinternal = 1915;
+				in_cint = 70;
+			}
+		} else if (id == ILI9882_CHIP) {
+			if (type == ILI_N) {
+				in_rinternal = 2000;
+				in_cint = 70;
+			} else if (type == ILI_H) {
+				in_rinternal = 2000;
+				in_cint = 69;
+			}
+		} else if (id == ILI7807_CHIP) {
+			if (type == ILI_Q) {
+				in_rinternal = 1500;
+				in_cint = 70;
+			} else if (type == ILI_S) {
+				in_rinternal = 1500;
+				in_cint = 66;
+				in_tvch = in_tvch / 10;
+				in_tvcl = in_tvcl / 10;
+			} else if (type == ILI_V) {
+				in_rinternal = 2000;
+				in_cint = 69;
+			}
+		}  else if (id == ILI9883_CHIP) {
+			if (type == ILI_A) {
+				in_rinternal = 2000;
+				in_cint = 70;
+			}
+		}
+	}
+	for (j = 0; j < core_mp.frame_len; j++) {
+		if (code[j] == 0) {
+			TS_LOG_ERR("code is invalid\n");
+		} else {
+			temp = ((in_tvch - in_tvcl) * in_variation * (in_tdf1 - in_tdf2) * (1 << 12) / (9 * code[j] * in_cint)) * 1000;
+			temp = (temp - in_rinternal) / 1000;
+		}
+		ohm[j] = temp;
+	}
+
+	/* Unit = M Ohm */
+	return temp;
+
 }
 
 static int code_to_ohm(s32 *ohm, s32 *code, u16 *v_tdf, int v_len, u16 *h_tdf, int h_len)
@@ -1445,7 +1607,7 @@ static int code_to_ohm(s32 *ohm, s32 *code, u16 *v_tdf, int v_len, u16 *h_tdf, i
 	int doutvch = 24;
 	int doutvcl = 8;
 	int doucint = 7;
-	int douvariation = 100;
+	const int douvariation = 100;
 	int dourinternal = 1915;
 	int ratio = 100;
 	int j = 0;
@@ -1496,7 +1658,6 @@ static int code_to_ohm(s32 *ohm, s32 *code, u16 *v_tdf, int v_len, u16 *h_tdf, i
 
 	/* Unit = M Ohm */
 	return temp;
-
 }
 
 static int short_test(int index, int frame_index)
@@ -1510,11 +1671,50 @@ static int short_test(int index, int frame_index)
 	h_tdf[0] = titems[index].h_tdf_1;
 	h_tdf[1] = titems[index].h_tdf_2;
 
+	if (ilits->ic_hardware_type == ILI9883) {
+		u32 pid = core_mp.chip_pid >> 8;
+		char str[32] = {0};
+
+		parser_get_int_data("short test", "tvch", str, sizeof(str));
+		short_para.tvch = ili_katoi(str, g_katoi_len);
+
+		parser_get_int_data("short test", "tvcl", str, sizeof(str));
+		short_para.tvcl = ili_katoi(str, g_katoi_len);
+
+		parser_get_int_data("short test", "variation", str, sizeof(str));
+		short_para.variation = ili_katoi(str, g_katoi_len);
+
+		parser_get_int_data("short test", "cint", str, sizeof(str));
+		short_para.cint = ili_katoi(str, g_katoi_len);
+
+		parser_get_int_data("short test", "rinternal", str, sizeof(str));
+		short_para.rinternal = ili_katoi(str, g_katoi_len);
+
+		/* 9881N, 9881O, 7807Q, 7807S not support cbk_step and cint read from mp.ini */
+		if ((pid != 0x988117) && (pid != 0x988118) &&
+			(pid != 0x78071A) && (pid != 0x78071C)) {
+			if ((short_para.cint == 0) || (short_para.rinternal == 0)) {
+				TS_LOG_ERR("Failed to get short parameter");
+				core_mp.lost_parameter = true;
+				return -1;
+			}
+		}
+
+		TS_LOG_INFO("TVCH = %d,TVCL = %d, Variation = %d, V_TDF1 = %d, V_TDF2 = %d, H_TDF1 = %d, H_TDF2 = %d, Cint = %d, Rinternal = %d\n",
+			short_para.tvch, short_para.tvcl, short_para.variation, titems[index].v_tdf_1, titems[index].v_tdf_2, titems[index].h_tdf_1, titems[index].h_tdf_2, short_para.cint, short_para.rinternal);
+	}
 	if (core_mp.protocol_ver >= PROTOCOL_VER_540) {
 		/* Calculate code to ohm and save to titems[index].buf */
 		ili_dump_data(frame_buf, 10, core_mp.frame_len, core_mp.xch_len, "Short Raw 1");
-		code_to_ohm(&titems[index].buf[frame_index * core_mp.frame_len], frame_buf, v_tdf, sizeof(v_tdf)/v_tdf[0], h_tdf, sizeof(h_tdf)/h_tdf[0]);
-		ili_dump_data(&titems[index].buf[frame_index * core_mp.frame_len], 10, core_mp.frame_len, core_mp.xch_len, "Short Ohm 1");
+		if (ilits->ic_hardware_type == ILI9883) {
+			code_to_ohm_ili9883(&titems[index].buf[frame_index * core_mp.frame_len],
+				frame_buf, v_tdf, sizeof(v_tdf) / v_tdf[0], h_tdf, sizeof(h_tdf) / h_tdf[0]);
+		} else {
+			code_to_ohm(&titems[index].buf[frame_index * core_mp.frame_len],
+				frame_buf, v_tdf, sizeof(v_tdf) / v_tdf[0], h_tdf, sizeof(h_tdf) / h_tdf[0]);
+		}
+		ili_dump_data(&titems[index].buf[frame_index * core_mp.frame_len],
+			10, core_mp.frame_len, core_mp.xch_len, "Short Ohm 1");
 	} else {
 		for (j = 0; j < core_mp.frame_len; j++)
 			titems[index].buf[frame_index * core_mp.frame_len + j] = frame_buf[j];
@@ -2445,7 +2645,8 @@ static int open_test_sp(int index)
 		addr = 0;
 		for (y = 0; y < core_mp.ych_len; y++) {
 			for (x = 0; x < core_mp.xch_len; x++) {
-				if (full_open_rate_compare(open[i].full_open, open[i].cbk_700, x, y, titems[index].node_type[addr], full_open_rate) == false) {
+				if (full_open_rate_compare(open[i].full_open, open[i].cbk_700,
+					x, y, titems[index].node_type[addr], full_open_rate) == false) {
 					titems[index].buf[(i * core_mp.frame_len) + addr] = 0;
 					open[i].charg_rate[addr] = 0;
 				}
@@ -2453,12 +2654,14 @@ static int open_test_sp(int index)
 			}
 		}
 
-		ili_dump_data(&titems[index].buf[(i * core_mp.frame_len)], 10, core_mp.frame_len, core_mp.xch_len, "after full_open_rate_compare");
+		ili_dump_data(&titems[index].buf[(i * core_mp.frame_len)], 10,
+			core_mp.frame_len, core_mp.xch_len, "after full_open_rate_compare");
 
 		addr = 0;
 		for (y = 0; y < core_mp.ych_len; y++) {
 			for (x = 0; x < core_mp.xch_len; x++) {
-				titems[index].buf[(i * core_mp.frame_len) + addr] = compare_charge(open[i].charg_rate, x, y, titems[index].node_type, charge_aa, charge_boarder, charge_notch);
+				titems[index].buf[(i * core_mp.frame_len) + addr] = compare_charge(open[i].charg_rate,
+					x, y, titems[index].node_type, charge_aa, charge_boarder, charge_notch);
 				addr++;
 			}
 		}
@@ -2562,8 +2765,28 @@ static int open_test_cap(int index)
 	parser_get_int_data(titems[index].desp, "tvcl", str, sizeof(str));
 	open_spec.tvcl = ili_katoi(str, g_katoi_len);
 
-	TS_LOG_DEBUG("gain = %d, tvch = %d, tvcl = %d\n", open_spec.gain, open_spec.tvch, open_spec.tvcl);
+	if (ilits->ic_hardware_type == ILI9883) {
+		u32 pid = core_mp.chip_pid >> 8;
 
+		parser_get_int_data(titems[index].desp, "cbk_step", str, sizeof(str));
+		open_spec.cbk_step = ili_katoi(str, g_katoi_len);
+
+		parser_get_int_data(titems[index].desp, "cint", str, sizeof(str));
+		open_spec.cint = ili_katoi(str, g_katoi_len);
+		/* 9881N, 9881O, 7807Q, 7807S not support cbk_step and cint read from mp.ini */
+		if ((pid != 0x988117) && (pid != 0x988118) && (pid != 0x78071A) && (pid != 0x78071C)) {
+			if ((open_spec.cbk_step == 0) || (open_spec.cint == 0)) {
+				TS_LOG_ERR("Failed to get open parameter");
+				ret = -EMP_PARA_NULL;
+				core_mp.lost_parameter = true;
+				goto out;
+			}
+		}
+		TS_LOG_DEBUG("gain = %d, tvch = %d, tvcl = %d, cbk_step = %d, cint = %d\n",
+			open_spec.gain, open_spec.tvch, open_spec.tvcl, open_spec.cbk_step, open_spec.cint);
+	} else {
+		TS_LOG_DEBUG("gain = %d, tvch = %d, tvcl = %d\n", open_spec.gain, open_spec.tvch, open_spec.tvcl);
+	}
 	for (i = 0; i < titems[index].frame_count; i++) {
 		open[i].cap_dac = kcalloc(core_mp.frame_len, sizeof(s32), GFP_KERNEL);
 		open[i].cap_raw = kcalloc(core_mp.frame_len, sizeof(s32), GFP_KERNEL);
@@ -3133,6 +3356,10 @@ static int mp_show_result(struct ts_rawdata_info *raw_info, bool lcm_on)
 	if (pass_item_count == 0) {
 		core_mp.final_result = MP_DATA_FAIL;
 		ret = MP_DATA_FAIL;
+		if ((ilits->ic_hardware_type == ILI9883) && core_mp.lost_parameter) {
+			ret_fail_name = NORMAL_CSV_WARNING_NAME;
+			TS_LOG_ERR("WARNING! OPEN or SHORT parameter not found in ini file!!\n");
+		}
 		if (lcm_on)
 			snprintf(csv_name, (CSV_FILE_SIZE - csv_len), "%s/%s_%s.csv", CSV_LCM_ON_PATH, get_date_time_str(), ret_fail_name);
 		else
@@ -3194,7 +3421,7 @@ static void ilitek_tddi_mp_init_item(void)
 
 	memset(&core_mp, 0, sizeof(core_mp));
 	memset(&open_spec, 0, sizeof(open_spec));
-
+	memset(&short_para, 0, sizeof(short_para));
 	core_mp.chip_pid = ilits->chip->pid;
 	core_mp.chip_id = ilits->chip->id;
 	core_mp.chip_type = ilits->chip->type;
@@ -3217,7 +3444,7 @@ static void ilitek_tddi_mp_init_item(void)
 	core_mp.td_retry = false;
 	core_mp.final_result = MP_DATA_FAIL;
 	core_mp.lost_benchmark = false;
-
+	core_mp.lost_parameter = false;
 	TS_LOG_INFO("============== TP & Panel info ================\n");
 	TS_LOG_INFO("Driver version = %s\n", DRIVER_VERSION);
 	TS_LOG_INFO("TP Module = %s\n", ilits->md_name);

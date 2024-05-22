@@ -32,6 +32,27 @@
 	} \
 }
 
+static DEFINE_MUTEX(g_ion_session_mutex);
+int open_session_ta_init = 0;
+
+/*
+ * The maximum number of connections is 8,
+ * using 9 ensures that every sessions can be occupied
+ */
+#define MAX_OPEN_SESSIONS_NUM 9
+#define ION_SESSION_NAME_LEN 20
+struct secmem_session_info {
+	int is_init;
+	int is_occupied;
+	TEEC_Context context_secmem;
+	TEEC_Session session_secmem;
+};
+struct secmem_session_info g_ion_session_info[MAX_OPEN_SESSIONS_NUM] = { 0 };
+
+#ifdef CONFIG_HISI_VLTMM
+struct secmem_session_info g_ion_vltmm_session = {0};
+#endif
+
 int secmem_tee_init(TEEC_Context *context, TEEC_Session *session,
 				const char *package_name)
 {
@@ -221,3 +242,105 @@ void secmem_tee_destroy(TEEC_Context *context, TEEC_Session *session)
 	sec_debug("TA closed !\n");
 }
 
+static inline void __open_ion_session(int *ta_init, const char *ta_name,
+	TEEC_Context *context, TEEC_Session *session, const char *package_name)
+{
+	int ret;
+
+	if (!(*ta_init)) {
+		ret = secmem_tee_init(context, session, package_name);
+		if (ret)
+			pr_err("%s %s TA session init failed\n", __func__, ta_name);
+		else
+			*ta_init = 1;
+	}
+	pr_err("%s %s TA session init done\n", __func__, ta_name);
+}
+
+static int open_ion_sessions(void)
+{
+	int ret;
+	int i;
+
+	mutex_lock(&g_ion_session_mutex);
+	if (!open_session_ta_init) {
+#ifdef CONFIG_HISI_VLTMM
+		__open_ion_session(&g_ion_vltmm_session.is_init, "vltmm",
+			&g_ion_vltmm_session.context_secmem,
+			&g_ion_vltmm_session.session_secmem,
+			TEE_VLTMM_NAME);
+#endif
+
+		for (i = 0; i < MAX_OPEN_SESSIONS_NUM; i++) {
+			char name[ION_SESSION_NAME_LEN] = {0};
+
+			ret = snprintf_s(name, ION_SESSION_NAME_LEN,
+				ION_SESSION_NAME_LEN - 1,
+				"secmem-%d", i);
+			if (ret < 0)
+				continue;
+
+			__open_ion_session(&g_ion_session_info[i].is_init, name,
+				&g_ion_session_info[i].context_secmem,
+				&g_ion_session_info[i].session_secmem,
+				TEE_SECMEM_NAME);
+		}
+
+		open_session_ta_init = 1;
+	}
+	mutex_unlock(&g_ion_session_mutex);
+
+	return 0;
+}
+device_initcall(open_ion_sessions);
+
+static inline int __sec_tee_get_session(int ta_is_init, int *is_occupied,
+		TEEC_Context **context, TEEC_Session **session,
+		TEEC_Context *ion_context, TEEC_Session *ion_session)
+{
+	if ((ta_is_init == 0) || (*is_occupied))
+		return -EINVAL;
+
+	*context = ion_context;
+	*session = ion_session;
+	*is_occupied = 1;
+	return 0;
+}
+
+int sec_tee_init(TEEC_Context **context, TEEC_Session **session, enum ion_sessions_type type)
+{
+	int ret = -EINVAL;
+	int i;
+
+	(void)open_ion_sessions();
+
+	mutex_lock(&g_ion_session_mutex);
+	switch (type) {
+	case ION_SESSIONS_SECMEM:
+		for (i = 0; i < MAX_OPEN_SESSIONS_NUM; i++) {
+			ret = __sec_tee_get_session(g_ion_session_info[i].is_init,
+				&g_ion_session_info[i].is_occupied, context, session,
+				&g_ion_session_info[i].context_secmem,
+				&g_ion_session_info[i].session_secmem);
+			if (ret)
+				continue;
+			break;
+		}
+		break;
+#ifdef CONFIG_HISI_VLTMM
+	case ION_SESSIONS_VLTMM:
+		ret = __sec_tee_get_session(g_ion_vltmm_session.is_init,
+			&g_ion_vltmm_session.is_occupied, context, session,
+			&g_ion_vltmm_session.context_secmem,
+			&g_ion_vltmm_session.session_secmem);
+		break;
+#endif
+	default:
+		pr_err("%s error session typs-%d\n", __func__, type);
+		break;
+	}
+	mutex_unlock(&g_ion_session_mutex);
+
+	pr_info("%s sessions_type is %d, ret-%d\n", __func__, type, ret);
+	return ret;
+}

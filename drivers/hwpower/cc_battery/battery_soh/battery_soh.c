@@ -233,7 +233,7 @@ void bsoh_dmd_append(const char *type_name, unsigned int dmd_no)
 static ssize_t bsoh_battery_removed_show(struct device *dev,
 	struct device_attribute *attr, char *buff)
 {
-	int flag = power_platform_is_battery_removed();
+	int flag = power_platform_is_battery_changed();
 
 	memmove(buff, &flag, sizeof(flag));
 	return sizeof(flag);

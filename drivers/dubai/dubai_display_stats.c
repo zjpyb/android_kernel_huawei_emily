@@ -319,11 +319,13 @@ static int dubai_get_display_hist_delta(hist_data *delta, int size)
 		kfree(curr);
 		return -EFAULT;
 	}
+	mutex_lock(&brightness_lock);
 	if (display_hist_last != NULL) {
 		dubai_calculate_delta(display_hist_last, curr, delta, size);
 		kfree(display_hist_last);
 	}
 	display_hist_last = curr;
+	mutex_unlock(&brightness_lock);
 
 	return 0;
 }

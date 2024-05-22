@@ -13,6 +13,7 @@ obj-$(CONFIG_HUAWEI_THP_SOLOMON) += ssl_thp.o
 obj-$(CONFIG_HUAWEI_SHB_THP) += huawei_thp_log.o
 obj-$(CONFIG_HUAWEI_THP_ILITEK) += ilitek_thp.o
 obj-$(CONFIG_HUAWEI_THP_ST) += stmicro_thp.o
+obj-$(CONFIG_HUAWEI_THP_CHIPONE) += chipone_thp.o
 
 EXTRA_CFLAGS += -Idrivers/hisi/tzdriver
 EXTRA_CFLAGS += -Idrivers/tzdriver
@@ -34,3 +35,7 @@ EXTRA_CFLAGS += -Idrivers/huawei_platform/sensor2_0/
 EXTRA_CFLAGS += -I$(srctree)/drivers/misc/mediatek/sensor/2.0/core
 
 EXTRA_CFLAGS += -I$(srctree)/drivers/misc/mediatek/sensors-1.0/alsps/alspshub
+
+ifeq ($(BUILD_WITH_AQ), true)
+	EXTRA_CFLAGS += -DCONFIG_THP_IRQ_STATISTIC_AQ
+endif

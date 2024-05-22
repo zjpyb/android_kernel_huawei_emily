@@ -239,6 +239,10 @@ static int sm5450_discharge(int enable, void *dev_data)
 		return -1;
 	}
 
+	if (di->ignore_discharge_flag) {
+		hwlog_info("sc8545_discharge return\n");
+		return 0;
+	};
 	/* VBUS_PD : 0(auto working), 1(manual pull down) */
 	ret = sm5450_write_mask(di, SM5450_PULLDOWN_REG,
 		SM5450_PULLDOWN_EN_VBUS_PD_MASK,
@@ -1533,6 +1537,8 @@ static void sm5450_parse_dts(struct device_node *np, struct sm5450_device_info *
 		"sense_r_config", &di->sense_r_config, SENSE_R_5_MOHM);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"sense_r_actual", &di->sense_r_actual, SENSE_R_5_MOHM);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ignore_discharge_flag", &di->ignore_discharge_flag, 0);
 }
 
 static void sm5450_init_lock_mutex(struct sm5450_device_info *di)

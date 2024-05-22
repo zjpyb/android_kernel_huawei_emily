@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2021. All rights reserved.
  * Description: mas block unistore lld function registration
  *
  * This software is licensed under the terms of the GNU General Public
@@ -21,13 +21,8 @@
 #include <linux/bio.h>
 #include <linux/delay.h>
 #include <linux/gfp.h>
-#include <linux/hisi/powerkey_event.h>
-#include <trace/events/block.h>
 #include <linux/types.h>
-#include <scsi/scsi_device.h>
-#include <scsi/scsi_host.h>
 #include "blk.h"
-#include "dsm_block.h"
 
 void mas_blk_mq_tagset_pwron_info_sync_register(
 	struct blk_mq_tag_set *tag_set, lld_dev_pwron_info_sync_fn func)

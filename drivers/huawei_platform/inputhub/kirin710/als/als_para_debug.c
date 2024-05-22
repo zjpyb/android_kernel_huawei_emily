@@ -20,6 +20,9 @@
 #include "als_para_table_ams.h"
 #include "als_para_table_ams_tmd3702.h"
 #include "als_para_table_ams_tmd3725.h"
+#include "als_para_table_ams_tmd2755.h"
+#include "als_para_table_emin_mn78911.h"
+#include "als_para_table_stk_stk33562.h"
 #include "als_para_table_ams_tsl2591.h"
 #include "als_para_table_avago.h"
 #include "als_para_table_liteon.h"
@@ -204,6 +207,71 @@ static void show_als_debug_tmd2745(uint32_t id, short *dbg, uint32_t num)
 	for (k = 0; k < 6; k++) /* 6 parameters */
 		dbg[k] = table->als_para[k];
 }
+
+static void show_als_debug_tmd2755(uint32_t id, short *dbg, uint32_t num)
+{
+	uint32_t k;
+	tmd2755_als_para_table *table = NULL;
+
+	table = als_get_tmd2755_table_by_id(id);
+	if (!table)
+		return;
+
+	/*
+	 * als_para:
+	 * 0: D_factor
+	 * 1: B_Coef
+	 * 2: C_Coef
+	 * 3: D_Coef
+	 * 4: is_min_algo
+	 * 5: is_auto_gain
+	 */
+}
+
+static void show_als_debug_mn78911(uint32_t id, short *dbg, uint32_t num)
+{
+	uint32_t k;
+	mn78911_als_para_table *table = NULL;
+
+	table = als_get_mn78911_table_by_id(id);
+	if (!table)
+		return;
+
+	/*
+	 * als_para:
+	 * 0: D_factor
+	 * 1: B_Coef
+	 * 2: C_Coef
+	 * 3: D_Coef
+	 * 4: is_min_algo
+	 * 5: is_auto_gain
+	 */
+	// for (k = 0; k < 8; k++) /* 6 parameters */
+	// 	dbg[k] = (short)(table->als_para[k]);
+}
+
+static void show_als_debug_stk33562(uint32_t id, short *dbg, uint32_t num)
+{
+	uint32_t k;
+	stk33562_als_para_table *table = NULL;
+
+	table = als_get_stk33562_table_by_id(id);
+	if (!table)
+		return;
+
+	/*
+	 * als_para:
+	 * 0: D_factor
+	 * 1: B_Coef
+	 * 2: C_Coef
+	 * 3: D_Coef
+	 * 4: is_min_algo
+	 * 5: is_auto_gain
+	 */
+	// for (k = 0; k < 8; k++) /* 6 parameters */
+	// 	dbg[k] = (short)(table->als_para[k]);
+}
+
 static void show_als_debug_syh399(uint32_t id, short *dbg, uint32_t num)
 {
 	uint32_t k;
@@ -239,7 +307,7 @@ ssize_t als_debug_data_show(int32_t tag, struct device *dev,
 
 	id = dev_info->table_id;
 
-	hwlog_info("%s chip_type=%d\n", __func__, dev_info->chip_type);
+	hwlog_info("%s chip_type=%d, id:%d \n", __func__, dev_info->chip_type, id);
 
 	if (dev_info->chip_type == ALS_CHIP_ROHM_RGB) /* bh745_para */
 		show_als_debug_bh745(id, dbg, num);
@@ -260,7 +328,12 @@ ssize_t als_debug_data_show(int32_t tag, struct device *dev,
 		show_als_debug_tmd2745(id, dbg, num);
 	else if (dev_info->chip_type == ALS_CHIP_SYH399)
 		show_als_debug_syh399(id, dbg, num);
-
+	else if (dev_info->chip_type == ALS_CHIP_TMD2755)
+		show_als_debug_tmd2755(id, dbg, num);
+	else if (dev_info->chip_type == ALS_CHIP_MN78911)
+		show_als_debug_mn78911(id, dbg, num);
+	else if (dev_info->chip_type == ALS_CHIP_STK33562)
+		show_als_debug_stk33562(id, dbg, num);
 	return snprintf_s(buf, BUF_SIZE, BUF_SIZE - 1,
 		"%hd,%hd,%hd,%hd,%hd,%hd,%hd,%hd\n",
 		dbg[0], dbg[1], dbg[2], dbg[3], dbg[4], dbg[5],
@@ -492,6 +565,78 @@ static ssize_t store_als_debug_tmd2745(struct als_platform_data *pf_data,
 	return size;
 }
 
+static ssize_t store_als_debug_tmd2755(struct als_platform_data *pf_data,
+	uint32_t id, const short *dbg, uint32_t num, size_t size)
+{
+	tmd2755_als_para_table *table = NULL;
+
+	table = als_get_tmd2755_table_by_id(id);
+	if (!table)
+		return -1;
+
+	if (memcpy_s(pf_data->als_extend_data, sizeof(pf_data->als_extend_data),
+		table->als_para, sizeof(table->als_para)) != EOK)
+		return -1;
+
+	return size;
+}
+
+static ssize_t store_als_debug_mn78911(struct als_platform_data *pf_data,
+	uint32_t id, const short *dbg, uint32_t num, size_t size)
+{
+	mn78911_als_para_table *table = NULL;
+
+	table = als_get_mn78911_table_by_id(id);
+	if (!table)
+		return -1;
+
+	/* D_factor */
+	//table->als_para[0] = dbg[0];
+	/* B_Coef */
+	//table->als_para[1] = dbg[1];
+	/* C_Coef */
+	//table->als_para[2] = dbg[2];
+	/* D_Coef */
+	//table->als_para[3] = dbg[3];
+	/* is_min_algo */
+	//table->als_para[4] = dbg[4];
+	/* is_auto_gain */
+	//table->als_para[5] = dbg[5];
+	if (memcpy_s(pf_data->als_extend_data, sizeof(pf_data->als_extend_data),
+		table->als_para, sizeof(table->als_para)) != EOK)
+		return -1;
+
+	return size;
+}
+
+static ssize_t store_als_debug_stk33562(struct als_platform_data *pf_data,
+	uint32_t id, const short *dbg, uint32_t num, size_t size)
+{
+	stk33562_als_para_table *table = NULL;
+
+	table = als_get_stk33562_table_by_id(id);
+	if (!table)
+		return -1;
+
+	/* D_factor */
+	// table->als_para[0] = dbg[0];
+	/* B_Coef */
+	// table->als_para[1] = dbg[1];
+	/* C_Coef */
+	// table->als_para[2] = dbg[2];
+	/* D_Coef */
+	// table->als_para[3] = dbg[3];
+	/* is_min_algo */
+	// table->als_para[4] = dbg[4];
+	/* is_auto_gain */
+	// table->als_para[5] = dbg[5];
+	if (memcpy_s(pf_data->als_extend_data, sizeof(pf_data->als_extend_data),
+		table->als_para, sizeof(table->als_para)) != EOK)
+		return -1;
+
+	return size;
+}
+
 static ssize_t store_als_debug_syh399(struct als_platform_data *pf_data,
 	uint32_t id, const char *buf, uint32_t num, size_t size)
 {
@@ -582,6 +727,12 @@ ssize_t als_debug_data_store(int32_t tag, struct device *dev,
 		return store_als_debug_ltr582(pf_data, id, dbg, num, size);
 	case ALS_CHIP_TMD2745:
 		return store_als_debug_tmd2745(pf_data, id, dbg, num, size);
+	case ALS_CHIP_TMD2755:
+		return store_als_debug_tmd2755(pf_data, id, dbg, num, size);
+	case ALS_CHIP_MN78911:
+		return store_als_debug_mn78911(pf_data, id, dbg, num, size);
+	case ALS_CHIP_STK33562:
+		return store_als_debug_stk33562(pf_data, id, dbg, num, size);
 	case ALS_CHIP_SYH399:
 		return store_als_debug_syh399(pf_data, id, buf, num, size);
 	default:

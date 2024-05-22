@@ -740,6 +740,12 @@ int skp_save_kdump_file(const char *dst_str, const char *exce_dir)
 		/* copy from DDR ,old process */
 		BB_PRINT_ERR("copy from ddr %s  %s\n", exce_dir, dst_str);
 		ret = rdr_copy_file_apend(dst_str, SRC_KERNELDUMP);
+#ifdef CONFIG_AQ_KDUMP_GZIP
+		if (ret == 0) {
+			BB_PRINT_ERR("[%s], AQ create hisi kdump gzip log file\n", __func__);
+			create_hisi_kdump_gzip_log_file();
+		}
+#endif
 	} else {
 		/* copy from flash */
 		BB_PRINT_ERR("copy from flash %s  %s\n", exce_dir, dst_str);

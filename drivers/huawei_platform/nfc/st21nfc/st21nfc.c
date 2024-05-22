@@ -1944,7 +1944,8 @@ static int st21nfc_sync_sakinfo(unsigned long arg)
 		return -1;
 	}
 
-	copy_from_user(&sak_info, (uintptr_t *)arg, sizeof(nfc_sak_sync_info));
+	uintptr_t address = (uintptr_t)arg;
+	copy_from_user(&sak_info, (nfc_sak_sync_info *)address, sizeof(nfc_sak_sync_info));
 	pr_info("sync sak = 0x%x, cardaid = %s\n", sak_info.sak, sak_info.card_aid);
 
 	command_info.service_id = MC_NFC_WATCH_WALLET_SVR;

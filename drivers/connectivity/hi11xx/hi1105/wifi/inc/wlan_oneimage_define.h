@@ -247,7 +247,7 @@
 #define hmac_atcmdsrv_dbb_num_response   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_dbb_num_response)
 #define hmac_atcmdsrv_fem_pa_response   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_fem_pa_response)
 #define hmac_atcmdsrv_get_ant_response   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_get_ant_response)
-#define hmac_atcmdsrv_get_rx_pkcg   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_get_rx_pkcg)
+#define hmac_config_get_rx_fcs_info   WLAN_ONEIMAGE_RENAME(hmac_config_get_rx_fcs_info)
 #define hmac_atcmdsrv_lte_gpio_check   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_lte_gpio_check)
 #ifdef PLATFORM_DEBUG_ENABLE
 #define hmac_atcmdsrv_report_efuse_reg   WLAN_ONEIMAGE_RENAME(hmac_atcmdsrv_report_efuse_reg)
@@ -342,8 +342,7 @@
 #define hmac_user_set_amsdu_level   WLAN_ONEIMAGE_RENAME(hmac_user_set_amsdu_level)
 #define hmac_compability_ap_tpye_identify_for_btcoex   \
     WLAN_ONEIMAGE_RENAME(hmac_compability_ap_tpye_identify_for_btcoex)
-#define hmac_user_cap_update_by_hisi_cap_ie   \
-        WLAN_ONEIMAGE_RENAME(hmac_user_cap_update_by_hisi_cap_ie)
+#define hmac_user_cap_update_by_hisi_cap_ie WLAN_ONEIMAGE_RENAME(hmac_user_cap_update_by_hisi_cap_ie)
 #define hmac_config_11i_add_key   WLAN_ONEIMAGE_RENAME(hmac_config_11i_add_key)
 #define hmac_config_11i_add_wep_entry   WLAN_ONEIMAGE_RENAME(hmac_config_11i_add_wep_entry)
 #define hmac_config_11i_get_key   WLAN_ONEIMAGE_RENAME(hmac_config_11i_get_key)
@@ -424,6 +423,7 @@
 #define hmac_config_get_max_user   WLAN_ONEIMAGE_RENAME(hmac_config_get_max_user)
 #define hmac_config_get_mode   WLAN_ONEIMAGE_RENAME(hmac_config_get_mode)
 #define hmac_config_get_monitor   WLAN_ONEIMAGE_RENAME(hmac_config_get_monitor)
+#define hmac_config_set_pt_mcast   WLAN_ONEIMAGE_RENAME(hmac_config_set_pt_mcast)
 #define hmac_config_get_mpdu_num   WLAN_ONEIMAGE_RENAME(hmac_config_get_mpdu_num)
 #define hmac_config_get_nobeacon   WLAN_ONEIMAGE_RENAME(hmac_config_get_nobeacon)
 #define hmac_config_get_prot_mode   WLAN_ONEIMAGE_RENAME(hmac_config_get_prot_mode)
@@ -1870,10 +1870,6 @@
 #define wifi_sysfs_init   WLAN_ONEIMAGE_RENAME(wifi_sysfs_init)
 #define mac_user_set_apsd_ram   WLAN_ONEIMAGE_RENAME(mac_user_set_apsd_ram)
 #define mac_get_wmm_ie_ram   WLAN_ONEIMAGE_RENAME(mac_get_wmm_ie_ram)
-#define wlan_exit_light_suspend   WLAN_ONEIMAGE_RENAME(wlan_exit_light_suspend)
-#define wlan_enter_light_suspend   WLAN_ONEIMAGE_RENAME(wlan_enter_light_suspend)
-#define wal_register_lights_suspend   WLAN_ONEIMAGE_RENAME(wal_register_lights_suspend)
-#define wal_unregister_lights_suspend   WLAN_ONEIMAGE_RENAME(wal_unregister_lights_suspend)
 #define hmac_get_feature_switch   WLAN_ONEIMAGE_RENAME(hmac_get_feature_switch)
 #define hmac_config_set_probe_resp_mode   WLAN_ONEIMAGE_RENAME(hmac_config_set_probe_resp_mode)
 #define hmac_scan_check_is_dispatch_scan_req   WLAN_ONEIMAGE_RENAME(hmac_scan_check_is_dispatch_scan_req)

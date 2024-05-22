@@ -116,7 +116,7 @@ static void discard_io_extent(struct io_extent *io_ext, unsigned int op)
 		zram_clear_flag(zram, index, ZRAM_UNDER_WB);
 		zram_slot_unlock(zram, index);
 	}
-	hyperhold_free_extent(zram->area, io_ext->ext_id);
+	hyperhold_free_extent(zram->area, io_ext->ext_id, true);
 out:
 	hyperhold_free(io_ext);
 }
@@ -457,7 +457,7 @@ static void extent_add(struct io_extent *io_ext,
 			goto out;
 	}
 	hh_print(HHLOG_DEBUG, "extent add OK, free ext_id = %d.\n", ext_id);
-	hyperhold_free_extent(zram->area, io_ext->ext_id);
+	hyperhold_free_extent(zram->area, io_ext->ext_id, true);
 	io_ext->ext_id = -EINVAL;
 out:
 	discard_io_extent(io_ext, REQ_OP_READ);
@@ -608,7 +608,7 @@ static int shrink_entry_list(struct io_extent *io_ext)
 	if (swap_size == 0) {
 		hh_print(HHLOG_ERR, "swap_size = 0, free ext_id = %d.\n",
 				io_ext->ext_id);
-		hyperhold_free_extent(zram->area, io_ext->ext_id);
+		hyperhold_free_extent(zram->area, io_ext->ext_id, true);
 		io_ext->ext_id = -EINVAL;
 		return -ENOENT;
 	}
@@ -923,7 +923,7 @@ void hyperhold_extent_objs_del(struct zram *zram, u32 index)
 	if (mcg)
 		atomic64_inc(&mcg->hyperhold_ext_notify_free);
 	hh_print(HHLOG_DEBUG, "free ext_id = %d\n", ext_id);
-	hyperhold_free_extent(zram->area, ext_id);
+	hyperhold_free_extent(zram->area, ext_id, true);
 }
 
 /*

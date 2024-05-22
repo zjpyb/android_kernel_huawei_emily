@@ -21,6 +21,7 @@
 #include <linux/regulator/consumer.h>
 #include <huawei_platform/log/hw_log.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
+#include <huawei_platform/usb/usb_extra_modem.h>
 #ifdef CONFIG_SUPERSWITCH_FSC
 #include <huawei_platform/usb/superswitch/fsc/core/hw_scp.h>
 #endif
@@ -236,6 +237,11 @@ int dig_hs_low_power(void)
 	if (!g_pdata) {
 		hwlog_warn("g_pdata is NULL\n");
 		return -ENOMEM;
+	}
+
+	if (uem_check_online_status()) {
+		hwlog_info("%s: uem attach, disable lowpower mode", __func__);
+		return 0;
 	}
 
 	if (!g_pdata->audio_buckboost_enable && pd_dpm_get_pd_source_vbus())

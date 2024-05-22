@@ -507,7 +507,7 @@ static int coul_get_calibration_status(void)
 	return di->coul_dev_ops->get_coul_calibration_status();
 }
 
-static int get_batt_reset_flag(void)
+static int get_batt_removed_flag(void)
 {
 	struct smartstar_coul_device *di = get_coul_dev();
 
@@ -516,7 +516,7 @@ static int get_batt_reset_flag(void)
 			      __func__);
 		return -1;
 	}
-	return di->batt_reset_flag;
+	return di->batt_removed_flag;
 }
 
 /* new battery, clear record fcc */
@@ -1002,7 +1002,7 @@ struct coulometer_ops g_coulometer_ops = {
 	.cal_uah_by_ocv = coul_cal_uah_by_ocv,
 	.convert_temp_to_adc = coul_convert_temp_to_adc,
 	.get_coul_calibration_status = coul_get_calibration_status,
-	.battery_removed_before_boot = get_batt_reset_flag,
+	.battery_removed_before_boot = get_batt_removed_flag,
 	.get_qmax = coul_get_battery_qmax,
 	.get_ocv_by_soc = coul_get_ocv_by_soc,
 	.get_soc_by_ocv = coul_get_soc_by_ocv,

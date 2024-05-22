@@ -550,6 +550,11 @@ uint32_t is_need_rdma_stretch_bit(struct dpu_fb_data_type *dpufd, dss_layer_t *l
 	if ((layer->need_cap & CAP_AFBCD) || (layer->need_cap & CAP_HFBCD) || (layer->need_cap & CAP_HEBCD)) {
 		v_stretch_ratio = 0;
 	} else {
+		if (layer->dst_rect.h == 0) {
+			DPU_FB_ERR("layer->dst_rect.h is 0!\n");
+			return 0;
+		}
+
 		if (is_yuv_sp_420(layer->img.format) || is_yuv_p_420(layer->img.format)) {
 			v_stretch_ratio_threshold = ((layer->src_rect.h + layer->dst_rect.h - 1) / layer->dst_rect.h);
 			v_stretch_ratio = ((layer->src_rect.h / layer->dst_rect.h) / 2) * 2;

@@ -40,6 +40,8 @@ extern ssize_t hyperhold_ft_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t len);
 extern ssize_t hyperhold_ft_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
+extern ssize_t hyperhold_discard_show(struct device *dev,
+	struct device_attribute *attr, char *buf);
 #endif
 extern ssize_t hyperhold_report_show(struct device *dev,
 	struct device_attribute *attr, char *buf);
@@ -97,6 +99,12 @@ static inline  ssize_t hyperhold_ft_store(struct device *dev,
 }
 
 static inline ssize_t hyperhold_ft_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return 0;
+}
+
+static inline ssize_t hyperhold_discard_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	return 0;

@@ -54,6 +54,9 @@
 #define INFO_DATA_TEMP_LENGTH 16
 #define TS_CHIP_INFO_SIZE 5
 #define EASYWAKE_POSITION_SIZE 2
+#define NEW_GAME_MODE 5
+#define OLD_GAME_MODE 1
+#define NO_OLD_GAME_MODE 0
 
 enum ts_offset_bit {
 	TS_OFFSET_0BIT = 0,
@@ -153,7 +156,7 @@ static ssize_t ts_chip_info_show(struct device *dev,
 			CHIP_INFO_LENGTH, "%s\n", info->mod_vendor);
 		g_ts_kit_platform_data.get_info_flag = false;
 	} else if (g_ts_kit_platform_data.hide_plain_id) {
-		error = snprintf(buf, CHIP_INFO_LENGTH, "%s\n",
+		error = snprintf(buf, CHIP_INFO_LENGTH * 2, "%s\n",
 			info->ic_vendor);
 	} else {
 		error = snprintf(buf,
@@ -2311,6 +2314,27 @@ out:
 	return error;
 }
 
+static const char old_game_scen_cmdon[INFO_DATA_TEMP_LENGTH] = "2,3,0";
+static const char old_game_scen_cmdoff[INFO_DATA_TEMP_LENGTH] = "2,4,0";
+
+static int is_old_game_mode(const char *buf, int *soper)
+{
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	int type;
+	int time;
+
+	int ret = sscanf(buf, "%d,%d,%d", &type, soper, &time);
+	if (ret <= 0) {
+		TS_LOG_ERR("sscanf error\n");
+		return -EINVAL;
+	}
+	TS_LOG_INFO("appType %d\n", type);
+	if (type == NEW_GAME_MODE && pdata->change_game_mode) {
+		return OLD_GAME_MODE;
+	}
+	return NO_OLD_GAME_MODE;
+}
+
 static ssize_t ts_touch_switch_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -2337,8 +2361,17 @@ static ssize_t ts_touch_switch_store(struct device *dev,
 		goto out;
 	}
 
+	int soper = 0;
 	memset(pdata->touch_switch_info, 0, MAX_STR_LEN);
-	snprintf(pdata->touch_switch_info, MAX_STR_LEN - 1, "%s", buf);
+	if (is_old_game_mode(buf, &soper)) {
+		if (soper == TS_SWITCH_GAME_ENABLE) {
+			snprintf(pdata->touch_switch_info, MAX_STR_LEN - 1, "%s", old_game_scen_cmdon);
+		} else {
+			snprintf(pdata->touch_switch_info, MAX_STR_LEN - 1, "%s", old_game_scen_cmdoff);
+		}
+	} else {
+		snprintf(pdata->touch_switch_info, MAX_STR_LEN - 1, "%s", buf);
+	}
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.command = TS_TOUCH_SWITCH;
@@ -2382,6 +2415,70 @@ static ssize_t udfp_enable_store(struct device *dev,
 		g_ts_kit_platform_data.udfp_enable_flag);
 	error = count;
 
+	return error;
+}
+
+static int ts_send_horizon_cmd(enum ts_action_status read_write_type, int timeout)
+{
+	int error = NO_ERR;
+	struct ts_cmd_node cmd;
+	struct ts_kit_platform_data *pdata = &g_ts_kit_platform_data;
+	struct ts_horizon_info *info = NULL;
+
+	memset(&cmd, 0, sizeof(cmd));
+	TS_LOG_INFO("%s, read_write_type=%d\n", __func__, read_write_type);
+	if (pdata->feature_info.horizon_info.horizon_supported) {
+		pdata->feature_info.horizon_info.op_action = read_write_type;
+		cmd.command = TS_HORIZON_SWITCH;
+		info = &pdata->feature_info.horizon_info;
+		cmd.cmd_param.prv_params = (void *)info;
+		if ((pdata->chip_data->is_direct_proc_cmd) &&
+			(pdata->chip_data->is_can_device_use_int))
+			error = ts_kit_proc_command_directly(&cmd);
+		else
+			error = ts_kit_put_one_cmd(&cmd, timeout);
+		if (error) {
+			TS_LOG_ERR("put cmd error: %d\n", error);
+			error = -EBUSY;
+		}
+	}
+	return error;
+}
+
+static ssize_t horizon_enable_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct ts_kit_device_data *ts_dev = g_ts_kit_platform_data.chip_data;
+	unsigned int value = 0;
+	unsigned long tmp = 0;
+	int error;
+	struct ts_horizon_info *info = &g_ts_kit_platform_data.feature_info.horizon_info;
+
+	error = kstrtoul(buf, 0, &tmp);
+	if (error) {
+		TS_LOG_ERR("kstrtoul return invaild :%d\n", error);
+		error = -EINVAL;
+		goto out;
+	}
+	value = (u8)tmp;
+	TS_LOG_DEBUG("kstrtoul value is %u\n", value);
+
+	if (info->horizon_switch == value) {
+		TS_LOG_INFO("%s, repeatedly send cmd, horizon_switch value is %u",
+			__func__, value);
+		error = count;
+		goto out;
+	}
+
+	info->horizon_switch = value;
+	error = ts_send_horizon_cmd(TS_ACTION_WRITE, SHORT_SYNC_TIMEOUT);
+	if (error) {
+		TS_LOG_ERR("ts_send_horizon_enable_store_cmd failed\n");
+		goto out;
+	}
+	error = count;
+out:
+	TS_LOG_INFO("horizon_enable_store done\n");
 	return error;
 }
 
@@ -2438,6 +2535,7 @@ static DEVICE_ATTR(tp_capacitance_test_config, 0400,
 static DEVICE_ATTR(touch_switch, 0660,
 	ts_touch_switch_show, ts_touch_switch_store);
 static DEVICE_ATTR(udfp_enable, 0660, udfp_enable_show, udfp_enable_store);
+static DEVICE_ATTR(horizon_switch, 0660, NULL, horizon_enable_store);
 
 static struct attribute *ts_attributes[] = {
 	&dev_attr_touch_oem_info.attr,
@@ -2473,6 +2571,7 @@ static struct attribute *ts_attributes[] = {
 #endif
 	&dev_attr_touch_switch.attr,
 	&dev_attr_udfp_enable.attr,
+	&dev_attr_horizon_switch.attr,
 	NULL
 };
 

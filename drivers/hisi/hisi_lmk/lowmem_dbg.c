@@ -21,6 +21,10 @@
 #include <linux/mm.h>
 #include <linux/oom.h>
 #include <linux/sched.h>
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#include <linux/sched/debug.h>
+#include <linux/sysrq.h>
+#endif
 #include <linux/rcupdate.h>
 #include <linux/notifier.h>
 #include <linux/mutex.h>
@@ -107,11 +111,35 @@ static void dump_tasks(bool verbose)
 	rcu_read_unlock();
 }
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+static void dump_kswapd(int nid, const char *stage)
+{
+	pg_data_t *pgdat = NODE_DATA(nid);
+
+	if (!pgdat || !(pgdat->kswapd))
+		return;
+
+	pr_err("Show kswapd%d %s stack:\n", nid, stage);
+	sched_show_task(pgdat->kswapd);
+}
+
+static void show_kswapd_stack(const char *stage)
+{
+	int nid;
+
+	for_each_node_state(nid, N_MEMORY)
+		dump_kswapd(nid, stage);
+}
+#endif
+
 static void lowmem_dump(struct work_struct *work)
 {
 	bool verbose = (work == &lowmem_dbg_verbose_wk) ? true : false;
 
 	mutex_lock(&lowmem_dump_mutex);
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	show_kswapd_stack("start");
+#endif
 	show_mem(SHOW_MEM_FILTER_NODES, NULL);
 	dump_tasks(verbose);
 	ksm_show_stats();
@@ -130,6 +158,13 @@ static void lowmem_dump(struct work_struct *work)
 #endif
 	if (verbose)
 		page_tracker_wake_up();
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	show_kswapd_stack("end");
+
+	/* Kswapd may be stuck in interrupt, so show cpu running stack */
+	pr_err("Show cpu running state when lowmem:\n");
+	__handle_sysrq('l', false);
+#endif
 	mutex_unlock(&lowmem_dump_mutex);
 }
 

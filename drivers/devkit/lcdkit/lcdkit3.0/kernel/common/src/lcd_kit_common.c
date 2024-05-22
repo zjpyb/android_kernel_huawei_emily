@@ -2865,6 +2865,8 @@ static void lcd_kit_panel_parse_util(struct device_node *np)
 	/* panel on command */
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-on-cmds",
 		"lcd-kit,panel-on-cmds-state", &common_info->panel_on_cmds);
+	lcd_kit_parse_dcs_cmds(np, "lcd-kit,display-bf-on-command",
+		"lcd-kit,panel-on-cmds-state", &common_info->display_on_before_backlight_cmds);
 	/* panel off command */
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-off-cmds",
 		"lcd-kit,panel-off-cmds-state", &common_info->panel_off_cmds);

@@ -32,6 +32,7 @@ enum bkops_operation {
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 #define BKOPS_IDLE_STATE 6
 #define BKOPS_FS_STARTED 7
+#define BKOPS_CHK_STOP_STATE 8
 #endif
 
 #ifdef CONFIG_MAS_DEBUG_FS

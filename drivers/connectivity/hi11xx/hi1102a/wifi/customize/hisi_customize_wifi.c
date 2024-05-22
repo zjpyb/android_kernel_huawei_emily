@@ -687,6 +687,7 @@ OAL_STATIC wlan_cfg_cmd g_wifi_config_priv[] = {
     { "dyn_bypass_extlna_enable", WLAN_CFG_PRIV_DYN_BYPASS_EXTLNA },
     { "hcc_flowctrl_type",        WLAN_CFG_PRIV_HCC_FLOWCTRL_TYPE },
     { "ext_fem_5g_type",          WLAN_CFG_PRIV_5G_EXT_FEM_TYPE },
+    { "close_filter_switch",      WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH},
     { OAL_PTR_NULL,               0 }
 };
 
@@ -1365,7 +1366,7 @@ oal_int32 hwifi_custom_host_read_dyn_cali_nvram(oal_void)
             while (pc_token != OAL_PTR_NULL) {
                 OAL_IO_PRINT("hwifi_custom_host_read_dyn_cali_nvram::get [%s]\n!", pc_token);
                 /* 将字符串转换成10进制数 */
-                *(pl_params + times_idx) = (oal_int32)oal_strtol(pc_token, OAL_PTR_NULL, 10);
+                *(pl_params + param_idx) = (oal_int32)oal_strtol(pc_token, OAL_PTR_NULL, 10);
                 pc_token = oal_strtok(OAL_PTR_NULL, pc_sep, &pc_ctx);
                 param_idx++;
             }

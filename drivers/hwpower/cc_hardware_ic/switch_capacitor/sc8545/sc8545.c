@@ -50,6 +50,11 @@ static int sc8545_discharge(int enable, void *dev_data)
 	if (!di)
 		return -ENODEV;
 
+	if (di->ignore_discharge_flag) {
+		hwlog_info("sc8545_discharge return\n");
+		return 0;
+	};
+
 	ret = sc8545_write_mask(di, SC8545_CTRL2_REG,
 		SC8545_VBUS_PD_EN_MASK, SC8545_VBUS_PD_EN_SHIFT, value);
 	ret += sc8545_read_byte(di, SC8545_CTRL2_REG, &reg);
@@ -200,6 +205,20 @@ int sc8545_get_vbus_mv(int *vbus, void *dev_data)
 	return 0;
 }
 
+int sc8545_get_vbus_uvp_status(void *dev_data)
+{
+	u8 reg = 0;
+	int ret;
+	struct sc8545_device_info *di = dev_data;
+
+	ret = sc8545_read_byte(di, SC8545_INT_STAT_REG, &reg);
+	if (ret)
+		return -EIO;
+	hwlog_info("INT_STAT [%x]=0x%x\n", SC8545_INT_STAT_REG, reg);
+
+	return (reg & SC8545_ADAPTER_INSERT_STAT_MASK) ? 0 : SC8545_ADAPTER_INSERT_STAT_UVP_MODE;
+}
+
 static int sc8545_get_vusb_mv(int *vusb, void *dev_data)
 {
 	int ret;
@@ -311,8 +330,9 @@ static int sc8545_config_vbat_regulation(void *dev_data, int vbat_regulation)
 	ret = sc8545_write_mask(di, SC8545_VBATREG_REG,
 		SC8545_VBATREG_BELOW_OVP_MASK,
 		SC8545_VBATREG_BELOW_OVP_SHIFT, value);
-	ret += sc8545_write_mask(di, SC8545_VBATREG_REG, SC8545_VBATREG_EN_MASK,
-		SC8545_VBATREG_EN_SHIFT, 1);
+	if (!di->close_regulation)
+		ret += sc8545_write_mask(di, SC8545_VBATREG_REG, SC8545_VBATREG_EN_MASK,
+			SC8545_VBATREG_EN_SHIFT, 1);
 	ret += sc8545_read_byte(di, SC8545_VBATREG_REG, &value);
 	if (ret)
 		return -EIO;
@@ -363,8 +383,9 @@ static int sc8545_config_ibat_regulation(void *dev_data, int ibat_regulation)
 	ret = sc8545_write_mask(di, SC8545_IBATREG_REG,
 		SC8545_IBATREG_BELOW_OCP_MASK,
 		SC8545_IBATREG_BELOW_OCP_SHIFT, value);
-	ret += sc8545_write_mask(di, SC8545_IBATREG_REG, SC8545_IBATREG_EN_MASK,
-		SC8545_IBATREG_EN_SHIFT, 1);
+	if (!di->close_regulation)
+		ret += sc8545_write_mask(di, SC8545_IBATREG_REG, SC8545_IBATREG_EN_MASK,
+			SC8545_IBATREG_EN_SHIFT, 1);
 	ret += sc8545_read_byte(di, SC8545_IBATREG_REG, &value);
 	if (ret)
 		return -EIO;
@@ -529,7 +550,7 @@ static int sc8545_threshold_reg_init(void *dev_data, u8 mode)
 	if (mode == SC8545_CHG_MODE_BYPASS)
 		ocp_th = SC8545_LVC_IBUS_OCP_TH_INIT;
 	else if (mode == SC8545_CHG_MODE_CHGPUMP)
-		ocp_th = SC8545_SC_IBUS_OCP_TH_INIT;
+		ocp_th = di->sc_ibus_ocp;
 	else
 		ocp_th = SC8545_IBUS_OCP_TH_INIT;
 
@@ -650,6 +671,17 @@ static int sc8545_reg_init(void *dev_data)
 		SC8545_DP_BUFF_EN_MASK, SC8545_DP_BUFF_EN_SHIFT, 1);
 	ret += sc8545_write_byte(di, SC8545_SCP_FLAG_MASK_REG,
 		SC8545_SCP_FLAG_MASK_REG_INIT);
+	/* set IBUS_UCP_DEGLITCH 5ms */
+	ret += sc8545_write_mask(di, SC8545_IBUS_OCP_UCP_REG, SC8545_IBUS_UCP_DEGLITCH_MASK,
+		SC8545_IBUS_UCP_DEGLITCH_SHIFT, SC8545_IBUS_UCP_DEGLITCH_5MS);
+	if (di->close_regulation) {
+		/* Disable the IBUS regulation */
+		ret += sc8545_write_mask(di, SC8545_IBUSREG_REG,SC8545_IBUSREG_EN_MASK,
+			SC8545_IBUSREG_EN_SHIFT, 0);
+		/* IBUS REG ACTIVE MASKED */
+		ret += sc8545_write_mask(di, SC8545_IBUSREG_REG,
+			SC8545_IBUSREG_ACTIVE_MSK_MASK, SC8545_IBUSREG_ACTIVE_MSK_SHIFT, 1);
+	}
 	if (ret)
 		hwlog_err("reg_init fail\n");
 
@@ -1053,6 +1085,16 @@ static void sc8545_parse_dts(struct device_node *np,
 		"sense_r_config", &di->sense_r_config, SENSE_R_5_MOHM);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"sense_r_actual", &di->sense_r_actual, SENSE_R_5_MOHM);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ignore_discharge_flag", &di->ignore_discharge_flag, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"close_regulation", &di->close_regulation, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc_ibus_ocp", &di->sc_ibus_ocp, SC8545_SC_IBUS_OCP_TH_INIT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"reset_fcp_config", &di->reset_fcp_config, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"scp_ack_retry_cycle", &di->scp_ack_retry_cycle, SC8545_SCP_ACK_RETRY_TIME);
 }
 
 static void sc8545_init_lock_mutex(struct sc8545_device_info *di)

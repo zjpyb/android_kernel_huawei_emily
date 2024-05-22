@@ -45,7 +45,7 @@ struct hmdfs_peer *get_next_con(struct hmdfs_sb_info *sbi,
 		if (node == head)
 			goto done;
 		next_con = container_of(node, struct hmdfs_peer, list);
-		if (next_con->status == NODE_STAT_ONLINE)
+		if (hmdfs_is_node_online_or_shaking(next_con))
 			goto done;
 		current_dev_id = next_con->device_id;
 		next_con = NULL;
@@ -57,7 +57,7 @@ struct hmdfs_peer *get_next_con(struct hmdfs_sb_info *sbi,
 			if (node == head)
 				goto done;
 			next_con = container_of(node, struct hmdfs_peer, list);
-			if (next_con->status == NODE_STAT_ONLINE)
+			if (hmdfs_is_node_online_or_shaking(next_con))
 				goto done;
 			current_dev_id = next_con->device_id;
 			next_con = NULL;

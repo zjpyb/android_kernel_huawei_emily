@@ -31,9 +31,17 @@
 #define NUM_PREALLOC_POST_READ_CTXS	128
 
 #define US_TO_NS		1000
+#define IO_WT_MAX		7
 
 static struct kmem_cache *bio_post_read_ctx_cache;
 static mempool_t *bio_post_read_ctx_pool;
+
+static bool __hmfs_same_bdev(struct f2fs_sb_info *sbi,
+				block_t blk_addr, struct bio *bio)
+{
+	struct block_device *b = hmfs_target_device(sbi, blk_addr, NULL);
+	return bio->bi_disk == b->bd_disk && bio->bi_partno == b->bd_partno;
+}
 
 static bool __is_pu_align_enabled(struct f2fs_sb_info *sbi, int type)
 {
@@ -463,6 +471,9 @@ static void bio_set_oob(struct f2fs_sb_info *sbi,
 		f2fs_bug_on(sbi, fofs & OOB_FSYNC_BIT);
 
 		bio->mas_bio.data_ino = ino;
+		hmfs_inode_set_fofs(sbi, fi,
+				fofs + F2FS_BYTES_TO_BLK(bio->bi_iter.bi_size));
+
 		if ((fi->fsync_task == current) &&
 			(!fi->fsync_atomic ||
 			(fi->oob_last_page &&
@@ -470,178 +481,8 @@ static void bio_set_oob(struct f2fs_sb_info *sbi,
 			fofs |= OOB_FSYNC_BIT;
 
 		bio->mas_bio.data_idx = fofs;
-
 		hmfs_file_check_switch_stream(page->mapping->host,
 				bio->mas_bio.stream_type);
-	}
-}
-
-static bool is_first_bio_in_section_list(struct f2fs_sb_info *sbi,
-					block_t blkaddr, int stream_id)
-{
-	if ((atomic_read(&sbi->last_blkaddr[stream_id]) == NULL_ADDR) &&
-			IS_FIRST_DATA_BLOCK_IN_SEC(sbi, blkaddr) &&
-			(GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, blkaddr)) ==
-			 hmfs_section_order_list_peek(sbi, stream_id)))
-		return true;
-	else
-		return false;
-}
-
-static bool is_legal_bio_for_issue(struct f2fs_sb_info *sbi,
-					block_t blkaddr, int stream_id)
-{
-	if (atomic_read(&sbi->last_blkaddr[stream_id]) == blkaddr ||
-			is_first_bio_in_section_list(sbi, blkaddr, stream_id)) {
-		hmfs_section_order_list_pop(sbi, blkaddr, stream_id);
-		return true;
-	} else {
-		return false;
-	}
-}
-
-static inline struct bio* hmfs_find_and_pop_bio_in_list(struct f2fs_sb_info *sbi,
-					struct bio_list *bl, int stream_id)
-{
-	struct bio *bio_pre = NULL;
-	struct bio *tmp_bio = NULL;
-	block_t tmp_blkaddr;
-
-	bio_list_for_each(tmp_bio, bl) {
-		tmp_blkaddr = hmfs_sector_to_blkaddr(sbi, tmp_bio);
-		if (is_legal_bio_for_issue(sbi, tmp_blkaddr, stream_id)) {
-			/* cannot enter this switch if last_blkaddr == bio_list_top_addr */
-			f2fs_bug_on(sbi, bio_pre == NULL);
-
-			bio_pre->bi_next = tmp_bio->bi_next;
-			tmp_bio->bi_next = NULL;
-			if (bl->tail == tmp_bio)
-				bl->tail = bio_pre;
-			break;
-		}
-		bio_pre = tmp_bio;
-	}
-
-	return tmp_bio;
-}
-
-static inline void __hmfs_submit_write_bio(struct f2fs_sb_info *sbi, struct bio *bio,
-				enum page_type type)
-{
-	block_t start_block = hmfs_sector_to_blkaddr(sbi, bio);
-	block_t tmp_blkaddr, end_blkaddr;
-	int tmp_nr_blk;
-	int stream_id = bio->mas_bio.stream_type;
-	struct bio *bio_pre;
-	struct bio *tmp_bio;
-	struct bio_list *bl;
-
-	f2fs_bug_on(sbi, (stream_id < STREAM_META) ||
-				(stream_id >= STREAM_NR));
-	f2fs_bug_on(sbi, ((stream_id == STREAM_META) &&
-			     (start_block >=  MAIN_BLKADDR(sbi))));
-	f2fs_bug_on(sbi, ((stream_id != STREAM_META) &&
-			     (start_block <  MAIN_BLKADDR(sbi))));
-
-	sbi->order_stat_times[0]++;
-	if (stream_id == STREAM_META) {
-		submit_bio(bio);
-		return;
-	}
-
-	bl = &sbi->bio_list[stream_id];
-	trace_hmfs_bio_list_pre_submit(bio,
-			atomic_read(&sbi->last_blkaddr[stream_id]), type);
-
-	tmp_nr_blk = SECTOR_TO_BLOCK(bio_sectors(bio));
-
-	stat_inc_pu_info(sbi, PU_ALIGN_IO, tmp_nr_blk);
-	if (__is_pu_align_enabled(sbi, CURSEG_T(stream_id))) {
-		block_t pu_align_begin = start_block - MAIN_BLKADDR(sbi);
-		block_t pu_align_len = tmp_nr_blk;
-
-		if (pu_align_begin % sbi->pu_size[SLC_MODE])
-			stat_inc_pu_info(sbi, PU_ALIGN_HEAD, tmp_nr_blk);
-		else if (pu_align_len % sbi->pu_size[SLC_MODE])
-			stat_inc_pu_info(sbi, PU_ALIGN_LEN, tmp_nr_blk);
-	}
-
-	mutex_lock(&sbi->bio_lock[stream_id]);
-	if (is_legal_bio_for_issue(sbi, start_block, stream_id)) {
-		trace_hmfs_bio_list_submit_direct(bio,
-				atomic_read(&sbi->last_blkaddr[stream_id]), type);
-		if (IS_LAST_DATA_BLOCK_IN_SEC(sbi, start_block + tmp_nr_blk - 1, DATA))
-			atomic_set(&sbi->last_blkaddr[stream_id], NULL_ADDR);
-		else
-			atomic_set(&sbi->last_blkaddr[stream_id], start_block + tmp_nr_blk);
-		mutex_unlock(&sbi->bio_lock[stream_id]);
-		submit_bio(bio);
-	} else {
-		trace_hmfs_bio_list_insert(bio,
-			atomic_read(&sbi->last_blkaddr[stream_id]), type);
-		/* insert bio to f2fs_bio_list by stream id */
-		if (bio_list_empty(bl)) {
-			bio_list_add(bl, bio);
-		} else {
-			bio_pre = NULL;
-			bio_list_for_each(tmp_bio, bl) {
-				tmp_blkaddr = hmfs_sector_to_blkaddr(sbi, tmp_bio);
-				if (start_block < tmp_blkaddr)
-					break;
-				bio_pre = tmp_bio;
-			}
-			if (bio_pre == NULL)
-				bio_list_add_head(bl, bio);
-			else
-				bio_list_insert(bl, bio_pre, bio);
-		}
-		mutex_unlock(&sbi->bio_lock[stream_id]);
-	}
-	/* submit bio orderly */
-	while (!bio_list_empty(bl)) {
-		mutex_lock(&sbi->bio_lock[stream_id]);
-		bl = &sbi->bio_list[stream_id];
-
-		if (bio_list_empty(bl)) {
-			mutex_unlock(&sbi->bio_lock[stream_id]);
-			break;
-		}
-		tmp_blkaddr = hmfs_sector_to_blkaddr(sbi, bio_list_peek(bl));
-		end_blkaddr = hmfs_sector_to_blkaddr(sbi, bl->tail);
-		if (is_legal_bio_for_issue(sbi, tmp_blkaddr, stream_id)) {
-			tmp_nr_blk = SECTOR_TO_BLOCK(bio_sectors(bio_list_peek(bl)));
-			tmp_blkaddr += tmp_nr_blk;
-			tmp_bio = bio_list_pop(bl);
-			if (IS_LAST_DATA_BLOCK_IN_SEC(sbi, tmp_blkaddr - 1, DATA))
-				atomic_set(&sbi->last_blkaddr[stream_id], NULL_ADDR);
-			else
-				atomic_set(&sbi->last_blkaddr[stream_id], tmp_blkaddr);
-			mutex_unlock(&sbi->bio_lock[stream_id]);
-
-			f2fs_bug_on(sbi, !tmp_bio);
-			trace_hmfs_bio_list_submit_inlist(tmp_bio,
-				atomic_read(&sbi->last_blkaddr[stream_id]), type);
-			submit_bio(tmp_bio);
-		} else if (!DATA_BLOCK_IN_SAME_SEC(sbi, tmp_blkaddr, end_blkaddr)) {
-			sbi->order_stat_times[1]++;
-			tmp_bio = hmfs_find_and_pop_bio_in_list(sbi, bl, stream_id);
-			if (tmp_bio) {
-				tmp_blkaddr = hmfs_sector_to_blkaddr(sbi, tmp_bio);
-				tmp_nr_blk = SECTOR_TO_BLOCK(bio_sectors(tmp_bio));
-				if (IS_LAST_DATA_BLOCK_IN_SEC(sbi, tmp_blkaddr + tmp_nr_blk - 1, DATA))
-					atomic_set(&sbi->last_blkaddr[stream_id], NULL_ADDR);
-				else
-					atomic_set(&sbi->last_blkaddr[stream_id], tmp_blkaddr + tmp_nr_blk);
-				mutex_unlock(&sbi->bio_lock[stream_id]);
-				submit_bio(tmp_bio);
-			} else {
-				mutex_unlock(&sbi->bio_lock[stream_id]);
-				break;
-			}
-		} else {
-			mutex_unlock(&sbi->bio_lock[stream_id]);
-			break;
-		}
 	}
 }
 
@@ -708,16 +549,14 @@ submit_io:
 
 	if (is_read_io(bio_op(bio))) {
 		trace_hmfs_submit_read_bio(sbi->sb, type, bio);
-		submit_bio(bio);
 	} else {
 #ifdef CONFIG_MAS_BLK
 		if (IS_HMFS_GC_THREAD() && sbi->gc_control_info.iolimit > 0)
 			hmfs_gc_wait(sbi);
 #endif
-
 		trace_hmfs_submit_write_bio(sbi->sb, type, bio);
-		__hmfs_submit_write_bio(sbi, bio, type);
 	}
+	submit_bio(bio);
 }
 
 #ifdef CONFIG_HMFS_CHECK_FS
@@ -747,7 +586,7 @@ static void hmfs_check_bio_crossed(struct f2fs_bio_info *io)
 			return;
 	}
 
-	start_blkaddr +=  SECTOR_TO_BLOCK(bio->bi_iter.bi_sector);
+	start_blkaddr += SECTOR_TO_BLOCK(bio->bi_iter.bi_sector);
 	f2fs_bug_on(sbi, fio->new_blkaddr != start_blkaddr);
 
 	if (bio_pages <= 1) {
@@ -865,6 +704,19 @@ static bool has_merged_page(struct f2fs_sb_info *sbi, struct inode *inode,
 	return ret;
 }
 
+/*
+ * Avoid FS hold bio too long to exceeding block timeout.
+ */
+void submit_merged_bio_quickly_fn(struct work_struct *work)
+{
+	struct f2fs_bio_info *io =
+		container_of(work, struct f2fs_bio_info, io_expire_work.work);
+
+	down_write(&io->io_rwsem);
+	__submit_merged_bio(io);
+	up_write(&io->io_rwsem);
+}
+
 static void __hmfs_submit_merged_write(struct f2fs_sb_info *sbi,
 				enum page_type type, enum temp_type temp)
 {
@@ -872,6 +724,7 @@ static void __hmfs_submit_merged_write(struct f2fs_sb_info *sbi,
 	struct f2fs_bio_info *io = sbi->write_io[btype] + temp;
 
 	down_write(&io->io_rwsem);
+	cancel_delayed_work(&io->io_expire_work);
 
 	/* change META to META_FLUSH in the checkpoint procedure */
 	if (type >= META_FLUSH) {
@@ -1204,6 +1057,13 @@ out:
 	if (is_sbi_flag_set(sbi, SBI_IS_SHUTDOWN) ||
 				f2fs_is_checkpoint_ready(sbi))
 		__submit_merged_bio(io);
+
+	if (io->bio)
+		mod_delayed_work(sbi->hmfs_io_expire_workqueue,
+				&io->io_expire_work,
+				msecs_to_jiffies(IO_WT_MAX));
+	else
+		cancel_delayed_work(&io->io_expire_work);
 	up_write(&io->io_rwsem);
 }
 
@@ -1775,8 +1635,12 @@ next_dnode:
 	end_offset = ADDRS_PER_PAGE(dn.node_page, inode);
 
 next_block:
-	if (!io_order_locked && create && lfs_mode && flag == F2FS_GET_BLOCK_DIO) {
-		down_write(&sbi->io_order_lock);
+	if (!io_order_locked && create && lfs_mode &&
+		flag == F2FS_GET_BLOCK_DIO) {
+		if (maxblocks == 1)
+			down_read(&sbi->io_order_lock);
+		else
+			down_write(&sbi->io_order_lock);
 		io_order_locked = true;
 	}
 
@@ -1929,8 +1793,13 @@ sync_out:
 	f2fs_put_dnode(&dn);
 unlock_out:
 	if (create) {
-		if (io_order_locked)
-			up_write(&sbi->io_order_lock);
+		if (io_order_locked) {
+			if (maxblocks == 1)
+				up_read(&sbi->io_order_lock);
+			else
+				up_write(&sbi->io_order_lock);
+		}
+
 		(void)__hmfs_do_map_lock(sbi, flag, false, lock2);
 
 		if (!lfs_mode || flag != F2FS_GET_BLOCK_DIO)
@@ -1938,6 +1807,13 @@ unlock_out:
 	}
 out:
 	trace_hmfs_map_blocks(inode, map, err);
+	/*
+	 * Return ok when some blocks have been allocated to
+	 * avoid submitting discontinuous bio to device in LFS mode.
+	 */
+	if (err && create && lfs_mode &&
+		(flag == F2FS_GET_BLOCK_DIO) && (map->m_len > 0))
+		err = 0;
 	return err;
 }
 
@@ -2944,6 +2820,7 @@ static int f2fs_write_cache_pages(struct address_space *mapping,
 	int nwritten = 0;
 	struct inode *inode = mapping->host;
 	struct f2fs_inode_info *fi = F2FS_I(inode);
+	bool in_atomic = false;
 
 	pagevec_init(&pvec, 0);
 
@@ -2974,8 +2851,10 @@ static int f2fs_write_cache_pages(struct address_space *mapping,
 retry:
 	if (wbc->sync_mode == WB_SYNC_ALL || wbc->tagged_writepages)
 		tag_pages_for_writeback(mapping, index, end);
-	if (fi->fsync_task == current && fi->fsync_atomic)
+	if (fi->fsync_task == current && fi->fsync_atomic) {
 		fi->oob_last_page = last_fsync_data(mapping);
+		in_atomic = true;
+	}
 
 	done_index = index;
 	while (!done && (index <= end)) {
@@ -3084,7 +2963,7 @@ continue_unlock:
 			fi->has_wb = true;
 	}
 
-	if (fi->oob_last_page) {
+	if (in_atomic && fi->oob_last_page) {
 		put_page(fi->oob_last_page);
 		fi->oob_last_page = NULL;
 	}
@@ -3905,6 +3784,7 @@ static void __set_unistore_bio_param(struct bio *bio, struct inode *inode,
 		loff_t foff)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
 	int rw_hint = hmfs_rw_hint_to_seg_type(sbi, inode->i_write_hint);
 	bool write = (bio_op(bio) == REQ_OP_WRITE);
 
@@ -3926,6 +3806,8 @@ static void __set_unistore_bio_param(struct bio *bio, struct inode *inode,
 	if (hmfs_is_oob_enable(sbi)) {
 		bio->mas_bio.data_ino = inode->i_ino;
 		/* DIO: no atomic, recovery all oob */
+		hmfs_inode_set_fofs(sbi, fi,
+				F2FS_BYTES_TO_BLK(foff + bio->bi_iter.bi_size));
 		bio->mas_bio.data_idx = (F2FS_BYTES_TO_BLK(foff) | OOB_FSYNC_BIT);
 		hmfs_file_check_switch_stream(inode, bio->mas_bio.stream_type);
 	}
@@ -3937,7 +3819,6 @@ static void __set_unistore_bio_param(struct bio *bio, struct inode *inode,
 static void f2fs_submit_direct(struct bio *bio, struct inode *inode,
 			       loff_t foff)
 {
-	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_crypt_dio *dio;
 	struct fscrypt_ctx *ctx;
 	/*lint -save -e737*/
@@ -3977,14 +3858,13 @@ static void f2fs_submit_direct(struct bio *bio, struct inode *inode,
 
 	bio->bi_private = dio;
 
+#ifdef CONFIG_BLK_DEV_THROTTLING
 	current->wb_stat.bios++;
-
-	if (write) {
+#endif
+	if (write)
 		__set_unistore_bio_param(bio, inode, foff);
-		__hmfs_submit_write_bio(sbi, bio, DATA);
-	} else {
-		submit_bio(bio);
-	}
+
+	submit_bio(bio);
 
 	return;
 
@@ -4002,17 +3882,14 @@ static void hmfs_submit_direct2(struct bio *bio, struct inode *inode,
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	bool write = (bio_op(bio) == REQ_OP_WRITE);
 
-	__set_unistore_bio_param(bio, inode, foff);
-
-	hmfs_submit_merged_write(sbi, DATA);
-
-	current->wb_stat.bios++;
-
 	if (write) {
-		__hmfs_submit_write_bio(sbi, bio, DATA);
-	} else {
-		submit_bio(bio);
+		__set_unistore_bio_param(bio, inode, foff);
+		hmfs_submit_merged_write(sbi, DATA);
 	}
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	current->wb_stat.bios++;
+#endif
+	submit_bio(bio);
 
 	return;
 }
@@ -4033,6 +3910,8 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	bool do_opu = false;
 	bool is_aio = !is_sync_kiocb(iocb);
 
+	long old_nice = task_nice(current);
+
 	err = check_direct_IO(inode, iter, offset);
 	if (err)
 		return err < 0 ? err : 0;
@@ -4044,8 +3923,12 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 
 	trace_hmfs_direct_IO_enter(inode, offset, count, rw);
 
-	if (rw == WRITE)
+	if (rw == WRITE) {
 		hmfs_io_throttle(sbi, count);
+
+		if (old_nice > 0)
+			set_user_nice(current, 0);
+	}
 
 	if (trace_android_fs_dataread_start_enabled() &&
 	    (rw == READ)) {
@@ -4071,11 +3954,11 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	}
 	if (rw == WRITE && whint_mode == WHINT_MODE_OFF)
 		iocb->ki_hint = WRITE_LIFE_NOT_SET;
-
+#ifdef CONFIG_BLK_DEV_THROTTLING
 	current->wb_stat.bios = 0;
 	blk_throtl_get_quota(inode->i_sb->s_bdev, PAGE_SIZE,
 			msecs_to_jiffies(100), true);
-
+#endif
 	if (iocb->ki_flags & IOCB_NOWAIT) {
 		if (!down_read_trylock(&fi->i_gc_rwsem[rw])) {
 			iocb->ki_hint = hint;
@@ -4136,19 +4019,25 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 		}
 	}
 out:
+#ifdef CONFIG_BLK_DEV_THROTTLING
 	if (current->wb_stat.bios)
 		blk_throtl_get_quotas(inode->i_sb->s_bdev,
 				PAGE_SIZE,
 				msecs_to_jiffies(100),
 				true,
 				current->wb_stat.bios - 1);
-
+#endif
 	if (trace_android_fs_dataread_start_enabled() &&
 	    (rw == READ))
 		trace_android_fs_dataread_end(inode, offset, count);
 	if (trace_android_fs_datawrite_start_enabled() &&
 	    (rw == WRITE))
 		trace_android_fs_datawrite_end(inode, offset, count);
+
+	if (rw == WRITE) {
+		if (task_nice(current) == 0)
+			set_user_nice(current, old_nice);
+	}
 
 	trace_hmfs_direct_IO_exit(inode, offset, count, rw, err);
 

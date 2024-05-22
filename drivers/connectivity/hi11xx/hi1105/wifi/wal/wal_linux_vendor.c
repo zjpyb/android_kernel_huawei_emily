@@ -1270,8 +1270,7 @@ OAL_STATIC int32_t wal_ioctl_send_wps_p2p_ie_cfg_event(oal_net_device_stru *net_
     WAL_WRITE_MSG_HDR_INIT(write_msg, WLAN_CFGID_SET_WPS_P2P_IE, sizeof(oal_w2h_app_ie_stru));
 
     /* 发送消息 */
-    ret = wal_send_cfg_event(net_dev, WAL_MSG_TYPE_WRITE,
-                             WAL_MSG_WRITE_MSG_HDR_LENGTH + sizeof(oal_w2h_app_ie_stru),
+    ret = wal_send_cfg_event(net_dev, WAL_MSG_TYPE_WRITE, WAL_MSG_WRITE_MSG_HDR_LENGTH + sizeof(oal_w2h_app_ie_stru),
                              (uint8_t *)write_msg, OAL_TRUE, &rsp_msg);
     if ((ret != OAL_SUCC) || (rsp_msg == NULL)) {
         oam_error_log1(0, OAM_SF_P2P, "{wal_ioctl_set_wps_p2p_ie:: wal_alloc_cfg_event err %d!}", ret);
@@ -1813,18 +1812,18 @@ OAL_STATIC int32_t wal_ioctl_priv_cmd_p2p_set_ps(oal_net_device_stru *pst_net_de
     int32_t l_ret;
     uint32_t skip = CMD_P2P_SET_PS_LEN + 1;
 
-        mac_cfg_p2p_ops_param_stru st_p2p_ops_param;
-        l_ret = wal_ioctl_judge_input_param_length(st_priv_cmd, CMD_P2P_SET_PS_LEN, sizeof(st_p2p_ops_param));
-        if (l_ret != OAL_SUCC) {
-            oam_error_log1(0, OAM_SF_ANY, "{wal_vendor_priv_cmd::CMD_P2P_SET_PS param len is too short.need %d.}",
-                skip + sizeof(st_p2p_ops_param));
-            return -OAL_EFAIL;
-        }
-        *l_memcpy_ret += memcpy_s(&st_p2p_ops_param, sizeof(mac_cfg_p2p_ops_param_stru),
-            pc_command + skip, sizeof(mac_cfg_p2p_ops_param_stru));
-        if (*l_memcpy_ret != EOK) {
-            oam_error_log0(0, OAM_SF_ANY, "wal_ioctl_priv_cmd_p2p_set_ps::memcpy fail!");
-        }
+    mac_cfg_p2p_ops_param_stru st_p2p_ops_param;
+    l_ret = wal_ioctl_judge_input_param_length(st_priv_cmd, CMD_P2P_SET_PS_LEN, sizeof(st_p2p_ops_param));
+    if (l_ret != OAL_SUCC) {
+        oam_error_log1(0, OAM_SF_ANY, "{wal_vendor_priv_cmd::CMD_P2P_SET_PS param len is too short.need %d.}",
+            skip + sizeof(st_p2p_ops_param));
+        return -OAL_EFAIL;
+    }
+    *l_memcpy_ret += memcpy_s(&st_p2p_ops_param, sizeof(mac_cfg_p2p_ops_param_stru),
+        pc_command + skip, sizeof(mac_cfg_p2p_ops_param_stru));
+    if (*l_memcpy_ret != EOK) {
+        oam_error_log0(0, OAM_SF_ANY, "wal_ioctl_priv_cmd_p2p_set_ps::memcpy fail!");
+    }
 
     return wal_ioctl_set_p2p_ops(pst_net_dev, &st_p2p_ops_param);
 }
@@ -1872,11 +1871,10 @@ OAL_STATIC int32_t wal_ioctl_priv_cmd_set_power_mgmt_on(int8_t *pc_command)
 
     return OAL_SUCC;
 }
-OAL_STATIC int32_t wal_ioctl_priv_cmd_get_capa_dbdc(int8_t *pc_command,
+OAL_STATIC int32_t wal_ioctl_priv_cmd_get_capa_dbdc(int8_t *command,
     wal_wifi_priv_cmd_stru st_priv_cmd, int32_t *l_memcpy_ret, oal_ifreq_stru *pst_ifr)
 {
     int32_t l_ret;
-    int32_t cmd_len = CMD_CAPA_DBDC_SUPP_LEN;
     int32_t ret_len;
     int32_t l_memset_ret;
 
@@ -1886,27 +1884,30 @@ OAL_STATIC int32_t wal_ioctl_priv_cmd_get_capa_dbdc(int8_t *pc_command,
     }
 
     /* 将buf清零 */
-    ret_len = oal_max(st_priv_cmd.total_len, cmd_len);
-    l_memset_ret = memset_s(pc_command, (uint32_t)(ret_len + 1), 0, (uint32_t)(ret_len + 1));
+    ret_len = oal_max(st_priv_cmd.total_len, CMD_CAPA_DBDC_SUPP_LEN);
+    l_memset_ret = memset_s(command, (uint32_t)(ret_len + 1), 0, (uint32_t)(ret_len + 1));
     if (l_memset_ret != EOK) {
         oam_error_log0(0, OAM_SF_ANY, "wal_ioctl_priv_cmd_get_capa_dbdc::memset fail!");
     }
-    pc_command[ret_len] = '\0';
+    command[ret_len] = '\0';
 
     /* hi1103 support DBDC */
-    *l_memcpy_ret += memcpy_s(pc_command,
-        (uint32_t)(ret_len + 1), CMD_CAPA_DBDC_SUPP, CMD_CAPA_DBDC_SUPP_LEN);
+    if (g_wlan_priv_dbdc_radio_cap == OAL_TRUE) { // 支持dbdc
+        *l_memcpy_ret += memcpy_s(command, (uint32_t)(ret_len + 1), CMD_CAPA_DBDC_SUPP, CMD_CAPA_DBDC_SUPP_LEN);
+    } else {
+        *l_memcpy_ret += memcpy_s(command, (uint32_t)(ret_len + 1), CMD_CAPA_DBDC_NOT_SUPP, CMD_CAPA_DBDC_NOT_SUPP_LEN);
+    }
+
     if (*l_memcpy_ret != EOK) {
         oam_error_log0(0, OAM_SF_ANY, "wal_ioctl_priv_cmd_get_capa_dbdc::memcpy fail!");
     }
 
-    l_ret = oal_copy_to_user(pst_ifr->ifr_data + BYTE_OFFSET_8, pc_command, ret_len);
+    l_ret = oal_copy_to_user(pst_ifr->ifr_data + BYTE_OFFSET_8, command, ret_len);
     if (oal_unlikely(l_ret != OAL_SUCC)) {
         oam_error_log0(0, OAM_SF_ANY, "wal_vendor_priv_cmd:CMD_GET_CAPA_DBDC Fail to copy ioctl_data to user!");
         return -OAL_EFAIL;
     }
-    oam_warning_log2(0, OAM_SF_ANY, "{wal_vendor_priv_cmd::CMD_GET_CAPA_DBDC reply len:%d, ret:%d}",
-        OAL_STRLEN(pc_command), l_ret);
+    oam_warning_log1(0, OAM_SF_ANY, "{wal_vendor_priv_cmd::CMD_GET_CAPA_DBDC reply len:%d}", OAL_STRLEN(command));
 
     return l_ret;
 }

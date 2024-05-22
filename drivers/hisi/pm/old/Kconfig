@@ -87,4 +87,11 @@ config SR_PM_DEBUG
 	default n
 	help
 	  PM stub
+
+config SR_LITE
+	bool "PM lite chip"
+	depends on SUSPEND
+	default n
+	help
+	  The chip has lite feature
 endmenu

@@ -200,6 +200,9 @@ struct bio {
 	struct bvec_iter ori_bi_iter;
 	struct list_head buf_bio_list_node;
 	struct list_head rec_bio_list_node;
+	unsigned int recovery_page_cnt;
+	unsigned int max_recovery_num;
+	bool non_anon_page_flag;
 #endif
 #endif
 
@@ -393,6 +396,7 @@ enum mas_req_flag_bits {
 	__MAS_REQ_GC,	/* gc IO - unistore */
 	__MAS_REQ_LBA,	/* expected LBA - unistore */
 	__MAS_REQ_RECOVERY,	/* recovery after device reset */
+	__MAS_REQ_RESET, /* reset powron IO */
 };
 #endif
 
@@ -422,6 +426,7 @@ enum mas_req_flag_bits {
 #define MAS_REQ_GC		(1ULL << __MAS_REQ_GC)
 #define MAS_REQ_LBA		(1ULL << __MAS_REQ_LBA)
 #define MAS_REQ_RECOVERY	(1ULL << __MAS_REQ_RECOVERY)
+#define MAS_REQ_RESET		(1ULL << __MAS_REQ_RESET)
 #endif
 
 #define REQ_NOUNMAP		(1ULL << __REQ_NOUNMAP)

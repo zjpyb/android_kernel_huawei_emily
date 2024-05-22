@@ -24,8 +24,13 @@ uint8_t hmdfs_adapter_read_dentry_flag(struct inode *inode)
 	if (!dentry)
 		return ret;
 
+#ifndef CONFIG_HMDFS_XATTR_NOSECURITY_SUPPORT
 	if (__vfs_getxattr(dentry, inode, DIRECTORY_TYPE_XATTR_KEY, &ret,
 			   sizeof(ret)) < 0)
+#else
+	if (__vfs_getxattr(dentry, inode, DIRECTORY_TYPE_XATTR_KEY, &ret,
+			   sizeof(ret), XATTR_NOSECURITY) < 0)
+#endif
 		ret = ADAPTER_OTHER_DENTRY_FLAG;
 
 	dput(dentry);
@@ -52,14 +57,18 @@ int hmdfs_adapter_persist_dentry_flag(struct dentry *dentry,
 int adapter_identify_dentry_flag(struct inode *dir, struct dentry *dentry,
 				 struct dentry *lower_dentry)
 {
-	if (hmdfs_adapter_read_dentry_flag(hmdfs_i(dir)->lower_inode) ==
-	    ADAPTER_PHOTOKIT_DENTRY_FLAG) {
+	int dentry_xattr_flag;
+
+	dentry_xattr_flag =
+		hmdfs_adapter_read_dentry_flag(hmdfs_i(dir)->lower_inode);
+	if (dentry_xattr_flag != ADAPTER_OTHER_DENTRY_FLAG) {
 		hmdfs_adapter_persist_dentry_flag(lower_dentry,
-						  ADAPTER_PHOTOKIT_DENTRY_FLAG);
+						  dentry_xattr_flag);
 		hmdfs_i(d_inode(dentry))->adapter_dentry_flag =
-			ADAPTER_PHOTOKIT_DENTRY_FLAG;
-		return ADAPTER_PHOTOKIT_DENTRY_FLAG;
+			dentry_xattr_flag;
+		return dentry_xattr_flag;
 	}
+
 	hmdfs_i(d_inode(dentry))->adapter_dentry_flag =
 		ADAPTER_OTHER_DENTRY_FLAG;
 	hmdfs_adapter_persist_dentry_flag(lower_dentry,

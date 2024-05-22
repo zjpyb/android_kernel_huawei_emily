@@ -588,7 +588,7 @@ int emcom_xengine_start_mpip(const char *data, uint16_t len)
 		return -EINVAL;
 	}
 	mutex_lock(&g_mpip_mutex);
-	err = memcpy_s(g_ifacename, sizeof(char) * IFNAMSIZ, data, len);
+	err = strncpy_s(g_ifacename, sizeof(char) * IFNAMSIZ, data, len);
 	if (err != EOK)
 		emcom_loge("emcom_xengine_start_mpip memcpy failed");
 	g_mpip_start = true;
@@ -968,7 +968,7 @@ void emcom_xengine_active_ccalg(const uint8_t *data, uint16_t len)
 	struct emcom_xengine_ccalg_config_data *ccalg_config = NULL;
 
 	/* input param check */
-	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
+	if ((data == NULL) || (len != sizeof(struct emcom_xengine_ccalg_config_data))) {
 		emcom_loge("CCAlg interface name or length %u is error", len);
 		return;
 	}
@@ -1015,7 +1015,7 @@ void emcom_xengine_deactive_ccalg(const uint8_t *data, uint16_t len)
 	uid_t uid;
 	int8_t index;
 
-	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
+	if ((data == NULL) || (len != sizeof(uid_t))) {
 		emcom_loge("CCAlg interface name or length %u is error", len);
 		return;
 	}
@@ -1383,24 +1383,26 @@ int emcom_xengine_setsockflag(struct sock *sk, const char __user *optval, int op
 }
 
 static LIST_HEAD(bind2device_list);
+static DEFINE_SPINLOCK(bind2device_list_lock);
 static int emcom_xengine_bind2device_uid(struct emcom_xengine_bind2device_node *cfg)
 {
 	struct emcom_xengine_bind2device_node *node = NULL;
 	bool is_add_list = false;
 	int err;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(node, &bind2device_list, list) {
+	spin_lock(&bind2device_list_lock);
+	list_for_each_entry(node, &bind2device_list, list) {
 		if (node->uid == cfg->uid) {
 			if (cfg->add) {
 				err = strncpy_s(node->iface_name, IFNAMSIZ, cfg->iface_name, IFNAMSIZ - 1);
+				spin_unlock(&bind2device_list_lock);
 				if (err != EOK)
 					emcom_loge("strncpy_s failed");
-				rcu_read_unlock();
 				return is_add_list;
 			} else {
 				list_del_rcu(&node->list);
-				rcu_read_unlock();
+				spin_unlock(&bind2device_list_lock);
+				synchronize_rcu();
 				kfree(node);
 				return is_add_list;
 			}
@@ -1411,7 +1413,7 @@ static int emcom_xengine_bind2device_uid(struct emcom_xengine_bind2device_node *
 		list_add_rcu(&cfg->list, &bind2device_list);
 		is_add_list = true;
 	}
-	rcu_read_unlock();
+	spin_unlock(&bind2device_list_lock);
 	return is_add_list;
 }
 

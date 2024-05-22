@@ -243,3 +243,7 @@ obj-$(CONFIG_ICS_DRIVER) += ics_drivers/
 
 obj-y += hisi_sim_adapt/
 obj-$(CONFIG_HUAWEI_EMCOM) += emcom/
+
+ifeq ($(BUILD_WITH_AQ), true)
+obj-$(CONFIG_HUAWEI_GLOBAL_TASK_MANAGER) += hwgtm/
+endif

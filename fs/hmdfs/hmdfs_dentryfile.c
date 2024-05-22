@@ -27,6 +27,15 @@
 #define HMDFS_HASH_COL_BIT ((0x1ULL) << 63)
 #define DELTA		   0x9E3779B9
 
+struct hmdfs_rename_ctx {
+	struct path path_dst;
+	struct path path_old;
+	struct path path_new;
+	struct dentry *old_dentry;
+	struct dentry *new_dentry;
+	struct dentry *trap;
+};
+
 static bool is_dot_dotdot(const unsigned char *name, __u32 len)
 {
 	if (len == 1 && name[0] == '.')
@@ -178,6 +187,31 @@ static int prepend_name(char **buffer, int *buflen, const struct qstr *name)
 	return 0;
 }
 
+static int hmdfs_prepend_name(struct dentry *dentry, char **retval, char **end,
+			      int *len, int hmdfs_root_dentry_type)
+{
+	int error = 0;
+	struct hmdfs_dentry_info *di = hmdfs_d(dentry);
+	while (di->dentry_type != hmdfs_root_dentry_type) {
+		struct dentry *parent = dentry->d_parent;
+
+		prefetch(parent);
+		error = prepend_name(end, len, &dentry->d_name);
+		if (error)
+			return error;
+		*retval = *end;
+		dentry = parent;
+		di = hmdfs_d(dentry);
+		if (!di) {
+			hmdfs_err("get relative path failed");
+			return -ENOENT;
+		}
+		di->time = jiffies;
+	}
+	return error;
+}
+
+
 static char *hmdfs_dentry_path_raw(struct dentry *d, char *buf, int buflen)
 {
 	struct dentry *dentry = NULL;
@@ -188,16 +222,15 @@ static char *hmdfs_dentry_path_raw(struct dentry *d, char *buf, int buflen)
 	int root_flag = 0;
 	int error = 0;
 	struct hmdfs_dentry_info *di = hmdfs_d(d);
-	int hmdfs_root_dentry_type = 0;
+	int hmdfs_root_dentry_type = hmdfs_get_root_dentry_type(d, &root_flag);
 
-	di->time = jiffies;
-	hmdfs_root_dentry_type = hmdfs_get_root_dentry_type(d, &root_flag);
 	if (hmdfs_root_dentry_type < 0)
 		return NULL;
 	if (root_flag) {
 		strcpy(buf, "/");
 		return buf;
 	}
+	di->time = jiffies;
 	rcu_read_lock();
 restart:
 	dentry = d;
@@ -209,18 +242,8 @@ restart:
 	retval = end - 1;
 	*retval = '/';
 	read_seqbegin_or_lock(&rename_lock, &seq);
-	while (di->dentry_type != hmdfs_root_dentry_type) {
-		struct dentry *parent = dentry->d_parent;
-
-		prefetch(parent);
-		error = prepend_name(&end, &len, &dentry->d_name);
-		if (error)
-			break;
-		retval = end;
-		dentry = parent;
-		di = hmdfs_d(dentry);
-		di->time = jiffies;
-	}
+	error = hmdfs_prepend_name(dentry, &retval, &end, &len,
+				   hmdfs_root_dentry_type);
 	if (!(seq & 1))
 		rcu_read_unlock();
 	if (need_seqretry(&rename_lock, seq)) {
@@ -229,10 +252,8 @@ restart:
 	}
 	done_seqretry(&rename_lock, seq);
 	if (error)
-		goto Elong;
+		return ERR_PTR(-ENAMETOOLONG);
 	return retval;
-Elong:
-	return ERR_PTR(-ENAMETOOLONG);
 }
 
 char *hmdfs_get_dentry_relative_path(struct dentry *dentry)
@@ -440,6 +461,32 @@ err_root_path:
 	return filp;
 }
 
+static int read_one_dentry(struct dir_context *ctx,
+			   struct hmdfs_dentry_group *dentry_group,
+			   unsigned long pos, int index)
+{
+	int len = le16_to_cpu(dentry_group->nsl[index].namelen);
+	int file_type = 0;
+
+	if (!test_bit_le(index, dentry_group->bitmap) || len == 0)
+		return 0;
+
+	if (S_ISDIR(le16_to_cpu(dentry_group->nsl[index].i_mode)))
+		file_type = DT_DIR;
+	else if (S_ISREG(le16_to_cpu(dentry_group->nsl[index].i_mode)))
+		file_type = DT_REG;
+	else if (S_ISLNK(le16_to_cpu(dentry_group->nsl[index].i_mode)))
+		file_type = DT_LNK;
+
+	if (!dir_emit(ctx, dentry_group->filename[index], len,
+		      le64_to_cpu(dentry_group->nsl[index].i_ino), file_type)) {
+		ctx->pos = pos;
+		return 1;
+	}
+
+	return 0;
+}
+
 /* read all dentry in target path directory */
 int read_dentry(struct hmdfs_sb_info *sbi, char *file_name,
 		struct dir_context *ctx)
@@ -455,12 +502,11 @@ int read_dentry(struct hmdfs_sb_info *sbi, char *file_name,
 	int i, j;
 	const struct cred *saved_cred;
 
-	saved_cred = hmdfs_override_fsids(false);
+	saved_cred = hmdfs_override_fsids(sbi, false);
 	if (!saved_cred) {
 		hmdfs_err("prepare cred failed!");
 		return -ENOMEM;
 	}
-
 
 	if (!file_name)
 		return -EINVAL;
@@ -481,30 +527,8 @@ int read_dentry(struct hmdfs_sb_info *sbi, char *file_name,
 		hmdfs_metainfo_read(sbi, handler, dentry_group,
 				    sizeof(struct hmdfs_dentry_group), i);
 		for (j = offset; j < DENTRY_PER_GROUP; j++) {
-			int len;
-			int file_type = 0;
-			bool is_continue;
-
-			len = le16_to_cpu(dentry_group->nsl[j].namelen);
-			if (!test_bit_le(j, dentry_group->bitmap) || len == 0)
-				continue;
-
-			if (S_ISDIR(le16_to_cpu(dentry_group->nsl[j].i_mode)))
-				file_type = DT_DIR;
-			else if (S_ISREG(le16_to_cpu(
-					 dentry_group->nsl[j].i_mode)))
-				file_type = DT_REG;
-			else if (S_ISLNK(le16_to_cpu(
-					 dentry_group->nsl[j].i_mode)))
-				file_type = DT_LNK;
-
 			pos = hmdfs_set_pos(0, i, j);
-			is_continue = dir_emit(
-				ctx, dentry_group->filename[j], len,
-				le64_to_cpu(dentry_group->nsl[j].i_ino),
-				file_type);
-			if (!is_continue) {
-				ctx->pos = pos;
+			if (read_one_dentry(ctx, dentry_group, pos, j)) {
 				iterate_result = 1;
 				goto done;
 			}
@@ -686,10 +710,11 @@ struct hmdfs_dentry *hmdfs_find_dentry(struct dentry *child_dentry,
 }
 
 void update_dentry(struct hmdfs_dentry_group *d, struct dentry *child_dentry,
-		   struct inode *inode, __u32 name_hash, unsigned int bit_pos)
+		   struct inode *inode, struct super_block *hmdfs_sb,
+		   __u32 name_hash, unsigned int bit_pos)
 {
 	struct hmdfs_dentry *de;
-	struct hmdfs_dentry_info *gdi = hmdfs_d(child_dentry);
+	struct hmdfs_dentry_info *gdi;
 	const struct qstr name = child_dentry->d_name;
 	int slots = get_dentry_slots(name.len);
 	int i;
@@ -701,6 +726,7 @@ void update_dentry(struct hmdfs_dentry_group *d, struct dentry *child_dentry,
 	 * and we should use the upper ino and generation to fill
 	 * the dentryfile.
 	 */
+	gdi = hmdfs_sb == child_dentry->d_sb ? hmdfs_d(child_dentry) : NULL;
 	if (!gdi && S_ISLNK(d_inode(child_dentry)->i_mode)) {
 		ino = d_inode(child_dentry)->i_ino;
 		igen = d_inode(child_dentry)->i_generation;
@@ -843,7 +869,8 @@ find:
 	goto find;
 add:
 	pos = get_dentry_group_pos(bidx);
-	update_dentry(dentry_blk, child_dentry, inode, namehash, bit_pos);
+	update_dentry(dentry_blk, child_dentry, inode, sbi->sb, namehash,
+		      bit_pos);
 	size = cache_file_write(sbi, file, dentry_blk,
 				sizeof(struct hmdfs_dentry_group), &pos);
 	if (size != sizeof(struct hmdfs_dentry_group))
@@ -1172,7 +1199,6 @@ out:
 static struct file *insert_cfn(struct hmdfs_sb_info *sbi, const char *filename,
 	       const char *path, const char *cid, bool server)
 {
-	const struct cred *old_cred = NULL;
 	struct cache_file_node *cfn = NULL;
 	struct cache_file_node *exist = NULL;
 	struct list_head *head = NULL;
@@ -1182,9 +1208,7 @@ static struct file *insert_cfn(struct hmdfs_sb_info *sbi, const char *filename,
 	if (!cfn)
 		return ERR_PTR(-ENOMEM);
 
-	old_cred = hmdfs_override_creds(sbi->system_cred);
 	filp = filp_open(filename, O_RDWR | O_LARGEFILE, 0);
-	hmdfs_revert_creds(old_cred);
 	if (IS_ERR(filp)) {
 		hmdfs_err("open file failed, err=%ld", PTR_ERR(filp));
 		goto out;
@@ -1592,8 +1616,13 @@ static void store_one(const char *name, struct cache_file_callback *cb)
 	if (!kvalue)
 		goto out_file;
 
+#ifndef CONFIG_HMDFS_XATTR_NOSECURITY_SUPPORT
 	error = __vfs_getxattr(file_dentry(file), file_inode(file),
 			       DENTRY_FILE_XATTR_NAME, kvalue, PATH_MAX);
+#else
+	error = __vfs_getxattr(file_dentry(file), file_inode(file),
+			       DENTRY_FILE_XATTR_NAME, kvalue, PATH_MAX, XATTR_NOSECURITY);
+#endif
 	if (error <= 0 || error >= PATH_MAX) {
 		hmdfs_err("getxattr return: %ld", error);
 		goto out_kvalue;
@@ -2257,7 +2286,6 @@ int hmdfs_clear_cache_dents(struct dentry *dentry, bool remove_cache)
 	 * under this dentry
 	 */
 	path = hmdfs_get_dentry_relative_path(dentry);
-
 	if (unlikely(!path)) {
 		hmdfs_err("get relative path failed");
 		return 0;
@@ -2562,103 +2590,132 @@ unlock_out:
 	return err;
 }
 
+static int hmdfs_check_rename(struct hmdfs_rename_ctx *ctx, unsigned flags)
+{
+	/* source should not be ancestor of target */
+	if (ctx->old_dentry == ctx->trap)
+		return -EINVAL;
+
+	/*
+	 * Exchange rename is not supported, thus target should not be an
+	 * ancestor of source.
+	 */
+	if (ctx->trap == ctx->new_dentry)
+		return -ENOTEMPTY;
+
+	if (d_is_positive(ctx->new_dentry) && (flags & RENAME_NOREPLACE))
+		return -EEXIST;
+
+	/* Don't support rename symlink */
+	if (hm_islnk(hmdfs_d(ctx->old_dentry)->file_type) ||
+	    hm_islnk(hmdfs_d(ctx->new_dentry)->file_type))
+		return -ENOTSUPP;
+
+	return 0;
+}
+
+static struct hmdfs_rename_ctx *
+init_rename_ctx(struct hmdfs_sb_info *sbi, const char *oldpath,
+		const char *oldname, const char *newpath, const char *newname)
+{
+	int err = 0;
+	struct hmdfs_rename_ctx *ctx = kmalloc(sizeof(*ctx), GFP_KERNEL);
+
+	if (!ctx)
+		return ERR_PTR(-ENOMEM);
+
+	err = kern_path(sbi->local_dst, 0, &ctx->path_dst);
+	if (err) {
+		hmdfs_err("kern_path for local dst failed %d", err);
+		goto free;
+	}
+
+	err = vfs_path_lookup(ctx->path_dst.dentry, ctx->path_dst.mnt, oldpath,
+			      0, &ctx->path_old);
+	if (err)
+		goto put_path_dst;
+
+	err = vfs_path_lookup(ctx->path_dst.dentry, ctx->path_dst.mnt, newpath,
+			      0, &ctx->path_new);
+	if (err)
+		goto put_path_old;
+
+	err = mnt_want_write(ctx->path_dst.mnt);
+	if (err)
+		goto put_path_new;
+
+	ctx->trap = lock_rename(ctx->path_new.dentry, ctx->path_old.dentry);
+	ctx->old_dentry = lookup_one_len(oldname, ctx->path_old.dentry,
+					 strlen(oldname));
+	if (IS_ERR(ctx->old_dentry)) {
+		err = PTR_ERR(ctx->old_dentry);
+		hmdfs_info("lookup old dentry failed, err %d", err);
+		goto unlock;
+	}
+
+	ctx->new_dentry = lookup_one_len(newname, ctx->path_new.dentry,
+					 strlen(newname));
+	if (IS_ERR(ctx->new_dentry)) {
+		err = PTR_ERR(ctx->new_dentry);
+		hmdfs_info("lookup new dentry failed, err %d", err);
+		goto put_old_dentry;
+	}
+	return ctx;
+
+put_old_dentry:
+	dput(ctx->old_dentry);
+unlock:
+	unlock_rename(ctx->path_new.dentry, ctx->path_old.dentry);
+	mnt_drop_write(ctx->path_dst.mnt);
+put_path_new:
+	path_put(&ctx->path_new);
+put_path_old:
+	path_put(&ctx->path_old);
+put_path_dst:
+	path_put(&ctx->path_dst);
+free:
+	kfree(ctx);
+	return ERR_PTR(err);
+}
+
+static void free_rename_ctx(struct hmdfs_rename_ctx *ctx)
+{
+	dput(ctx->new_dentry);
+	dput(ctx->old_dentry);
+	unlock_rename(ctx->path_new.dentry, ctx->path_old.dentry);
+	mnt_drop_write(ctx->path_dst.mnt);
+	path_put(&ctx->path_new);
+	path_put(&ctx->path_old);
+	path_put(&ctx->path_dst);
+	kfree(ctx);
+}
+
 int hmdfs_root_rename(struct hmdfs_sb_info *sbi, uint64_t device_id,
 		      const char *oldpath, const char *oldname,
 		      const char *newpath, const char *newname,
 		      unsigned int flags)
 {
 	int err = 0;
-	struct path path_dst;
-	struct path path_old;
-	struct path path_new;
-	struct dentry *trap = NULL;
-	struct dentry *old_dentry = NULL;
-	struct dentry *new_dentry = NULL;
+	struct hmdfs_rename_ctx *ctx =
+		init_rename_ctx(sbi, oldpath, oldname, newpath, newname);
 
-	err = kern_path(sbi->local_dst, 0, &path_dst);
-	if (err) {
-		hmdfs_err("kern_path for local dst failed %d", err);
-		return err;
-	}
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
 
-	err = vfs_path_lookup(path_dst.dentry, path_dst.mnt, oldpath, 0,
-			      &path_old);
-	if (err) {
-		hmdfs_info("lookup oldpath from local_dst failed, err %d", err);
-		goto put_path_dst;
-	}
+	err = hmdfs_check_rename(ctx, flags);
+	if (err)
+		goto out;
 
-	err = vfs_path_lookup(path_dst.dentry, path_dst.mnt, newpath, 0,
-			      &path_new);
-	if (err) {
-		hmdfs_info("lookup newpath from local_dst failed, err %d", err);
-		goto put_path_old;
-	}
+	hmdfs_mark_drop_flag(device_id, ctx->path_old.dentry);
+	if (ctx->path_old.dentry != ctx->path_new.dentry)
+		hmdfs_mark_drop_flag(device_id, ctx->path_new.dentry);
 
-	err = mnt_want_write(path_dst.mnt);
-	if (err) {
-		hmdfs_info("get write access failed for local_dst, err %d",
-			   err);
-		goto put_path_new;
-	}
+	err = vfs_rename(d_inode(ctx->path_old.dentry), ctx->old_dentry,
+			 d_inode(ctx->path_new.dentry), ctx->new_dentry,
+			 NULL, 0);
 
-	trap = lock_rename(path_new.dentry, path_old.dentry);
-
-	old_dentry = lookup_one_len(oldname, path_old.dentry, strlen(oldname));
-	if (IS_ERR(old_dentry)) {
-		err = PTR_ERR(old_dentry);
-		hmdfs_info("lookup old dentry failed, err %d", err);
-		goto unlock;
-	}
-
-	/* source should not be ancestor of target */
-	if (old_dentry == trap) {
-		err = -EINVAL;
-		goto put_old_dentry;
-	}
-
-	new_dentry = lookup_one_len(newname, path_new.dentry, strlen(newname));
-	if (IS_ERR(new_dentry)) {
-		err = PTR_ERR(new_dentry);
-		hmdfs_info("lookup new dentry failed, err %d", err);
-		goto put_old_dentry;
-	}
-
-	/*
-	 * Exchange rename is not supported, thus target should not be an
-	 * ancestor of source.
-	 */
-	if (trap == new_dentry) {
-		err = -ENOTEMPTY;
-		goto put_new_dentry;
-	}
-
-	if (d_is_positive(new_dentry) && (flags & RENAME_NOREPLACE)) {
-		err = -EEXIST;
-		goto put_new_dentry;
-	}
-
-	hmdfs_mark_drop_flag(device_id, path_old.dentry);
-	if (path_old.dentry != path_new.dentry)
-		hmdfs_mark_drop_flag(device_id, path_new.dentry);
-
-	err = vfs_rename(d_inode(path_old.dentry), old_dentry,
-			 d_inode(path_new.dentry), new_dentry, NULL, 0);
-
-put_new_dentry:
-	dput(new_dentry);
-put_old_dentry:
-	dput(old_dentry);
-unlock:
-	unlock_rename(path_new.dentry, path_old.dentry);
-	mnt_drop_write(path_dst.mnt);
-put_path_new:
-	path_put(&path_new);
-put_path_old:
-	path_put(&path_old);
-put_path_dst:
-	path_put(&path_dst);
-
+out:
+	free_rename_ctx(ctx);
 	return err;
 }
 

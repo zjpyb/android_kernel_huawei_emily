@@ -33,7 +33,7 @@ uint32_t jiffies;
 freq_lock_control_stru g_freq_lock_control = { 0 };
 /* Wi-Fi驱动收发负载识别数据区 */
 freq_wifi_load_stru g_st_wifi_load = { 0 };
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 struct cpufreq_req g_ast_cpufreq[OAL_BUS_MAXCPU_NUM];
 hisi_max_cpu_freq g_aul_cpumaxfreq[OAL_BUS_MAXCPU_NUM];
 struct pm_qos_request g_st_pmqos_requset;
@@ -328,7 +328,7 @@ oal_bool_enum_uint8 hmac_wifi_rx_is_busy(void)
     return g_st_wifi_load.en_wifi_rx_busy;
 }
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #define HMAC_MAX_CPU_FREQ 2516000 // kHZ
 OAL_STATIC uint32_t hmac_get_max_cpu_freq(uint8_t cpu_id)
 {
@@ -378,7 +378,7 @@ OAL_STATIC OAL_INLINE void hmac_unlock_max_cpu_freq(void)
 
 OAL_STATIC OAL_INLINE void hmac_lock_cpu_freq_high_throughput_proc(void)
 {
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     if (g_freq_lock_control.uc_lock_max_cpu_freq == OAL_TRUE) {
         /* 当前还存在锁频后频率会掉下来，并且后面也无法锁到最高频率，需要继续定位。后续需要调整锁频时间。
@@ -424,7 +424,7 @@ void hmac_set_cpu_freq(uint8_t uc_req_freq_state)
 
     g_freq_lock_control.uc_cur_cpu_freq_state = uc_req_freq_state;
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
     if (g_freq_lock_control.uc_lock_max_cpu_freq == OAL_TRUE) {
         if (uc_req_freq_state == WLAN_CPU_FREQ_SUPER) {

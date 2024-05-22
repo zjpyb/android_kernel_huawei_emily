@@ -119,12 +119,13 @@ static void ckm_work_handler(struct work_struct *work)
 	unsigned int sensor, alarm, index;
 
 	sensor = atfd_service_clk_smc(CKM_QUERY_SENSOR, 0, 0, 0);
-	hickm_info("%s sensor is %u\n", ckm->sensor_list[sensor]->sensor_name,
-		sensor);
-	if (sensor > ckm->sensor_num) {
+	if (sensor >= ckm->sensor_num) {
 		hickm_err("%s sensor index get err!\n", __func__);
 		goto exit;
 	}
+	hickm_info("%s sensor is %u\n", ckm->sensor_list[sensor]->sensor_name,
+		sensor);
+
 	alarm = atfd_service_clk_smc(CKM_QUERY_ALARM, sensor, 0, 0);
 	hickm_info("%s alarm is %u\n", ckm->sensor_list[sensor]->sensor_name,
 		alarm);

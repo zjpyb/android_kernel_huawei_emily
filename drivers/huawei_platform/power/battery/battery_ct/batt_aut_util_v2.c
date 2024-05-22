@@ -313,6 +313,10 @@ static void byc_batt_source_update(struct batt_chk_data *drv_data,
 {
 	enum batt_source temp = BATTERY_ORIGINAL;
 
+	if (check_sn_binded(drv_data) != 1) {
+		hwlog_info("%s sn not binded\n", __func__);
+		return;
+	}
 	if ((drv_data->batt_src_current != BATTERY_SPARE_PART) ||
 		(real_cycles <= drv_data->spare_cycles))
 		return;

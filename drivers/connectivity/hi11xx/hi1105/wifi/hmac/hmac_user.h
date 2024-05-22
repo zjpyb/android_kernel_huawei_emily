@@ -478,7 +478,7 @@ typedef struct hmac_user_tag {
     void *tcp_ack_buf;
 #endif
     uint8_t uc_cfm_num;                                            /* 用户已被识别业务个数 */
-    uint8_t auc_resv2[1];
+    oal_bool_enum_uint8 assoc_ap_up_tx_auth_req;                   // APUT下关联user是否在关联状态下回复过auth
     /* 未识别出RTP后清空重新识别的次数 在达到门限前可先快速预识别 加快识别过程 防止底层BE VI 调度可能导致的乱序 */
     uint16_t us_clear_judge_count;
     hmac_tx_cfm_flow_stru ast_cfm_flow_list[MAX_CONFIRMED_FLOW_NUM]; /* 已识别业务 */

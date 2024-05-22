@@ -271,6 +271,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "cb data end\n"); /*print the title */
 				seq_printf(m, "rawdata begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "rawdata end\n");
+				seq_printf(m, "cbdata begin\n");
 			} else {
 				seq_printf(m, "rawdata end\n");
 				seq_printf(m, "shortdata begin\n");
@@ -280,6 +283,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "rawdata end\n"); /*print the title */
 				seq_printf(m, "rx delta begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "cbdata end\n");
+				seq_printf(m, "noise data begin\n");
 			} else {
 				seq_printf(m, "shortdata end\n");
 				seq_printf(m, "cbdata begin\n");
@@ -289,6 +295,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "rx delta end\n"); /*print the title */
 				seq_printf(m, "tx delta begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "noise data end\n");
+				seq_printf(m, "open data begin\n");
 			} else {
 				seq_printf(m, "cbdata end\n");
 				seq_printf(m, "cb uniformity x arry begin\n");
@@ -298,6 +307,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "tx delta end\n"); /*print the title */
 				seq_printf(m, "noise data begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "open data end\n");
+				seq_printf(m, "short circuit begin\n");
 			} else {
 				seq_printf(m, "cb uniformity x arry end\n");
 				seq_printf(m, "cb uniformity y arry begin\n");
@@ -307,6 +319,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "noise data end\n"); /*print the title */
 				seq_printf(m, "open data begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "short circuit end\n");
+				seq_printf(m, "the following data is invalid\n");
 			} else {
 				seq_printf(m, "cb uniformity y arry end\n");
 				seq_printf(m, "noise begin\n");
@@ -316,6 +331,9 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 			if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 				seq_printf(m, "open data end\n"); /*print the title */
 				seq_printf(m, "short circuit begin\n");
+			} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+				seq_printf(m, "the following data is invalid\n");
+				seq_printf(m, "the following data is invalid\n");
 			} else {
 				seq_printf(m, "noise end\n");
 				seq_printf(m, "cb increase data begin\n");
@@ -325,6 +343,8 @@ static int rawdata_proc_focal_printf(struct seq_file *m, struct ts_rawdata_info 
 	/*index =219,cb increase array printf tag*/
 	if (g_focal_dev_data->ic_type == FOCAL_FT8756) {
 		seq_printf(m, "short circuit end\n");
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		seq_printf(m, "the following data is invalid\n");
 	} else {
 		seq_printf(m, "cb increase data  end\n");
 	}
@@ -624,6 +644,8 @@ int focal_hardware_reset(int model)
 	case FTS_MODEL_BOOTLOADER:
 		if (g_focal_dev_data->ic_type == FOCAL_FT8756)
 			reset_enable_delay = 8;
+		else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB)
+			reset_enable_delay = 12;
 		else
 			reset_enable_delay = 6;
 		break;
@@ -640,7 +662,8 @@ int focal_hardware_reset(int model)
 	TS_LOG_INFO("%s:reset enable delay:%d\n",
 		HARDWARE_RESET, reset_enable_delay);
 	if ((g_focal_dev_data->ic_type == FOCAL_FT8006U) ||
-		(g_focal_dev_data->ic_type == FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB)) {
 		/*ft8006 need accurate delay(6-26ms),the mdelay() is more accurate than msleep()*/
 		mdelay(reset_enable_delay);
 	}else{
@@ -1154,6 +1177,72 @@ static int focal_read_touch_data(struct ts_event *event_data)
 static int focal_gpio_request(struct ts_kit_device_data *focal_pata)
 {
 	int ret = 0;
+
+	return ret;
+}
+
+static int fts_refresh_ic_type_by_chip_id(void)
+{
+	int ret = NO_ERR;
+	u32 chip_id;
+	int i;
+	u8 cmd[4] = { 0 };
+	u8 reg_val[2] = { 0, 0 };
+
+	cmd[0] = FTS_REG_BOOT_CHIP_ID;
+	cmd[1] = 0x00;
+	cmd[2] = 0x00;
+	cmd[3] = 0x00;
+
+	if (g_focal_pdata->use_dif_ic_type) {
+		ret = focal_hardware_reset(FTS_MODEL_BOOTLOADER);
+		if (ret)
+			TS_LOG_ERR("hardware_reset_to_rom_update_model:%s, ret=%d\n",
+				"hardware reset to bootloader fail", ret);
+		/* ft8201ab need mdelay 10ms after hardware reset */
+		mdelay(4);
+		ret = focal_write_default(FTS_UPGRADE_55);
+		if (ret)
+			TS_LOG_ERR("hardware_reset_to_rom_update_model:write command 0x55 fail,ret=%d\n",
+				ret);
+		mdelay(FOCAL_AFTER_WRITE_55_DELAY_TIME);
+		for (i = 1; i <= FOCAL_CMD_LEN_MAX; i++) {
+			ret = focal_read(cmd, i, reg_val, 2);
+			if (ret)
+				TS_LOG_ERR("read chip id fail, ret=%d\n", ret);
+			chip_id = (reg_val[0] << 8) | reg_val[1];
+			TS_LOG_ERR("chip_id is 0x%X, i = %d\n", chip_id, i);
+			if ((reg_val[0] == 0xef) || (reg_val[1] == 0xef) ||
+				(reg_val[0] == 0x00) || (reg_val[1] == 0x00)) {
+				TS_LOG_ERR("%s: cmd_len error\n", __func__);
+				continue;
+			} else {
+				break;
+			}
+		}
+	} else {
+		ret = focal_read_chip_id_from_app(&chip_id);
+		if (ret) {
+			TS_LOG_ERR("%s:read chip id from app fail, ret=%d\n",
+				__func__, ret);
+			return ret;
+		}
+	}
+	switch (chip_id) {
+	case CHIP_ID_FT8201:
+		g_focal_dev_data->ic_type = FOCAL_FT8201;
+		break;
+	case CHIP_ID_FT8201AB:
+		g_focal_dev_data->ic_type = FOCAL_FT8201_AB;
+		break;
+	default:
+		TS_LOG_INFO("Non-related chip id, do nothing\n");
+		break;
+	}
+
+	TS_LOG_INFO("%s:ic_type = %u, use 0x%x as pram addr\n", __func__,
+		g_focal_dev_data->ic_type,
+		g_focal_pdata->pram_projectid_addr);
 
 	return ret;
 }
@@ -2328,7 +2417,7 @@ static int focal_suspend(void)
 		}else {
 			/**ft8201 don't self ctrl power,lcd suspend turn off vddio 1.8v,so don't need write 0x03 to oxA5,
 			   but need set reset gpio low**/
-			if (FOCAL_FT8201 != g_focal_dev_data->ic_type) {
+			if (FOCAL_FT8201 != g_focal_dev_data->ic_type && FOCAL_FT8201_AB != g_focal_dev_data->ic_type) {
 				ret = focal_write_reg(FTS_REG_SLEEP, 0x03);
 				if (ret) {
 					TS_LOG_ERR("%s: write reg fail\n", __func__);
@@ -2400,7 +2489,8 @@ static int focal_resume(void)
 		(g_focal_dev_data->ic_type != FOCAL_FT5422U) &&
 		(g_focal_dev_data->ic_type != FOCAL_FT8201) &&
 		(g_focal_dev_data->ic_type != FOCAL_FT3528) &&
-		(g_focal_dev_data->ic_type != FOCAL_FT8756)) {
+		(g_focal_dev_data->ic_type != FOCAL_FT8756) &&
+		(g_focal_dev_data->ic_type != FOCAL_FT8201_AB)) {
 		TS_LOG_INFO("%s: not the 5 ic do nothing\n",
 			__func__);
 		return ret;
@@ -2457,7 +2547,7 @@ static int focal_resume(void)
 			gpio_direction_output(reset_gpio, 1);
 		}else{
 			/*exit sleep mode*/
-			if (FOCAL_FT8201 != g_focal_dev_data->ic_type) {
+			if (FOCAL_FT8201 != g_focal_dev_data->ic_type && FOCAL_FT8201_AB != g_focal_dev_data->ic_type) {
 				ret = focal_gpio_reset();
 				if(NO_ERR != ret){
 					TS_LOG_ERR("%s, %d: have error\n", __func__, __LINE__);
@@ -3628,6 +3718,14 @@ static int focal_init_chip(void)
 	if (ret) {
 		TS_LOG_ERR("%s:parse dts fail, ret=%d\n", INIT_CHIP, ret);
 		goto free_delay_time;
+	}
+
+	if (focal_pdata->allow_refresh_ic_type) {
+		ret = fts_refresh_ic_type_by_chip_id();
+		if (ret) {
+			TS_LOG_ERR("%s:ic_type refresh fail, ret = %d\n",
+				INIT_CHIP, ret);
+		}
 	}
 
 	focal_pdata->focal_platform_dev = ts_platform_data->ts_dev;

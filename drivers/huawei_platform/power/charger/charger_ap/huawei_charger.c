@@ -36,7 +36,8 @@
 #include <huawei_platform/usb/switch/usbswitch_common.h>
 #include <linux/delay.h>
 #include <chipset_common/hwpower/common_module/power_common.h>
-
+#include <huawei_platform/hwpower/common_module/power_platform.h>
+#include <chipset_common/hwpower/hardware_monitor/ship_mode.h>
 #ifdef CONFIG_TCPC_CLASS
 #include <huawei_platform/usb/pd/richtek/tcpm.h>
 #include <huawei_platform/usb/hw_pd_dev.h>
@@ -136,6 +137,8 @@ static int fcp_charge_check_cnt;
 #define PD_TO_SCP_MAX_COUNT                 5
 static int try_pd_to_scp_counter;
 #endif
+#define PD_TO_FCP_MAX_COUNT                 5
+static int try_pd_to_fcp_counter;
 static time64_t boot_time;
 static bool chg_wait_pd_init;
 static int g_recharge_count;
@@ -158,7 +161,7 @@ static int iin_set_complete_flag;
 
 #define VBUS_REPORT_NUM                     4
 #define WORK_DELAY_5000MS                   5000
-
+#define FFC_VTERM_DELAY_MAX_CNT             2
 static int vbus_flag;
 static int output_num;
 static int detect_num;
@@ -616,7 +619,10 @@ static int dcp_set_vterm_dec(unsigned int val)
 		return -EINVAL;
 	}
 
-	vterm_max = coul_drv_battery_vbat_max();
+	if (di->core_data->vterm && di->use_thirdparty_buck_to_ffc)
+		vterm_max = di->core_data->vterm;
+	else
+		vterm_max = coul_drv_battery_vbat_max();
 	if (vterm_max < 0) {
 		hwlog_err("get vterm_max=%d fail\n", vterm_max);
 		vterm_max = VTERM_MAX_DEFAULT_MV;
@@ -2718,7 +2724,8 @@ static int charge_is_charging_full(struct charge_device_info *di)
 	if (((ichg > MIN_CHARGING_CURRENT_OFFSET) && (ichg_avg > MIN_CHARGING_CURRENT_OFFSET)) ||
 		di->core_data->warm_triggered)
 		term_allow = TRUE;
-
+	hwlog_info("term_allow = %d, ichg = %d, ichg_avg = %d, iterm = %d", (int)term_allow,
+			ichg, ichg_avg, (int)di->core_data->iterm);
 	if (term_allow && (ichg < (int)di->core_data->iterm) &&
 		(ichg_avg < (int)di->core_data->iterm)) {
 		di->check_full_count++;
@@ -3114,6 +3121,7 @@ static void charge_stop_charging(struct charge_device_info *di)
 	di->weaksource_cnt = 0;
 	di->rt_test_succ = false;
 	di->ffc_vterm_flag = 0;
+	di->ffc_delay_cnt = 0;
 #ifdef CONFIG_TCPC_CLASS
 	di->pd_input_current = 0;
 	di->pd_charge_current = 0;
@@ -3150,7 +3158,7 @@ static void charge_stop_charging(struct charge_device_info *di)
 	fcp_output_vol_retry_cnt = 0;
 	try_pd_to_scp_counter = 0;
 #endif
-
+	try_pd_to_fcp_counter = 0;
 	if (di->ops->set_adc_conv_rate)
 		di->ops->set_adc_conv_rate(di->sysfs_data.adc_conv_rate);
 	di->check_full_count = 0;
@@ -3296,6 +3304,18 @@ static int charge_get_incr_term_volt(struct charge_device_info *di)
 	int ret;
 	int ffc_vterm = ffc_get_buck_vterm();
 	struct charge_term_volt_nvdata nv_data = { 0 };
+
+	if (di->use_thirdparty_buck_to_ffc) {
+		if (!direct_charge_check_charge_done()) {
+			hwlog_info("not sc switch to buck, no need ffc\n");
+			return 0;
+		}
+
+		if (di->ffc_delay_cnt < FFC_VTERM_DELAY_MAX_CNT) {
+			ffc_vterm = di->custom_ffc_vterm;
+			di->ffc_delay_cnt++;
+		}
+	}
 
 	if (di->ffc_vterm_flag & FFC_VETRM_END_FLAG) {
 		charge_update_iterm(di, ffc_get_buck_iterm());
@@ -3842,8 +3862,9 @@ static void charge_turn_on_charging(struct charge_device_info *di)
 
 		increase_volt = charge_get_incr_term_volt(di);
 		vterm += increase_volt;
+		hwlog_info("set vterm %d, increase_volt = %d, ffc_delay_cnt = %d\n", vterm,
+			increase_volt, di->ffc_delay_cnt);
 
-		hwlog_info("set vterm %d\n", vterm);
 		ret = di->ops->set_terminal_voltage(vterm);
 		if (ret > 0) {
 			hwlog_info("terminal voltage is out of range:%dmV\n", ret);
@@ -4280,6 +4301,61 @@ static void series_batt_speaker_charge_monitor(struct charge_device_info *di)
 #endif /* CONFIG_HUAWEI_SPEAKER_CHARGER */
 
 /* lint -save -e* */
+static void charger_switch_type_to_fcp(struct charge_device_info *di)
+{
+	if (!di) {
+		hwlog_err("%s:NULL pointer\n", __func__);
+		return;
+	}
+
+	if (cancel_work_flag) {
+		hwlog_info("charge already stop\n");
+		return;
+	}
+
+	pd_charge_flag = false;
+	pd_vbus_abnormal_cnt = 0;
+	di->charger_type = CHARGER_TYPE_FCP;
+	di->charger_source = POWER_SUPPLY_TYPE_MAINS;
+	if (di->support_standard_ico == 1)
+		ico_enable = 1;
+	else
+		ico_enable = 0;
+	hwlog_info("%s CHARGER_TYPE_FCP\n", __func__);
+}
+
+static void charger_try_pd2fcp(struct charge_device_info *di)
+{
+	int adp_mode = ADAPTER_SUPPORT_UNDEFINED;
+
+	if (!pd_dpm_get_ctc_cable_flag())
+		return;
+
+	if ((try_pd_to_fcp_counter <= 0) || !power_platform_check_online_status() ||
+		(huawei_get_charger_type() == CHARGER_TYPE_STANDARD))
+		return;
+
+	chg_wait_pd_init = false;
+
+	if (cancel_work_flag) {
+		try_pd_to_fcp_counter = 0;
+		return;
+	}
+
+	hwlog_info("%s try_pd_to_fcp\n", __func__);
+	if ((fcp_get_stage() == FCP_STAGE_SUCESS) ||
+		adapter_detect_adapter_support_mode(ADAPTER_PROTOCOL_FCP,
+		&adp_mode)== FCP_ADAPTER_DETECT_SUCC) {
+		charger_switch_type_to_fcp(di);
+		try_pd_to_fcp_counter = 0;
+	} else {
+		try_pd_to_fcp_counter--;
+	}
+
+	if (try_pd_to_fcp_counter < 0)
+		try_pd_to_fcp_counter = 0;
+}
+
 static void charge_monitor_work(struct work_struct *work)
 {
 	struct charge_device_info *di = container_of(work, struct charge_device_info,
@@ -4300,9 +4376,14 @@ static void charge_monitor_work(struct work_struct *work)
 	/* if support both SCP and PD, try to control adapter by SCP */
 	charger_try_pd2scp(di);
 
+	/* For uem:if support both FCP and PD, try to control adapter by FCP */
+	charger_try_pd2fcp(di);
 	type = huawei_get_charger_type();
 
-	if (direct_charge_in_charging_stage() == DC_NOT_IN_CHARGING_STAGE) {
+	if ((!di->wait_direct_chg_stop_support &&
+		(direct_charge_in_charging_stage() == DC_NOT_IN_CHARGING_STAGE)) ||
+		(di->wait_direct_chg_stop_support &&
+		direct_charge_get_stop_charging_complete_flag())) {
 		/* update type before get params */
 		charge_update_charger_type(di);
 		type = huawei_get_charger_type();
@@ -4314,7 +4395,10 @@ static void charge_monitor_work(struct work_struct *work)
 		charger_direct_charge_check(di, type);
 	}
 
-	if (direct_charge_in_charging_stage() == DC_NOT_IN_CHARGING_STAGE) {
+	if ((!di->wait_direct_chg_stop_support &&
+		(direct_charge_in_charging_stage() == DC_NOT_IN_CHARGING_STAGE)) ||
+		(di->wait_direct_chg_stop_support &&
+		direct_charge_get_stop_charging_complete_flag())) {
 		if (uvdm_charge_in_charging_stage() == UVDM_NOT_IN_CHARGING_STAGE)
 			uvdm_pre_check();
 
@@ -4974,10 +5058,12 @@ static void charger_type_handler(unsigned long type, void *data)
 		else
 			di->charger_source = POWER_SUPPLY_TYPE_USB;
 
+		if (last_type == CHARGER_TYPE_STANDARD) {
+			try_pd_to_fcp_counter = PD_TO_FCP_MAX_COUNT;
 #ifdef CONFIG_DIRECT_CHARGER
-		if (last_type == CHARGER_TYPE_STANDARD)
 			try_pd_to_scp_counter = PD_TO_SCP_MAX_COUNT;
 #endif
+		}
 		need_resched_work = 1;
 		hwlog_info("%s case = CHARGER_TYPE_PD\n", __func__);
 		break;
@@ -5008,6 +5094,7 @@ static int pd_dpm_notifier_call(struct notifier_block *tcpc_nb, unsigned long ev
 
 	if ((di->event == START_SINK) && (event == CHARGER_TYPE_DCP) &&
 		(di->charger_type == CHARGER_TYPE_PD)) {
+		try_pd_to_fcp_counter = PD_TO_FCP_MAX_COUNT;
 #ifdef CONFIG_DIRECT_CHARGER
 		try_pd_to_scp_counter = PD_TO_SCP_MAX_COUNT;
 		hwlog_info("%s try_pd_to_scp\n", __func__);
@@ -5679,6 +5766,12 @@ static void charger_dts_read_u32(struct charge_device_info *di,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"scp_vindpm", &di->scp_vindpm, CHARGE_VOLTAGE_4600_MV);
 #endif /* CONFIG_HUAWEI_SPEAKER_CHARGER */
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"wait_direct_chg_stop_support", &di->wait_direct_chg_stop_support, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"use_thirdparty_buck_to_ffc", &di->use_thirdparty_buck_to_ffc, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"custom_ffc_vterm", &di->custom_ffc_vterm, 0);
 }
 
 static inline void charger_dts_read_bool(struct device_node *np)
@@ -5761,6 +5854,32 @@ int charge_otg_mode_enable(int enable, unsigned int user)
 	hwlog_info("charge_otg_mode_enable = %d,user = %d\n", enable, user);
 	return 0;
 }
+
+static void huawei_charger_set_entry_time(unsigned int time, void *dev_data)
+{
+	if (!dev_data)
+		return;
+
+	hwlog_info("set_entry_time: value=%u\n", time);
+}
+
+static void huawei_charger_set_work_mode(unsigned int mode, void *dev_data)
+{
+	if (!dev_data)
+		return;
+
+	if ((mode != SHIP_MODE_IN_SHIP) && (mode != SHIP_MODE_IN_SHUTDOWN_SHIP))
+		return;
+
+	charge_set_batfet_disable(true);
+	charge_disable_watchdog(dev_data);
+}
+
+static struct ship_mode_ops huawei_charger_ship_mode_ops = {
+	.ops_name = "huawei_charger",
+	.set_entry_time = huawei_charger_set_entry_time,
+	.set_work_mode = huawei_charger_set_work_mode,
+};
 
 static int charge_probe(struct platform_device *pdev)
 {
@@ -5887,7 +6006,10 @@ static int charge_probe(struct platform_device *pdev)
 	di->sysfs_data.ichg_thl = di->core_data->ichg_max;
 	di->sysfs_data.iin_rt = di->core_data->iin_max;
 	di->sysfs_data.ichg_rt = di->core_data->ichg_max;
-	di->sysfs_data.vterm_rt = coul_drv_battery_vbat_max();
+	if (!di->use_thirdparty_buck_to_ffc)
+		di->sysfs_data.vterm_rt = coul_drv_battery_vbat_max();
+	else
+		di->sysfs_data.vterm_rt = BATTERY_VOLTAGE_4500_MV;
 	di->sysfs_data.charge_enable = TRUE;
 	di->sysfs_data.fcp_charge_enable = TRUE;
 	di->sysfs_data.batfet_disable = FALSE;
@@ -6007,6 +6129,8 @@ static int charge_probe(struct platform_device *pdev)
 	power_if_ops_register(&dcp_if_ops);
 	power_if_ops_register(&fcp_if_ops);
 
+	huawei_charger_ship_mode_ops.dev_data = di;
+	ship_mode_ops_register(&huawei_charger_ship_mode_ops);
 	hwlog_info("huawei charger probe ok\n");
 	return 0;
 

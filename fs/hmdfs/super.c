@@ -14,6 +14,7 @@
 #include <linux/slab.h>
 
 #include "hmdfs.h"
+#include "authority/authentication.h"
 
 enum {
 	OPT_RA_PAGES,
@@ -22,8 +23,10 @@ enum {
 	OPT_CACHE_DIR,
 	OPT_S_CASE,
 	OPT_VIEW_TYPE,
+	OPT_RECV_UID,
 	OPT_NO_OFFLINE_STASH,
 	OPT_NO_DENTRY_CACHE,
+	OPT_EXTERNAL_FS,
 	OPT_ERR,
 };
 
@@ -34,8 +37,10 @@ static match_table_t hmdfs_tokens = {
 	{ OPT_CACHE_DIR, "cache_dir=%s" },
 	{ OPT_S_CASE, "sensitive" },
 	{ OPT_VIEW_TYPE, "merge" },
+	{ OPT_RECV_UID, "recv_uid=%s"},
 	{ OPT_NO_OFFLINE_STASH, "no_offline_stash" },
 	{ OPT_NO_DENTRY_CACHE, "no_dentry_cache" },
+	{ OPT_EXTERNAL_FS, "external_fs" },
 	{ OPT_ERR, NULL },
 };
 
@@ -71,13 +76,80 @@ static int hmdfs_match_strdup(const substring_t *s, char **dst)
 	return 0;
 }
 
+static int hmdfs_parse_one_option_continue(struct hmdfs_sb_info *sbi, int token)
+{
+	switch (token) {
+	case OPT_S_CASE:
+		sbi->s_case_sensitive = true;
+		break;
+	case OPT_VIEW_TYPE:
+		sbi->s_merge_switch = true;
+		break;
+	case OPT_NO_OFFLINE_STASH:
+		sbi->s_offline_stash = false;
+		break;
+	case OPT_NO_DENTRY_CACHE:
+		sbi->s_dentry_cache = false;
+		break;
+	case OPT_EXTERNAL_FS:
+		sbi->s_external_fs = true;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int hmdfs_parse_one_option(struct hmdfs_sb_info *sbi, char *p,
+				  unsigned long *value)
+{
+	int token = 0;
+	char *name = NULL;
+	substring_t args[MAX_OPT_ARGS];
+	int err = 0;
+	unsigned long mnt_uid = AID_MEDIA_RW;
+
+	memset(args, 0, sizeof(args));
+	token = match_token(p, hmdfs_tokens, args);
+
+	switch (token) {
+	case OPT_RA_PAGES:
+		name = match_strdup(&args[0]);
+		if (name) {
+			err = kstrtoul(name, 10, value);
+			kfree(name);
+		}
+		break;
+	case OPT_RECV_UID:
+		name = match_strdup(&args[0]);
+		if (name) {
+			err = kstrtoul(name, 10, &mnt_uid);
+			kfree(name);
+			sbi->mnt_uid = mnt_uid;
+			name = NULL;
+		}
+		break;
+	case OPT_LOCAL_DST:
+		err = hmdfs_match_strdup(&args[0], &sbi->local_dst);
+		break;
+	case OPT_ACCOUNT:
+		match_strlcpy(sbi->local_info.account, &args[0],
+			      HMDFS_ACCOUNT_HASH_MAX_LEN);
+		break;
+	case OPT_CACHE_DIR:
+		err = hmdfs_match_strdup(&args[0], &sbi->cache_dir);
+		break;
+	default:
+		err = hmdfs_parse_one_option_continue(sbi, token);
+	}
+	return err;
+}
+
 int hmdfs_parse_options(struct hmdfs_sb_info *sbi, const char *data)
 {
 	char *p = NULL;
-	char *name = NULL;
 	char *options = NULL;
 	char *options_src = NULL;
-	substring_t args[MAX_OPT_ARGS];
 	unsigned long value = DEAULT_RA_PAGES;
 	struct super_block *sb = sbi->sb;
 	int err = 0;
@@ -93,54 +165,12 @@ int hmdfs_parse_options(struct hmdfs_sb_info *sbi, const char *data)
 		goto out;
 
 	while ((p = strsep(&options_src, ",")) != NULL) {
-		int token;
-
 		if (!*p)
 			continue;
-		args[0].to = args[0].from = NULL;
-		token = match_token(p, hmdfs_tokens, args);
 
-		switch (token) {
-		case OPT_RA_PAGES:
-			name = match_strdup(&args[0]);
-			if (name) {
-				err = kstrtoul(name, 10, &value);
-				if (err)
-					goto out;
-				kfree(name);
-				name = NULL;
-			}
+		err = hmdfs_parse_one_option(sbi, p, &value);
+		if (err)
 			break;
-		case OPT_LOCAL_DST:
-			err = hmdfs_match_strdup(&args[0], &sbi->local_dst);
-			if (err)
-				goto out;
-			break;
-		case OPT_ACCOUNT:
-			match_strlcpy(sbi->local_info.account, &args[0],
-				      HMDFS_ACCOUNT_HASH_MAX_LEN);
-			break;
-		case OPT_CACHE_DIR:
-			err = hmdfs_match_strdup(&args[0], &sbi->cache_dir);
-			if (err)
-				goto out;
-			break;
-		case OPT_S_CASE:
-			sbi->s_case_sensitive = true;
-			break;
-		case OPT_VIEW_TYPE:
-			sbi->s_merge_switch = true;
-			break;
-		case OPT_NO_OFFLINE_STASH:
-			sbi->s_offline_stash = false;
-			break;
-		case OPT_NO_DENTRY_CACHE:
-			sbi->s_dentry_cache = false;
-			break;
-		default:
-			err = -EINVAL;
-			goto out;
-		}
 	}
 out:
 	kfree(options);

@@ -48,6 +48,9 @@ struct rcu_node;
 struct reclaim_acct;
 #endif
 struct reclaim_state;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+struct capture_control;
+#endif
 struct robust_list_head;
 struct sched_attr;
 struct sched_param;
@@ -1047,6 +1050,9 @@ struct task_struct {
 
 	struct mm_struct		*mm;
 	struct mm_struct		*active_mm;
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+	struct mm_struct		*remote_mm;
+#endif
 
 	/* Per-thread vma caching: */
 	struct vmacache			vmacache;
@@ -1219,7 +1225,9 @@ struct task_struct {
 	struct sysv_shm			sysvshm;
 #endif
 #ifdef CONFIG_DETECT_HUNG_TASK
+#if defined CONFIG_OPTIMIZE_MM_AQ && !defined CONFIG_DETECT_HUAWEI_HUNG_TASK
 	unsigned long			last_switch_count;
+#endif
 #endif
 	/* Filesystem information: */
 	struct fs_struct		*fs;
@@ -1337,6 +1345,9 @@ struct task_struct {
 
 	struct io_context		*io_context;
 
+#if defined(CONFIG_COMPACTION) && defined(CONFIG_HARMONY_PERFORMANCE_AQ)
+	struct capture_control		*capture_control;
+#endif
 	/* Ptrace state: */
 	unsigned long			ptrace_message;
 	siginfo_t			*last_siginfo;
@@ -1604,6 +1615,23 @@ struct task_struct {
 	 * Do not put anything below here!
 	 */
 };
+
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+static inline void set_remote_mm(struct mm_struct *mm)
+{
+	current->remote_mm = mm;
+}
+
+static inline void clear_remote_mm(void)
+{
+	current->remote_mm = NULL;
+}
+
+static inline struct mm_struct *get_remote_mm(struct task_struct *task)
+{
+	return task->remote_mm;
+}
+#endif
 
 static inline struct pid *task_pid(struct task_struct *task)
 {

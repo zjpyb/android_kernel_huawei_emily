@@ -431,6 +431,9 @@ struct discard_cmd {
 		struct discard_info di;	/* discard info */
 
 	};
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	unsigned short bio_ref;		/* bio reference count */
+#endif
 	struct list_head list;		/* command list */
 	struct completion wait;		/* compleation */
 	struct block_device *bdev;	/* bdev */
@@ -440,7 +443,9 @@ struct discard_cmd {
 	int error;			/* bio error */
         u64 discard_time;
 	spinlock_t lock;		/* for state/bio_ref updating */
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	unsigned short bio_ref;		/* bio reference count */
+#endif
 };
 
 enum {
@@ -916,9 +921,14 @@ struct f2fs_inode_info {
 	atomic_t dirty_pages;		/* # of dirty pages */
 	f2fs_hash_t chash;		/* hash value of given file name */
 	unsigned int clevel;		/* maximum level of given file name */
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	nid_t i_xattr_nid;		/* node id that contains xattrs */
+#endif
 	struct task_struct *task;	/* lookup and create consistency */
 	struct task_struct *cp_task;	/* separate cp/wb IO stats*/
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	nid_t i_xattr_nid;		/* node id that contains xattrs */
+#endif
 	loff_t	last_disk_size;		/* lastly written file size */
 
 #ifdef CONFIG_QUOTA
@@ -943,9 +953,14 @@ struct f2fs_inode_info {
 	int i_extra_isize;		/* size of extra space located in i_addr */
 	kprojid_t i_projid;		/* id for project quota */
 	int i_inline_xattr_size;	/* inline xattr size */
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	unsigned int skip_count;
+#endif
 	struct timespec i_crtime;	/* inode creation time */
 	struct timespec i_disk_time[4];	/* inode disk times */
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	unsigned int skip_count;
+#endif
 #ifdef CONFIG_MAS_ORDER_PRESERVE
 	struct delayed_work fsync_work;
 	unsigned char i_fsync_flag;
@@ -1677,6 +1692,7 @@ struct f2fs_sb_info {
 	unsigned int cur_victim_sec;		/* current victim section num */
 	unsigned int gc_mode;			/* current GC state */
 	/* for skip statistic */
+	unsigned int atomic_files;
 	unsigned long long skipped_atomic_files[2];	/* FG_GC and BG_GC */
 	unsigned long long skipped_gc_rwsem;		/* FG_GC only */
 

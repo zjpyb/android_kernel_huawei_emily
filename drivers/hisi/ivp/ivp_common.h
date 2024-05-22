@@ -56,6 +56,7 @@ struct ivp_common {
 	struct mutex ivp_wake_lock_mutex;
 	struct mutex ivp_load_image_mutex;
 	struct mutex ivp_power_up_off_mutex;
+	struct mutex ivp_ioctl_mutex;
 	struct mutex ivp_open_release_mutex;
 	int ivp_meminddr_len;
 	unsigned int dynamic_mem_size;

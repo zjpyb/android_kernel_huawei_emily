@@ -377,7 +377,7 @@ uint32_t hmac_user_init(hmac_user_stru *pst_hmac_user)
 
     pst_hmac_user->us_clear_judge_count = 0;
     pst_hmac_user->assoc_err_code = 0; /* È¥¹ØÁª error code */
-
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     hmac_init_tx_update_freq_timer(pst_hmac_user);
 
 #ifdef _PRE_WLAN_FEATURE_TCP_ACK_BUFFER
@@ -1055,9 +1055,9 @@ uint32_t hmac_user_del(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_hmac_user)
     pst_mac_user = (mac_user_stru *)(&pst_hmac_user->st_user_base_info);
     pst_mac_device = mac_res_get_dev(pst_mac_vap->uc_device_id);
     if (oal_unlikely(pst_mac_device == NULL)) {
-        oam_error_log0(pst_mac_vap->uc_vap_id, OAM_SF_UM, "{hmac_user_del::pst_mac_device null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     hmac_dbdc_need_kick_user(pst_mac_vap, pst_mac_device);
     oam_warning_log4(pst_mac_vap->uc_vap_id, OAM_SF_UM, "{hmac_user_del::del user[%d] start,is multi user[%d], "
         "user mac:XX:XX:XX:XX:%02X:%02X}", pst_mac_user->us_assoc_id, pst_mac_user->en_is_multi_user,

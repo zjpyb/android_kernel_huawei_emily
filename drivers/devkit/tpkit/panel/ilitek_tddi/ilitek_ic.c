@@ -64,13 +64,14 @@ static struct ilitek_ic_func_ctrl func_ctrl[FUNC_CTRL_NUM] = {
 	[20] = {"roi_set", {0x1, 0x0F, 0x0}, 3},
 };
 
-#define CHIP_SUP_NUM	5
+#define CHIP_SUP_NUM 6
 static u32 ic_sup_list[CHIP_SUP_NUM] = {
 	[0] = ILI9881_CHIP,
 	[1] = ILI7807_CHIP,
 	[2] = ILI9881N_AA,
 	[3] = ILI9881O_AA,
-	[4] = ILI9882_CHIP
+	[4] = ILI9882_CHIP,
+	[5] = ILI9883_CHIP
 };
 
 static int ilitek_tddi_ic_check_support(u32 pid, u16 id)
@@ -83,14 +84,13 @@ static int ilitek_tddi_ic_check_support(u32 pid, u16 id)
 	}
 
 	if (i >= CHIP_SUP_NUM) {
-		TS_LOG_INFO("ERROR, ILITEK CHIP(0x%x) Not found !!\n", pid);
+		TS_LOG_INFO("ERROR, ili CHIP Not found !!\n");
 		return -1;
 	}
 
-	TS_LOG_INFO("A20 CHIP found.\n");
+	TS_LOG_INFO("CHIP found.\n");
 
 	ilits->chip->pid = pid;
-
 	ilits->chip->reset_key = 0x00019878;
 	ilits->chip->wtd_key = 0x9881;
 
@@ -152,11 +152,17 @@ int ili_ice_mode_write(u32 addr, u32 data, int len)
 	return ret;
 }
 
+#define BUF_LEN 4
 int ili_ice_mode_read(u32 addr, u32 *data, int len)
 {
 	int ret = 0;
-	u8 *rxbuf = NULL;
-	u8 txbuf[4] = {0};
+	u8 rxbuf[BUF_LEN] = {0};
+	u8 txbuf[BUF_LEN] = {0};
+
+	if (len > sizeof(u32)) {
+		TS_LOG_ERR("ice mode read lenght = %d, must less than or equal to 4 bytes\n", len);
+		len = BUF_LEN;
+	}
 
 	if (!atomic_read(&ilits->ice_stat)) {
 		TS_LOG_ERR("ice mode not enabled\n");
@@ -172,19 +178,17 @@ int ili_ice_mode_read(u32 addr, u32 *data, int len)
 	if (ret < 0)
 		goto out;
 
-	rxbuf = kcalloc(len, sizeof(u8), GFP_KERNEL);
-	if (err_alloc_mem(rxbuf)) {
-		TS_LOG_ERR("Failed to allocate rxbuf, %ld\n", PTR_ERR(rxbuf));
-		ret = -ENOMEM;
-		goto out;
-	}
-
 	ret = ilits->wrapper(NULL, 0, rxbuf, len, OFF, OFF);
 	if (ret < 0)
 		goto out;
 
-	if (len == sizeof(u8))
+	*data = 0;
+	if (len == 1)
 		*data = rxbuf[0];
+	else if (len == 2)
+		*data = (rxbuf[0] | rxbuf[1] << 8);
+	else if (len == 3)
+		*data = (rxbuf[0] | rxbuf[1] << 8 | rxbuf[2] << 16);
 	else
 		*data = (rxbuf[0] | rxbuf[1] << 8 | rxbuf[2] << 16 | rxbuf[3] << 24);
 
@@ -192,7 +196,6 @@ out:
 	if (ret < 0)
 		TS_LOG_ERR("Failed to read data in ice mode, ret = %d\n", ret);
 
-	ipio_kfree((void **)&rxbuf);
 	return ret;
 }
 
@@ -223,10 +226,9 @@ int ili_ice_mode_ctrl(bool enable, bool mcu)
 				atomic_set(&ilits->ice_stat, DISABLE);
 				return -EIO;
 			}
-			if (!ili_ice_mode_read(ilits->chip->pid_addr,
-				&pid, sizeof(u32)))
-				TS_LOG_INFO("CHIP: PID = %x\n",
-					(pid >> BYTE_LEN));
+			if (!ili_ice_mode_read(ilits->chip->pid_addr, &pid, sizeof(u32)))
+				TS_LOG_INFO("CHIP: PID = %x\n", (pid >> BYTE_LEN));
+
 			if (!ilitek_tddi_ic_check_support(pid, pid >> WORD_LEN))
 				break;
 		} while (--retry > 0);
@@ -524,6 +526,11 @@ int ili_ic_check_int_level(bool level)
 	int timer = 3000;
 	int irq_gpio;
 
+	if ((ilits->actual_tp_mode != P5_X_FW_TEST_MODE) &&
+		(ilits->ic_hardware_type == ILI9883)) {
+		timer = 300;
+		TS_LOG_DEBUG("timer = %d\n", timer);
+	}
 	/*
 	 * If callers have a trouble to use the gpio that is passed by vendors,
 	 * please utlises a physical gpio number instead or call a help from them.
@@ -728,6 +735,13 @@ int ili_ic_get_panel_info(void)
 	u8 cmd = P5_X_GET_PANEL_INFORMATION;
 	u8 buf[10] = {0};
 	u8 len = ilits->protocol->panel_info_len;
+	u8 res;
+
+	if (ilits->ic_hardware_type == ILI9883) {
+		res = ilits->fw_info[0] & 0x01;
+	} else {
+		res = ilits->fw_info[0];
+	}
 
 	if (ilits->info_from_hex && (ilits->chip->core_ver >= CORE_VER_1410)) {
 		buf[1] = ilits->fw_info[16];
@@ -736,7 +750,7 @@ int ili_ic_get_panel_info(void)
 		buf[4] = ilits->fw_info[19];
 		ilits->panel_wid = buf[2] << 8 | buf[1];
 		ilits->panel_hei = buf[4] << 8 | buf[3];
-		ilits->trans_xy = (ilits->chip->core_ver >= CORE_VER_1430) ? ilits->fw_info[0] : OFF;
+		ilits->trans_xy = (ilits->chip->core_ver >= CORE_VER_1430) ? res : OFF;
 		goto out;
 	}
 

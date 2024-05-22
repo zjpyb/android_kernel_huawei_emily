@@ -2825,6 +2825,13 @@ static int get_ts_board_info(void)
 		data->fp_tp_enable = 0;
 	}
 
+	rc = of_property_read_u32(data->node, "change_game_mode",
+		&data->change_game_mode);
+	if (rc) {
+		TS_LOG_ERR(" ts_kit change_game_mode is not valid\n");
+		data->change_game_mode = 0;
+	}
+
 	rc = of_property_read_u32(data->node, "register_charger_notifier",
 		&data->register_charger_notifier);
 	if (rc) {
@@ -2856,6 +2863,15 @@ static int get_ts_board_info(void)
 		data->touch_switch_need_process = 0;
 		TS_LOG_INFO("touch_switch_need_process not exsit\n");
 	}
+
+	rc = of_property_read_u32(data->node, "thp_compatible_tskit",
+		&data->thp_compatible_tskit);
+	if (rc) {
+		data->thp_compatible_tskit = 0;
+		TS_LOG_INFO("thp_compatible_tskit not exsit\n");
+	}
+	TS_LOG_INFO("thp_compatible_tskit :%u\n",
+		data->thp_compatible_tskit);
 
 	TS_LOG_INFO(
 		"bus id :%d ts_kit reset gpio is = %d ts_kit irq gpio is = %d hide_plain_id = %d touch_switch_need_process = %d.\n",
@@ -4215,6 +4231,9 @@ related_proc:
 			proc_cmd->cmd_param.ts_cmd_freehook(
 				proc_cmd->cmd_param.prv_params);
 		break;
+	case TS_HORIZON_SWITCH:
+		ts_horizon_switch(proc_cmd);
+		break;
 	default:
 		break;
 	}
@@ -4382,6 +4401,9 @@ int ts_kit_proc_command_directly(struct ts_cmd_node *cmd)
 		break;
 	case TS_TOUCH_SWITCH:
 		ts_touch_switch_cmd();
+		break;
+	case TS_HORIZON_SWITCH:
+		ts_horizon_switch(cmd);
 		break;
 	default:
 		TS_LOG_ERR("%s, command %d unknown!", __func__, cmd->command);
@@ -4772,6 +4794,20 @@ void ts_recovery_setting()
 	ts_recovery_init();
 }
 
+#ifdef CONFIG_LCDKIT_DRIVER
+static int ts_check_tp_driver_type(void)
+{
+	int driver_type;
+
+	driver_type = lcdkit_get_tp_driver_type();
+	TS_LOG_INFO("%s:enter driver_type = %u\n", __func__, driver_type);
+	if (driver_type == TS_KIT_1_0)
+		return 0;
+	else
+		return TP_DRIVER_TYPE_MATCH_FAIL;
+}
+#endif
+
 static int __init huawei_ts_module_init(void)
 {
 	int error = NO_ERR;
@@ -4788,6 +4824,15 @@ static int __init huawei_ts_module_init(void)
 		TS_LOG_ERR("get bus info failed :%d\n", error);
 		goto out;
 	}
+#ifdef CONFIG_LCDKIT_DRIVER
+	if (cd->thp_compatible_tskit) {
+		error = ts_check_tp_driver_type();
+		if (error) {
+			TS_LOG_ERR("tp drver type is not match :%d\n", error);
+			goto out;
+		}
+	}
+#endif
 	error = ts_create_client();
 	if (error) {
 		TS_LOG_ERR("create device failed :%d\n", error);

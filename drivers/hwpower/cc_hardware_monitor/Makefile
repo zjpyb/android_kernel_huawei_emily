@@ -16,3 +16,4 @@ obj-$(CONFIG_HUAWEI_FFC_CONTROL) += ffc_control/
 obj-$(CONFIG_HUAWEI_SMPL) += smpl/
 obj-$(CONFIG_HUAWEI_USB_SHORT_CIRCUIT_PROTECT) += uscp/
 obj-$(CONFIG_HUAWEI_WATER_CHECK) += water_check/
+obj-$(CONFIG_HUAWEI_SHIP_MODE) += ship_mode/

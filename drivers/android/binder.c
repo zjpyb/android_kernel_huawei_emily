@@ -336,6 +336,7 @@ struct binder_work {
 		BINDER_WORK_DEAD_BINDER,
 		BINDER_WORK_DEAD_BINDER_AND_CLEAR,
 		BINDER_WORK_CLEAR_DEATH_NOTIFICATION,
+		BINDER_WORK_TRANSLATION_COMPLETE,
 	} type;
 
 #ifdef CONFIG_HW_BINDER_FG_REQ_FIRST
@@ -346,6 +347,11 @@ struct binder_work {
 	int qos;
 	uid_t sender_euid;
 #endif
+};
+
+struct binder_translation {
+	struct binder_work work;
+	uint32_t desc;
 };
 
 struct binder_error {
@@ -559,6 +565,9 @@ struct binder_priority {
  * @files                 files_struct for process
  *                        (protected by @files_lock)
  * @files_lock            mutex to protect @files
+ * @cred                  struct cred associated with the `struct file`
+ *                        in binder_open()
+ *                        (invariant after initialized)
  * @deferred_work_node:   element for binder_deferred_list
  *                        (protected by binder_deferred_lock)
  * @deferred_work:        bitmap of deferred work to perform
@@ -605,6 +614,7 @@ struct binder_proc {
 	struct task_struct *tsk;
 	struct files_struct *files;
 	struct mutex files_lock;
+	const struct cred *cred;
 	struct hlist_node deferred_work_node;
 	int deferred_work;
 	bool is_dead;
@@ -2600,6 +2610,18 @@ static int binder_inc_ref_for_node(struct binder_proc *proc,
 	}
 	ret = binder_inc_ref_olocked(ref, strong, target_list);
 	*rdata = ref->data;
+	if (ret && ref == new_ref) {
+		/*
+		 * Cleanup the failed reference here as the target
+		 * could now be dead and have already released its
+		 * references by now. Calling on the new reference
+		 * with strong=0 and a tmp_refs will not decrement
+		 * the node. The new_ref gets kfree'd below.
+		 */
+		binder_cleanup_ref_olocked(new_ref);
+		ref = NULL;
+	}
+
 	binder_proc_unlock(proc);
 	if (new_ref && ref != new_ref)
 		/*
@@ -3128,7 +3150,7 @@ static int binder_translate_binder(struct flat_binder_object *fp,
 		ret = -EINVAL;
 		goto done;
 	}
-	if (security_binder_transfer_binder(proc->tsk, target_proc->tsk)) {
+	if (security_binder_transfer_binder(proc->cred, target_proc->cred)) {
 		ret = -EPERM;
 		goto done;
 	}
@@ -3174,7 +3196,7 @@ static int binder_translate_handle(struct flat_binder_object *fp,
 				  proc->pid, thread->pid, fp->handle);
 		return -EINVAL;
 	}
-	if (security_binder_transfer_binder(proc->tsk, target_proc->tsk)) {
+	if (security_binder_transfer_binder(proc->cred, target_proc->cred)) {
 		ret = -EPERM;
 		goto done;
 	}
@@ -3258,7 +3280,7 @@ static int binder_translate_fd(int fd,
 		ret = -EBADF;
 		goto err_fget;
 	}
-	ret = security_binder_transfer_file(proc->tsk, target_proc->tsk, file);
+	ret = security_binder_transfer_file(proc->cred, target_proc->cred, file);
 	if (ret < 0) {
 		ret = -EPERM;
 		goto err_security;
@@ -3730,8 +3752,8 @@ static void binder_transaction(struct binder_proc *proc,
 #endif
 
 		e->to_node = target_node->debug_id;
-		if (security_binder_transaction(proc->tsk,
-						target_proc->tsk) < 0) {
+		if (security_binder_transaction(proc->cred,
+						target_proc->cred) < 0) {
 			return_error = BR_FAILED_REPLY;
 			return_error_param = -EPERM;
 			return_error_line = __LINE__;
@@ -3850,7 +3872,7 @@ static void binder_transaction(struct binder_proc *proc,
 		u32 secid;
 		size_t added_size;
 
-		security_task_getsecid(proc->tsk, &secid);
+		security_cred_getsecid(proc->cred, &secid);
 		ret = security_secid_to_secctx(secid, &secctx, &secctx_sz);
 		if (ret) {
 			return_error = BR_FAILED_REPLY;
@@ -4268,6 +4290,75 @@ err_invalid_target_handle:
 		thread->return_error.cmd = return_error;
 		binder_enqueue_thread_work(thread, &thread->return_error.work);
 	}
+}
+
+/**
+ * if pid and node name are equal, but proc not equal,
+ * it means this user process has opened /dev/binder twice,
+ * one from aosp and the other from hosp.
+ */
+static struct binder_proc *find_target_proc_by_pid(int pid, struct binder_proc *from_proc)
+{
+	struct binder_proc *proc = NULL;
+
+	mutex_lock(&binder_procs_lock);
+	hlist_for_each_entry (proc, &binder_procs, proc_node) {
+		if ((proc->pid == pid) && (proc != from_proc) &&
+		    (!strcmp(proc->context->name, from_proc->context->name))) {
+			binder_inner_proc_lock(proc);
+			if (proc->is_dead) {
+				binder_inner_proc_unlock(proc);
+				mutex_unlock(&binder_procs_lock);
+				pr_err("translate handle failed, target proc is dead");
+				return NULL;
+			}
+			proc->tmp_ref++;
+			binder_inner_proc_unlock(proc);
+			mutex_unlock(&binder_procs_lock);
+			return proc;
+		}
+	}
+	mutex_unlock(&binder_procs_lock);
+	return NULL;
+}
+
+/**
+ * translate ipc object between aosp and hosp.
+ * if translate a binder, find or new a binder node;
+ * otherwise find node existd and add ref to it.
+ */
+static int binder_translate_within_process(struct flat_binder_object *flat,
+				struct binder_proc *target_proc, struct binder_proc *proc,
+				struct binder_thread *thread)
+{
+	struct binder_ref_data dest_rdata;
+	struct binder_node *node = NULL;
+	int ret = -EINVAL;
+	if (flat->hdr.type == BINDER_TYPE_HANDLE) {
+		node = binder_get_node_from_ref(proc, flat->handle, true, NULL);
+	} else if (flat->hdr.type == BINDER_TYPE_BINDER) {
+		node = binder_new_node(proc, flat);
+	}
+	if (node == NULL) {
+		pr_err("translate handle: node is invalid");
+		return ret;
+	}
+
+	if (flat->hdr.type == BINDER_TYPE_HANDLE) {
+		ret = binder_inc_ref_for_node(target_proc, node, true, NULL, &dest_rdata);
+	} else if (flat->hdr.type == BINDER_TYPE_BINDER) {
+		ret = binder_inc_ref_for_node(target_proc, node, true, &thread->todo, &dest_rdata);
+	}
+
+	if (ret) {
+		flat->handle = 0;
+		pr_err("translate handle: ref is not valid");
+	} else {
+		flat->handle = dest_rdata.desc;
+		pr_info("translate handle to %u success", flat->handle);
+	}
+	binder_put_node(node);
+	return ret;
 }
 
 static int binder_thread_write(struct binder_proc *proc,
@@ -4734,6 +4825,33 @@ static int binder_thread_write(struct binder_proc *proc,
 			}
 			binder_inner_proc_unlock(proc);
 		} break;
+		case BC_TRANSLATION: {
+			struct binder_translation *tcomplete = NULL;
+			struct binder_proc *target_proc = NULL;
+			struct flat_binder_object flat;
+			if (copy_from_user(&flat, ptr, sizeof(flat)))
+				return -EFAULT;
+			ptr += sizeof(flat);
+
+			target_proc = find_target_proc_by_pid(proc->pid, proc);
+			if (target_proc == NULL) {
+				pr_err("translate handle failed, no target proc");
+				return -EINVAL;
+			}
+
+			ret = binder_translate_within_process(&flat, target_proc, proc, thread);
+			binder_proc_dec_tmpref(target_proc);
+			if (ret)
+				return -EINVAL;
+
+			tcomplete = kzalloc(sizeof(*tcomplete), GFP_KERNEL);
+			if (tcomplete == NULL)
+				return -ENOMEM;
+
+			tcomplete->desc = flat.handle;
+			tcomplete->work.type = BINDER_WORK_TRANSLATION_COMPLETE;
+			binder_enqueue_thread_work(thread, &tcomplete->work);
+		} break;
 
 		default:
 			pr_err("%d:%d unknown command %d\n",
@@ -4977,6 +5095,23 @@ retry:
 				     proc->pid, thread->pid);
 			kfree(w);
 			binder_stats_deleted(BINDER_STAT_TRANSACTION_COMPLETE);
+		} break;
+		case BINDER_WORK_TRANSLATION_COMPLETE: {
+			struct binder_translation *e =
+				container_of(w, struct binder_translation, work);
+			uint32_t handle = e->desc;
+			cmd = BR_TRANSLATION_COMPLETE;
+			binder_inner_proc_unlock(proc);
+			kfree(e);
+			if (put_user(cmd, (uint32_t __user *)ptr))
+				return -EFAULT;
+			ptr += sizeof(uint32_t);
+			if (put_user(handle, (uint32_t __user *)ptr))
+				return -EFAULT;
+			ptr += sizeof(uint32_t);
+			binder_debug(BINDER_DEBUG_TRANSACTION_COMPLETE,
+				     "%d:%d BR_TRANSLATION_COMPLETE,handle:%u\n",
+				     proc->pid, thread->pid, handle);
 		} break;
 		case BINDER_WORK_NODE: {
 			struct binder_node *node = container_of(w, struct binder_node, work);
@@ -5281,6 +5416,13 @@ static void binder_release_work(struct binder_proc *proc,
 			kfree(w);
 			binder_stats_deleted(BINDER_STAT_TRANSACTION_COMPLETE);
 		} break;
+		case BINDER_WORK_TRANSLATION_COMPLETE: {
+			struct binder_translation *e = container_of(
+				w, struct binder_translation, work);
+			binder_debug(BINDER_DEBUG_DEAD_TRANSACTION,
+				     "undelivered TRANSLATION_COMPLETE\n");
+			kfree(e);
+		} break;
 		case BINDER_WORK_DEAD_BINDER_AND_CLEAR:
 		case BINDER_WORK_CLEAR_DEATH_NOTIFICATION: {
 			struct binder_ref_death *death;
@@ -5374,6 +5516,7 @@ static void binder_free_proc(struct binder_proc *proc)
 #endif
 	binder_alloc_deferred_release(&proc->alloc);
 	put_task_struct(proc->tsk);
+	put_cred(proc->cred);
 	binder_stats_deleted(BINDER_STAT_PROC);
 	kfree(proc);
 }
@@ -5449,23 +5592,20 @@ static int binder_thread_release(struct binder_proc *proc,
 	}
 
 	/*
-	 * If this thread used poll, make sure we remove the waitqueue
-	 * from any epoll data structures holding it with POLLFREE.
-	 * waitqueue_active() is safe to use here because we're holding
-	 * the inner lock.
+	 * If this thread used poll, make sure we remove the waitqueue from any
+	 * poll data structures holding it.
 	 */
-	if ((thread->looper & BINDER_LOOPER_STATE_POLL) &&
-	    waitqueue_active(&thread->wait)) {
-		wake_up_poll(&thread->wait, POLLHUP | POLLFREE);
-	}
+	if (thread->looper & BINDER_LOOPER_STATE_POLL)
+		wake_up_pollfree(&thread->wait);
 
 	binder_inner_proc_unlock(thread->proc);
 
 	/*
-	 * This is needed to avoid races between wake_up_poll() above and
-	 * and ep_remove_waitqueue() called for other reasons (eg the epoll file
-	 * descriptor being closed); ep_remove_waitqueue() holds an RCU read
-	 * lock, so we can be sure it's done after calling synchronize_rcu().
+	 * This is needed to avoid races between wake_up_pollfree() above and
+	 * someone else removing the last entry from the queue for other reasons
+	 * (e.g. ep_remove_wait_queue() being called due to an epoll file
+	 * descriptor being closed).  Such other users hold an RCU read lock, so
+	 * we can be sure they're done after we call synchronize_rcu().
 	 */
 	if (thread->looper & BINDER_LOOPER_STATE_POLL)
 		synchronize_rcu();
@@ -5591,7 +5731,7 @@ static int binder_ioctl_set_ctx_mgr(struct file *filp,
 		ret = -EBUSY;
 		goto out;
 	}
-	ret = security_binder_set_context_mgr(proc->tsk);
+	ret = security_binder_set_context_mgr(proc->cred);
 	if (ret < 0)
 		goto out;
 	if (uid_valid(context->binder_context_mgr_uid)) {
@@ -5756,9 +5896,11 @@ static void binder_sched_scene_ctl(struct binder_sched_args *args)
 
 static void binder_sched_proc_init(struct binder_proc *proc)
 {
-	if (proc->tsk && (!strncmp(proc->tsk->comm, SYSTEM_SERVER_NAME,
-		TASK_COMM_LEN)) && proc->context && proc->context->name &&
-		(!strcmp(proc->context->name, BINDER_NAME))) {
+	if (proc->tsk && (!strncmp(proc->tsk->comm, SYSTEM_SERVER_NAME, TASK_COMM_LEN))
+		&& proc->context && proc->context->name
+		&& (!strcmp(proc->context->name, BINDER_NAME))
+		&& proc->tsk->cred
+		&& multiuser_get_app_id(__kuid_val(proc->tsk->cred->uid)) == SYSTEM_UID) {
 		proc->is_system_server = true;
 		proc->last_check_time = sched_clock();
 		system_server_proc = proc;
@@ -5771,82 +5913,6 @@ static void binder_sched_proc_init(struct binder_proc *proc)
 	proc->bg_count = 0;
 }
 #endif
-
-/*
-* if pid and name is equal, but proc is not equal,
-* it means this user process has opened /dev/binder twice
-*/
-static struct binder_proc * find_to_proc_bypid(int pid, struct binder_proc *from_proc)
-{
-	struct binder_proc *proc = NULL;
-	mutex_lock(&binder_procs_lock);
-	hlist_for_each_entry(proc, &binder_procs, proc_node) {
-		if ((proc->pid == pid) && (proc != from_proc)
-			&& (!strcmp(proc->context->name, from_proc->context->name))) {
-			mutex_unlock(&binder_procs_lock);
-			return proc;
-		}
-	}
-	mutex_unlock(&binder_procs_lock);
-	return NULL;
-}
-
-/*
- * translate handle occour in hosp, so proc belong to hosp,
- * info.has_weak_ref == 1 means hosp2aosp, else info.has_weak_ref == 2 means aosp2hosp,
- * info.has_weak_ref == 3 means hosp stub to aosp bpBinder.
- * if input a cookie, find or new node, else find node existd to add ref to it.
- */
-static int binder_translate_within_process(struct binder_node_debug_info *info,
-	struct binder_proc *aosp_proc, struct binder_proc *hosp_proc,
-	struct binder_thread *hosp_thread)
-{
-	struct binder_ref_data dest_rdata;
-	struct binder_node *node = NULL;
-	int ret = -EINVAL;
-	if (info->has_weak_ref == 1) {
-		node = binder_get_node_from_ref(hosp_proc, info->has_strong_ref, true, NULL);
-	} else if (info->has_weak_ref == 2) {
-		node = binder_get_node_from_ref(aosp_proc, info->has_strong_ref, true, NULL);
-	} else if (info->has_weak_ref == 3 || info->has_weak_ref == 4) {
-		struct flat_binder_object flat;
-		flat.hdr.type = BINDER_TYPE_BINDER;
-		flat.binder = info->ptr;
-		flat.cookie = info->cookie;
-		flat.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS | info->has_strong_ref;
-		if (info->has_weak_ref == 3) {
-			node = binder_new_node(hosp_proc, &flat);
-		} else {
-			node = binder_new_node(aosp_proc, &flat);
-		}
-	}
-	if (node == NULL) {
-		pr_err("translate handle: node is invalid");
-		return ret;
-	}
-	if (info->has_weak_ref == 1) {
-		ret = binder_inc_ref_for_node(aosp_proc, node, true, NULL, &dest_rdata);
-	} else if (info->has_weak_ref == 2) {
-		ret = binder_inc_ref_for_node(hosp_proc, node, true, NULL, &dest_rdata);
-	} else if (info->has_weak_ref == 3) {
-		ret = binder_inc_ref_for_node(aosp_proc, node, true, &hosp_thread->todo, &dest_rdata);
-	} else if (info->has_weak_ref == 4) {
-		struct binder_thread * aosp_thread = binder_get_thread(aosp_proc);
-		if (aosp_thread != NULL) {
-			pr_err("translate handle: aosp_thread is valid");
-			ret = binder_inc_ref_for_node(hosp_proc, node, true, &aosp_thread->todo, &dest_rdata);
-		}
-	}
-	if (ret) {
-		info->has_strong_ref = 0;
-		pr_err("translate handle: ref is not valid");
-	} else {
-		info->has_strong_ref = dest_rdata.desc;
-		pr_info("translate handle to %d success\n", info->has_strong_ref);
-	}
-	binder_put_node(node);
-	return ret;
-}
 
 static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -5982,28 +6048,6 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	}
 #endif
-	case BINDER_TRANSLATE_HANDLE: {
-		struct binder_node_debug_info info;
-		struct binder_proc *aosp_proc;
-
-		if (copy_from_user(&info, ubuf, sizeof(info))) {
-			ret = -EINVAL;
-			goto err;
-		}
-		aosp_proc = find_to_proc_bypid(proc->pid, proc);
-		if (!aosp_proc) {
-			ret = -EINVAL;
-			pr_err("failed! translate handle:only one proc of this process");
-			goto err;
-		}
-		ret = binder_translate_within_process(&info, aosp_proc, proc, thread);
-		if (!ret && copy_to_user(ubuf, &info, sizeof(info))) {
-			ret = -EINVAL;
-			goto err;
-		}
-		break;
-	}
-
 	default:
 		ret = -EINVAL;
 		goto err;
@@ -6114,6 +6158,7 @@ static int binder_open(struct inode *nodp, struct file *filp)
 	get_task_struct(current->group_leader);
 	proc->tsk = current->group_leader;
 	mutex_init(&proc->files_lock);
+	proc->cred = get_cred(filp->f_cred);
 	INIT_LIST_HEAD(&proc->todo);
 #ifdef CONFIG_HW_BINDER_FG_REQ_FIRST
 	INIT_LIST_HEAD(&proc->fg_todo);

@@ -9,7 +9,11 @@
  *
  */
 
+#include <linux/bug.h>
+#include <linux/random.h>
+
 #include "adapter_crypto.h"
+#include "comm/transport.h"
 #include "hmdfs.h"
 
 #define ENCRYPT_FLAG 1
@@ -65,7 +69,7 @@ static int set_aeadcipher(struct crypto_aead *tfm, struct aead_request *req,
 	return 0;
 }
 
-int aeadcipher_encrypt_buffer(struct connection *con, __u8 *src_buf,
+int aeadcipher_encrypt_buffer(struct crypto_aead *tfm, __u8 *src_buf,
 			      size_t src_len, __u8 *dst_buf, size_t dst_len)
 {
 	int ret = 0;
@@ -84,12 +88,12 @@ int aeadcipher_encrypt_buffer(struct connection *con, __u8 *src_buf,
 
 	get_random_bytes(cipher_iv, HMDFS_IV_SIZE);
 	memcpy(dst_buf, cipher_iv, HMDFS_IV_SIZE);
-	req = aead_request_alloc(con->tfm, GFP_KERNEL);
+	req = aead_request_alloc(tfm, GFP_KERNEL);
 	if (!req) {
 		hmdfs_err("aead_request_alloc() failed");
 		return -ENOMEM;
 	}
-	ret = set_aeadcipher(con->tfm, req, &result);
+	ret = set_aeadcipher(tfm, req, &result);
 	if (ret) {
 		hmdfs_err("set_enaeadcipher exit fault");
 		goto out;
@@ -105,7 +109,7 @@ out:
 	return ret;
 }
 
-int aeadcipher_decrypt_buffer(struct connection *con, __u8 *src_buf,
+int aeadcipher_decrypt_buffer(struct crypto_aead *tfm, __u8 *src_buf,
 			      size_t src_len, __u8 *dst_buf, size_t dst_len)
 {
 	int ret = 0;
@@ -123,12 +127,12 @@ int aeadcipher_decrypt_buffer(struct connection *con, __u8 *src_buf,
 	}
 
 	memcpy(cipher_iv, src_buf, HMDFS_IV_SIZE);
-	req = aead_request_alloc(con->tfm, GFP_KERNEL);
+	req = aead_request_alloc(tfm, GFP_KERNEL);
 	if (!req) {
 		hmdfs_err("aead_request_alloc() failed");
 		return -ENOMEM;
 	}
-	ret = set_aeadcipher(con->tfm, req, &result);
+	ret = set_aeadcipher(tfm, req, &result);
 	if (ret) {
 		hmdfs_err("set_deaeadcipher exit fault");
 		goto out;
@@ -143,4 +147,58 @@ int aeadcipher_decrypt_buffer(struct connection *con, __u8 *src_buf,
 out:
 	aead_request_free(req);
 	return ret;
+}
+
+static int set_tfm(__u8 *master_key, struct crypto_aead *tfm)
+{
+	int ret = 0;
+	int iv_len;
+	__u8 *sec_key = NULL;
+
+	sec_key = master_key;
+	crypto_aead_clear_flags(tfm, ~0);
+	ret = crypto_aead_setkey(tfm, sec_key, HMDFS_KEY_SIZE);
+	if (ret) {
+		hmdfs_err("failed to set the key");
+		goto out;
+	}
+	ret = crypto_aead_setauthsize(tfm, HMDFS_TAG_SIZE);
+	if (ret) {
+		hmdfs_err("authsize length is error");
+		goto out;
+	}
+
+	iv_len = crypto_aead_ivsize(tfm);
+	if (iv_len != HMDFS_IV_SIZE) {
+		hmdfs_err("IV recommended value should be set %d", iv_len);
+		ret = -ENODATA;
+	}
+out:
+	return ret;
+}
+
+struct crypto_aead *hmdfs_alloc_aead(uint8_t *master_key, size_t len)
+{
+	int err = 0;
+	struct crypto_aead *tfm = NULL;
+
+	BUG_ON(len != HMDFS_KEY_SIZE);
+
+	tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
+	if (IS_ERR(tfm)) {
+		hmdfs_err("failed to alloc gcm(aes): %ld", PTR_ERR(tfm));
+		return NULL;
+	}
+
+	err = set_tfm(master_key, tfm);
+	if (err) {
+		hmdfs_err("failed to set key to tfm, exit fault: %d", err);
+		goto out;
+	}
+
+	return tfm;
+
+out:
+	crypto_free_aead(tfm);
+	return NULL;
 }

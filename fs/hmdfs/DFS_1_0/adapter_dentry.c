@@ -59,26 +59,21 @@ struct hmdfs_lookup_ret *hmdfs_adapter_remote_lookup(struct hmdfs_peer *con,
 						     const char *relative_path,
 						     const char *d_name)
 {
-	int ret = 0;
-	struct hmdfs_lookup_ret *lookup_ret = NULL;
+	int ret = -ENOMEM;
 	char *account = con->sbi->local_info.account;
-	char *path = NULL;
-	struct lookup_request *req = NULL;
-	struct metabase *meta_result = NULL;
 	int name_len = strlen(d_name);
 	int relative_path_len = strlen(relative_path);
 	int path_len = strlen(account) + relative_path_len + name_len + 2;
+	char *path = kzalloc(path_len, GFP_KERNEL);
+	struct metabase *meta_result =
+		kzalloc(path_len + sizeof(*meta_result), GFP_KERNEL);
+	struct lookup_request *req =
+		kzalloc(sizeof(*req) + path_len, GFP_KERNEL);
+	struct hmdfs_lookup_ret *lookup_ret =
+		kzalloc(sizeof(*lookup_ret), GFP_KERNEL);
 
-	lookup_ret = kzalloc(sizeof(*lookup_ret), GFP_KERNEL);
-	if (!lookup_ret)
+	if (!lookup_ret || !path || !req || !meta_result)
 		goto out;
-
-	path = kzalloc(path_len, GFP_KERNEL);
-	if (!path) {
-		kfree(lookup_ret);
-		lookup_ret = NULL;
-		goto out;
-	}
 
 	if (relative_path_len != 1)
 		snprintf(path, path_len, "/%s%s%s", account, relative_path,
@@ -86,30 +81,14 @@ struct hmdfs_lookup_ret *hmdfs_adapter_remote_lookup(struct hmdfs_peer *con,
 	else
 		snprintf(path, path_len, "/%s%s", account, d_name);
 
-	req = kzalloc(sizeof(*req) + path_len, GFP_KERNEL);
-	if (!req) {
-		kfree(lookup_ret);
-		lookup_ret = NULL;
-		goto out_get_path;
-	}
-
 	req->device_id = con->iid;
 	req->name_len = name_len;
 	req->path_len = strlen(path) - req->name_len;
 	memcpy(req->path, path, path_len);
 
 	path_len += sizeof(*meta_result);
-	meta_result = kzalloc(path_len, GFP_KERNEL);
-	if (!meta_result) {
-		kfree(lookup_ret);
-		lookup_ret = NULL;
-		goto out_get_meta;
-	}
 	ret = dentry_syncer_lookup(req, meta_result, path_len);
-	if (ret != 0) {
-		kfree(lookup_ret);
-		lookup_ret = NULL;
-	} else {
+	if (!ret) {
 		lookup_ret->i_mode = (uint16_t)meta_result->mode;
 		lookup_ret->i_size = meta_result->size;
 		lookup_ret->i_mtime = meta_result->mtime;
@@ -117,12 +96,14 @@ struct hmdfs_lookup_ret *hmdfs_adapter_remote_lookup(struct hmdfs_peer *con,
 		lookup_ret->fno = meta_result->fno;
 	}
 
-	kfree(meta_result);
-out_get_meta:
-	kfree(req);
-out_get_path:
-	kfree(path);
 out:
+	kfree(meta_result);
+	kfree(req);
+	kfree(path);
+	if (ret) {
+		kfree(lookup_ret);
+		lookup_ret = NULL;
+	}
 	trace_hmdfs_adapter_remote_lookup(con, relative_path, d_name,
 					  lookup_ret);
 	return lookup_ret;
@@ -212,6 +193,21 @@ int hmdfs_adapter_create(struct hmdfs_sb_info *sbi, struct dentry *dentry,
 	return 0;
 }
 
+static void update_req_from_lower_inode(struct metabase *req,
+					struct inode *lower_inode)
+{
+	req->ctime = lower_inode->i_ctime.tv_sec;
+	req->mtime = lower_inode->i_mtime.tv_sec;
+	req->atime = lower_inode->i_atime.tv_sec;
+	req->size = lower_inode->i_size;
+	req->uid = lower_inode->i_uid.val;
+	req->gid = lower_inode->i_gid.val;
+	req->nlink = lower_inode->i_nlink;
+	req->rdev = lower_inode->i_rdev;
+	req->dno = 0; // Unused, won't be updated
+	req->fno = 0; // Unused, won't be updated
+}
+
 int hmdfs_adapter_update(struct inode *inode, struct file *file)
 {
 	int err = 0;
@@ -221,7 +217,7 @@ int hmdfs_adapter_update(struct inode *inode, struct file *file)
 	char *account = sbi->local_info.account;
 	const char *name = dentry->d_name.name;
 	char *relative_path = NULL;
-	struct metabase *up_req = NULL;
+	struct metabase *req = NULL;
 	int relative_path_len = 0;
 	int path_len = 0;
 	char *path = NULL;
@@ -241,30 +237,21 @@ int hmdfs_adapter_update(struct inode *inode, struct file *file)
 
 	snprintf(path, path_len, "/%s%s", account, relative_path);
 
-	up_req = kzalloc(sizeof(*up_req) + path_len, GFP_KERNEL);
-	if (!up_req) {
+	req = kzalloc(sizeof(*req) + path_len, GFP_KERNEL);
+	if (!req) {
 		err = -ENOMEM;
 		goto out_get_req;
 	}
-	up_req->ctime = lower_inode->i_ctime.tv_sec;
-	up_req->mtime = lower_inode->i_mtime.tv_sec;
-	up_req->atime = lower_inode->i_atime.tv_sec;
-	up_req->size = lower_inode->i_size;
-	up_req->mode = inode->i_mode;
-	up_req->uid = lower_inode->i_uid.val;
-	up_req->gid = lower_inode->i_gid.val;
-	up_req->nlink = lower_inode->i_nlink;
-	up_req->rdev = lower_inode->i_rdev;
-	up_req->dno = 0; // Unused, won't be updated
-	up_req->fno = 0; // Unused, won't be updated
-	up_req->name_len = strlen(name);
-	up_req->path_len = strlen(path) - up_req->name_len - 1;
-	memcpy(up_req->path, path, path_len);
+	update_req_from_lower_inode(req, lower_inode);
+	req->mode = inode->i_mode;
+	req->name_len = strlen(name);
+	req->path_len = strlen(path) - req->name_len - 1;
+	memcpy(req->path, path, path_len);
 
 	trace_hmdfs_adapter_update(account, relative_path, name);
-	dentry_syncer_update(up_req);
+	dentry_syncer_update(req);
 
-	kfree(up_req);
+	kfree(req);
 out_get_req:
 	kfree(path);
 out_get_path:
@@ -280,13 +267,13 @@ int hmdfs_adapter_rename(struct hmdfs_sb_info *sbi, const char *old_path,
 	int is_dir = S_ISDIR(old_dentry->d_inode->i_mode);
 	const char *old_name = old_dentry->d_name.name;
 	const char *new_name = new_dentry->d_name.name;
-	struct _rename_request *rename_req = NULL;
-	int dir_old_len = strlen(old_path);
-	int dir_new_len = strlen(new_path);
-	int old_name_len = strlen(old_name);
-	int new_name_len = strlen(new_name);
+	struct _rename_request *req = NULL;
+	int old_dlen = strlen(old_path);
+	int new_dlen = strlen(new_path);
+	int old_nlen = strlen(old_name);
+	int new_nlen = strlen(new_name);
 	int account_len = strlen(account);
-	int length = dir_old_len + dir_new_len + old_name_len + new_name_len +
+	int length = old_dlen + new_dlen + old_nlen + new_nlen +
 		     account_len * 2 + 3;
 	int real_len;
 	char *path = kzalloc(length, GFP_KERNEL);
@@ -294,13 +281,13 @@ int hmdfs_adapter_rename(struct hmdfs_sb_info *sbi, const char *old_path,
 	if (!path)
 		return -ENOMEM;
 
-	if (dir_old_len != 1 && dir_new_len != 1)
+	if (old_dlen != 1 && new_dlen != 1)
 		snprintf(path, length, "/%s%s%s/%s%s%s", account, old_path,
 			 old_name, account, new_path, new_name);
-	else if (dir_old_len == 1 && dir_new_len != 1)
+	else if (old_dlen == 1 && new_dlen != 1)
 		snprintf(path, length, "/%s%s/%s%s%s", account, old_name,
 			 account, new_path, new_name);
-	else if (dir_old_len != 1 && dir_new_len == 1)
+	else if (old_dlen != 1 && new_dlen == 1)
 		snprintf(path, length, "/%s%s%s/%s%s", account, old_path,
 			 old_name, account, new_name);
 	else
@@ -308,28 +295,26 @@ int hmdfs_adapter_rename(struct hmdfs_sb_info *sbi, const char *old_path,
 			 new_name);
 
 	real_len = strlen(path);
-	rename_req = kzalloc(sizeof(*rename_req) + real_len + 1, GFP_KERNEL);
-	if (!rename_req) {
+	req = kzalloc(sizeof(*req) + real_len + 1, GFP_KERNEL);
+	if (!req) {
 		kfree(path);
 		return -ENOMEM;
 	}
 
-	rename_req->is_dir = is_dir;
-	rename_req->flags = 0;
-	rename_req->oldparent_len =
-		account_len + 1 + (dir_old_len == 1 ? 0 : dir_old_len);
-	rename_req->oldname_len = old_name_len;
-	rename_req->newparent_len =
-		account_len + 1 + (dir_new_len == 1 ? 0 : dir_new_len);
-	rename_req->newname_len = new_name_len;
-	memcpy(rename_req->path, path, real_len + 1);
+	req->is_dir = is_dir;
+	req->flags = 0;
+	req->oldparent_len = account_len + 1 + (old_dlen == 1 ? 0 : old_dlen);
+	req->oldname_len = old_nlen;
+	req->newparent_len = account_len + 1 + (new_dlen == 1 ? 0 : new_dlen);
+	req->newname_len = new_nlen;
+	memcpy(req->path, path, real_len + 1);
 
 	trace_hmdfs_adapter_rename(account, old_path, old_name, new_path,
 				   new_name, is_dir);
-	dentry_syncer_rename(rename_req);
+	dentry_syncer_rename(req);
 
 	kfree(path);
-	kfree(rename_req);
+	kfree(req);
 	return 0;
 }
 

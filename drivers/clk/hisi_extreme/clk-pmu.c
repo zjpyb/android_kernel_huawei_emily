@@ -148,19 +148,19 @@ static void hi3xxx_multicore_abb_clkgate_unprepare(struct clk_hw *hw)
 	}
 
 	val = readl(pclk->sctrl);
-	if ((val & BIT(AP_ABB_EN)) == 1) {
-		if ((val & BIT(LPM3_ABB_EN)) == 0) {
-			if (!pclk->always_on) {
+	if (!pclk->always_on) {
+		if ((val & BIT(AP_ABB_EN)) == 1) {
+			if ((val & BIT(LPM3_ABB_EN)) == 0) {
 				/* close abb clk */
 				val = (*pclk->clk_pmic_read)(pclk->pmu_clk_enable);
 				val &= (~pclk->ebits);
 				(*pclk->clk_pmic_write)(pclk->pmu_clk_enable, val);
 			}
+			/* write 0x43C register */
+			val = readl(pclk->sctrl);
+			val &= (~BIT(AP_ABB_EN));
+			writel(val, pclk->sctrl);
 		}
-		/* write 0x43C register */
-		val = readl(pclk->sctrl);
-		val &= (~BIT(AP_ABB_EN));
-		writel(val, pclk->sctrl);
 	}
 	hwspin_unlock(pclk->clk_hwlock);
 #endif

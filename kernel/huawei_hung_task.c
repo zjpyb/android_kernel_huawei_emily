@@ -557,6 +557,19 @@ unlock_f:
 	rcu_read_unlock();
 }
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+static void refresh_task_type(pid_t pid, int task_type)
+{
+	struct task_item *item = NULL;
+
+	spin_lock(&list_tasks_lock);
+	item = find_task(pid, &list_tasks);
+	if (item)
+		item->task_type = task_type;
+	spin_unlock(&list_tasks_lock);
+}
+#endif
+
 static void refresh_pids(void)
 {
 	int i;
@@ -567,6 +580,9 @@ static void refresh_pids(void)
 		if (strlen(whitetmplist[i].name) > 0) {
 			whitetmplist[i].pid = get_pid_by_name(whitetmplist[i].name);
 			hash_index = hunglist_hash_locate(whitetmplist[i].pid, HASH_INSERT, whitelist);
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+			refresh_task_type(whitetmplist[i].pid, TASK_TYPE_WHITE);
+#endif
 			if (hash_index != HASH_ERROR)
 				pr_err("hungtask: whitelist[%d]-%s-%d\n",
 					i, whitetmplist[i].name, whitelist[hash_index].pid);
@@ -1246,6 +1262,20 @@ static void check_topapp_hung(struct task_item *item)
 
 }
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+static void update_panic_task(const struct task_item *item)
+{
+	if (upload_hungtask.pid != 0)
+		return;
+
+	upload_hungtask.pid = item->pid;
+	upload_hungtask.tgid = item->tgid;
+	if (memcpy_s(upload_hungtask.name, sizeof(upload_hungtask.name),
+	    item->name, strlen(item->name) != EOK))
+		pr_err("failed to copy upload name");
+}
+#endif
+
 static void deal_task(struct task_item *item, struct task_struct *task, bool is_called)
 {
 	int any_dumped_num = 0;
@@ -1292,6 +1322,9 @@ static void deal_task(struct task_item *item, struct task_struct *task, bool is_
 	if (!is_called && (item->task_type & TASK_TYPE_WHITE)) {
 		if (whitelist_panic_cnt && item->panic_wa > whitelist_panic_cnt) {
 			pr_err("hungtask: Task %s is causing panic\n", item->name);
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+			update_panic_task(item);
+#endif
 			item->panic_wa = 0;
 			hung_task_must_panic++;
 		} else {
@@ -1424,7 +1457,12 @@ void check_hung_tasks_proposal(unsigned long timeout)
 			if (!rcu_lock_break(g, t))
 				goto unlock;
 		}
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+		if ((t->state == TASK_UNINTERRUPTIBLE) ||
+			(t->state == TASK_KILLABLE))
+#else
 		if (t->state == TASK_UNINTERRUPTIBLE)
+#endif
 			check_hung_task(t);
 	}
 unlock:

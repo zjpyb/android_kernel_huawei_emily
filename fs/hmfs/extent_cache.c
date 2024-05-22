@@ -646,6 +646,7 @@ static void f2fs_update_extent_tree_range(struct inode *inode,
 
 	if (updated) {
 		bool dirtied = is_inode_flag_set(inode, FI_DIRTY_INODE);
+		bool flag = IS_FI_ONLY_CHG_EXT(inode);
 		hmfs_mark_inode_dirty_sync(inode, true);
 
 		/*
@@ -654,7 +655,7 @@ static void f2fs_update_extent_tree_range(struct inode *inode,
 		 * whether flushing inode or not in f2fs_do_sync_file.
 		 * In this way, we can speed up fsync with oob info.
 		 */
-		if (hmfs_is_oob_enable(sbi) && !dirtied)
+		if (hmfs_is_oob_enable(sbi) && (!dirtied || flag))
 			set_inode_flag(inode, FI_ONLY_LARGEST_EXT_CHG);
 	}
 }

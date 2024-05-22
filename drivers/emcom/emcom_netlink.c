@@ -140,8 +140,6 @@ static void kernel_emcom_receive(struct sk_buff *__skb)
 	uint16_t data_len;
 	uint8_t submod;
 
-	emcom_logd("emcom: kernel_emcom_receive!");
-
 	skb = skb_get(__skb);
 
 	mutex_lock(&emcom_receive_sem);
@@ -153,7 +151,6 @@ static void kernel_emcom_receive(struct sk_buff *__skb)
 
 	if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr)) &&
 		(skb->len >= nlh->nlmsg_len)) {
-			emcom_logd("emcom netlink receive a packet,nlmsg_type=%d", nlh->nlmsg_type);
 			submod = (nlh->nlmsg_type & EMCOM_SUB_MOD_MASK) >> EMCOM_SUB_MOD_MASK_LEN;
 
 			switch (submod) {

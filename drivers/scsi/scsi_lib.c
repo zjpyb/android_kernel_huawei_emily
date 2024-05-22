@@ -757,8 +757,9 @@ static bool scsi_disorder_check_unistore(struct scsi_cmnd *cmd,
 	if (!scsi_unistore(cmd))
 		return false;
 
-	/* disorder when asc = 0x6A, ascq = 0x05 */
-	return (sshdr->asc == 0x6A && sshdr->ascq == 0x05);
+	/* disorder when asc = 0x6A, ascq = 0x05 || 0x1x */
+	return ((sshdr->asc == 0x6A) && ((sshdr->ascq == 0x05) ||
+		((sshdr->ascq >= 0x10) && (sshdr->ascq < 0x20))));
 }
 #endif
 
@@ -2333,7 +2334,8 @@ void __scsi_init_queue(struct Scsi_Host *shost, struct request_queue *q)
 	blk_queue_order_enable(q, shost->order_enabled);
 #endif
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
-	mas_blk_set_up_unistore_env(q, shost->mas_sec_size, shost->unistore_enable);
+	mas_blk_set_up_unistore_env(q, shost->mas_sec_size, shost->mas_pu_size,
+		shost->unistore_enable);
 #endif
 #endif /* CONFIG_MAS_BLK */
 }

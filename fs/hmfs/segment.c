@@ -16,6 +16,7 @@
 #include <linux/random.h>
 #include <linux/freezer.h>
 #include <linux/sched/signal.h>
+#include <linux/delay.h>
 
 #include "hmfs.h"
 #include "segment.h"
@@ -28,7 +29,8 @@
 
 #define PE_UPDATE_PERIOD	(100)	/* PE limits query period */
 
-#define SLC_SEGS_IN_SEC(sbi)	((sbi)->segs_per_sec / 3)
+#define SLC_SEGS_IN_SEC(sbi)	((sbi)->segs_per_slc_sec)
+
 #define READ_VERIFY_SPECIAL_CHECK	7
 
 const int curseg_dm_type[NR_CURSEG_DM_TYPE] = {
@@ -45,7 +47,6 @@ static struct kmem_cache *discard_entry_slab;
 static struct kmem_cache *discard_cmd_slab;
 static struct kmem_cache *sit_entry_set_slab;
 static struct kmem_cache *inmem_entry_slab;
-static struct kmem_cache *section_order_list_slab;
 
 static struct discard_policy dpolicys[MAX_DPOLICY] = {
 	/* discard_policy	min_gran		io_aware	io_aware_gran	       req_sync */
@@ -98,7 +99,7 @@ static int hmfs_get_slc_mode_type(struct f2fs_sb_info *sbi)
 	if (ctrl->closed)
 		slc_th_interval = level[BG_GC_LEVEL3] + SLC_ENABLE_INTERVAL;
 
-	if (free_secs > slc_th_interval) {
+	if (free_secs >= slc_th_interval) {
 		ctrl->closed = false;
 		return SLC_HOT_DATA;
 	}
@@ -113,6 +114,9 @@ static bool hmfs_is_slc_mode_enable(struct f2fs_sb_info *sbi)
 	if (!test_hw_opt(sbi, SLC_MODE))
 		return false;
 
+	if (!SLC_SEGS_IN_SEC(sbi))
+		return false;
+
 	if (ctrl->pe_limited)
 		return false;
 
@@ -124,9 +128,8 @@ static void hmfs_update_pe_limited(struct f2fs_sb_info *sbi)
 	struct slc_mode_control_info *ctrl = &sbi->slc_mode_ctrl;
 
 	/* pe_limited change: only false -> true */
-	if (ctrl->pe_limited) {
+	if (ctrl->pe_limited)
 		return;
-	}
 
 	atomic_inc(&ctrl->alloc_secs);
 
@@ -155,15 +158,10 @@ static void query_pe_limits_worker(struct work_struct *work)
 
 	err = mas_blk_slc_mode_configuration(sbi->sb->s_bdev, &pe_limited);
 	hmfs_msg(sbi->sb, KERN_INFO, "get pe limits[%u][%d]", pe_limited, err);
-	/* set pe_limited true to disable slc_enable when result is 0xff */
-	if (err == 0xff) {
-		f2fs_bug_on(sbi,  pe_limited != true);
+	if (err || pe_limited)
 		ctrl->pe_limited = true;
-	} else {
-		f2fs_bug_on(sbi, !(err == 0 && pe_limited == false));
-	}
 
-	ctrl->hmfs_is_slc_mode_enable = hmfs_is_slc_mode_enable(sbi);
+	ctrl->is_slc_mode_enable = hmfs_is_slc_mode_enable(sbi);
 }
 
 static int __hmfs_choose_flash_mode(int slc_mode_type, int type)
@@ -206,7 +204,7 @@ static int hmfs_choose_flash_mode(struct f2fs_sb_info *sbi, int type)
 	ctrl->cur_util_rate = utilization(sbi);
 	ctrl->slc_mode_type = hmfs_get_slc_mode_type(sbi);
 
-	if (!ctrl->hmfs_is_slc_mode_enable || ctrl->slc_mode_type == SLC_NONE) {
+	if (!ctrl->is_slc_mode_enable || ctrl->slc_mode_type == SLC_NONE) {
 		atomic_inc(&ctrl->sec_count[TLC_MODE]);
 		return TLC_MODE;
 	}
@@ -467,9 +465,10 @@ void hmfs_file_check_switch_stream(struct inode *inode, int stream_id)
 	fi = F2FS_I(inode);
 
 	spin_lock(&fi->stream_lock);
-	if (fi->fsync_ver != cur_cp_version(F2FS_CKPT(sbi))) {
+	if (fi->cp_ver[WB_CP_VER] != cur_cp_version(F2FS_CKPT(sbi))) {
 		fi->is_switch = false;
 		fi->last_stream = stream_id;
+		fi->cp_ver[WB_CP_VER] = cur_cp_version(F2FS_CKPT(sbi));
 		spin_unlock(&fi->stream_lock);
 		return;
 	}
@@ -743,7 +742,6 @@ void hmfs_drop_inmem_page(struct inode *inode, struct page *page)
 static struct page *last_atomic_data(struct inode *inode)
 {
 	struct page *last_page = NULL;
-	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_inode_info *fi = F2FS_I(inode);
 	struct inmem_pages *cur, *tmp;
 
@@ -762,8 +760,6 @@ static struct page *last_atomic_data(struct inode *inode)
 	}
 
 	trace_hmfs_last_flush_data(inode->i_ino, last_page);
-	hmfs_msg(sbi->sb, KERN_DEBUG, "log last atomic write[%llu, %lld]",
-			inode->i_ino, last_page ? last_page->index : -1);
 	return last_page;
 }
 
@@ -894,6 +890,7 @@ int hmfs_commit_inmem_pages(struct inode *inode)
 
 #define DEF_DIRTY_STAT_INTERVAL 15 /* 15 secs */
 
+#ifdef CONFIG_HMFS_STAT_FS
 bool hmfs_need_balance_dirty_type(struct f2fs_sb_info *sbi)
 {
 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
@@ -949,6 +946,12 @@ bool hmfs_need_balance_dirty_type(struct f2fs_sb_info *sbi)
 
 	return false;
 }
+#else
+bool hmfs_need_balance_dirty_type(struct f2fs_sb_info *sbi)
+{
+	return false;
+}
+#endif
 
 /*
  * This function balances dirty node and dentry pages.
@@ -1345,7 +1348,7 @@ static void __locate_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
 
 		if (IS_MULTI_SEGS_IN_SEC(sbi)) {
 			unsigned int secno = GET_SEC_FROM_SEG(sbi, segno);
-			unsigned short valid_blocks =
+			unsigned int valid_blocks =
 				get_valid_blocks(sbi, segno, true);
 
 			f2fs_bug_on(sbi, unlikely(!valid_blocks ||
@@ -1361,7 +1364,7 @@ static void __remove_dirty_segment(struct f2fs_sb_info *sbi, unsigned int segno,
 		enum dirty_type dirty_type)
 {
 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
-	unsigned short valid_blocks;
+	unsigned int valid_blocks;
 
 	if (test_and_clear_bit(segno, dirty_i->dirty_segmap[dirty_type])) {
 		dirty_i->nr_dirty[dirty_type]--;
@@ -2618,7 +2621,7 @@ bool hmfs_datamove_verify_check(struct f2fs_sb_info *sbi,
 		for (i = start_bit; i < end_bit; i++) {
 			if (test_and_clear_bit(i + start_seg, prefree_map)) {
 				dirty_i->nr_dirty[PRE]--;
-				update_pre_sec_count(sbi, i, false);
+				update_pre_sec_count(sbi, i + start_seg, false);
 			}
 		}
 
@@ -2660,10 +2663,10 @@ void hmfs_clear_prefree_segments(struct f2fs_sb_info *sbi,
 	unsigned long *prefree_map = dirty_i->dirty_segmap[PRE];
 	unsigned int start = 0, end = -1;
 	bool force = (cpc->reason & CP_DISCARD);
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
 
-	if (atomic_read(&HMFS_DM(sbi)->refs))
-		io_wait_event(HMFS_DM(sbi)->wait,
-				!atomic_read(&HMFS_DM(sbi)->refs));
+	if (atomic_read(&dm->refs))
+		io_wait_event(dm->wait, !atomic_read(&dm->refs));
 
 	mutex_lock(&dirty_i->seglist_lock);
 
@@ -2948,7 +2951,7 @@ void hmfs_update_segment_mtime(struct f2fs_sb_info *sbi, block_t blkaddr,
 		SIT_I(sbi)->max_mtime = ctime;
 }
 
-void hmfs_refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new,
+static void hmfs_refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new,
 							       bool from_gc)
 {
        unsigned long long old_mtime = 0;
@@ -2963,9 +2966,6 @@ void hmfs_refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new,
 	       if (!from_gc)
 		       hmfs_update_segment_mtime(sbi, old, 0, false);
        }
-
-       locate_dirty_segment(sbi, GET_SEGNO(sbi, old));
-       locate_dirty_segment(sbi, GET_SEGNO(sbi, new));
 }
 
 
@@ -3170,8 +3170,8 @@ find_other_zone:
 	if (go_left == 0)
 		goto skip_left;
 
-find_other_zone2:
-	while (test_bit(left_start, free_i->free_secmap)) {
+	while (test_bit(left_start, free_i->free_secmap) ||
+			IS_CUR_GC_SEC(left_start)) {
 		if (left_start > start_sec) {
 			left_start--;
 			continue;
@@ -3180,13 +3180,14 @@ find_other_zone2:
 							end_sec,
 							start_sec);
 		f2fs_bug_on(sbi, left_start >= end_sec);
+
+		if (IS_CUR_GC_SEC(left_start)) {
+			start_sec = left_start + 1;
+			continue;
+		}
 		break;
 	}
 	secno = left_start;
-	if (IS_CUR_GC_SEC(secno)) {
-		left_start--;
-		goto find_other_zone2;
-	}
 skip_left:
 	segno = GET_SEG_FROM_SEC(sbi, secno);
 	zoneno = GET_ZONE_FROM_SEC(sbi, secno);
@@ -3275,7 +3276,7 @@ static unsigned int __get_next_segno(struct f2fs_sb_info *sbi, int type)
 	return CURSEG_I(sbi, type)->segno;
 }
 
-static int get_stream_id_by_seg_type(int type)
+int get_stream_id_by_seg_type(int type)
 {
 	switch (type) {
 	case CURSEG_HOT_DATA:
@@ -3292,7 +3293,7 @@ static int get_stream_id_by_seg_type(int type)
 	return STREAM_NR;
 }
 
-static void update_new_curseg_list(struct f2fs_sb_info *sbi,
+static void __update_section_list(struct f2fs_sb_info *sbi,
 	unsigned int segno, int type)
 {
 	struct block_device *bdev = NULL;
@@ -3304,52 +3305,49 @@ static void update_new_curseg_list(struct f2fs_sb_info *sbi,
 				stream_id, hmfs_get_flash_mode(sbi, segno));
 }
 
-void hmfs_insert_section_order_list(struct f2fs_sb_info *sbi,
-			       unsigned int segno, int curseg_type)
+static void update_section_list(struct f2fs_sb_info *sbi,
+	block_t blkaddr, int type)
 {
-	struct section_order *sec_order_entry = NULL;
-	unsigned int stream_id = get_stream_id_by_seg_type(curseg_type);
+	int secno;
 
-	if (stream_id >= STREAM_NR)
-		return;
-
-	sec_order_entry = f2fs_kmem_cache_alloc(section_order_list_slab, GFP_NOFS);
-	sec_order_entry->secno = GET_SEC_FROM_SEG(sbi, segno);
-
-	spin_lock(&sbi->section_list_lock[stream_id]);
-	list_add_tail(&sec_order_entry->list, &sbi->section_list[stream_id]);
-	spin_unlock(&sbi->section_list_lock[stream_id]);
+	secno = GET_SEC_FROM_LBA(sbi, blkaddr);
+	__update_section_list(sbi, GET_SEG_FROM_SEC(sbi, secno), type);
 }
 
-unsigned int hmfs_section_order_list_peek(struct f2fs_sb_info *sbi, int stream_id)
+static void clear_section_list(struct f2fs_sb_info *sbi,
+	block_t blkaddr, int stream_id)
 {
-	struct section_order *sec_order_entry = NULL;
+	struct block_device *bdev = NULL;
 
-	if (list_empty(&sbi->section_list[stream_id]))
-		return NULL_SECNO;
-	sec_order_entry = list_first_entry(&sbi->section_list[stream_id],
-			struct section_order, list);
-
-	return sec_order_entry->secno;
+	bdev = hmfs_target_device(sbi, blkaddr, NULL);
+	mas_blk_clear_section_list(bdev, stream_id);
 }
 
-void hmfs_section_order_list_pop(struct f2fs_sb_info *sbi, block_t blkaddr, int stream_id)
+int get_last_sec_index_by_stream(int stream_id)
 {
-	struct section_order *sec_order_entry = NULL;
+	if (stream_id == STREAM_HOT_DATA)
+		return 0;
 
-	if (list_empty(&sbi->section_list[stream_id]))
+	if (stream_id == STREAM_COLD_DATA)
+		return 1;
+
+	return -1;
+}
+
+static void record_reserved_secno(struct f2fs_sb_info *sbi,
+	int stream_id, int secno)
+{
+	int i;
+	int index;
+
+	index = get_last_sec_index_by_stream(stream_id);
+	if (index < 0)
 		return;
-	if (GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, blkaddr)) !=
-			hmfs_section_order_list_peek(sbi, stream_id))
-		return;
 
-	spin_lock(&sbi->section_list_lock[stream_id]);
-	sec_order_entry = list_first_entry(&sbi->section_list[stream_id],
-			struct section_order, list);
-	list_del(&sec_order_entry->list);
-	spin_unlock(&sbi->section_list_lock[stream_id]);
+	for (i = 0; i < GC_RESERVE_VICTIM - 1; i++)
+		sbi->last_sec[index][i] = sbi->last_sec[index][i + 1];
 
-	kmem_cache_free(section_order_list_slab, sec_order_entry);
+	sbi->last_sec[index][GC_RESERVE_VICTIM - 1] = secno;
 }
 
 /*
@@ -3385,6 +3383,7 @@ static void new_curseg(struct f2fs_sb_info *sbi, struct curseg_info *curseg,
 	curseg->alloc_type = LFS;
 
 	if (old_secno != GET_SEC_FROM_SEG(sbi, segno)) {
+		record_reserved_secno(sbi, get_stream_id_by_seg_type(type), old_secno);
 		hmfs_update_pe_limited(sbi);
 		if (IS_DMGCSEG(type)) {
 			hmfs_set_flash_mode(sbi, segno, TLC_MODE);
@@ -3393,8 +3392,7 @@ static void new_curseg(struct f2fs_sb_info *sbi, struct curseg_info *curseg,
 			hmfs_set_flash_mode(sbi, segno, flash_mode);
 		}
 		update_oob_wr_sec(sbi, type, 1);
-		update_new_curseg_list(sbi, segno, type);
-		hmfs_insert_section_order_list(sbi, segno, type);
+		__update_section_list(sbi, segno, type);
 	}
 }
 
@@ -3471,8 +3469,13 @@ void hmfs_datamove_change_curseg(struct f2fs_sb_info *sbi,
 		block_t next_blk_addr)
 {
 	unsigned int new_segno;
-	unsigned int old_segno = curseg->segno;
+	unsigned int old_segno;
 
+	down_read(&SM_I(sbi)->curseg_lock);
+	mutex_lock(&curseg->curseg_mutex);
+	down_write(&SIT_I(sbi)->sentry_lock);
+
+	old_segno = curseg->segno;
 	if (IS_LAST_DATA_BLOCK_IN_SEC(sbi,
 			next_blk_addr - 1, DATA)) {
 		SIT_I(sbi)->s_ops->allocate_segment(sbi,
@@ -3491,6 +3494,10 @@ void hmfs_datamove_change_curseg(struct f2fs_sb_info *sbi,
 	}
 	/* NOTICE: avoid skip segment with 0 valid block */
 	locate_dirty_segment(sbi, old_segno);
+
+	up_write(&SIT_I(sbi)->sentry_lock);
+	mutex_unlock(&curseg->curseg_mutex);
+	up_read(&SM_I(sbi)->curseg_lock);
 }
 
 void hmfs_restore_virtual_curseg_status(struct f2fs_sb_info *sbi, bool recover)
@@ -3934,6 +3941,7 @@ static void new_curseg_subdivision(struct f2fs_sb_info *sbi,
 	curseg->alloc_type = LFS;
 
 	if (old_secno != GET_SEC_FROM_SEG(sbi, segno)) {
+		record_reserved_secno(sbi, get_stream_id_by_seg_type(type), old_secno);
 		hmfs_update_pe_limited(sbi);
 
 		if (IS_DMGCSEG(type)) {
@@ -3943,8 +3951,7 @@ static void new_curseg_subdivision(struct f2fs_sb_info *sbi,
 			hmfs_set_flash_mode(sbi, segno, flash_mode);
 		}
 		update_oob_wr_sec(sbi, type, 1);
-		update_new_curseg_list(sbi, segno, type);
-		hmfs_insert_section_order_list(sbi, segno, type);
+		__update_section_list(sbi, segno, type);
 	}
 }
 
@@ -4362,7 +4369,7 @@ static int __get_segment_type(struct f2fs_io_info *fio)
 	return type;
 }
 
-int  hmfs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
+int hmfs_allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 		block_t old_blkaddr, block_t *new_blkaddr,
 		struct f2fs_summary *sum, int type,
 		struct f2fs_io_info *fio, bool add_list,
@@ -4580,8 +4587,13 @@ static int do_write_page(struct f2fs_summary *sum, struct f2fs_io_info *fio)
 {
 	int type = __get_segment_type(fio);
 	int err;
+	int ret = 0;
 	bool keep_order = test_opt(fio->sbi, LFS) && ((IS_DATASEG(type)) ||
 		(IS_DMGCSEG(type)));
+	long old_nice = task_nice(current);
+
+	if (old_nice > 0)
+		set_user_nice(current, 0);
 
 	if (keep_order)
 		down_read(&fio->sbi->io_order_lock);
@@ -4589,9 +4601,8 @@ reallocate:
 	err = hmfs_allocate_data_block(fio->sbi, fio->page, fio->old_blkaddr,
 			&fio->new_blkaddr, sum, type, fio, true, SEQ_NONE);
 	if (err) {
-		if (keep_order)
-			up_read(&fio->sbi->io_order_lock);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto unlock_out;
 	}
 	if (GET_SEGNO(fio->sbi, fio->old_blkaddr) != NULL_SEGNO)
 		invalidate_mapping_pages(META_MAPPING(fio->sbi),
@@ -4605,10 +4616,14 @@ reallocate:
 	}
 
 	hmfs_update_device_state(fio->sbi, fio->ino, fio->new_blkaddr);
-
+unlock_out:
 	if (keep_order)
 		up_read(&fio->sbi->io_order_lock);
-	return 0;
+
+	if (task_nice(current) == 0)
+		set_user_nice(current, old_nice);
+
+	return ret;
 }
 
 void hmfs_do_write_meta_page(struct f2fs_sb_info *sbi, struct page *page,
@@ -4809,8 +4824,11 @@ static bool __do_sync_wr_pos(struct f2fs_sb_info *sbi,
 	bool need_cp = false;
 	unsigned int old_segno;
 	struct curseg_info *curseg;
+	int type = CURSEG_T(stream);
 
-	curseg = CURSEG_I(sbi, CURSEG_T(stream));
+	curseg = CURSEG_I(sbi, type);
+	/* Clear section info list added in fs-tool. */
+	clear_section_list(sbi, blkaddr, stream);
 
 	down_write(&SM_I(sbi)->curseg_lock);
 	mutex_lock(&curseg->curseg_mutex);
@@ -4834,6 +4852,7 @@ static bool __do_sync_wr_pos(struct f2fs_sb_info *sbi,
 			stream, curseg->segno, curseg->next_blkoff,
 			GET_SEGNO(sbi, blkaddr), GET_BLKOFF_FROM_SEG0(sbi, blkaddr));
 
+		record_reserved_secno(sbi, stream, GET_SEC_FROM_SEG(sbi, curseg->segno));
 		if (curseg->segno != GET_SEGNO(sbi, blkaddr)) {
 			old_segno = curseg->segno;
 			curseg->next_segno = GET_SEGNO(sbi, blkaddr);
@@ -4843,11 +4862,13 @@ static bool __do_sync_wr_pos(struct f2fs_sb_info *sbi,
 		curseg->next_blkoff = GET_BLKOFF_FROM_SEG0(sbi, blkaddr);
 		need_cp = true;
 		hmfs_set_flash_mode(sbi, GET_SEGNO(sbi, blkaddr), flash_mode);
+		update_section_list(sbi, blkaddr, type);
 	} else {
 		hmfs_msg(sbi->sb, KERN_INFO,
 			"pon sync info: stream[%d] is same[%u,%u]", stream,
 			GET_SEGNO(sbi, blkaddr), GET_BLKOFF_FROM_SEG0(sbi, blkaddr));
 		hmfs_set_flash_mode(sbi, GET_SEGNO(sbi, blkaddr), flash_mode);
+		update_section_list(sbi, blkaddr, type);
 	}
 	up_write(&SIT_I(sbi)->sentry_lock);
 	mutex_unlock(&curseg->curseg_mutex);
@@ -4927,7 +4948,7 @@ static void hmfs_sync_flash_mode(struct f2fs_sb_info *sbi,
 	hmfs_msg(sbi->sb, KERN_INFO, "power on sync info: dm slc mode[%x]",
 			stor_info->dm_slc_mode_status);
 
-	ctrl->hmfs_is_slc_mode_enable = hmfs_is_slc_mode_enable(sbi);
+	ctrl->is_slc_mode_enable = hmfs_is_slc_mode_enable(sbi);
 }
 
 static inline void fill_blk_verify_info(
@@ -4943,12 +4964,14 @@ static inline void fill_blk_verify_info(
 		verify_info->error_injection |= 1 << READ_VERIFY_SPECIAL_CHECK;
 }
 
-static bool hmfs_choose_dm_recovery_policy(struct f2fs_sb_info *sbi,
-		struct hmfs_dm_info *dm_info, int dm_stream_id,
-		block_t cp_verified_blkaddr, block_t cp_next_blkaddr,
-		block_t cached_last_blkaddr,
+static void hmfs_choose_dm_recovery_policy(struct f2fs_sb_info *sbi,
+		int dm_stream_id, block_t cp_verified_blkaddr,
+		block_t cp_next_blkaddr, block_t cached_last_blkaddr,
 		struct stor_dev_sync_read_verify_info *verify_info)
 {
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[dm_stream_id];
+	struct curseg_info *curseg = CURSEG_I(sbi, CURSEG_DATA_MOVE1 + dm_stream_id);
 	/*
 	 * If verify_done_status is non-zero, mean that flash is
 	 * in error status. Execute datamove rescue to fix flash.
@@ -4966,12 +4989,11 @@ static bool hmfs_choose_dm_recovery_policy(struct f2fs_sb_info *sbi,
 		if (!dm_info->next_blkaddr || dm_info->next_blkaddr == cp_next_blkaddr) {
 			hmfs_datamove_fill_array(sbi, dm_info->next_blkaddr,
 					dm_info->cached_last_blkaddr, dm_stream_id);
-			f2fs_bug_on(sbi, dm_info->index >= HMFS_DATAMOVE_PU_SIZE(sbi));
-			return false;
+			return;
 		} else if (dm_info->next_blkaddr > cached_last_blkaddr ||
 				!DATA_BLOCK_IN_SAME_SEC(sbi, dm_info->next_blkaddr,
 				cached_last_blkaddr)) {
-			hmfs_msg(sbi->sb, KERN_INFO, "FW next_blkaddr %u >= cached_last_blkaddr %u\n",
+			hmfs_msg(sbi->sb, KERN_INFO, "FW next_blkaddr %u over cached_last_blkaddr %u\n",
 					dm_info->next_blkaddr, cached_last_blkaddr);
 			hmfs_datamove_drop_verified_entries(sbi, cp_verified_blkaddr, 1);
 			dm_info->cached_last_blkaddr = 0;
@@ -4984,92 +5006,112 @@ static bool hmfs_choose_dm_recovery_policy(struct f2fs_sb_info *sbi,
 			f2fs_bug_on(sbi, 1);
 		}
 	}
-	return true;
+
+	if (dm_info->next_blkaddr != NEXT_FREE_BLKADDR(sbi, curseg))
+		hmfs_datamove_change_curseg(sbi, curseg,
+			CURSEG_DATA_MOVE1 + dm_stream_id, dm_info->next_blkaddr);
 }
 
-static void hmfs_datamove_restore_head(struct f2fs_sb_info *sbi,
-			struct stor_dev_pwron_info *stor_info)
+static void sync_datamove_flash_mode(struct f2fs_sb_info *sbi, int stream,
+		struct stor_dev_pwron_info *stor_info)
 {
 	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
-	struct hmfs_dm_info *dm_info;
-	struct block_device *bdev;
-	struct curseg_info *seg_i;
-	struct stor_dev_sync_read_verify_info verify_info;
-	block_t cur_blkaddr, cp_verified_blkaddr, cp_next_blkaddr, cached_last_blkaddr;
-	int num = atomic_read(&dm->count);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[stream];
 	int flash_mode;
-	int i, ret;
+
+	if (dm_info->next_blkaddr &&
+		!IS_FIRST_DATA_BLOCK_IN_SEC(sbi, dm_info->next_blkaddr)) {
+		flash_mode = ((stor_info->dm_slc_mode_status &
+			(1 << stream)) == (1 << stream));
+		hmfs_set_flash_mode(sbi, GET_SEGNO(sbi,
+			dm_info->next_blkaddr), flash_mode);
+	}
+}
+
+static void sync_verify_submit(struct f2fs_sb_info *sbi, int stream,
+		struct stor_dev_sync_read_verify_info *verify_info)
+{
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[stream];
+	int fail_times = 0;
+	struct block_device *bdev = NULL;
+	int ret;
+
+	bdev = hmfs_target_device(sbi, MAIN_BLKADDR(sbi), NULL);
+
+fail:
+	memset(verify_info, 0,
+		sizeof(struct stor_dev_sync_read_verify_info));
+	fill_blk_verify_info(verify_info, stream, false,
+		dm_info->verified_blkaddr,
+		dm_info->next_blkaddr,
+		dm_info->cached_last_blkaddr);
+
+	ret = mas_blk_sync_read_verify(bdev, verify_info);
+	if (ret) {
+		fail_times++;
+		hmfs_msg(sbi->sb, KERN_ERR, "sync verify fail, ret:%d",
+			ret);
+		if (fail_times > DM_RETRY_TIMES)
+			hmfs_datamove_err_handle(sbi, stream, ret);
+		msleep(DM_MIN_WT);
+		goto fail;
+	}
+
+	hmfs_datamove_update_info(sbi, stream, &(verify_info->verify_info), true);
+}
+
+void hmfs_sync_verify(struct f2fs_sb_info *sbi, int stream,
+		struct stor_dev_pwron_info *stor_info, bool pwron)
+{
+	struct hmfs_dm_manager *dm = HMFS_DM(sbi);
+	struct hmfs_dm_info *dm_info = &dm->dm_info[stream];
+	struct stor_dev_sync_read_verify_info verify_info;
+	block_t cp_verified_blkaddr = dm_info->verified_blkaddr;
+	block_t cp_next_blkaddr = dm_info->next_blkaddr;
+	block_t cached_last_blkaddr = dm_info->cached_last_blkaddr;
 
 	if (!hmfs_datamove_on(sbi))
 		return;
 
-	memset(&verify_info, 0,
-		sizeof(struct stor_dev_sync_read_verify_info));
+	hmfs_msg(sbi->sb, KERN_INFO, "before sync_read_verify: dm stream:%d,"
+		" entry_num:%d, verified_addr:%u, next_addr:%u, last_addr:%u",
+		stream, atomic_read(&dm->count), dm_info->verified_blkaddr,
+		dm_info->next_blkaddr, dm_info->cached_last_blkaddr);
 
-	for (i = 0; i < NR_CURSEG_DM_TYPE; i++) {
-		dm_info = &dm->dm_info[i];
-		seg_i = CURSEG_I(sbi, CURSEG_DATA_MOVE1 + i);
-		cur_blkaddr = NEXT_FREE_BLKADDR(sbi, seg_i);
-		cp_verified_blkaddr = dm_info->verified_blkaddr;
-		cp_next_blkaddr = dm_info->next_blkaddr;
-		cached_last_blkaddr = dm_info->cached_last_blkaddr;
-		bdev = hmfs_target_device(sbi, cur_blkaddr, NULL);
+	sync_verify_submit(sbi, stream, &verify_info);
 
-		fill_blk_verify_info(&verify_info, i, false,
-				dm_info->verified_blkaddr,
-				dm_info->next_blkaddr,
-				dm_info->cached_last_blkaddr);
+	hmfs_msg(sbi->sb, KERN_INFO, "after sync_read_verify: dm stream:%d,"
+		" verified_addr:%u, next_addr:%u, verify status:%u",
+		stream, dm_info->verified_blkaddr, dm_info->next_blkaddr,
+		verify_info.verify_info.verify_done_status);
 
-		ret = mas_blk_sync_read_verify(bdev, &verify_info);
-		f2fs_bug_on(sbi, ret);
-		dm_info->verified_blkaddr =
-			verify_info.verify_info.next_to_be_verify_4k_lba;
-		dm_info->next_blkaddr =
-			verify_info.verify_info.next_available_write_4k_lba;
-
-		hmfs_msg(sbi->sb, KERN_INFO, "restore from device: "
-			"dm stream id %d, verify status %u, entry_num %u, "
-			"verified_addr %u, next_blkaddr %u, cp_verified_addr %u, "
-			"cp_next_blkaddr %u, cached_last_blkaddr %u, "
-			"cur_blkaddr %d, ret %d\n",
-			i, verify_info.verify_info.verify_done_status,
-			num, dm_info->verified_blkaddr,
-			dm_info->next_blkaddr, cp_verified_blkaddr,
-			cp_next_blkaddr, dm_info->cached_last_blkaddr,
-			cur_blkaddr, ret);
-
-		if (dm_info->next_blkaddr &&
-			!IS_FIRST_DATA_BLOCK_IN_SEC(sbi, dm_info->next_blkaddr)) {
-			flash_mode = ((stor_info->dm_slc_mode_status &
-				(1 << i)) == (1 << i));
-			hmfs_set_flash_mode(sbi, GET_SEGNO(sbi,
-				dm_info->next_blkaddr), flash_mode);
-		}
-
-		down_write(&dm->rw_sem);
+	/* This way is only called in ufs reset, dm->rw_sem has been locked. */
+	if (!pwron) {
 		if (dm_info->verified_blkaddr)
 			hmfs_datamove_drop_verified_entries(sbi,
 					dm_info->verified_blkaddr, 0);
-
-		if (!hmfs_choose_dm_recovery_policy(sbi, dm_info, i,
-					cp_verified_blkaddr, cp_next_blkaddr,
-					cached_last_blkaddr, &verify_info)) {
-			up_write(&dm->rw_sem);
-			continue;
-		}
-		up_write(&dm->rw_sem);
-
-		if (dm_info->next_blkaddr != NEXT_FREE_BLKADDR(sbi, seg_i)) {
-			down_read(&SM_I(sbi)->curseg_lock);
-			mutex_lock(&seg_i->curseg_mutex);
-			down_write(&SIT_I(sbi)->sentry_lock);
-			hmfs_datamove_change_curseg(sbi, seg_i,
-				CURSEG_DATA_MOVE1 + i, dm_info->next_blkaddr);
-			up_write(&SIT_I(sbi)->sentry_lock);
-			mutex_unlock(&seg_i->curseg_mutex);
-			up_read(&SM_I(sbi)->curseg_lock);
-		}
+		return;
 	}
+
+	sync_datamove_flash_mode(sbi, stream, stor_info);
+	down_write(&dm->rw_sem);
+	if (dm_info->verified_blkaddr)
+		hmfs_datamove_drop_verified_entries(sbi,
+				dm_info->verified_blkaddr, 0);
+
+	hmfs_choose_dm_recovery_policy(sbi, stream, cp_verified_blkaddr,
+		cp_next_blkaddr, cached_last_blkaddr, &verify_info);
+	up_write(&dm->rw_sem);
+}
+
+static void hmfs_datamove_restore_head(struct f2fs_sb_info *sbi,
+		struct stor_dev_pwron_info *stor_info)
+{
+	int i;
+
+	for (i = 0; i < NR_CURSEG_DM_TYPE; i++)
+		hmfs_sync_verify(sbi, i, stor_info, true);
 }
 
 static int __power_on_addr_check(struct f2fs_sb_info *sbi,
@@ -5187,10 +5229,11 @@ void hmfs_replace_block(struct f2fs_sb_info *sbi, struct dnode_of_data *dn,
 	hmfs_update_data_blkaddr(dn, new_addr);
 }
 
-static void hmfs_copy_page_for_reset(struct f2fs_sb_info *sbi, struct page *page)
+static void hmfs_copy_page_for_reset(struct page *page)
 {
 	int error;
 	struct page *cached_page = NULL;
+	struct f2fs_sb_info *sbi = F2FS_P_SB(page);
 
 	if (PageAnon(page)) {
 		f2fs_bug_on(sbi, 1);
@@ -5205,7 +5248,7 @@ static void hmfs_copy_page_for_reset(struct f2fs_sb_info *sbi, struct page *page
 	 * buf list for reset recovery. Wait for the page to
 	 * complete writeback, and alloc a new page to replace it.
 	 */
-	cached_page = alloc_page(GFP_KERNEL);
+	cached_page = alloc_page(GFP_NOIO | __GFP_NOFAIL);
 	if (!cached_page) {
 		hmfs_msg(sbi->sb, KERN_ERR,
 			"%s - alloc cached page failed!", __func__);
@@ -5213,11 +5256,11 @@ static void hmfs_copy_page_for_reset(struct f2fs_sb_info *sbi, struct page *page
 	}
 
 	f2fs_copy_page(page, cached_page);
+	mas_blk_recovery_pages_add(cached_page);
 	wait_on_page_writeback(page);
 	error = mas_blk_update_buf_bio_page(sbi->sb->s_bdev, page, cached_page);
 	if (error) {
-		hmfs_msg(sbi->sb, KERN_ERR,
-			"%s - replace page failed: %d!", __func__, error);
+		mas_blk_recovery_pages_sub(cached_page);
 		__free_page(cached_page);
 	}
 }
@@ -5235,9 +5278,8 @@ void hmfs_wait_on_page_writeback(struct page *page,
 			wait_on_page_writeback(page);
 		else
 			wait_for_stable_page(page);
-
-		hmfs_copy_page_for_reset(sbi, page);
 	}
+	hmfs_copy_page_for_reset(page);
 }
 
 void hmfs_wait_on_block_writeback(struct inode *inode, block_t blkaddr)
@@ -5819,7 +5861,6 @@ static void remove_sits_in_journal(struct f2fs_sb_info *sbi)
 			continue;
 		}
 		dirtied = __mark_sit_entry_dirty(sbi, segno);
-
 		if (!dirtied)
 			add_sit_entry(segno, &SM_I(sbi)->sit_entry_set);
 	}
@@ -5965,7 +6006,7 @@ static int hmfs_build_slc_mode_ctrl_info(struct f2fs_sb_info *sbi)
 	atomic_set(&ctrl->alloc_secs, 0);
 	ctrl->sbi = sbi;
 	ctrl->cur_util_rate = utilization(sbi);
-	ctrl->hmfs_is_slc_mode_enable = false;
+	ctrl->is_slc_mode_enable = false;
 	ctrl->closed = true;
 	ctrl->slc_mode_type = hmfs_get_slc_mode_type(sbi);
 
@@ -6241,8 +6282,7 @@ static int hmfs_build_datamove_entry(struct f2fs_sb_info *sbi)
 				"unverified datamove entries from checkpoint!\n");
 
 	for (i = 0; i < num; i++) {
-		dm_entry = (struct hmfs_datamove_entry *)
-							(kaddr + offset);
+		dm_entry = (struct hmfs_datamove_entry *)(kaddr + offset);
 		src_addr = le32_to_cpu(dm_entry->src_blkaddr);
 		dst_addr = le32_to_cpu(dm_entry->dst_blkaddr);
 		down_write(&dm->rw_sem);
@@ -6416,8 +6456,8 @@ static void init_dirty_segmap(struct f2fs_sb_info *sbi)
 	struct dirty_seglist_info *dirty_i = DIRTY_I(sbi);
 	struct free_segmap_info *free_i = FREE_I(sbi);
 	unsigned int segno = 0, offset = 0, secno;
-	unsigned short valid_blocks;
-	unsigned short blks_per_sec = BLKS_PER_SEC(sbi);
+	unsigned int valid_blocks;
+	unsigned int blks_per_sec = BLKS_PER_SEC(sbi);
 
 	while (1) {
 		/* find dirty segment based on free segmap */
@@ -6604,11 +6644,7 @@ int hmfs_build_segment_manager(struct f2fs_sb_info *sbi)
 		sm_info->ipu_policy = 1 << F2FS_IPU_FSYNC;
 	sm_info->min_ipu_util = DEF_MIN_IPU_UTIL;
 	sm_info->min_fsync_blocks = DEF_MIN_FSYNC_BLOCKS;
-	if (IS_MULTI_SEGS_IN_SEC(sbi)) {
-		sm_info->min_seq_blocks = DEF_MIN_SEQ_BLOCKS;
-	} else {
-		sm_info->min_seq_blocks = sbi->blocks_per_seg * sbi->segs_per_sec;
-	}
+	sm_info->min_seq_blocks = sbi->blocks_per_seg;
 	sm_info->min_hot_blocks = DEF_MIN_HOT_BLOCKS;
 	sm_info->min_ssr_sections = reserved_sections(sbi);
 
@@ -6792,15 +6828,7 @@ int __init hmfs_create_segment_manager_caches(void)
 			sizeof(struct inmem_pages));
 	if (!inmem_entry_slab)
 		goto destroy_sit_entry_set;
-
-	section_order_list_slab = f2fs_kmem_cache_create("section_list",
-			sizeof(struct section_order));
-	if (!section_order_list_slab)
-		goto destroy_inmem_page_entry;
 	return 0;
-
-destroy_inmem_page_entry:
-	kmem_cache_destroy(inmem_entry_slab);
 destroy_sit_entry_set:
 	kmem_cache_destroy(sit_entry_set_slab);
 destroy_discard_cmd:
@@ -6817,5 +6845,4 @@ void hmfs_destroy_segment_manager_caches(void)
 	kmem_cache_destroy(discard_cmd_slab);
 	kmem_cache_destroy(discard_entry_slab);
 	kmem_cache_destroy(inmem_entry_slab);
-	kmem_cache_destroy(section_order_list_slab);
 }

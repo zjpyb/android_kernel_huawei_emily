@@ -239,6 +239,8 @@ extern "C" {
 #define wlan_power_off                               wlan_power_off_etc2
 #define oal_bus_get_chip_num                         oal_bus_get_chip_num_etc2
 #define oal_sdio_transfer_scatt                      oal_sdio_transfer_scatt_etc2
+#define oal_sdio_malloc_buffer                       oal_sdio_malloc_buffer_etc2
+#define oal_sdio_free_buffer                         oal_sdio_free_buffer_etc2
 #define init_hcc_head_and_send                       init_hcc_head_and_send_etc2
 #define frw_event_ipc_event_queue_full_register      frw_event_ipc_event_queue_full_register_etc2
 #define oam_reg_get_cfg                              oam_reg_get_cfg_etc2

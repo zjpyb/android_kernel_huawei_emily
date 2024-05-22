@@ -99,6 +99,8 @@ int hmdfs_send_fsync(struct hmdfs_peer *con, const struct hmdfs_fid *fid,
 		     __s64 start, __s64 end, __s32 datasync);
 int hmdfs_client_readpage(struct hmdfs_peer *con, const struct hmdfs_fid *fid,
 			  struct page *page);
+int hmdfs_client_readpages(struct hmdfs_peer *con, const struct hmdfs_fid *fid,
+			   struct page **pages, unsigned int nr);
 
 int hmdfs_send_setattr(struct hmdfs_peer *con, const char *send_buf,
 		       struct setattr_info *attr_info);
@@ -107,8 +109,6 @@ int hmdfs_send_getattr(struct hmdfs_peer *con, const char *send_buf,
 		       struct hmdfs_getattr_ret *getattr_result);
 int hmdfs_send_statfs(struct hmdfs_peer *con, const char *path,
 		      struct kstatfs *buf);
-void hmdfs_client_recv_readpage(struct hmdfs_head_cmd *head, int err,
-				struct hmdfs_async_work *async_work);
 int hmdfs_send_syncfs(struct hmdfs_peer *con, int syncfs_timeout);
 int hmdfs_send_getxattr(struct hmdfs_peer *con, const char *send_buf,
 			const char *name, void *value, size_t size);

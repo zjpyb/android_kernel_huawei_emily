@@ -457,6 +457,7 @@ int hisee_get_cosid_processid(const void *buf, unsigned int *cos_id,
 	return ret;
 }
 
+
 int hisee_poweron_booting_func(const void *buf, int para)
 {
 	int ret;
@@ -849,6 +850,36 @@ end:
 	return set_errno_then_exit(ret);
 }
 
+static void hisee_power_off_all(void)
+{
+	if (g_power_vote_cnt > 0 ||
+	    g_power_vote_status.value != POWER_VOTE_OFF_STATUS) {
+		pr_err("%s: %lx, vote_cnt = %x\n", __func__,
+		       g_power_vote_status.value, g_power_vote_cnt);
+		g_power_vote_status.value = POWER_VOTE_OFF_STATUS;
+		g_power_vote_cnt = 0;
+		if (hisee_power_ctrl(HISEE_POWER_OFF, 0, HISEE_POWER_CMD_OFF) !=
+		    HISEE_OK)
+			pr_err("%s: power_off failed!\n", __func__);
+	}
+}
+
+int hisee_force_power_off(void)
+{
+	struct hisee_module_data *hisee_data_ptr = get_hisee_data_ptr();
+
+	if (!hisee_data_ptr) {
+		pr_err("%s():get_hisee_data failed!\n", __func__);
+		return HISEE_ERROR;
+	}
+
+	mutex_lock(&hisee_data_ptr->hisee_mutex);
+	hisee_power_off_all();
+	mutex_unlock(&hisee_data_ptr->hisee_mutex);
+
+	return HISEE_OK;
+}
+
 int hisee_suspend(struct platform_device *pdev, struct pm_message state)
 {
 	struct timer_entry_list *cursor = NULL;
@@ -876,19 +907,7 @@ int hisee_suspend(struct platform_device *pdev, struct pm_message state)
 	mutex_unlock(&g_poweron_timeout_mutex);
 
 	mutex_lock(&hisee_data_ptr->hisee_mutex);
-
-	pr_err("hisee_suspend: %lx, vote_cnt = %x\n",
-	       g_power_vote_status.value, g_power_vote_cnt);
-
-	if (g_power_vote_cnt > 0 ||
-	    g_power_vote_status.value != POWER_VOTE_OFF_STATUS) {
-		g_power_vote_status.value = POWER_VOTE_OFF_STATUS;
-		g_power_vote_cnt = 0;
-		if (hisee_power_ctrl(HISEE_POWER_OFF, 0, HISEE_POWER_CMD_OFF) !=
-		    HISEE_OK)
-			pr_err("hisee_suspend: power_off failed\n");
-	}
-
+	hisee_power_off_all();
 	mutex_unlock(&hisee_data_ptr->hisee_mutex);
 
 	pr_err("hisee_suspend: -\n");

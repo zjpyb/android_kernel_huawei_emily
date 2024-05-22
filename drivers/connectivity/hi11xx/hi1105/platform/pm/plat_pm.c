@@ -96,111 +96,12 @@ gpio_ext_func *g_hisi_gpio_func = NULL;
 #endif
 
 #ifdef _PRE_CONFIG_HISI_S3S4_POWER_STATE
-struct s_pm_wal_host_handler {
-    work_cb pf_wal_host_resume_work_func;
-    work_cb pf_wal_host_suspend_work_func;
-};
-
 struct s_pm_wal_host_handler g_pm_wal_host_handler = {NULL, NULL};
-
-typedef enum {
-    PM_S3S4_CHR_WIFI_RESUME_HANDLE_NULL = 1,
-    PM_S3S4_CHR_WIFI_SUSPEND_HANDLE_NULL = 2,
-    PM_S3S4_CHR_BT_RESUME_HANDLE_NULL = 3,
-    PM_S3S4_CHR_BT_SUSPEND_HANDLE_NULL = 4,
-    PM_S3S4_CHR_WIFI_RESUME_FAIL = 5,
-    PM_S3S4_CHR_WIFI_SUSPEND_FAIL = 6,
-    PM_S3S4_CHR_BT_RESUME_FAIL = 7,
-    PM_S3S4_CHR_BT_SUSPEND_FAIL = 8,
-    PM_S3S4_CHR_BUTT
-} pm_s3s4_status_enum;
-
-typedef struct tag_pm_s3s4_chr_info {
-    uint16_t us_s3s4_status;
-    uint8_t resv[2]; // 2×Ö½Ú±£Áô
-} pm_s3s4_chr_info_stru;
-
-#ifdef _PRE_CONFIG_S3_HCI_DEV_OPT
-#ifdef _PRE_PRODUCT_ARMPC
-int hisi_hci_dev_do_open(struct hci_dev *hdev);
-#else
-int extend_hci_dev_do_open(struct hci_dev *hdev);
-#endif
-#endif
-
-#define POWER_OFF 0
-#define POWER_ON 1
-#define BT_IOCTL_HCISETPROTO 101
-#define BT_IOCTL_HCIUNSETPROTO 102
-
 int g_wifi_is_enable = 0;
 int g_bfgx_is_enable = 0;
-
-void pm_host_walcb_register(work_cb suspend_cb, work_cb resume_cb)
-{
-    g_pm_wal_host_handler.pf_wal_host_suspend_work_func = suspend_cb;
-    g_pm_wal_host_handler.pf_wal_host_resume_work_func = resume_cb;
-}
-
-EXPORT_SYMBOL(pm_host_walcb_register);
-void resume_hi110x_wifi(void)
-{
-    int ret = FAILURE;
-    pm_s3s4_chr_info_stru pm_s3s4_chr_info = { 0 };
-
-    if (oal_likely(g_pm_wal_host_handler.pf_wal_host_resume_work_func)) {
-        ps_print_info("resume_hi110x_wifi::wal_host_resume_work\n");
-        ret = g_pm_wal_host_handler.pf_wal_host_resume_work_func();
-        if (ret != SUCCESS) {
-            pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_WIFI_RESUME_FAIL;
-        }
-    } else {
-        ps_print_err("resume_hi110x_wifi::wal_host_resume_work NULL\n");
-        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_WIFI_RESUME_HANDLE_NULL;
-    }
-
-    if (ret != SUCCESS) {
-        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
-                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
-    }
-}
-
-int resume_hi110x_bfgx(void)
-{
-#ifdef _PRE_CONFIG_S3_HCI_DEV_OPT
-    int ret;
-    struct pm_drv_data *pm_data = pm_get_drvdata(BUART);
-    pm_s3s4_chr_info_stru pm_s3s4_chr_info = { 0 };
-
-    if (pm_data == NULL) {
-        ps_print_err("resume_hi110x_bfgx::pm_get_drvdata return null\n");
-        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_BT_RESUME_HANDLE_NULL;
-        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
-                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
-        return -FAILURE;
-    }
-
-#ifdef _PRE_PRODUCT_ARMPC
-    ret = hisi_hci_dev_do_open(pm_data->st_bt_dev.hdev);
-#else
-    ret = extend_hci_dev_do_open(pm_data->st_bt_dev.hdev);
 #endif
-    ps_print_info("[%s]extend_hci_dev_do_open in resume_hi110x_bfgx\n", index2name(pm_data->index));
-    if (ret != SUCCESS) {
-        ps_print_err("[%s]extend_hci_dev_do_open fail in resume_hi110x\n", index2name(pm_data->index));
-        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_BT_RESUME_FAIL;
-        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
-                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
-    }
-    return ret;
-#else
-    ps_print_info("resume_hi110x_bfgx::hw_bt_ioctl register\n");
-    hw_bt_ioctl(NULL, BT_IOCTL_HCISETPROTO, 0);
-    return SUCCESS;
-#endif
-}
 
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 void oal_free_irq_in_s4(void)
 {
     uint32_t dev_id = HCC_CHIP_110X_DEV;
@@ -330,6 +231,71 @@ int set_board_s4(unsigned long mode)
     return ret;
 }
 #endif
+
+#ifdef _PRE_CONFIG_HISI_S3S4_POWER_STATE
+void pm_host_walcb_register(work_cb suspend_cb, work_cb resume_cb)
+{
+    g_pm_wal_host_handler.pf_wal_host_suspend_work_func = suspend_cb;
+    g_pm_wal_host_handler.pf_wal_host_resume_work_func = resume_cb;
+}
+
+EXPORT_SYMBOL(pm_host_walcb_register);
+void resume_hi110x_wifi(void)
+{
+    int ret = FAILURE;
+    pm_s3s4_chr_info_stru pm_s3s4_chr_info = { 0 };
+
+    if (oal_likely(g_pm_wal_host_handler.pf_wal_host_resume_work_func)) {
+        ps_print_info("resume_hi110x_wifi::wal_host_resume_work\n");
+        ret = g_pm_wal_host_handler.pf_wal_host_resume_work_func();
+        if (ret != SUCCESS) {
+            pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_WIFI_RESUME_FAIL;
+        }
+    } else {
+        ps_print_err("resume_hi110x_wifi::wal_host_resume_work NULL\n");
+        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_WIFI_RESUME_HANDLE_NULL;
+    }
+
+    if (ret != SUCCESS) {
+        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
+                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
+    }
+}
+
+int resume_hi110x_bfgx(void)
+{
+#ifdef _PRE_CONFIG_S3_HCI_DEV_OPT
+    int ret;
+    struct pm_drv_data *pm_data = pm_get_drvdata(BUART);
+    pm_s3s4_chr_info_stru pm_s3s4_chr_info = { 0 };
+
+    if (pm_data == NULL) {
+        ps_print_err("resume_hi110x_bfgx::pm_get_drvdata return null\n");
+        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_BT_RESUME_HANDLE_NULL;
+        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
+                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
+        return -FAILURE;
+    }
+
+#ifdef _PRE_PRODUCT_ARMPC
+    ret = hisi_hci_dev_do_open(pm_data->st_bt_dev.hdev);
+#else
+    ret = extend_hci_dev_do_open(pm_data->st_bt_dev.hdev);
+#endif
+    ps_print_info("[%s]extend_hci_dev_do_open in resume_hi110x_bfgx\n", index2name(pm_data->index));
+    if (ret != SUCCESS) {
+        ps_print_err("[%s]extend_hci_dev_do_open fail in resume_hi110x\n", index2name(pm_data->index));
+        pm_s3s4_chr_info.us_s3s4_status = PM_S3S4_CHR_BT_RESUME_FAIL;
+        chr_exception_p(CHR_PLATFORM_S3S4_EVENTID,
+                        (uint8_t *)(&pm_s3s4_chr_info), sizeof(pm_s3s4_chr_info_stru));
+    }
+    return ret;
+#else
+    ps_print_info("resume_hi110x_bfgx::hw_bt_ioctl register\n");
+    hw_bt_ioctl(NULL, BT_IOCTL_HCISETPROTO, 0);
+    return SUCCESS;
+#endif
+}
 
 void resume_hi110x(void)
 {
@@ -596,6 +562,15 @@ static int pf_suspend_notify(struct notifier_block *notify_block, unsigned long 
             }
             ps_print_info("[BUART] host suspend now \n");
             break;
+        case PM_POST_HIBERNATION:
+        case PM_HIBERNATION_PREPARE: {
+#if defined(_PRE_TV_STD_FEATURE)
+            set_board_s4(mode);
+#endif
+            ps_print_info("[BUART] host std %s now \n",
+                          (mode == PM_HIBERNATION_PREPARE) ? "suspend" : "resume");
+            break;
+        }
         default:
             break;
     }
@@ -647,6 +622,15 @@ static int pf_gnss_sr_notify(struct notifier_block *notify_block, unsigned long 
             }
             ps_print_info("[GUART] host suspend now \n");
             break;
+        case PM_POST_HIBERNATION:
+        case PM_HIBERNATION_PREPARE: {
+#if defined(_PRE_TV_STD_FEATURE)
+            set_board_s4(mode);
+#endif
+            ps_print_info("[BUART] host std %s now \n",
+                          (mode == PM_HIBERNATION_PREPARE) ? "suspend" : "resume");
+            break;
+        }
         default:
             break;
     }

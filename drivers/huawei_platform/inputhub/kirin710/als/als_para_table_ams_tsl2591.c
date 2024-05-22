@@ -60,6 +60,12 @@ static tsl2591_als_para_table tsl2591_als_para_diff_tp_color_table[] = {
 	{ ASK, V4, TS_PANEL_UNKNOWN,
 	 { 6135, 1590, 5552, 10050, 4140, 12421, 470, 0,
 		530, 180, 491, 86, 58, 5000, 300 } },
+	{ CHL, V3, TS_PANEL_UNKNOWN,
+	 { 386, 1560, 4502, 8098, 4185, 7115, 400, 0,
+		380, 200, 9500, 0, 60, 10000, 100 } },
+	{ CHA, V3, TS_PANEL_UNKNOWN,
+	 { 386, 1560, 4502, 8098, 4185, 7115, 400, 0,
+		380, 200, 9500, 0, 60, 10000, 100 } },
 };
 
 tsl2591_als_para_table *als_get_tsl2591_table_by_id(uint32_t id)

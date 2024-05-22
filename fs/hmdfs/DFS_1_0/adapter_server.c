@@ -28,20 +28,6 @@
 /* DFS 1.0 defines (err base + unix err code) as customized err code */
 #define DFS_1_0_ERRNO_BASE ((13UL << 21) + (1UL << 16))
 
-static void fill_ack_header(struct hmdfs_adapter_head *head, int operations,
-			    int datasize, __u64 source, int msg_id)
-{
-	memset(head, 0, sizeof(struct hmdfs_adapter_head));
-	head->magic = HMDFS_MSG_MAGIC;
-	head->version = DFS_2_0;
-	head->operations = (__u8)operations;
-	head->datasize = (__u32)datasize;
-	head->source = source;
-	head->msg_id = 0;
-	head->request_id = (__u16)msg_id;
-	head->flags |= HMDFS_FLAG_ENCRYPTED;
-}
-
 static int err_data_len[META_PULL_END] = {
 	[READ_RESPONSE] = sizeof(struct adapter_read_ack),
 	[WRITE_RESPONSE] = sizeof(struct adapter_write_ack),
@@ -71,17 +57,14 @@ static void send_err_response(struct hmdfs_peer *con, int operations,
 	if (!ack_head)
 		return;
 
-	fill_ack_header(ack_head, operations, ret_len, source, msg_id);
+	fill_ack_header(ack_head, (__u8)operations, (__u32)ret_len,
+			source, 0, (__u16)msg_id);
 	status =
 		(__u32 *)((void *)ack_head + sizeof(struct hmdfs_adapter_head));
 	*status = DFS_1_0_ERRNO_BASE - err;
 
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = status;
-	msg.len = ret_len - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, status, ret_len - sizeof(struct hmdfs_adapter_head));
 	hmdfs_sendmessage(con, &msg);
 	kfree(ack_head);
 }
@@ -104,8 +87,8 @@ void server_recv_handshake(struct hmdfs_peer *con,
 		hmdfs_err("ack_head alloc fail");
 		return;
 	}
-	fill_ack_header(ack_head, HANDSHAKE_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, HANDSHAKE_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data = (struct adapter_handshake_ack
 			    *)((void *)ack_head +
@@ -113,12 +96,8 @@ void server_recv_handshake(struct hmdfs_peer *con,
 	ack_data->len = len;
 	memcpy(ack_data->dev_id, buf, len);
 
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 	hmdfs_sendmessage(con, &msg);
 	kfree(ack_head);
 }
@@ -173,8 +152,8 @@ void server_recv_read(struct hmdfs_peer *con, struct hmdfs_adapter_head *head,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, READ_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, READ_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data =
 		(struct adapter_read_ack *)((void *)ack_head +
@@ -192,12 +171,8 @@ void server_recv_read(struct hmdfs_peer *con, struct hmdfs_adapter_head *head,
 	ret_size -= read_size - ack_data->size;
 	ack_head->datasize = ret_size;
 
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 	hmdfs_sendmessage(con, &msg);
 	goto out;
 
@@ -247,8 +222,8 @@ void server_recv_writepages(struct hmdfs_peer *con,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, WRITE_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, WRITE_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data = (void *)ack_head + sizeof(struct hmdfs_adapter_head);
 
@@ -287,12 +262,8 @@ void server_recv_writepages(struct hmdfs_peer *con,
 	}
 	ack_data->status = 0;
 	ack_data->size = real_size;
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 	hmdfs_sendmessage(con, &msg);
 	goto out;
 
@@ -346,22 +317,15 @@ void server_recv_close(struct hmdfs_peer *con, struct hmdfs_adapter_head *head,
 		hmdfs_err("ack_head alloc fail");
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, CLOSE_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, CLOSE_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data =
 		(struct adapter_close_ack *)((void *)ack_head +
 					     sizeof(struct hmdfs_adapter_head));
-	ack_data->status = 0;
-	ack_data->size = size;
-	ack_data->mtime = mtime;
-	ack_data->atime = atime;
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_ack_data(ack_data, 0, size, mtime, atime);
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 
 	hmdfs_sendmessage(con, &msg);
 	goto out;
@@ -415,17 +379,13 @@ void server_recv_delete(struct hmdfs_peer *con, struct hmdfs_adapter_head *head,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, DELETE_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, DELETE_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 	status =
 		(__u32 *)((void *)ack_head + sizeof(struct hmdfs_adapter_head));
 	*status = 0;
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = status;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, status, ret_size - sizeof(struct hmdfs_adapter_head));
 
 	hmdfs_sendmessage(con, &msg);
 	goto out;
@@ -486,8 +446,8 @@ void server_recv_read_meta(struct hmdfs_peer *con,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, READ_META_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, READ_META_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data = (struct adapter_read_meta_ack
 			    *)((void *)ack_head +
@@ -510,12 +470,8 @@ void server_recv_read_meta(struct hmdfs_peer *con,
 		remain_size -= cur_size;
 	}
 
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 	hmdfs_sendmessage(con, &msg);
 	goto out;
 
@@ -571,22 +527,15 @@ void server_recv_sync(struct hmdfs_peer *con, struct hmdfs_adapter_head *head,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, SYNC_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, SYNC_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 
 	ack_data =
 		(struct adapter_close_ack *)((void *)ack_head +
 					     sizeof(struct hmdfs_adapter_head));
-	ack_data->status = 0;
-	ack_data->size = size;
-	ack_data->mtime = mtime;
-	ack_data->atime = atime;
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = ack_data;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_ack_data(ack_data, 0, size, mtime, atime);
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, ack_data, ret_size - sizeof(struct hmdfs_adapter_head));
 
 	hmdfs_sendmessage(con, &msg);
 	goto out;
@@ -629,8 +578,8 @@ void server_recv_set_fsize(struct hmdfs_peer *con,
 		err = -ENOMEM;
 		goto out_failed;
 	}
-	fill_ack_header(ack_head, SET_FSIZE_RESPONSE, ret_size, local_dno,
-			head->msg_id);
+	fill_ack_header(ack_head, SET_FSIZE_RESPONSE,
+			(__u32)ret_size, local_dno, 0, head->msg_id);
 	status =
 		(__u32 *)((void *)ack_head + sizeof(struct hmdfs_adapter_head));
 
@@ -646,12 +595,8 @@ void server_recv_set_fsize(struct hmdfs_peer *con,
 		goto out_failed;
 	}
 	*status = 0;
-	msg.head = ack_head;
-	msg.head_len = sizeof(struct hmdfs_adapter_head);
-	msg.data = status;
-	msg.len = ret_size - msg.head_len;
-	msg.sdesc_len = 0;
-	msg.sdesc = NULL;
+	fill_msg(&msg, ack_head, sizeof(struct hmdfs_adapter_head), NULL,
+		 0, status, ret_size - sizeof(struct hmdfs_adapter_head));
 
 	hmdfs_sendmessage(con, &msg);
 	goto out;
@@ -699,7 +644,7 @@ static int verify_request(struct hmdfs_peer *con,
 void server_request_recv(struct hmdfs_peer *con,
 			 struct hmdfs_adapter_head *head, void *buf)
 {
-	const struct cred *saved_cred = hmdfs_override_fsids(true);
+	const struct cred *saved_cred = hmdfs_override_fsids(con->sbi, true);
 
 	if (!saved_cred) {
 		hmdfs_err("prepare cred failed!");

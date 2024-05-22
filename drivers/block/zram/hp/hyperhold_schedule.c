@@ -31,6 +31,7 @@
 #include <linux/zsmalloc.h>
 #include <linux/delay.h>
 #include <linux/fscrypt_common.h>
+#include <linux/blkdev.h>
 #include "hyperhold_internal.h"
 
 /* default key index is zero */
@@ -422,25 +423,44 @@ static int hyperhold_bio_add_page(struct bio *bio,
 
 	list_for_each_entry_safe(io_entry, tmp, &segment->io_entries, list)  {
 		for (i = 0; i < io_entry->pages_sz; i++) {
-			io_entry->dest_pages[i]->index =
-				bio->bi_iter.bi_sector + k;
+#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
+			io_entry->dest_pages[i]->index = bio->index + k;
+#endif
 			if (unlikely(!bio_add_page(bio,
 				io_entry->dest_pages[i], PAGE_SIZE, 0))) {
 
 				return -EIO;
 			}
-			k += HYPERHOLD_PAGE_SIZE_SECTOR;
+			k++;
 		}
 	}
 
 	return 0;
 }
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static void hyperhold_unistore_set_stream_type(struct bio *bio)
+{
+	struct block_device *bdev = hyperhold_bdev();
+	struct request_queue *q = NULL;
+
+	if (!bdev)
+		return;
+
+	q = bdev_get_queue(bdev);
+	if (blk_queue_query_unistore_enable(q))
+		bio->mas_bio.stream_type = BLK_STREAM_HP;
+}
+#endif
+
 static void hyperhold_set_bio_opf(struct bio *bio,
 	struct hyperhold_segment *segment)
 {
 	if (segment->req->io_para.scenario == HYPERHOLD_RECLAIM_IN) {
 		bio->bi_opf |= REQ_BACKGROUND;
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+		hyperhold_unistore_set_stream_type(bio);
+#endif
 		return;
 	}
 

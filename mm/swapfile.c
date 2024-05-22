@@ -133,6 +133,20 @@ __try_to_reclaim_swap(struct swap_info_struct *si, unsigned long offset)
 	return ret;
 }
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+static inline struct swap_extent *first_se(struct swap_info_struct *sis)
+{
+	struct rb_node *rb = rb_first(&sis->swap_extent_root);
+	return rb_entry(rb, struct swap_extent, rb_node);
+}
+
+static inline struct swap_extent *next_se(struct swap_extent *se)
+{
+	struct rb_node *rb = rb_next(&se->rb_node);
+	return rb ? rb_entry(rb, struct swap_extent, rb_node) : NULL;
+}
+#endif
+
 /*
  * swapon tell device that all the old swap contents can be discarded,
  * to allow the swap device to optimize its wear-levelling.
@@ -145,7 +159,11 @@ static int discard_swap(struct swap_info_struct *si)
 	int err = 0;
 
 	/* Do not discard the swap header page! */
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	se = &si->first_swap_extent;
+#else
+	se = first_se(si);
+#endif
 	start_block = (se->start_block + 1) << (PAGE_SHIFT - 9);
 	nr_blocks = ((sector_t)se->nr_pages - 1) << (PAGE_SHIFT - 9);
 	if (nr_blocks) {
@@ -156,7 +174,11 @@ static int discard_swap(struct swap_info_struct *si)
 		cond_resched();
 	}
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	list_for_each_entry(se, &si->first_swap_extent.list, list) {
+#else
+	for (se = next_se(se); se; se = next_se(se)) {
+#endif
 		start_block = se->start_block << (PAGE_SHIFT - 9);
 		nr_blocks = (sector_t)se->nr_pages << (PAGE_SHIFT - 9);
 
@@ -170,6 +192,27 @@ static int discard_swap(struct swap_info_struct *si)
 	return err;		/* That will often be -EOPNOTSUPP */
 }
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+static struct swap_extent *
+offset_to_swap_extent(struct swap_info_struct *sis, unsigned long offset)
+{
+	struct swap_extent *se;
+	struct rb_node *rb;
+
+	rb = sis->swap_extent_root.rb_node;
+	while (rb) {
+		se = rb_entry(rb, struct swap_extent, rb_node);
+		if (offset < se->start_page)
+			rb = rb->rb_left;
+		else if (offset >= se->start_page + se->nr_pages)
+			rb = rb->rb_right;
+		else
+			return se;
+	}
+	/* It *must* be present */
+	BUG();
+}
+#endif
 /*
  * swap allocation tell device that a cluster of swap can now be discarded,
  * to allow the swap device to optimize its wear-levelling.
@@ -177,6 +220,7 @@ static int discard_swap(struct swap_info_struct *si)
 static void discard_swap_cluster(struct swap_info_struct *si,
 				 pgoff_t start_page, pgoff_t nr_pages)
 {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct swap_extent *se = si->curr_swap_extent;
 	int found_extent = 0;
 
@@ -204,6 +248,28 @@ static void discard_swap_cluster(struct swap_info_struct *si,
 
 		se = list_next_entry(se, list);
 	}
+#else
+	struct swap_extent *se = offset_to_swap_extent(si, start_page);
+
+	while (nr_pages) {
+		pgoff_t offset = start_page - se->start_page;
+		sector_t start_block = se->start_block + offset;
+		sector_t nr_blocks = se->nr_pages - offset;
+
+		if (nr_blocks > nr_pages)
+			nr_blocks = nr_pages;
+		start_page += nr_blocks;
+		nr_pages -= nr_blocks;
+
+		start_block <<= PAGE_SHIFT - 9;
+		nr_blocks <<= PAGE_SHIFT - 9;
+		if (blkdev_issue_discard(si->bdev, start_block,
+					nr_blocks, GFP_NOIO, 0))
+			break;
+
+		se = next_se(se);
+	}
+#endif
 }
 
 #ifdef CONFIG_THP_SWAP
@@ -553,12 +619,23 @@ new_cluster:
 			cluster->next = cluster_next(&cluster->index) *
 					SWAPFILE_CLUSTER;
 		} else if (!cluster_list_empty(&si->discard_clusters)) {
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+			/*
+			 * we don't have free cluster but have some clusters in
+			 * discarding, do discard now and reclaim them, then
+			 * reread cluster_next_cpu since we dropped si->lock
+			 */
+			swap_do_scheduled_discard(si);
+			*scan_base = this_cpu_read(*si->cluster_next_cpu);
+			*offset = *scan_base;
+#else
 			/*
 			 * we don't have free cluster but have some clusters in
 			 * discarding, do discard now and reclaim them
 			 */
 			swap_do_scheduled_discard(si);
 			*scan_base = *offset = si->cluster_next;
+#endif
 			goto new_cluster;
 		} else
 			return false;
@@ -676,6 +753,36 @@ static void swap_range_free(struct swap_info_struct *si, unsigned long offset,
 #endif
 }
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+static void set_cluster_next(struct swap_info_struct *si, unsigned long next)
+{
+	unsigned long prev;
+
+	if (!(si->flags & SWP_SOLIDSTATE)) {
+		si->cluster_next = next;
+		return;
+	}
+
+	prev = this_cpu_read(*si->cluster_next_cpu);
+	/*
+	 * Cross the swap address space size aligned trunk, choose
+	 * another trunk randomly to avoid lock contention on swap
+	 * address space if possible.
+	 */
+	if ((prev >> SWAP_ADDRESS_SPACE_SHIFT) !=
+	    (next >> SWAP_ADDRESS_SPACE_SHIFT)) {
+		/* No free swap slots available */
+		if (si->highest_bit <= si->lowest_bit)
+			return;
+		next = si->lowest_bit +
+			prandom_u32_max(si->highest_bit - si->lowest_bit + 1);
+		next = ALIGN_DOWN(next, SWAP_ADDRESS_SPACE_PAGES);
+		next = max_t(unsigned int, next, si->lowest_bit);
+	}
+	this_cpu_write(*si->cluster_next_cpu, next);
+}
+#endif
+
 static int scan_swap_map_slots(struct swap_info_struct *si,
 			       unsigned char usage, int nr,
 			       swp_entry_t slots[])
@@ -686,6 +793,9 @@ static int scan_swap_map_slots(struct swap_info_struct *si,
 	unsigned long last_in_cluster = 0;
 	int latency_ration = LATENCY_LIMIT;
 	int n_ret = 0;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	bool scanned_many = false;
+#endif
 
 	if (nr > SWAP_BATCH)
 		nr = SWAP_BATCH;
@@ -702,7 +812,20 @@ static int scan_swap_map_slots(struct swap_info_struct *si,
 	 */
 
 	si->flags += SWP_SCANNING;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	/*
+	 * Use percpu scan base for SSD to reduce lock contention on
+	 * cluster and swap cache.  For HDD, sequential access is more
+	 * important.
+	 */
+	if (si->flags & SWP_SOLIDSTATE)
+		scan_base = this_cpu_read(*si->cluster_next_cpu);
+	else
+		scan_base = si->cluster_next;
+	offset = scan_base;
+#else
 	scan_base = offset = si->cluster_next;
+#endif
 
 	/* SSD algorithm */
 	if (si->cluster_info) {
@@ -795,7 +918,9 @@ checks:
 	unlock_cluster(ci);
 
 	swap_range_alloc(si, offset, 1);
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	si->cluster_next = offset + 1;
+#endif
 	slots[n_ret++] = swp_entry(si->type, offset);
 
 	/* got enough slots or reach max slots? */
@@ -829,8 +954,31 @@ checks:
 		--si->cluster_nr;
 		goto checks;
 	}
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	/*
+	 * Even if there's no free clusters available (fragmented),
+	 * try to scan a little more quickly with lock held unless we
+	 * have scanned too many slots already.
+	 */
+	if (!scanned_many) {
+		unsigned long scan_limit;
+
+		if (offset < scan_base)
+			scan_limit = scan_base;
+		else
+			scan_limit = si->highest_bit;
+		for (; offset <= scan_limit && --latency_ration > 0;
+		     offset++) {
+			if (!si->swap_map[offset])
+				goto checks;
+		}
+	}
 
 done:
+	set_cluster_next(si, offset + 1);
+#else
+done:
+#endif
 	si->flags -= SWP_SCANNING;
 	return n_ret;
 
@@ -848,6 +996,9 @@ scan:
 		if (unlikely(--latency_ration < 0)) {
 			cond_resched();
 			latency_ration = LATENCY_LIMIT;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+			scanned_many = true;
+#endif
 		}
 	}
 	offset = si->lowest_bit;
@@ -863,6 +1014,9 @@ scan:
 		if (unlikely(--latency_ration < 0)) {
 			cond_resched();
 			latency_ration = LATENCY_LIMIT;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+			scanned_many = true;
+#endif
 		}
 		offset++;
 	}
@@ -1711,7 +1865,11 @@ int swap_type_of(dev_t device, sector_t offset, struct block_device **bdev_p)
 			return type;
 		}
 		if (bdev == sis->bdev) {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 			struct swap_extent *se = &sis->first_swap_extent;
+#else
+			struct swap_extent *se = first_se(sis);
+#endif
 
 			if (se->start_block == offset) {
 				if (bdev_p)
@@ -2294,7 +2452,9 @@ static void drain_mmlist(void)
 static sector_t map_swap_entry(swp_entry_t entry, struct block_device **bdev)
 {
 	struct swap_info_struct *sis;
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct swap_extent *start_se;
+#endif
 	struct swap_extent *se;
 	pgoff_t offset;
 
@@ -2302,6 +2462,7 @@ static sector_t map_swap_entry(swp_entry_t entry, struct block_device **bdev)
 	*bdev = sis->bdev;
 
 	offset = swp_offset(entry);
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	start_se = sis->curr_swap_extent;
 	se = start_se;
 
@@ -2314,6 +2475,10 @@ static sector_t map_swap_entry(swp_entry_t entry, struct block_device **bdev)
 		sis->curr_swap_extent = se;
 		BUG_ON(se == start_se);		/* It *must* be present */
 	}
+#else
+	se = offset_to_swap_extent(sis, offset);
+	return se->start_block + (offset - se->start_page);
+#endif
 }
 
 /*
@@ -2331,6 +2496,7 @@ sector_t map_swap_page(struct page *page, struct block_device **bdev)
  */
 static void destroy_swap_extents(struct swap_info_struct *sis)
 {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	while (!list_empty(&sis->first_swap_extent.list)) {
 		struct swap_extent *se;
 
@@ -2339,6 +2505,15 @@ static void destroy_swap_extents(struct swap_info_struct *sis)
 		list_del(&se->list);
 		kfree(se);
 	}
+#else
+	while (!RB_EMPTY_ROOT(&sis->swap_extent_root)) {
+		struct rb_node *rb = sis->swap_extent_root.rb_node;
+		struct swap_extent *se = rb_entry(rb, struct swap_extent, rb_node);
+
+		rb_erase(rb, &sis->swap_extent_root);
+		kfree(se);
+	}
+#endif
 
 	if (sis->flags & SWP_FILE) {
 		struct file *swap_file = sis->swap_file;
@@ -2359,8 +2534,12 @@ int
 add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
 		unsigned long nr_pages, sector_t start_block)
 {
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	struct rb_node **link = &sis->swap_extent_root.rb_node, *parent = NULL;
+#endif
 	struct swap_extent *se;
 	struct swap_extent *new_se;
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct list_head *lh;
 
 	if (start_page == 0) {
@@ -2373,6 +2552,20 @@ add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
 	} else {
 		lh = sis->first_swap_extent.list.prev;	/* Highest extent */
 		se = list_entry(lh, struct swap_extent, list);
+#else
+
+	/*
+	 * place the new node at the right most since the
+	 * function is called in ascending page order.
+	 */
+	while (*link) {
+		parent = *link;
+		link = &parent->rb_right;
+	}
+
+	if (parent) {
+		se = rb_entry(parent, struct swap_extent, rb_node);
+#endif
 		BUG_ON(se->start_page + se->nr_pages != start_page);
 		if (se->start_block + se->nr_pages == start_block) {
 			/* Merge it */
@@ -2391,7 +2584,12 @@ add_swap_extent(struct swap_info_struct *sis, unsigned long start_page,
 	new_se->nr_pages = nr_pages;
 	new_se->start_block = start_block;
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	list_add_tail(&new_se->list, &sis->first_swap_extent.list);
+#else
+	rb_link_node(&new_se->rb_node, parent, link);
+	rb_insert_color(&new_se->rb_node, &sis->swap_extent_root);
+#endif
 	return 1;
 }
 EXPORT_SYMBOL_GPL(add_swap_extent);
@@ -2670,6 +2868,10 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	mutex_unlock(&swapon_mutex);
 	free_percpu(p->percpu_cluster);
 	p->percpu_cluster = NULL;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	free_percpu(p->cluster_next_cpu);
+	p->cluster_next_cpu = NULL;
+#endif
 	vfree(swap_map);
 	kvfree(cluster_info);
 	kvfree(frontswap_map);
@@ -2883,7 +3085,11 @@ static struct swap_info_struct *alloc_swap_info(void)
 		 * would be relying on p->type to remain valid.
 		 */
 	}
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	INIT_LIST_HEAD(&p->first_swap_extent.list);
+#else
+	p->swap_extent_root = RB_ROOT;
+#endif
 	plist_node_init(&p->list, 0);
 	for_each_node(i)
 		plist_node_init(&p->avail_lists[i], 0);
@@ -3213,11 +3419,25 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 		unsigned long ci, nr_cluster;
 
 		p->flags |= SWP_SOLIDSTATE;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+		p->cluster_next_cpu = alloc_percpu(unsigned int);
+		if (!p->cluster_next_cpu) {
+			error = -ENOMEM;
+			goto bad_swap;
+		}
+#endif
 		/*
 		 * select a random position to start with to help wear leveling
 		 * SSD
 		 */
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+		for_each_possible_cpu(cpu) {
+			per_cpu(*p->cluster_next_cpu, cpu) =
+				1 + prandom_u32_max(p->highest_bit);
+		}
+#else
 		p->cluster_next = 1 + (prandom_u32() % p->highest_bit);
+#endif
 		nr_cluster = DIV_ROUND_UP(maxpages, SWAPFILE_CLUSTER);
 
 		cluster_info = kvzalloc(nr_cluster * sizeof(*cluster_info),
@@ -3318,6 +3538,10 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 bad_swap:
 	free_percpu(p->percpu_cluster);
 	p->percpu_cluster = NULL;
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	free_percpu(p->cluster_next_cpu);
+	p->cluster_next_cpu = NULL;
+#endif
 	if (inode && S_ISBLK(inode->i_mode) && p->bdev) {
 		set_blocksize(p->bdev, p->old_block_size);
 		blkdev_put(p->bdev, FMODE_READ | FMODE_WRITE | FMODE_EXCL);

@@ -56,6 +56,10 @@
 #include <linux/hisi/hisi_drm_heaps_tracer.h>
 #endif
 
+#if defined(CONFIG_HISI_LOWMEM_DBG) && defined(CONFIG_OPTIMIZE_MM_AQ)
+#include <linux/hisi/lowmem_killer.h>
+#endif
+
 #include <chipset_common/hwmemcheck/memcheck.h>
 
 int sysctl_panic_on_oom;
@@ -432,6 +436,12 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
 
 	cpuset_print_current_mems_allowed();
 	dump_stack();
+
+#if defined(CONFIG_HISI_LOWMEM_DBG) && defined(CONFIG_OPTIMIZE_MM_AQ)
+	hisi_lowmem_dbg(0); /* 0 means verbose log */
+	return;
+#endif
+
 	if (oc->memcg)
 		mem_cgroup_print_oom_info(oc->memcg, p);
 	else
@@ -1033,6 +1043,18 @@ int unregister_oom_notifier(struct notifier_block *nb)
 	return blocking_notifier_chain_unregister(&oom_notify_list, nb);
 }
 EXPORT_SYMBOL_GPL(unregister_oom_notifier);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+/*
+ * Show the info registered by register_oom_notifier.
+ */
+void show_oom_notifier_mem_info(void)
+{
+	unsigned long freed = 0;
+
+	(void)blocking_notifier_call_chain(&oom_notify_list, 0, &freed);
+}
+#endif
 
 /**
  * out_of_memory - kill the "best" process when we run out of memory

@@ -37,7 +37,7 @@ static spinlock_t g_netlink_lock; /* lock for netlink array */
 struct tag_hw_msg2knl {
 	struct nlmsghdr hdr;
 	int opt;
-	char data[1];
+	char data[0];
 };
 
 struct appdload_nl_packet_msg {
@@ -140,19 +140,23 @@ static void kernel_hw_receive(struct sk_buff *__skb)
 		kfree_skb(skb);
 		return;
 	}
-	if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr)) &&
-		(skb->len >= nlh->nlmsg_len)) {
-		if (nlh->nlmsg_type == NETLINK_REG_TO_KERNEL) {
-			g_uspa_pid = nlh->nlmsg_pid;
-		} else if (nlh->nlmsg_type == NETLINK_UNREG_TO_KERNEL) {
-			g_uspa_pid = 0;
-		} else {
+	if ((nlh->nlmsg_len < sizeof(struct nlmsghdr)) ||
+		(skb->len < nlh->nlmsg_len)) {
+		kfree_skb(skb);
+		return;
+	}
+	if (nlh->nlmsg_type == NETLINK_REG_TO_KERNEL) {
+		g_uspa_pid = nlh->nlmsg_pid;
+	} else if (nlh->nlmsg_type == NETLINK_UNREG_TO_KERNEL) {
+		g_uspa_pid = 0;
+	} else {
+		if (nlh->nlmsg_len > sizeof(struct tag_hw_msg2knl)) {
 			hmsg = (struct tag_hw_msg2knl *)nlh;
-			data = (char *)&(hmsg->data[0]);
 			if (check_str(nlh)) {
 				kfree_skb(skb);
 				return;
 			}
+			data = (char *)&(hmsg->data[0]);
 			proc_cmd(nlh->nlmsg_type, hmsg->opt, data);
 		}
 	}

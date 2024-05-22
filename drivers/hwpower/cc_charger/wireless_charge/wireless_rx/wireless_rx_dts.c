@@ -71,6 +71,29 @@ static void wlrx_parse_antifake_kid(const struct device_node *np, struct wlrx_dt
 	hwlog_info("antifake_kid=%d\n", dts->antifake_kid);
 }
 
+static void wlrx_acc_parse_eff(const struct device_node *np, struct wlrx_dts *dts)
+{
+	int i, len;
+
+	len = of_property_count_u32_elems(np, "eff_para");
+	if (len != WLRX_SCN_END)
+		goto default_val;
+
+	if (power_dts_read_u32_array(power_dts_tag(HWLOG_TAG), np,
+		"eff_para", (u32 *)dts->eff_para, WLRX_SCN_END))
+		goto default_val;
+	goto print;
+
+default_val:
+	/* 100: unlimited tx_efficiency */
+	dts->eff_para[WLRX_SCN_NORMAL] = 100;
+	dts->eff_para[WLRX_SCN_LIGHTSTRAP] = 100;
+	dts->eff_para[WLRX_SCN_UEM] = 100;
+print:
+	for (i = 0; i < WLRX_SCN_END; i++)
+		hwlog_info("eff_para[%d]=%d\n", i, dts->eff_para[i]);
+}
+
 static int wlrx_parse_product_cfg(const struct device_node *np, struct wlrx_dts *dts)
 {
 	dts->product_cfg = kzalloc(sizeof(*dts->product_cfg), GFP_KERNEL);
@@ -91,6 +114,7 @@ static int wlrx_parse_basic_cfg(const struct device_node *np, struct wlrx_dts *d
 	int ret;
 
 	wlrx_parse_antifake_kid(np, dts);
+	wlrx_acc_parse_eff(np, dts);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"ui_max_pwr", (u32 *)&dts->ui_pmax_lth, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -117,6 +141,8 @@ static int wlrx_parse_basic_cfg(const struct device_node *np, struct wlrx_dts *d
 		"support_high_pwr_wltx", &dts->support_high_pwr_wltx, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"wired_sw_dflt_on", (u32 *)&dts->wired_sw_dflt_on, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"otg_need_plim", &dts->otg_need_plim, 0);
 
 	ret = wlrx_parse_product_cfg(np, dts);
 	if (ret)

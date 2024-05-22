@@ -17,6 +17,7 @@
  */
 
 #include "batt_aut_checker.h"
+#include <chipset_common/hwpower/common_module/power_nv.h>
 #include <chipset_common/hwpower/battery/battery_type_identify.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
 
@@ -1078,6 +1079,38 @@ static int get_ic_ops(struct device_node *node, struct batt_chk_data *drv_data)
 free_dev_ic_phandles:
 	kfree(dev_ic_phandles);
 	return ic_unready;
+}
+
+int check_sn_binded(struct batt_chk_data *checker_data)
+{
+	const unsigned char *sn = NULL;
+	unsigned int sn_len;
+	struct binded_info bbinfo;
+
+	if (power_nv_read(POWER_NV_BBINFO, &bbinfo,
+		sizeof(struct binded_info))) {
+		hwlog_err("[%s]: bbinfo read failed\n", __func__);
+		return -1;
+	}
+	if (checker_data->bco.get_batt_sn(checker_data, 0, &sn, &sn_len)) {
+		hwlog_err("get battery sn failed in %s\n",
+			__func__);
+		return -1;
+	}
+
+	if (sn_len < MAX_RAW_SN_LEN) {
+		hwlog_err("battery sn len %u error in %s\n",
+			sn_len, __func__);
+		return -1;
+	}
+
+	if (memcmp(bbinfo.info[0], sn, MAX_RAW_SN_LEN)) {
+		hwlog_err("%s: battery sn is not binded\n",
+			__func__);
+		return 1;
+	}
+
+	return 0;
 }
 
 static int battery_cycles_limit_init(struct platform_device *pdev)

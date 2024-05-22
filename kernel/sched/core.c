@@ -2976,6 +2976,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
 
+#if defined(CONFIG_COMPACTION) && defined(CONFIG_HARMONY_PERFORMANCE_AQ)
+	p->capture_control = NULL;
+#endif
 #ifdef CONFIG_NUMA_BALANCING
 	if (p->mm && atomic_read(&p->mm->mm_users) == 1) {
 		p->mm->numa_next_scan = jiffies + msecs_to_jiffies(sysctl_numa_balancing_scan_delay);

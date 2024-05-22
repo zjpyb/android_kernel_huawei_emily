@@ -22,6 +22,7 @@
 
 static struct ts_recovery_data g_ts_recovery_data;
 static void ts_recovery_work(struct work_struct *work);
+int ext_reset_command(void);
 
 int get_one_detect_cmd(struct ts_cmd_node *cmd)
 {
@@ -178,9 +179,12 @@ static void ts_recovery_work(struct work_struct *work)
 			release_memory();
 			return;
 		} else {
+			TS_LOG_INFO("ts recovery work ext_reset_command\n");
 			put_one_detect_cmd(&cmd);
+			ext_reset_command();
 		}
 	}
+	TS_LOG_INFO("ts recovery work end\n");
 	mod_timer(&g_ts_recovery_data.recovery_timer, jiffies +
 		msecs_to_jiffies(TS_RECOVERY_TIMEOUT));
 }

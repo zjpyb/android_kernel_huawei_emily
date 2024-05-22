@@ -234,6 +234,20 @@ static void read_vibrator_config4_from_dts(struct device_node *dn,
 		vibrator_data.dma_channel = (uint8_t)temp;
 }
 
+static void read_vibrator_config5_from_dts(struct device_node *dn,
+	struct sensor_detect_manager *sm)
+{
+	int temp = 0;
+
+	if (of_property_read_u32(dn, "phone_type", &temp)) {
+		hwlog_err("%s:read phone_type fail\n", __func__);
+		vibrator_data.phone_type = 0;
+	} else {
+		vibrator_data.phone_type = (uint32_t)temp;
+		hwlog_info("%s:read phone_type = %d\n", __func__, vibrator_data.phone_type);
+	}
+}
+
 void read_vibrator_from_dts(struct device_node *dn,
 	struct sensor_detect_manager *sm)
 {
@@ -242,6 +256,7 @@ void read_vibrator_from_dts(struct device_node *dn,
 	read_vibrator_config2_from_dts(dn, sm);
 	read_vibrator_config3_from_dts(dn, sm);
 	read_vibrator_config4_from_dts(dn, sm);
+	read_vibrator_config5_from_dts(dn, sm);
 }
 
 static bool vibrator_sensor_status_is_ok(struct device_node *dn)

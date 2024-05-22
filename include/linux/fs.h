@@ -418,9 +418,14 @@ struct address_space {
 	unsigned long		flags;		/* error bits */
 	spinlock_t		private_lock;	/* for use by the address_space */
 	gfp_t			gfp_mask;	/* implicit gfp mask for allocations */
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	errseq_t		wb_err;
+#endif
 	struct list_head	private_list;	/* for use by the address_space */
 	void			*private_data;	/* ditto */
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	errseq_t		wb_err;
+#endif
 } __attribute__((aligned(sizeof(long))));
 	/*
 	 * On most architectures that alignment is already the case; but
@@ -621,8 +626,13 @@ struct inode {
 	struct timespec		i_ctime;
 	spinlock_t		i_lock;	/* i_blocks, i_bytes, maybe i_size */
 	unsigned short          i_bytes;
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	u8			i_blkbits;
+	u8			i_write_hint;
+#else
 	unsigned int		i_blkbits;
 	enum rw_hint		i_write_hint;
+#endif
 	blkcnt_t		i_blocks;
 
 #ifdef __NEED_I_SIZE_ORDERED
@@ -661,6 +671,11 @@ struct inode {
 #ifdef CONFIG_IMA
 	atomic_t		i_readcount; /* struct files open RO */
 #endif
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+	int			i_protect;
+#endif
+#endif
 	const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
 	struct file_lock_context	*i_flctx;
 	struct address_space	i_data;
@@ -685,8 +700,11 @@ struct inode {
 #endif
 
 	void			*i_private; /* fs or device private pointer */
+
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
 	int			i_protect;
+#endif
 #endif
 
 #ifdef CONFIG_FILE_MAP
@@ -933,7 +951,9 @@ static inline struct file *get_file(struct file *f)
 	atomic_long_inc(&f->f_count);
 	return f;
 }
-#define get_file_rcu(x) atomic_long_inc_not_zero(&(x)->f_count)
+#define get_file_rcu_many(x, cnt)	\
+	atomic_long_add_unless(&(x)->f_count, (cnt), 0)
+#define get_file_rcu(x) get_file_rcu_many((x), 1)
 #define fput_atomic(x)	atomic_long_add_unless(&(x)->f_count, -1, 1)
 #define file_count(x)	atomic_long_read(&(x)->f_count)
 
@@ -1353,6 +1373,8 @@ extern int send_sigurg(struct fown_struct *fown);
 
 /* sb->s_iflags to limit user namespace mounts */
 #define SB_I_USERNS_VISIBLE		0x00000010 /* fstype already mounted */
+
+#define SB_I_PERSB_BDI	0x00000200	/* has a per-sb bdi */
 
 /* Possible states of 'frozen' field */
 enum {

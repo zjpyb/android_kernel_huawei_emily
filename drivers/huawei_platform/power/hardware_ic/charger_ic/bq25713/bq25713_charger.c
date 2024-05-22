@@ -924,12 +924,19 @@ static int bq25713_irq_init(struct device_node *np,
 static int bq25713_get_adc_ibus(void)
 {
 	u8 reg_adc;
+	u16 reg_sta;
 	int ibus;
 
 	if (bq25713_read_byte(BQ25713_REG_IBUS_ADC, &reg_adc))
 		return -1;
 
 	ibus = (int)reg_adc * BQ25713_IBUS_ADC_STEP_MA;
+	/* adc stop working when adapter unplugged */
+	if (bq25713_read_word(BQ25713_REG_CS0, &reg_sta))
+		return -1;
+
+	if (!(reg_sta & BQ25713_REG_CS0_NOT_PG_MASK))
+		ibus = 0;
 
 	hwlog_info("adc ibus is %dmA\n", ibus);
 	return ibus;
@@ -938,6 +945,7 @@ static int bq25713_get_adc_ibus(void)
 static int bq25713_get_adc_vbus(void)
 {
 	u8 reg_adc;
+	u16 reg_sta;
 	int vbus;
 
 	if (bq25713_read_byte(BQ25713_REG_VBUS_ADC, &reg_adc))
@@ -945,6 +953,12 @@ static int bq25713_get_adc_vbus(void)
 
 	vbus = (int)reg_adc * BQ25713_VBUS_ADC_STEP_MV +
 		BQ25713_VBUS_ADC_OFFSET;
+	/* adc stop working when adapter unplugged */
+	if (bq25713_read_word(BQ25713_REG_CS0, &reg_sta))
+		return -1;
+
+	if (!(reg_sta & BQ25713_REG_CS0_NOT_PG_MASK))
+		vbus = 0;
 
 	hwlog_info("adc vbus is %dmV\n", vbus);
 	return vbus;

@@ -40,7 +40,7 @@ void __init hmdfs_create_debugfs_root(void);
 void hmdfs_destroy_debugfs_root(void);
 
 void hmdfs_fault_inject_init(struct hmdfs_fault_inject *fault_inject,
-			     const char *name);
+			     const char *name, int namelen);
 void hmdfs_fault_inject_fini(struct hmdfs_fault_inject *fault_inject);
 bool hmdfs_should_fail_sendmsg(struct hmdfs_fault_inject *fault_inject,
 			       struct hmdfs_peer *con,
@@ -58,7 +58,7 @@ static inline void hmdfs_destroy_debugfs_root(void) {}
 
 static inline void
 hmdfs_fault_inject_init(struct hmdfs_fault_inject *fault_inject,
-			const char *name)
+			const char *name, int namelen)
 {
 }
 static inline void

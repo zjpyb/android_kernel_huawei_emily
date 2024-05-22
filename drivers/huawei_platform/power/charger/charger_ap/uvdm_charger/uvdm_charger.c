@@ -182,7 +182,7 @@ static int uvdm_set_iin_limit(unsigned int val)
 		return -1;
 	}
 
-	index = di->stage_size - 1;
+	index = di->orig_volt_para_p[0].stage_size - 1;
 	cur_low = di->orig_volt_para_p[0].volt_info[index].cur_th_low;
 
 	if (val == 0)

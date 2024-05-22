@@ -1354,7 +1354,10 @@ void direct_charge_select_charging_param(void)
 	vbat_th = l_di->volt_para[l_di->cur_stage / 2].vol_th +
 		l_di->compensate_v;
 	vol_th = l_di->volt_para[l_di->stage_size - 1].vol_th;
-	l_di->cur_vbat_th = vbat_th < vol_th ? vbat_th : vol_th;
+	if (l_di->all_stage_compensate_r_en)
+		l_di->cur_vbat_th = vbat_th;
+	else
+		l_di->cur_vbat_th = vbat_th < vol_th ? vbat_th : vol_th;
 
 	/* cur_stage include cc and cv stage so divide 2 */
 	l_di->cur_ibat_th_low = l_di->volt_para[l_di->cur_stage / 2].cur_th_low;
@@ -1493,8 +1496,9 @@ void direct_charge_select_charging_stage(void)
 	l_di->pre_stage = l_di->cur_stage;
 	for (i = stage_size - 1; i >= 0; --i) {
 		vbat_th = l_di->volt_para[i].vol_th + l_di->compensate_v;
-		vbat_th = (vbat_th > l_di->volt_para[stage_size - 1].vol_th) ?
-			l_di->volt_para[stage_size - 1].vol_th : vbat_th;
+		if (!l_di->all_stage_compensate_r_en)
+			vbat_th = (vbat_th > l_di->volt_para[stage_size - 1].vol_th) ?
+				l_di->volt_para[stage_size - 1].vol_th : vbat_th;
 		/* 0: cc stage, 1: cv stage, 2: max stage */
 		if ((vbat >= vbat_th) && (ibat <= l_di->volt_para[i].cur_th_low)) {
 			cur_stage = 2 * i + 2;
@@ -1970,7 +1974,7 @@ void direct_charge_get_ffc_para(void)
 	int vbat_aux;
 	struct direct_charge_device *l_di = direct_charge_get_di();
 
-	if (!l_di || l_di->force_single_path_flag || !l_di->multi_ic_mode_para.support_multi_ic)
+	if (!l_di || l_di->multi_ic_check_info.force_single_path_flag || !l_di->multi_ic_mode_para.support_multi_ic)
 		return;
 
 	para = ffc_get_dc_vbat_para();
@@ -1982,7 +1986,7 @@ void direct_charge_get_ffc_para(void)
 	vbat_aux = dcm_get_ic_vbtb_with_comp(l_di->working_mode, CHARGE_IC_AUX,
 		l_di->comp_para.vbat_comp);
 	if ((vbat_main > para->vbat_main_th) || (vbat_aux > para->vbat_aux_th)) {
-		l_di->force_single_path_flag = true;
+		l_di->multi_ic_check_info.force_single_path_flag = true;
 		hwlog_info("ffc set force_single_path_flag true\n");
 	}
 }
@@ -2104,6 +2108,38 @@ int direct_charge_start_charging(void)
 	return 0;
 }
 
+void dc_preparation_before_switch_to_singlepath(int working_mode, int ratio, int vdelt)
+{
+	int ibus = 0;
+	int vbat = 0;
+	int vadp = 0;
+	int ibat_th = 0;
+	int retry = 30; /* 30 : max retry times */
+
+	if (!ratio)
+		return;
+
+	dcm_get_ic_max_ibat(working_mode, CHARGE_MULTI_IC, &ibat_th);
+	if (!ibat_th)
+		ibat_th = DC_SINGLEIC_CURRENT_LIMIT;
+
+	direct_charge_get_device_ibus(&ibus);
+	direct_charge_get_bat_sys_voltage(&vbat);
+	if (ibus > ibat_th / ratio) {
+		if (dc_get_adapter_voltage(&vadp))
+			return;
+
+		do {
+			vadp = vadp - 200; /* voltage decreases by 200mv each time */
+			dc_set_adapter_voltage(vadp);
+			power_usleep(DT_USLEEP_5MS);
+			direct_charge_get_device_ibus(&ibus);
+			hwlog_info("[%d] set vadp=%d, ibus=%d\n", retry, vadp, ibus);
+			retry--;
+		} while ((ibus >= ibat_th / ratio) && (retry != 0) && (vadp > (vbat * ratio + vdelt)));
+	}
+}
+
 static void direct_charge_preparation_before_stop(struct direct_charge_device *di)
 {
 	int ibat = 0;
@@ -2127,20 +2163,9 @@ static void direct_charge_preparation_before_stop(struct direct_charge_device *d
 		return;
 	}
 
-	if (di->multi_ic_mode_para.support_multi_ic && !di->sysfs_enable_charger &&
-		(di->ibat > di->single_ic_ibat_th)) {
-		if (dc_get_adapter_voltage(&vadp))
-			return;
-
-		do {
-			vadp = vadp - 200; /* voltage decreases by 200mv each time */
-			dc_set_adapter_voltage(vadp);
-			power_usleep(DT_USLEEP_5MS);
-			direct_charge_get_bat_current(&ibat);
-			hwlog_info("[%d] set vadp=%d, ibat=%d\n", retry, vadp, ibat);
-			retry--;
-		} while ((ibat >= di->single_ic_ibat_th) && (retry != 0));
-	}
+	if (di->cur_mode == CHARGE_MULTI_IC)
+		dc_preparation_before_switch_to_singlepath(di->working_mode, di->dc_volt_ratio,
+			di->init_delt_vset);
 }
 
 void direct_charge_stop_charging(void)
@@ -2293,7 +2318,7 @@ void direct_charge_stop_charging(void)
 	l_di->compensate_v = 0;
 	l_di->ibat_abnormal_cnt = 0;
 	l_di->max_adaptor_cur = 0;
-	l_di->force_single_path_flag = false;
+	l_di->multi_ic_check_info.force_single_path_flag = false;
 	memset(&l_di->limit_max_pwr, 0, sizeof(l_di->limit_max_pwr));
 	direct_charge_wake_unlock();
 	l_di->scp_stop_charging_complete_flag = 1;

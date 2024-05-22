@@ -280,6 +280,93 @@ static inline unsigned long hmdfs_dirty_intv(unsigned long dirty,
 	return 1;
 }
 
+static bool hmdfs_not_reach_bg_thresh(struct bdi_writeback *wb,
+				      struct hmdfs_dirty_throttle_control *hdtc)
+{
+	/* Per-filesystem overbalance writeback */
+	hdtc->fs_nr_dirty = wb_stat_sum(wb, WB_RECLAIMABLE);
+	hdtc->fs_nr_reclaimable =
+		hdtc->fs_nr_dirty + wb_stat_sum(wb, WB_WRITEBACK);
+	if (hdtc->fs_nr_reclaimable < hdtc->file_bg_thresh) {
+		current->nr_dirtied_pause =
+			hmdfs_dirty_intv(hdtc->fs_nr_reclaimable,
+					 hdtc->file_thresh);
+		current->nr_dirtied = 0;
+		return true;
+	}
+
+	return false;
+}
+
+static bool hmdfs_not_reach_freerun_ceiling(
+		struct bdi_writeback *wb, struct inode *inode,
+		struct hmdfs_dirty_throttle_control *hdtc)
+{
+	unsigned long fs_intv;
+	unsigned long file_intv;
+	struct super_block *sb = inode->i_sb;
+
+	/* Per-file overbalance writeback */
+	hdtc->file_nr_dirty =
+		hmdfs_idirty_pages(inode, PAGECACHE_TAG_DIRTY);
+	hdtc->file_nr_reclaimable =
+		hmdfs_idirty_pages(inode, PAGECACHE_TAG_WRITEBACK) +
+		hdtc->file_nr_dirty;
+	if ((hdtc->fs_nr_reclaimable <
+	     hmdfs_dirty_freerun_ceiling(hdtc, HMDFS_DIRTY_FS)) &&
+	    (hdtc->file_nr_reclaimable <
+	     hmdfs_dirty_freerun_ceiling(hdtc, HMDFS_DIRTY_FILE))) {
+		fs_intv = hmdfs_dirty_intv(hdtc->fs_nr_reclaimable,
+					   hdtc->fs_thresh);
+		file_intv = hmdfs_dirty_intv(hdtc->file_nr_reclaimable,
+					     hdtc->file_thresh);
+		current->nr_dirtied_pause = min(fs_intv, file_intv);
+		current->nr_dirtied = 0;
+		return true;
+	}
+
+	if (hdtc->fs_nr_reclaimable >=
+	    hmdfs_dirty_freerun_ceiling(hdtc, HMDFS_DIRTY_FS)) {
+		if (unlikely(!writeback_in_progress(wb)))
+			hmdfs_writeback_inodes_sb(sb);
+	} else {
+		hmdfs_writeback_inode(sb, inode);
+	}
+
+	return false;
+}
+
+static bool hmdfs_not_reach_fs_thresh(struct hmdfs_sb_info *sbi,
+				      struct bdi_writeback *wb,
+				      struct hmdfs_dirty_throttle_control *hdtc,
+				      unsigned long start_time,
+				      unsigned int *dirty_exceeded)
+{
+	unsigned long exceed = 0;
+	struct hmdfs_writeback *hwb = sbi->h_wb;
+
+	if (unlikely(hdtc->fs_nr_reclaimable >= hdtc->fs_thresh))
+		exceed |= HMDFS_FS_EXCEED;
+	if (unlikely(hdtc->file_nr_reclaimable >= hdtc->file_thresh))
+		exceed |= HMDFS_FILE_EXCEED;
+
+	if (!exceed) {
+		trace_hmdfs_balance_dirty_pages(sbi, wb, hdtc,
+						0UL, start_time);
+		current->nr_dirtied = 0;
+		return true;
+	}
+	/*
+	 * Per-file or per-fs reclaimable pages exceed throttle limit,
+	 * sleep pause time and check again.
+	 */
+	*dirty_exceeded |= exceed;
+	if (*dirty_exceeded && !hwb->dirty_exceeded)
+		hwb->dirty_exceeded = true;
+
+	return false;
+}
+
 static void hmdfs_balance_dirty_pages(struct address_space *mapping)
 {
 	struct inode *inode = mapping->host;
@@ -300,49 +387,11 @@ static void hmdfs_balance_dirty_pages(struct address_space *mapping)
 	hmdfs_init_dirty_limit(&hdtc);
 
 	while (1) {
-		unsigned long exceed = 0;
-		unsigned long diff;
-
-		/* Per-filesystem overbalance writeback */
-		hdtc.fs_nr_dirty = wb_stat_sum(wb, WB_RECLAIMABLE);
-		hdtc.fs_nr_reclaimable =
-			hdtc.fs_nr_dirty + wb_stat_sum(wb, WB_WRITEBACK);
-		if (hdtc.fs_nr_reclaimable < hdtc.file_bg_thresh) {
-			diff = hmdfs_dirty_intv(hdtc.fs_nr_reclaimable,
-						hdtc.file_thresh);
-			goto free_running;
-		}
-
-		/* Per-file overbalance writeback */
-		hdtc.file_nr_dirty =
-			hmdfs_idirty_pages(inode, PAGECACHE_TAG_DIRTY);
-		hdtc.file_nr_reclaimable =
-			hmdfs_idirty_pages(inode, PAGECACHE_TAG_WRITEBACK) +
-			hdtc.file_nr_dirty;
-		if ((hdtc.fs_nr_reclaimable <
-		     hmdfs_dirty_freerun_ceiling(&hdtc, HMDFS_DIRTY_FS)) &&
-		    (hdtc.file_nr_reclaimable <
-		     hmdfs_dirty_freerun_ceiling(&hdtc, HMDFS_DIRTY_FILE))) {
-			unsigned long fs_intv, file_intv;
-
-			fs_intv = hmdfs_dirty_intv(hdtc.fs_nr_reclaimable,
-						   hdtc.fs_thresh);
-			file_intv = hmdfs_dirty_intv(hdtc.file_nr_reclaimable,
-						     hdtc.file_thresh);
-			diff = min(fs_intv, file_intv);
-free_running:
-			current->nr_dirtied_pause = diff;
-			current->nr_dirtied = 0;
+		if (hmdfs_not_reach_bg_thresh(wb, &hdtc))
 			break;
-		}
 
-		if (hdtc.fs_nr_reclaimable >=
-		    hmdfs_dirty_freerun_ceiling(&hdtc, HMDFS_DIRTY_FS)) {
-			if (unlikely(!writeback_in_progress(wb)))
-				hmdfs_writeback_inodes_sb(sb);
-		} else {
-			hmdfs_writeback_inode(sb, inode);
-		}
+		if (hmdfs_not_reach_freerun_ceiling(wb, inode, &hdtc))
+			break;
 
 		/*
 		 * If dirty_auto_threshold is enabled, recalculate writeback
@@ -357,24 +406,9 @@ free_running:
 					   HMDFS_BANDWIDTH_INTERVAL))
 			hmdfs_update_dirty_limit(&hdtc);
 
-		if (unlikely(hdtc.fs_nr_reclaimable >= hdtc.fs_thresh))
-			exceed |= HMDFS_FS_EXCEED;
-		if (unlikely(hdtc.file_nr_reclaimable >= hdtc.file_thresh))
-			exceed |= HMDFS_FILE_EXCEED;
-
-		if (!exceed) {
-			trace_hmdfs_balance_dirty_pages(sbi, wb, &hdtc,
-							0UL, start_time);
-			current->nr_dirtied = 0;
+		if (hmdfs_not_reach_fs_thresh(sbi, wb, &hdtc, start_time,
+					      &dirty_exceeded))
 			break;
-		}
-		/*
-		 * Per-file or per-fs reclaimable pages exceed throttle limit,
-		 * sleep pause time and check again.
-		 */
-		dirty_exceeded |= exceed;
-		if (dirty_exceeded && !hwb->dirty_exceeded)
-			hwb->dirty_exceeded = true;
 
 		/* Pause */
 		pause = hmdfs_wb_pause(wb, hdtc.fs_nr_reclaimable);
@@ -458,10 +492,36 @@ void hmdfs_destroy_writeback(struct hmdfs_sb_info *sbi)
 	sbi->h_wb = NULL;
 }
 
+static int hmdfs_init_writeback_wq(struct hmdfs_sb_info *sbi,
+				   struct hmdfs_writeback *hwb)
+{
+	char name[HMDFS_WQ_NAME_LEN];
+
+	snprintf(name, sizeof(name), "dfs_ino_wb%u", sbi->seq);
+	hwb->dirty_inode_writeback_wq = create_singlethread_workqueue(name);
+	if (!hwb->dirty_inode_writeback_wq) {
+		hmdfs_err("Failed to create inode writeback workqueue!");
+		return -ENOMEM;
+	}
+
+	snprintf(name, sizeof(name), "dfs_sb_wb%u", sbi->seq);
+	hwb->dirty_sb_writeback_wq = create_singlethread_workqueue(name);
+	if (!hwb->dirty_sb_writeback_wq) {
+		hmdfs_err("Failed to create filesystem writeback workqueue!");
+		destroy_workqueue(hwb->dirty_inode_writeback_wq);
+		return -ENOMEM;
+	}
+	INIT_DELAYED_WORK(&hwb->dirty_sb_writeback_work,
+			  hmdfs_writeback_inodes_sb_handler);
+	INIT_DELAYED_WORK(&hwb->dirty_inode_writeback_work,
+			  hmdfs_writeback_inode_handler);
+
+	return 0;
+}
+
 int hmdfs_init_writeback(struct hmdfs_sb_info *sbi)
 {
 	struct hmdfs_writeback *hwb;
-	char name[HMDFS_WQ_NAME_LEN];
 	int ret = -ENOMEM;
 
 	hwb = kzalloc(sizeof(struct hmdfs_writeback), GFP_KERNEL);
@@ -494,28 +554,14 @@ int hmdfs_init_writeback(struct hmdfs_sb_info *sbi)
 	if (!hwb->bdp_ratelimits)
 		goto free_hwb;
 
-	snprintf(name, sizeof(name), "dfs_ino_wb%u", sbi->seq);
-	hwb->dirty_inode_writeback_wq = create_singlethread_workqueue(name);
-	if (!hwb->dirty_inode_writeback_wq) {
-		hmdfs_err("Failed to create inode writeback workqueue!");
+	if (hmdfs_init_writeback_wq(sbi, hwb))
 		goto free_bdp;
-	}
-	snprintf(name, sizeof(name), "dfs_sb_wb%u", sbi->seq);
-	hwb->dirty_sb_writeback_wq = create_singlethread_workqueue(name);
-	if (!hwb->dirty_sb_writeback_wq) {
-		hmdfs_err("Failed to create filesystem writeback workqueue!");
-		goto free_i_wq;
-	}
-	INIT_DELAYED_WORK(&hwb->dirty_sb_writeback_work,
-			  hmdfs_writeback_inodes_sb_handler);
-	INIT_DELAYED_WORK(&hwb->dirty_inode_writeback_work,
-			  hmdfs_writeback_inode_handler);
+
 	sbi->h_wb = hwb;
 	return 0;
-free_i_wq:
-	destroy_workqueue(hwb->dirty_inode_writeback_wq);
+
 free_bdp:
-	free_percpu(sbi->h_wb->bdp_ratelimits);
+	free_percpu(hwb->bdp_ratelimits);
 free_hwb:
 	kfree(hwb);
 	return ret;

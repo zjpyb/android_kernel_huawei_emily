@@ -408,7 +408,7 @@ static int commu_read_check(struct commu_data *commu_data)
 static void commu_wakeup_read(struct commu_data *commu_data)
 {
 	unsigned int delay_times = 0;
-	int ret;
+	int ret = -EFAULT;
 	unsigned char *read_buf = NULL;
 	u32 read_len = 0;
 	enum commu_driver driver;
@@ -767,12 +767,13 @@ static void spi_write_worker(struct kthread_work *work)
 		ret = -ENOMEM;
 		goto err;
 	}
-	if (g_spi_context.spi_write_done) {
-		ret = -EACCES;
-		goto err;
-	}
+
 	g_spi_context.spi_write_flag = 0;
 	for (i = 0; i < pkg_count; ++i) {
+		if (g_spi_context.spi_write_done) {
+			ret = -EACCES;
+			goto err;
+		}
 		copy_len = each_len;
 		send_len = each_len + 1;
 		if (i == pkg_count - 1) {
@@ -880,6 +881,13 @@ static int spi_commu_write(u8 *buffer, u32 length)
 			__func__, ret, g_spi_context.spi_write_done);
 		ret = wait_event_interruptible(g_spi_context.spi_write_wait,
 					       g_spi_context.spi_write_done);
+		if (ret == -ERESTARTSYS) {
+			g_spi_context.spi_write_flag = 0;
+			g_spi_context.spi_ret = ret;
+			g_spi_context.spi_write_done = true;
+			kthread_cancel_work_sync(&g_spi_context.write_work);
+			pr_info("%s cancel spi write work", __func__);
+		}
 	}
 	if (ret < 0) {
 		g_spi_context.buf = NULL;

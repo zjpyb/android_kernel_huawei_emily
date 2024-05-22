@@ -917,6 +917,11 @@ static struct queue_sysfs_entry queue_device_read_section = {
 	.show = mas_queue_device_read_section_show,
 };
 
+static struct queue_sysfs_entry queue_device_read_pu_size = {
+	.attr = {.name = "device_read_pu_size", .mode = S_IRUGO },
+	.show = mas_queue_device_read_pu_size_show,
+};
+
 static struct queue_sysfs_entry queue_device_config_mapping_partition = {
 	.attr = {.name = "device_config_mapping_partition", .mode = S_IRUGO | S_IWUSR},
 	.show = mas_queue_device_config_mapping_partition_show,
@@ -944,7 +949,7 @@ static struct queue_sysfs_entry queue_device_data_move_number  = {
 };
 
 static struct queue_sysfs_entry queue_device_slc_mode_configuration = {
-	.attr = {.name = "slc_mode_configuration", .mode = S_IRUGO | S_IWUSR },
+	.attr = {.name = "slc_mode_configuration", .mode = S_IRUGO },
 	.show = mas_queue_device_slc_mode_configuration_show,
 };
 
@@ -983,12 +988,35 @@ static struct queue_sysfs_entry queue_mas_unistore_debug_en_entry = {
 	.store = mas_queue_unistore_debug_en_store,
 };
 static struct queue_sysfs_entry queue_mas_recovery_debug_on_entry = {
-	.attr = {.name = "recovery_debug_on", .mode =  S_IWUSR | S_IRUSR },
+	.attr = {.name = "reset_recovery_debug", .mode =  S_IWUSR | S_IRUSR },
 	.show = mas_queue_recovery_debug_on_show,
 	.store = mas_queue_recovery_debug_on_store,
 };
+static struct queue_sysfs_entry queue_mas_recovery_page_cnt_entry = {
+	.attr = {.name = "reset_recovery_page", .mode = S_IRUGO },
+	.show = mas_queue_recovery_page_cnt_show,
+};
+static struct queue_sysfs_entry queue_mas_reset_cnt_entry = {
+	.attr = {.name = "reset_cnt", .mode = S_IRUGO },
+	.show = mas_queue_reset_cnt_show,
+};
+static struct queue_sysfs_entry queue_mas_disorder_response_en_entry = {
+	.attr = {.name = "disorder_enabled", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_enable_disorder_show,
+	.store = mas_queue_enable_disorder_store,
+};
+static struct queue_sysfs_entry queue_mas_max_recovery_num_entry = {
+	.attr = {.name = "max_recovery_num", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_max_recovery_num_show,
+	.store = mas_queue_max_recovery_num_store,
+};
+static struct queue_sysfs_entry queue_mas_recovery_del_num_entry = {
+	.attr = {.name = "recovery_del_num", .mode =  S_IWUSR | S_IRUSR },
+	.show = mas_queue_recovery_del_num_show,
+	.store = mas_queue_recovery_del_num_store,
+};
 static struct queue_sysfs_entry queue_mas_unistore_en_entry = {
-	.attr = {.name = "unistore_enabled", .mode =  S_IWUSR | S_IRUSR },
+	.attr = {.name = "unistore_enabled", .mode = S_IRUGO },
 	.show = mas_queue_unistore_en_show,
 };
 #endif /* CONFIG_MAS_UNISTORE_PRESERVE */
@@ -1150,6 +1178,7 @@ static struct attribute *default_attrs[] = {
 	&queue_stream_oob_info_entry.attr,
 	&queue_device_reset_ftl_entry.attr,
 	&queue_device_read_section.attr,
+	&queue_device_read_pu_size.attr,
 	&queue_device_config_mapping_partition.attr,
 	&queue_device_fs_sync_done.attr,
 	&queue_device_rescue_block_inject_data.attr,
@@ -1164,6 +1193,11 @@ static struct attribute *default_attrs[] = {
 	&queue_device_bad_block_bad_num.attr,
 	&queue_mas_unistore_debug_en_entry.attr,
 	&queue_mas_recovery_debug_on_entry.attr,
+	&queue_mas_recovery_page_cnt_entry.attr,
+	&queue_mas_reset_cnt_entry.attr,
+	&queue_mas_disorder_response_en_entry.attr,
+	&queue_mas_max_recovery_num_entry.attr,
+	&queue_mas_recovery_del_num_entry.attr,
 	&queue_mas_unistore_en_entry.attr,
 #endif
 #ifdef CONFIG_MAS_MQ_USING_CP

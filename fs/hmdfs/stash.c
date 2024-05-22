@@ -558,6 +558,22 @@ static void hmdfs_del_file_cache(struct hmdfs_cache_info *cache)
 	kfree(cache->path_buf);
 	kfree(cache);
 }
+static int hmdfs_update_cache_info(struct hmdfs_peer *conn,
+				   struct hmdfs_cache_info *cache)
+{
+	cache->path_cnt = 1;
+	cache->path_len = strlen(cache->path) + 1;
+	cache->path_offs = DIV_ROUND_UP(sizeof(struct hmdfs_cache_file_head),
+					HMDFS_STASH_BLK_SIZE);
+	cache->data_offs = cache->path_offs + DIV_ROUND_UP(cache->path_len,
+					HMDFS_STASH_BLK_SIZE);
+	cache->cache_file = hmdfs_new_stash_file(&conn->sbi->stash_work_dir,
+						 conn->cid);
+	if (IS_ERR(cache->cache_file))
+		return PTR_ERR(cache->cache_file);
+
+	return 0;
+}
 
 static struct hmdfs_cache_info *
 hmdfs_new_file_cache(struct hmdfs_peer *conn, struct hmdfs_inode_info *info)
@@ -600,18 +616,9 @@ hmdfs_new_file_cache(struct hmdfs_peer *conn, struct hmdfs_inode_info *info)
 		cache->path = cache->path_buf;
 	}
 
-	cache->path_cnt = 1;
-	cache->path_len = strlen(cache->path) + 1;
-	cache->path_offs = DIV_ROUND_UP(sizeof(struct hmdfs_cache_file_head),
-					HMDFS_STASH_BLK_SIZE);
-	cache->data_offs = cache->path_offs + DIV_ROUND_UP(cache->path_len,
-					HMDFS_STASH_BLK_SIZE);
-	cache->cache_file = hmdfs_new_stash_file(&conn->sbi->stash_work_dir,
-						 conn->cid);
-	if (IS_ERR(cache->cache_file)) {
-		err = PTR_ERR(cache->cache_file);
+	err = hmdfs_update_cache_info(conn, cache);
+	if (err)
 		goto free_path;
-	}
 
 	return cache;
 
@@ -1094,90 +1101,140 @@ static inline bool hmdfs_is_node_offlined(const struct hmdfs_peer *conn,
 	return hmdfs_node_evt_seq(conn) != seq;
 }
 
-static int hmdfs_verify_restore_file_head(struct hmdfs_file_restore_ctx *ctx,
-				    const struct hmdfs_cache_file_head *head)
+static int hmdfs_verify_head_magic(struct hmdfs_file_restore_ctx *ctx,
+				   const struct hmdfs_cache_file_head *head)
 {
-	struct inode *inode = file_inode(ctx->src_filp);
-	struct hmdfs_peer *conn = ctx->conn;
-	unsigned int crc, read_crc, crc_offset;
-	loff_t path_offs, data_offs, isize;
-	int err = 0;
-
 	if (le32_to_cpu(head->magic) != HMDFS_STASH_FILE_HEAD_MAGIC) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid magic: got 0x%x, exp 0x%x",
-			  conn->owner, conn->device_id, ctx->inum,
+			  ctx->conn->owner, ctx->conn->device_id, ctx->inum,
 			  le32_to_cpu(head->magic),
 			  HMDFS_STASH_FILE_HEAD_MAGIC);
-		goto out;
+		return -EUCLEAN;
 	}
 
-	crc_offset = le32_to_cpu(head->crc_offset);
-	read_crc = le32_to_cpu(*((__le32 *)((char *)head + crc_offset)));
-	crc = crc32(0, head, crc_offset);
+	return 0;
+}
+
+static int hmdfs_verify_head_crc(struct hmdfs_file_restore_ctx *ctx,
+				 const struct hmdfs_cache_file_head *head)
+{
+	unsigned int crc_offset = le32_to_cpu(head->crc_offset);
+	unsigned int read_crc =
+		le32_to_cpu(*((__le32 *)((char *)head + crc_offset)));
+	unsigned int crc = crc32(0, head, crc_offset);
 	if (read_crc != crc) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid crc: got 0x%x, exp 0x%x",
-			  conn->owner, conn->device_id, ctx->inum,
+			  ctx->conn->owner, ctx->conn->device_id, ctx->inum,
 			  read_crc, crc);
-		goto out;
+		return -EUCLEAN;
 	}
 
+	return 0;
+}
+
+static int hmdfs_verify_head_ino(struct hmdfs_file_restore_ctx *ctx,
+				 const struct hmdfs_cache_file_head *head)
+{
 	if (le64_to_cpu(head->ino) != ctx->inum) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid ino: got %llu, exp %llu",
-			  conn->owner, conn->device_id, ctx->inum,
+			  ctx->conn->owner, ctx->conn->device_id, ctx->inum,
 			  le64_to_cpu(head->ino), ctx->inum);
-		goto out;
+		return -EUCLEAN;
 	}
 
-	path_offs = (loff_t)le32_to_cpu(head->path_offs) <<
-		    HMDFS_STASH_BLK_SHIFT;
+	return 0;
+}
+
+static int hmdfs_verify_head_data(struct hmdfs_file_restore_ctx *ctx,
+				  const struct hmdfs_cache_file_head *head)
+{
+	struct hmdfs_peer *conn = ctx->conn;
+	struct inode *inode = file_inode(ctx->src_filp);
+	loff_t data_offs = 0;
+	loff_t isize = 0;
+	loff_t path_offs = (loff_t)le32_to_cpu(head->path_offs) <<
+			   HMDFS_STASH_BLK_SHIFT;
 	if (path_offs <= 0 || path_offs >= i_size_read(inode)) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid path_offs %d, stash file size %llu",
 			  conn->owner, conn->device_id, ctx->inum,
 			  le32_to_cpu(head->path_offs), i_size_read(inode));
-		goto out;
+		return -EUCLEAN;
 	}
 
 	data_offs = (loff_t)le32_to_cpu(head->data_offs) <<
 		    HMDFS_STASH_BLK_SHIFT;
 	if (path_offs >= data_offs) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid data_offs %d, path_offs %d",
 			  conn->owner, conn->device_id, ctx->inum,
 			  le32_to_cpu(head->data_offs),
 			  le32_to_cpu(head->path_offs));
-		goto out;
+		return -EUCLEAN;
 	}
+
 	if (data_offs <= 0 || data_offs >= i_size_read(inode)) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid data_offs %d, stash file size %llu",
 			  conn->owner, conn->device_id, ctx->inum,
 			  le32_to_cpu(head->data_offs), i_size_read(inode));
-		goto out;
+		return -EUCLEAN;
 	}
 
 	isize = le64_to_cpu(head->size);
 	if (isize != i_size_read(inode)) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid isize: got %llu, exp %llu",
 			  conn->owner, conn->device_id, ctx->inum,
 			  le64_to_cpu(head->size), i_size_read(inode));
-		goto out;
+		return -EUCLEAN;
 	}
 
 	if (le32_to_cpu(head->path_cnt) < 1) {
-		err = -EUCLEAN;
 		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx invalid path_cnt %d",
 			  conn->owner, conn->device_id, ctx->inum,
 			  le32_to_cpu(head->path_cnt));
-		goto out;
+		return -EUCLEAN;
 	}
 
-out:
-	return err;
+	return 0;
+}
+
+static int hmdfs_verify_restore_file_head(
+		struct hmdfs_file_restore_ctx *ctx,
+		const struct hmdfs_cache_file_head *head)
+{
+	int err = hmdfs_verify_head_magic(ctx, head);
+	if (err)
+		return err;
+
+	err = hmdfs_verify_head_crc(ctx, head);
+	if (err)
+		return err;
+
+	err = hmdfs_verify_head_ino(ctx, head);
+	if (err)
+		return err;
+
+	return hmdfs_verify_head_data(ctx, head);
+}
+
+static int read_restore_readpath(struct hmdfs_file_restore_ctx *ctx,
+				 unsigned int read_size, loff_t pos)
+{
+	struct hmdfs_peer *conn = ctx->conn;
+	int rd = kernel_read(ctx->src_filp, ctx->dst, read_size, &pos);
+	if (rd != read_size) {
+		int ret = rd < 0 ? rd : -ENODATA;
+
+		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx read path err %d",
+			  conn->owner, conn->device_id, ctx->inum, ret);
+		return ret;
+	}
+
+	if (strnlen(ctx->dst, read_size) >= read_size) {
+		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx read path not end with \\0",
+			  conn->owner, conn->device_id, ctx->inum);
+		return -EUCLEAN;
+	}
+
+	return 0;
 }
 
 static int hmdfs_get_restore_file_metadata(struct hmdfs_file_restore_ctx *ctx)
@@ -1185,14 +1242,13 @@ static int hmdfs_get_restore_file_metadata(struct hmdfs_file_restore_ctx *ctx)
 	struct hmdfs_cache_file_head head;
 	struct hmdfs_peer *conn = ctx->conn;
 	unsigned int head_size, read_size, head_crc_offset;
-	loff_t pos;
+	loff_t pos = 0;
 	ssize_t rd;
 	int err = 0;
 
 	head_size = sizeof(struct hmdfs_cache_file_head);
 	memset(&head, 0, head_size);
 	/* Read part head */
-	pos = 0;
 	read_size = offsetof(struct hmdfs_cache_file_head, crc_offset) +
 		    sizeof(head.crc_offset);
 	rd = kernel_read(ctx->src_filp, &head, read_size, &pos);
@@ -1233,19 +1289,7 @@ static int hmdfs_get_restore_file_metadata(struct hmdfs_file_restore_ctx *ctx)
 	/* Read path */
 	read_size = min_t(unsigned int, le32_to_cpu(head.path_len), PATH_MAX);
 	pos = (loff_t)le32_to_cpu(head.path_offs) << HMDFS_STASH_BLK_SHIFT;
-	rd = kernel_read(ctx->src_filp, ctx->dst, read_size, &pos);
-	if (rd != read_size) {
-		err = rd < 0 ? rd : -ENODATA;
-		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx read path err %d",
-			  conn->owner, conn->device_id, ctx->inum, err);
-		goto out;
-	}
-	if (strnlen(ctx->dst, read_size) >= read_size) {
-		err = -EUCLEAN;
-		hmdfs_err("peer 0x%x:0x%llx ino 0x%llx read path not end with \\0",
-			  conn->owner, conn->device_id, ctx->inum);
-		goto out;
-	}
+	err = read_restore_readpath(ctx, read_size, pos);
 	/* TODO: Pick a valid path from all paths */
 
 out:
@@ -1740,8 +1784,7 @@ static int hmdfs_rebuild_stash_list(struct hmdfs_peer *conn,
 		}
 
 		inode_info = hmdfs_i(file_inode(dst_filp));
-		is_valid = hmdfs_is_valid_stash_status(inode_info,
-						       ctx.inum);
+		is_valid = hmdfs_is_valid_stash_status(inode_info, ctx.inum);
 		if (is_valid) {
 			stats->succeed++;
 		} else {

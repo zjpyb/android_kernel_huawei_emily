@@ -26,6 +26,9 @@
 #define QUERY_DESC_SECTION_SIZE 4
 #define QUERY_DESC_SECTION_SIZE_OFFSET 0x12
 
+#define QUERY_DESC_PU_SIZE 2
+#define QUERY_DESC_PU_SIZE_OFFSET 0x16
+
 #define QUERY_DESC_MAX_PARA_DIE_NUM_OFFSET 0xf
 #define QUERY_DESC_TLC_PROGRAM_SIZE_OFFSET 0x10
 #define QUERY_DESC_SLC_PROGRAM_SIZE_OFFSET 0x16
@@ -36,8 +39,7 @@
 #define QUERY_DESC_ENABLE_UNISTORE_OFFSET 0x2
 #define QUERY_DESC_NEW_FORMAT_OFFSET 0x3
 
-#define MAX_STREAM_NUM 5
-#define MAX_DM_STREAM_NUM 2
+#define MAX_STREAM_NUM 6
 #define STREAM_ADDR_OFFSET 0
 #define DM_STREAM_ADDR_OFFSET 28
 #define STREAM_LUN_OFFSET 48
@@ -46,6 +48,7 @@
 #define DM_SLC_MODE_STATUS_OFFSET 61
 #define RESCUE_SEG_CNT_OFFSET 64
 #define RESCUE_SEG_OFFSET 68
+#define STREAM_SECTION_OFFSET 2172
 
 #define PWRON_INFO_QUERY_PE_LIMIT_STATUS_OFFSET 8
 #define PWRON_INFO_READ_BUFFER_OFFSET 8
@@ -73,6 +76,48 @@
 #define PWRON_INFO_SYNC_LEN 4096
 #define STREAM_OOB_INFO_FETCH_LEN 4096
 
+struct ufshcd_pwron_info_ctrl {
+	atomic_t in_process_cnt;
+	u8 *buffer;
+	unsigned int rescue_seg_size;
+	struct stor_dev_pwron_info *stor_info;
+};
+
+struct ufshcd_pwron_info_ctrl g_pwron_info_ctl[PWRON_MAX_TYPE] = { 0 };
+
+static int ufshcd_dev_pwron_info_init(struct stor_dev_pwron_info *stor_info,
+	unsigned int rescue_seg_size, u8 *buffer, unsigned int pwron_type)
+{
+	if (atomic_cmpxchg(&g_pwron_info_ctl[pwron_type].in_process_cnt, 0, 1))
+		return -EACCES;
+
+	g_pwron_info_ctl[pwron_type].buffer = buffer;
+	g_pwron_info_ctl[pwron_type].rescue_seg_size = rescue_seg_size;
+	g_pwron_info_ctl[pwron_type].stor_info = stor_info;
+
+	return 0;
+}
+
+static void ufshcd_get_stream_section_info(u8 *desc_buf,
+	struct stor_dev_pwron_info *stor_info)
+{
+	int offset;
+	unsigned int i;
+	unsigned int j;
+
+	offset = STREAM_SECTION_OFFSET;
+	for (i = 0; i < BLK_ORDER_STREAM_NUM; ++i) {
+		for (j = 0; j < STREAM_SECTION_NUM; ++j) {
+			stor_info->section_info[i][j] =
+				get_unaligned_be16(desc_buf + offset);
+			/* each section id takes place 2 bytes */
+			offset += 2;
+		}
+		/* 4 bytes aligned for each stream */
+		offset += 2;
+	}
+}
+
 static int ufshcd_get_pwron_info(u8 *desc_buf,
 	struct stor_dev_pwron_info *stor_info,
 	unsigned int rescue_seg_size)
@@ -88,7 +133,7 @@ static int ufshcd_get_pwron_info(u8 *desc_buf,
 	}
 
 	offset = DM_STREAM_ADDR_OFFSET;
-	for (i = 0; i < MAX_DM_STREAM_NUM; ++i) {
+	for (i = 0; i < DATA_MOVE_STREAM_NUM; ++i) {
 		stor_info->dm_stream_addr[i] =
 			get_unaligned_be32(desc_buf + offset);
 		offset += 4;
@@ -99,7 +144,7 @@ static int ufshcd_get_pwron_info(u8 *desc_buf,
 		stor_info->stream_lun_info[i] = desc_buf[offset++];
 
 	offset = DM_STREAM_LUN_OFFSET;
-	for (i = 0; i < MAX_DM_STREAM_NUM; ++i)
+	for (i = 0; i < DATA_MOVE_STREAM_NUM; ++i)
 		stor_info->dm_lun_info[i] = desc_buf[offset++];
 
 	stor_info->io_slc_mode_status = desc_buf[IO_SLC_MODE_STATUS_OFFSET];
@@ -107,6 +152,9 @@ static int ufshcd_get_pwron_info(u8 *desc_buf,
 
 	stor_info->rescue_seg_cnt =
 		get_unaligned_be16(desc_buf + RESCUE_SEG_CNT_OFFSET);
+
+	if (!rescue_seg_size)
+		return 0;
 
 	if (rescue_seg_size / sizeof(unsigned int) <
 		stor_info->rescue_seg_cnt) {
@@ -122,44 +170,54 @@ static int ufshcd_get_pwron_info(u8 *desc_buf,
 		offset += 4;
 	}
 
+	ufshcd_get_stream_section_info(desc_buf, stor_info);
+
 	return 0;
 }
 
-static int ufshcd_dev_pwron_info_sync_by_query(struct ufs_hba *hba,
-	struct stor_dev_pwron_info *stor_info, unsigned int rescue_seg_size,
-	u8 *buffer, int buffer_len)
+static void ufshcd_dev_pwron_info_done(struct request *rq,
+	blk_status_t err)
 {
-	int ret;
-	struct ufs_query_res response;
-	struct ufs_query_vcmd cmd = { 0 };
-	u8 *response_buff = NULL;
+	int ret = err;
+	struct scsi_request *req = scsi_req(rq);
+	u8 pwron_type = req->cmd[RW_BUFFER_2ND_RESERVED_OFFSET];
+	struct stor_dev_pwron_info *stor_info = NULL;
+	u8 *buffer = NULL;
+	unsigned int rescue_seg_size;
 
-	cmd.buf_len = buffer_len;
-	cmd.desc_buf = buffer;
-	cmd.opcode = UPIU_QUERY_OPCODE_VENDOR_READ;
-	cmd.idn = QUERY_PWRON_INFO_SYNC;
-	cmd.query_func = UPIU_QUERY_FUNC_STANDARD_READ_REQUEST;
-	cmd.response = &response;
+	scsi_unistore_execute_done(rq);
 
-	ret = ufshcd_query_vcmd_retry(hba, &cmd);
-	if (ret) {
-		dev_err(hba->dev, "%s: ufshcd_query_vcmd_retry fail %d\n",
-			__func__, ret);
-
-		return ret;
+	if (pwron_type >= PWRON_MAX_TYPE) {
+		pr_err("%s pwron_type %u is err\n", __func__, pwron_type);
+		return;
 	}
 
-	response_buff = (u8 *)&response.upiu_res;
-	stor_info->pe_limit_status =
-		response_buff[PWRON_INFO_QUERY_PE_LIMIT_STATUS_OFFSET];
+	buffer = g_pwron_info_ctl[pwron_type].buffer;
+	rescue_seg_size = g_pwron_info_ctl[pwron_type].rescue_seg_size;
+	stor_info = g_pwron_info_ctl[pwron_type].stor_info;
+	if (!stor_info || !stor_info->done_info.done) {
+		pr_err("%s: ufshcd_get_pwron_info NULL\n", __func__);
+		goto out;
+	}
 
-	ret = ufshcd_get_pwron_info(cmd.desc_buf, stor_info,
-		rescue_seg_size);
-	if (ret)
-		dev_err(hba->dev, "%s: ufshcd_get_pwron_info fail %d\n",
-			__func__, ret);
-
-	return ret;
+	if (!ret && buffer) {
+		stor_info->pe_limit_status = *(buffer + PWRON_INFO_PE_LIMIT_STATUS_OFFSET);
+		ret = ufshcd_get_pwron_info(buffer + PWRON_INFO_READ_BUFFER_OFFSET,
+			stor_info,rescue_seg_size);
+		if (ret)
+			pr_err("%s: ufshcd_get_pwron_info fail %d\n", __func__, ret);
+	} else {
+		pr_err("%s: fail %d\n", __func__, err);
+		ret = -EAGAIN;
+	}
+	stor_info->done_info.done(ret, pwron_type);
+out:
+	if (buffer)
+		kfree(buffer);
+	g_pwron_info_ctl[pwron_type].buffer = NULL;
+	g_pwron_info_ctl[pwron_type].stor_info = NULL;
+	g_pwron_info_ctl[pwron_type].rescue_seg_size = 0;
+	atomic_set(&g_pwron_info_ctl[pwron_type].in_process_cnt, 0);
 }
 
 static int ufshcd_dev_pwron_info_sync_by_read_buffer(
@@ -169,11 +227,28 @@ static int ufshcd_dev_pwron_info_sync_by_read_buffer(
 	int ret;
 	struct ufs_hba *hba = shost_priv(dev->host);
 	struct ufs_rw_buffer_vcmd vcmd = { 0 };
+	unsigned int pwron_type;
 
 	vcmd.buffer_id = VCMD_READ_PWRON_INFO_BUFFER_ID;
 	vcmd.buffer_len = buffer_len;
 	vcmd.retries = VCMD_REQ_RETRIES;
 	vcmd.buffer = buffer;
+
+	if (stor_info->done_info.done) {
+		pwron_type = stor_info->done_info.pwron_type;
+		if (pwron_type >= PWRON_MAX_TYPE) {
+			dev_err(hba->dev, "%s: pwron_type is err %u\n", __func__, pwron_type);
+			return -EINVAL;
+		}
+
+		vcmd.reserved_2nd[0] = pwron_type;
+		vcmd.done = ufshcd_dev_pwron_info_done;
+		ret = ufshcd_dev_pwron_info_init(stor_info, rescue_seg_size, buffer, pwron_type);
+		if (ret) {
+			dev_err(hba->dev, "%s: ufshcd_dev_pwron_info_init %d\n", __func__, ret);
+			return ret;
+		}
+	}
 
 	ret = ufshcd_read_buffer_vcmd_retry(dev, &vcmd);
 	if (ret) {
@@ -183,14 +258,16 @@ static int ufshcd_dev_pwron_info_sync_by_read_buffer(
 		return ret;
 	}
 
-	stor_info->pe_limit_status = *(buffer +
-		PWRON_INFO_PE_LIMIT_STATUS_OFFSET);
+	if (!stor_info->done_info.done) {
+		stor_info->pe_limit_status = *(buffer +
+			PWRON_INFO_PE_LIMIT_STATUS_OFFSET);
 
-	ret = ufshcd_get_pwron_info(buffer + PWRON_INFO_READ_BUFFER_OFFSET,
-		stor_info, rescue_seg_size);
-	if (ret)
-		dev_err(hba->dev, "%s: ufshcd_get_pwron_info fail %d\n",
-			__func__, ret);
+		ret = ufshcd_get_pwron_info(buffer + PWRON_INFO_READ_BUFFER_OFFSET,
+			stor_info, rescue_seg_size);
+		if (ret)
+			dev_err(hba->dev, "%s: ufshcd_get_pwron_info fail %d\n",
+				__func__, ret);
+	}
 
 	return ret;
 }
@@ -203,7 +280,7 @@ int ufshcd_dev_pwron_info_sync(struct scsi_device *dev,
 	u8 *buffer = NULL;
 	int ret;
 
-	if (!stor_info || !stor_info->rescue_seg)
+	if (!stor_info || (rescue_seg_size && !stor_info->rescue_seg))
 		return -EINVAL;
 
 	buffer = kzalloc(PWRON_INFO_SYNC_LEN, __GFP_NOFAIL);
@@ -213,14 +290,11 @@ int ufshcd_dev_pwron_info_sync(struct scsi_device *dev,
 		return -ENOMEM;
 	}
 
-	if (ufshcd_rw_buffer_is_enabled(hba))
-		ret = ufshcd_dev_pwron_info_sync_by_read_buffer(dev, stor_info,
-			rescue_seg_size, buffer, PWRON_INFO_SYNC_LEN);
-	else
-		ret = ufshcd_dev_pwron_info_sync_by_query(hba, stor_info,
-			rescue_seg_size, buffer, PWRON_INFO_SYNC_LEN);
+	ret = ufshcd_dev_pwron_info_sync_by_read_buffer(dev, stor_info,
+		rescue_seg_size, buffer, PWRON_INFO_SYNC_LEN);
 
-	kfree(buffer);
+	if (!stor_info->done_info.done)
+		kfree(buffer);
 
 	return ret;
 }
@@ -240,10 +314,8 @@ int ufshcd_dev_read_section_size(struct scsi_device *sdev,
 	if (!hba)
 		return -EINVAL;
 
-	pm_runtime_get_sync(hba->dev);
 	ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_DEVICE_UNISTORE, 0,
 		QUERY_DESC_SECTION_SIZE_OFFSET, desc_buf, buf_len);
-	pm_runtime_put_sync(hba->dev);
 	if (unlikely(ret)) {
 		*section_size = 0;
 		dev_err(hba->dev, "%s: read section size err! %d\n",
@@ -281,10 +353,8 @@ int ufshcd_dev_read_section_size_hba(struct ufs_hba *hba,
 	int buf_len = QUERY_DESC_SECTION_SIZE;
 	u8 desc_buf[QUERY_DESC_SECTION_SIZE];
 
-	pm_runtime_get_sync(hba->dev);
 	ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_DEVICE_UNISTORE, 0,
 		QUERY_DESC_SECTION_SIZE_OFFSET, desc_buf, buf_len);
-	pm_runtime_put_sync(hba->dev);
 	if (unlikely(ret)) {
 		*section_size = 0;
 		dev_err(hba->dev, "%s: read section size err! <%d>\r\n",
@@ -293,6 +363,28 @@ int ufshcd_dev_read_section_size_hba(struct ufs_hba *hba,
 		goto out;
 	}
 	*section_size = get_unaligned_be32(desc_buf);
+
+out:
+	return ret;
+}
+
+int ufshcd_dev_read_pu_size_hba(struct ufs_hba *hba,
+	unsigned int *pu_size)
+{
+	int ret;
+	int buf_len = QUERY_DESC_PU_SIZE;
+	u8 desc_buf[QUERY_DESC_PU_SIZE];
+
+	ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_DEVICE_UNISTORE, 0,
+		QUERY_DESC_PU_SIZE_OFFSET, desc_buf, buf_len);
+	if (unlikely(ret)) {
+		*pu_size = 0;
+		dev_err(hba->dev, "%s: read section size err! <%d>\r\n",
+			__func__, ret);
+
+		goto out;
+	}
+	*pu_size = get_unaligned_be16(desc_buf);
 
 out:
 	return ret;
@@ -316,11 +408,9 @@ int ufshcd_dev_read_mapping_partition(
 	if (!hba)
 		return -EINVAL;
 
-	pm_runtime_get_sync(hba->dev);
 	ret = ufshcd_query_descriptor_retry(hba, UPIU_QUERY_OPCODE_READ_DESC,
 		QUERY_DESC_IDN_UNIT_UNISTORE, MAPPING_PARTITION_LUN,
 		MAPPING_PARTITION_SELECTOR, desc_buf, &buf_len);
-	pm_runtime_put_sync(hba->dev);
 	if (unlikely(ret)) {
 		dev_err(hba->dev, "%s: read section num err! %d\n",
 			__func__, ret);
@@ -361,8 +451,6 @@ int ufshcd_dev_config_mapping_partition(
 	if (!hba)
 		return -EINVAL;
 
-	pm_runtime_get_sync(hba->dev);
-
 	desc_buf[QUERY_DESC_LEN_OFFSET] = QUERY_DESC_UINT_UNISTORE_MAX_SIZE;
 	desc_buf[QUERY_DESC_IDN_OFFSET] = QUERY_DESC_IDN_UNIT_UNISTORE;
 	desc_buf[QUERY_DESC_ENABLE_UNISTORE_OFFSET] = true;
@@ -384,8 +472,6 @@ int ufshcd_dev_config_mapping_partition(
 	if (unlikely(ret))
 		dev_err(hba->dev, "%s: write desc err! %d\n",
 			__func__, ret);
-
-	pm_runtime_put_sync(hba->dev);
 
 	return ret;
 }
@@ -537,9 +623,7 @@ int ufshcd_dev_get_bad_block_info(struct scsi_device *sdev,
 	bad_block_info->tlc_total_block_num = 0;
 	bad_block_info->tlc_bad_block_num = 0;
 
-	pm_runtime_get_sync(hba->dev);
 	ret = ufshcd_query_bad_block_info(hba, bad_block_info);
-	pm_runtime_put_sync(hba->dev);
 
 	return ret;
 }
@@ -587,10 +671,8 @@ int ufshcd_dev_get_program_size(struct scsi_device *sdev,
 	program_size->tlc_program_size = 0;
 	program_size->slc_program_size = 0;
 
-	pm_runtime_get_sync(hba->dev);
 	ret = ufshcd_read_desc_param(hba, QUERY_DESC_IDN_DEVICE_UNISTORE, 0,
 		0, desc_buf, buf_len);
-	pm_runtime_put_sync(hba->dev);
 	if (unlikely(ret)) {
 		dev_err(hba->dev, "%s: read section size err! %d\n",
 			__func__, ret);
@@ -614,17 +696,17 @@ out:
 
 static void ufshcd_get_op_size(unsigned long long lba, int *op_size)
 {
-	int capacity_gbase = 0;
 	*op_size = 0;
 
-	capacity_gbase = lba >> CAPACITY_LBA_TO_GBASE;
+	if (lba > CAPACITY_512G_4KBASE_93)
+		*op_size = (int)(lba - CAPACITY_512G_4KBASE_93);
+	else if (lba > CAPACITY_256G_4KBASE_93)
+		*op_size = (int)(lba - CAPACITY_256G_4KBASE_93);
+	else if (lba > CAPACITY_128G_4KBASE_93)
+		*op_size = (int)(lba - CAPACITY_128G_4KBASE_93);
 
-	if (capacity_gbase <= 128)
-		*op_size = lba - CAPACITY_128G_4KBASE_93;
-	else if ((capacity_gbase > 128) && (capacity_gbase <= 256))
-		*op_size = lba - CAPACITY_256G_4KBASE_93;
-	else if (capacity_gbase > 256)
-		*op_size = lba - CAPACITY_512G_4KBASE_93;
+	if (!(*op_size))
+		pr_err("%s lba is err 0x%llx\n", __func__, lba);
 }
 
 int ufshcd_dev_read_op_size(struct scsi_device *dev, int *op_size)
@@ -663,12 +745,23 @@ int ufshcd_dev_read_op_size(struct scsi_device *dev, int *op_size)
 	return ret;
 }
 
+struct scsi_device *g_read_buffer_device = NULL;
+void ufshcd_set_read_buffer_device(struct scsi_device *dev)
+{
+	g_read_buffer_device = dev;
+}
+
+static inline struct scsi_device *ufshcd_get_read_buffer_device(void)
+{
+	return g_read_buffer_device;
+}
+
 int ufshcd_get_fsr_by_read_buffer(struct ufs_hba *hba, u8 *buffer,
 	u16 buffer_len)
 {
 	int ret;
 	struct ufs_rw_buffer_vcmd vcmd = { 0 };
-	struct scsi_device *dev = hba->sdev_ufs_device;
+	struct scsi_device *dev = ufshcd_get_read_buffer_device();
 
 	if (!dev) {
 		dev_err(hba->dev, "%s: scsi_device is null\n", __func__);
@@ -689,33 +782,15 @@ int ufshcd_get_fsr_by_read_buffer(struct ufs_hba *hba, u8 *buffer,
 	return ret;
 }
 
-void ufshcd_add_buf_to_recovery_list(struct ufs_hba *hba)
+void ufshcd_set_recovery_flag(struct ufs_hba *hba)
 {
-	int err;
-	struct stor_dev_pwron_info stor_info;
 	struct request_queue *q = NULL;
-	struct scsi_device *sdev = NULL;
+	struct scsi_device *sdev = ufshcd_get_read_buffer_device();
 
-	if (!hba->host->unistore_enable)
+	if (!hba->host->unistore_enable || !sdev)
 		return;
 
-	q = hba->sdev_ufs_device->request_queue;
-	sdev = q->queuedata;
-	stor_info.rescue_seg = vmalloc(sizeof(unsigned int) * MAX_RESCUE_SEG_CNT);
-	if (unlikely(!stor_info.rescue_seg)) {
-		pr_err("%s: alloc mem failed!\n", __func__);
-		return;
-	}
-
-	err = ufshcd_dev_pwron_info_sync(sdev, &stor_info,
-			sizeof(unsigned int) * MAX_RESCUE_SEG_CNT);
-	if (unlikely(err)) {
-		pr_err("%s, pwron_info_sync failed, err = %d\n", __func__, err);
-		vfree(stor_info.rescue_seg);
-		return;
-	}
-
-	vfree(stor_info.rescue_seg);
-
-	mas_blk_add_buf_to_recovery_list(q, &stor_info);
+	q = sdev->request_queue;
+	if (q)
+		mas_blk_set_recovery_flag(q);
 }

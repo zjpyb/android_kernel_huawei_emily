@@ -42,6 +42,17 @@ int bastet_send_msg(struct bst_sock_id *guide, uint8_t *data, uint32_t len)
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
 	memset(&msg, 0, sizeof(msg));
 	memset(&iov, 0, sizeof(iov));
 	msg.msg_flags  |= MSG_DONTWAIT;
@@ -91,6 +102,18 @@ int bastet_set_hb_reply(struct bst_sock_id *guide, uint8_t *data, uint32_t len)
 			guide->fd, guide->pid);
 		err = -ENOENT;
 		goto out;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		err = -ENOENT;
+		goto out_put;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		err = -ENOENT;
+		goto out_put;
 	}
 
 	bsk = sk->bastet;
@@ -338,6 +361,16 @@ int bastet_filter_hb_reply(struct bst_sock_id *guide)
 		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
+	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
 	}
 	if (is_wifi_proxy(sk)) {
 		bastet_logi("filter heartbeat reply");

@@ -52,6 +52,7 @@ struct pogopin_otg_id_dev {
 	struct platform_device *pdev;
 	struct notifier_block otg_nb;
 	struct notifier_block pogopin_nb;
+	struct wakeup_source *wakelock;
 	u32 otg_adc_channel;
 	int gpio;
 	int ocp_int_gpio;

@@ -13,6 +13,8 @@
 
 #define TX_NUM_MAX			30
 #define RX_NUM_MAX			40
+#define DUAL_CHIP_TX_NUM_MAX 40
+#define DUAL_CHIP_RX_NUM_MAX 50
 #define DEVICE_MODE_ADDR		0x00
 #define DEVICE_MODE_WORK		0x00
 #define DEVICE_MODE_FACTORY		0x40
@@ -101,6 +103,7 @@ struct focal_test_threshold {
 	int short_circuit_min;
 	int  lcd_noise_max;
 	int open_test_cb_min;
+	int open_test_cb_max;
 	int row_column_delta_max;
 	int cb_uniformity_x;
 	int cb_uniformity_y;

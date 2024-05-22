@@ -26,6 +26,10 @@
 
 #define HMDFS_MAX_HIDDEN_DIR	1
 
+#define HMDFS_FSID_DCACHE_PRECISION_VFAT	10
+#define HMDFS_FSID_DCACHE_PRECISION_EXFAT	10
+#define HMDFS_FSID_DCACHE_PRECISION_NTFS	1
+
 enum {
 	HMDFS_NOT_HIDDEN_DIR = 0,
 	HMDFS_IS_HIDDEN_DIR,
@@ -230,6 +234,72 @@ static int hmdfs_get_inode_by_name(struct hmdfs_peer *con, const char *filename,
 	return 0;
 }
 
+static const char *datasl_str[] = {
+	"S0", "S1", "S2", "S3", "S4"
+};
+
+static int parse_data_sec_level(const char *sl_value, size_t sl_value_len)
+{
+	int i;
+
+	for (i = 0; i < sizeof(datasl_str) / sizeof(datasl_str[0]); i++) {
+		if (!strncmp(sl_value, datasl_str[i], strlen(datasl_str[i])))
+			return i + DATA_SEC_LEVEL0;
+	}
+
+	return DATA_SEC_LEVEL3;
+}
+
+static int check_sec_level(struct hmdfs_peer *node, const char *file_name)
+{
+	int err;
+	int ret = 0;
+	struct path root_path;
+	struct path file_path;
+	char *value = NULL;
+	size_t value_len = DATA_SEC_LEVEL_LENGTH;
+
+	if (node->devsl <= 0) {
+		ret = -EACCES;
+		goto out_free;
+	}
+
+	value = kzalloc(value_len, GFP_KERNEL);
+	if (!value) {
+		ret = -ENOMEM;
+		goto out_free;
+	}
+
+	err = kern_path(node->sbi->local_dst, LOOKUP_DIRECTORY, &root_path);
+	if (err) {
+		ret = err;
+		goto out_free;
+	}
+
+	err = vfs_path_lookup(root_path.dentry, root_path.mnt, file_name, 0,
+		&file_path);
+	if (err) {
+		ret = err;
+		goto out_err;
+	}
+
+	err = vfs_getxattr(file_path.dentry, DATA_SEC_LEVEL_LABEL, value,
+		value_len);
+	if (err <= 0 && node->devsl >= DATA_SEC_LEVEL3)
+		goto out;
+	if (err > 0 && node->devsl >= parse_data_sec_level(value, err))
+		goto out;
+
+	ret = -EACCES;
+out:
+	path_put(&file_path);
+out_err:
+	path_put(&root_path);
+out_free:
+	kfree(value);
+	return ret;
+}
+
 static struct file *hmdfs_open_file(struct hmdfs_peer *con,
 				    const char *filename, uint8_t file_type,
 				    int *file_id)
@@ -240,6 +310,11 @@ static struct file *hmdfs_open_file(struct hmdfs_peer *con,
 	if (!filename) {
 		hmdfs_err("filename is NULL");
 		return ERR_PTR(-EINVAL);
+	}
+
+	if (check_sec_level(con, filename)) {
+		hmdfs_err("devsl permission denied");
+		return ERR_PTR(-EACCES);
 	}
 
 	if (hm_islnk(file_type))
@@ -327,6 +402,24 @@ static struct file *get_file_by_fid_and_ver(struct hmdfs_peer *con,
 	return file;
 }
 
+static struct hmdfs_time_t get_dcache_precision(struct hmdfs_sb_info *sbi,
+						struct super_block *sb)
+{
+	unsigned int precision_ms;
+	const char *fs_name = sb->s_type->name;
+
+	if (!strcmp(fs_name, "vfat"))
+		precision_ms = HMDFS_FSID_DCACHE_PRECISION_VFAT;
+	else if (!strcmp(fs_name, "ntfs"))
+		precision_ms = HMDFS_FSID_DCACHE_PRECISION_NTFS;
+	else if (!strcmp(fs_name, "exfat"))
+		precision_ms = HMDFS_FSID_DCACHE_PRECISION_EXFAT;
+	else
+		precision_ms = sbi->dcache_precision;
+
+	return msec_to_timespec(precision_ms);
+}
+
 static void hmdfs_update_open_response(struct hmdfs_peer *con,
 				       struct hmdfs_head_cmd *cmd,
 				       struct hmdfs_open_info *info,
@@ -336,7 +429,7 @@ static void hmdfs_update_open_response(struct hmdfs_peer *con,
 	struct hmdfs_time_t ctime = info->stat_valid ? info->stat.ctime :
 						       info->inode->i_ctime;
 	struct hmdfs_time_t precision =
-		msec_to_timespec(con->sbi->dcache_precision);
+			get_dcache_precision(con->sbi, info->inode->i_sb);
 	loff_t size = info->stat_valid ? info->stat.size :
 					 i_size_read(info->inode);
 
@@ -1152,8 +1245,13 @@ out_response:
 	err = hmdfs_readfile_response(con, cmd, filp);
 	if (!err)
 		hmdfs_add_remote_cache_list(con, lo_p_name);
-	if (num >= con->sbi->dcache_threshold)
+	if (num >= con->sbi->dcache_threshold) {
+		const struct cred *old_cred =
+			hmdfs_override_creds(con->sbi->system_cred);
+
 		cache_file_persistent(con, filp, lo_p_name, true);
+		hmdfs_revert_creds(old_cred);
+	}
 	if (filp)
 		fput(filp);
 err_lookup_path:
@@ -1261,6 +1359,11 @@ void hmdfs_server_create(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 	create_dir = create_recv->path;
 	create_name = create_recv->path + path_len + 1;
 
+	if (con->devsl < DATA_SEC_LEVEL3) {
+		err = -EACCES;
+		goto create_out;
+	}
+
 	if (is_hidden_dir(create_dir)) {
 		err = -EPERM;
 		goto create_out;
@@ -1326,6 +1429,7 @@ void hmdfs_server_unlink(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 	struct path root_path;
 	char *path = NULL;
 	char *name = NULL;
+	char *name_path = NULL;
 	struct unlink_request *unlink_recv = data;
 
 	if (hmdfs_should_fail_req(&con->sbi->fault_inject, con, cmd, &err))
@@ -1333,12 +1437,24 @@ void hmdfs_server_unlink(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 
 	path = unlink_recv->path;
 	name = unlink_recv->path + le32_to_cpu(unlink_recv->path_len) + 1;
+
+	name_path = hmdfs_connect_path(path, name);
+	if (!name_path) {
+		err = -EACCES;
+		goto out;
+	}
+	err = check_sec_level(con, name_path);
+	if (err) {
+		goto out;
+	}
+
 	err = kern_path(con->sbi->local_dst, 0, &root_path);
 	if (!err) {
 		err = hmdfs_root_unlink(con->device_id, &root_path, path, name);
 		path_put(&root_path);
 	}
 out:
+	kfree(name_path);
 	hmdfs_send_err_response(con, cmd, err);
 }
 
@@ -1355,6 +1471,7 @@ void hmdfs_server_rename(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 	char *name_old = NULL;
 	char *path_new = NULL;
 	char *name_new = NULL;
+	char *name_path = NULL;
 	struct rename_request *recv = data;
 
 	if (hmdfs_should_fail_req(&con->sbi->fault_inject, con, cmd, &err))
@@ -1372,6 +1489,17 @@ void hmdfs_server_rename(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 	name_new = recv->path + old_path_len + 1 + new_path_len + 1 +
 		   old_name_len + 1;
 
+	name_path = hmdfs_connect_path(path_old, name_old);
+	if (!name_path) {
+		err = -EACCES;
+		goto out;
+	}
+
+	err = check_sec_level(con, name_path);
+	if (err) {
+		goto out;
+	}
+
 	if (is_hidden_dir(path_new)) {
 		err = -EPERM;
 		goto out;
@@ -1379,6 +1507,7 @@ void hmdfs_server_rename(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 	err = hmdfs_root_rename(con->sbi, con->device_id, path_old, name_old,
 				path_new, name_new, flags);
 out:
+	kfree(name_path);
 	hmdfs_send_err_response(con, cmd, err);
 }
 
@@ -1424,14 +1553,19 @@ out:
 	return ret;
 }
 
+struct dir_entry_info {
+	struct list_head list;
+	char *name;
+	int name_len;
+	unsigned int d_type;
+};
+
 static int hmdfs_filldir_real(struct dir_context *ctx, const char *name,
 			      int name_len, loff_t offset, u64 ino,
 			      unsigned int d_type)
 {
-	int res = 0;
-	char namestr[NAME_MAX + 1];
-	struct getdents_callback_real *gc = NULL;
-	struct dentry *child = NULL;
+	struct getdents_callback_real *gc;
+	struct dir_entry_info *di;
 
 	if (name_len > NAME_MAX) {
 		hmdfs_err("name_len:%d NAME_MAX:%u", name_len, NAME_MAX);
@@ -1440,36 +1574,63 @@ static int hmdfs_filldir_real(struct dir_context *ctx, const char *name,
 
 	gc = container_of(ctx, struct getdents_callback_real, ctx);
 
-	memcpy(namestr, name, name_len);
-	namestr[name_len] = '\0';
-
-	if (hmdfs_file_type(namestr) != HMDFS_TYPE_COMMON)
+	di = kmalloc(sizeof(*di), GFP_KERNEL);
+	if (!di)
 		goto out;
 
-	/* parent lock already hold by iterate_dir */
-	child = lookup_one_len(name, gc->parent_path->dentry, name_len);
+	di->name = kstrndup(name, name_len, GFP_KERNEL);
+	if (!di->name) {
+		kfree(di);
+		goto out;
+	}
+
+	if (hmdfs_file_type(di->name) != HMDFS_TYPE_COMMON) {
+		kfree(di->name);
+		kfree(di);
+		goto out;
+	}
+
+	di->name_len = name_len;
+	di->d_type = d_type;
+	list_add_tail(&di->list, &gc->dir_ents);
+
+out:
+	/*
+	 * we always return 0 here, so that the caller can continue to next
+	 * dentry even if failed on this dentry somehow.
+	 */
+	return 0;
+}
+
+static void _do_create_dentry(struct getdents_callback_real *gc,
+			      struct dir_entry_info *di)
+{
+	int res = 0;
+	struct dentry *child = NULL;
+
+	inode_lock(d_inode(gc->parent_path->dentry));
+	child = lookup_one_len(di->name, gc->parent_path->dentry, di->name_len);
+	inode_unlock(d_inode(gc->parent_path->dentry));
 	if (IS_ERR(child)) {
 		res = PTR_ERR(child);
 		hmdfs_err("lookup failed because %d", res);
-		goto out;
+		return;
 	}
 
 	if (d_really_is_negative(child)) {
-		dput(child);
 		hmdfs_err("lookup failed because negative dentry");
-		/* just do not fill this entry and continue for next entry */
 		goto out;
 	}
 
-	if (d_type == DT_REG || d_type == DT_DIR) {
+	if (di->d_type == DT_REG || di->d_type == DT_DIR) {
 		create_dentry(child, d_inode(child), gc->file, gc->sbi);
 		gc->num++;
-	} else if (d_type == DT_LNK) {
+	} else if (di->d_type == DT_LNK) {
 		struct path link_path;
 
 		res = hmdfs_lookup_symlink(&link_path, "%s/%s/%s",
 					   gc->sbi->local_src, gc->dir,
-					   namestr);
+					   di->name);
 		if (!res) {
 			create_dentry(child, d_inode(link_path.dentry),
 				      gc->file, gc->sbi);
@@ -1485,14 +1646,20 @@ static int hmdfs_filldir_real(struct dir_context *ctx, const char *name,
 		}
 	}
 
-	dput(child);
-
 out:
-	/*
-	 * we always return 0 here, so that the caller can continue to next
-	 * dentry even if failed on this dentry somehow.
-	 */
-	return 0;
+	dput(child);
+}
+
+static void _gen_dir_dents_info(struct getdents_callback_real *gc)
+{
+	struct dir_entry_info *di = NULL, *tmp = NULL;
+
+	list_for_each_entry_safe(di, tmp, &gc->dir_ents, list) {
+		_do_create_dentry(gc, di);
+		list_del(&di->list);
+		kfree(di->name);
+		kfree(di);
+	}
 }
 
 static void hmdfs_server_set_header(struct hmdfs_dcache_header *header,
@@ -1517,8 +1684,6 @@ struct file *hmdfs_server_rebuild_dents(struct hmdfs_sb_info *sbi,
 	int err = 0;
 	struct getdents_callback_real gc = {
 		.ctx.actor = hmdfs_filldir_real,
-		.ctx.pos = 0,
-		.num = 0,
 		.sbi = sbi,
 		.dir = dir,
 	};
@@ -1543,16 +1708,17 @@ struct file *hmdfs_server_rebuild_dents(struct hmdfs_sb_info *sbi,
 
 	gc.parent_path = path;
 	gc.file = dentry_file;
+	INIT_LIST_HEAD(&gc.dir_ents);
 
 	if (is_hidden_dir(dir))
 		goto write_header;
 
 	err = iterate_dir(file, &(gc.ctx));
+	_gen_dir_dents_info(&gc);
 	if (err) {
 		hmdfs_err("iterate_dir failed");
 		goto out;
 	}
-
 write_header:
 	header.case_sensitive = sbi->s_case_sensitive ? 1 : 0;
 	header.num = cpu_to_le64(gc.num);
@@ -1767,47 +1933,60 @@ static void update_getattr_response(struct hmdfs_peer *con, struct inode *inode,
 	resp->crtime_nsec = cpu_to_le32(ks->btime.tv_nsec);
 }
 
+static int check_server_getattr(struct hmdfs_peer *con,
+				struct hmdfs_head_cmd *cmd,
+				struct getattr_request *recv,
+				unsigned int *lookup_flags)
+{
+	int err = 0;
+	unsigned int recv_flags = le32_to_cpu(recv->lookup_flags);
+
+	if (hmdfs_should_fail_req(&con->sbi->fault_inject, con, cmd, &err))
+		return err;
+
+	err = hmdfs_convert_lookup_flags(recv_flags, lookup_flags);
+	if (err)
+		return err;
+
+	err = is_hidden_dir(recv->buf);
+	if (err == HMDFS_IN_HIDDEN_DIR)
+		return -ENOENT;
+
+	return 0;
+}
+
 void hmdfs_server_getattr(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 			  void *data)
 {
 	int err = 0;
 	struct getattr_request *recv = data;
 	int size_read = sizeof(struct getattr_response);
-	struct getattr_response *resp = NULL;
 	struct kstat ks;
 	struct path root_path, dst_path;
 	struct inode *inode = NULL;
-	unsigned int recv_flags = le32_to_cpu(recv->lookup_flags);
 	unsigned int lookup_flags = 0;
+	struct getattr_response *resp = kzalloc(size_read, GFP_KERNEL);
 
-	if (hmdfs_should_fail_req(&con->sbi->fault_inject, con, cmd, &err))
-		goto err;
-
-	err = hmdfs_convert_lookup_flags(recv_flags, &lookup_flags);
-	if (err)
-		goto err;
-
-	resp = kzalloc(size_read, GFP_KERNEL);
 	if (!resp) {
 		err = -ENOMEM;
-		goto err;
+		goto out;
 	}
+
+	err = check_server_getattr(con, cmd, recv, &lookup_flags);
+	if (err)
+		goto out;
+
 	err = kern_path(con->sbi->local_dst, 0, &root_path);
 	if (err) {
 		hmdfs_err("kern_path failed err = %d", err);
-		goto err_free_resp;
+		goto out;
 	}
+
 	//TODO: local_dst -->local_src
 	err = vfs_path_lookup(root_path.dentry, root_path.mnt, recv->buf,
 			      lookup_flags, &dst_path);
 	if (err)
 		goto out_put_root;
-
-	err = is_hidden_dir(recv->buf);
-	if (err == HMDFS_IN_HIDDEN_DIR) {
-		err = -ENOENT;
-		goto out_put_dst;
-	}
 
 	inode = hmdfs_verify_path(dst_path.dentry, recv->buf, con->sbi->sb);
 	if (!inode) {
@@ -1824,30 +2003,21 @@ void hmdfs_server_getattr(struct hmdfs_peer *con, struct hmdfs_head_cmd *cmd,
 
 	err = vfs_getattr(&dst_path, &ks, STATX_ALL, 0);
 	if (err)
-		goto err_put_dst;
+		goto out_put_dst;
 	update_getattr_response(con, inode, &ks, resp);
 
 out_put_dst:
 	path_put(&dst_path);
 out_put_root:
-	/*
-	 * if path lookup failed, we return with result_mask setting to
-	 * zero. So we can be aware of such situation in caller.
-	 */
-	if (err)
-		resp->result_mask = cpu_to_le32(0);
 	path_put(&root_path);
-	hmdfs_sendmessage_response(con, cmd, size_read, resp, err);
+out:
+	if (err)
+		hmdfs_send_err_response(con, cmd, err);
+	else
+		hmdfs_sendmessage_response(con, cmd, size_read, resp, 0);
+
 	kfree(resp);
 	return;
-
-err_put_dst:
-	path_put(&dst_path);
-	path_put(&root_path);
-err_free_resp:
-	kfree(resp);
-err:
-	hmdfs_send_err_response(con, cmd, err);
 }
 
 static void init_statfs_response(struct statfs_response *resp,

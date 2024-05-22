@@ -65,6 +65,7 @@ enum power_if_op_user {
 	POWER_IF_OP_USER_BSOH, /* for bsoh daemon */
 	POWER_IF_OP_USER_BMS_HEATING, /* for bms_heating daemon */
 	POWER_IF_OP_USER_BMS_AUTH, /* for bms_auth daemon */
+	POWER_IF_OP_USER_RF, /* for rf interface */
 	POWER_IF_OP_USER_END,
 };
 

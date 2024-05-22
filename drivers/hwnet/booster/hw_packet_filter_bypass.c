@@ -121,29 +121,30 @@ static bool upate_bypass_flag(int uid, bool bypass)
 	return false;
 }
 
-static void do_commands(struct req_msg_head *msg)
+static void do_commands(struct req_msg_head *msg, u32 len)
 {
-	int uid;
-	int num;
-	int len;
-	int i;
+	int uid, num, size, i;
 	char *p = NULL;
 	bool ret = false;
 
 	if (!msg || msg->len <= sizeof(struct req_msg_head)) {
-		pr_err("too small\n");
+		pr_err("hw_packet_filter_bypass msg length too small msg len error!!!\n");
 		return;
 	}
 
-	len = msg->len - sizeof(struct req_msg_head);
+	size = len - sizeof(struct req_msg_head);
 	p = (char *)msg + sizeof(struct req_msg_head);
-	if (len <= sizeof(int))
+	if (size <= sizeof(int)) {
+		pr_err("hw_packet_filter_bypass msg size too small msg len error!!! %d\n", size);
 		return;
+	}
 	num = *(int *)p;
-	len -= sizeof(int);
+	size -= sizeof(int);
 	p += sizeof(int);
-	if (len < (sizeof(int) * num))
+	if (size < (sizeof(int) * num)) {
+		pr_err("hw_packet_filter_bypass real length too small msg len error!!!\n");
 		return;
+	}
 
 	spin_lock_bh(&listen_uids.lock);
 	for (i = 0; i < num; ++i) {

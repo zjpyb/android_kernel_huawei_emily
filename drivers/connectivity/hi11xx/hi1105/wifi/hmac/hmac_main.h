@@ -49,7 +49,7 @@ typedef struct {
     uint8_t uc_allowed_cpus;
 } hmac_rxdata_thread_stru;
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
 typedef struct {
     uint32_t max_cpu_freq;
     uint32_t valid;

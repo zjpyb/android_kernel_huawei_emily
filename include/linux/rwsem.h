@@ -31,6 +31,12 @@ struct rw_semaphore {
 	atomic_long_t count;
 	struct list_head wait_list;
 	raw_spinlock_t wait_lock;
+#if defined(CONFIG_HW_VIP_SEMAPHORE) && defined(CONFIG_HARMONY_PERFORMANCE_AQ)
+	bool vip_sem;
+#endif
+#if defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_OPTIMIZE_MM_AQ)
+	bool boost;
+#endif
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	struct optimistic_spin_queue osq; /* spinner MCS lock */
 	/*
@@ -40,7 +46,7 @@ struct rw_semaphore {
 	struct task_struct *owner;
 #endif
 
-#ifdef CONFIG_HW_VIP_THREAD
+#if defined(CONFIG_HW_VIP_THREAD) && !defined(CONFIG_OPTIMIZE_MM_AQ)
 	struct task_struct *vip_dep_task;
 #endif
 
@@ -88,6 +94,7 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 # define __RWSEM_DEP_MAP_INIT(lockname)
 #endif
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 #ifdef CONFIG_HW_VIP_THREAD
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 #define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL, .vip_dep_task = NULL
@@ -96,6 +103,25 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 #endif
 #else
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
+#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL
+#else
+#define __RWSEM_OPT_INIT(lockname)
+#endif
+#endif
+#else
+#if defined(CONFIG_HW_VIP_SEMAPHORE) && defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_RWSEM_SPIN_ON_OWNER)
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL, .boost = false, .vip_sem = false
+#else
+#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL, .vip_dep_task = NULL, .vip_sem = false
+#endif
+#elif defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_RWSEM_SPIN_ON_OWNER)
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL, .boost = false
+#else
+#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL, .vip_dep_task = NULL
+#endif
+#elif defined(CONFIG_RWSEM_SPIN_ON_OWNER)
 #define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .owner = NULL
 #else
 #define __RWSEM_OPT_INIT(lockname)

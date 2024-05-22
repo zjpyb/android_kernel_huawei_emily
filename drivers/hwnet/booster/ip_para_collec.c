@@ -13,9 +13,10 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <net/tcp.h>
-
+#include "hw_booster_common.h"
 #include "ip_para_collec_ex.h"
 #include "netlink_handle.h"
+#include <securec.h>
 #ifdef CONFIG_HW_NETWORK_SLICE
 #include "network_slice_management.h"
 #endif
@@ -33,6 +34,319 @@ static struct link_property_info g_link_property[] = {
 	{ DS_NET_ID, INVALID_LINK_PROPERTITY_INTERFACE_ID },
 	{ DS_NET_SLAVE_ID, INVALID_LINK_PROPERTITY_INTERFACE_ID }
 };
+
+static DEFINE_SPINLOCK(g_ip_para_collec_lock);
+bool g_is_enable_stats = false;
+int g_dev_id_network_type[NETWORK_NUM] = {-1, -1, -1}; // -1 means main card, second card or wifi is closed
+traffic_node_ptr g_traffic_info_head = NULL;
+traffic_node_ptr g_traffic_info_tail = NULL;
+u32 g_list_num = 0;
+u32 g_top_uid[MAX_TOP_UID_NUM] = {0};
+u32 g_top_uid_num = 0;
+u64 g_total_traffic_len = 0;
+u32 g_last_report_time = 0;
+
+static int match_net_dev(struct sk_buff *skb, struct sock *sk, u32 *dev_id);
+inline u32 get_sock_uid(struct sock *sk);
+
+/*
+ * create and init head node of list
+ */
+static bool create_list()
+{
+	traffic_node_ptr p_head = NULL;
+
+	if (g_traffic_info_head != NULL) {
+		pr_info("[IP_PARA]list has existed, can not create list");
+		return false;
+	}
+
+	p_head = (traffic_node_ptr)kmalloc(sizeof(traffic_node), GFP_ATOMIC);
+	if (p_head == NULL) {
+		pr_info("[IP_PARA]create head node failed");
+		return false;
+	}
+
+	(void)memset_s(p_head, sizeof(traffic_node), 0, sizeof(traffic_node));
+	p_head->uid = OTHER_UID;
+	p_head->next = NULL;
+	g_traffic_info_head = p_head;
+	g_traffic_info_tail = p_head;
+
+	pr_info("[IP_PARA]create list success");
+	return true;
+}
+
+/*
+ * search for node which have the same id
+ */
+static traffic_node_ptr find_list(int id)
+{
+	traffic_node_ptr p = g_traffic_info_head->next;
+	while (p != NULL && p->uid != id)
+		p = p->next;
+	return p;
+}
+
+/*
+ * insert a node at the end of list with certain id
+ */
+static traffic_node_ptr insert_tail(int id)
+{
+	traffic_node_ptr tmp = NULL;
+
+	if (g_traffic_info_tail == NULL) {
+		pr_info("[IP_PARA]tail node is not found");
+		return NULL;
+	}
+
+	tmp = (traffic_node_ptr)kmalloc(sizeof(traffic_node), GFP_ATOMIC);
+	if (tmp == NULL) {
+		pr_info("[IP_PARA]insert tail failed");
+		return NULL;
+	}
+
+	(void)memset_s(tmp, sizeof(traffic_node), 0, sizeof(traffic_node));
+	tmp->uid = id;
+	tmp->next = NULL;
+
+	g_traffic_info_tail->next = tmp;
+	g_traffic_info_tail = tmp;
+	g_list_num++;
+
+	pr_info("[IP_PARA]insert tail success");
+	return tmp;
+}
+
+/*
+ * delete all of node except the head node
+ */
+static void delete_list()
+{
+	traffic_node_ptr p = NULL;
+	traffic_node_ptr tmp = NULL;
+
+	if (g_traffic_info_head == NULL) {
+		pr_info("[IP_PARA]tail node is not found");
+		return;
+	}
+
+	p = g_traffic_info_head;
+	tmp = g_traffic_info_head->next;
+	while (tmp != NULL) {
+		p->next = tmp->next;
+		kfree(tmp);
+		tmp = p->next;
+	}
+
+	(void)memset_s(g_traffic_info_head, sizeof(traffic_node), 0, sizeof(traffic_node));
+	g_traffic_info_head->uid = OTHER_UID;
+	g_traffic_info_head->next = NULL;
+	g_traffic_info_tail = g_traffic_info_head;
+	g_list_num = 0;
+	pr_info("[IP_PARA]delete list success");
+}
+
+/*
+ * send traffic info msg to the booster, and free the memory
+ */
+static void notify_traffic_info_process(char *event)
+{
+	if (event != NULL && g_app_ctx->fn)
+		g_app_ctx->fn((struct res_msg_head *)event);
+}
+
+/*
+ * send traffic info msg to the booster, and delete the list of traffic info
+ */
+static void notify_traffic_info(char *p, u16 notify_len)
+{
+	int i;
+	u32 tmp_traffic_len, tmp_traffic_duration;
+	traffic_node_ptr cur_traffic_info_ptr = NULL;
+
+	// type
+	assign_short(p, TRAFFIC_STATS_INFO_RPT);
+	skip_byte(p, sizeof(u16));
+	pr_info("[IP_PARA]notify_type: %d", TRAFFIC_STATS_INFO_RPT);
+	// len(2B type + 2B len + 4B uid_num + 52B * (g_list_num + 1) traffic_info)
+	assign_short(p, notify_len);
+	skip_byte(p, sizeof(u16));
+	assign_uint(p, g_list_num + 1);
+	skip_byte(p, sizeof(u32));
+
+	cur_traffic_info_ptr = g_traffic_info_head;
+	while (cur_traffic_info_ptr != NULL) {
+		assign_uint(p, cur_traffic_info_ptr->uid);
+		skip_byte(p, sizeof(u32));
+		for (i = 0; i < RAT_NUM_MAX; i++) {
+			tmp_traffic_len = (u32)(cur_traffic_info_ptr->traffic_len[i] / LEN_ONE_KILOBYTE);
+			tmp_traffic_duration = cur_traffic_info_ptr->traffic_duration[i] / DURATION_ONE_SEC;
+			if (tmp_traffic_len == 0 || tmp_traffic_duration == 0) {
+				tmp_traffic_len = 0;
+				tmp_traffic_duration = 0;
+			}
+			assign_uint(p, tmp_traffic_len);
+			skip_byte(p, sizeof(u32));
+			assign_uint(p, tmp_traffic_duration);
+			skip_byte(p, sizeof(u32));
+		}
+		cur_traffic_info_ptr = cur_traffic_info_ptr->next;
+	}
+
+	delete_list();
+	g_total_traffic_len = 0;
+	g_last_report_time = jiffies_to_msecs(jiffies_64);
+}
+
+/*
+ * judge if socket is ipv6 packet
+ */
+static bool is_v6_sock(struct sock *sk)
+{
+	if (sk->sk_family == AF_INET6 &&
+		!(ipv6_addr_type(&sk->sk_v6_daddr) & IPV6_ADDR_MAPPED) &&
+		!(ipv6_addr_type(&sk->sk_v6_rcv_saddr) & IPV6_ADDR_MAPPED))
+		return true;
+	return false;
+}
+
+/*
+ *  update traffic info of each different uid
+ */
+static void update_traffic_info_process(const traffic_node_ptr match_traffic_info_ptr, u32 dev_id, int len)
+{
+	u32 cur_time = jiffies_to_msecs(jiffies_64);
+	u32 duration;
+
+	// 0 sa, 1 nsa, 2 nsa_no_endc, 3 lte, 4 other, 5 wifi
+	match_traffic_info_ptr->traffic_len[g_dev_id_network_type[dev_id]] += len;
+	duration = cur_time - match_traffic_info_ptr->last_pkt_time[dev_id];
+	if (duration > 0 && duration < MAX_TRAFFIC_DURATION &&
+		match_traffic_info_ptr->last_pkt_time[dev_id] != 0)
+		match_traffic_info_ptr->traffic_duration[g_dev_id_network_type[dev_id]] += duration;
+	match_traffic_info_ptr->last_pkt_time[dev_id] = cur_time;
+
+	g_total_traffic_len += len;
+}
+
+/*
+ *  update traffic info from tethering
+ */
+static void update_tethering_traffic_info(struct sk_buff *skb)
+{
+	u32 dev_id;
+	traffic_node_ptr match_traffic_info_ptr = NULL;
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (g_dev_id_network_type[WIFI_NET_ID] == -1)
+		dev_id = DS_NET_ID;
+	else
+		dev_id = WIFI_NET_ID;
+
+	if (g_dev_id_network_type[dev_id] < 0 || g_dev_id_network_type[dev_id] >= RAT_NUM_MAX) {
+		pr_info("[IP_PARA]update tethering traffic info dev id network type error");
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		return;
+	}
+
+	match_traffic_info_ptr = g_traffic_info_head;
+	if (match_traffic_info_ptr == NULL) {
+		pr_info("[IP_PARA]match node is not found");
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		return;
+	}
+	update_traffic_info_process(match_traffic_info_ptr, dev_id, skb->len);
+	spin_unlock_bh(&g_ip_para_collec_lock);
+}
+
+/*
+ * update traffic info from TCP and UDP
+ */
+static void update_traffic_info(struct sk_buff *skb, struct sock *sk, int len, u32 uid)
+{
+	int i;
+	u32 dev_id;
+	bool is_top_uid = false;
+	traffic_node_ptr match_traffic_info_ptr = NULL;
+
+	if (match_net_dev(skb, sk, &dev_id) != RTN_SUCC) {
+		pr_info("[IP_PARA]update traffic info get dev id failed");
+		return;
+	}
+	if (dev_id == WIFI_NET_SLAVE_ID)
+		dev_id = WIFI_NET_ID; // statistics wifi regardless of main and second
+	if (dev_id < 0 || dev_id > WIFI_NET_ID) {
+		pr_info("[IP_PARA]update traffic info dev id error");
+		return;
+	}
+	if (g_dev_id_network_type[dev_id] < 0 || g_dev_id_network_type[dev_id] >= RAT_NUM_MAX) {
+		pr_info("[IP_PARA]update traffic info dev id network type error");
+		return;
+	}
+
+	uid = uid % UID_MASK; // do not distinguish userid, the application clone is counted to the main application
+	for (i = 0; i < g_top_uid_num; i++) {
+		if (uid == g_top_uid[i]) {
+			is_top_uid = true;
+			break;
+		}
+	}
+
+	if (is_top_uid == false) {
+		match_traffic_info_ptr = g_traffic_info_head; // if not found, the statistics are otherapp in the head node
+	} else {
+		match_traffic_info_ptr = find_list(uid);
+		if (match_traffic_info_ptr == NULL)
+			match_traffic_info_ptr = insert_tail(uid);
+	}
+
+	if (match_traffic_info_ptr == NULL) {
+		pr_info("[IP_PARA]match node is not found");
+		return;
+	}
+	update_traffic_info_process(match_traffic_info_ptr, dev_id, len);
+}
+
+/*
+ * hook packet from certain hook point, and judge if it's time to send msg to booster
+ */
+static void statistics_traffic(u8 protocol, struct sk_buff *skb, struct sock *sk, u8 direction)
+{
+	char *event = NULL;
+	u32 uid = get_sock_uid(sk);
+	u32 cur_time;
+	u16 notify_len;
+
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (protocol == IPPROTO_TCP && (direction == NF_INET_LOCAL_IN || direction == NF_INET_POST_ROUTING)) {
+		update_traffic_info(skb, sk, skb->len, uid);
+	} else if (protocol == IPPROTO_UDP) {
+		if (direction == NF_INET_UDP_IN_HOOK) {
+			int len = (is_v6_sock(sk) == false) ? (skb->len + IPV4_HEAD_LEN) : (skb->len + IPV6_HEAD_LEN);
+			update_traffic_info(skb, sk, len, uid);
+		} else if (direction == NF_INET_POST_ROUTING) {
+			update_traffic_info(skb, sk, skb->len, uid);
+		}
+	}
+
+	cur_time = jiffies_to_msecs(jiffies_64);
+	if ((g_total_traffic_len > REPORT_TRAFFIC_LEN_THRESHOLD &&
+		cur_time - g_last_report_time > REPORT_TRAFFIC_DURATION_THRESHOLD) ||
+		cur_time - g_last_report_time > MAX_REPORT_DURATION_CYCLE) {
+		pr_info("[IP_PARA]notify after meeting the threshold");
+		notify_len = sizeof(u16) + sizeof(u16) + sizeof(u32) + LEN_PER_UID * (g_list_num + 1);
+		event = (char *)kmalloc(notify_len, GFP_ATOMIC);
+		if (event != NULL) {
+			(void)memset_s(event, notify_len, 0, notify_len);
+			notify_traffic_info(event, notify_len);
+		}
+	}
+	spin_unlock_bh(&g_ip_para_collec_lock);
+
+	notify_traffic_info_process(event);
+	if (event != NULL)
+		kfree(event);
+}
 
 inline u32 get_sock_uid(struct sock *sk)
 {
@@ -638,6 +952,8 @@ static int match_net_dev(struct sk_buff *skb, struct sock *sk, u32 *dev_id)
 		*dev_id = WIFI_NET_ID;
 	else if (strncmp(dev_name, WIFI_NET_SLAVE, WIFI_NET_LEN) == 0)
 		*dev_id = WIFI_NET_SLAVE_ID;
+    else if (strncmp(dev_name, PHONE_SHELL_NET, PHONE_SHELL_NET_LEN) == 0)
+		*dev_id = PHONE_SHELL_NET_ID;
 	else
 		return NET_DEV_ERR;
 	return RTN_SUCC;
@@ -722,6 +1038,8 @@ static void stat_proces(struct sk_buff *skb, struct sock *sk,
 	if (state == NULL)
 		return;
 
+	if (g_is_enable_stats == true)
+		statistics_traffic(protocol, skb, sk, state->hook);
 	app = &g_app_ctx->cur[cpu];
 	spin_lock_bh(&app->lock);
 
@@ -786,6 +1104,8 @@ static unsigned int hook4(void *priv,
 
 	if (state == NULL)
 		return NF_ACCEPT;
+	if (g_is_enable_stats == true && skb != NULL && state->hook == NF_INET_FORWARD)
+		update_tethering_traffic_info(skb);
 
 #ifdef CONFIG_HW_NETWORK_SLICE
 	if (state->hook == NF_INET_LOCAL_OUT)
@@ -877,6 +1197,8 @@ static unsigned int hook6(void *priv,
 
 	if (state == NULL)
 		return NF_ACCEPT;
+	if (g_is_enable_stats == true && skb != NULL && state->hook == NF_INET_FORWARD)
+		update_tethering_traffic_info(skb);
 
 #ifdef CONFIG_HW_NETWORK_SLICE
 	if (state->hook == NF_INET_LOCAL_OUT)
@@ -1277,17 +1599,241 @@ static void process_link_property_update(struct link_property_msg *msg)
 	g_link_property[modem_id].interface_id = interface_id;
 }
 
-static void cmd_process(struct req_msg_head *msg)
+/*
+ * handle top uid list msg
+ */
+static void process_uid_list(const struct uid_list_msg_head *msg)
+{
+	u32 *p = NULL;
+	int i;
+
+	pr_info("[IP_PARA]process uid list uid_num: %u", msg->uid_num);
+	if (msg->uid_num <= 0 || msg->uid_num > MAX_TOP_UID_NUM) {
+		pr_info("[IP_PARA]uid num is invalid, process uid list failed");
+		return;
+	}
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (g_top_uid_num != 0) {
+		pr_info("[IP_PARA]top uid has existed");
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		return;
+	}
+
+	if (create_list() == false) {
+		pr_info("[IP_PARA]create list failed");
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		return;
+	}
+	p = (u32 *)msg;
+	p = p + sizeof(struct uid_list_msg_head) / sizeof(u32);
+
+	for (i = 0; i < msg->uid_num; i++) {
+		g_top_uid[g_top_uid_num] = *p;
+		g_top_uid_num++; // g_top_uid_num represents the number of elements in g_top_uid
+		p++;
+	}
+
+	if (g_top_uid_num > 0) {
+		g_is_enable_stats = true;
+		g_last_report_time = jiffies_to_msecs(jiffies_64);
+	}
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+	return;
+}
+
+/*
+ * handle install app msg
+ */
+static void process_uid_add_update(const struct uid_change_msg *msg)
+{
+	pr_info("[IP_PARA]process uid add update uid: %u", msg->uid);
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (g_is_enable_stats == false) {
+		if (create_list() == false) {
+			pr_info("[IP_PARA]create list failed");
+			spin_unlock_bh(&g_ip_para_collec_lock);
+			return;
+		}
+		g_is_enable_stats = true;
+		g_last_report_time = jiffies_to_msecs(jiffies_64);
+	}
+
+	if (g_top_uid_num < MAX_TOP_UID_NUM) {
+		g_top_uid[g_top_uid_num] = msg->uid;
+		g_top_uid_num++;
+	}
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+	return;
+}
+
+/*
+ * handle uninstall app msg
+ */
+static void process_uid_del_update(const struct uid_change_msg *msg)
+{
+	traffic_node_ptr del_traffic_info_ptr = NULL;
+	char *event = NULL;
+	int pos;
+	int i;
+	u16 notify_len;
+
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (g_is_enable_stats == false) {
+		pr_info("[IP_PARA]process uid del update failed");
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		return;
+	}
+	pr_info("[IP_PARA]process uid del update uid: %u", msg->uid);
+
+	del_traffic_info_ptr = find_list(msg->uid);
+	if (del_traffic_info_ptr != NULL) {
+		pr_info("[IP_PARA]notify if del uid is in list");
+		notify_len = sizeof(u16) + sizeof(u16) + sizeof(u32) + LEN_PER_UID * (g_list_num + 1);
+		event = (char *)kmalloc(notify_len, GFP_ATOMIC);
+		if (event != NULL) {
+			(void)memset_s(event, notify_len, 0, notify_len);
+			notify_traffic_info(event, notify_len);
+		}
+	}
+
+	pos = g_top_uid_num;
+	for (i = 0; i < g_top_uid_num; i++) {
+		if (msg->uid == g_top_uid[i]) {
+			pos = i;
+			break;
+		}
+	}
+	if (pos == g_top_uid_num) {
+		spin_unlock_bh(&g_ip_para_collec_lock);
+		notify_traffic_info_process(event);
+		if (event != NULL)
+			kfree(event);
+		return;
+	}
+	for (i = pos; i < g_top_uid_num - 1; i++)
+		g_top_uid[i] = g_top_uid[i + 1];
+	g_top_uid[g_top_uid_num - 1] = 0;
+	g_top_uid_num--;
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+
+	notify_traffic_info_process(event);
+	if (event != NULL)
+		kfree(event);
+	return;
+}
+
+/*
+ * handle network type msg
+ */
+static void process_cellular_network_update(const struct cellular_network_type_msg *msg)
+{
+	pr_info("[IP_PARA]process network update modem0: %d, modem1: %d",
+		msg->networktype_modem0, msg->networktype_modem1);
+
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (msg->networktype_modem0 < 0 || msg->networktype_modem0 >= STATS_NETWORK_TYPE_WIFI)
+		g_dev_id_network_type[DS_NET_ID] = -1;
+	else
+		g_dev_id_network_type[DS_NET_ID] = msg->networktype_modem0;
+
+	if (msg->networktype_modem1 < 0 || msg->networktype_modem1 >= STATS_NETWORK_TYPE_WIFI)
+		g_dev_id_network_type[DS_NET_SLAVE_ID] = -1;
+	else
+		g_dev_id_network_type[DS_NET_SLAVE_ID] = msg->networktype_modem1;
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+	return;
+}
+
+/*
+ * handle wifi state msg
+ */
+static void process_wifi_update(const struct wifi_state_msg *msg)
+{
+	pr_info("[IP_PARA]process wifi update wifi_state: %d", msg->wifi_state);
+
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (msg->wifi_state == WIFI_STATE_ON)
+		g_dev_id_network_type[WIFI_NET_ID] = STATS_NETWORK_TYPE_WIFI;
+	else
+		g_dev_id_network_type[WIFI_NET_ID] = -1;
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+	return;
+}
+
+/*
+ * handle virtual sim state msg
+ */
+static void process_virtual_sim_update(const struct virtual_sim_state_msg *msg)
+{
+	pr_info("[IP_PARA]process virtual sim update virtual_sim_state: %d", msg->virtual_sim_state);
+
+	spin_lock_bh(&g_ip_para_collec_lock);
+	if (msg->virtual_sim_state == VIRTUAL_SIM_STATE_ON) {
+		g_dev_id_network_type[DS_NET_ID] = -1;
+		g_dev_id_network_type[DS_NET_SLAVE_ID] = -1;
+	}
+
+	spin_unlock_bh(&g_ip_para_collec_lock);
+	return;
+}
+
+/*
+ * handle msg from booster
+ */
+static void booster_msg_process(const struct req_msg_head *msg)
+{
+	switch (msg->type) {
+	case SYNC_TOP_UID_LIST:
+		if (msg->len >= sizeof(struct uid_list_msg_head))
+			process_uid_list((struct uid_list_msg_head *)msg);
+		break;
+	case ADD_TOP_UID:
+		if (msg->len == sizeof(struct uid_change_msg))
+			process_uid_add_update((struct uid_change_msg *)msg);
+		break;
+	case DEL_TOP_UID:
+		if (msg->len == sizeof(struct uid_change_msg))
+			process_uid_del_update((struct uid_change_msg *)msg);
+		break;
+	case UPDATE_CELLULAR_MODE:
+		if (msg->len == sizeof(struct cellular_network_type_msg))
+			process_cellular_network_update((struct cellular_network_type_msg *)msg);
+		break;
+	case UPDATE_WIFI_STATE:
+		if (msg->len == sizeof(struct wifi_state_msg))
+			process_wifi_update((struct wifi_state_msg *)msg);
+		break;
+	case UPDATE_VIRTUAL_SIM_STATE:
+		if (msg->len == sizeof(struct virtual_sim_state_msg))
+			process_virtual_sim_update((struct virtual_sim_state_msg *)msg);
+		break;
+	default:
+		break;
+	}
+}
+
+static void cmd_process(struct req_msg_head *msg, u32 len)
 {
 	if (msg->len > MAX_REQ_DATA_LEN)
 		return;
 
+	if (msg->len != len) {
+		pr_err("ip_para_collec msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	if (msg->type == APP_QOE_SYNC_CMD)
 		process_sync((struct req_msg *)msg);
 	else if (msg->type == UPDATE_APP_INFO_CMD)
 		process_app_update((struct req_msg *)msg);
 	else if (msg->type == UPDAT_INTERFACE_NAME)
 		process_link_property_update((struct link_property_msg *)msg);
+	else if (msg->type >= ADD_TOP_UID && msg->type <= UPDATE_VIRTUAL_SIM_STATE)
+		booster_msg_process(msg);
 	else
 		pr_info("[IP_PARA]map msg error\n");
 }

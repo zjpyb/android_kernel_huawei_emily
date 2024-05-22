@@ -34,6 +34,8 @@
 #define DS_NET_QCOM_PREFIX_LEN 10
 #define DS_NET_QCOM_LEN 11
 #define WIFI_NET_LEN 5
+#define PHONE_SHELL_NET "usb0"
+#define PHONE_SHELL_NET_LEN 4
 #define NF_INET_UDP_IN_HOOK (NF_INET_NUMHOOKS + 1) // 6
 #define NF_INET_TCP_DUPACK_IN_HOOK (NF_INET_NUMHOOKS + 2) // 7
 #define NF_INET_NEW_SK_HOOK (NF_INET_NUMHOOKS + 3) // 8
@@ -41,7 +43,7 @@
 #define NF_INET_UPDATE_RTT_HOOK (NF_INET_NUMHOOKS + 5) // 10
 #define NF_INET_RETRANS_TIMER_HOOK (NF_INET_NUMHOOKS + 6) // 11
 #define NF_INET_OFO_HOOK (NF_INET_NUMHOOKS + 7) // 12
-#define CHANNEL_NUM 4
+#define CHANNEL_NUM 5
 #define IP_TCP_HEAD_LEN 40
 #define TCP_PKT_LEN 1460
 #define TCP_RTT_ARRAY_LEN 2
@@ -63,6 +65,21 @@
 #define MAX_KEY_WORLD_LEN 24
 #define MAX_KEY_FLOW_TYPE_NUM 4
 #define DS_INTERFACE_NAME_ID 6
+#define MAX_TOP_UID_NUM 29 // the max num of top uid
+#define NETWORK_NUM 3 // 0 main card, 1 second card, 2 wifi
+#define OTHER_UID 88888 // use the head node to statistics traffic info of other app which is not top app
+#define UID_MASK 100000 // the mask is used to mask the high bits of the UID, which indicates USERID
+#define MAX_TRAFFIC_DURATION 5000 // if duration between two packets is less than 5000 ms, it's counted as online time
+#define IPV4_HEAD_LEN 20 // IPv4 head is 20 Byte
+#define IPV6_HEAD_LEN 40 // IPv6 head is 40 Byte
+#define LEN_ONE_KILOBYTE 1024 // Byte to KByte
+#define DURATION_ONE_SEC 1000 // ms to s
+#define LEN_PER_UID (4 + 6 * (4 + 4)) // the msg length of each uid
+#define WIFI_STATE_ON 1 // wifi is on
+#define VIRTUAL_SIM_STATE_ON 1 // virtual sim is on
+#define REPORT_TRAFFIC_LEN_THRESHOLD (100 * 1024 * 1024) // the report threshold of traffic len is 100 MB
+#define REPORT_TRAFFIC_DURATION_THRESHOLD (60 * 60 * 1000) //  the report threshold of traffic duration is 60 min
+#define MAX_REPORT_DURATION_CYCLE (7 * 24 * 60 * 60 * 1000) // the max report cycle of duration is 7 days
 
 /* The structure that sets the app information is defined as: */
 struct app_id {
@@ -218,6 +235,7 @@ enum net_dev_id {
 	DS_NET_SLAVE_ID,
 	WIFI_NET_ID,
 	WIFI_NET_SLAVE_ID,
+	PHONE_SHELL_NET_ID,
 };
 
 enum flow_type {
@@ -240,5 +258,50 @@ struct link_property_msg {
 	u16 len; // The length behind this field, the limit lower 2048
 	struct link_property_info property;;
 };
+
+/* The head of uid list message is defined as: */
+struct uid_list_msg_head {
+	u16 type;
+	u16 len;
+	u32 uid_num;
+};
+
+/* The uid change message is defined as: */
+struct uid_change_msg {
+	u16 type;
+	u16 len;
+	u32 uid;
+};
+
+/* The message of cellular network type is defined as: */
+struct cellular_network_type_msg {
+	u16 type;
+	u16 len;
+	u32 networktype_modem0;
+	u32 networktype_modem1;
+};
+
+/* The message of wifi state is defined as: */
+struct wifi_state_msg {
+	u16 type;
+	u16 len;
+	u32 wifi_state;
+};
+
+/* The message of virtual sim state is defined as: */
+struct virtual_sim_state_msg {
+	u16 type;
+	u16 len;
+	u32 virtual_sim_state;
+};
+
+/* The structure of statistics traffic info is defined as: */
+typedef struct traffic_info {
+	u32 uid; // the uid of top app, and set the uid of head node to 88888
+	u64 traffic_len[RAT_NUM_MAX]; // 0 sa, 1 nsa, 2 nsa_no_endc, 3 lte, 4 other, 5 wifi
+	u32 traffic_duration[RAT_NUM_MAX]; // 0 sa, 1 nsa, 2 nsa_no_endc, 3 lte, 4 other, 5 wifi
+	u32 last_pkt_time[NETWORK_NUM]; // 0 main card, 1 second card, 2 wifi
+	struct traffic_info *next;
+}traffic_node, *traffic_node_ptr;
 
 #endif // _IP_PARA_COLLEC_H

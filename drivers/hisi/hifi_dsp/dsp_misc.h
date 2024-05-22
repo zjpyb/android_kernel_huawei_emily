@@ -20,6 +20,8 @@
 #define __DSP_MISC_H__
 
 #include <linux/list.h>
+#include <linux/time.h>
+
 #include "global_ddr_map.h"
 #include "soc_acpu_baseaddr_interface.h"
 
@@ -74,6 +76,7 @@
 #define CODEC_DSP_SOUNDTRIGGER_TOTAL_SIZE  0xF000
 #define DSP_PCM_UPLOAD_BUFFER_SIZE         0x2000
 #define DSP_PARA_DOWNLOAD_BUFFER_SIZE      0x2000
+#define DSP_SOUND_ENHANCE_BUFF_SIZE        0x2000
 #define DSP_AUDIO_EFFECT_PARAM_BUFF_SIZE   0xC000
 #ifdef CONFIG_HIFI_MEMORY_15M
 #define HIFI_USB_DRIVER_SHARE_MEM_SIZE     0x0
@@ -100,7 +103,7 @@
 #define AP_AUDIO_WAKEUP_MODEL_SIZE         0x1000
 #define AP_AUDIO_LP_WAKEUP_RINGBUFEER_SIZE AP_AUDIO_WAKEUP_RINGBUFEER_SIZE
 #define AP_AUDIO_LP_WAKEUP_CAPTURE_SIZE    AP_AUDIO_WAKEUP_CAPTURE_SIZE
-#define DSP_UNSEC_RESERVE_SIZE                  0x48C00
+#define DSP_UNSEC_RESERVE_SIZE                  0x46C00
 #define DSP_PCM_THREAD_DATA_SIZE                0x48
 #define DRV_DSP_SCREEN_STATUS_SIZE              4
 #ifdef HISI_EXTERNAL_MODEM
@@ -152,7 +155,8 @@
 #define AP_VIRTUAL_CALL_UPLINK_ADDR   (AP_VIRTUAL_CALL_DOWNLINK_ADDR + AP_VIRTUAL_CALL_DOWNLINK_SIZE)
 #define AP_AUDIO_VIBRATOR_ADDR (AP_VIRTUAL_CALL_UPLINK_ADDR + AP_VIRTUAL_CALL_UPLINK_SIZE)
 #define HIFI_WIRED_HEADSET_PARA_ADDR (AP_AUDIO_VIBRATOR_ADDR + AP_AUDIO_VIBRATOR_DATA_SIZE)
-#define DSP_UNSEC_RESERVE_ADDR (HIFI_WIRED_HEADSET_PARA_ADDR + DSP_PARA_DOWNLOAD_BUFFER_SIZE)
+#define HIFI_SOUND_ENHANCE_PARA_ADDR (HIFI_WIRED_HEADSET_PARA_ADDR + DSP_PARA_DOWNLOAD_BUFFER_SIZE)
+#define DSP_UNSEC_RESERVE_ADDR (HIFI_SOUND_ENHANCE_PARA_ADDR + DSP_SOUND_ENHANCE_BUFF_SIZE)
 
 #define DSP_OM_LOG_SIZE                0xA000
 #define DSP_OM_LOG_ADDR                (DRV_DSP_UART_TO_MEM - DSP_OM_LOG_SIZE)
@@ -349,6 +353,11 @@ enum dsp_msg_id {
 	ID_AP_HIFI_SET_WIRED_HEADSET_PARA_CMD = 0xDF59, /* ap hal set wired headset para */
 	ID_AP_HIFI_GET_VALUE_DATA_CMD = 0xDF60, /* ap hal get hearing protection volume data info */
 	ID_HIFI_AP_GET_VALUE_DATA_CNF = 0xDF61, /* ap hal get hearing protection volume data feedback */
+	ID_AP_HIFI_SET_SOUND_ENHANCE_SWITCH_CMD = 0xDF62, /* ap hal set sound enhance switch */
+	ID_AP_HIFI_SET_SOUND_ENHANCE_SCENE_CMD = 0xDF63, /* ap hal set sound enhance scene */
+	ID_AP_HIFI_SET_SOUND_ENHANCE_PARA_CMD = 0xDF64, /* ap hal set sound enhance para */
+	ID_AP_DSP_GET_REC_START_DMA_STAMP_REQ = 0xDF68,
+	ID_DSP_AP_GET_REC_START_DMA_STAMP_CNF = 0xDF69,
 };
 
 enum dsp_platform_type {
@@ -449,6 +458,15 @@ struct dsp_misc_proc {
 	const struct dsp_ioctl_cmd *cmd_table;
 	cmd_proc_func sync_msg_proc;
 	unsigned int size;
+};
+
+struct record_start_dma_stamp_get_cnf {
+	unsigned short msg_id;
+	unsigned short reserved;
+	unsigned int dsp_stamp;
+	unsigned int kernel_stamp;
+	__kernel_time_t kernel_time_s;
+	__kernel_suseconds_t kernel_time_us;
 };
 
 long dsp_msg_process_cmd(unsigned int cmd, uintptr_t data32);

@@ -142,7 +142,7 @@ int get_img_size_info(struct dpu_fb_data_type *dpufd, dss_overlay_t *pov_req,
 static void set_ovl_single_layer_struct(dss_ovl_t *ovl, dss_layer_t *layer,
 	struct img_size img_info, int layer_idx, int pov_h_block_idx)
 {
-	if (layer_idx >= pov_h_block_idx) {
+	if ((layer_idx >= pov_h_block_idx) && layer_idx < (sizeof(ovl->ovl_layer) / sizeof(ovl->ovl_layer[0]))) {
 		ovl->ovl_layer[layer_idx].layer_pos = set_bits32(ovl->ovl_layer[layer_idx].layer_pos, 0, 15, 0);
 		ovl->ovl_layer[layer_idx].layer_pos = set_bits32(ovl->ovl_layer[layer_idx].layer_pos,
 			img_info.img_height, 15, 16);

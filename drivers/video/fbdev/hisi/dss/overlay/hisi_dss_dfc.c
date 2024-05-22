@@ -407,11 +407,9 @@ static void no_compress_rot90_set_rect_align(dss_rect_t *aligned_rect, dss_rect_
 	uint32_t addr;
 	uint32_t dst_addr;
 	uint32_t bpp;
-	bool mmu_enable;
 
 	aligned_line = (layer->dst.bpp <= 2) ? 32 : 16; /* sp:32bytes ; others:64bytes */
-	mmu_enable = (layer->dst.mmu_enable == 1) ? true : false;
-	dst_addr = mmu_enable ? layer->dst.vir_addr : layer->dst.phy_addr;
+	dst_addr = layer->dst.vir_addr;
 	bpp = layer->dst.bpp;
 	addr = dst_addr + layer->dst_rect.x * bpp +
 		(in_rect.x - layer->dst_rect.x + layer->dst_rect.y) * layer->dst.stride;

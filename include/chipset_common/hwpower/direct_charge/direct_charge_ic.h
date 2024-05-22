@@ -23,6 +23,7 @@
 #define CHARGE_IC_MAIN             BIT(0)
 #define CHARGE_IC_AUX              BIT(1)
 #define CHARGE_MULTI_IC            (CHARGE_IC_MAIN | CHARGE_IC_AUX)
+#define CHIP_DEV_NAME_LEN          32
 
 enum dc_ic_type {
 	CHARGE_IC_TYPE_MAIN = 0,
@@ -82,6 +83,7 @@ struct dc_ic_dev {
 	struct dc_ic_mode_para mode_para[IC_MODE_MAX_NUM];
 	int mode_num;
 	int use_coul_vbat;
+	int use_coul_ibat;
 	bool para_flag;
 };
 
@@ -100,6 +102,7 @@ struct dc_ic_ops {
 	int (*ic_init)(void *);
 	int (*ic_exit)(void *);
 	int (*ic_enable)(int, void *);
+	int (*irq_enable)(int enable, void *dev_data);
 	int (*ic_adc_enable)(int, void *);
 	int (*ic_discharge)(int, void *);
 	int (*is_ic_close)(void *);
@@ -135,6 +138,8 @@ struct dc_ic_ops *dc_ic_get_ic_ops(int mode, unsigned int index);
 struct dc_batinfo_ops *dc_ic_get_battinfo_ops(int mode, unsigned int index);
 int dc_ic_get_ic_index(int mode, unsigned int path, unsigned int *index, int len);
 int dc_ic_get_ic_index_for_ibat(int mode, unsigned int path, unsigned int *index, int len);
+int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat);
+bool dc_ic_get_ibat_from_coul(int *ibat);
 bool dc_ic_get_vbat_from_coul(int *vbat);
 #else
 static inline int dc_ic_ops_register(int mode, unsigned int index, struct dc_ic_ops *ops)
@@ -165,6 +170,16 @@ static inline int dc_ic_get_ic_index(int mode, unsigned int path, unsigned int *
 static inline int dc_ic_get_ic_index_for_ibat(int mode, unsigned int path, unsigned int *index, int len)
 {
 	return -1;
+}
+
+static inline int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
+{
+	return -1;
+}
+
+static inline bool dc_ic_get_ibat_from_coul(int *ibat)
+{
+	return false;
 }
 
 static inline bool dc_ic_get_vbat_from_coul(int *vbat)

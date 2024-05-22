@@ -18,6 +18,7 @@
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
+#include <linux/mm_inline.h>
 
 #include "file_remote.h"
 
@@ -34,82 +35,62 @@ static inline bool hmdfs_remote_write_cache_expired(
 }
 
 enum expire_reason {
+	/* keep file cache */
 	ALL_GOOD = 0,
-	INO_DISMATCH = 1,
-	SIZE_OR_CTIME_DISMATCH = 2,
-	TIMER_EXPIRE = 3,
-	TIMER_WORKING = 4,
-	STABLE_CTIME_DISMATCH = 5,
-	KEEP_CACHE = 6,
+	TIMER_WORKING = 1,
+	INO_DISMATCH = 2,
+	KEEP_CACHE = 3,
+	/* expire file cache */
+	SIZE_OR_CTIME_DISMATCH = 4,
+	TIMER_EXPIRE = 5,
+	STABLE_CTIME_DISMATCH = 6,
 };
 
-/*
- * hmdfs_open_final_remote - Do final steps of opening a remote file, update
- * local inode cache and decide whether of not to truncate inode pages.
- *
- * @info: hmdfs inode info
- * @open_ret: values returned from remote when opening a remote file
- * @keep_cache: keep local cache & i_size
- */
-static int hmdfs_open_final_remote(struct hmdfs_inode_info *info,
-				   struct hmdfs_open_ret *open_ret,
-				   struct file *file, bool keep_cache)
+enum expire_reason expire_file_cache(struct hmdfs_inode_info *info,
+				     struct hmdfs_open_ret *open_ret,
+				     bool keep_cache)
 {
 	struct inode *inode = &info->vfs_inode;
-	bool truncate = false;
-	enum expire_reason reason = ALL_GOOD;
-	int ret = 0;
 
 	/*
 	 * if remote inode number changed and lookup stale data, we'll return
 	 * -ESTALE, and reopen the file with metedate from remote getattr.
 	 */
-	if (info->remote_ino != open_ret->ino) {
+	if (!info->conn->sbi->s_external_fs &&
+	    info->remote_ino != open_ret->ino) {
 		hmdfs_debug(
 			"got stale local inode, ino in local %llu, ino from open %llu",
 			info->remote_ino, open_ret->ino);
 		hmdfs_send_close(info->conn, &open_ret->fid);
-		reason = INO_DISMATCH;
-		ret = -ESTALE;
-		goto out;
+		return INO_DISMATCH;
 	}
 
-	if (keep_cache) {
-		reason = KEEP_CACHE;
-		trace_hmdfs_open_final_remote(info, open_ret, file, reason);
-		goto set_fid_out;
-	}
+	if (keep_cache)
+		return KEEP_CACHE;
 
 	/*
 	 * if remote size do not match local inode, or remote ctime do not match
 	 * the last time same file was opened.
 	 */
 	if (inode->i_size != open_ret->file_size ||
-	    hmdfs_time_compare(&info->remote_ctime, &open_ret->remote_ctime)) {
-		truncate = true;
-		reason = SIZE_OR_CTIME_DISMATCH;
-		goto out;
-	}
+	    hmdfs_time_compare(&info->remote_ctime, &open_ret->remote_ctime))
+		return SIZE_OR_CTIME_DISMATCH;
 
 	/*
 	 * If 'writecache_expire' is set, check if it expires. And skip the
 	 * checking of stable_ctime.
 	 */
 	if (info->writecache_expire) {
-		truncate = hmdfs_remote_write_cache_expired(info);
-		if (truncate)
-			reason = TIMER_EXPIRE;
+		if (hmdfs_remote_write_cache_expired(info))
+			return TIMER_EXPIRE;
 		else
-			reason = TIMER_WORKING;
-		goto out;
+			return TIMER_WORKING;
+		return ALL_GOOD;
 	}
 
 	/* the first time, or remote ctime is ahead of remote time */
-	if (info->stable_ctime.tv_sec == 0 && info->stable_ctime.tv_nsec == 0) {
-		truncate = true;
-		reason = STABLE_CTIME_DISMATCH;
-		goto out;
-	}
+	if (info->stable_ctime.tv_sec == 0 && info->stable_ctime.tv_nsec == 0)
+		return STABLE_CTIME_DISMATCH;
 
 	/*
 	 * - if last stable_ctime == stable_ctime, we do nothing.
@@ -125,25 +106,41 @@ static int hmdfs_open_final_remote(struct hmdfs_inode_info *info,
 	 *   stable_ctime must be zero in this case, this is possible because
 	 *   system time might be changed.
 	 */
-	if (hmdfs_time_compare(&info->stable_ctime, &open_ret->stable_ctime)) {
-		truncate = true;
-		reason = STABLE_CTIME_DISMATCH;
-		goto out;
-	}
+	if (hmdfs_time_compare(&info->stable_ctime, &open_ret->stable_ctime))
+		return STABLE_CTIME_DISMATCH;
 
-out:
+	return ALL_GOOD;
+}
+/*
+ * hmdfs_open_final_remote - Do final steps of opening a remote file, update
+ * local inode cache and decide whether of not to truncate inode pages.
+ *
+ * @info: hmdfs inode info
+ * @open_ret: values returned from remote when opening a remote file
+ * @keep_cache: keep local cache & i_size
+ */
+static int hmdfs_open_final_remote(struct hmdfs_inode_info *info,
+				   struct hmdfs_open_ret *open_ret,
+				   struct file *file, bool keep_cache)
+{
+	struct inode *inode = &info->vfs_inode;
+	enum expire_reason reason =
+		expire_file_cache(info, open_ret, keep_cache);
+
 	trace_hmdfs_open_final_remote(info, open_ret, file, reason);
-	if (ret)
-		return ret;
+	if (reason == INO_DISMATCH)
+		return -ESTALE;
 
-	if (reason == SIZE_OR_CTIME_DISMATCH) {
-		inode->i_ctime = open_ret->remote_ctime;
-		info->remote_ctime = open_ret->remote_ctime;
-	}
+	if (reason == KEEP_CACHE)
+		goto set_fid_out;
 
-	if (truncate) {
+	if (reason > KEEP_CACHE) {
 		info->writecache_expire = 0;
 		truncate_inode_pages(inode->i_mapping, 0);
+		if (reason == SIZE_OR_CTIME_DISMATCH) {
+			inode->i_ctime = open_ret->remote_ctime;
+			info->remote_ctime = open_ret->remote_ctime;
+		}
 	}
 
 	atomic64_set(&info->write_counter, 0);
@@ -479,7 +476,7 @@ retry:
 
 	ra = &filp->f_ra;
 	/* rtt is measured in 10 msecs */
-	rtt = hmdfs_tcpi_rtt(info->conn) / 10000;
+	rtt = hmdfs_get_connection_rtt(info->conn) / 10000;
 	switch (rtt) {
 	case 0:
 		break;
@@ -653,13 +650,77 @@ static int hmdfs_readpage_remote(struct file *file, struct page *page)
 		return 0;
 	}
 
-	if (!isize || page->index > end_index) {
-		hmdfs_fill_page_zero(page);
+	hmdfs_remote_fetch_fid(info, &fid);
+	return hmdfs_client_readpage(info->conn, &fid, page);
+}
+
+static void hmdfs_readpage_one_by_one(struct file *filp,
+				      struct address_space *mapping,
+				      struct list_head *pages,
+				      unsigned int nr_pages, gfp_t gfp)
+{
+	unsigned int page_idx;
+
+	for (page_idx = 0; page_idx < nr_pages; page_idx++) {
+		struct page *page = lru_to_page(pages);
+		list_del(&page->lru);
+		if (!add_to_page_cache_lru(page, mapping, page->index, gfp))
+			mapping->a_ops->readpage(filp, page);
+		put_page(page);
+	}
+}
+
+static int hmdfs_readpages_remote(struct file *filp,
+				  struct address_space *mapping,
+				  struct list_head *pages,
+				  unsigned int nr_pages)
+{
+	struct hmdfs_inode_info *info = hmdfs_i(file_inode(filp));
+	unsigned int idx, cnt, limit;
+	unsigned long next_index;
+	struct hmdfs_fid fid;
+	gfp_t gfp = readahead_gfp_mask(mapping);
+	struct page **vec = NULL;
+
+	if (!(info->conn->features & HMDFS_FEATURE_READPAGES)) {
+		hmdfs_readpage_one_by_one(filp, mapping, pages, nr_pages, gfp);
 		return 0;
 	}
 
+	limit = info->conn->sbi->s_readpages_nr;
+	vec = kmalloc(limit * sizeof(*vec), GFP_KERNEL);
+	if (!vec) {
+		hmdfs_warning("cannot alloc vec (%u pages)", limit);
+		return -ENOMEM;
+	}
+
 	hmdfs_remote_fetch_fid(info, &fid);
-	return hmdfs_client_readpage(info->conn, &fid, page);
+
+	cnt = 0;
+	next_index = 0;
+	for (idx = 0; idx < nr_pages; ++idx) {
+		struct page *page = lru_to_page(pages);
+
+		list_del(&page->lru);
+		if (add_to_page_cache_lru(page, mapping, page->index, gfp))
+			goto next_page;
+
+		if (cnt && (cnt >= limit || page->index != next_index)) {
+			hmdfs_client_readpages(info->conn, &fid, vec, cnt);
+			cnt = 0;
+		}
+		next_index = page->index + 1;
+		vec[cnt++] = page;
+
+next_page:
+		put_page(page);
+	}
+
+	if (cnt)
+		hmdfs_client_readpages(info->conn, &fid, vec, cnt);
+
+	kfree(vec);
+	return 0;
 }
 
 uint32_t hmdfs_get_writecount(struct page *page)
@@ -702,6 +763,32 @@ static bool allow_cur_thread_wpage(struct hmdfs_inode_info *info,
 	return *rsem_held;
 }
 
+static struct hmdfs_writepage_context *
+init_writepage_ctx(struct page *page, bool rsem_held, bool sync,
+		   unsigned int count)
+{
+	struct inode *inode = page->mapping->host;
+	struct hmdfs_inode_info *info = hmdfs_i(inode);
+	struct hmdfs_sb_info *sbi = hmdfs_sb(inode->i_sb);
+	struct hmdfs_writepage_context *param = NULL;
+
+	param = kzalloc(sizeof(*param), GFP_NOFS);
+	if (!param)
+		return ERR_PTR(-ENOMEM);
+
+	param->count = count;
+	param->rsem_held = rsem_held;
+	hmdfs_remote_fetch_fid(info, &param->fid);
+	param->sync_all = sync;
+	param->caller = current;
+	get_task_struct(current);
+	param->page = page;
+	param->timeout = jiffies + msecs_to_jiffies(sbi->wb_timeout_ms);
+	INIT_DELAYED_WORK(&param->retry_dwork, hmdfs_remote_writepage_retry);
+
+	return param;
+}
+
 /**
  * hmdfs_writepage_remote - writeback a dirty page to remote
  *
@@ -719,44 +806,34 @@ static int hmdfs_writepage_remote(struct page *page,
 {
 	struct inode *inode = page->mapping->host;
 	struct hmdfs_inode_info *info = hmdfs_i(inode);
-	struct hmdfs_sb_info *sbi = hmdfs_sb(inode->i_sb);
 	int ret = 0;
 	bool rsem_held = false;
 	bool sync = wbc->sync_mode == WB_SYNC_ALL;
 	struct hmdfs_writepage_context *param = NULL;
+	unsigned int count = hmdfs_get_writecount(page);
 
 	if (!allow_cur_thread_wpage(info, &rsem_held, sync))
 		goto out_unlock;
 
 	set_page_writeback(page);
+	if (sync && hmdfs_usr_sig_pending(current)) {
+		ClearPageUptodate(page);
+		goto out_endwb;
+	}
+	if (!count)
+		goto out_endwb;
 
-	param = kzalloc(sizeof(*param), GFP_NOFS);
-	if (!param) {
-		ret = -ENOMEM;
+	param = init_writepage_ctx(page, rsem_held, sync, count);
+	if (IS_ERR(param)) {
+		ret = PTR_ERR(param);
 		goto out_endwb;
 	}
 
-	if (sync && hmdfs_usr_sig_pending(current)) {
-		ClearPageUptodate(page);
-		goto out_free;
-	}
-	param->count = hmdfs_get_writecount(page);
-	if (!param->count)
-		goto out_free;
-	param->rsem_held = rsem_held;
-	hmdfs_remote_fetch_fid(info, &param->fid);
-	param->sync_all = sync;
-	param->caller = current;
-	get_task_struct(current);
-	param->page = page;
-	param->timeout = jiffies + msecs_to_jiffies(sbi->wb_timeout_ms);
-	INIT_DELAYED_WORK(&param->retry_dwork, hmdfs_remote_writepage_retry);
 	ret = hmdfs_remote_do_writepage(info->conn, param);
 	if (likely(!ret))
 		return 0;
 
 	put_task_struct(current);
-out_free:
 	kfree(param);
 out_endwb:
 	end_page_writeback(page);
@@ -783,6 +860,29 @@ static void hmdfs_account_dirty_pages(struct address_space *mapping)
 	this_cpu_inc(*sbi->h_wb->bdp_ratelimits);
 }
 
+int hmdfs_generic_write_begin(struct page *page, unsigned int len,
+			      struct page **pagep, loff_t pos,
+			      struct inode *inode)
+{
+	*pagep = page;
+	wait_on_page_writeback(page);
+
+	// If this page will be covered completely.
+	if (len == HMDFS_PAGE_SIZE || PageUptodate(page))
+		return false;
+
+	/*
+	 * If data existed in this page will covered,
+	 * we just need to clear this page.
+	 */
+	if (!((unsigned long long)pos & (HMDFS_PAGE_SIZE - 1)) &&
+	    (pos + len) >= i_size_read(inode)) {
+		zero_user_segment(page, len, HMDFS_PAGE_SIZE);
+		return false;
+	}
+	return true;
+}
+
 static int hmdfs_write_begin_remote(struct file *file,
 				    struct address_space *mapping, loff_t pos,
 				    unsigned int len, unsigned int flags,
@@ -797,22 +897,9 @@ start:
 	page = grab_cache_page_write_begin(mapping, index, AOP_FLAG_NOFS);
 	if (!page)
 		return -ENOMEM;
-	*pagep = page;
-	wait_on_page_writeback(page);
 
-	// If this page will be covered completely.
-	if (len == HMDFS_PAGE_SIZE || PageUptodate(page))
+	if (!hmdfs_generic_write_begin(page, len, pagep, pos, inode))
 		return 0;
-
-	/*
-	 * If data existed in this page will covered,
-	 * we just need to clear this page.
-	 */
-	if (!((unsigned long long)pos & (HMDFS_PAGE_SIZE - 1)) &&
-	    (pos + len) >= i_size_read(inode)) {
-		zero_user_segment(page, len, HMDFS_PAGE_SIZE);
-		return 0;
-	}
 	/*
 	 * We need readpage before write date to this page.
 	 */
@@ -835,13 +922,9 @@ start:
 	return ret;
 }
 
-static int hmdfs_write_end_remote(struct file *file,
-				  struct address_space *mapping, loff_t pos,
-				  unsigned int len, unsigned int copied,
-				  struct page *page, void *fsdata)
+bool hmdfs_generic_write_end(struct page *page, unsigned int len,
+			     unsigned int copied)
 {
-	struct inode *inode = page->mapping->host;
-
 	if (!PageUptodate(page)) {
 		if (unlikely(copied != len))
 			copied = 0;
@@ -849,6 +932,20 @@ static int hmdfs_write_end_remote(struct file *file,
 			SetPageUptodate(page);
 	}
 	if (!copied)
+		return false;
+	return true;
+}
+
+static int hmdfs_write_end_remote(struct file *file,
+				  struct address_space *mapping, loff_t pos,
+				  unsigned int len, unsigned int copied,
+				  struct page *page, void *fsdata)
+{
+	struct inode *inode = page->mapping->host;
+	bool ret;
+
+	ret = hmdfs_generic_write_end(page, len, copied);
+	if (!ret)
 		goto unlock_out;
 
 	if (!PageDirty(page)) {
@@ -871,6 +968,7 @@ unlock_out:
 
 const struct address_space_operations hmdfs_dev_file_aops_remote = {
 	.readpage = hmdfs_readpage_remote,
+	.readpages = hmdfs_readpages_remote,
 	.write_begin = hmdfs_write_begin_remote,
 	.write_end = hmdfs_write_end_remote,
 	.writepage = hmdfs_writepage_remote,
@@ -889,37 +987,58 @@ unsigned long hmdfs_set_pos(unsigned long dev_id, unsigned long group_id,
 	return pos;
 }
 
+static int analysis_dentry(struct dir_context *ctx,
+			   struct hmdfs_dentry_group *dentry_group,
+			   char *dentry_name, unsigned long pos, int index)
+{
+	int len = le16_to_cpu(dentry_group->nsl[index].namelen);
+	int file_type = DT_UNKNOWN;
+
+	if (!test_bit_le(index, dentry_group->bitmap) || len == 0)
+		return 0;
+
+	memset(dentry_name, 0, DENTRY_NAME_MAX_LEN);
+	// TODO: Support more file_type
+	if (S_ISDIR(le16_to_cpu(dentry_group->nsl[index].i_mode)))
+		file_type = DT_DIR;
+	else if (S_ISREG(le16_to_cpu(dentry_group->nsl[index].i_mode)))
+		file_type = DT_REG;
+
+	strncat(dentry_name, dentry_group->filename[index], len);
+	if (!dir_emit(ctx, dentry_name, len, pos + INUNUMBER_START,
+		      file_type)) {
+		ctx->pos = pos;
+		return 1;
+	}
+
+	return 0;
+}
+
 static int analysis_dentry_file_from_con(struct hmdfs_sb_info *sbi,
 					 struct file *file,
 					 struct file *handler,
 					 struct dir_context *ctx)
 {
-	struct hmdfs_dentry_group *dentry_group = NULL;
+	struct hmdfs_dentry_group *dentry_group =
+		kzalloc(sizeof(*dentry_group), GFP_KERNEL);
+	char *dentry_name = kzalloc(DENTRY_NAME_MAX_LEN, GFP_KERNEL);
 	unsigned long pos = (unsigned long)(ctx->pos);
 	unsigned long dev_id = (pos << 1) >> (POS_BIT_NUM - DEV_ID_BIT_NUM);
 	unsigned long group_id = (pos << (1 + DEV_ID_BIT_NUM)) >>
 				 (POS_BIT_NUM - GROUP_ID_BIT_NUM);
 	unsigned long offset = pos & OFFSET_BIT_MASK;
-	int group_num = 0;
-	char *dentry_name = NULL;
-	int iterate_result = 0;
+	int group_num = get_dentry_group_cnt(file_inode(handler));
+	int err = 0;
 	int i, j;
 
-	dentry_group = kzalloc(sizeof(*dentry_group), GFP_KERNEL);
-
-	if (!dentry_group)
-		return -ENOMEM;
-
-	if (IS_ERR_OR_NULL(handler)) {
-		kfree(dentry_group);
-		return -ENOENT;
+	if (!dentry_group || !dentry_name) {
+		err = -ENOMEM;
+		goto done;
 	}
 
-	group_num = get_dentry_group_cnt(file_inode(handler));
-	dentry_name = kzalloc(DENTRY_NAME_MAX_LEN, GFP_KERNEL);
-	if (!dentry_name) {
-		kfree(dentry_group);
-		return -ENOMEM;
+	if (IS_ERR_OR_NULL(handler)) {
+		err = -ENOENT;
+		goto done;
 	}
 
 	for (i = group_id; i < group_num; i++) {
@@ -932,30 +1051,10 @@ static int analysis_dentry_file_from_con(struct hmdfs_sb_info *sbi,
 		}
 
 		for (j = offset; j < DENTRY_PER_GROUP; j++) {
-			int len;
-			int file_type = DT_UNKNOWN;
-			bool is_continue;
-
-			len = le16_to_cpu(dentry_group->nsl[j].namelen);
-			if (!test_bit_le(j, dentry_group->bitmap) || len == 0)
-				continue;
-
-			memset(dentry_name, 0, DENTRY_NAME_MAX_LEN);
-			// TODO: Support more file_type
-			if (S_ISDIR(le16_to_cpu(dentry_group->nsl[j].i_mode)))
-				file_type = DT_DIR;
-			else if (S_ISREG(le16_to_cpu(
-					 dentry_group->nsl[j].i_mode)))
-				file_type = DT_REG;
-
-			strncat(dentry_name, dentry_group->filename[j], len);
 			pos = hmdfs_set_pos(dev_id, i, j);
-			is_continue =
-				dir_emit(ctx, dentry_name, len,
-					 pos + INUNUMBER_START, file_type);
-			if (!is_continue) {
-				ctx->pos = pos;
-				iterate_result = 1;
+			if (analysis_dentry(ctx, dentry_group, dentry_name,
+					    pos, j)) {
+				err = 1;
 				goto done;
 			}
 		}
@@ -965,7 +1064,7 @@ static int analysis_dentry_file_from_con(struct hmdfs_sb_info *sbi,
 done:
 	kfree(dentry_name);
 	kfree(dentry_group);
-	return iterate_result;
+	return err;
 }
 
 int hmdfs_dev_readdir_from_con(struct hmdfs_peer *con, struct file *file,

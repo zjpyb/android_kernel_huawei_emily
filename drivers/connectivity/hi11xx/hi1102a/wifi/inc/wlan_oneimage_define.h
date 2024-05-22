@@ -985,7 +985,7 @@ extern "C" {
 #define hmac_atcmdsrv_get_ant_response                    hmac_atcmdsrv_get_ant_response_etc2
 #define hmac_atcmdsrv_get_ant_info_response               hmac_atcmdsrv_get_ant_info_response_etc2
 #define hmac_atcmdsrv_double_ant_switch_info_response     hmac_atcmdsrv_double_ant_switch_info_response_etc2
-#define hmac_atcmdsrv_get_rx_pkcg                         hmac_atcmdsrv_get_rx_pkcg_etc2
+#define hmac_config_get_rx_fcs_info                       hmac_config_get_rx_fcs_info_etc2
 #define hmac_atcmdsrv_lte_gpio_check                      hmac_atcmdsrv_lte_gpio_check_etc2
 #define hmac_atcmdsrv_report_efuse_reg                    hmac_atcmdsrv_report_efuse_reg_etc2
 #define hmac_config_vowifi_report                         hmac_config_vowifi_report_etc2

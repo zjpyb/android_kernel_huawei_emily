@@ -18,11 +18,13 @@
 #include <scsi/ufs/ufs.h>
 #include <asm/unaligned.h>
 #include <linux/mutex.h>
+#include <linux/atomic.h>
 
 #include "ufshcd.h"
 #include "ufs_func.h"
 #include "ufshcd-kirin-interface.h"
 #include "ufs_vcmd_proc.h"
+#include "ufs_unistore_read.h"
 
 enum {
 	OP_RESET_SEG_FTL,
@@ -53,14 +55,30 @@ enum {
 
 #define QUERY_SLC_STATUS_OFFSET 4
 
+#define MAX_DM_RECOVERY_NUM 10
+
 struct ufshcd_data_move_ctrl {
-	struct mutex lock;
+	atomic_t in_process_cnt;
 	u8 *send_buffer;
 	bool response_flag;
+	bool scsi_err_flag;
+	u8 recovery_cnt;
+	u8 repeat_cnt;
+	u8 stream_id;
 	u8 response[DATA_MOVE_RESPONSE_LEN];
+	struct stor_dev_pwron_info stor_info;
+	struct stor_dev_data_move_info data_move_info;
+	struct scsi_device *sdev;
+	struct work_struct recovery_work;
+	struct work_struct repeat_work;
 };
 
-struct ufshcd_data_move_ctrl g_data_move_ctl;
+struct ufshcd_data_move_ctrl g_data_move_ctl[DATA_MOVE_STREAM_NUM];
+static struct workqueue_struct *g_data_move_recovery_workqueue = NULL;
+
+static int ufshcd_dev_data_move_by_write_buff(
+	struct scsi_device *dev,
+	struct stor_dev_data_move_info *data_move_info, u8 stream_id);
 
 static void ufshcd_get_reset_ftl_stream_id(unsigned char *stream_id,
 	struct stor_dev_reset_ftl *reset_ftl_info)
@@ -146,111 +164,300 @@ int ufshcd_dev_fs_sync_done(struct scsi_device *sdev)
 	return ret;
 }
 
-int ufshcd_dev_data_move_init(void)
+static void ufshcd_dev_data_move_recovery_fail(u8 stream_id, u8 reason)
 {
-	mutex_init(&g_data_move_ctl.lock);
-	g_data_move_ctl.response_flag = false;
-	g_data_move_ctl.send_buffer = kzalloc(DATA_MOVE_DATA_LENGTH, __GFP_NOFAIL);
-	if (!g_data_move_ctl.send_buffer)
-		return -ENOMEM;
+	struct stor_dev_verify_info verify_info = { 0 };
+	stor_dev_data_move_done_fn *done = NULL;
+	void *private_data = NULL;
+
+	/* Fail:1, Succes:0 */
+	verify_info.verify_done_status = 1;
+	/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+	verify_info.verify_fail_reason = reason;
+
+	pr_err("%s verify_fail_reason %u\n", __func__, verify_info.verify_fail_reason);
+
+	done = g_data_move_ctl[stream_id].data_move_info.done_info.done;
+	private_data = g_data_move_ctl[stream_id].data_move_info.done_info.private_data;
+	g_data_move_ctl[stream_id].data_move_info.done_info.done = NULL;
+	atomic_set(&g_data_move_ctl[stream_id].in_process_cnt, 0);
+
+	if (done)
+		done(verify_info, private_data);
+}
+
+static void ufshcd_dev_data_move_recovery_work(struct work_struct *work)
+{
+	int ret;
+	struct ufshcd_data_move_ctrl *data_move_ctl =
+		container_of(work, struct ufshcd_data_move_ctrl, recovery_work);
+
+	if (data_move_ctl->stream_id >= DATA_MOVE_STREAM_NUM) {
+		pr_err("%s: stream_id %u is err\n", __func__, data_move_ctl->stream_id);
+		return;
+	}
+
+retry:
+	if (data_move_ctl->recovery_cnt > MAX_DM_RECOVERY_NUM) {
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		ufshcd_dev_data_move_recovery_fail(data_move_ctl->stream_id, 4);
+		pr_err("%s recovery_cnt is max\n", __func__);
+		return;
+	}
+
+	data_move_ctl->recovery_cnt++;
+	pr_err("%s recovery_cnt %u\n", __func__, data_move_ctl->recovery_cnt);
+	ret = ufshcd_dev_pwron_info_sync(data_move_ctl->sdev,
+		&data_move_ctl->stor_info, 0);
+	if (ret)
+		goto retry;
+}
+
+static void ufshcd_dev_data_move_recovery(u8 stream_id)
+{
+	if (g_data_move_recovery_workqueue)
+		queue_work(g_data_move_recovery_workqueue,
+			&g_data_move_ctl[stream_id].recovery_work);
+	else
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		ufshcd_dev_data_move_recovery_fail(stream_id, 4);
+}
+
+static void ufshcd_dev_data_move_repeat_work(struct work_struct *work)
+{
+	int ret;
+	struct ufshcd_data_move_ctrl *data_move_ctl =
+		container_of(work, struct ufshcd_data_move_ctrl, repeat_work);
+
+	if (data_move_ctl->stream_id >= DATA_MOVE_STREAM_NUM) {
+		pr_err("%s: stream_id %u is err\n", __func__, data_move_ctl->stream_id);
+		return;
+	}
+
+retry:
+	if (data_move_ctl->repeat_cnt > MAX_DM_RECOVERY_NUM) {
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		ufshcd_dev_data_move_recovery_fail(data_move_ctl->stream_id, 4);
+		pr_err("%s recovery_cnt is max\n", __func__);
+		return;
+	}
+
+	data_move_ctl->repeat_cnt++;
+	data_move_ctl->data_move_info.error_injection = 0;
+	pr_err("%s repeat_cnt %u\n", __func__, data_move_ctl->repeat_cnt);
+	ret = ufshcd_dev_data_move_by_write_buff(data_move_ctl->sdev,
+		&data_move_ctl->data_move_info, data_move_ctl->stream_id);
+	if (ret)
+		goto retry;
+}
+
+static void ufshcd_dev_data_move_repeat(u8 stream_id)
+{
+	if (g_data_move_recovery_workqueue)
+		queue_work(g_data_move_recovery_workqueue,
+			&g_data_move_ctl[stream_id].repeat_work);
+	else
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		ufshcd_dev_data_move_recovery_fail(stream_id, 4);
+}
+
+static void ufshcd_dev_data_move_pwron_done(int err, u8 pwron_type)
+{
+	u8 stream_id;
+
+	if ((pwron_type != DM_STRAM0_TYPE) && (pwron_type != DM_STRAM1_TYPE)) {
+		pr_err("%s pwron_type is err %u\n", __func__, pwron_type);
+		return;
+	}
+
+	stream_id = pwron_type - DM_STRAM0_TYPE;
+	if (err) {
+		pr_err("%s datamove recovery\n", __func__);
+		ufshcd_dev_data_move_recovery(stream_id);
+		return;
+	}
+
+	if (g_data_move_ctl[stream_id].data_move_info.dest_4k_lba !=
+		g_data_move_ctl[stream_id].stor_info.dm_stream_addr[stream_id])
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		ufshcd_dev_data_move_recovery_fail(stream_id, 5);
+	else
+		ufshcd_dev_data_move_repeat(stream_id);
+}
+
+int ufshcd_dev_data_move_ctl_init(void)
+{
+	u8 stream_id;
+	u8 free_stream_id;
+
+	g_data_move_recovery_workqueue = alloc_workqueue("proc_data_move_recovery",
+		WQ_HIGHPRI | WQ_UNBOUND, 0);
+	if (unlikely(!g_data_move_recovery_workqueue))
+		return -EFAULT;
+
+	for (stream_id = 0; stream_id < DATA_MOVE_STREAM_NUM; stream_id++) {
+		atomic_set(&g_data_move_ctl[stream_id].in_process_cnt, 0);
+		g_data_move_ctl[stream_id].stream_id = stream_id;
+		g_data_move_ctl[stream_id].response_flag = false;
+		g_data_move_ctl[stream_id].scsi_err_flag = false;
+		g_data_move_ctl[stream_id].stor_info.done_info.done =
+			ufshcd_dev_data_move_pwron_done;
+		g_data_move_ctl[stream_id].stor_info.done_info.pwron_type =
+			stream_id + DM_STRAM0_TYPE;
+		g_data_move_ctl[stream_id].data_move_info.done_info.done = NULL;
+		g_data_move_ctl[stream_id].data_move_info.done_info.private_data = NULL;
+		INIT_WORK(&g_data_move_ctl[stream_id].recovery_work,
+			ufshcd_dev_data_move_recovery_work);
+		INIT_WORK(&g_data_move_ctl[stream_id].repeat_work,
+			ufshcd_dev_data_move_repeat_work);
+		g_data_move_ctl[stream_id].send_buffer =
+			kzalloc(DATA_MOVE_DATA_LENGTH, __GFP_NOFAIL);
+		if (!g_data_move_ctl[stream_id].send_buffer)
+			goto out;
+	}
 
 	return 0;
+
+out:
+	for (free_stream_id = 0; free_stream_id < stream_id; free_stream_id++)
+		kfree(g_data_move_ctl[free_stream_id].send_buffer);
+
+	return -ENOMEM;
 }
 
-static u8 *ufshcd_get_data_move_send_buffer(void)
+static u8 *ufshcd_get_data_move_send_buffer(u8 stream_id)
 {
-	return g_data_move_ctl.send_buffer;
+	return g_data_move_ctl[stream_id].send_buffer;
 }
 
-static u8 *ufshcd_get_data_move_response(void)
+static u8 *ufshcd_get_data_move_response(u8 stream_id)
 {
-	if (g_data_move_ctl.response_flag)
-		return g_data_move_ctl.response;
+	if (g_data_move_ctl[stream_id].response_flag)
+		return g_data_move_ctl[stream_id].response;
 	else
 		return NULL;
 }
 
-static void ufshcd_clear_data_move_response(void)
+static int ufshcd_data_move_init(struct scsi_device *sdev,
+	struct stor_dev_data_move_info *data_move_info, u8 stream_id)
 {
-	g_data_move_ctl.response_flag = false;
-	memset(g_data_move_ctl.response, 0, DATA_MOVE_RESPONSE_LEN);
+	if (atomic_cmpxchg(&g_data_move_ctl[stream_id].in_process_cnt, 0, 1))
+		return -EACCES;
+
+	g_data_move_ctl[stream_id].response_flag = false;
+	g_data_move_ctl[stream_id].scsi_err_flag = false;
+	g_data_move_ctl[stream_id].sdev = sdev;
+	g_data_move_ctl[stream_id].recovery_cnt = 0;
+	g_data_move_ctl[stream_id].repeat_cnt = 0;
+	g_data_move_ctl[stream_id].stream_id = stream_id;
+	memset(g_data_move_ctl[stream_id].response, 0, DATA_MOVE_RESPONSE_LEN);
+	memcpy(&g_data_move_ctl[stream_id].data_move_info, data_move_info,
+		sizeof(struct stor_dev_data_move_info));
+
+	return 0;
 }
 
 void ufshcd_dev_data_move_done(struct scsi_cmnd *cmd,
-	struct utp_upiu_rsp *ucd_rsp_ptr)
+	struct ufshcd_lrb *lrbp)
 {
+	int ocs;
+	u8 stream_id;
+	struct utp_upiu_rsp *ucd_rsp_ptr = lrbp->ucd_rsp_ptr;
+
 	if ((cmd->req.cmd[RW_BUFFER_OPCODE_OFFSET] == WRITE_BUFFER) &&
 		(cmd->req.cmd[RW_BUFFER_BUFFER_ID_OFFSET] ==
-			VCMD_WRITE_DATA_MOVE_BUFFER_ID)) {
-		memcpy(g_data_move_ctl.response, ucd_rsp_ptr->sr.reserved,
+			VCMD_WRITE_DATA_MOVE_BUFFER_ID) && ucd_rsp_ptr) {
+		stream_id = cmd->req.cmd[RW_BUFFER_2ND_RESERVED_OFFSET];
+		if (stream_id >= DATA_MOVE_STREAM_NUM) {
+			pr_err("%s stream_id %u is err\n", __func__, stream_id);
+			return;
+		}
+		memcpy(g_data_move_ctl[stream_id].response, ucd_rsp_ptr->sr.reserved,
 			DATA_MOVE_RESPONSE_LEN);
-		g_data_move_ctl.response_flag = true;
+		g_data_move_ctl[stream_id].response_flag = true;
+
+		if (lrbp->is_hufs_utrd)
+			ocs = le32_to_cpu(lrbp->hufs_utr_descriptor_ptr->header.dword_2) & MASK_OCS;
+		else
+			ocs = le32_to_cpu(lrbp->utr_descriptor_ptr->header.dword_2) & MASK_OCS;
+
+		if (ocs == OCS_INVALID_COMMAND_STATUS)
+			g_data_move_ctl[stream_id].scsi_err_flag = false;
+		else
+			g_data_move_ctl[stream_id].scsi_err_flag = true;
 	}
 }
 
-static void ufshcd_data_move_lock(void)
+static void ufshcd_get_data_move_info(
+	struct stor_dev_verify_info *verify_info, const unsigned char *buf)
 {
-	mutex_lock(&g_data_move_ctl.lock);
-}
-
-static void ufshcd_data_move_unlock(void)
-{
-	mutex_unlock(&g_data_move_ctl.lock);
-}
-
-static void ufshcd_get_data_move_info(struct ufs_hba *hba,
-	struct stor_dev_data_move_info *data_move_info, u8 *buf)
-{
-	data_move_info->verify_info.next_to_be_verify_4k_lba =
+	verify_info->next_to_be_verify_4k_lba =
 		get_unaligned_be32(buf + VERIFY_INFO_NEXT_TO_BE_VERIFY_OFFSET);
-	data_move_info->verify_info.next_available_write_4k_lba =
+	verify_info->next_available_write_4k_lba =
 		get_unaligned_be32(buf + VERIFY_INFO_NEXT_AVAILABLE_OFFSET);
 
-	if (ufshcd_rw_buffer_is_enabled(hba)) {
-		data_move_info->verify_info.verify_done_status =
-			buf[WRITE_BUFFER_VERIFY_DONE_STATUS_OFFSET];
-		data_move_info->verify_info.verify_fail_reason =
-			buf[WRITE_BUFFER_VERIFY_FAIL_REASON_OFFSET];
-		data_move_info->verify_info.pu_size =
-			get_unaligned_be16(buf + WRITE_BUFFER_PU_SIZE_OFFSET);
-	} else {
-		data_move_info->verify_info.verify_done_status =
-			buf[QUERY_VERIFY_DONE_STATUS_OFFSET];
-		data_move_info->verify_info.verify_fail_reason =
-			buf[QUERY_VERIFY_FAIL_REASON_OFFSET];
-		data_move_info->verify_info.pu_size =
-			get_unaligned_be16(buf + QUERY_PU_SIZE_OFFSET);
-	}
+	verify_info->verify_done_status =
+		buf[WRITE_BUFFER_VERIFY_DONE_STATUS_OFFSET];
+	verify_info->verify_fail_reason =
+		buf[WRITE_BUFFER_VERIFY_FAIL_REASON_OFFSET];
+	verify_info->pu_size =
+		get_unaligned_be16(buf + WRITE_BUFFER_PU_SIZE_OFFSET);
 }
 
-static int ufshcd_dev_data_move_by_query(struct scsi_device *sdev,
-	struct stor_dev_data_move_info *data_move_info, u8 *buffer)
+static void ufshcd_dev_data_move_io_done(struct request *rq,
+	blk_status_t err)
 {
-	int ret;
-	struct ufs_hba *hba = shost_priv(sdev->host);
-	struct ufs_query_vcmd cmd = { 0 };
-	struct ufshcd_data_move_buf *data_move_buf = NULL;
+	struct stor_dev_verify_info verify_info = { 0 };
+	struct scsi_request *req = scsi_req(rq);
+	u8 stream_id = req->cmd[RW_BUFFER_2ND_RESERVED_OFFSET];
+	stor_dev_data_move_done_fn *done = NULL;
+	void *private_data = NULL;
 
-	data_move_buf = (struct ufshcd_data_move_buf *)buffer;
-	data_move_buf->sdev = sdev;
-	data_move_buf->data_move_info = data_move_info;
+	scsi_unistore_execute_done(rq);
 
-	cmd.opcode = UPIU_QUERY_OPCODE_VENDOR_WRITE;
-	cmd.idn = QUERY_VENDOR_DATA_MOVE;
-	cmd.query_func = UPIU_QUERY_FUNC_STANDARD_WRITE_REQUEST;
-	cmd.buf_len = DATA_MOVE_DATA_LENGTH;
-	cmd.desc_buf = buffer;
-
-	ret = ufshcd_query_vcmd_single(hba, &cmd);
-	if (ret) {
-		dev_err(hba->dev, "%s: query fail %d\n", __func__, ret);
-
-		return ret;
+	if (stream_id >= DATA_MOVE_STREAM_NUM) {
+		pr_err("%s stream_id %u is err\n", __func__, stream_id);
+		return;
 	}
 
-	ufshcd_get_data_move_info(hba, data_move_info, buffer);
+	if (err) {
+		if (unlikely(!g_data_move_ctl[stream_id].scsi_err_flag)) {
+			pr_err("%s datamove recovery\n", __func__);
+			ufshcd_dev_data_move_recovery(stream_id);
+			return;
+		}
 
-	return 0;
+		/* Fail:1, Succes:0 */
+		verify_info.verify_done_status = 1;
+		/* 1:verify Fail, 2: UNC fail, 3:Program Fail 4:IO Fail 5:reset err */
+		verify_info.verify_fail_reason = 4;
+
+		pr_err("%s verify_fail_reason %u\n", __func__, verify_info.verify_fail_reason);
+	} else {
+		ufshcd_get_data_move_info(&verify_info,
+			g_data_move_ctl[stream_id].response);
+
+		if ((verify_info.next_to_be_verify_4k_lba >=
+			g_data_move_ctl[stream_id].data_move_info.done_info.start_addr) &&
+			(verify_info.next_available_write_4k_lba >=
+			g_data_move_ctl[stream_id].data_move_info.done_info.start_addr)) {
+			verify_info.next_to_be_verify_4k_lba -=
+				g_data_move_ctl[stream_id].data_move_info.done_info.start_addr;
+			verify_info.next_available_write_4k_lba -=
+				g_data_move_ctl[stream_id].data_move_info.done_info.start_addr;
+		} else {
+			pr_err("%s response_flag %u, response addr is err\n",
+				__func__, g_data_move_ctl[stream_id].response_flag);
+		}
+	}
+
+	done = g_data_move_ctl[stream_id].data_move_info.done_info.done;
+	private_data = g_data_move_ctl[stream_id].data_move_info.done_info.private_data;
+	g_data_move_ctl[stream_id].data_move_info.done_info.done = NULL;
+	atomic_set(&g_data_move_ctl[stream_id].in_process_cnt, 0);
+
+	if (done)
+		done(verify_info, private_data);
 }
 
 static void ufschd_data_move_prepare_addr(u8 lun_id,
@@ -333,37 +540,34 @@ void ufschd_data_move_prepare_buf(struct scsi_device *sdev,
 
 static int ufshcd_dev_data_move_by_write_buff(
 	struct scsi_device *dev,
-	struct stor_dev_data_move_info *data_move_info, u8 *buffer)
+	struct stor_dev_data_move_info *data_move_info, u8 stream_id)
 {
 	int ret;
 	struct ufs_hba *hba = shost_priv(dev->host);
 	struct ufs_rw_buffer_vcmd vcmd = { 0 };
-	u8 *response = NULL;
+	unsigned char *buffer = ufshcd_get_data_move_send_buffer(stream_id);
 
-	ufshcd_clear_data_move_response();
+	if (!buffer) {
+		dev_err(hba->dev, "%s: send buff null\n", __func__);
+		return -ENOMEM;
+	}
 
 	vcmd.buffer_id = VCMD_WRITE_DATA_MOVE_BUFFER_ID;
 	vcmd.buffer_len = DATA_MOVE_DATA_LENGTH;
 	vcmd.retries = 1; /* data move cmd send only once */
 	vcmd.buffer = buffer;
+	vcmd.reserved_2nd[0] = stream_id;
+	if (data_move_info->done_info.done)
+		vcmd.done = ufshcd_dev_data_move_io_done;
+	else
+		vcmd.done = NULL;
 
 	ufschd_data_move_prepare_buf(dev, data_move_info, buffer);
-
 	ret = ufshcd_write_buffer_vcmd_retry(dev, &vcmd);
 	if (ret) {
 		dev_err(hba->dev, "%s: write buffer fail %d\n", __func__, ret);
-
 		return ret;
 	}
-
-	response = ufshcd_get_data_move_response();
-	if (!response) {
-		dev_err(hba->dev, "%s: get response fail\n", __func__);
-
-		return -EFAULT;
-	}
-
-	ufshcd_get_data_move_info(hba, data_move_info, response);
 
 	return 0;
 }
@@ -373,26 +577,39 @@ int ufshcd_dev_data_move(struct scsi_device *sdev,
 {
 	int ret;
 	struct ufs_hba *hba = shost_priv(sdev->host);
-	unsigned char *buffer = ufshcd_get_data_move_send_buffer();
+	u8 stream_id = data_move_info->dest_stream_id;
+	u8 *response = NULL;
 
-	if (!buffer) {
-		dev_err(hba->dev, "%s: send buff null\n", __func__);
-
-		return -ENOMEM;
+	if (stream_id >= DATA_MOVE_STREAM_NUM) {
+		dev_err(hba->dev, "%s: dest_stream_id %u is err\n", __func__, stream_id);
+		return -EINVAL;
 	}
 
-	ufshcd_data_move_lock();
+	ret = ufshcd_data_move_init(sdev, data_move_info, stream_id);
+	if (ret) {
+		dev_err(hba->dev, "%s: ufshcd_data_move_init %d\n", __func__, ret);
 
-	if (ufshcd_rw_buffer_is_enabled(hba))
-		ret = ufshcd_dev_data_move_by_write_buff(sdev, data_move_info,
-			buffer);
-	else
-		ret = ufshcd_dev_data_move_by_query(sdev, data_move_info,
-			buffer);
+		return ret;
+	}
 
-	ufshcd_data_move_unlock();
+	ret = ufshcd_dev_data_move_by_write_buff(sdev, data_move_info, stream_id);
+	if (ret) {
+		atomic_set(&g_data_move_ctl[stream_id].in_process_cnt, 0);
+		return ret;
+	}
 
-	return ret;
+	if (!data_move_info->done_info.done) {
+		response = ufshcd_get_data_move_response(stream_id);
+		if (!response) {
+			dev_err(hba->dev, "%s: get response fail\n", __func__);
+			return -EFAULT;
+		}
+
+		ufshcd_get_data_move_info(&data_move_info->verify_info, response);
+		atomic_set(&g_data_move_ctl[stream_id].in_process_cnt, 0);
+	}
+
+	return 0;
 }
 
 static int ufshcd_slc_mode_configuration(struct ufs_hba *hba,

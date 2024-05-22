@@ -1164,6 +1164,9 @@ struct kbase_mem_pool {
 
 	bool dying;
 	bool dont_reclaim;
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	atomic_t reclaim_count;
+#endif
 };
 
 /**
@@ -1254,7 +1257,7 @@ struct kbase_report_info{
  *                    encode the physical address of the actual page being mapped.
  * @entry_set_pte:    program the pte to be a valid entry to encode the physical
  *                    address of the next lower level page table.
- * @entry_invalidate: clear out or invalidate the pte.
+ * @entries_invalidate: clear out or invalidate a range of ptes.
  * @flags:            bitmask of MMU mode flags. Refer to KBASE_MMU_MODE_ constants.
  */
 struct kbase_mmu_mode {
@@ -1272,7 +1275,7 @@ struct kbase_mmu_mode {
 	void (*entry_set_ate_scramble_bit)(struct kbase_device *kbdev, u64 *entry, struct tagged_addr phy,
 			unsigned long flags, unsigned int level);
 	void (*entry_set_pte)(u64 *entry, phys_addr_t phy);
-	void (*entry_invalidate)(u64 *entry);
+	void (*entries_invalidate)(u64 *entry, u32 count);
 	unsigned long flags;
 };
 
@@ -1887,6 +1890,10 @@ struct kbase_device {
 
 	/* shader core mask from dts*/
 	u32 shader_present_lo_cfg;
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	struct notifier_block oom_notifier_block;
+#endif
 };
 
 #ifdef CONFIG_HUAWEI_DSM

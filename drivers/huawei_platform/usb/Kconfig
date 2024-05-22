@@ -8,4 +8,5 @@ source "drivers/huawei_platform/usb/otg_dual_role/Kconfig"
 source "drivers/huawei_platform/usb/hw_pogopin/Kconfig"
 source "drivers/huawei_platform/usb/hw_ycable/Kconfig"
 source "drivers/huawei_platform/usb/hw_hishow/Kconfig"
+source "drivers/huawei_platform/usb/usb_extra_modem/Kconfig"
 

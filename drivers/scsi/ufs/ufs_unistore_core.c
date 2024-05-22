@@ -25,28 +25,6 @@
 
 #include "ufshcd.h"
 
-void ufshcd_prepare_utp_query_req_upiu_unistore(
-	struct ufs_query *query, struct utp_upiu_req *ucd_req_ptr,
-	u8 *descp, u16 len)
-{
-	struct ufshcd_data_move_buf *data_move_buf = NULL;
-
-	if ((query->request.upiu_req.opcode ==
-		UPIU_QUERY_OPCODE_VENDOR_WRITE) &&
-		(query->request.upiu_req.idn == QUERY_VENDOR_DATA_MOVE)) {
-		ucd_req_ptr->header.dword_2 =
-			UPIU_HEADER_DWORD(0, 0, (len >> 8), (u8)len);
-
-		data_move_buf =
-			(struct ufshcd_data_move_buf *)(query->descriptor);
-		ufschd_data_move_prepare_buf(data_move_buf->sdev,
-			data_move_buf->data_move_info, descp);
-
-		query->request.upiu_req.length = cpu_to_be16(DATA_MOVE_LENGTH);
-		ucd_req_ptr->qr.length = cpu_to_be16(DATA_MOVE_LENGTH);
-	}
-}
-
 static int ufshcd_unistore_bad_block_notify_register(
 	struct scsi_device *sdev,
 	void (*func)(struct Scsi_Host *host,
@@ -145,11 +123,8 @@ static void ufshcd_unistore_set_sec_size(struct ufs_hba *hba)
 	ret = ufshcd_dev_read_section_size_hba(hba, &(hba->host->mas_sec_size));
 	if (ret)
 		dev_err(hba->dev, "%s: read sec size ret err %d\n", __func__, ret);
-
-#if defined(CONFIG_HISI_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
-	/* 144M - 288M */
-	if ((hba->host->mas_sec_size != 0x9000) &&
-		(hba->host->mas_sec_size != 0x12000)) {
+#if defined(CONFIG_DFX_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+	if (!hba->host->mas_sec_size) {
 		dev_err(hba->dev, "%s: read section size err %u\n",
 			__func__, hba->host->mas_sec_size);
 		rdr_syserr_process_for_ap(
@@ -158,10 +133,25 @@ static void ufshcd_unistore_set_sec_size(struct ufs_hba *hba)
 #endif
 }
 
+static int ufshcd_unistore_set_pu_size(struct ufs_hba *hba)
+{
+	int ret;
+
+	ret = ufshcd_dev_read_pu_size_hba(hba, &(hba->host->mas_pu_size));
+	if (ret || !hba->host->mas_pu_size) {
+		dev_err(hba->dev, "%s: read po size ret %d, mas_po_size %u\n",
+			__func__, ret, hba->host->mas_pu_size);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 int ufshcd_unistore_init(struct ufs_hba *hba)
 {
 	int ret;
 	struct Scsi_Host *host = hba->host;
+	static bool init_flag = false;
 
 	if (!host)
 		return -EINVAL;
@@ -177,31 +167,67 @@ int ufshcd_unistore_init(struct ufs_hba *hba)
 		return ret;
 	}
 
-	ret = ufshcd_dev_data_move_init();
-	if (ret) {
-		dev_err(hba->dev, "%s: ufshcd_dev_data_move_init err %d\n",
-			__func__, ret);
-
-		return ret;
-	}
-
 	ufshcd_enable_bad_block_occur(hba);
 
-	ufshcd_unistore_set_sec_size(hba);
+	if (!init_flag) {
+		ret = ufshcd_unistore_set_pu_size(hba);
+		if (ret)
+			return ret;
+
+		ufshcd_unistore_set_sec_size(hba);
+
+		ret = ufshcd_dev_data_move_ctl_init();
+		if (ret) {
+			dev_err(hba->dev, "%s: ufshcd_dev_data_move_init err %d\n",
+				__func__, ret);
+
+			return ret;
+		}
+
+		init_flag = true;
+	}
 
 	return 0;
 }
 
 void ufshcd_unistore_done(struct ufs_hba *hba, struct scsi_cmnd *cmd,
-	struct utp_upiu_rsp *ucd_rsp_ptr)
+	struct ufshcd_lrb *lrbp)
 {
-	if (ufshcd_rw_buffer_is_enabled(hba))
-		ufshcd_dev_data_move_done(cmd, ucd_rsp_ptr);
+	ufshcd_dev_data_move_done(cmd, lrbp);
+}
+
+static bool ufshcd_unistore_is_wlun(u64 lun)
+{
+	return (lun == UFS_UPIU_REPORT_LUNS_WLUN) ||
+		(lun == UFS_UPIU_UFS_DEVICE_WLUN) ||
+		(lun == UFS_UPIU_BOOT_WLUN) ||
+		(lun == UFS_UPIU_RPMB_WLUN);
+}
+
+void ufshcd_unistore_scsi_device_init(struct scsi_device *sdev)
+{
+	if (!ufshcd_unistore_is_wlun(sdev->lun))
+		ufshcd_set_read_buffer_device(sdev);
 }
 
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 #define CUSTOM_UPIU_BUILD_STREAM_TYPE_MASK	0x1F
 #define CUSTOM_UPIU_BUILD_SLC_MODE_OFFSET	4
+
+static void ufshcd_unistore_set_dfx_time(struct utp_upiu_req *ucd_req_ptr)
+{
+	u32 curr_time;
+
+	if (ucd_req_ptr->sc.cdb[0] == READ_10) {
+		curr_time= (u32)ktime_to_ms(ktime_get());
+
+		/* CMD UPIU Byte 5,6,7,9 for time */
+		ucd_req_ptr->header.dword_1 |= UPIU_HEADER_DWORD(0, (u8)curr_time,
+			(u8)(curr_time >> 8), (u8)(curr_time >> 16));
+		ucd_req_ptr->header.dword_2 |=
+			UPIU_HEADER_DWORD(0, (u8)(curr_time >> 24), 0, 0);
+	}
+}
 
 int ufshcd_custom_upiu_unistore(
 	struct utp_upiu_req *ucd_req_ptr, struct request *req,
@@ -244,8 +270,8 @@ int ufshcd_custom_upiu_unistore(
 			CUSTOM_UPIU_BUILD_STREAM_TYPE_MASK;
 
 #if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
-		if (mas_blk_recovery_debug_on() && req->mas_req.stream_type) {
-			pr_err("%s, reset debug, make_nr:%u, stream:%u\n", __func__,
+		if ((mas_blk_recovery_debug_on() == RESET_DEBUG_700D) && req->mas_req.stream_type) {
+			pr_err("%s, reset_debug_700D, make_nr:%u, stream:%u\n", __func__,
 				req->mas_req.make_req_nr, req->mas_req.stream_type);
 			ucd_req_ptr->sc.cdb[6] = 0;
 			mas_blk_recovery_debug_off();
@@ -255,6 +281,8 @@ int ufshcd_custom_upiu_unistore(
 		if (req->mas_req.cp_tag)
 			ucd_req_ptr->sc.cdb[6] |= 0x20;
 	}
+
+	ufshcd_unistore_set_dfx_time(ucd_req_ptr);
 
 	if (scsi_is_order_cmd(scmd)) {
 		stream_type = (scmd->cmnd[0] == WRITE_10) ?

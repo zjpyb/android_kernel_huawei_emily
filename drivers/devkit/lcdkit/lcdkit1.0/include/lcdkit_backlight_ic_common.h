@@ -23,6 +23,7 @@
 #define LCD_BACKLIGHT_IC_NAME_LEN 20
 #define LCD_BACKLIGHT_INIT_CMD_NUM 30
 
+#define LCD_BACKLIGHT_DIMMING_SUPPORT 1
 #ifndef BIT
 #define BIT(x)  (1<<(x))
 #endif
@@ -137,6 +138,14 @@ struct lcdkit_bl_ic_info
 	unsigned int   bl_ocp_fault_bit;
 	unsigned int   bl_ovp_fault_bit;
 	unsigned int   bl_tsd_bit;
+	unsigned char  *name;
+	unsigned int   vboost_enable;
+	unsigned int   vboost_delay1;
+	unsigned int   vboost_delay2;
+	struct backlight_ic_cmd vboost_cmd1;
+	struct backlight_ic_cmd vboost_cmd2;
+	unsigned int   bl_dimming_support;
+	struct backlight_ic_cmd bl_dimming_cmd;
 };
 
 struct lcdkit_bl_ic_device {

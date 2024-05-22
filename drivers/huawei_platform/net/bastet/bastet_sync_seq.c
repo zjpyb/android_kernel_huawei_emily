@@ -905,6 +905,17 @@ int set_sock_sync_hold_time(struct bst_set_sock_sync_delay hold_delay)
 			hold_delay.guide.fd, hold_delay.guide.pid);
 		return -ENOENT;
 	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
 	bsk = sk->bastet;
 	if (bsk == NULL) {
 		bastet_loge("not expected bastet null");
@@ -1104,6 +1115,17 @@ int stop_bastet_sock(struct bst_sock_id *guide)
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
 
 	bsk = sk->bastet;
 	if (bsk == NULL) {
@@ -1155,6 +1177,17 @@ int prepare_bastet_sock(struct bst_set_sock_sync_delay *sync_prop)
 		bastet_loge("can not find sock by fd: %d pid: %d",
 			sync_prop->guide.fd, sync_prop->guide.pid);
 		return -ENOENT;
+	}
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
 	}
 
 	if (sk->sk_state != TCP_ESTABLISHED) {
@@ -1649,6 +1682,19 @@ int get_tcp_sock_comm_prop(struct bst_get_sock_comm_prop *get_prop)
 			guide->fd, guide->pid);
 		return -ENOENT;
 	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
+	}
+
 	if (sk->sk_state != TCP_ESTABLISHED) {
 		bastet_loge("sk_state not expected");
 		sock_put(sk);
@@ -1675,6 +1721,18 @@ int get_tcp_sock_comm_prop_ipv6(
 		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
 	}
 
 	if (sk->sk_state != TCP_ESTABLISHED) {
@@ -1942,6 +2000,18 @@ int get_tcp_bastet_sock_state(struct bst_get_bastet_sock_state *get_prop)
 		bastet_loge("can not find sock by fd: %d pid: %d",
 			guide->fd, guide->pid);
 		return -ENOENT;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
+		bastet_loge("sk_protocol is not IPPROTO_TCP");
+		sock_put(sk);
+		return -EPERM;
+	}
+
+	if (sk->sk_type != SOCK_STREAM) {
+		bastet_loge("sk_type is not SOCK_STREAM");
+		sock_put(sk);
+		return -EPERM;
 	}
 
 	get_prop->sync_state = get_bastet_sock_state(sk);

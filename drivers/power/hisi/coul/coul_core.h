@@ -380,8 +380,8 @@ struct smartstar_coul_device {
 	int batt_ocv; /* ocv in uv */
 	int batt_ocv_temp;
 	int batt_ocv_valid_to_refresh_fcc;
+	int batt_removed_flag;
 	int batt_changed_flag;
-	int batt_reset_flag;
 	int soc_limit_flag;
 	int batt_temp; /* temperature in degree * 10 */
 	int qmax; /* uAh */

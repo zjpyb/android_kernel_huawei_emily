@@ -37,8 +37,10 @@ static const char * const g_dc_device_name[] = {
 	[SWITCHCAP_SM_SM5450] = "sc_sm5450",
 	[SWITCHCAP_SC8551] = "sc_sc8551",
 	[SWITCHCAP_HL1530] = "sc_hl1530",
+	[SWITCHCAP_HL7130] = "sc_hl7130",
 	[SWITCHCAP_SYH69637] = "sc_syh69637",
 	[SWITCHCAP_SC8545] = "sc_sc8545",
+	[SWITCHCAP_HL7139] = "sc_hl7139",
 	[SWITCHCAP_NU2105] = "sc_nu2105",
 };
 

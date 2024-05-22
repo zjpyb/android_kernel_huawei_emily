@@ -58,6 +58,7 @@ static struct lcd_kit_panel_map panel_map[] = {
 	{ PANEL_190_206_6P45, lcd_kit_esd_mipi_err_check_probe },
 	{ PANEL_191_206_8P01, lcd_kit_dual_mipi_panel_probe },
 	{ PANEL_350_C00_12P6, lcd_kit_dual_mipi_panel_probe },
+	{ PANEL_350_C01_12P6, lcd_kit_dual_mipi_panel_probe },
 	{ PANEL_190_C00_6P45, lcd_kit_sot_esd_err_check_probe },
 	{ PANEL_191_C00_8P01, lcd_kit_sot_esd_err_check_probe },
 };

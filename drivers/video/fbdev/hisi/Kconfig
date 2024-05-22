@@ -293,5 +293,11 @@ config DP_CDC
 	help
 	  This framebuffer driver supports CDC DP.
 
+config DPU_ULTR_LOW_CLK_RATE
+	tristate "ultra low power"
+	depends on HISI_FB_V320
+	help
+	  ultra low power for watch
+
 source "drivers/video/fbdev/hisi/mdfx/Kconfig"
 source "drivers/video/fbdev/hisi/dpu/Kconfig"

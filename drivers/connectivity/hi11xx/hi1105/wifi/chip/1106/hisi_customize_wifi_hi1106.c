@@ -1833,6 +1833,8 @@ static wlan_cust_cfg_cmd g_wifi_cfg_cap[] = {
     {"dynamic_dbac_adjust_mask", WLAN_CFG_CAP_DYNAMIC_DBAC_SWITCH, &g_cust_cap.dbac_dynamic_switch,
      sizeof(g_cust_cap.dbac_dynamic_switch),   WLAN_CUST_NUM_1, OAL_FALSE},
 
+    {"pt_mcast_enable",           WLAN_CFG_CAP_PT_MCAST_ENABLE, &g_cust_cap.pt_mcast_enable,
+     sizeof(g_cust_cap.pt_mcast_enable),   WLAN_CUST_NUM_1, OAL_FALSE},
     /* DBDC */
     {"radio_cap",     WLAN_CFG_CAP_DBDC_RADIO,
      &g_cust_cap.radio_cap[0], sizeof(g_cust_cap.radio_cap[0]), ARRAY_SIZE(g_cust_cap.radio_cap), OAL_FALSE},
@@ -3442,6 +3444,7 @@ static void hwifi_config_host_global_ini_param_extend_1106(void)
         g_mac_ftm_cap = g_cust_cap.ftm_cap;
     }
 #endif
+    g_pt_mcast_enable = g_cust_cap.pt_mcast_enable;
 }
 
 
@@ -3630,7 +3633,7 @@ void hwifi_config_host_global_ini_param_1106(void)
 
 void hwifi_config_cpu_freq_ini_param_1106(void)
 {
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
     g_freq_lock_control.uc_lock_dma_latency = (g_cust_host.freq_lock.dma_latency_val > 0) ?  OAL_TRUE : OAL_FALSE;
     g_freq_lock_control.dma_latency_value = g_cust_host.freq_lock.dma_latency_val;
     oal_io_print("DMA latency[%d]\r\n", g_freq_lock_control.uc_lock_dma_latency);

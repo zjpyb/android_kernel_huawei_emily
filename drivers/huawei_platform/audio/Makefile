@@ -16,3 +16,7 @@ obj-y += tf_agent/
 obj-$(CONFIG_VIRTUAL_VOICE_PROXY) += virtual_voice_proxy/
 obj-$(CONFIG_CODEC_CHECK) += codec_check/
 obj-$(CONFIG_SND_SOC_ES7210) += adc/
+obj-$(CONFIG_HWEVEXT_CODEC_MODULE) += hwevext_codec/
+obj-$(CONFIG_HWEVEXT_EXTERN_ADC) += hwevext_adc/
+obj-$(CONFIG_SND_SOC_TFA98XX) += smartpa/tfa98xx/
+obj-$(CONFIG_HWCXEXT_CODEC_MODULE) += hwcxext_codec/

@@ -169,6 +169,7 @@ void hmfs_print_ckpt_info(struct f2fs_sb_info *sbi)
 	printk("\n\n");
 }
 
+#ifdef CONFIG_HMFS_STAT_FS
 void hmfs_print_sbi_info(struct f2fs_sb_info *sbi)
 {
 	if (sbi == NULL || !sbi->print_sbi_safe)
@@ -213,7 +214,7 @@ void hmfs_print_sbi_info(struct f2fs_sb_info *sbi)
 	if (likely(sbi->meta_inode && sbi->meta_inode->i_mapping))
 		hmfs_msg(sbi->sb, KERN_ALERT, "meta_pages: %d\n",(int)META_MAPPING(sbi)->nrpages);
 	if (likely(NM_I(sbi)))
-		hmfs_msg(sbi->sb, KERN_ALERT, "nats: %d\n", NM_I(sbi)->nat_cnt);
+		hmfs_msg(sbi->sb, KERN_ALERT, "nats: %d\n", NM_I(sbi)->nat_cnt[TOTAL_NAT]);
 
 	hmfs_msg(sbi->sb, KERN_ALERT, "segment_count[LFS]: %d\n", sbi->segment_count[0]);
 	hmfs_msg(sbi->sb, KERN_ALERT, "segment_count[SSR]: %d\n", sbi->segment_count[1]);
@@ -223,6 +224,9 @@ void hmfs_print_sbi_info(struct f2fs_sb_info *sbi)
 
 	hmfs_msg(sbi->sb, KERN_ALERT, "\n\n");
 }
+#else
+void hmfs_print_sbi_info(struct f2fs_sb_info *sbi) {}
+#endif
 
 /* Display on console for little endian disk data*/
 #define DISP_LE_u16(ptr, member)						\

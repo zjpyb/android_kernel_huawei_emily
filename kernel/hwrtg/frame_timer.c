@@ -86,32 +86,47 @@ static void on_timer_timeout(unsigned long pdata)
 	wake_thread();
 }
 
+DEFINE_MUTEX(g_timer_lock);
 void init_frame_timer(void)
 {
-	if (atomic_read(&g_timer_on) == 1)
+	mutex_lock(&g_timer_lock);
+	if (atomic_read(&g_timer_on) == 1) {
+		mutex_unlock(&g_timer_lock);
 		return;
+	}
 
 	atomic_set(&g_timer_on, 1);
 	init_timer(&g_frame_timer);
 	g_frame_timer.function = on_timer_timeout;
 	g_frame_timer.data = 0;
+	mutex_unlock(&g_timer_lock);
 
 	/* create thread */
 	set_bit(DISABLE_FRAME_SCHED, &g_thread_flag);
+	if (!IS_ERR_OR_NULL(g_timer_thread)) {
+		pr_err("[AWARE_RTG] g_timer_thread already exist\n");
+		return;
+	}
+
 	g_timer_thread = kthread_create(frame_thread_func, NULL, "frame_sched");
-	if (g_timer_thread)
-		wake_up_process(g_timer_thread);
-	else
+	if (IS_ERR_OR_NULL(g_timer_thread)) {
 		pr_err("[AWARE_RTG] g_timer_thread create failed\n");
+		return;
+	}
+	wake_up_process(g_timer_thread);
 }
 
 void deinit_frame_timer(void)
 {
-	if (atomic_read(&g_timer_on) == 0)
+	mutex_lock(&g_timer_lock);
+	if (atomic_read(&g_timer_on) == 0) {
+		mutex_unlock(&g_timer_lock);
 		return;
+	}
 
 	atomic_set(&g_timer_on, 0);
 	del_timer_sync(&g_frame_timer);
+	mutex_unlock(&g_timer_lock);
 }
 
 void start_boost_timer(u32 duration, u32 min_util)
@@ -119,12 +134,17 @@ void start_boost_timer(u32 duration, u32 min_util)
 	unsigned long dur = msecs_to_jiffies(duration);
 	int id = DEFAULT_RT_FRAME_ID;
 
-	if (atomic_read(&g_timer_on) == 0)
+	mutex_lock(&g_timer_lock);
+	if (atomic_read(&g_timer_on) == 0) {
+		mutex_unlock(&g_timer_lock);
 		return;
+	}
 
 	if (timer_pending(&g_frame_timer) &&
-		time_after(g_frame_timer.expires, jiffies + dur))
+		time_after(g_frame_timer.expires, jiffies + dur)) {
+		mutex_unlock(&g_timer_lock);
 		return;
+	}
 
 	set_frame_min_util(rtg_frame_info(id), min_util, true);
 #ifdef CONFIG_HW_RTG_MULTI_FRAME
@@ -141,4 +161,5 @@ void start_boost_timer(u32 duration, u32 min_util)
 #ifdef CONFIG_HW_MTK_RTG_SCHED
 	trace_rtg_frame_sched("g_frame_timer", dur);
 #endif
+	mutex_unlock(&g_timer_lock);
 }

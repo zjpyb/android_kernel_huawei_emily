@@ -992,7 +992,7 @@ static int aw869xx_haptic_get_vbat(struct aw869xx *aw869xx)
 	aw869xx_haptic_raminit(aw869xx, true);
 	aw869xx_i2c_write_bits(aw869xx, AW869XX_REG_DETCFG2,
 		AW869XX_BIT_DETCFG2_VBAT_GO_MASK, AW869XX_BIT_DETCFG2_VABT_GO_ON);
-	usleep_range(20000, 25000);
+	usleep_range(3000, 3500);
 	aw869xx_i2c_read(aw869xx, AW869XX_REG_DET_VBAT, &reg_val);
 	vbat_code = (vbat_code | reg_val) << 2;
 	aw869xx_i2c_read(aw869xx, AW869XX_REG_DET_LO, &reg_val);

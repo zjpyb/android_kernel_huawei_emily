@@ -35,8 +35,7 @@ extern "C" {
 /* 发送BA窗口记录seq number的bitmap所使用的类型长度 */
 #define DMAC_TX_BUF_BITMAP_WORD_SIZE 32
 /* 发送BA窗口记录seq number的bit map的长度 */
-#define DMAC_TX_BUF_BITMAP_WORDS \
-    ((DMAC_TID_MAX_BUFS + DMAC_TX_BUF_BITMAP_WORD_SIZE - 1) / DMAC_TX_BUF_BITMAP_WORD_SIZE)
+#define DMAC_TX_BUF_BITMAP_WORDS ((DMAC_TID_MAX_BUFS + DMAC_TX_BUF_BITMAP_WORD_SIZE - 1) / DMAC_TX_BUF_BITMAP_WORD_SIZE)
 
 #define IS_RW_RING_FULL(read, write)                                    \
     (((read)->st_rw_ptr.bit_rw_ptr == (write)->st_rw_ptr.bit_rw_ptr) && \
@@ -303,6 +302,8 @@ typedef enum {
     CUSTOM_CFGID_PRIV_INI_FTM_CAP_ID,
     CUSTOM_CFGID_PRIV_INI_MIRACAST_SINK,
     CUSTOM_CFGID_PRIV_INI_MCAST_AMPDU_ENABLE_ID,
+    CUSTOM_CFGID_PRIV_INI_PT_MCAST_ENABLE_ID,
+    CUSTOM_CFGID_PRIV_CLOSE_FILTER_SWITCH_ID,
 
     CUSTOM_CFGID_INI_BUTT,
 } custom_cfgid_h2d_ini_enum;
@@ -318,6 +319,12 @@ enum custom_optimize_feature {
     CUSTOM_OPTIMIZE_CE_IDLE = 6, /* CE认证用例场景关闭pk mode，不调整竞争参数 */
     CUSTOM_OPTIMIZE_CSA_EXT = 7, /* CSA扩展 跨频段功能 开关 */
     CUSTOM_OPTIMIZE_FEATURE_BUTT,
+};
+
+enum custom_close_filter_switch {
+    CUSTOM_APF_CLOSE_SWITCH,
+    CUSTOM_ARP_CLOSE_MULITCAST_FILTER,
+    CUSTOM_CLOSE_FILTER_SWITCH_BUTT
 };
 
 typedef struct {
@@ -530,7 +537,7 @@ struct mac_tx_ctl {
     uint8_t uc_reserved1 : 2;
     uint8_t uc_data_type : 4; /* 数据帧类型, ring tx使用, 对应data_type_enum */
     uint8_t csum_type : 3;
-    uint8_t reserved2 : 1;
+    uint8_t bit_is_pt_mcast : 1;  /* 标识帧是否为组播图传picture transmission协议类型 */
     /* byte17-18 */
     uint8_t uc_alg_pktno;     /* 算法用到的字段，唯一标示该报文 */
     uint8_t uc_alg_frame_tag : 2; /* 用于算法对帧进行标记 */
@@ -762,6 +769,7 @@ typedef struct {
 #define MAC_GET_CB_IS_ROAM_DATA(_pst_tx_ctrl)       ((_pst_tx_ctrl)->bit_roam_data)
 #define MAC_GET_CB_IS_FROM_PS_QUEUE(_pst_tx_ctrl)   ((_pst_tx_ctrl)->bit_is_get_from_ps_queue)
 #define MAC_GET_CB_IS_MCAST(_pst_tx_ctrl)           ((_pst_tx_ctrl)->bit_ismcast)
+#define MAC_GET_CB_IS_PT_MCAST(_pst_tx_ctrl)        ((_pst_tx_ctrl)->bit_is_pt_mcast)
 #define MAC_GET_CB_IS_NEEDRETRY(_pst_tx_ctrl)       ((_pst_tx_ctrl)->bit_is_needretry)
 #define MAC_GET_CB_IS_PROBE_DATA(_pst_tx_ctrl)      ((_pst_tx_ctrl)->en_is_probe_data)
 #define MAC_GET_CB_IS_RTSP(_pst_tx_ctrl)            ((_pst_tx_ctrl)->bit_is_rtsp)

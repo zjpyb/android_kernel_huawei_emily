@@ -1848,6 +1848,10 @@ oal_int32 wal_atcmdsrv_wifi_priv_cmd(oal_net_device_stru *pst_net_dev, oal_ifreq
             break;
         case WAL_ATCMDSRV_IOCTL_CMD_GET_PDET_PARAM:
             l_ret = wal_atcmsrv_ioctl_get_pd_tran_param(pst_net_dev, st_priv_cmd.pri_data.ac_pd_tran_param);
+            if (oal_copy_to_user(pst_ifr->ifr_data, &st_priv_cmd, sizeof(wal_atcmdsrv_wifi_priv_cmd_stru))) {
+                OAM_ERROR_LOG0(0, OAM_SF_ANY, "wal_atcmdsrv_wifi_priv_cmd_etc:Failed to copy ioctl_data to user !");
+                l_ret = -OAL_EINVAL;
+            }
             break;
         case WAL_ATCMDSRV_IOCTL_CMD_IO_TEST:
             l_ret = wal_atcmsrv_ioctl_io_test(pst_net_dev, &st_priv_cmd.pri_data.s_wkup_io_status);

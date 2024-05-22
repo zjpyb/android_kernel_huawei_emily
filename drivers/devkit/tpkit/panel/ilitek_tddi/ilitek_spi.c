@@ -252,9 +252,9 @@ static int ili_spi_pll_clk_wakeup(void)
 	wdata[1] = wlen >> 8;
 	wdata[2] = wlen & 0xff;
 	index = 3;
-	wlen += index;
 
 	memcpy(&wdata[index], wakeup, wlen);
+	wlen += index;
 
 	TS_LOG_INFO("Write dummy to wake up spi pll clk\n");
 	if (ilits->spi_write_then_read(ilits->spi, wdata, wlen, NULL, 0) < 0) {
@@ -326,7 +326,6 @@ static int ili_spi_wrapper(u8 *txbuf, u32 wlen, u8 *rxbuf, u32 rlen, bool spi_ir
 			}
 		}
 
-
 		memcpy(&wdata[index], txbuf, wlen);
 		wlen += index;
 
@@ -348,7 +347,10 @@ static int ili_spi_wrapper(u8 *txbuf, u32 wlen, u8 *rxbuf, u32 rlen, bool spi_ir
 			TS_LOG_INFO("spi-wrapper write error\n");
 			break;
 		}
-
+		if (!ice && (ilits->ic_hardware_type == ILI9883)) {
+			TS_LOG_DEBUG("send cmd delay 1ms\n");
+			mdelay(1);
+		}
 		/* Won't break if it needs to read data following with writing. */
 		if (!rlen)
 			break;
@@ -358,7 +360,11 @@ static int ili_spi_wrapper(u8 *txbuf, u32 wlen, u8 *rxbuf, u32 rlen, bool spi_ir
 			if (ilits->detect_int_stat(false) < 0) {
 				TS_LOG_ERR("ERROR! Check INT timeout\n");
 				ret = -ETIME;
-				break;
+				if (ilits->ic_hardware_type == ILI9883) {
+					break;
+				} else if (ilits->actual_tp_mode == P5_X_FW_TEST_MODE) {
+					break;
+				}
 			}
 		}
 

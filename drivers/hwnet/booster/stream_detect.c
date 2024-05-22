@@ -552,10 +552,15 @@ static void stream_para_report_stop()
 	spin_unlock_bh(&stream->lock);
 }
 
-static void cmd_process(struct req_msg_head *msg)
+static void cmd_process(struct req_msg_head *msg, u32 len)
 {
 	if (!msg) {
 		pr_err("%s,msg is NULL \n", __func__);
+		return;
+	}
+
+	if (msg->len != len) {
+		pr_err("stream_detect msg len error!!! left = %d, right = %d", msg->len, len);
 		return;
 	}
 	if (msg->type == STREAM_DETECTION_START)

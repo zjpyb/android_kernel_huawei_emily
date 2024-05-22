@@ -591,6 +591,7 @@ out:
 
 static struct list_lru shadow_nodes;
 
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 void workingset_update_node(struct radix_tree_node *node, void *private)
 {
 	struct address_space *mapping = private;
@@ -599,6 +600,10 @@ void workingset_update_node(struct radix_tree_node *node, void *private)
 	if (dax_mapping(mapping) || shmem_mapping(mapping))
 		return;
 
+#else
+void workingset_update_node(struct radix_tree_node *node)
+{
+#endif
 	/*
 	 * Track non-empty nodes that contain only shadow entries;
 	 * unlink those that contain pages or are being freed.
@@ -734,7 +739,11 @@ static enum lru_status shadow_lru_isolate(struct list_head *item,
 		goto out_invalid;
 	inc_lruvec_page_state(virt_to_page(node), WORKINGSET_NODERECLAIM);
 	__radix_tree_delete_node(&mapping->page_tree, node,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 				 workingset_update_node, mapping);
+#else
+				 workingset_lookup_update(mapping));
+#endif
 
 out_invalid:
 	spin_unlock(&mapping->tree_lock);

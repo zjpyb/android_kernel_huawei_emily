@@ -158,7 +158,7 @@
 #define SCP_PROTOCOL_ADP_B_TYPE1_YLR_100W_CAR      0x2a /* 20v5a */
 #define SCP_PROTOCOL_ADP_B_TYPE1_22P5W_BANK_1      0x2b /* 10v2.25a */
 #define SCP_PROTOCOL_ADP_B_TYPE1_XR_65W_PC         0x2c /* 20v3.25a */
-#define SCP_PROTOCOL_ADP_B_TYPE1_FCR_65W           0x2d /* 20v3.25a */
+#define SCP_PROTOCOL_ADP_B_TYPE1_FCR_66W           0x2d /* 20v2a 11v6a */
 #define SCP_PROTOCOL_ADP_B_TYPE1_HHR_90W_1         0x2e /* 20v4.5a */
 /* Power Strip three port adapter typeC1+typeC2+typeA */
 #define SCP_PROTOCOL_ADP_B_TYPE1_PS_C_65W          0x2f /* 20v3.25a */
@@ -167,6 +167,7 @@
 #define SCP_PROTOCOL_ADP_B_TYPE1_PS_C_22P5W        0x32 /* 10v2.25a */
 #define SCP_PROTOCOL_ADP_B_TYPE1_PS_A_40W          0x33 /* 10v4a */
 #define SCP_PROTOCOL_ADP_B_TYPE1_PS_A_22P5W        0x34 /* 10v2.25a */
+#define SCP_PROTOCOL_ADP_B_TYPE1_FCR_66W_1         0x45 /* 20v2a 11v6a */
 
 #define SCP_PROTOCOL_FACTORY_ID              0x8e
 

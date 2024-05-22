@@ -47,6 +47,10 @@
 #include <dsm/dsm_pub.h>
 #endif
 
+#ifdef CONFIG_HWCONNECTIVITY
+#include <huawei_platform/connectivity/hw_connectivity.h>
+#endif
+
 enum sdhci_cookie {
 	COOKIE_UNMAPPED,
 	COOKIE_PRE_MAPPED,	/* mapped by sdhci_pre_req() */
@@ -146,6 +150,9 @@ extern int mci_send_cmd(struct dw_mci_slot *slot, u32 cmd, u32 arg);
 extern unsigned int test_sd_data;
 extern unsigned int sd_test_reset_flag;
 #endif
+
+unsigned int no_tuning_move_flag = 0;
+EXPORT_SYMBOL(no_tuning_move_flag);
 
 #if defined(CONFIG_DEBUG_FS)
 static int dw_mci_req_show(struct seq_file *s, void *v)
@@ -1898,9 +1905,8 @@ void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
 	host->mrq = NULL;
 
 	if (drv_data->tuning_move) {
-
-	/*SOC1005*/
-	if ((host->flags & DWMMC_TUNING_DONE) && mrq && mrq->cmd &&
+		/*SOC1005*/
+		if ((host->flags & DWMMC_TUNING_DONE) && mrq && mrq->cmd &&
 		((mrq->cmd->error ) ||
 		(mrq->cmd->data && ((mrq->cmd->data->error) ||
 		(mrq->cmd->data->stop && mrq->cmd->data->stop->error))))){
@@ -1912,6 +1918,7 @@ void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
 
 			dev_dbg(host->dev, "move tuning del_sel, start=%d, cmd=%d, arg=0x%x\n",
 					host->tuning_move_start, mrq->cmd->opcode, mrq->cmd->arg);
+
 			/* req error, need move del_sel */
 			if (host->tuning_move_start != -1) {
 				if (drv_data->tuning_move(host, timing, host->tuning_move_start)) {
@@ -1983,6 +1990,7 @@ static void dw_mci_command_complete(struct dw_mci *host, struct mmc_command *cmd
 	struct dw_mci_slot *slot = host->cur_slot;
 
 	host->cmd_status = 0;
+	no_tuning_move_flag = 0;
 
 	/* Read the response from the card (up to 16 bytes) */
 	if (cmd->flags & MMC_RSP_PRESENT) {
@@ -2006,8 +2014,13 @@ static void dw_mci_command_complete(struct dw_mci *host, struct mmc_command *cmd
 
 		if (!(slot && slot->sdio_wakelog_switch))
 		{
-                                dw_mci_print_error(host,cmd);
+			dw_mci_print_error(host,cmd);
 		}
+		#ifdef CONFIG_HWCONNECTIVITY
+			if (isMyConnectivityChip(CHIP_TYPE_SYNA)) {
+				no_tuning_move_flag = 1;
+			}
+		#endif
 		cmd->error = -ETIMEDOUT;
 	} else if ((cmd->flags & MMC_RSP_CRC) && (status & SDMMC_INT_RCRC)) {
 		if ((host->hw_mmc_id == DWMMC_SD_ID) &&

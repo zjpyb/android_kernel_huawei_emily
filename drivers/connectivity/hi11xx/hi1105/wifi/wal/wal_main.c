@@ -616,9 +616,6 @@ int32_t wal_main_init(void)
 
     wal_register_ip_filter(&g_st_ip_filter_ops);
 
-    if (hmac_get_feature_switch(HMAC_MIRACAST_SINK_SWITCH)) {
-        wal_register_lights_suspend();
-    }
     return OAL_SUCC;
 }
 
@@ -669,9 +666,5 @@ void wal_main_exit(void)
     frw_timer_clean_timer(OAM_MODULE_ID_WAL);
 
     wal_unregister_ip_filter();
-
-    if (hmac_get_feature_switch(HMAC_MIRACAST_SINK_SWITCH)) {
-        wal_unregister_lights_suspend();
-    }
 }
 

@@ -1017,7 +1017,7 @@ static void battery_plug_in(struct smartstar_coul_device *di)
 	g_sr_cur_state = SR_DEVICE_WAKEUP;
 
 	set_charge_cycles(di, 0);
-	di->batt_changed_flag = 1;
+	di->batt_removed_flag = 1;
 	di->batt_limit_fcc = 0;
 	di->adjusted_fcc_temp_lut = NULL;
 	di->is_nv_need_save = 1;
@@ -1194,13 +1194,13 @@ static void coul_check_drained_battery_flag(struct smartstar_coul_device *di)
 		coul_core_err("%s: snprintf_s fail ret = %d\n", __func__, ret);
 		return;
 	}
-	coul_core_info("changed_flag=%d, drained_flag=%d,vol=%d,cur=%d\n",
-		di->batt_changed_flag, drained_battery_flag, vbat_uv, ibat_ua);
+	coul_core_info("removed_flag=%d, drained_flag=%d,vol=%d,cur=%d\n",
+		di->batt_removed_flag, drained_battery_flag, vbat_uv, ibat_ua);
 
 #ifdef CONFIG_HUAWEI_DSM
 	if (drained_battery_flag)
 		coul_dsm_report_ocv_cali_info(di, DSM_BATTERY_DRAINED_NO, buff);
-	else if (di->batt_changed_flag)
+	else if (di->batt_removed_flag)
 		coul_dsm_report_ocv_cali_info(di, DSM_BATTERY_CHANGED_NO, buff);
 #endif
 

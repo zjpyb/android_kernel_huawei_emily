@@ -500,7 +500,8 @@ unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 		 * passing NULL for memcg.
 		 */
 		if (memcg_kmem_enabled() &&
-		    !!memcg != !!(shrinker->flags & SHRINKER_MEMCG_AWARE))
+		    !!memcg != !!(shrinker->flags & SHRINKER_MEMCG_AWARE)
+		    && !should_only_do_gss())
 			continue;
 
 		if (!(shrinker->flags & SHRINKER_NUMA_AWARE))
@@ -2709,6 +2710,36 @@ static int get_fine_reclaim(void)
 }
 #endif
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+/**
+ * Skip shrink anon list when freeswap is very low(< 2m). In this case, many
+ * progress is in direct reclaim state and try to reclaim anon pages at the
+ * same time. As a result, few progress successfully steal the page, but other
+ * progess are just wasting time to shrink anon list while there is no freeswap,
+ * which cause serious thrashing problem.
+ *
+ * Freeswap will below the limit sometimes, as freeswap is decrease after the
+ * shrink. It is desiged to do this as few swapfree space will be wasted while
+ * thrashing is well limited.
+ */
+static bool skip_shrink_anon(void)
+{
+	long freeswap_pages = atomic_long_read(&nr_swap_pages);
+
+	/**
+	 * nr_swap_pages is below zero when zram is initializing or
+	 * swapoff is in progess, just skip these cases.
+	 */
+	if (freeswap_pages < 0)
+		return false;
+
+	if (unlikely(freeswap_pages < 0))
+		return false;
+
+	return freeswap_pages < (freeswap_min_mbytes() << (20 - PAGE_SHIFT));
+}
+#endif
+
 #ifndef CONFIG_REFAULT_IO_VMSCAN
 /*
  * Determine how aggressively the anon and file LRU lists should be
@@ -2967,6 +2998,22 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 #ifdef CONFIG_DIRECT_SWAPPINESS
 	if (!current_is_kswapd())
 		swappiness = direct_vm_swappiness;
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	else if (is_in_direct_reclaim())
+		swappiness = 0;
+#endif
+#endif
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	/*
+	 * There are many 3-order allocations which trigger memory reclaim,
+	 * such as network skb_alloc and kmem cache alloc and so on. In most
+	 * case, freepages are relatively high but only lack of 3-order pages,
+	 * swap is not really needed. So just lower it to make it quick and
+	 * save some energy.
+	 */
+	if (current_is_kswapd() && sc->origin_order == 3)
+		swappiness = swappiness * 6 / 10;
 #endif
 
 	/* If we have no swap space, do not bother scanning anon pages. */
@@ -2977,6 +3024,14 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 #endif
 		goto out;
 	}
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	/* If swapfree is low, do not bother scanning anon pages. */
+	if (skip_shrink_anon()) {
+		scan_balance = SCAN_FILE;
+		goto out;
+	}
+#endif
 
 	/*
 	 * Global reclaim will swap to prevent OOM even with no
@@ -4393,6 +4448,9 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 #ifdef CONFIG_HYPERHOLD
 		.invoker = KSWAPD,
 #endif
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		.origin_order = order,
+#endif
 	};
 	psi_memstall_enter(&pflags);
 	count_vm_event(PAGEOUTRUN);
@@ -4551,6 +4609,22 @@ static enum zone_type kswapd_classzone_idx(pg_data_t *pgdat,
 	return curr_idx == MAX_NR_ZONES ? prev_classzone_idx : curr_idx;
 }
 
+#ifdef CONFIG_KSWAPD_DEBUG
+static void count_vm_watermark_by_order(pg_data_t *pgdat, long remaining)
+{
+	int order;
+
+	order = READ_ONCE(pgdat->kswapd_order);
+	if (order > KSWAPD_WMARK_ORDER_MAX)
+		order = KSWAPD_WMARK_ORDER_MAX;
+
+	if (remaining)
+		count_vm_event(KSWAPD_LOW_WMARK_HIT_QUICKLY_0 + order);
+	else
+		count_vm_event(KSWAPD_HIGH_WMARK_HIT_QUICKLY_0 + order);
+}
+#endif
+
 static void kswapd_try_to_sleep(pg_data_t *pgdat, int alloc_order, int reclaim_order,
 				unsigned int classzone_idx)
 {
@@ -4630,6 +4704,10 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat, int alloc_order, int reclaim_o
 			count_vm_event(KSWAPD_LOW_WMARK_HIT_QUICKLY);
 		else
 			count_vm_event(KSWAPD_HIGH_WMARK_HIT_QUICKLY);
+
+#ifdef CONFIG_KSWAPD_DEBUG
+		count_vm_watermark_by_order(pgdat, remaining);
+#endif
 	}
 	finish_wait(&pgdat->kswapd_wait, &wait);
 }

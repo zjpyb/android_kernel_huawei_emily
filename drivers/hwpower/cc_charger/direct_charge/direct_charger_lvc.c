@@ -122,7 +122,7 @@ static int lvc_set_iin_limit(unsigned int val)
 		return -1;
 	}
 
-	index = di->stage_size - 1;
+	index = di->orig_volt_para_p[0].stage_size - 1;
 	cur_low = di->orig_volt_para_p[0].volt_info[index].cur_th_low;
 
 	if (val == 0)
@@ -159,7 +159,7 @@ static int lvc_set_iin_limit_ichg_control(unsigned int val)
 		return -1;
 	}
 
-	index = di->stage_size - 1;
+	index = di->orig_volt_para_p[0].stage_size - 1;
 	cur_low = di->orig_volt_para_p[0].volt_info[index].cur_th_low;
 
 	if (val == 0)
@@ -652,7 +652,7 @@ static void lvc_init_parameters(struct direct_charge_device *di)
 	di->cur_mode = CHARGE_IC_MAIN;
 	di->tbat_id = BAT_TEMP_MIXED;
 	di->local_mode = LVC_MODE;
-	di->force_single_path_flag = false;
+	di->multi_ic_check_info.force_single_path_flag = false;
 	for (i = 0; i < DC_MODE_TOTAL; i++)
 		di->rt_test_para[i].rt_test_result = false;
 }

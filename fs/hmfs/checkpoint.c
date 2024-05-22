@@ -1768,6 +1768,7 @@ int hmfs_write_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 		hmfs_msg(sbi->sb, KERN_WARNING,
 				"Start checkpoint disabled!");
 	}
+	hmfs_wait_all_dm_complete(sbi);
 	mutex_lock(&sbi->cp_mutex);
 
 	if (!is_sbi_flag_set(sbi, SBI_IS_DIRTY) &&
@@ -1785,6 +1786,7 @@ int hmfs_write_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 
 	/* try to do force flush for datamove */
 	hmfs_datamove_force_flush(sbi, cpc);
+	hmfs_wait_all_dm_complete(sbi);
 
 	trace_hmfs_write_checkpoint(sbi->sb, cpc->reason, "start block_ops");
 #ifdef CONFIG_HMFS_CHECK_FS
@@ -1808,7 +1810,7 @@ int hmfs_write_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 			goto out;
 		}
 
-		if (NM_I(sbi)->dirty_nat_cnt == 0 &&
+		if (NM_I(sbi)->nat_cnt[DIRTY_NAT] == 0 &&
 				SIT_I(sbi)->dirty_sentries == 0 &&
 				prefree_segments(sbi) == 0) {
 			f2fs_cp_flush_meta_time = 0;

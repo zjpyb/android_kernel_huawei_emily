@@ -168,6 +168,12 @@ static inline enum cp_reason_type need_do_checkpoint(struct inode *inode)
 	enum cp_reason_type cp_reason = CP_NO_NEEDED;
 	nid_t nid = fi->i_xattr_nid;
 
+	if (is_sbi_flag_set(sbi, SBI_NEED_FSCK)) {
+		hmfs_msg(sbi->sb, KERN_NOTICE,
+			"Found FS corruption, use cp instead of fsync.");
+		return CP_SB_NEED_CP;
+	}
+
 	if (!S_ISREG(inode->i_mode))
 		cp_reason = CP_NON_REGULAR;
 	else if (inode->i_nlink != 1)
@@ -198,6 +204,12 @@ static inline enum cp_reason_type need_do_checkpoint(struct inode *inode)
 			cp_reason = CP_OOB_OVERFLOW;
 		else if (hmfs_is_file_atomic_switch(inode))
 			cp_reason = CP_OOB_CHG_ATOMIC;
+		else if (hmfs_is_file_truncate_write(inode, TRUNC_CP_VER))
+			cp_reason = CP_TRUNCATE_WRITE;
+		else if (hmfs_is_file_truncate_write(inode, PUNCH_CP_VER))
+			cp_reason = CP_PUNCH_WRITE;
+		else if (hmfs_is_file_fsync_after_wb(inode))
+			cp_reason = CP_FSYNC_AFTER_WB;
 	}
 
 	return cp_reason;
@@ -284,21 +296,33 @@ void hmfs_wait_writeback_work_fn(struct work_struct *work)
  * 2) record fsync_mark to hint: need recover this inode
  */
 static bool need_sync_node(struct inode *inode,
-		int dsync, bool dirty_inode, int dirty_pages)
+		int dsync, bool dirty_inode)
 {
 	bool need_sync = false;
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_inode_info *fi = F2FS_I(inode);
 	unsigned long long cur_ver = cur_cp_version(F2FS_CKPT(sbi));
 
-	/* mainly for 2) purpose */
-	if (!dirty_pages && fi->fsync_ver != cur_ver && fi->has_wb) {
+	/* mainly for 2) purpose
+	 * now we will issue CP before to distinguish
+	 * the order of node and data
+	 */
+	if (!fi->fsync_dirty_pages && fi->has_wb &&
+			fi->cp_ver[FSYNC_CP_VER] != cur_ver) {
 		need_sync = true;
 		goto done;
 	}
 
 	/* left part for 1) purpose */
-	if (dsync || !dirty_inode)
+	if (!dirty_inode)
+		goto done;
+
+	/*
+	 * left part for 1) purpose
+	 * fdatasync don't concern all inode info: atime for example,
+	 * but isize is require recovery
+	 */
+	if (dsync && !(inode->i_size % PAGE_SIZE))
 		goto done;
 
 	/* only for debug */
@@ -307,8 +331,8 @@ static bool need_sync_node(struct inode *inode,
 
 	need_sync = true;
 done:
-	trace_hmfs_node_sync(inode, dsync, fi->fsync_ver == cur_ver,
-			dirty_pages, dirty_inode, need_sync);
+	trace_hmfs_node_sync(inode, dsync, fi->cp_ver[FSYNC_CP_VER] == cur_ver,
+			fi->fsync_dirty_pages, dirty_inode, need_sync);
 
 	return need_sync;
 }
@@ -375,7 +399,6 @@ static int f2fs_do_sync_file(struct file *file, loff_t start, loff_t end,
 	struct request_queue *queue = sbi->sb->s_bdev->bd_disk->queue;
 	bool f2fs_ff_enable = blk_queue_query_unistore_enable(queue) &&
 				(fi->i_fsync_flag != F2FS_I_FSYNC_FLAG_WAITING);
-	int dirty_pages;
 	bool dirty_inode;
 
 	if (unlikely(f2fs_readonly(inode->i_sb) ||
@@ -388,11 +411,11 @@ static int f2fs_do_sync_file(struct file *file, loff_t start, loff_t end,
 	fsync_begin = local_clock();
 
 	/* if no dirty page(dirty_pages == 0), should flush inode page */
-	dirty_pages = get_dirty_pages(inode);
+	fi->fsync_dirty_pages = get_dirty_pages(inode);
 
 	if (!fi->fsync_task) {
 		fi->last_atomic = fi->fsync_atomic;
-		/* only for unif2fs_ioc_abort_volatile_write */
+		/* only for hmfs_ioc_abort_volatile_write */
 		fi->fsync_atomic = atomic;
 		fi->fsync_task = current;
 	} else {
@@ -433,6 +456,9 @@ static int f2fs_do_sync_file(struct file *file, loff_t start, loff_t end,
 		/* it may call write_inode just prior to fsync */
 		if (need_inode_page_update(sbi, ino))
 			goto go_write;
+		if (hmfs_is_file_truncate_write(inode, TRUNC_CP_VER) ||
+				hmfs_is_file_truncate_write(inode, PUNCH_CP_VER))
+			goto go_write;
 
 		trace_hmfs_sync_file_flush(ino,
 				is_inode_flag_set(inode, FI_UPDATE_WRITE) ||
@@ -450,6 +476,10 @@ go_write:
 	 * Both of fdatasync() and fsync() are able to be recovered from
 	 * sudden-power-off.
 	 */
+	if (hmfs_is_file_truncate_write(inode, TRUNC_CP_VER) &&
+			F2FS_BLK_TO_BYTES(fi->fofs) <= inode->i_size)
+		fi->cp_ver[TRUNC_CP_VER] = 0;
+
 	down_read(&fi->i_sem);
 	cp_reason = need_do_checkpoint(inode);
 	up_read(&fi->i_sem);
@@ -472,7 +502,7 @@ go_write:
 		goto out;
 	}
 
-	if (!need_sync_node(inode, datasync, dirty_inode, dirty_pages))
+	if (!need_sync_node(inode, datasync, dirty_inode))
 		goto out;
 
 	sync_node_begin = local_clock();
@@ -528,8 +558,11 @@ out:
 		max_bd_val(sbi, max_fsync_flush_time, flush_end - flush_begin);
 		bd_mutex_unlock(&sbi->bd_mutex);
 
-		fi->fsync_ver = cur_cp_version(F2FS_CKPT(sbi));
 		fi->has_wb = false;
+		fi->cp_ver[FSYNC_CP_VER] = cur_cp_version(F2FS_CKPT(sbi));
+		fi->cp_ver[TRUNC_CP_VER] = 0;
+		fi->cp_ver[PUNCH_CP_VER] = 0;
+
 		if (cp_reason) {
 			spin_lock(&fi->stream_lock);
 			fi->is_switch = false;
@@ -539,7 +572,7 @@ out:
 	}
 
 	mas_blk_fsync_barrier(inode->i_sb->s_bdev);
-	
+
 	return ret;
 }
 
@@ -888,6 +921,8 @@ free_partial:
 
 int hmfs_truncate(struct inode *inode)
 {
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
 	int err;
 
 	if (unlikely(f2fs_cp_error(F2FS_I_SB(inode))))
@@ -915,6 +950,7 @@ int hmfs_truncate(struct inode *inode)
 	if (err)
 		return err;
 
+	fi->cp_ver[TRUNC_CP_VER] = cur_cp_version(F2FS_CKPT(sbi));
 	inode->i_mtime = inode->i_ctime = current_time(inode);
 	hmfs_mark_inode_dirty_sync(inode, false);
 	return 0;
@@ -1784,6 +1820,8 @@ static long f2fs_fallocate(struct file *file, int mode,
 				loff_t offset, loff_t len)
 {
 	struct inode *inode = file_inode(file);
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
 	long ret = 0;
 
 	if (unlikely(f2fs_cp_error(F2FS_I_SB(inode))))
@@ -1820,6 +1858,7 @@ static long f2fs_fallocate(struct file *file, int mode,
 	}
 
 	if (!ret) {
+		fi->cp_ver[PUNCH_CP_VER] = cur_cp_version(F2FS_CKPT(sbi));
 		inode->i_mtime = inode->i_ctime = current_time(inode);
 		hmfs_mark_inode_dirty_sync(inode, false);
 		f2fs_update_time(F2FS_I_SB(inode), REQ_TIME);
@@ -2210,6 +2249,9 @@ static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
 		hmfs_sync_meta_pages(sbi, META, LONG_MAX, FS_META_IO);
 		hmfs_stop_checkpoint(sbi, false);
 		set_sbi_flag(sbi, SBI_IS_SHUTDOWN);
+		break;
+	case F2FS_GOING_DOWN_DISABLECP:
+		set_sbi_flag(sbi, SBI_CP_DISABLED);
 		break;
 	default:
 		ret = -EINVAL;
@@ -3377,7 +3419,7 @@ static ssize_t f2fs_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 						goto out;
 				}
 
-		} else {
+		} else if (!(iocb->ki_flags & IOCB_DIRECT)) {
 			preallocated = true;
 			target_size = iocb->ki_pos + iov_iter_count(from);
 

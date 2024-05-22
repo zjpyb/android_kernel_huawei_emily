@@ -32,5 +32,5 @@ void bt_skb_purge(struct bt_core_s *bt_core_d);
 int32 bt_skb_enqueue(struct bt_core_s *bt_core_d, struct sk_buff *skb, uint8 type);
 struct sk_buff *bt_skb_dequeue(struct bt_core_s *bt_core_d, uint8 type);
 void bt_core_tx_work(struct work_struct *work);
-int32 bt_recv_data_cb(unsigned char service_id, unsigned char command_id, unsigned char *data, int data_len);
+int32 bt_recv_data_cb(uint8 service_id, uint8 command_id, uint8 *data, int32 data_len);
 #endif

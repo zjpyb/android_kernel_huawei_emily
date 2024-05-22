@@ -33,6 +33,7 @@
 #include <chipset_common/hwpower/common_module/power_vote.h>
 #include <chipset_common/hwpower/common_module/power_sysfs.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
 
 #define HWLOG_TAG hw_usb
 HWLOG_REGIST();
@@ -150,6 +151,7 @@ void hw_usb_set_usb_speed(unsigned int usb_speed)
 	case USB_SPEED_SUPER:
 	case USB_SPEED_SUPER_PLUS:
 		hw_usb_send_event(USB31_CABLE_IN_EVENT);
+		power_event_bnc_notify(POWER_BNT_USB_EXT_MODEM, POWER_NE_UEM_USB_SUPER_SPEED, NULL);
 		break;
 	default:
 		break;

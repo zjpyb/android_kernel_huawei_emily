@@ -171,6 +171,38 @@ static bh1745_als_para_table als_para_diff_tp_color_table[] = {
 	 7732, 1132, 1732, 4618, 1952, 3781, 4360, 1743, 477, 3213, 7902, 4000, 250 } },
 };
 
+static sy3133_als_para_table sy3133_als_para_diff_tp_color_table[] = {
+	{ BAH4, V3, TS_PANEL_TRULY, WHITE,
+	{ 100, 120, 9113, 192, 7994, 12255, 1414, 940, 0, 120, 9113, 192,
+	  7994, 12255, 1414, 940, 0, 21709, 18803, 10135, 11112, 18803, 25, 2048, 4, 0,
+	  0, 0, 0 } },
+
+	{ BAH4, V3, TS_PANEL_TRULY, BLACK,
+	{ 100, 120, 9113, 192, 7994, 21592, 1289, 2350, 0, 120, 9113, 192,
+	  7994, 21592, 1289, 2350, 0, 13253, 20354, 3624, 6911, 0, 50, 2048, 5, 0,
+	  0, 0, 0 } },
+
+	{ BAH4, V3, TS_PANEL_EELY, WHITE,
+	{ 100, 120, 9113, 192, 7994, 10871, 1489, 1170, 0, 120, 9113, 192,
+	  7994, 10871, 1489, 1170, 0, 18538, 15848, 8799, 7954, 15848, 200, 128, 3, 0,
+	  0, 0, 0 } },
+
+	{ BAH4, V3, TS_PANEL_EELY, BLACK,
+	{ 100, 120, 9113, 192, 7994, 17078, 1458, 1743, 0, 120, 9113, 192,
+	  7994, 17078, 1458, 1743, 0, 18257, 29530, 5778, 7901, 0, 50, 2048, 5, 0,
+	  0, 0, 0 } },
+
+	{ BAH4, V3, TS_PANEL_UNKNOWN, WHITE,
+	{ 100, 120, 9113, 192, 7994, 12255, 1414, 940, 0, 120, 9113, 192,
+	  7994, 12435, 0, 1040, 0, 0, 0, 0, 0, 0, 25, 2048, 4, 0,
+	  0, 0, 0 } },
+
+	{ BAH4, V3, TS_PANEL_UNKNOWN, BLACK,
+	{ 100, 120, 9113, 192, 7994, 21592, 1289, 2350, 0, 120, 9113, 192,
+	  7994, 20607, 0, 1860, 0, 0, 0, 0, 0, 0, 50, 2048, 5, 0,
+	  0, 0, 0 } },
+};
+
 static bu27006_als_para_table bu27006_als_para_diff_tp_color_table[] = {
 	{ BAH4, V3, DEFAULT_TPLCD, BLACK,
 	{ 3000, 4782, 3494, 14639, -105, 9501, -8533, 16867, -3359, 17423, -4278, 4301, 27670, -5700, 11769,
@@ -181,15 +213,35 @@ static bu27006_als_para_table bu27006_als_para_diff_tp_color_table[] = {
 };
 
 static tcs3707_als_para_table tcs3707_als_para_diff_tp_color_table[] = {
-	{ BAH4, V3, DEFAULT_TPLCD, WHITE,
-	{ 100, 873, 231, -327, 1047, -1222, 0, 873, 231, -327, 1047, -1222,
-	  0, 0, 11620, 0, 0, 906, 11620, 0, 0, 906, 8693, 26887, 13740, 8367,
-	  6445, 10000, 100 } },
+	{ BAH4, V3, TS_PANEL_TRULY, WHITE,
+	{ 100, 850, 144, -50, 157, -111, 0, 850, 144, -50, 157, -111,
+	  0, 0, 8175, 0, 0, 2604, 8175, 0, 0, 2604, 8693, 29110, 15121, 9271,
+	  7243, 10000, 100 } },
 
-	{ BAH4, V3, DEFAULT_TPLCD, BLACK,
-	{ 100, 1008, -1622, 1093, 6563, -3256, 0, 1008, -1622, 1093, 6563, -3256,
-	  0, 0, 21298, 0, 0, -250, 21298, 0, 0, -250, 30, 8017, 4806, 2290,
-	  1464, 10000, 100 } },
+	{ BAH4, V3, TS_PANEL_TRULY, BLACK,
+	{ 100, 850, 1135, -504, -837, 312, 0, 850, 1135, -504, -837, 312,
+	  0, 0, 12447, 0, 0, 3130, 12477, 0, 0, 3130, 30, 8582, 5202, 2504,
+	  1619, 10000, 100 } },
+
+	{ BAH4, V3, TS_PANEL_EELY, WHITE,
+	{ 100, 838, 122, 13, -24, 156, 0, 838, 122, 13, -24, 156,
+	  0, 0, 5505, 0, 0, 1745, 5505, 0, 0, 1745, 8693, 28472, 11487, 10732,
+	  7824, 10000, 100 } },
+
+	{ BAH4, V3, TS_PANEL_EELY, BLACK,
+	{ 100, 855, -69, -96, 3250, -2497, 0, 855, -69, -96, 32, -25,
+	  0, 0, 8786, 0, 0, 1762, 8786, 0, 0, 1762, 30, 8884, 4106, 3294,
+	  1960, 10000, 100 } },
+
+	{ BAH4, V3, TS_PANEL_UNKNOWN, WHITE,
+	{ 100, 850, 144, -50, 157, -111, 0, 850, 144, -50, 157, -111,
+	  0, 0, 8175, 0, 0, 2604, 8175, 0, 0, 2604, 8693, 0, 0, 0,
+	  0, 10000, 100 } },
+
+	{ BAH4, V3, TS_PANEL_UNKNOWN, BLACK,
+	{ 100, 850, 1135, -504, -837, 312, 0, 850, 1135, -504, -837, 312,
+	  0, 0, 12447, 0, 0, 3130, 12477, 0, 0, 3130, 30, 0, 0, 0,
+	  0, 10000, 100 } },
 };
 
 static rpr531_als_para_table rpr531_als_para_diff_tp_color_table[] = {
@@ -282,6 +334,13 @@ bh1745_als_para_table *als_get_bh1745_table_by_id(uint32_t id)
 	return &(als_para_diff_tp_color_table[id]);
 }
 
+sy3133_als_para_table *als_get_sy3133_table_by_id(uint32_t id)
+{
+	if (id >= ARRAY_SIZE(sy3133_als_para_diff_tp_color_table))
+		return NULL;
+	return &(sy3133_als_para_diff_tp_color_table[id]);
+}
+
 bu27006_als_para_table *als_get_bu27006_table_by_id(uint32_t id)
 {
 	if (id >= ARRAY_SIZE(bu27006_als_para_diff_tp_color_table))
@@ -301,6 +360,11 @@ bh1745_als_para_table *als_get_bh1745_first_table(void)
 	return &(als_para_diff_tp_color_table[0]);
 }
 
+sy3133_als_para_table *als_get_sy3133_first_table(void)
+{
+	return &(sy3133_als_para_diff_tp_color_table[0]);
+}
+
 bu27006_als_para_table *als_get_bu27006_first_table(void)
 {
 	return &(bu27006_als_para_diff_tp_color_table[0]);
@@ -314,6 +378,11 @@ tcs3707_als_para_table *als_get_tcs3707_first_table(void)
 uint32_t als_get_bh1745_table_count(void)
 {
 	return ARRAY_SIZE(als_para_diff_tp_color_table);
+}
+
+uint32_t als_get_sy3133_table_count(void)
+{
+	return ARRAY_SIZE(sy3133_als_para_diff_tp_color_table);
 }
 
 uint32_t als_get_bu27006_table_count(void)

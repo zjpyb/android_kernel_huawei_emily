@@ -326,6 +326,9 @@ static int hisi_dss_block_set_regs(struct dpu_fb_data_type *dpufd, dss_overlay_b
 static int hisi_dss_mctl_sys_ov_set_reg(struct dpu_fb_data_type *dpufd, dss_module_reg_t *dss_module,
 	int32_t ovl_idx)
 {
+	dpu_check_and_return(((ovl_idx < DSS_OVL2) || (ovl_idx >= DSS_OVL_IDX_MAX)),
+		-EINVAL, ERR, "ovl_idx %d is invalid!\n", ovl_idx);
+
 	/* MCTL ov */
 	dss_module->mctl_sys.chn_ov_sel_used[ovl_idx] = 1;
 	dss_module->mctl_sys.wch_ov_sel_used[ovl_idx - DSS_OVL2] = 1;

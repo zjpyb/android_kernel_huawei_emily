@@ -23,6 +23,7 @@
 #define _HYPERHOLD_AREA_H
 
 #include <linux/memcontrol.h>
+#include <linux/rbtree.h>
 
 struct hyperhold_area {
 	unsigned long size;
@@ -44,6 +45,16 @@ struct hyperhold_area {
 	atomic_t *ext_stored_pages;
 
 	unsigned int mcg_id_cnt[MEM_CGROUP_ID_MAX + 1];
+
+	struct work_struct hyperhold_discard_work;
+	struct rb_root discard_tree;
+
+	spinlock_t hyperhold_discard_lock;
+};
+
+struct discard_type {
+	struct rb_node node;
+	int extent_id;
 };
 
 struct mem_cgroup *get_mem_cgroup(unsigned short mcg_id);
@@ -55,7 +66,7 @@ int mcg_idx(struct hyperhold_area *area, int idx);
 void free_hyperhold_area(struct hyperhold_area *area);
 struct hyperhold_area *alloc_hyperhold_area(unsigned long ori_size,
 					    unsigned long comp_size);
-void hyperhold_free_extent(struct hyperhold_area *area, int ext_id);
+void hyperhold_free_extent(struct hyperhold_area *area, int ext_id, bool discard_wq);
 int hyperhold_alloc_extent(struct hyperhold_area *area, struct mem_cgroup *mcg);
 int get_extent(struct hyperhold_area *area, int ext_id);
 void put_extent(struct hyperhold_area *area, int ext_id);

@@ -2835,11 +2835,6 @@ static void ufshcd_prepare_utp_query_req_upiu(struct ufs_hba *hba,
 		memcpy(descp, query->descriptor, len);
 
 	memset(lrbp->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
-
-#ifdef CONFIG_SCSI_UFS_UNISTORE
-	ufshcd_prepare_utp_query_req_upiu_unistore(query, ucd_req_ptr, descp,
-		len);
-#endif
 }
 
 static inline void ufshcd_prepare_utp_nop_upiu(struct ufshcd_lrb *lrbp)
@@ -5506,6 +5501,9 @@ static int ufshcd_slave_configure(struct scsi_device *sdev)
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 	mas_blk_queue_unistore_enable(q, sdev->host->unistore_enable);
 #endif
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+	ufshcd_unistore_scsi_device_init(sdev);
+#endif
 #ifdef CONFIG_HISI_UFS_MANUAL_BKOPS
 	hufs_manual_bkops_config(sdev);
 #endif
@@ -5822,7 +5820,7 @@ check:
 			iomt_host_latency_cmd_end(hba->host, cmd);
 #endif
 #ifdef CONFIG_SCSI_UFS_UNISTORE
-			ufshcd_unistore_done(hba, cmd, lrbp->ucd_rsp_ptr);
+			ufshcd_unistore_done(hba, cmd, lrbp);
 #endif
 			cmd->scsi_done(cmd);
 			pm_runtime_mark_last_busy(hba->dev);
@@ -6818,26 +6816,20 @@ static int ufshcd_eh_device_reset_handler(struct scsi_cmnd *cmd)
 {
 	struct Scsi_Host *host;
 	struct ufs_hba *hba;
-	unsigned int tag;
 	int pos;
 	int err;
-	u8 resp = 0xF;
-	struct ufshcd_lrb *lrbp;
+	u8 resp = 0xF, lun;
 	unsigned long flags;
 
 	host = cmd->device->host;
 	hba = shost_priv(host);
-	if (!host->use_blk_mq)
-		tag = cmd->request->tag;
-	else
-		tag = cmd->tag;
 
 	dev_err(hba->dev, "%s: occurs\n", __func__);
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 	mas_blk_dump_unistore(hba->sdev_ufs_device->request_queue, "DEVICERESET");
 #endif
-	lrbp = &hba->lrb[tag];
-	err = ufshcd_issue_tm_cmd(hba, lrbp->lun, 0, UFS_LOGICAL_RESET, &resp);
+	lun = ufshcd_scsi_to_upiu_lun(cmd->device->lun);
+	err = ufshcd_issue_tm_cmd(hba, lun, 0, UFS_LOGICAL_RESET, &resp);
 	if (err || resp != UPIU_TASK_MANAGEMENT_FUNC_COMPL) {
 		if (!err)
 			err = resp;
@@ -6846,7 +6838,7 @@ static int ufshcd_eh_device_reset_handler(struct scsi_cmnd *cmd)
 
 	/* clear the commands that were pending for corresponding LUN */
 	for_each_set_bit(pos, &hba->outstanding_reqs, hba->nutrs) {
-		if (hba->lrb[pos].lun == lrbp->lun) {
+		if (hba->lrb[pos].lun == lun) {
 			err = ufshcd_clear_cmd(hba, pos);
 			if (err)
 				break;
@@ -7101,8 +7093,14 @@ static int __ufshcd_host_reset_and_restore(struct ufs_hba *hba,
 	ufshcd_hba_stop(hba, false);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 
-	if (device_reset)
+	if (device_reset) {
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+		/* unitstore delay 100ms before reset */
+		if (hba->host && hba->host->unistore_enable)
+			msleep(100);
+#endif
 		ufshcd_vops_device_reset(hba);
+	}
 
 	err = ufshcd_hba_enable(hba);
 	if (err)
@@ -7185,7 +7183,7 @@ static int ufshcd_reset_and_restore(struct ufs_hba *hba)
 
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 	if (!err)
-		ufshcd_add_buf_to_recovery_list(hba);
+		ufshcd_set_recovery_flag(hba);
 #endif
 	return err;
 }
@@ -7746,6 +7744,7 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 	ktime_t start = ktime_get();
 #ifdef CONFIG_HUAWEI_UFS_DSM
 	u32 avail_lane_rx, avail_lane_tx;
+	struct hufs_host *host = hba->priv;
 #endif
 	unsigned long flags;
 
@@ -7883,8 +7882,11 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 			&avail_lane_rx);
 	ufshcd_dme_peer_get(hba, UIC_ARG_MIB(PA_AVAILTXDATALANES),
 			&avail_lane_tx);
-	if ((hba->max_pwr_info.info.lane_rx < avail_lane_rx) ||
-		(hba->max_pwr_info.info.lane_tx < avail_lane_tx)) {
+
+	/* no need to do this when use one lane */
+	if (((hba->max_pwr_info.info.lane_rx < avail_lane_rx) ||
+		(hba->max_pwr_info.info.lane_tx < avail_lane_tx)) &&
+		!(host->caps & USE_ONE_LANE)) {
 		dev_err(hba->dev, "ufs line number is less than avail "
 			"rx=%d, tx=%d, avail_rx=%d, avail_tx=%d\n",
 			hba->max_pwr_info.info.lane_rx,
@@ -10819,6 +10821,11 @@ static void ufshcd_ufs_set_dieid(struct ufs_hba *hba, struct ufs_dev_desc *dev_d
 	if (hba->manufacturer_id != UFS_VENDOR_HI1861)
 		return;
 
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+	if (hba->host && hba->host->unistore_enable)
+		return;
+#endif
+
 	if (ufs_hixxxx_dieid == NULL)
 		ufs_hixxxx_dieid = kmalloc(UFS_DIEID_TOTAL_SIZE, GFP_KERNEL);
 	if (!ufs_hixxxx_dieid)
@@ -10835,7 +10842,7 @@ static void ufshcd_ufs_set_dieid(struct ufs_hba *hba, struct ufs_dev_desc *dev_d
 
 	memset(fbuf, 0, HI1861_FSR_INFO_SIZE);
 
-	ret = ufshcd_read_fsr(hba, fbuf, HI1861_FSR_INFO_SIZE);
+	ret = ufshcd_read_fsr_info(hba, 0, 0, fbuf, HI1861_FSR_INFO_SIZE);
 	if (ret) {
 		is_fsr_read_failed = 1;
 		dev_err(hba->dev, "[%s]READ FSR FAILED\n", __func__);

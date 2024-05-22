@@ -878,9 +878,20 @@ static int wb_create_h_v_block_layer(dss_overlay_t *pov_req_h_v, dss_layer_t *h_
 	return 0;
 }
 
+/*lint -e545*/
 static int init_pov_req_v_block(dss_overlay_t *pov_req, dss_overlay_t *pov_req_h_v,
 	dss_overlay_block_t *pov_h_block, dss_overlay_block_t *pov_h_v_block)
 {
+	struct dpu_fb_data_type *dpufd = NULL;
+
+	if (pov_h_v_block == NULL) {
+		dpufd = container_of(pov_req_h_v, struct dpu_fb_data_type, ov_req);
+		dpu_check_and_return((dpufd == NULL), -1, ERR, "dpufd is NULL\n");
+		pov_req_h_v->ov_block_infos_ptr = (uint64_t)(uintptr_t)(&(dpufd->ov_block_infos));
+		pov_h_v_block = (dss_overlay_block_t *)(uintptr_t)pov_req_h_v->ov_block_infos_ptr;
+		dpu_check_and_return((pov_h_v_block == NULL), -1, ERR, "pov_h_v_block is NULL\n");
+	}
+
 	memcpy(pov_req_h_v, pov_req, sizeof(dss_overlay_t));
 	pov_req_h_v->ov_block_infos_ptr = (uint64_t)(uintptr_t)(pov_h_v_block);
 
@@ -895,6 +906,7 @@ static int init_pov_req_v_block(dss_overlay_t *pov_req, dss_overlay_t *pov_req_h
 
 	return 0;
 }
+/*lint +e545*/
 
 static void calc_wb_block_size(dss_overlay_t *pov_req, dss_rect_t ov_block_rect,
 	dss_rect_t *wb_ov_rect)

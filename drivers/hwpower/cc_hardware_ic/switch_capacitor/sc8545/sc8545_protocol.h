@@ -22,10 +22,11 @@
 #include "sc8545.h"
 
 /* scp */
-#define SC8545_SCP_ACK_RETRY_TIME              10
+#define SC8545_SCP_ACK_RETRY_TIME              3
 #define SC8545_SCP_RESTART_TIME                4
 #define SC8545_SCP_RETRY_TIME                  3
 #define SC8545_SCP_POLL_TIME                   100 /* ms */
+#define SC8545_SCP_HVDCP_CNT                   10
 #define SC8545_SCP_DETECT_MAX_CNT              20
 #define SC8545_SCP_PING_DETECT_MAX_CNT         15
 #define SC8545_SCP_NO_ERR                      0

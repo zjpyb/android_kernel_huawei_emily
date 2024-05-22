@@ -25,9 +25,11 @@ static void collect_cfg_info(struct req_msg_head *msg)
 		return;
 
 	num = *(int *)p;
+	if (num > MAX_CONFIG_APK_NUM)
+		return;
 	len -= sizeof(int);
 	p += sizeof(int);
-	if (len < (sizeof(int) * num))
+	if (len < (sizeof(struct config_info) * num))
 		return;
 
 	spin_lock_bh(&g_apks.lock);
@@ -158,11 +160,15 @@ static void collect_ds_state(struct req_msg_head *msg)
 	spin_unlock_bh(&g_apks.lock);
 }
 
-static void extract_data(struct req_msg_head *msg)
+static void extract_data(struct req_msg_head *msg, u32 len)
 {
 	if (msg == NULL || msg->len <= sizeof(struct req_msg_head))
 		return;
 
+	if (msg->len != len) {
+		pr_err("tcp_cong_algo_ctrl msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	switch (msg->type) {
 	case UPDATE_TCP_CA_CONFIG:
 		collect_cfg_info(msg);

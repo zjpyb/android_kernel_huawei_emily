@@ -554,7 +554,7 @@ int dpufb_ctrl_dss_voltage_set(struct fb_info *info, void __user *argp)
 		goto volt_vote_out;
 	}
 
-	if (dss_vote_cmd.dss_voltage_level == dpufd->dss_vote_cmd.dss_voltage_level) {
+	if ((dss_vote_cmd.dss_voltage_level == dpufd->dss_vote_cmd.dss_voltage_level) && !dpufd->panel_info.bypass_dvfs) {
 		DPU_FB_DEBUG("fb%d same voltage level %d\n", dpufd->index, dss_vote_cmd.dss_voltage_level);
 		goto volt_vote_out;
 	}
@@ -604,6 +604,10 @@ int dpufb_ctrl_dss_vote_cmd_set(struct fb_info *info, const void __user *argp)
 			DPU_FB_DEBUG("no support core_clk_upt\n");
 			return ret;
 		}
+	}
+
+	if (dpufd->panel_info.bypass_dvfs) {
+		return ret;
 	}
 
 	ret = copy_from_user(&vote_cmd, argp, sizeof(dss_vote_cmd_t));

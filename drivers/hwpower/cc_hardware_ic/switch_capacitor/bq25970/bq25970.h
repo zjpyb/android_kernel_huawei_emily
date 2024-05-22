@@ -486,6 +486,7 @@ struct bq25970_device_info {
 #define BQ2597X_DEVICE_ID_SC8551           0
 #define BQ2597X_DEVICE_ID_SC8551A          0x51
 #define BQ2597X_DEVICE_ID_HL1530           0x1A
+#define BQ2597X_DEVICE_ID_HL7130           0x2A
 #define BQ2597X_DEVICE_ID_SYH69637         0x6
 #define BQ2597X_DEVICE_ID_NU2105           0xC0
 
@@ -638,6 +639,10 @@ struct bq25970_device_info {
 /* PULSE_MODE reg=0x2b */
 #define BQ2597X_PULSE_MODE_REG             0x2B
 
+#define NU2105_SS_TIMEOUT_SET_MASK         (BIT(5) | BIT(6) | BIT(7))
+#define NU2105_SS_TIMEOUT_SET_SHIFT        5
+#define NU2105_SS_TIMEOUT_SET_100MS        4
+
 #define BQ2597X_PULSE_EN_MASK              BIT(7)
 #define BQ2597X_PULSE_EN_SHIFT             7
 
@@ -667,6 +672,12 @@ struct bq25970_device_info {
 #define BQ2597X_IBUS_LOW_DEGLITCH_10US     0
 #define BQ2597X_IBUS_LOW_DEGLITCH_5MS      1
 
+#define NU2105_CHRG_MODE_REG               0x2F
+#define NU2105_CHRG_MODE_MASK              BIT(0)
+#define NU2105_CHRG_MODE_SHIFT             0
+#define NU2105_CHRG_MODE_REG_LVC           1
+#define NU2105_CHRG_MODE_REG_SC            0
+
 /* Hidden register, to improve ADC accuracy */
 #define BQ2597X_ADC_ACCU_REG               0x34
 #define BQ2597X_ADC_ACCU_REG_INIT          0x01
@@ -689,6 +700,24 @@ struct bq25970_device_info {
 /* BUS_OVP reg=0x06 BIT(7):PD_EN */
 #define HL1530_BUS_PD_EN_MASK              BIT(7)
 #define HL1530_BUS_PD_EN_SHIFT             7
+
+/* PMID_VOUT_UV_OV reg=0x2f */
+#define HL7130_PMID_VOUT_UV_OV_REG         0x2F
+#define HL7130_PMID_VOUT_UV_OV_INIT        0x0E
+
+/* ADC_CTRL reg=0x14 */
+#define HL7130_ADC_CTRL_REG_INIT           0xB0
+
+/* ADC_FN_DISABLE reg=0x15 */
+#define HL7130_ADC_FN_DIS_REG_INIT         0x06
+
+/* CONTROL2 reg=0x30 */
+#define HL7130_CONTROL2_REG                0x30
+#define HL7130_CONTROL2_INIT               0x38
+
+/* ADC_CTL1 reg=0x33 */
+#define HL7130_ADC_CTL1_REG                0x33
+#define HL7130_ADC_CTL1_INIT               0x04
 
 /* SYH69637 ADC reg base ratio */
 #define SYH69637_BASE_RATIO_UNIT           10000

@@ -343,7 +343,11 @@ static int shmem_radix_tree_replace(struct address_space *mapping,
 	if (item != expected)
 		return -ENOENT;
 	__radix_tree_replace(&mapping->page_tree, node, pslot,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 			     replacement, NULL, NULL);
+#else
+			     replacement, NULL);
+#endif
 	return 0;
 }
 

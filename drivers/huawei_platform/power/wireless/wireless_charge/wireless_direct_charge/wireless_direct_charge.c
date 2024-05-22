@@ -916,6 +916,7 @@ static void wldc_get_imax_by_tx_ability(struct wldc_dev_info *di)
 {
 	s64 tmp;
 	int rx_ratio;
+	int tx_eff;
 	struct wireless_protocol_tx_cap *tx_cap = wlc_get_tx_cap();
 
 	if (!tx_cap) {
@@ -925,7 +926,8 @@ static void wldc_get_imax_by_tx_ability(struct wldc_dev_info *di)
 	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
 	tmp = (s64)(tx_cap->vout_max / POWER_PERCENT) *
 		tx_cap->iout_max * WLRX_ACC_TX_PWR_RATIO;
-	di->tx_imax = (int)tmp / (WLDC_VBAT_OVP_TH * rx_ratio * di->volt_ratio);
+	tx_eff = wlrx_acc_get_tx_eff(WLTRX_DRV_MAIN);
+	di->tx_imax = (int)tmp / (WLDC_VBAT_OVP_TH * rx_ratio * di->volt_ratio) * tx_eff / POWER_PERCENT;
 	hwlog_info("[%s] tx_imax = %dmA\n", __func__, di->tx_imax);
 }
 

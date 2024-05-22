@@ -81,11 +81,14 @@ int focal_get_vendor_name_from_dts(
 			GET_VENDOR_NAME, ret);
 		return ret;
 	}
-	ret = of_property_read_u32(np, FTS_IC_TYPES, &g_focal_dev_data->ic_type);
-	if (ret) {
-		TS_LOG_ERR("%s:get ic_type fail, ret=%d\n",
-			GET_VENDOR_NAME, ret);
-		return -ENODATA;
+	if (g_focal_pdata->allow_refresh_ic_type) {
+		TS_LOG_INFO("%s:do not need parse ic type frome dts\n", GET_VENDOR_NAME);
+	} else {
+		ret = of_property_read_u32(np, FTS_IC_TYPES, &g_focal_dev_data->ic_type);
+		if (ret) {
+			TS_LOG_ERR("%s:get ic_type fail, ret=%d\n", GET_VENDOR_NAME, ret);
+			return -ENODATA;
+		}
 	}
 	TS_LOG_INFO("%s: is: producer is :%s, ic_type is %d\n",
 		GET_VENDOR_NAME, producer, g_focal_dev_data->ic_type);
@@ -765,6 +768,28 @@ int focal_parse_dts(
 	}
 	TS_LOG_INFO("%s:%s=%d\n", OF_PROPERTY_READ_U32,
 		"irq_config", dev_data->irq_config);
+	focal_of_property_read_u32_default(np, FTS_ALLOW_REFRESH_IC_TYPE,
+		&focal_pdata->allow_refresh_ic_type, 0);
+	TS_LOG_INFO("%s:allow_refresh_ic_type = %u\n", OF_PROPERTY_READ_U32,
+		focal_pdata->allow_refresh_ic_type);
+	ret = of_property_read_u32(np, "supported_vamalloc_fortest",
+		&focal_pdata->supported_vamalloc_fortest);
+	if (ret) {
+		TS_LOG_ERR("%s:supported_vamalloc_fortest = %u\n", OF_PROPERTY_READ_U32,
+			focal_pdata->supported_vamalloc_fortest);
+		focal_pdata->supported_vamalloc_fortest = 0;
+	} else {
+		TS_LOG_INFO("%s:supported_vamalloc_fortest = %u\n", OF_PROPERTY_READ_U32,
+			focal_pdata->supported_vamalloc_fortest);
+	}
+	focal_of_property_read_u32_default(np, FTS_USE_DIF_IC_TYPE,
+		&focal_pdata->use_dif_ic_type, 0);
+	TS_LOG_INFO("%s:use_dif_ic_type = %u\n", OF_PROPERTY_READ_U32,
+		focal_pdata->use_dif_ic_type);
+	focal_of_property_read_u32_default(np, FTS_SUPPORT_DUAL_CHIP_ARCH,
+		&focal_pdata->support_dual_chip_arch, 0);
+	TS_LOG_INFO("%s:support_dual_chip_arch = %u\n", OF_PROPERTY_READ_U32,
+		focal_pdata->support_dual_chip_arch);
 
 	focal_of_property_read_u32_default(np, FTS_PROJECTID_LEN_CTRL_FLAG,
 		&focal_pdata->projectid_length_control_flag, 0);
@@ -780,7 +805,7 @@ int focal_parse_dts(
 
 	focal_of_property_read_u8_default(np, FTS_8201_GESTURE_SUPPORTED,
 		&focal_pdata->fts_8201_support, 0);
-	TS_LOG_INFO("%s:fts_8201_gesture_supported = %d\n",
+	TS_LOG_INFO("%s:double_click_supported = %d\n",
 		OF_PROPERTY_READ_U32, focal_pdata->fts_8201_support);
 
 	focal_of_property_read_u8_default(np, FTS_CONTROL_CS_GPIO,
@@ -946,6 +971,10 @@ int focal_parse_cap_test_config(
 		TS_LOG_INFO("%s: cap threshold in dts file\n", PARSE_CAP_TEST);
 		focal_prase_test_threshold(np, &params->threshold);
 	}
+
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB)
+		focal_of_property_read_u32_default(np, CAPACITANCE_TEST_SEQUENCE,
+			&fts_pdata->capa_test_sequence, 0);
 
 	return 0;
 }

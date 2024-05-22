@@ -21,6 +21,379 @@
 size_t message_length[C_FLAG_SIZE][F_SIZE][HMDFS_MESSAGE_MIN_MAX];
 bool need_response[F_SIZE];
 
+static void open_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct open_request);
+	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct open_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct open_response);
+	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void atomic_open_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct atomic_open_request);
+	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct atomic_open_request) + PATH_MAX + NAME_MAX + 1;
+	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX]
+		= MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct atomic_open_response);
+	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX]
+		= MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void release_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct release_request);
+	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct release_request);
+	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void fsync_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct fsync_request);
+	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct fsync_request);
+	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void readpage_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct readpage_request);
+	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct readpage_request);
+	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_MAX_INDEX] =
+		HMDFS_PAGE_SIZE;
+	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void readpages_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct readpages_request);
+	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct readpages_request);
+	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_MAX_INDEX] =
+		HMDFS_READPAGES_NR_MAX * HMDFS_PAGE_SIZE;
+	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void readpages_open_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_READPAGES_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct readpages_open_request);
+	message_length[C_REQUEST][F_READPAGES_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct readpages_open_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_READPAGES_OPEN][
+		HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_READPAGES_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
+		0;
+	message_length[C_RESPONSE][F_READPAGES_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct readpages_open_response) +
+		HMDFS_READPAGES_NR_MAX * HMDFS_PAGE_SIZE;
+	message_length[C_RESPONSE][F_READPAGES_OPEN][
+		HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void writepage_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct writepage_request) + HMDFS_PAGE_SIZE;
+	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct writepage_request) + HMDFS_PAGE_SIZE;
+	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct writepage_response);
+	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void iterate_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct readdir_request);
+	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct readdir_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(__le64) + HMDFS_MAX_MESSAGE_LEN;
+	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void mkdir_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct mkdir_request);
+	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct mkdir_request) + PATH_MAX + NAME_MAX + 2;
+	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct hmdfs_inodeinfo_response);
+	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct hmdfs_inodeinfo_response);
+	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void create_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct create_request);
+	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct create_request) + PATH_MAX + NAME_MAX + 2;
+	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct hmdfs_inodeinfo_response);
+	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct hmdfs_inodeinfo_response);
+	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void rmdir_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct rmdir_request);
+	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct rmdir_request) + PATH_MAX + NAME_MAX + 2;
+	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void unlink_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct unlink_request);
+	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct unlink_request) + PATH_MAX + NAME_MAX + 2;
+	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void rename_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct rename_request);
+	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct rename_request) + 4 + 4 * PATH_MAX;
+	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void setattr_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct setattr_request);
+	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct setattr_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void getattr_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct getattr_request);
+	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct getattr_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct getattr_response);
+	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void connect_echo_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_CONNECT_ECHO][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct connection_echo_param);
+	message_length[C_REQUEST][F_CONNECT_ECHO][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct connection_echo_param);
+	message_length[C_REQUEST][F_CONNECT_ECHO]
+		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_CONNECT_ECHO][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct connection_echo_param);
+	message_length[C_RESPONSE][F_CONNECT_ECHO][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct connection_echo_param);
+	message_length[C_RESPONSE][F_CONNECT_ECHO]
+		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void statfs_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct statfs_request);
+	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct statfs_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct statfs_response);
+	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void syncfs_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct syncfs_request);
+	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct syncfs_request);
+	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void getxattr_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct getxattr_request);
+	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct getxattr_request) + PATH_MAX + XATTR_NAME_MAX + 2;
+	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct getxattr_response) + HMDFS_XATTR_SIZE_MAX;
+	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void setxattr_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct setxattr_request);
+	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct setxattr_request) + PATH_MAX + XATTR_NAME_MAX +
+		HMDFS_XATTR_SIZE_MAX + 2;
+	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_MAX_INDEX] = 0;
+	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void listxattr_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct listxattr_request);
+	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct listxattr_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
+	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct listxattr_response) + HMDFS_LISTXATTR_SIZE_MAX;
+	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+static void connect_rekey_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_CONNECT_REKEY][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct connection_rekey_request);
+	message_length[C_REQUEST][F_CONNECT_REKEY][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct connection_rekey_request);
+	message_length[C_REQUEST][F_CONNECT_REKEY]
+		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
+}
+
+static void drop_push_message_verify_init(void)
+{
+	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_MIN_INDEX] =
+		sizeof(struct drop_push_request);
+	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_MAX_INDEX] =
+		sizeof(struct drop_push_request) + PATH_MAX + 1;
+	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
+		MESSAGE_LEN_JUDGE_RANGE;
+}
+
+typedef void (*mesage_verify_init_fn)(void);
+
+static const mesage_verify_init_fn verify_init[F_SIZE] = {
+	[F_OPEN]		= open_message_verify_init,
+	[F_RELEASE]		= release_message_verify_init,
+	[F_READPAGE]		= readpage_message_verify_init,
+	[F_WRITEPAGE]		= writepage_message_verify_init,
+	[F_ITERATE]		= iterate_message_verify_init,
+	[F_MKDIR]		= mkdir_message_verify_init,
+	[F_RMDIR]		= rmdir_message_verify_init,
+	[F_CREATE]		= create_message_verify_init,
+	[F_UNLINK]		= unlink_message_verify_init,
+	[F_RENAME]		= rename_message_verify_init,
+	[F_SETATTR]		= setattr_message_verify_init,
+	[F_CONNECT_ECHO]	= connect_echo_message_verify_init,
+	[F_STATFS]		= statfs_message_verify_init,
+	[F_CONNECT_REKEY]	= connect_rekey_message_verify_init,
+	[F_DROP_PUSH]		= drop_push_message_verify_init,
+	[F_GETATTR]		= getattr_message_verify_init,
+	[F_FSYNC]		= fsync_message_verify_init,
+	[F_SYNCFS]		= syncfs_message_verify_init,
+	[F_GETXATTR]		= getxattr_message_verify_init,
+	[F_SETXATTR]		= setxattr_message_verify_init,
+	[F_LISTXATTR]		= listxattr_message_verify_init,
+	[F_READPAGES]		= readpages_message_verify_init,
+	[F_READPAGES_OPEN]	= readpages_open_message_verify_init,
+	[F_ATOMIC_OPEN]		= atomic_open_message_verify_init,
+};
+
 void hmdfs_message_verify_init(void)
 {
 	int flag, cmd;
@@ -40,335 +413,69 @@ void hmdfs_message_verify_init(void)
 		}
 	}
 
-	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct open_request);
-	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct open_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct open_response);
-	message_length[C_RESPONSE][F_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct atomic_open_request);
-	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct atomic_open_request) + PATH_MAX + NAME_MAX + 1;
-	message_length[C_REQUEST][F_ATOMIC_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX]
-		= MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct atomic_open_response);
-	message_length[C_RESPONSE][F_ATOMIC_OPEN][HMDFS_MESSAGE_LEN_JUDGE_INDEX]
-		= MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct release_request);
-	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct release_request);
-	message_length[C_REQUEST][F_RELEASE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct fsync_request);
-	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct fsync_request);
-	message_length[C_REQUEST][F_FSYNC][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_FSYNC][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct readpage_request);
-	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct readpage_request);
-	message_length[C_REQUEST][F_READPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_MAX_INDEX] =
-		HMDFS_PAGE_SIZE;
-	message_length[C_RESPONSE][F_READPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct readpages_request);
-	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct readpages_request);
-	message_length[C_REQUEST][F_READPAGES][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_MAX_INDEX] =
-		HMDFS_READPAGES_NR_MAX * HMDFS_PAGE_SIZE;
-	message_length[C_RESPONSE][F_READPAGES][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_READPAGES_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct readpages_open_request);
-	message_length[C_REQUEST][F_READPAGES_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct readpages_open_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_READPAGES_OPEN][
-		HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_READPAGES_OPEN][HMDFS_MESSAGE_MIN_INDEX] =
-		0;
-	message_length[C_RESPONSE][F_READPAGES_OPEN][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct readpages_open_response) +
-		HMDFS_READPAGES_NR_MAX * HMDFS_PAGE_SIZE;
-	message_length[C_RESPONSE][F_READPAGES_OPEN][
-		HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct writepage_request) + HMDFS_PAGE_SIZE;
-	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct writepage_request) + HMDFS_PAGE_SIZE;
-	message_length[C_REQUEST][F_WRITEPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct writepage_response);
-	message_length[C_RESPONSE][F_WRITEPAGE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct readdir_request);
-	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct readdir_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_ITERATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(__le64) + HMDFS_MAX_MESSAGE_LEN;
-	message_length[C_RESPONSE][F_ITERATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct mkdir_request);
-	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct mkdir_request) + PATH_MAX + NAME_MAX + 2;
-	message_length[C_REQUEST][F_MKDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct hmdfs_inodeinfo_response);
-	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct hmdfs_inodeinfo_response);
-	message_length[C_RESPONSE][F_MKDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct create_request);
-	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct create_request) + PATH_MAX + NAME_MAX + 2;
-	message_length[C_REQUEST][F_CREATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct hmdfs_inodeinfo_response);
-	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct hmdfs_inodeinfo_response);
-	message_length[C_RESPONSE][F_CREATE][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct rmdir_request);
-	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct rmdir_request) + PATH_MAX + NAME_MAX + 2;
-	message_length[C_REQUEST][F_RMDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_RMDIR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct unlink_request);
-	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct unlink_request) + PATH_MAX + NAME_MAX + 2;
-	message_length[C_REQUEST][F_UNLINK][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_UNLINK][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct rename_request);
-	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct rename_request) + 4 + 4 * PATH_MAX;
-	message_length[C_REQUEST][F_RENAME][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_RENAME][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct setattr_request);
-	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct setattr_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_SETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_SETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct getattr_request);
-	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct getattr_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_GETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct getattr_response);
-	message_length[C_RESPONSE][F_GETATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_CONNECT_ECHO][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct connection_echo_param);
-	message_length[C_REQUEST][F_CONNECT_ECHO][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct connection_echo_param);
-	message_length[C_REQUEST][F_CONNECT_ECHO]
-		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_CONNECT_ECHO][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct connection_echo_param);
-	message_length[C_RESPONSE][F_CONNECT_ECHO][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct connection_echo_param);
-	message_length[C_RESPONSE][F_CONNECT_ECHO]
-		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct statfs_request);
-	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct statfs_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_STATFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct statfs_response);
-	message_length[C_RESPONSE][F_STATFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct syncfs_request);
-	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct syncfs_request);
-	message_length[C_REQUEST][F_SYNCFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_SYNCFS][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct getxattr_request);
-	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct getxattr_request) + PATH_MAX + XATTR_NAME_MAX + 2;
-	message_length[C_REQUEST][F_GETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct getxattr_response) + HMDFS_XATTR_SIZE_MAX;
-	message_length[C_RESPONSE][F_GETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct setxattr_request);
-	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct setxattr_request) + PATH_MAX + XATTR_NAME_MAX +
-		HMDFS_XATTR_SIZE_MAX + 2;
-	message_length[C_REQUEST][F_SETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_MAX_INDEX] = 0;
-	message_length[C_RESPONSE][F_SETXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct listxattr_request);
-	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct listxattr_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_LISTXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_MIN_INDEX] = 0;
-	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct listxattr_response) + HMDFS_LISTXATTR_SIZE_MAX;
-	message_length[C_RESPONSE][F_LISTXATTR][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
-
-	message_length[C_REQUEST][F_CONNECT_REKEY][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct connection_rekey_request);
-	message_length[C_REQUEST][F_CONNECT_REKEY][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct connection_rekey_request);
-	message_length[C_REQUEST][F_CONNECT_REKEY]
-		      [HMDFS_MESSAGE_LEN_JUDGE_INDEX] = MESSAGE_LEN_JUDGE_BIN;
-
-	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_MIN_INDEX] =
-		sizeof(struct drop_push_request);
-	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_MAX_INDEX] =
-		sizeof(struct drop_push_request) + PATH_MAX + 1;
-	message_length[C_REQUEST][F_DROP_PUSH][HMDFS_MESSAGE_LEN_JUDGE_INDEX] =
-		MESSAGE_LEN_JUDGE_RANGE;
+	for (cmd = 0; cmd < F_SIZE; cmd++) {
+		if (verify_init[cmd])
+			verify_init[cmd]();
+	}
 }
 
-static void find_first_no_slash(const char **name, int *len)
+/*
+ * We expect path to match following conditions:
+ * a. do not end with '/' or "/." or "/.."
+ * b. do not contain "/./" or "/../"
+ */
+static bool is_path_valid(const char *name, size_t len)
 {
-	const char *s = *name;
-	int l = *len;
-
-	while (*s == '/' && l > 0) {
-		s++;
-		l--;
+	if (len == 0) {
+		hmdfs_err("len is %zd", len);
+		return false;
 	}
 
-	*name = s;
-	*len = l;
-}
-
-static void find_first_slash(const char **name, int *len)
-{
-	const char *s = *name;
-	int l = *len;
-
-	while (*s != '/' && l > 0) {
-		s++;
-		l--;
+	if (name[len - 1] == '/') {
+		hmdfs_err("end with '/'");
+		return false;
 	}
 
-	*name = s;
-	*len = l;
-}
+	if (len == 1)
+		return true;
 
-static bool path_contain_dotdot(const char *name, int len)
-{
-	while (true) {
-		find_first_no_slash(&name, &len);
-
-		if (len == 0)
-			return false;
-
-		if (len >= 2 && name[0] == '.' && name[1] == '.' &&
-		    (len == 2 || name[2] == '/'))
-			return true;
-
-		find_first_slash(&name, &len);
+	if (!strncmp(name + len - 2, "/.", 2)) {
+		hmdfs_err("end with \"/.\"");
+		return false;
 	}
+
+	if (len == 2)
+		return true;
+
+	if (!strncmp(name + len - 3, "/..", 3)) {
+		hmdfs_err("end with \"..\"");
+		return false;
+	}
+
+	if (strstr(name, "/../")) {
+		hmdfs_err("contain \"/../\"");
+		return false;
+	}
+
+	if (strstr(name, "/./")) {
+		hmdfs_err("contain \"/./\"");
+		return false;
+	}
+
+	return true;
 }
 
 static int hmdfs_open_message_verify(int flag, size_t len, void *data)
 {
-	struct open_request *req = NULL;
-	size_t tmp_len = 0;
-	int path_len;
+	struct open_request *req = data;
+	size_t tmp_len;
+	size_t path_len;
 
 	if (flag != C_REQUEST || !data)
 		return 0;
 
-	req = data;
-	path_len = le32_to_cpu(req->path_len);
 	tmp_len = strnlen(req->buf, PATH_MAX);
+	path_len = le32_to_cpu(req->path_len);
 	if (tmp_len == PATH_MAX ||
 	    tmp_len != len - sizeof(struct open_request) - 1 ||
 	    path_len != tmp_len) {
@@ -376,12 +483,8 @@ static int hmdfs_open_message_verify(int flag, size_t len, void *data)
 		return -EINVAL;
 	}
 
-	/*
-	 * We only alow server to open file in hmdfs, thus we need to
-	 * make sure path don't contain "..".
-	 */
-	if (path_contain_dotdot(req->buf, path_len)) {
-		hmdfs_err("verify fail, path contain dotdot");
+	if (!is_path_valid(req->buf, path_len)) {
+		hmdfs_err("verify fail, invalid path");
 		return -EINVAL;
 	}
 
@@ -412,7 +515,6 @@ static int hmdfs_atomic_open_verify(int flag, size_t len, void *data)
 
 	max_file_size = min_t(size_t, NAME_MAX + 1, total_len - path_len - 1);
 	file_len = strnlen(req->buf + path_len + 1, max_file_size);
-
 	if (file_len == max_file_size ||
 	    total_len != path_len + 1 + file_len + 1 ||
 	    le32_to_cpu(req->path_len) != path_len ||
@@ -598,60 +700,43 @@ static int hmdfs_unlink_verify(int flag, size_t len, void *data)
 static int hmdfs_rename_verify(int flag, size_t len, void *data)
 {
 	int err = 0;
-	struct rename_request *tmp_request = NULL;
-	char *tmp_char = NULL;
-	size_t tmp_old_path_len = 0;
-	size_t tmp_new_path_len = 0;
-	size_t tmp_old_name_len = 0;
-	size_t tmp_new_name_len = 0;
-	size_t tmp_char_old_path_len = 0;
-	size_t tmp_char_new_path_len = 0;
-	size_t tmp_char_old_name_len = 0;
-	size_t tmp_char_new_name_len = 0;
+	struct rename_request *req = NULL;
+	char *buf = NULL;
+	size_t old_path_len = 0;
+	size_t new_path_len = 0;
+	size_t old_name_len = 0;
+	size_t new_name_len = 0;
+	size_t buf_old_path_len = 0;
+	size_t buf_new_path_len = 0;
+	size_t buf_old_name_len = 0;
+	size_t buf_new_name_len = 0;
 
-	if (flag == C_REQUEST) {
-		if (data) {
-			tmp_request = data;
-			tmp_char = tmp_request->path;
+	if (flag != C_REQUEST || !data)
+		return 0;
 
-			tmp_old_path_len =
-				le32_to_cpu(tmp_request->old_path_len);
-			tmp_new_path_len =
-				le32_to_cpu(tmp_request->new_path_len);
-			tmp_old_name_len =
-				le32_to_cpu(tmp_request->old_name_len);
-			tmp_new_name_len =
-				le32_to_cpu(tmp_request->new_name_len);
+	req = data;
+	buf = req->path;
+	old_path_len = le32_to_cpu(req->old_path_len);
+	new_path_len = le32_to_cpu(req->new_path_len);
+	old_name_len = le32_to_cpu(req->old_name_len);
+	new_name_len = le32_to_cpu(req->new_name_len);
+	buf_old_path_len = strnlen(buf, PATH_MAX);
+	buf_new_path_len = strnlen(buf + buf_old_path_len + 1, PATH_MAX);
+	buf_old_name_len = strnlen(buf + buf_old_path_len + 1 +
+				   buf_new_path_len + 1, PATH_MAX);
+	buf_new_name_len = strnlen(buf + buf_old_path_len + 1 +
+				   buf_new_path_len + 1 +
+				   buf_old_name_len + 1, PATH_MAX);
 
-			tmp_char_old_path_len = strnlen(tmp_char, PATH_MAX);
-			tmp_char_new_path_len = strnlen(
-				tmp_char + tmp_char_old_path_len + 1, PATH_MAX);
-
-			tmp_char_old_name_len =
-				strnlen(tmp_char + tmp_char_old_path_len + 1 +
-						tmp_char_new_path_len + 1,
-					PATH_MAX);
-			tmp_char_new_name_len =
-				strnlen(tmp_char + tmp_char_old_path_len + 1 +
-						tmp_char_new_path_len + 1 +
-						tmp_char_old_name_len + 1,
-					PATH_MAX);
-		} else {
-			return err;
-		}
-
-		if (tmp_new_name_len != tmp_char_new_name_len ||
-		    tmp_old_name_len != tmp_char_old_name_len ||
-		    tmp_new_path_len != tmp_char_new_path_len ||
-		    tmp_old_path_len != tmp_char_old_path_len ||
-		    len - sizeof(struct rename_request) !=
-			    tmp_new_name_len + 1 + tmp_old_name_len + 1 +
-				    tmp_new_path_len + 1 + tmp_old_path_len +
-				    1) {
-			err = -EINVAL;
-			hmdfs_err("verify fail");
-			return err;
-		}
+	if (new_name_len != buf_new_name_len ||
+	    old_name_len != buf_old_name_len ||
+	    new_path_len != buf_new_path_len ||
+	    old_path_len != buf_old_path_len ||
+	    len - sizeof(struct rename_request) != new_name_len + 1 +
+		old_name_len + 1 + new_path_len + 1 + old_path_len + 1) {
+		err = -EINVAL;
+		hmdfs_err("verify fail");
+		return err;
 	}
 
 	return err;
@@ -929,12 +1014,34 @@ static void handle_bad_message(struct hmdfs_peer *con,
 	}
 }
 
+static int hmdfs_message_check_len(struct hmdfs_head_cmd *head, size_t len,
+				   int flag, int cmd)
+{
+	int len_type = message_length[flag][cmd][HMDFS_MESSAGE_LEN_JUDGE_INDEX];
+	size_t min = message_length[flag][cmd][HMDFS_MESSAGE_MIN_INDEX];
+	size_t max = 0;
+
+	if (head->operations.command == F_ITERATE && flag == C_RESPONSE)
+		max = sizeof(struct slice_descriptor) + PAGE_SIZE;
+	else
+		max = message_length[flag][cmd][HMDFS_MESSAGE_MAX_INDEX];
+
+	if (len_type == MESSAGE_LEN_JUDGE_RANGE && (len < min || len > max))
+		return -EINVAL;
+
+	if (len_type == MESSAGE_LEN_JUDGE_BIN && (len != min && len != max))
+		return -EINVAL;
+
+	return 0;
+}
+
 int hmdfs_message_verify(struct hmdfs_peer *con, struct hmdfs_head_cmd *head,
 			 void *data)
 {
 	int err = 0;
-	int flag, cmd, len_type;
-	size_t len, min, max;
+	int flag = 0;
+	int cmd = 0;
+	size_t len = 0;
 
 	if (!head)
 		return -EINVAL;
@@ -953,39 +1060,20 @@ int hmdfs_message_verify(struct hmdfs_peer *con, struct hmdfs_head_cmd *head,
 	if (head->version == DFS_2_0) {
 		len = le32_to_cpu(head->data_len) -
 		      sizeof(struct hmdfs_head_cmd);
-		min = message_length[flag][cmd][HMDFS_MESSAGE_MIN_INDEX];
-		if (head->operations.command == F_ITERATE && flag == C_RESPONSE)
-			max = sizeof(struct slice_descriptor) + PAGE_SIZE;
-		else
-			max = message_length[flag][cmd][HMDFS_MESSAGE_MAX_INDEX];
-		len_type =
-			message_length[flag][cmd][HMDFS_MESSAGE_LEN_JUDGE_INDEX];
-
-		if (len_type == MESSAGE_LEN_JUDGE_RANGE) {
-			if (len < min || len > max) {
-				hmdfs_err(
-					"cmd %d -> %d message verify fail, len = %lu",
-					cmd, flag, len);
-				err = -EINVAL;
-				goto handle_bad_msg;
-			}
-		} else {
-			if (len != min && len != max) {
-				hmdfs_err(
-					"cmd %d -> %d message verify fail, len = %lu",
-					cmd, flag, len);
-				err = -EINVAL;
-				goto handle_bad_msg;
-			}
+		err = hmdfs_message_check_len(head, len, flag, cmd);
+		if (err) {
+			hmdfs_err("cmd %d -> %d message len verify fail, len = %lu",
+				  cmd, flag, len);
+			goto handle_bad_msg;
 		}
 
-		if (message_verify[cmd])
+		if (message_verify[cmd]) {
 			err = message_verify[cmd](flag, len, data);
+			if (err)
+				goto handle_bad_msg;
+		}
 
-		if (err)
-			goto handle_bad_msg;
-
-		return err;
+		return 0;
 	}
 
 handle_bad_msg:

@@ -41,11 +41,15 @@ static void sock_destroy_cmd(struct sock_destroy_req_msg *msg)
 	}
 }
 
-static void sock_destroy_msg_process(struct req_msg_head *msg)
+static void sock_destroy_msg_process(struct req_msg_head *msg, u32 len)
 {
 	if (msg == NULL)
 		return;
 
+	if (msg->len != len) {
+		pr_err("sock_destroy_handler msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	if (msg->type == SOCK_DESTROY_HANDLER_CMD &&
 		msg->len >= sizeof(struct sock_destroy_req_msg))
 		sock_destroy_cmd((struct sock_destroy_req_msg *)msg);

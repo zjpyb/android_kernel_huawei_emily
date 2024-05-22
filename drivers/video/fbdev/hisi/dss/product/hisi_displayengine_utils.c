@@ -113,7 +113,7 @@ static uint64_t correct_time_based_on_fps(uint32_t real_te_interval,
 
 static uint64_t get_backlight_sync_delay_time_us(
 	struct dpu_fb_panel_data *pdata,
-	struct dpu_fb_data_type *dpufd)
+	struct dpu_fb_data_type *dpufd, bool is_dc)
 {
 	uint64_t left_thres_us;
 	uint64_t right_thres_us;
@@ -132,6 +132,10 @@ static uint64_t get_backlight_sync_delay_time_us(
 		pdata->panel_info->left_time_to_te_us);
 	right_thres_us = correct_time_based_on_fps(real_te_interval,
 		pdata->panel_info->right_time_to_te_us);
+	if (is_dc && pdata->panel_info->dcdelay_support > 0)
+		right_thres_us = correct_time_based_on_fps(real_te_interval,
+			pdata->panel_info->dc_time_to_te_us);
+
 	te_interval = correct_time_based_on_fps(real_te_interval,
 		pdata->panel_info->te_interval_us);
 	if (te_interval == 0) {
@@ -307,7 +311,7 @@ static void handle_mask_layer_on(struct dpu_fb_data_type *dpufd,
 		status, mask_delay_time_before_fp, ktime_to_us(ktime_get()),
 		ktime_to_us(dpufd->te_timestamp),
 		ktime_to_us(ktime_get()) - ktime_to_us(dpufd->te_timestamp));
-	fp_delay_time_us = get_backlight_sync_delay_time_us(pdata, dpufd);
+	fp_delay_time_us = get_backlight_sync_delay_time_us(pdata, dpufd, false);
 	if (fp_delay_time_us > 0)
 		usleep_range(fp_delay_time_us, fp_delay_time_us);
 
@@ -365,7 +369,7 @@ static void handle_mask_layer_off(struct dpu_fb_data_type *dpufd,
 
 	DPU_FB_INFO("min change_status=%d, delay_time_after_fp =%d\n",
 		status, mask_delay_time_after_fp);
-	fp_delay_time_us = get_backlight_sync_delay_time_us(pdata, dpufd);
+	fp_delay_time_us = get_backlight_sync_delay_time_us(pdata, dpufd, false);
 	if (fp_delay_time_us > 0)
 		usleep_range(fp_delay_time_us, fp_delay_time_us);
 
@@ -489,7 +493,7 @@ static void dpufb_dc_te_vsync_delay(struct dpu_fb_data_type *dpufd)
 		DPU_FB_ERR("pdata is NULL");
 		return;
 	}
-	te_delay_time = get_backlight_sync_delay_time_us(pdata, dpufd);
+	te_delay_time = get_backlight_sync_delay_time_us(pdata, dpufd, true);
 	if (te_delay_time > 0)
 		usleep_range(te_delay_time, te_delay_time);
 	dpufb_dc_skip_even_frame(dpufd);

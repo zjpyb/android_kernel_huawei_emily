@@ -60,6 +60,9 @@ struct fscrypt_info {
 	u8 ci_data_mode;
 	u8 ci_filename_mode;
 	u8 ci_flags;
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	u8 ci_hw_enc_flag;
+#endif
 	struct crypto_skcipher *ci_ctfm;
 	struct crypto_aead *ci_gtfm;
 	struct crypto_cipher *ci_essiv_tfm;
@@ -68,7 +71,9 @@ struct fscrypt_info {
 	int ci_key_len;
 	int ci_key_index;
 	u8 ci_metadata[METADATA_BYTE_IN_KDF];
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	u8 ci_hw_enc_flag;
+#endif
 };
 
 #ifdef CONFIG_HWDPS

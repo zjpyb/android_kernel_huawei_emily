@@ -76,6 +76,7 @@ int ts_wakeup_gesture_enable_switch(struct ts_cmd_node *in_cmd,
 	struct ts_cmd_node *out_cmd);
 int ts_holster_switch(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);
 int ts_roi_switch(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);
+int ts_horizon_switch(struct ts_cmd_node *in_cmd);
 int ts_chip_regs_operate(struct ts_cmd_node *in_cmd,
 	struct ts_cmd_node *out_cmd, struct ts_cmd_sync *sync);
 int ts_test_cmd(struct ts_cmd_node *in_cmd, struct ts_cmd_node *out_cmd);

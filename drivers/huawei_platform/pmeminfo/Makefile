@@ -1,1 +1,1 @@
-obj-$(CONFIG_HUAWEI_MEMINFO_DUMP)	+= process_mem.o
+obj-$(CONFIG_TOPN_MEMINFO_DUMP)	+= process_mem.o

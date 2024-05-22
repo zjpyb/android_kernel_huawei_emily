@@ -96,6 +96,7 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	[POWER_NE_WLTX_ASK_SET_VTX] = "wltx_ask_set_vtx",
 	[POWER_NE_WLTX_GET_TX_CAP] = "wltx_get_tx_cap",
 	[POWER_NE_WLTX_TX_FOD] = "wltx_tx_fod",
+	[POWER_NE_WLTX_TX_PING_OCP] = "wltx_tx_ping_ocp",
 	[POWER_NE_WLTX_RP_DM_TIMEOUT] = "wltx_rp_dm_timeout",
 	[POWER_NE_WLTX_TX_INIT] = "wltx_tx_init",
 	[POWER_NE_WLTX_TX_AP_ON] = "wltx_tx_ap_on",
@@ -153,6 +154,9 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	/* section: for third platform pd */
 	[POWER_NE_THIRDPLAT_PD_START] = "thirdplat_pd_start",
 	[POWER_NE_THIRDPLAT_PD_STOP] = "thirdplat_pd_stop",
+	/* section: for usb extra modem */
+	[POWER_NE_UEM_RECEIVE_UVDM_DATA] = "uem_receive_uvdm_data",
+	[POWER_NE_UEM_USB_SUPER_SPEED] = "uem_usb_super_speed",
 };
 
 static const char *power_event_get_ne_name(unsigned int event)

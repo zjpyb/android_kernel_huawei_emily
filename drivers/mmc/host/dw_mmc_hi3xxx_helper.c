@@ -37,9 +37,15 @@
 #include "dw_mmc-pltfm.h"
 #include "dw_mmc_hi3xxx_common.h"
 
+#ifdef CONFIG_HWCONNECTIVITY
+#include <huawei_platform/connectivity/hw_connectivity.h>
+#endif
+
 #ifdef CONFIG_HUAWEI_DSM
 static struct dsm_client *wifi_client;
 #endif
+
+extern unsigned int no_tuning_move_flag;
 
 #ifdef CONFIG_SD_SDIO_CRC_RETUNING
 static void dw_mci_sd_crc_retuning_set(struct dw_mci *host, int sam_phase_val,
@@ -958,6 +964,15 @@ int dw_mci_hs_tuning_move_helper(struct dw_mci *host, int timing, int start)
 
 	sample_max = hs_timing_config[id][timing][SAM_PHASE_MAX];
 	sample_min = hs_timing_config[id][timing][SAM_PHASE_MIN];
+
+	#ifdef CONFIG_HWCONNECTIVITY
+		if (isMyConnectivityChip(CHIP_TYPE_SYNA)) {
+			if (no_tuning_move_flag) {
+				dev_info(host->dev, "id = %d, no_tuning_move_flag = 1, tuning move return\n", id);
+				return 0;
+			}
+		}
+	#endif
 
 	if (sample_max == sample_min) {
 		dev_info(host->dev, "id = %d, tuning move return\n", id);

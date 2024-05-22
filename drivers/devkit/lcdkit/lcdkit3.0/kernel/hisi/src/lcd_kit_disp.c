@@ -1780,6 +1780,22 @@ static bool lcd_kit_first_screenon(uint32_t last_bl_level, uint32_t bl_level)
 	return ret;
 }
 
+void display_on_before_backlight(struct hisi_fb_data_type *hisifd)
+{
+	int ret = LCD_KIT_OK;
+	struct lcd_kit_adapt_ops *adapt_ops = NULL;
+
+	adapt_ops = lcd_kit_get_adapt_ops();
+
+	hisifb_activate_vsync(hisifd);
+	if (adapt_ops && adapt_ops->mipi_tx) {
+		ret = adapt_ops->mipi_tx((void *)hisifd, &common_info->display_on_before_backlight_cmds);
+		if (ret)
+			LCD_KIT_ERR("send display on cmds error\n");
+	}
+	hisifb_deactivate_vsync(hisifd);
+}
+
 static int lcd_kit_set_backlight(struct platform_device *pdev, uint32_t bl_level)
 {
 	int ret = LCD_KIT_OK;
@@ -1831,6 +1847,12 @@ static int lcd_kit_set_backlight(struct platform_device *pdev, uint32_t bl_level
 	bl_flicker_detector_collect_upper_bl(bl_level);
 	bl_flicker_detector_collect_algo_delta_bl(hisifd->de_info.blc_delta);
 	bl_type = lcd_kit_get_bl_set_type(pinfo);
+	if (first_screenon && pinfo->display_on_before_backlight) {
+		mdelay(pinfo->before_bl_on_mdelay);
+		LCD_KIT_INFO("before_bl_on_mdelay = %d\n", pinfo->before_bl_on_mdelay);
+		display_on_before_backlight(hisifd);
+	}
+
 	switch (bl_type) {
 	case BL_SET_BY_PWM:
 		ret = hisi_pwm_set_backlight(hisifd, bl_level);
@@ -2561,12 +2583,14 @@ static ssize_t lcd_kit_color_param_get_func(struct hisi_fb_data_type *hisifd)
 		hisifd->de_info.lcd_color_oeminfo.color_params.c_lmt[i] =
 			oeminfo->color_params.c_lmt[i];
 	for (i = 0; i < ROW_LEN; i++) {
-		for (j = 0; j < COLUMN_LEN; j++) {
+		for (j = 0; j < COLUMN_LEN; j++)
 			hisifd->de_info.lcd_color_oeminfo.color_params.mxcc_matrix[i][j] =
 				oeminfo->color_params.mxcc_matrix[i][j];
+	}
+	for (i = 0; i < CHROMA_ROW; i++) {
+		for (j = 0; j < CHROMA_VOLUMN; j++)
 			hisifd->de_info.lcd_color_oeminfo.color_mdata.chroma_coordinates[i][j] =
 				oeminfo->color_mdata.chroma_coordinates[i][j];
-		}
 	}
 	hisifd->de_info.lcd_color_oeminfo.color_params.white_decay_luminace =
 		oeminfo->color_params.white_decay_luminace;

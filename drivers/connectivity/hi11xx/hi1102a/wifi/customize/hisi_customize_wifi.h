@@ -411,6 +411,7 @@ enum wlan_cfg_priv {
     /* 5G 外置FEM的类型 */
     WLAN_CFG_PRIV_5G_EXT_FEM_TYPE,
 
+    WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH,
     WLAN_CFG_PRIV_BUTT,
 };
 

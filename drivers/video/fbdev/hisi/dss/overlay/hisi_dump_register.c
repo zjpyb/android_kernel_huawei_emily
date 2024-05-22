@@ -72,8 +72,9 @@ static void hisi_dump_dpp_info(struct dpu_fb_data_type *dpufd)
 
 static void hisi_dump_arsr_post_info(struct dpu_fb_data_type *dpufd)
 {
+	dpu_check_and_no_retval(!dpufd->dss_module.post_scf_base, ERR, "post_scf_base is NULL!\n");
 #if defined(CONFIG_HISI_FB_970)
-	DPU_FB_INFO("0x%x, 0x%x,0x%x, 0x%x,0x%x, 0x%x,0x%x, 0x%x, 0x%x,0x%x, 0x%x\n",
+	DPU_FB_INFO("0x%x, 0x%x,0x%x, 0x%x,0x%x, 0x%x,0x%x, 0x%x, 0x%x\n",
 		inp32(dpufd->dss_module.post_scf_base + ARSR_POST_MODE),
 		inp32(dpufd->dss_module.post_scf_base + ARSR_POST_IHLEFT),
 		inp32(dpufd->dss_module.post_scf_base + ARSR_POST_IHLEFT1),

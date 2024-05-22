@@ -34,7 +34,7 @@ enum EXTERNAL_PERFORMANCE_LEVEL {
 
 int dss_get_peri_volt(int *curr_volt);
 int dss_set_peri_volt(int volt_to_set, int *curr_volt);
-int dpe_get_voltage_value(uint32_t dss_voltage_level); /* get value by level */
+int dpe_get_voltage_value(struct dpu_fb_data_type *dpufd, uint32_t dss_voltage_level); /* get value by level */
 int dpe_get_voltage_level(int votage_value); /* get level by value */
 int dpufb_get_other_fb_votelevel(struct dpu_fb_data_type *dpufd,
 	uint32_t *max_vote_level);

@@ -79,7 +79,7 @@ int32_t hitv_board_wakeup_gpio_init(struct platform_device *pdev);
 #endif
 int32_t enable_board_pmu_clk32k(void);
 int32_t disable_board_pmu_clk32k(void);
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 void hi1103_suspend_gpio(void);
 void hi1103_resume_gpio(void);
 #endif

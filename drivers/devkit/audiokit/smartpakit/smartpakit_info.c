@@ -151,6 +151,48 @@ static void smartpakit_get_chip_vendor_and_model(struct smartpakit_info *info)
 		info->chip_model);
 }
 
+static void smartpakit_get_simpa_pa_id_info(struct smartpakit_priv *pakit_priv)
+{
+	int i;
+	struct smartpakit_switch_node *pa_id_ctl =
+		pakit_priv->simple_pa_id.pa_id_ctl;
+	unsigned int gpio_id_num = pakit_priv->simple_pa_id.gpio_id_num;
+	struct simple_pa_id_match_check *pa_id_match_check =
+		pakit_priv->simple_pa_id.pa_id_match_check;
+	int id_match_check_num = pakit_priv->simple_pa_id.id_match_check_num;
+
+	if (!pa_id_ctl || !pa_id_match_check)
+		return;
+
+	if (!pakit_priv->simple_pa_id.pa_id_enable)
+		return;
+
+	hwlog_info("%s: gpio_id_num:%d, id_match_check_num:%d\n",
+		__func__, gpio_id_num, id_match_check_num);
+	smartpakit_append_info(
+		"simple_pa_id, gpio_id_num:%d, id_match_check_num:%d\n",
+		gpio_id_num, id_match_check_num);
+	for (i = 0; i < gpio_id_num; i++) {
+		hwlog_info("%s: gpio[%d]:%d\n", __func__,
+			pa_id_ctl[i].gpio, pa_id_ctl[i].state);
+		smartpakit_append_info(
+			"simple_pa_id, pa_id_ctl[%d]:%d\n",
+			pa_id_ctl[i].gpio, pa_id_ctl[i].state);
+	}
+	hwlog_info("%s: pa_id_status:%d\n",
+		__func__, pakit_priv->simple_pa_id.pa_id_status);
+	smartpakit_append_info("simple_pa_id_status:%d\n",
+		pakit_priv->simple_pa_id.pa_id_status);
+	for (i = 0; i < id_match_check_num; i++) {
+		hwlog_info("%s: id_match:%d, id_status:%s, chip_model:%s\n",
+			__func__, i, pa_id_match_check[i].id_status,
+			pa_id_match_check[i].chip_model);
+		smartpakit_append_info("id_match:%d,id_status:%s,chip_model:%s\n",
+			i, pa_id_match_check[i].id_status,
+			pa_id_match_check[i].chip_model);
+	}
+}
+
 /* pa info */
 static int smartpakit_get_pa_info(char *buffer, const struct kernel_param *kp)
 {
@@ -209,6 +251,7 @@ static int smartpakit_get_pa_info(char *buffer, const struct kernel_param *kp)
 	/* chip vendor and model */
 	smartpakit_get_chip_vendor_and_model(&info);
 	smartpakit_append_info("special_name: %s\n", info.special_name_config);
+	smartpakit_get_simpa_pa_id_info(kit);
 
 	len = snprintf_s(buffer, (unsigned long)INFO_BUF_MAX,
 		(unsigned long)INFO_BUF_MAX - 1, info_buffer);

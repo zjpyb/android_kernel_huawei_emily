@@ -126,6 +126,7 @@ struct tag_efusec_data {
 #define HISI_EFUSE_READ_SOCID              0xf000
 #define HISI_EFUSE_GET_NVCNT               0xf001
 #define HISI_EFUSE_SET_NVCNT               0xf002
+#define HISI_EFUSE_UPDATE_NVCNT            0xf010
 
 #define EFUSE_MODULE_INIT_SUCCESS          0x12345678
 
@@ -163,6 +164,7 @@ s32 hisi_efuse_write_value(u32 *buf, u32 buf_size, u32 func_id);
 s32 get_efuse_avs_value(u8 *buf, u32 buf_size, u32 timeout);
 s32 get_partial_pass_info(u8 *buf, u32 size, u32 timeout);
 s32 get_efuse_socid_value(u8 *buf, u32 size, u32 timeout);
+s32 efuse_update_nvcnt(u8 *buf, u32 size);
 #else
 static inline s32 get_efuse_dieid_value(u8 *buf, u32 size, u32 timeout)
 {
@@ -233,6 +235,10 @@ static inline s32 get_partial_pass_info(u8 *buf, u32 size, u32 timeout)
 	return OK;
 }
 static inline s32 get_efuse_socid_value(u8 *buf, u32 size, u32 timeout)
+{
+	return OK;
+}
+static inline s32 efuse_update_nvcnt(u8 *buf, u32 size)
 {
 	return OK;
 }

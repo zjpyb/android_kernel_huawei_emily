@@ -1167,7 +1167,19 @@ const char * const vmstat_text[] = {
 	"slabs_scanned",
 	"kswapd_inodesteal",
 	"kswapd_low_wmark_hit_quickly",
+#ifdef CONFIG_KSWAPD_DEBUG
+	"kswapd_low_wmark_hit_quickly_0",
+	"kswapd_low_wmark_hit_quickly_1",
+	"kswapd_low_wmark_hit_quickly_2",
+	"kswapd_low_wmark_hit_quickly_3+",
+#endif
 	"kswapd_high_wmark_hit_quickly",
+#ifdef CONFIG_KSWAPD_DEBUG
+	"kswapd_high_wmark_hit_quickly_0",
+	"kswapd_high_wmark_hit_quickly_1",
+	"kswapd_high_wmark_hit_quickly_2",
+	"kswapd_high_wmark_hit_quickly_3+",
+#endif
 	"pageoutrun",
 
 	"pgrotated",
@@ -1613,6 +1625,9 @@ static void zoneinfo_show_print(struct seq_file *m, pg_data_t *pgdat,
 	for (i = 0; i < NR_VM_ZONE_STAT_ITEMS; i++)
 		seq_printf(m, "\n      %-12s %lu", vmstat_text[i],
 				zone_page_state(zone, i));
+
+	seq_printf(m, "\n      nr_highatomic %lu",
+		zone->nr_reserved_highatomic);
 
 #ifdef CONFIG_NUMA
 	for (i = 0; i < NR_VM_NUMA_STAT_ITEMS; i++)

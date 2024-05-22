@@ -27,10 +27,17 @@
 #define BUF_LENGTH	(50)
 #define GPIO_LCD_BTB_NAME		   "gpio_lcdkit_btb"
 
+struct lcdkit_btb_array_data {
+	uint32_t* buf;
+	int cnt;
+};
+
 static struct lcdkit_btb_info {
 	unsigned char btb_support; /* 0:not support btb check  1:support btb check */
+	unsigned char btb_check_support; /* 0:not support btb check  1:support btb check */
 	unsigned int btb_con_addr;
 	unsigned int gpio_lcdkit_btb;
+	struct lcdkit_btb_array_data btb_gpio;
 };
 
 enum btb_gpio_optype {
@@ -40,5 +47,5 @@ enum btb_gpio_optype {
 };
 
 extern int mipi_lcdkit_btb_check(void);
-
+extern int lcdkit_btb_check(void);
 extern struct lcdkit_btb_info lcdkit_btb_inf;

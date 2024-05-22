@@ -105,6 +105,7 @@ enum uvdm_protocol_function {
 	UVDM_FUNCTION_DC_CTRL,
 	UVDM_FUCNTION_RX_CTRL,
 	UVDM_FUNCTION_PD_CTRL,
+	UVDM_FUNCTION_USB_EXT_MODEM,
 	UVDM_FUNCTION_END,
 };
 
@@ -182,8 +183,16 @@ struct uvdm_protocol_dev {
 
 #ifdef CONFIG_ADAPTER_PROTOCOL_UVDM
 int uvdm_protocol_ops_register(struct uvdm_protocol_ops *ops);
+int uvdm_protocol_handle_vdo_data(u32 *data, int len,
+	bool response, unsigned int retrys);
 #else
 static inline int uvdm_protocol_ops_register(struct uvdm_protocol_ops *ops)
+{
+	return 0;
+}
+
+static inline int uvdm_protocol_handle_vdo_data(u32 *data, int len,
+	bool response, unsigned int retrys)
 {
 	return 0;
 }

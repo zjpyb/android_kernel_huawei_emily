@@ -68,6 +68,12 @@ enum PHONE_TYPE {
 	AGS3 = 53,
 	BLM = 54,
 	BAH4 = 55,
+	JSCH = 56,
+	CHL = 57,
+	PHONE_TYPE_MGA = 58,
+	PHONE_TYPE_MEDCH = 59,
+	CHA = 60,
+	EVE = 61,
 };
 
 enum PHONE_VERSION {
@@ -102,6 +108,10 @@ enum ts_panel_id {
 	TS_PANEL_TOPTOUCH 		= 18,
 	TS_PANEL_BOE_BAK		= 19,
 	TS_PANEL_CTC_BAK 		= 20,
+	// add new screen type, please  refer to http://3ms.huawei.com/hi/group/3942690/wiki_6225602.html
+	TS_PANEL_TXD			= 21,
+	TS_PANEL_KING			= 22,
+	TS_PANEL_SKYWORTH		= 23,
 	TS_PANEL_UNKNOWN 		= 0xFF,
 };
 

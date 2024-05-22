@@ -200,6 +200,7 @@ struct getdents_callback_real {
 	struct file *file;
 	struct hmdfs_sb_info *sbi;
 	const char *dir;
+	struct list_head dir_ents;
 };
 
 struct file *hmdfs_server_rebuild_dents(struct hmdfs_sb_info *sbi,

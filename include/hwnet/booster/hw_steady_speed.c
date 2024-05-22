@@ -205,11 +205,15 @@ static void update_uid_list(const char *msg, int len)
 	write_unlock_bh(&uid_list.lock);
 }
 
-static void do_commands(struct req_msg_head *msg)
+static void do_commands(struct req_msg_head *msg, u32 len)
 {
 	if (!msg || msg->len <= sizeof(struct req_msg_head))
 		return;
 
+	if (msg->len != len) {
+		pr_err("hw_steady_speed msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	if (msg->type != UPDATE_UID_LIST)
 		return;
 	update_uid_list((char *)msg + sizeof(struct req_msg_head),

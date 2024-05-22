@@ -684,6 +684,7 @@ OAL_STATIC void hmac_dfs_cac_start_save_dfs_result(hmac_vap_stru *hmac_vap)
 uint32_t hmac_dfs_go_cac_check(mac_vap_stru *mac_vap)
 {
     hmac_vap_stru *hmac_vap;
+    mac_vap_stru *another_vap = NULL;
     hmac_vap = (hmac_vap_stru *)mac_res_get_hmac_vap(mac_vap->uc_vap_id);
     if (hmac_vap == NULL) {
         oam_warning_log0(mac_vap->uc_vap_id, OAM_SF_M2S,
@@ -694,9 +695,18 @@ uint32_t hmac_dfs_go_cac_check(mac_vap_stru *mac_vap)
     hmac_dfs_status_set(HMAC_INS_START);
     hmac_dfs_cac_start_save_dfs_result(hmac_vap);
 
-    if (!IS_LEGACY_VAP(mac_vap) && g_go_cac == OAL_FALSE) {
-        g_go_cac = OAL_TRUE;
-        return OAL_FAIL;
+    if (!IS_LEGACY_VAP(mac_vap)) {
+        if (g_go_cac == OAL_FALSE) {
+            g_go_cac = OAL_TRUE;
+            return OAL_FAIL;
+        }
+
+        another_vap = mac_vap_find_another_up_vap_by_mac_vap(&(hmac_vap->st_vap_base_info));
+        if (another_vap != NULL && another_vap->st_channel.uc_chan_number == mac_vap->st_channel.uc_chan_number) {
+            oam_warning_log0(mac_vap->uc_vap_id, OAM_SF_DFS,
+                "{hmac_dfs_go_cac_check::one vap already on radar channel, GO not need cac!}");
+            return OAL_FAIL;
+        }
     }
 
     return OAL_SUCC;

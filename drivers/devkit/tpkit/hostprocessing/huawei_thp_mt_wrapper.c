@@ -54,6 +54,10 @@
 #define trace_touch(x...)
 #endif
 
+#if defined(CONFIG_HUAWEI_DSM)
+#include <dsm/dsm_pub.h>
+#endif
+
 #define DEVICE_NAME "input_mt_wrapper"
 #define SECOND 1000000
 #define NO_DELAY 0
@@ -540,6 +544,10 @@ static int thp_mt_ioctl_report_keyevent(unsigned long arg)
 		input_sync(input_dev);
 		input_report_key(input_dev, KEY_F26, 0);
 		input_sync(input_dev);
+#if defined(CONFIG_HUAWEI_DSM)
+		thp_dmd_report(DSM_TP_ESD_ERROR_NO,
+			"%s, KEYEVENT ESD\n", __func__);
+#endif
 	} else if (keyevent == INPUT_MT_WRAPPER_KEYEVENT_APPROACH) {
 		thp_log_info("[Proximity_feature] %s: report [near] event!\n",
 			__func__);

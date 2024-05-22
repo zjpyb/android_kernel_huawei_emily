@@ -14,6 +14,8 @@
 
 #include <linux/types.h>
 
+#include "comm/protocol.h"
+
 #define HMDFS_FLAG_ENCRYPTED	     0x1
 #define ADAPTER_LOCK_DEFAULT_TIMEOUT 3000 // ms
 
@@ -181,6 +183,42 @@ struct adapter_sendmsg {
 	int timeout;
 	void *outmsg;
 };
+
+static inline void fill_ack_data(struct adapter_close_ack *ack_data,
+				 __u32 status, __u64 size, __u64 mtime,
+				 __u64 atime)
+{
+	ack_data->status = status;
+	ack_data->size = size;
+	ack_data->mtime = mtime;
+	ack_data->atime = atime;
+}
+
+static inline void fill_msg(struct hmdfs_send_data *msg, void *head,
+			    size_t head_len, void *sdesc, size_t sdesc_len,
+			    void *data, size_t len)
+{
+	msg->head = head;
+	msg->head_len = head_len;
+	msg->sdesc = sdesc;
+	msg->sdesc_len = sdesc_len;
+	msg->data = data;
+	msg->len = len;
+}
+
+static inline void fill_ack_header(struct hmdfs_adapter_head *head,
+				   __u8 operations, __u32 datasize,
+				   __u64 source, __u16 msg_id, __u16 request_id)
+{
+	head->magic = HMDFS_MSG_MAGIC;
+	head->version = DFS_2_0;
+	head->operations = operations;
+	head->datasize = datasize;
+	head->source = source;
+	head->msg_id = msg_id;
+	head->request_id = request_id;
+	head->flags |= HMDFS_FLAG_ENCRYPTED;
+}
 
 enum { HMDFS_MSG_LEN_ANY = 1, HMDFS_MSG_LEN_MIN, HMDFS_MSG_LEN_FIXED };
 #endif

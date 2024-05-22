@@ -598,6 +598,7 @@ int brd_create(unsigned int size)
 {
 	struct brd_device *brd = NULL;
 	int id;
+	int brd_number = 0;
 
 	mutex_lock(&brd_devices_mutex);
 
@@ -618,9 +619,10 @@ int brd_create(unsigned int size)
 	list_add_tail(&brd->brd_list, &brd_devices);
 	add_disk(brd->brd_disk);
 
+	brd_number = brd->brd_number;
 	mutex_unlock(&brd_devices_mutex);
 
-	return brd->brd_number;
+	return brd_number;
 }
 
 int brd_delete(int nr)

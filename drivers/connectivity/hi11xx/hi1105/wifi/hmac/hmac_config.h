@@ -82,6 +82,8 @@ typedef struct {
     uint32_t ie_len;
 } hmac_conn_param_stru;
 
+extern uint8_t g_p2p_go_max_user_num;
+
 uint32_t hmac_config_start_vap_event(mac_vap_stru *pst_mac_vap, oal_bool_enum_uint8 en_mgmt_rate_init_flag);
 uint32_t hmac_set_mode_event(mac_vap_stru *pst_mac_vap);
 uint32_t hmac_config_sta_update_rates(mac_vap_stru *pst_mac_vap,
@@ -210,6 +212,7 @@ uint32_t hmac_config_set_sniffer_1106(mac_vap_stru *mac_vap, uint16_t len, uint8
 uint32_t hmac_config_set_monitor_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 uint32_t hmac_config_get_monitor(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, uint8_t *puc_param);
 #endif
+uint32_t hmac_config_set_pt_mcast(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 uint32_t hmac_config_set_prot_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 uint32_t hmac_config_get_prot_mode(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, uint8_t *puc_param);
 uint32_t hmac_config_set_auth_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
@@ -423,7 +426,7 @@ uint32_t hmac_config_send_neighbor_req(mac_vap_stru *pst_mac_vap, uint16_t us_le
 uint32_t hmac_config_vendor_cmd_get_channel_list(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, uint8_t *puc_param);
 uint32_t hmac_config_dbdc_debug_switch(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param);
 uint32_t hmac_config_cali_debug(mac_vap_stru *mac_vap, uint16_t len, uint8_t *param);
-uint32_t hmac_atcmdsrv_get_rx_pkcg(mac_vap_stru *pst_mac_vap, uint8_t uc_len, uint8_t *puc_param);
+uint32_t hmac_config_get_rx_fcs_info(mac_vap_stru *pst_mac_vap, uint8_t uc_len, uint8_t *puc_param);
 
 #ifdef __cplusplus
 #if __cplusplus

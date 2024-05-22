@@ -3915,7 +3915,6 @@ skip_recovery:
 		}
 #endif
 	}
-	kfree(options);
 
 	/* recover broken superblock */
 	if (recovery) {
@@ -3929,14 +3928,6 @@ skip_recovery:
 		}
 	}
 
-	f2fs_join_shrinker(sbi);
-
-	f2fs_tuning_parameters(sbi);
-	f2fs_msg(sbi->sb, KERN_ALERT, "F2fs successfully mounted with checkpoint version = %llx",
-				cur_cp_version(F2FS_CKPT(sbi)));
-	f2fs_update_time(sbi, CP_TIME);
-	f2fs_update_time(sbi, REQ_TIME);
-
 #ifndef CONFIG_F2FS_CHECK_FS
 	/* wq for need fsck */
 	sbi->need_fsck_wq = alloc_workqueue("f2fs", WQ_FREEZABLE, 0);
@@ -3947,6 +3938,13 @@ skip_recovery:
 	sbi->need_fsck_work.sbi = sbi;
 	INIT_WORK(&sbi->need_fsck_work.work, need_fsck_fn);
 #endif
+	kfree(options);
+	f2fs_join_shrinker(sbi);
+	f2fs_tuning_parameters(sbi);
+	f2fs_msg(sbi->sb, KERN_ALERT, "F2fs successfully mounted with checkpoint version = %llx",
+                                cur_cp_version(F2FS_CKPT(sbi)));
+	f2fs_update_time(sbi, CP_TIME);
+	f2fs_update_time(sbi, REQ_TIME);
 
 #ifdef CONFIG_FSCK_BOOST
 	fsck_boost_end(sb->s_bdev);

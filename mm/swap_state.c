@@ -23,6 +23,9 @@
 #include <linux/huge_mm.h>
 #include <linux/hisi/page_tracker.h>
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+#include <linux/shmem_fs.h>
+#endif
 #include <asm/pgtable.h>
 #include "internal.h"
 
@@ -256,8 +259,12 @@ int __add_to_swap_cache(struct page *page, swp_entry_t entry, void **shadowp)
 
 		set_page_private(page + i, entry.val + i);
 		__radix_tree_replace(&address_space->page_tree, node, slot,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 				     page + i, workingset_update_node,
 				     address_space);
+#else
+				     page + i, workingset_lookup_update(address_space));
+#endif
 	}
 
 	if (likely(!error)) {
@@ -330,8 +337,12 @@ void __delete_from_swap_cache(struct page *page, void *shadow)
 
 		radix_tree_clear_tags(&address_space->page_tree, node, slot);
 		__radix_tree_replace(&address_space->page_tree, node, slot,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 				     shadow, workingset_update_node,
 				     address_space);
+#else
+				     shadow, workingset_lookup_update(address_space));
+#endif
 		set_page_private(page + i, 0);
 	}
 	ClearPageSwapCache(page);
@@ -371,8 +382,12 @@ void clear_shadow_from_swap_cache(int type, unsigned long begin,
 			if (!radix_tree_exceptional_entry(p))
 				continue;
 			__radix_tree_replace(&mapping->page_tree, iter.node,
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 					     slot, NULL, workingset_update_node,
 					     mapping);
+#else
+					     slot, NULL, workingset_lookup_update(mapping));
+#endif
 			mapping->nrexceptional--;
 			if (!mapping->nrexceptional)
 				break;

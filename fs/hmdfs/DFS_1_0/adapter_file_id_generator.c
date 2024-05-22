@@ -79,7 +79,8 @@ static uint32_t alloc_file_id(bool random)
 	return id;
 }
 
-static int create_dir_if_not_exist(const char *dirpath, umode_t mode)
+static int create_dir_if_not_exist(struct hmdfs_sb_info *sbi,
+				   const char *dirpath, umode_t mode)
 {
 	int ret;
 	struct dentry *dentry;
@@ -103,7 +104,7 @@ static int create_dir_if_not_exist(const char *dirpath, umode_t mode)
 	inode = path.dentry->d_inode;
 #ifdef CONFIG_HMDFS_ANDROID
 	tmp_uid = get_inode_uid(inode);
-	orig_cred = hmdfs_override_fsids(false);
+	orig_cred = hmdfs_override_fsids(sbi, false);
 	if (!orig_cred) {
 		ret = -ENOMEM;
 		goto no_cred;
@@ -121,7 +122,8 @@ no_cred:
 	return ret;
 }
 
-static int create_id_symlink(const char *src, const char *link)
+static int create_id_symlink(struct hmdfs_sb_info *sbi, const char *src,
+			     const char *link)
 {
 	int ret;
 	struct dentry *dentry;
@@ -155,7 +157,7 @@ static int create_id_symlink(const char *src, const char *link)
 
 		strcat(tmp_path, "/");
 		strcat(tmp_path, cur);
-		ret = create_dir_if_not_exist(tmp_path, 0771);
+		ret = create_dir_if_not_exist(sbi, tmp_path, 0771);
 		if (ret) {
 			hmdfs_err("create dir failed, err=%d", ret);
 			goto out;
@@ -171,7 +173,7 @@ static int create_id_symlink(const char *src, const char *link)
 
 	inode_lock_nested(path.dentry->d_parent->d_inode, I_MUTEX_PARENT);
 #ifdef CONFIG_HMDFS_ANDROID
-	orig_cred = hmdfs_override_fsids(false);
+	orig_cred = hmdfs_override_fsids(sbi, false);
 	if (!orig_cred) {
 		ret = -ENOMEM;
 		goto no_cred;
@@ -277,7 +279,7 @@ int hmdfs_adapter_generate_file_id(struct hmdfs_sb_info *sbi, const char *dir,
 			id = alloc_file_id(false);
 
 		hmdfs_adapter_convert_file_id_to_path(id, linkpath);
-		ret = create_id_symlink(destpath, linkpath);
+		ret = create_id_symlink(sbi, destpath, linkpath);
 		if (!ret)
 			break;
 		hmdfs_debug("id %u used, retry %d", id, retry);
@@ -297,7 +299,8 @@ out:
 	return ret;
 }
 
-static int __rebuild_file_id_linkfile(const char *path, uint32_t id)
+static int __rebuild_file_id_linkfile(struct hmdfs_sb_info *sbi,
+				      const char *path, uint32_t id)
 {
 	int ret;
 	char *linkpath = NULL;
@@ -321,7 +324,7 @@ static int __rebuild_file_id_linkfile(const char *path, uint32_t id)
 		ret = -ENAMETOOLONG;
 		goto out;
 	}
-	ret = create_id_symlink(destpath, linkpath);
+	ret = create_id_symlink(sbi, destpath, linkpath);
 out:
 	kfree(destpath);
 	kfree(linkpath);
@@ -369,15 +372,20 @@ uint32_t hmdfs_read_file_id(struct inode *inode)
 	if (!dentry)
 		return ret;
 
+#ifndef CONFIG_HMDFS_XATTR_NOSECURITY_SUPPORT
 	if (__vfs_getxattr(dentry, inode, FILE_ID_XATTR_KEY, &ret,
 			   sizeof(ret)) < 0)
+#else
+	if (__vfs_getxattr(dentry, inode, FILE_ID_XATTR_KEY, &ret,
+			   sizeof(ret), XATTR_NOSECURITY) < 0)
+#endif
 		ret = INVALID_FILE_ID;
 
 	dput(dentry);
 	return ret;
 }
 
-static void rename_link_dest(const char *pathname)
+static void rename_link_dest(struct hmdfs_sb_info *sbi, const char *pathname)
 {
 	uint32_t id;
 	struct path path;
@@ -395,7 +403,7 @@ static void rename_link_dest(const char *pathname)
 	}
 
 	hmdfs_adapter_remove_file_id(id);
-	__rebuild_file_id_linkfile(pathname, id);
+	__rebuild_file_id_linkfile(sbi, pathname, id);
 }
 
 struct walk_callback {
@@ -497,7 +505,7 @@ process_one_data:
 			} else {
 				snprintf(path_buf, PATH_MAX, "%s/%s",
 					 cur_dir->path, data->name);
-				rename_link_dest(path_buf);
+				rename_link_dest(sbi, path_buf);
 			}
 			readlen += sizeof(*data) + strlen(data->name) + 1;
 			data = (struct walk_namedata *)(walk_cb.buf + readlen);
@@ -527,7 +535,7 @@ static void process_file_id_delete_task(struct id_async_task *tsk)
 
 static void process_file_rename_task(struct id_async_task *tsk)
 {
-	rename_link_dest(tsk->path);
+	rename_link_dest(tsk->sbi, tsk->path);
 }
 
 static void process_dir_rename_task(struct id_async_task *tsk)
@@ -561,7 +569,7 @@ static int async_task_loop(void *data)
 				const struct cred *orig_cred =
 					hmdfs_override_creds(tsk->sbi->cred);
 				const struct cred *reverted_cred =
-					hmdfs_override_fsids(false);
+					hmdfs_override_fsids(tsk->sbi, false);
 
 				if (unlikely(!reverted_cred)) {
 					const int min = 1000;

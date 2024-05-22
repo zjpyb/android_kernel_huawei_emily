@@ -1192,41 +1192,62 @@ OAL_STATIC int32_t oal_sdio_rx_int_mask(hcc_bus *pst_bus, int32_t is_mask)
     return OAL_SUCC;
 }
 
+#ifdef CONFIG_VMAP_STACK
 /*
  * Prototype    : oal_sdio_writesb_by_heap
  * Description  : before sdio send, copy buf to heap memory
  */
-#ifdef CONFIG_VMAP_STACK
-OAL_STATIC int32_t oal_sdio_writesb_by_heap(struct sdio_func *func, uint8_t *buf, uint32_t len)
+OAL_STATIC int32_t oal_sdio_writesb_by_heap(struct oal_sdio *hi_sdio, uint8_t *buf, uint32_t len)
 {
     int32_t ret;
     uint8_t *send_buf = NULL;
+    struct sdio_func *func = hi_sdio->func;
 
-    if (len <= 0) {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "get invalid malloc len %d\n", len);
-        return -OAL_EINVAL;
+    // 非栈地址，直接使用源地址，作为sdio buffer源头
+    if (virt_addr_valid(buf) && !object_is_on_stack(buf)) {
+        ret = oal_sdio_writesb(func, HISDIO_REG_FUNC1_FIFO, buf, len);
+        if (ret < 0) {
+            oal_print_hi11xx_log(HI11XX_LOG_ERR, "write error:%d\n", ret);
+        }
+
+        return ret;
+    } else {
+        // 低于HISDIO_SEND_SIZE的长度，使用开机初始化申请的buffer
+        if ((len < HISDIO_SEND_SIZE) && (hi_sdio->sdio_send_buff != NULL)) {
+            send_buf = hi_sdio->sdio_send_buff;
+            if (memcpy_s(send_buf, len, buf, len) != EOK) {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "memcpy_s failed\n");
+                return -OAL_EINVAL;
+            }
+
+            ret = oal_sdio_writesb(func, HISDIO_REG_FUNC1_FIFO, send_buf, len);
+            if (ret < 0) {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "write error:%d\n", ret);
+            }
+
+            return ret;
+        } else {
+            send_buf = (uint8_t *)kmalloc(len, GFP_KERNEL);
+            if (send_buf == NULL) {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "malloc len %d failed\n", len);
+                return -OAL_ENOMEM;
+            }
+
+            if (memcpy_s(send_buf, len, buf, len) != EOK) {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "memcpy_s failed\n");
+                kfree(send_buf);
+                return -OAL_EINVAL;
+            }
+
+            ret = oal_sdio_writesb(func, HISDIO_REG_FUNC1_FIFO, send_buf, len);
+            if (ret < 0) {
+                oal_print_hi11xx_log(HI11XX_LOG_ERR, "write error:%d\n", ret);
+            }
+            kfree(send_buf);
+
+            return ret;
+        }
     }
-
-    send_buf = (uint8_t *)kmalloc(len, GFP_KERNEL);
-    if (send_buf == NULL) {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "malloc failed, len %d\n", len);
-        return -OAL_ENOMEM;
-    }
-
-    if (memcpy_s(send_buf, len, buf, len) != EOK) {
-        kfree(send_buf);
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "memcpy_s failed\n");
-        return -OAL_EINVAL;
-    }
-
-    ret = oal_sdio_writesb(func, HISDIO_REG_FUNC1_FIFO, send_buf, len);
-    if (ret < 0) {
-        oal_print_hi11xx_log(HI11XX_LOG_ERR, "write error:%d\n", ret);
-    }
-
-    kfree(send_buf);
-
-    return ret;
 }
 #endif
 
@@ -1255,7 +1276,7 @@ OAL_STATIC int32_t oal_sdio_patch_writesb(struct oal_sdio *pst_sdio, uint8_t *bu
 
     oal_sdio_claim_host(pst_sdio);
 #ifdef CONFIG_VMAP_STACK
-    ret = oal_sdio_writesb_by_heap(func, buf, len);
+    ret = oal_sdio_writesb_by_heap(pst_sdio, buf, len);
 #else
     ret = oal_sdio_writesb(func, HISDIO_REG_FUNC1_FIFO, buf, len);
 #endif
@@ -2628,6 +2649,34 @@ OAL_STATIC void oal_sdio_credit_info_init(struct oal_sdio *hi_sdio)
     oal_spin_lock_init(&hi_sdio->sdio_credit_info.credit_lock);
 }
 
+int32_t oal_sdio_malloc_buffer(struct oal_sdio *hi_sdio)
+{
+    hi_sdio->sdio_align_buff = kzalloc(HISDIO_BLOCK_SIZE, GFP_KERNEL);
+    if (hi_sdio->sdio_align_buff == NULL) {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "alloc sdio_align_buff size %d failed\n", HISDIO_BLOCK_SIZE);
+        return -OAL_ENOMEM;
+    }
+
+#ifdef CONFIG_VMAP_STACK
+    hi_sdio->sdio_send_buff = kzalloc(HISDIO_SEND_SIZE, GFP_KERNEL);
+    if (hi_sdio->sdio_send_buff == NULL) {
+        kfree(hi_sdio->sdio_align_buff);
+        hi_sdio->sdio_align_buff = NULL;
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "alloc sdio_send_buff size %d failed\n", HISDIO_SEND_SIZE);
+        return -OAL_ENOMEM;
+    }
+#endif
+    return OAL_SUCC;
+}
+
+void oal_sdio_free_buffer(struct oal_sdio *hi_sdio)
+{
+#ifdef CONFIG_VMAP_STACK
+    kfree(hi_sdio->sdio_send_buff);
+#endif
+    kfree(hi_sdio->sdio_align_buff);
+}
+
 struct oal_sdio *oal_sdio_init_module()
 {
 #ifdef CONFIG_HISDIO_H2D_SCATT_LIST_ASSEMBLE
@@ -2697,9 +2746,8 @@ struct oal_sdio *oal_sdio_init_module()
         goto failed_sdio_write_sg_alloc;
     }
 
-    hi_sdio->sdio_align_buff = kzalloc(HISDIO_BLOCK_SIZE, GFP_KERNEL);
-    if (hi_sdio->sdio_align_buff == NULL) {
-        goto failed_sdio_align_buff_alloc;
+    if (oal_sdio_malloc_buffer(hi_sdio) < 0) {
+        goto failed_sdio_buff_alloc;
     }
 #ifdef CONFIG_HISDIO_H2D_SCATT_LIST_ASSEMBLE
     tx_scatt_buff_len = HISDIO_HOST2DEV_SCATT_SIZE + HISDIO_HOST2DEV_SCATT_MAX *
@@ -2738,9 +2786,9 @@ failed_sdio_rx_scatt_buff_alloc:
 #endif
 #ifdef CONFIG_HISDIO_H2D_SCATT_LIST_ASSEMBLE
 failed_sdio_tx_scatt_buff_alloc:
-    kfree(hi_sdio->sdio_align_buff);
+    oal_sdio_free_buffer(hi_sdio);
 #endif
-failed_sdio_align_buff_alloc:
+failed_sdio_buff_alloc:
     kfree(hi_sdio->scatt_info[SDIO_WRITE].sglist);
 failed_sdio_write_sg_alloc:
     kfree(hi_sdio->scatt_info[SDIO_READ].sglist);
@@ -2766,7 +2814,7 @@ void oal_sdio_exit_module(struct oal_sdio *hi_sdio)
 #ifdef CONFIG_HISDIO_H2D_SCATT_LIST_ASSEMBLE
     oal_mem_dma_blockfree(hi_sdio->tx_scatt_buff.buff);
 #endif
-    kfree(hi_sdio->sdio_align_buff);
+    oal_sdio_free_buffer(hi_sdio);
     kfree(hi_sdio->scatt_info[SDIO_WRITE].sglist);
     kfree(hi_sdio->scatt_info[SDIO_READ].sglist);
     kfree(hi_sdio->sdio_extend);

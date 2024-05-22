@@ -115,7 +115,15 @@ static int bq40z50_get_battery_temp(void)
 		temp_c = di->cache.temp;
 	} else {
 		temp_c = (int)temp_k / POWER_BASE_DEC - BQ40Z50_BATT_TEMP_ZERO;
-		di->cache.temp = temp_c;
+		if (((temp_c <= BQ40Z50_BATT_TEMP_ABNORMAL_LOW) ||
+			(temp_c >= BQ40Z50_BATT_TEMP_ABNORMAL_HIGH)) &&
+			(di->abnormal_temp_count < BQ40Z50_BATT_TEMP_ABNORMAL_MAX_CNT)) {
+			di->abnormal_temp_count++;
+			temp_c = di->cache.temp;
+		} else {
+			di->abnormal_temp_count = 0;
+			di->cache.temp = temp_c;
+		}
 	}
 
 	hwlog_info("battery_temp=%d\n", temp_c);

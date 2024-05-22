@@ -323,6 +323,31 @@ void kbase_mem_pool_set_max_size(struct kbase_mem_pool *pool, size_t max_size)
 	kbase_mem_pool_unlock(pool);
 }
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+/**
+ * kbase_mem_pool_trylock - Try to lock a memory pool
+ * @pool: Memory pool to lock
+ * Return: Return true if the lock is obtained and reclaim_count is increased
+ *         Return false otherwise
+ */
+static bool kbase_mem_pool_trylock(struct kbase_mem_pool *pool)
+{
+	if (likely(kbase_mem_pool_is_empty(pool)))
+		return false;
+
+	if (unlikely(atomic_inc_return(&pool->reclaim_count) > 1)) {
+		atomic_dec(&pool->reclaim_count);
+		return false;
+	}
+
+	if (!spin_trylock(&pool->pool_lock)) {
+		atomic_dec(&pool->reclaim_count);
+		return false;
+	}
+
+	return true;
+}
+#endif
 
 static unsigned long kbase_mem_pool_reclaim_count_objects(struct shrinker *s,
 		struct shrink_control *sc)
@@ -332,13 +357,25 @@ static unsigned long kbase_mem_pool_reclaim_count_objects(struct shrinker *s,
 
 	pool = container_of(s, struct kbase_mem_pool, reclaim);
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (!kbase_mem_pool_trylock(pool))
+		return 0;
+#else
 	kbase_mem_pool_lock(pool);
+#endif
 	if (pool->dont_reclaim && !pool->dying) {
 		kbase_mem_pool_unlock(pool);
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		atomic_dec(&pool->reclaim_count);
+#endif
 		return 0;
 	}
 	pool_size = kbase_mem_pool_size(pool);
 	kbase_mem_pool_unlock(pool);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	atomic_dec(&pool->reclaim_count);
+#endif
 
 	return pool_size;
 }
@@ -351,9 +388,18 @@ static unsigned long kbase_mem_pool_reclaim_scan_objects(struct shrinker *s,
 
 	pool = container_of(s, struct kbase_mem_pool, reclaim);
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (!kbase_mem_pool_trylock(pool))
+		return 0;
+#else
 	kbase_mem_pool_lock(pool);
+#endif
+
 	if (pool->dont_reclaim && !pool->dying) {
 		kbase_mem_pool_unlock(pool);
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+		atomic_dec(&pool->reclaim_count);
+#endif
 		return 0;
 	}
 
@@ -362,6 +408,10 @@ static unsigned long kbase_mem_pool_reclaim_scan_objects(struct shrinker *s,
 	freed = kbase_mem_pool_shrink_locked(pool, sc->nr_to_scan);
 
 	kbase_mem_pool_unlock(pool);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	atomic_dec(&pool->reclaim_count);
+#endif
 
 	pool_dbg(pool, "reclaim freed %ld pages\n", freed);
 
@@ -416,6 +466,10 @@ int kbase_mem_pool_init(struct kbase_mem_pool *pool,
 	pool->reclaim.batch = 0;
 #endif
 	register_shrinker(&pool->reclaim);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	atomic_set(&pool->reclaim_count, 0);
+#endif
 
 	pool_dbg(pool, "initialized\n");
 

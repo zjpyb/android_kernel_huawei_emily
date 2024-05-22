@@ -210,9 +210,12 @@ static void entry_set_pte(u64 *entry, phys_addr_t phy)
 	page_table_entry_set(entry, (phy & ~0xFFF) | ENTRY_IS_PTE);
 }
 
-static void entry_invalidate(u64 *entry)
+static void entries_invalidate(u64 *entry, u32 count)
 {
-	page_table_entry_set(entry, ENTRY_IS_INVAL);
+	u32 i;
+
+	for (i = 0; i < count; i++)
+		page_table_entry_set(entry + i, ENTRY_IS_INVAL);
 }
 
 static struct kbase_mmu_mode const lpae_mode = {
@@ -225,7 +228,7 @@ static struct kbase_mmu_mode const lpae_mode = {
 	.entry_set_ate = entry_set_ate,
 	.entry_set_ate_scramble_bit = entry_set_ate_scramble_bit,
 	.entry_set_pte = entry_set_pte,
-	.entry_invalidate = entry_invalidate,
+	.entries_invalidate = entries_invalidate,
 	.flags = 0
 };
 

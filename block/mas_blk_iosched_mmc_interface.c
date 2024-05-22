@@ -111,9 +111,14 @@ static inline void __cfi_mmc_mq_req_timeout_handler(struct request *req)
 	mmc_mq_req_timeout_handler(req);
 }
 
-static inline void __cfi_mmc_mq_ctx_put(void)
+static inline void __cfi_mmc_mq_ctx_put(struct request_queue *q)
 {
-	mmc_mq_ctx_put();
+	mmc_mq_ctx_put(q);
+}
+
+static inline struct blk_mq_ctx *__cfi_mmc_mq_ctx_get(struct request_queue *q)
+{
+	return mmc_mq_ctx_get(q);
 }
 
 static inline void __cfi_mmc_mq_hctx_get_by_req(
@@ -183,6 +188,7 @@ struct blk_queue_ops mas_mmc_blk_queue_ops = {
 	.mq_req_requeue_fn = __cfi_mmc_mq_req_requeue,
 	.mq_req_timeout_fn = __cfi_mmc_mq_req_timeout_handler,
 	.mq_ctx_put_fn = __cfi_mmc_mq_ctx_put,
+	.mq_ctx_get_fn = __cfi_mmc_mq_ctx_get,
 	.mq_hctx_get_by_req_fn = __cfi_mmc_mq_hctx_get_by_req,
 	.mq_tag_get_fn = __cfi_mmc_mq_tag_get,
 	.mq_tag_put_fn = __cfi_mmc_mq_tag_put,

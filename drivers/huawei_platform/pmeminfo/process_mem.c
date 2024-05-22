@@ -22,6 +22,7 @@
 struct proc_meminfo {
 	char task_name[MAX_LENGTH];
 	int task_size;
+	pid_t pid;
 	struct list_head node_task;
 };
 
@@ -86,6 +87,7 @@ static struct proc_meminfo *process_info_add(const struct task_struct *task,
 	if (dump_info && task) {
 		strcpy(dump_info->task_name, task->comm);
 		dump_info->task_size = tsize;
+		dump_info->pid = task->pid;
 	}
 	return dump_info;
 }
@@ -157,8 +159,9 @@ t_unlock:
 		if (!temp_info)
 			continue;
 		if (count++ < top_n) {
-			seq_printf(m, "%s ", temp_info->task_name);
-			seq_printf(m, "%dKB\n", temp_info->task_size);
+			seq_printf(m, "pid:%d ", temp_info->pid);
+			seq_printf(m, "comm:%s ", temp_info->task_name);
+			seq_printf(m, "size:%dKB\n", temp_info->task_size);
 		}
 		kmem_cache_free(process_cache, temp_info);
 		temp_info = NULL;

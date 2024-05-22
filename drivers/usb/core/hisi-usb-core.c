@@ -43,8 +43,8 @@ int usb_device_read_mutex_trylock(void)
 
 int usb_device_read_usb_trylock_device(struct usb_device *udev)
 {
-	/* wait 3 seconds for usb device enumerate */
-	unsigned long jiffies_expire = jiffies + 3 * HZ;
+	/* wait 6 seconds for usb device enumerate */
+	unsigned long jiffies_expire = jiffies + 6 * HZ;
 
 	if (!udev)
 		return -EFAULT;

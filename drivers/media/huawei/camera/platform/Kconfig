@@ -811,6 +811,16 @@ config HUAWEI_CAMERA_USE_GC2375INE
     default n
     depends on HUAWEI_CAMERA
 
+config HUAWEI_CAMERA_USE_GC2375KOB2K
+    bool "gc2375KOB2K"
+    default n
+    depends on HUAWEI_CAMERA
+
+config HUAWEI_CAMERA_USE_GC2375KOB2KCXT
+    bool "gc2375KOB2KCXT"
+    default n
+    depends on HUAWEI_CAMERA
+
 config HUAWEI_CAMERA_USE_GC2375INEFRONT
     bool "gc2375INEFRONT"
     default n

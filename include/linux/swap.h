@@ -150,7 +150,11 @@ struct zone;
  * We always assume that blocks are of size PAGE_SIZE.
  */
 struct swap_extent {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct list_head list;
+#else
+	struct rb_node rb_node;
+#endif
 	pgoff_t start_page;
 	pgoff_t nr_pages;
 	sector_t start_block;
@@ -247,9 +251,16 @@ struct swap_info_struct {
 	unsigned int inuse_pages;	/* number of those currently in use */
 	unsigned int cluster_next;	/* likely index for next allocation */
 	unsigned int cluster_nr;	/* countdown to next cluster search */
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+	unsigned int __percpu *cluster_next_cpu; /*percpu index for next allocation */
+#endif
 	struct percpu_cluster __percpu *percpu_cluster; /* per cpu's swap location */
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	struct swap_extent *curr_swap_extent;
 	struct swap_extent first_swap_extent;
+#else
+	struct rb_root swap_extent_root;/* root of the swap extent rbtree */
+#endif
 	struct block_device *bdev;	/* swap device or bdev of swap file */
 	struct file *swap_file;		/* seldom referenced */
 	unsigned int old_block_size;	/* seldom referenced */
@@ -316,7 +327,22 @@ void *workingset_eviction(struct page *page, struct mem_cgroup *target_memcg);
 #endif
 void workingset_activation(struct page *page);
 void workingset_refault(struct page *page, void *shadow);
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 void workingset_update_node(struct radix_tree_node *node, void *private);
+#else
+
+/* Do not use directly, use workingset_lookup_update */
+void workingset_update_node(struct radix_tree_node *node);
+
+/* Returns workingset_update_node() if the mapping has shadow entries. */
+#define workingset_lookup_update(mapping)                              \
+({                                                                     \
+	radix_tree_update_node_t __helper = workingset_update_node;     \
+	if (dax_mapping(mapping) || shmem_mapping(mapping))             \
+		__helper = NULL;                                        \
+	__helper;                                                       \
+})
+#endif
 
 /* linux/mm/page_alloc.c */
 extern unsigned long totalram_pages;

@@ -39,6 +39,15 @@ HWLOG_REGIST();
 #define LV_SMOOTH_I_TH             (-400) /* -400*2.5 = -1000 mA */
 #define CC_THRESHOLD               450
 #define NODE_NAME_MAX              20
+#define RT9426_FC_LOW_CURR_DELTA   100
+#define RT9426_FC_LOW_CURR_TH      30
+#define RT9426_FC_ITH_SPD          40
+#define RT9426_FC_ITH_FACTOR       4
+#define RT9426_FC_VTH_FLAG_A       5
+#define RT9426_FC_VTH_FLAG_B       3600
+#define RT9426_MASK_HIGH_BYTE      0xff00
+#define RT9426_MASK_BYTE           0xff
+#define RT9426_BOOST_PERIOD        5000 /* 5s */
 
 struct rt9426_platform_data {
 	int soc_offset_size[RT9426_SOC_OFFSET_SIZE];
@@ -72,6 +81,7 @@ struct rt9426_platform_data {
 	u32 fd_vth;
 	u32 fcc[RT9426_MAX_VTERM_SIZE];
 	u32 fc_vth[RT9426_MAX_VTERM_SIZE];
+	int fc_low_curr_vth[RT9426_MAX_VTERM_SIZE];
 
 	u32 temp_source;
 	u32 volt_source;
@@ -91,6 +101,7 @@ struct rt9426_platform_data {
 
 struct rt9426_chip {
 	struct i2c_client *i2c;
+	struct delayed_work fc_low_dynamic_setting_work;
 	struct device *dev;
 	struct rt9426_platform_data *pdata;
 	struct power_supply *fg_psy;
@@ -142,6 +153,7 @@ enum {
 };
 
 static struct rt9426_chip *g_rt9426_chip;
+static bool boost_status = false;
 
 static int rt9426_read_device(void *client, u32 reg, int len, void *dst)
 {
@@ -3167,6 +3179,13 @@ static int rt9426_parse_sub_param(struct device *dev,
 			pdata->ocv_vterm_size);
 	}
 
+	ret = power_dts_read_u32_array(power_dts_tag(HWLOG_TAG), child_node,
+		"rt,fc_low_curr_vth", pdata->fc_low_curr_vth, pdata->ocv_vterm_size);
+	if (ret < 0) {
+		dev_notice(dev, "no fc_vth property, fc_low_dynamic not supported\n");
+		memset32(pdata->fc_low_curr_vth, 0, pdata->ocv_vterm_size); /* For non-JSC products, default: 0. */
+	}
+
 	ret = of_property_read_u32_array(child_node, "rt,dtsi_version",
 		pdata->dtsi_version, RT9426_DTSI_VER_SIZE);
 	if (ret < 0)
@@ -3628,6 +3647,80 @@ update:
 	rt9426_apply_calibration_para(chip, RT9426_GAIN_DEFAULT_VAL, chip->c_gain, chip->v_gain);
 }
 
+static int rt9426_get_fc_th(struct rt9426_chip *chip)
+{
+	int fc_th;
+
+	if (!chip)
+		return 0;
+
+	mutex_lock(&chip->update_lock);
+	rt9426_read_page_cmd(chip, RT9426_PAGE_5);
+	fc_th = rt9426_reg_read_word(chip->i2c, RT9426_REG_SWINDOW3);
+	mutex_unlock(&chip->update_lock);
+
+	return fc_th;
+}
+
+static void rt9426_get_dynamic_boost_para(struct rt9426_chip *chip, int *fc_vth)
+{
+	int cur = rt9426_get_display_data(chip, RT9426_DISPLAY_IBAT);
+	int vol = rt9426_get_display_data(chip, RT9426_DISPLAY_VBAT);
+	int fc_ith = chip->pdata->fc_ith * RT9426_FC_ITH_FACTOR * chip->pdata->rs_ic_setting / chip->pdata->rs_schematic;
+
+	/* handling dynamic iterm setting only when charging */
+	if ((cur <= fc_ith + RT9426_FC_ITH_SPD + RT9426_FC_LOW_CURR_DELTA) &&
+		(cur > 0) && (vol <= chip->pdata->fc_vth[chip->ocv_index] * RT9426_FC_VTH_FLAG_A + RT9426_FC_VTH_FLAG_B) &&
+		(vol > chip->pdata->fc_vth[chip->ocv_index] * RT9426_FC_VTH_FLAG_A + RT9426_FC_VTH_FLAG_B - RT9426_FC_LOW_CURR_TH)) {
+		/* Need to increase the voltage, fc_vth use low_fc_vth. */
+		*fc_vth = chip->pdata->fc_low_curr_vth[chip->ocv_index];
+		boost_status = true;
+	}
+}
+
+static void rt9426_set_dynamic_boost_para(struct rt9426_chip *chip, int fc_vth)
+{
+	int cur = rt9426_get_display_data(chip, RT9426_DISPLAY_IBAT);
+	int vol = rt9426_get_display_data(chip, RT9426_DISPLAY_VBAT);
+	int fc_th_old = rt9426_get_fc_th(chip);
+	int fc_th_dynamic = (fc_vth & RT9426_MASK_BYTE) | (fc_th_old & RT9426_MASK_HIGH_BYTE);
+
+	/* charging: The voltage is always boosted, and the default parameters are not restored. */
+	/* no charge: Restoring from Boost Parameters to Default Parameters. */
+	if (!((fc_th_dynamic == fc_th_old) || ((boost_status && fc_vth == chip->pdata->fc_vth[chip->ocv_index])))) {
+		mutex_lock(&chip->update_lock);
+		rt9426_write_page_cmd(chip, RT9426_PAGE_5);
+		rt9426_reg_write_word(chip->i2c, RT9426_REG_SWINDOW3, fc_th_dynamic);
+		mutex_unlock(&chip->update_lock);
+		dev_info(chip->dev, "%s change fc_th =%d.\n", __func__, fc_vth);
+		dev_info(chip->dev, "%s low_curr_vth change: cur=%d, (0,%d]\n", __func__, cur,
+			chip->pdata->fc_ith * RT9426_FC_ITH_FACTOR * chip->pdata->rs_ic_setting /
+			chip->pdata->rs_schematic + RT9426_FC_ITH_SPD + RT9426_FC_LOW_CURR_DELTA);
+		dev_info(chip->dev, "%s low_curr_vth change: vol=%d, (%d,%d]\n", __func__, vol,
+			chip->pdata->fc_vth[chip->ocv_index] * RT9426_FC_VTH_FLAG_A + RT9426_FC_VTH_FLAG_B - RT9426_FC_LOW_CURR_TH,
+			chip->pdata->fc_vth[chip->ocv_index] * RT9426_FC_VTH_FLAG_A + RT9426_FC_VTH_FLAG_B);
+	}
+}
+
+static void rt9426_fc_low_dynamic_setting_work(struct work_struct *work)
+{
+	struct rt9426_chip *chip = g_rt9426_chip;
+	int regval, fc_vth;
+
+	/* Only jsc supports fc_low_curr_vth. Non-JSC product transfer-out work cycle */
+	if (!chip || !chip->pdata->fc_low_curr_vth[chip->ocv_index])
+		return;
+	/* default vth */
+	fc_vth = chip->pdata->fc_vth[chip->ocv_index];
+	regval = rt9426_reg_read_word(chip->i2c, RT9426_REG_FLAG1);
+	if (regval & BIT(0))
+		boost_status = false;
+
+	rt9426_get_dynamic_boost_para(chip, &fc_vth);
+	rt9426_set_dynamic_boost_para(chip, fc_vth);
+	schedule_delayed_work(&chip->fc_low_dynamic_setting_work, msecs_to_jiffies(RT9426_BOOST_PERIOD));
+}
+
 static int rt9426_i2c_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *id)
 {
@@ -3668,6 +3761,7 @@ static int rt9426_i2c_probe(struct i2c_client *i2c,
 	g_rt9426_chip = chip;
 
 	mutex_init(&chip->var_lock);
+	mutex_init(&chip->update_lock);
 	i2c_set_clientdata(i2c, chip);
 	rt9426_apply_sense_resistor(chip);
 
@@ -3725,6 +3819,11 @@ static int rt9426_i2c_probe(struct i2c_client *i2c,
 	rt9426_init_calibration_para(chip);
 	coul_cali_ops_register(&rt9426_cali_ops);
 	rt9426_dump_register(chip);
+
+	INIT_DELAYED_WORK(&chip->fc_low_dynamic_setting_work,
+		rt9426_fc_low_dynamic_setting_work);
+	schedule_delayed_work(&chip->fc_low_dynamic_setting_work,
+		msecs_to_jiffies(0));
 	dev_info(chip->dev, "chip ver = 0x%04x\n", chip->ic_ver);
 	return 0;
 }
@@ -3735,6 +3834,7 @@ static int rt9426_i2c_remove(struct i2c_client *i2c)
 
 	dev_info(chip->dev, "%s\n", __func__);
 	g_rt9426_chip = NULL;
+	cancel_delayed_work(&chip->fc_low_dynamic_setting_work);
 	rt9426_irq_enable(chip, false);
 	rt9426_irq_deinit(chip);
 	mutex_destroy(&chip->var_lock);

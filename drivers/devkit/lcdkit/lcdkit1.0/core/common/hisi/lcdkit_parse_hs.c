@@ -90,6 +90,7 @@ void lcdkit_parse_platform_dts(struct device_node* np,  void* pdata)
 
 	OF_PROPERTY_READ_U64_RETURN(np, "hw,lcdkit-panel-pxl-clk", &pinfo->pxl_clk_rate);
 	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-panel-pxl-clk-div", &pinfo->pxl_clk_rate_div);
+	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-bypass-dvfs", &pinfo->bypass_dvfs);
 	OF_PROPERTY_READ_U8_RETURN(np, "hw,lcdkit-panel-dirt-updt-support", &pinfo->dirty_region_updt_support);
 	OF_PROPERTY_READ_U8_RETURN(np, "hw,lcdkit-panel-dsi-upt-support", &pinfo->dsi_bit_clk_upt_support);
 	if(pinfo->dsi_bit_clk_upt_support)
@@ -262,6 +263,7 @@ void lcdkit_parse_platform_dts(struct device_node* np,  void* pdata)
 	OF_PROPERTY_READ_DIRTYREGION_INFO_RETURN(np, "hw,lcdkit-dirt-bott-start", &pinfo->dirty_region_info.bottom_start);
 
 	OF_PROPERTY_READ_U8_RETURN(np, "hw,lcdkit-panel-bl-type", &lcdkit_info.panel_infos.bl_type);
+	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-delay-bf-lp00", &pinfo->delay_bf_lp00);
 	if (lcdkit_info.panel_infos.snd_cmd_before_frame_support){
 		pinfo->snd_cmd_before_frame_support = 1;
 	}else{

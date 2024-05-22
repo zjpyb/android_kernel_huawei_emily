@@ -510,10 +510,12 @@ void add_dpi_rule(const char *data)
 }
 
 /* process the cmd, opt not used currently */
-static void _proc_cmd(int cmd, int opt, const char *data)
+static void _proc_cmd(int cmd, int opt, const char *data, u32 len)
 {
-	dpi_mark_rule_t *p_dmr = (dpi_mark_rule_t *)data;
+	dpi_mark_rule_t *p_dmr = NULL;
 
+	if (len >= sizeof(dpi_mark_rule_t))
+		p_dmr = (dpi_mark_rule_t *)data;
 	switch (cmd) {
 	case NETLINK_SET_RULE_TO_KERNEL:
 		add_dpi_rule(data);
@@ -526,15 +528,27 @@ static void _proc_cmd(int cmd, int opt, const char *data)
 		g_mark_tag = 0;
 		break;
 	case NETLINK_MPLK_BIND_NETWORK:
+		if (p_dmr == NULL) {
+			pr_info("dpi_hw_hook proc_cmd NETLINK_MPLK_BIND_NETWORK p_dmr is null\n");
+			return;
+		}
 		mplk_add_nw_bind(p_dmr->dmr_app_uid, p_dmr->dmr_mplk_netid);
 		break;
 	case NETLINK_MPLK_UNBIND_NETWORK:
+		if (p_dmr == NULL) {
+			pr_info("dpi_hw_hook proc_cmd NETLINK_MPLK_UNBIND_NETWORK p_dmr is null\n");
+			return;
+		}
 		mplk_del_nw_bind(p_dmr->dmr_app_uid);
 		break;
 	case NETLINK_MPLK_RESET_SOCKET:
 		pr_info("mplk not support reset command now\n");
 		break;
 	case NETLINK_MPLK_CLOSE_SOCKET:
+		if (p_dmr == NULL) {
+			pr_info("dpi_hw_hook proc_cmd NETLINK_MPLK_CLOSE_SOCKET p_dmr is null\n");
+			return;
+		}
 		mplk_close_socket_by_uid(p_dmr->dmr_mplk_strategy,
 			p_dmr->dmr_app_uid);
 		break;
@@ -562,10 +576,13 @@ static void kernel_ntl_receive(struct sk_buff *__skb)
 				g_uspa_pid = nlh->nlmsg_pid;
 			} else if (nlh->nlmsg_type == NETLINK_UNREG_TO_KERNEL) {
 				g_uspa_pid = 0;
+			} else if (nlh->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(int) + sizeof(char)) {
+				pr_info("dpi_hw_hook kernel_ntl_receive nlh->nlmsg_len=%d is too short\n", nlh->nlmsg_len);
+				return;
 			} else {
 				hmsg = (struct tag_hw_msg2knl *)nlh;
 				_proc_cmd(nlh->nlmsg_type, hmsg->opt,
-					(char *)&(hmsg->data[0]));
+					(char *)&(hmsg->data[0]), nlh->nlmsg_len - sizeof(struct nlmsghdr) - sizeof(int));
 			}
 		}
 	}

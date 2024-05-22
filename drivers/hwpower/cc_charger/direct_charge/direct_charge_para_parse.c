@@ -403,6 +403,8 @@ static void dc_parse_basic_para(struct device_node *np,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"compensate_r", (u32 *)&di->compensate_r, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"all_stage_compensate_r_en", (u32 *)&di->all_stage_compensate_r_en, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"cc_protect", &di->cc_protect, 0);
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -467,7 +469,8 @@ static void dc_parse_multi_ic_para(struct device_node *np,
 		"use_higher_vbat", (u32 *)&di->use_higher_vbat, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"support_select_temp", &di->multi_ic_mode_para.support_select_temp, 0);
-
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"use_buck_as_aux_sc", &di->multi_ic_mode_para.use_buck_as_aux_sc, 0);
 	multi_ic_parse_check_para(np, &di->multi_ic_check_info);
 }
 

@@ -51,6 +51,7 @@ static const struct dynamic_mem_config g_dyn_mem_config[] = {
 	{ TEE_SECIDENTIFICATION3, SEC_EID },
 	{ TEE_SERVICE_HIAI, SEC_HIAI },
 	{ TEE_SERVICE_HIAI_TINY, SEC_HIAI },
+	{ TEE_SERVICE_VCODEC, SEC_DRM_TEE },
 };
 
 static struct dynamic_mem_list g_dynamic_mem_list;

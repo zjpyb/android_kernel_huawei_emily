@@ -66,6 +66,7 @@ struct sc200x_device_info {
 	unsigned int fcp_support;
 	unsigned int scp_support;
 	unsigned int pd_support;
+	bool shipmode_enable;
 };
 
 /* reg=0x11, r, device type */

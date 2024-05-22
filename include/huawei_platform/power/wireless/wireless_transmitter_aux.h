@@ -113,6 +113,7 @@ enum wltx_acc_dev_state {
 	WL_ACC_DEV_STATE_ONLINE,
 	WL_ACC_DEV_STATE_PING_SUCC,
 	WL_ACC_DEV_STATE_PING_TIMEOUT,
+	WL_ACC_DEV_STATE_PING_ERROR,
 	WL_ACC_DEV_STATE_END,
 };
 
@@ -239,5 +240,6 @@ struct wltx_acc_dev {
 };
 
 extern int wltx_aux_ops_register(struct wltx_dev_ops *ops);
+void wltx_aux_report_acc_info(int state);
 
 #endif /* _WIRELESS_TRANSMITTER_AUX_H_ */

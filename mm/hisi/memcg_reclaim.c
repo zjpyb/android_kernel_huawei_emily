@@ -505,8 +505,11 @@ static void get_scan_count_hyperhold(struct pglist_data *pgdat,
 	unsigned long pgdatfile;
 
 #ifdef CONFIG_DIRECT_SWAPPINESS
+	/* Set kswapd's swappiness to 0 if direct reclaim is happening. */
 	if (!current_is_kswapd())
 		swappiness = get_direct_swappiness();
+	else if (is_in_direct_reclaim())
+		swappiness = 0;
 
 	pgdatfile = node_page_state(pgdat, NR_ACTIVE_FILE) +
 		node_page_state(pgdat, NR_INACTIVE_FILE);
@@ -662,6 +665,8 @@ static void shrink_anon(struct pglist_data *pgdat,
 	unsigned long nr_node_inactive = lruvec_lru_size(
 			node_lruvec(pgdat), LRU_INACTIVE_ANON, MAX_NR_ZONES);
 
+	if (nr[LRU_ACTIVE_ANON] == 0 && nr[LRU_INACTIVE_ANON] == 0)
+		return;
 	while ((memcg = get_next_memcg(memcg))) {
 		struct lruvec *lruvec = mem_cgroup_lruvec(pgdat, memcg);
 
@@ -1227,7 +1232,7 @@ static bool get_memcg_anon_refault_status(struct mem_cgroup *memcg,
  * in total cost -- which contains file and anon's cost.
  * Return True if area anon refault is too hard and skip zswapd shrink.
  */
-static bool get_area_anon_refault_status(struct pg_data_t *pgdat)
+static bool get_area_anon_refault_status(pg_data_t *pgdat)
 {
 	struct lruvec *lruvec = node_lruvec(pgdat);
 	int ratio;

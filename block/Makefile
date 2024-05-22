@@ -15,8 +15,7 @@ obj-$(CONFIG_MAS_BLK) += mas_blk_core.o mas_blk_dump.o mas_blk_latency.o mas_blk
 					mas_blk_busy_idle_interface.o mas_blk_core_interface.o mas_blk_dump_interface.o \
 					mas_blk_flush_interface.o mas_blk_latency_interface.o mas_blk_mq_tag.o \
 					mas_blk_unistore_interface.o mas_blk_tz.o dsm_block.o
-obj-$(CONFIG_MAS_UNISTORE_PRESERVE) += mas_blk_unistore.o mas_blk_unistore_register.o \
-					mas_blk_unistore_sysfs.o mas_blk_unistore_partition_sysfs.o
+obj-$(CONFIG_MAS_UNISTORE_PRESERVE) += mas_blk_unistore.o mas_blk_unistore_register.o mas_blk_unistore_sysfs.o
 obj-$(CONFIG_MMC_MQ_CQ_HCI) += mas_blk_iosched_mmc_mq.o mas_blk_iosched_mmc_interface.o mas_blk_mmc_mq_tag.o
 obj-$(CONFIG_MAS_BLK_DEBUG) += mas_blk_ft.o
 obj-$(CONFIG_MAS_BKOPS) += mas_bkops_core.o mas_bkops_sysfs.o mas_bkops_core_interface.o \

@@ -143,6 +143,8 @@
 #define ROAM_REENABLE_TIMEOUT_MS  120000 /* bssid驻留需求下发漫游关闭, 2分钟后使能漫游 */
 hmac_tx_pkts_stat_stru g_host_tx_pkts;
 
+uint8_t g_p2p_go_max_user_num = 0;
+
 typedef struct {
     wlan_protocol_enum_uint8 en_protocol_mode; /* wid枚举 */
     uint8_t auc_resv[NUM_3_BYTES];
@@ -265,9 +267,8 @@ int8_t *hmac_config_b_w2string(uint32_t b_w)
 }
 
 
-OAL_STATIC uint32_t hmac_config_alloc_event(mac_vap_stru *pst_mac_vap,
-    hmac_to_dmac_syn_type_enum_uint8 en_syn_type, hmac_to_dmac_cfg_msg_stru **ppst_syn_msg,
-    frw_event_mem_stru **ppst_event_mem, uint16_t us_len)
+OAL_STATIC uint32_t hmac_config_alloc_event(mac_vap_stru *pst_mac_vap, hmac_to_dmac_syn_type_enum_uint8 en_syn_type,
+    hmac_to_dmac_cfg_msg_stru **ppst_syn_msg, frw_event_mem_stru **ppst_event_mem, uint16_t us_len)
 {
     frw_event_mem_stru *pst_event_mem;
     frw_event_stru *pst_event = NULL;
@@ -294,10 +295,8 @@ OAL_STATIC uint32_t hmac_config_alloc_event(mac_vap_stru *pst_mac_vap,
 }
 
 
-uint32_t hmac_config_send_event(mac_vap_stru *pst_mac_vap,
-                                wlan_cfgid_enum_uint16 en_cfg_id,
-                                uint16_t us_len,
-                                uint8_t *puc_param)
+uint32_t hmac_config_send_event(mac_vap_stru *pst_mac_vap, wlan_cfgid_enum_uint16 en_cfg_id,
+                                uint16_t us_len, uint8_t *puc_param)
 {
     uint32_t ret;
     frw_event_mem_stru *pst_event_mem = NULL;
@@ -383,9 +382,8 @@ uint32_t hmac_config_h2d_send_app_ie(mac_vap_stru *mac_vap, oal_app_ie_stru *app
 
     event = frw_get_event_stru(event_mem);
     frw_event_hdr_init(&(event->st_event_hdr), FRW_EVENT_TYPE_WLAN_CTX,
-                       DMAC_WLAN_CTX_EVENT_SUB_TYPE_APP_IE_H2D, sizeof(dmac_tx_event_stru),
-                       FRW_EVENT_PIPELINE_STAGE_1, mac_vap->uc_chip_id, mac_vap->uc_device_id,
-                       mac_vap->uc_vap_id);
+        DMAC_WLAN_CTX_EVENT_SUB_TYPE_APP_IE_H2D, sizeof(dmac_tx_event_stru),
+        FRW_EVENT_PIPELINE_STAGE_1, mac_vap->uc_chip_id, mac_vap->uc_device_id, mac_vap->uc_vap_id);
 
     memset_s(oal_netbuf_cb(netbuf_app_ie), OAL_TX_CB_LEN, 0, OAL_TX_CB_LEN);
 
@@ -645,6 +643,9 @@ OAL_STATIC uint32_t hmac_config_add_vap_uapsd_is_enable(mac_cfg_add_vap_param_st
 
 OAL_STATIC uint32_t hmac_get_p2p_max_user(void)
 {
+    if (g_p2p_go_max_user_num != 0) {
+        return g_p2p_go_max_user_num;
+    }
     return g_wlan_spec_cfg->p2p_go_max_user_num;
 }
 
@@ -2447,6 +2448,19 @@ uint32_t hmac_config_get_monitor(mac_vap_stru *pst_mac_vap, uint16_t *pus_len, u
     return OAL_SUCC;
 }
 #endif
+uint32_t hmac_config_set_pt_mcast(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param)
+{
+    hmac_vap_stru *pst_hmac_vap;
+
+    pst_hmac_vap = (hmac_vap_stru *)mac_res_get_hmac_vap(pst_mac_vap->uc_vap_id);
+    if (pst_hmac_vap == NULL) {
+        oam_error_log0(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{hmac_config_set_pt_mcast::pst_hmac_vap null.}");
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+
+    pst_hmac_vap->en_pt_mcast_switch = *puc_param;
+    return OAL_SUCC;
+}
 
 
 uint32_t hmac_config_set_prot_mode(mac_vap_stru *pst_mac_vap, uint16_t us_len, uint8_t *puc_param)
@@ -3100,6 +3114,12 @@ OAL_STATIC uint8_t hmac_set_channel_160m_invalid(mac_vap_stru *pst_mac_vap, mac_
         (pst_prot_param->en_bandwidth >= WLAN_BAND_WIDTH_160PLUSPLUSPLUS) &&
         (pst_mac_vap->en_vap_mode == WLAN_VAP_MODE_BSS_AP) && (pst_hmac_device->en_ap_support_160m == OAL_FALSE)) {
         oam_warning_log0(0, OAM_SF_CFG, "hmac_set_channel_160m_invalid::aput not support 160M");
+        return OAL_TRUE;
+    }
+
+    if ((mac_mib_get_dot11VapMaxBandWidth(pst_mac_vap) <= WLAN_BW_CAP_80M) &&
+        (pst_prot_param->en_bandwidth >= WLAN_BAND_WIDTH_160PLUSPLUSPLUS)) {
+        oam_warning_log0(0, OAM_SF_CFG, "hmac_set_channel_160m_invalid::NOT support 160M!");
         return OAL_TRUE;
     }
 
@@ -3986,8 +4006,7 @@ uint32_t hmac_config_80211_ucast_switch(mac_vap_stru *pst_mac_vap, uint16_t us_l
     if (ether_is_broadcast(mac_80211_switch_param->auc_user_macaddr)) {
         for (us_user_idx = 0; us_user_idx < us_max_user_idx; us_user_idx++) {
             oam_report_80211_ucast_set_switch(mac_80211_switch_param->en_frame_direction,
-                                              mac_80211_switch_param->en_frame_type,
-                                              &oam_switch_param, us_user_idx);
+                mac_80211_switch_param->en_frame_type, &oam_switch_param, us_user_idx);
         }
     } else {
         ret = mac_vap_find_user_by_macaddr(pst_mac_vap, mac_80211_switch_param->auc_user_macaddr, &us_user_idx);
@@ -4002,15 +4021,12 @@ uint32_t hmac_config_80211_ucast_switch(mac_vap_stru *pst_mac_vap, uint16_t us_l
         }
 
         ret = oam_report_80211_ucast_set_switch(mac_80211_switch_param->en_frame_direction,
-                                                mac_80211_switch_param->en_frame_type,
-                                                &oam_switch_param, us_user_idx);
+                                                mac_80211_switch_param->en_frame_type, &oam_switch_param, us_user_idx);
         if (ret != OAL_SUCC) {
             oam_warning_log4(pst_mac_vap->uc_vap_id, OAM_SF_CFG,
                 "{hmac_config_80211_ucast_switch::Set switch of report_ucast failed[%d]!"
-                "frame_switch[%d], cb_switch[%d], dscr_switch[%d].}",
-                ret, mac_80211_switch_param->en_frame_switch,
-                mac_80211_switch_param->en_cb_switch,
-                mac_80211_switch_param->en_dscr_switch);
+                "frame_switch[%d], cb_switch[%d], dscr_switch[%d].}", ret, mac_80211_switch_param->en_frame_switch,
+                mac_80211_switch_param->en_cb_switch, mac_80211_switch_param->en_dscr_switch);
             return ret;
         }
     }
@@ -4040,16 +4056,14 @@ uint32_t hmac_config_set_mgmt_log(mac_vap_stru *pst_mac_vap, mac_user_stru *pst_
         st_80211_ucast_switch.en_cb_switch = OAL_SWITCH_OFF;
         st_80211_ucast_switch.en_dscr_switch = OAL_SWITCH_OFF;
         oal_set_mac_addr(st_80211_ucast_switch.auc_user_macaddr, pst_mac_user->auc_user_mac_addr);
-        hmac_config_80211_ucast_switch(pst_mac_vap, sizeof(st_80211_ucast_switch),
-                                       (uint8_t *)&st_80211_ucast_switch);
+        hmac_config_80211_ucast_switch(pst_mac_vap, sizeof(st_80211_ucast_switch), (uint8_t *)&st_80211_ucast_switch);
 
         st_80211_ucast_switch.en_frame_direction = OAM_OTA_FRAME_DIRECTION_TYPE_RX;
         st_80211_ucast_switch.en_frame_type = OAM_USER_TRACK_FRAME_TYPE_MGMT;
         st_80211_ucast_switch.en_frame_switch = OAL_SWITCH_OFF;
         st_80211_ucast_switch.en_cb_switch = OAL_SWITCH_OFF;
         st_80211_ucast_switch.en_dscr_switch = OAL_SWITCH_OFF;
-        hmac_config_80211_ucast_switch(pst_mac_vap, sizeof(st_80211_ucast_switch),
-                                       (uint8_t *)&st_80211_ucast_switch);
+        hmac_config_80211_ucast_switch(pst_mac_vap, sizeof(st_80211_ucast_switch), (uint8_t *)&st_80211_ucast_switch);
     } else {
         st_80211_ucast_switch.en_frame_direction = OAM_OTA_FRAME_DIRECTION_TYPE_TX;
         st_80211_ucast_switch.en_frame_type = OAM_USER_TRACK_FRAME_TYPE_MGMT;
@@ -6822,7 +6836,7 @@ void hmac_config_show_fcs_info(mac_vap_stru *mac_vap)
 
     hal_host_al_rx_fcs_info(hmac_vap);
     hal_host_get_rx_pckt_info(hmac_vap, &atcmdsrv_get_rx_pkcg_event);
-    hmac_atcmdsrv_get_rx_pkcg(mac_vap, sizeof(dmac_atcmdsrv_atcmd_response_event),
+    hmac_config_get_rx_fcs_info(mac_vap, sizeof(dmac_atcmdsrv_atcmd_response_event),
         (uint8_t *)&atcmdsrv_get_rx_pkcg_event);
 #endif
 #endif
@@ -9163,19 +9177,22 @@ uint32_t hmac_atcmdsrv_get_ant_response(mac_vap_stru *pst_mac_vap, uint8_t uc_le
     return OAL_SUCC;
 }
 
-uint32_t hmac_atcmdsrv_get_rx_pkcg(mac_vap_stru *pst_mac_vap, uint8_t uc_len, uint8_t *puc_param)
+uint32_t hmac_config_get_rx_fcs_info(mac_vap_stru *pst_mac_vap, uint8_t uc_len, uint8_t *puc_param)
 {
     hmac_vap_stru *pst_hmac_vap;
     dmac_atcmdsrv_atcmd_response_event *pst_atcmdsrv_get_rx_pkcg_event = NULL;
     pst_hmac_vap = mac_res_get_hmac_vap(pst_mac_vap->uc_vap_id);
     if (pst_hmac_vap == NULL) {
-        oam_error_log0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_atcmdsrv_get_rx_pkcg::pst_hmac_vap null.}");
+        oam_error_log0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_get_rx_fcs_info::pst_hmac_vap null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
     pst_atcmdsrv_get_rx_pkcg_event = (dmac_atcmdsrv_atcmd_response_event *)(puc_param);
     if (pst_atcmdsrv_get_rx_pkcg_event->uc_event_id == OAL_ATCMDSRV_GET_RX_PKCG) {
         pst_hmac_vap->st_atcmdsrv_get_status.rx_pkct_succ_num = pst_atcmdsrv_get_rx_pkcg_event->event_para;
         pst_hmac_vap->st_atcmdsrv_get_status.s_rx_rssi = pst_atcmdsrv_get_rx_pkcg_event->s_always_rx_rssi;
+        oam_warning_log2(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_get_rx_fcs_info:: \
+            rx_pkct_succ_num=[%d], rx_rssi=[%d]}", pst_hmac_vap->st_atcmdsrv_get_status.rx_pkct_succ_num,
+            pst_hmac_vap->st_atcmdsrv_get_status.s_rx_rssi);
     }
     /* 唤醒wal_sdt_recv_reg_cmd等待的进程 */
     pst_hmac_vap->st_atcmdsrv_get_status.uc_get_rx_pkct_flag = OAL_TRUE;
@@ -10279,7 +10296,7 @@ OAL_STATIC const hmac_config_syn_stru g_ast_hmac_config_syn[] = {
     { WLAN_CFGID_GET_VERSION,  { 0, 0 }, hmac_atcmdsrv_dbb_num_response },
     { WLAN_CFGID_GET_ANT,      { 0, 0 }, hmac_atcmdsrv_get_ant_response },
 
-    { WLAN_CFGID_RX_FCS_INFO, { 0, 0 }, hmac_atcmdsrv_get_rx_pkcg },
+    { WLAN_CFGID_RX_FCS_INFO, { 0, 0 }, hmac_config_get_rx_fcs_info },
     { WLAN_CFGID_GET_DIEID, { 0, 0 }, hmac_config_get_dieid_rsp },
     { WLAN_CFGID_CHECK_LTE_GPIO, { 0, 0 }, hmac_atcmdsrv_lte_gpio_check },
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)

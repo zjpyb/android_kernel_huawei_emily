@@ -566,17 +566,18 @@ TRACE_EVENT(hmdfs_server_release,
 		__entry->device_id, __entry->err)
 );
 
-TRACE_EVENT(hmdfs_client_recv_readpage,
+TRACE_EVENT(hmdfs_client_recv_readpages,
 
 	TP_PROTO(struct hmdfs_peer *con, unsigned long long remote_ino,
-		unsigned long page_index, int err),
+		unsigned long page_index, unsigned int pages_nr, int err),
 
-	TP_ARGS(con, remote_ino, page_index, err),
+	TP_ARGS(con, remote_ino, page_index, pages_nr, err),
 
 	TP_STRUCT__entry(
 		__array(char, src, 128)
 		__field(uint64_t, remote_ino)
 		__field(unsigned long, page_index)
+		__field(unsigned int, pages_nr)
 		__field(uint64_t, device_id)
 		__field(int, err)
 	),
@@ -585,13 +586,14 @@ TRACE_EVENT(hmdfs_client_recv_readpage,
 		strlcpy(__entry->src, con->sbi->local_src, 128);
 		__entry->remote_ino = remote_ino;
 		__entry->page_index = page_index;
+		__entry->pages_nr = pages_nr;
 		__entry->device_id = con->device_id;
 		__entry->err = err;
 	),
 
-	TP_printk("hmdfs: src %s, client readpage callback from remote device %llu, remote_ino=%llu, page_idx=%lu, err=%d",
-		__entry->src, __entry->device_id,
-		__entry->remote_ino, __entry->page_index, __entry->err)
+	TP_printk("hmdfs: src %s, client readpage(s) callback from remote device %llu, remote_ino=%llu, page_idx=%lu, pages_nr=%u, err=%d",
+		__entry->src, __entry->device_id, __entry->remote_ino,
+		__entry->page_index, __entry->pages_nr, __entry->err)
 );
 
 TRACE_EVENT(hmdfs_writepage_cb_enter,

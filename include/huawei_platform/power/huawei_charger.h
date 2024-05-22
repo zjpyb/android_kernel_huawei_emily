@@ -603,6 +603,9 @@ struct charge_device_info {
 	u32 increase_term_volt_en;
 	u32 ffc_vterm_flag;
 	bool is_dc_enable_hiz;
+	int ffc_delay_cnt;
+	int use_thirdparty_buck_to_ffc;
+	int custom_ffc_vterm;
 #ifdef CONFIG_HUAWEI_SPEAKER_CHARGER
 	u32 scp_cur_trans_ratio;
 	u32 scp_vindpm;
@@ -610,6 +613,7 @@ struct charge_device_info {
 	struct timeval charge_start_time;
 	struct timeval charge_done_time;
 	u32 smart_charge_support;
+	u32 wait_direct_chg_stop_support;
 };
 enum charge_wakelock_flag {
 	CHARGE_NEED_WAKELOCK,

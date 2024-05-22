@@ -20,7 +20,8 @@
 #include <linux/of_address.h>
 #include <linux/regulator/consumer.h>
 #include <linux/workqueue.h>
-
+#include <linux/fs.h>
+#include <linux/uaccess.h>
 #ifdef CONFIG_CONTEXTHUB_IDLE_32K
 #include <linux/hisi/hisi_idle_sleep.h>
 #endif
@@ -37,6 +38,7 @@
 #include "motion_detect.h"
 #include "sensor_config.h"
 #include "sensor_detect.h"
+#include "tp_color.h"
 
 /*
  * CONFIG_USE_CAMERA3_ARCH : the camera module build config
@@ -48,7 +50,6 @@
 #endif
 
 int (*api_inputhub_mcu_recv)(const char *buf, unsigned int length) = 0;
-int (*send_func)(int) = NULL;
 
 extern uint32_t need_reset_io_power;
 extern uint32_t need_set_3v_io_power;
@@ -63,7 +64,8 @@ struct config_on_ddr *g_p_config_on_ddr;
 struct regulator *sensorhub_vddio;
 int sensor_power_pmic_flag;
 int sensor_power_init_finish;
-static u8 tplcd_manufacture;
+static u8 tplcd_manufacture;       // get from dts
+static u8 tplcd_manufacture_curr; // get from /sys/class/graphics/fb0/lcd_model
 unsigned long sensor_jiffies;
 rproc_id_t ipc_ap_to_iom_mbx = HISI_AO_ACPU_IOM3_MBX1;
 rproc_id_t ipc_ap_to_lpm_mbx = HISI_ACPU_LPM3_MBX_5;
@@ -101,6 +103,11 @@ static void peri_used_timeout(unsigned long data)
 u8 get_tplcd_manufacture(void)
 {
 	return tplcd_manufacture;
+}
+
+u8 get_tplcd_manufacture_curr(void)
+{
+	return tplcd_manufacture_curr;
 }
 
 static void peri_used_init(void)
@@ -363,6 +370,8 @@ static lcd_module lcd_info[] = {
 	{ DTS_COMP_INX_NT36572A_6P39, INX_TPLCD },
 	{ DTS_COMP_INX_NT36526_6P39, INX_TPLCD2 },
 	{ DTS_COMP_TM_FT8615_G6_6P39, TM_TPLCD },
+	{ DTS_COMP_SAMSUNG_AMS653VY01, SAMSUNG_TPLCD },
+	{ DTS_COMP_EDO_E652FAC73, EDO_TPLCD },
 };
 
 static lcd_model lcd_model_info[] = {
@@ -383,6 +392,25 @@ static lcd_model lcd_model_info[] = {
 	{ DTS_COMP_TM_NT36682A_6P4, TM_TPLCD },
 	{ DTS_COMP_BOE_TD4320_6P4, BOE_TPLCD },
 };
+
+const static lcd_panel_model g_lcd_panel_model_list[] = {
+	{ "320_506 6.7' VIDEO 720 x 1600", TS_PANEL_LENS },
+	{ "250_105 6.7' VIDEO 720 x 1600", TS_PANEL_TXD },
+	{ "190_107 6.7' VIDEO 720 x 1600", TS_PANEL_BOE },
+	{ "190_A05 6.7' VIDEO 720 x 1600", TS_PANEL_BOE },
+	{ "220_107 6.7' VIDEO 720 x 1600", TS_PANEL_KING },
+	{ "110_107 6.7' VIDEO 720 x 1600", TS_PANEL_TIANMA },
+	{ "BACH4_120 20d 0 10.3' 1200 x 2000", TS_PANEL_EELY },
+	{ "BACH4_190 502 0 10.3' 1200 x 2000", TS_PANEL_TRULY },
+	{ "BACH4_190 20d 0 10.3' 1200 x 2000", TS_PANEL_TRULY },
+	{ "370_606 6.5' VIDEO 720 x 1600", TS_PANEL_SKYWORTH },
+	{ "110_d05 6.5' VIDEO 720 x 1600", TS_PANEL_TIANMA },
+};
+
+uint16_t get_lcd_panel_model_list_size(void)
+{
+	return (uint16_t)ARRAY_SIZE(g_lcd_panel_model_list);
+}
 
 static int8_t get_lcd_info(uint8_t index)
 {
@@ -439,6 +467,64 @@ static int get_lcd_module(void)
 	hwlog_warn("sensor kernel failed to get lcd module\n");
 	return -1;
 }
+
+static uint16_t find_lcd_manufacture(const char *panel_name)
+{
+	const int len = get_lcd_panel_model_list_size();
+	int i = 0;
+	for (i = 0; i < len; i++) {
+		if ((strncmp(g_lcd_panel_model_list[i].panel_name, panel_name, 
+				strlen(g_lcd_panel_model_list[i].panel_name)) == 0)) {
+			hwlog_err("match panel_name success, index = %d, manufacture = %d", i,
+				g_lcd_panel_model_list[i].manufacture);
+			return (uint16_t)g_lcd_panel_model_list[i].manufacture;
+		}
+	}
+	return TS_PANEL_UNKNOWN;
+}
+
+void init_tp_manufacture_curr(void)
+{
+	int ret = -1;
+	char buf[LCD_PANEL_NAME_LEN + 1] = {'\0'};
+	char path[128] = "/sys/class/graphics/fb0/lcd_model";
+	struct file *fp = NULL;
+	mm_segment_t old_fs;
+	u8 lcd_manuf = get_lcd_module();
+
+	tplcd_manufacture_curr = lcd_manuf;
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	fp = filp_open(path, O_RDONLY, 0);
+	if (IS_ERR(fp)) {
+		hwlog_err("FAIL TO OPEN %s FILE", path);
+		set_fs(old_fs);
+		return;
+	}
+
+	vfs_llseek(fp, 0L, SEEK_SET);
+	ret = vfs_read(fp, buf, LCD_PANEL_NAME_LEN, &(fp->f_pos));
+	if (ret < 0) {
+		hwlog_err("%s:read file %s exception with ret %d.\n",
+			__func__, path, ret);
+		set_fs(old_fs);
+		return;
+	}
+	filp_close(fp, NULL);
+
+	set_fs(old_fs);
+
+	lcd_manuf = find_lcd_manufacture(buf);
+	if (lcd_manuf == TS_PANEL_UNKNOWN) {
+		return;
+	}
+
+	tplcd_manufacture_curr = lcd_manuf;
+	return;
+}
+
 
 static int inputhub_mcu_recv(const char *buf, unsigned int length)
 {
@@ -543,7 +629,9 @@ static int mcu_sys_ready_callback(const struct pkt_header *head)
 #endif
 	if (((pkt_sys_statuschange_req_t *)head)->status == ST_MINSYSREADY) {
 		tplcd_manufacture = get_lcd_module();
-		hwlog_info("sensor get_lcd_module tplcd_manufacture=%d\n", tplcd_manufacture);
+		init_tp_manufacture_curr();
+		hwlog_info("sensor get_lcd_module tplcd_manufacture=%d, curr:%d\n", 
+			tplcd_manufacture, tplcd_manufacture_curr);
 #ifdef SENSOR_1V8_POWER
 		result = check_sensor_1v8_from_pmic();
 		if (!result)
@@ -671,6 +759,7 @@ static int inputhub_mcu_init(void)
 	if (ret)
 		hwlog_err("%s boot sensorhub fail,ret %d.\n", __func__, ret);
 	set_sensor_mcumode(1);
+	mag_current_notify();
 	return ret;
 }
 

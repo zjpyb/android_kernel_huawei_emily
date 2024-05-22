@@ -730,44 +730,28 @@ static int pcm_set_share_data(
 	return 0;
 }
 
-static int audio_pcm_get_mmap_buf_phys(struct device *dev, int shared_fd,
-	dma_addr_t *addr)
+static int audio_pcm_get_mmap_buf_phys(struct device *dev, struct audio_pcm_mmap_buf *mmap_buf)
 {
 	struct sg_table *table = NULL;
-	struct dma_buf *buf = NULL;
 	struct dma_buf_attachment *attach = NULL;
 
-	if (shared_fd < 0) {
-		AUDIO_LOGE("share fd is invalid: %d", shared_fd);
-		return -EFAULT;
-	}
-
-	buf = dma_buf_get(shared_fd);
-	if (IS_ERR(buf)) {
-		AUDIO_LOGE("buf can not be get from fd: %d", shared_fd);
-		return -EFAULT;
-	}
-
-	attach = dma_buf_attach(buf, dev);
+	attach = dma_buf_attach(mmap_buf->dmabuf, dev);
 	if (IS_ERR(attach)) {
 		AUDIO_LOGE("dmabuf attach failed");
-		dma_buf_put(buf);
 		return -EFAULT;
 	}
 
 	table = dma_buf_map_attachment(attach, DMA_BIDIRECTIONAL);
 	if (IS_ERR_OR_NULL(table)) {
 		AUDIO_LOGE("dmabuf map attachment failed");
-		dma_buf_detach(buf, attach);
-		dma_buf_put(buf);
+		dma_buf_detach(mmap_buf->dmabuf, attach);
 		return -EFAULT;
 	}
 
-	*addr = sg_phys(table->sgl);
+	mmap_buf->phy_addr = sg_phys(table->sgl);
 
 	dma_buf_unmap_attachment(attach, table, DMA_BIDIRECTIONAL);
-	dma_buf_detach(buf, attach);
-	dma_buf_put(buf);
+	dma_buf_detach(mmap_buf->dmabuf, attach);
 
 	return 0;
 }
@@ -803,25 +787,25 @@ static int audio_pcm_get_mmap_share_buf(struct snd_pcm_substream *substream,
 	}
 
 	mmap_buf->buf_size = buf_size;
-
-	/* get share buffer phy address */
-	ret = audio_pcm_get_mmap_buf_phys(dev, shared_fd, &mmap_buf->phy_addr);
-	if (ret) {
-		AUDIO_LOGE("failed to get buf phys");
-		goto err_buf_addr;
-	}
-
 	mmap_buf->dmabuf = dma_buf_get(shared_fd);
 	if (IS_ERR(mmap_buf->dmabuf)) {
 		AUDIO_LOGE("dmabuf get failed");
 		ret = - ENOMEM;
 		goto err_buf_addr;
 	}
+
+	/* get share buffer phy address */
+	ret = audio_pcm_get_mmap_buf_phys(dev, mmap_buf);
+	if (ret) {
+		AUDIO_LOGE("failed to get buf phys");
+		goto err_get_phys;
+	}
+
 #if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 	ret = dma_buf_begin_cpu_access(mmap_buf->dmabuf, DMA_BIDIRECTIONAL);
 	if (ret) {
 		AUDIO_LOGE("dma buf begin cpu access failed !");
-		goto err_access_dmabuf;
+		goto err_get_phys;
 	}
 #endif
 	/* get buffer virt address */
@@ -841,8 +825,8 @@ static int audio_pcm_get_mmap_share_buf(struct snd_pcm_substream *substream,
 err_buf_map:
 #if (KERNEL_VERSION(4, 14, 0) > LINUX_VERSION_CODE)
 	dma_buf_end_cpu_access(mmap_buf->dmabuf, DMA_BIDIRECTIONAL);
-err_access_dmabuf:
 #endif
+err_get_phys:
 	dma_buf_put(mmap_buf->dmabuf);
 	mmap_buf->dmabuf = NULL;
 err_buf_addr:

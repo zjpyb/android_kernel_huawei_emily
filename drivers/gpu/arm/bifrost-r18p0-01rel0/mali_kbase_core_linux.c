@@ -1671,7 +1671,7 @@ static ssize_t kbase_read(struct file *filp, char __user *buf, size_t count, lof
 
 	if (count < sizeof(uevent))
 		return -ENOBUFS;
-
+	memset(&uevent, 0, sizeof(uevent));
 	do {
 		while (kbase_event_dequeue(kctx, &uevent)) {
 			if (out_count > 0)

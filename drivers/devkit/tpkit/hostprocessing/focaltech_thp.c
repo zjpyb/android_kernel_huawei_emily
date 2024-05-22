@@ -392,7 +392,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			if (rc) {
 				thp_log_err("%s:write 0x90 command fail\n",
 					__func__);
-				return rc;
+				goto exit;
 			}
 
 			if ((cmd1[SPI_DUMMY_BYTE] == CHIP_DETECT_FAILE_ONE) ||
@@ -426,7 +426,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			if (rc) {
 				thp_log_err("%s:write 0x90 command fail\n",
 					__func__);
-				return rc;
+				goto exit;
 			}
 			msleep(10); /* 10ms sequential */
 
@@ -438,7 +438,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			if (rc) {
 				thp_log_err("%s:read 0x90 data fail\n",
 					__func__);
-				return rc;
+				goto exit;
 			}
 
 			if ((cmd[1] == CHIP_DETECT_FAILE_ONE) ||
@@ -457,6 +457,15 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			}
 			msleep(50); /* 50ms sequential */
 		}
+	}
+exit:
+	if (tdev->thp_core->fast_booting_solution) {
+		kfree(tdev->tx_buff);
+		tdev->tx_buff = NULL;
+		kfree(tdev->rx_buff);
+		tdev->rx_buff = NULL;
+		kfree(tdev);
+		tdev = NULL;
 	}
 	return -EIO;
 }
@@ -838,8 +847,13 @@ static int __init touch_driver_module_init(void)
 	dev->ic_name = FOCALTECH_IC_NAME;
 	dev->ops = &fts_dev_ops;
 	if (cd && cd->fast_booting_solution) {
-		thp_log_err("%s: don't support this solution\n", __func__);
-		goto err;
+		thp_send_detect_cmd(dev, NO_SYNC_TIMEOUT);
+		/*
+		 * The thp_register_dev will be called later to complete
+		 * the real detect action.If it fails, the detect function will
+		 * release the resources requested here.
+		 */
+		return 0;
 	}
 	rc = thp_register_dev(dev);
 	if (rc) {

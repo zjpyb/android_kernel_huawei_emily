@@ -227,9 +227,10 @@ static bool check_sock_valid(int fd, pid_t pid,
 		goto out_put;
 	if (sk->sk_socket == NULL)
 		goto out_put;
+	if (sk->sk_protocol != IPPROTO_TCP)
+		goto out_put;
 	if (sk->sk_socket->type != SOCK_STREAM)
 		goto out_put;
-
 	bastet_get_comm_prop(sk, comm);
 	if (comm->remote_ip == 0 && comm->remote_port == 0)
 		goto out_put;

@@ -229,6 +229,7 @@ enum {
 	STREAM_DATA_MOVE2
 };
 
+#define GC_RESERVE_VICTIM	2	 /* reserved gc victim num for not select */
 #define OOB_FSYNC_BIT	(1 << 31)
 
 typedef u32 block_t;	/*
@@ -262,32 +263,36 @@ struct f2fs_mount_info {
 };
 
 struct gc_loop_info {
-        unsigned long count;
-        unsigned int segno;
-        bool check;
+	unsigned long count;
+	unsigned int segno;
+	bool check;
+	bool has_node_rd_err;
+	unsigned int unc_fail_cnt;
 	unsigned long *segmap;
 };
 #ifdef CONFIG_HMFS_CHECK_FS
 #define F2FS_GC_LOOP_MOD 10000 /* must be larger than 1 */
 #define F2FS_GC_LOOP_NOMEM_MOD 50 /* must be larger than 1 */
 #define hmfs_gc_loop_debug(sbi) \
-        do {    \
-                if (unlikely((sbi)->gc_loop.check && \
-                        !((sbi)->gc_loop.count % F2FS_GC_LOOP_MOD)))    \
-                        hmfs_msg((sbi)->sb, KERN_ERR, "hmfs_gc_loop aborts from %s:%d\n", __func__, __LINE__);  \
-        } while (0)
+	do {	\
+		if (unlikely((sbi)->gc_loop.check &&	\
+			!((sbi)->gc_loop.count % F2FS_GC_LOOP_MOD)))	\
+			hmfs_msg((sbi)->sb, KERN_ERR, "hmfs_gc_loop aborts from %s:%d\n", __func__, __LINE__);	\
+	} while (0)
 #else
 #define F2FS_GC_LOOP_MOD 100 /* must be larger than 1 */
 #define F2FS_GC_LOOP_NOMEM_MOD 500 /* must be larger than 1 */
 #define hmfs_gc_loop_debug(sbi)
 #endif
 #define F2FS_GC_LOOP_MAX 10000 /* must be equal or larger than F2FS_GC_LOOP_MOD */
+#define HMFS_UNC_FSCK_TH 2
 #define init_hmfs_gc_loop(sbi) \
-        do {    \
-                (sbi)->gc_loop.check = false;   \
-                (sbi)->gc_loop.count = 0;       \
-                (sbi)->gc_loop.segno = NULL_SEGNO;      \
-        } while (0)
+	do {	\
+		(sbi)->gc_loop.check = false;	\
+		(sbi)->gc_loop.has_node_rd_err = false;	\
+		(sbi)->gc_loop.count = 0;	\
+		(sbi)->gc_loop.segno = NULL_SEGNO;	\
+	} while (0)
 #define IS_HMFS_GC_THREAD() (strncmp("hmfs_gc", current->comm, 7) == 0)
 #define IS_CUR_GC_SEC(secno) (sbi->next_victim_seg !=	\
 		NULL_SEGNO && (secno) ==	\
@@ -535,11 +540,7 @@ struct fsync_inode_entry {
 	struct inode *inode;	/* vfs inode pointer */
 	block_t blkaddr;	/* block address locating the last fsync */
 	block_t last_dentry;	/* block address locating the last dentry */
-};
-
-struct section_order {
-	struct list_head list;
-	unsigned int secno;
+	int oob_last_fsync_idx;	/* idx in oob_info locating the last fsync */
 };
 
 #define nats_in_cursum(jnl)		(le16_to_cpu((jnl)->n_nats))
@@ -635,6 +636,7 @@ static inline bool __has_cursum_space(struct f2fs_journal *journal,
 #define F2FS_GOING_DOWN_METASYNC	0x1	/* going down with metadata */
 #define F2FS_GOING_DOWN_NOSYNC		0x2	/* going down */
 #define F2FS_GOING_DOWN_METAFLUSH	0x3	/* going down with meta flush */
+#define F2FS_GOING_DOWN_DISABLECP	0x4	/* disable checkpoint */
 
 #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
 /*
@@ -910,6 +912,17 @@ enum {
 	NR_SKIP
 };
 
+#define INIT_CP_VER			0
+
+enum cp_ver_record {
+	FSYNC_CP_VER,	/* cp version of last fsync */
+	WB_CP_VER,	/* cp version of last switch stream */
+	TRUNC_CP_VER,	/* cp version of last truncate write */
+	PUNCH_CP_VER,	/* cp version of last punch write */
+	WRITE_CP_VER,	/* cp version of last write */
+	NR_CP_VER
+};
+
 struct f2fs_inode_info {
 	struct inode vfs_inode;		/* serve a vfs inode */
 	unsigned long i_flags;		/* keep an inode flags for ioctl */
@@ -947,7 +960,9 @@ struct f2fs_inode_info {
 	bool last_atomic;
 	struct page *oob_last_page;
 	struct task_struct *fsync_task;	/* whether in fsync flow, protect by i_rwsem */
-	unsigned long long fsync_ver;	/* cp version of last fsync */
+	unsigned long long cp_ver[NR_CP_VER];
+	loff_t fofs;			/* end block addr of last write */
+	int fsync_dirty_pages;		/* record dirty page cnt before fsync flow */
 
 	int last_stream;		/* STREAM_NR(init) or last stream id */
 	/* whether file stream id is switched or not after last CP */
@@ -1061,6 +1076,13 @@ enum nid_state {
 	MAX_NID_STATE,
 };
 
+enum nat_state {
+	TOTAL_NAT,
+	DIRTY_NAT,
+	RECLAIMABLE_NAT,
+	MAX_NAT_STATE,
+};
+
 struct f2fs_nm_info {
 	block_t nat_blkaddr;		/* base disk address of NAT */
 	nid_t max_nid;			/* maximum possible node ids */
@@ -1076,8 +1098,7 @@ struct f2fs_nm_info {
 	struct rw_semaphore nat_tree_lock;	/* protect nat_tree_lock */
 	struct list_head nat_entries;	/* cached nat entry list (clean) */
 	spinlock_t nat_list_lock;	/* protect clean nat entry list */
-	unsigned int nat_cnt;		/* the # of cached nat entries */
-	unsigned int dirty_nat_cnt;	/* total num of nat entries in set */
+	unsigned int nat_cnt[MAX_NAT_STATE]; /* the # of cached nat entries */
 	unsigned int nat_blocks;	/* # of nat blocks */
 
 	/* free node ids management */
@@ -1306,6 +1327,9 @@ enum cp_reason_type {
 	CP_XATTR_DIRTY,
 	CP_OOB_OVERFLOW,
 	CP_OOB_CHG_ATOMIC,
+	CP_TRUNCATE_WRITE,
+	CP_PUNCH_WRITE,
+	CP_FSYNC_AFTER_WB,
 	/* end: for oob recovery */
 };
 
@@ -1365,6 +1389,7 @@ struct f2fs_bio_info {
 	pgoff_t last_index_in_bio;	/* for fs encryption/oob recover */
 	spinlock_t io_lock;		/* serialize DATA/NODE IOs */
 	struct list_head io_list;	/* track fios */
+	struct delayed_work io_expire_work;	/* work for submit io */
 };
 
 #define FDEV(i)				(sbi->devs[i])
@@ -1415,16 +1440,17 @@ enum flash_mode {
 
 struct slc_mode_control_info {
 	bool pe_limited;		/* disable slc_enable when reach PE limits */
+	bool is_slc_mode_enable;	/* disabled by PE limits or util_rate */
+	bool closed;			/* closed because of lack of free sections */
+
 	atomic_t alloc_secs;
 	struct workqueue_struct *query_wq;
 	struct work_struct       query_work;	/* query PE limits */
 
 	int cur_util_rate;		/* user utilization */
 	int slc_mode_type;			/* section threshold */
-	bool hmfs_is_slc_mode_enable;	/* disabled by PE limits or util_rate */
-	atomic_t sec_count[NR_FLASH_MODE];
 
-	bool closed;			/* closed because of lack of free sections */
+	atomic_t sec_count[NR_FLASH_MODE];
 
 	struct f2fs_sb_info *sbi;
 };
@@ -1578,8 +1604,17 @@ struct gc_stat {
 };
 
 /* for data move */
-/* FIXME: PU should be setted according to device feature */
-#define HMFS_DATAMOVE_PU_SIZE(sbi)		(sbi->pu_size[TLC_MODE])
+#define HMFS_DM_MAX_PU_SIZE	(sbi->pu_size[TLC_MODE])
+#define DM_IO_ERROR	4
+#define DM_IN_RESET	5
+struct hmfs_dm_private_data {
+	struct f2fs_sb_info *sbi;
+	int stream_id;
+	unsigned char verify_fail;
+	bool rescue;
+	bool force_flush;
+};
+
 struct hmfs_dm_entry {
 	block_t	src_blkaddr;
 	block_t dst_blkaddr;
@@ -1588,14 +1623,18 @@ struct hmfs_dm_entry {
 };
 
 struct hmfs_dm_info {
-	struct hmfs_dm_entry *entries;		/* entries cached before submited */
-	unsigned int index;		/* current index */
+	unsigned int dm_len;	/* dm address length to submit */
+	block_t dm_first_blkaddr;	/* first block address to submit */
 	block_t verified_blkaddr;	/* The address before verified_blkaddr has been verified */
 	block_t next_blkaddr;		/* next block address to do datamove to */
 	block_t cached_last_blkaddr;	/* last block address not submited */
+	unsigned int rescue_len;	/* rescue dm cached entries num */
+	block_t rescue_first_blkaddr;	/* rescue first block address not submited */
 
-	struct hmfs_dm_entry *rescue_entries;	/* entries need to be rescued */
-	unsigned int rescue_index;
+	wait_queue_head_t dm_wait;
+	bool wait_dm_complete;
+	struct hmfs_dm_private_data *data;
+	struct work_struct dm_async_work;
 };
 
 struct hmfs_dm_manager {
@@ -1606,6 +1645,7 @@ struct hmfs_dm_manager {
 	atomic_t refs;
 	struct stor_dev_data_move_source_addr *source_addrs;
 	struct stor_dev_data_move_source_inode *source_inodes;
+	struct workqueue_struct *dm_async_wq;
 
 	struct hmfs_dm_info dm_info[NR_CURSEG_DM_TYPE];
 };
@@ -1732,14 +1772,6 @@ struct f2fs_sb_info {
 	struct list_head inode_list[NR_INODE_TYPE];	/* dirty inode list */
 	spinlock_t inode_lock[NR_INODE_TYPE];	/* for dirty inode list lock */
 
-	/* for storage turbo guarantee order of bio */
-	struct bio_list bio_list[STREAM_NR];
-	struct mutex bio_lock[STREAM_NR];
-	struct list_head section_list[STREAM_NR];
-	spinlock_t section_list_lock[STREAM_NR];	/* lock for section list */
-	atomic_t last_blkaddr[STREAM_NR];
-	unsigned int order_stat_times[2]; /* 0:total times   1:scan order list times */
-
 	/* for extent tree cache */
 	struct radix_tree_root extent_tree_root;/* cache extent cache entries */
 	struct mutex extent_tree_lock;	/* locking extent radix tree */
@@ -1846,9 +1878,9 @@ struct f2fs_sb_info {
 	unsigned int ndirty_inode[NR_INODE_TYPE];	/* # of dirty inodes */
         struct mutex bd_mutex;
         struct f2fs_bigdata_info *bd_info;      /* big data collections */
+#endif
 	struct gc_stat gc_stat;
 	int gc_stat_enable;
-#endif
 	atomic_t need_ssr_gc;
 	spinlock_t stat_lock;			/* lock for stat operations */
 
@@ -1912,6 +1944,7 @@ struct f2fs_sb_info {
 	struct hmfs_gc_control_info gc_control_info;
 	struct workqueue_struct *need_bkops_wq;
 	struct delayed_work start_bkops_work;
+	int last_sec[NR_CURSEG_DATA_TYPE - 1][GC_RESERVE_VICTIM];	 /* last write section */
 
 	struct slc_mode_control_info slc_mode_ctrl;
 
@@ -1926,10 +1959,25 @@ struct f2fs_sb_info {
 
 	atomic64_t pu_align_info[PU_ALIGN_NR];	/* stat pu align of IOs */
 	int pu_size[NR_FLASH_MODE];		/* for TLC passthrough in future */
+	int next_pu_size[NR_CURSEG_DM_TYPE];	/* for next datamove length */
 	bool skip_pu_align;			/* use for debug */
+
+	int segs_per_slc_sec;			/* segments per slc section */
 
 	/* threshold for writing checkpoint during gc */
 	unsigned int prefree_sec_threshold;
+#ifdef CONFIG_HMFS_CHECK_FS
+	/*
+	 * Datamove error injection:
+	 * 1:  unc error
+	 * 2:  program fail
+	 * 8:  reset error, before datamove
+	 * 16: reset error, during datamove
+	 * 24: reset error, after datamove
+	 */
+	unsigned char datamove_inject;
+#endif
+	struct workqueue_struct *hmfs_io_expire_workqueue;
 };
 
 #ifdef CONFIG_HMFS_FAULT_INJECTION
@@ -3079,10 +3127,10 @@ enum {
 	FI_EXTRA_ATTR,		/* indicate file has extra attribute */
 	FI_PROJ_INHERIT,	/* indicate file inherits projectid */
 	FI_PIN_FILE,		/* indicate file should not be gced */
-	FI_ATOMIC_REVOKE_REQUEST, /* request to drop atomic data */
-        FI_LOG_FILE,            /* indicate file is a log */
-        FI_HOT_FILE,            /* indicate file is hot */
-	FI_ONLY_LARGEST_EXT_CHG,/* indicate inode changed largest extent only */
+	FI_ATOMIC_REVOKE_REQUEST,	/* request to drop atomic data */
+	FI_LOG_FILE,		/* indicate file is a log */
+	FI_HOT_FILE,		/* indicate file is hot */
+	FI_ONLY_LARGEST_EXT_CHG,	/* indicate inode changed largest extent only */
 };
 
 static inline void __mark_inode_dirty_flag(struct inode *inode,
@@ -3852,9 +3900,6 @@ bool hmfs_is_checkpointed_data(struct f2fs_sb_info *sbi, block_t blkaddr);
 void hmfs_drop_discard_cmd(struct f2fs_sb_info *sbi);
 void hmfs_stop_discard_thread(struct f2fs_sb_info *sbi);
 bool hmfs_wait_discard_bios(struct f2fs_sb_info *sbi);
-
-void hmfs_refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new,
-                                                                bool from_gc);
 void hmfs_clear_prefree_segments(struct f2fs_sb_info *sbi,
 					struct cp_control *cpc);
 void hmfs_dirty_to_prefree(struct f2fs_sb_info *sbi);
@@ -3922,10 +3967,10 @@ int hmfs_sync_device_info(struct f2fs_sb_info *sbi, bool *need_cp);
 void hmfs_bio_set_flash_mode(struct f2fs_sb_info *sbi, struct bio *bio,
 			block_t blkaddr, int stream_id);
 void hmfs_file_check_switch_stream(struct inode *inode, int stream_id);
-void hmfs_insert_section_order_list(struct f2fs_sb_info *sbi,
-				unsigned int segno, int curseg_type);
-unsigned int hmfs_section_order_list_peek(struct f2fs_sb_info *sbi, int stream_id);
-void hmfs_section_order_list_pop(struct f2fs_sb_info *sbi, block_t blkaddr, int stream_id);
+void hmfs_sync_verify(struct f2fs_sb_info *sbi, int stream,
+			struct stor_dev_pwron_info *stor_info, bool pwron);
+int get_stream_id_by_seg_type(int type);
+int get_last_sec_index_by_stream(int stream_id);
 
 /*
  * checkpoint.c
@@ -4015,6 +4060,7 @@ int hmfs_migrate_page(struct address_space *mapping, struct page *newpage,
 bool hmfs_overwrite_io(struct inode *inode, loff_t pos, size_t len);
 void hmfs_clear_radix_tree_dirty_tag(struct page *page);
 void hmfs_io_throttle(struct f2fs_sb_info *sbi, unsigned int len);
+void submit_merged_bio_quickly_fn(struct work_struct *work);
 
 /*
  * gc.c
@@ -4053,7 +4099,7 @@ void hmfs_datamove_force_flush(struct f2fs_sb_info *sbi,
 				struct cp_control *cpc);
 void hmfs_datamove(struct f2fs_sb_info *sbi, int dm_stream_id,
 				bool force_flush);
-void hmfs_datamove_tree_print_info(struct f2fs_sb_info *sbi,
+void hmfs_datamove_tree_get_info(struct f2fs_sb_info *sbi,
 				unsigned int *unverify_sec,
 				unsigned int *unverify_free_sec);
 void hmfs_datamove_fill_array(struct f2fs_sb_info *sbi,
@@ -4067,6 +4113,11 @@ void __hmfs_datamove_add_entry(struct f2fs_sb_info *sbi, block_t src,
 			    block_t dst, enum page_type type, int dm_stream_id);
 void __hmfs_datamove_remove_entry(struct f2fs_sb_info *sbi,
 				block_t blkaddr);
+void hmfs_wait_all_dm_complete(struct f2fs_sb_info *sbi);
+void hmfs_datamove_err_handle(struct f2fs_sb_info *sbi,
+				int stream_id, int ret);
+void hmfs_datamove_update_info(struct f2fs_sb_info *sbi, int stream,
+				struct stor_dev_verify_info *verify_info, bool pwron);
 
 static inline bool hmfs_datamove_on(struct f2fs_sb_info *sbi)
 {
@@ -4186,8 +4237,6 @@ static inline struct f2fs_stat_info *F2FS_STAT(struct f2fs_sb_info *sbi)
 #define stat_inc_bggc_node_ssr_blks(sbi)	((sbi)->bggc_node_ssr_blks++)
 #define stat_inc_assr_lfs_segs(sbi)		((sbi)->assr_lfs_segs++)
 #define stat_inc_assr_ssr_segs(sbi)		((sbi)->assr_ssr_segs++)
-#define stat_io_skip_bggc_count(sbi)		((sbi)->io_skip_bggc++)
-#define stat_other_skip_bggc_count(sbi)        ((sbi)->other_skip_bggc++)
 #define stat_inc_dirty_inode(sbi, type)	((sbi)->ndirty_inode[type]++)
 #define stat_dec_dirty_inode(sbi, type)	((sbi)->ndirty_inode[type]--)
 #define stat_inc_total_hit(sbi)		(atomic64_inc(&(sbi)->total_hit_ext))
@@ -4449,6 +4498,13 @@ static inline struct f2fs_bigdata_info *F2FS_BD_STAT(struct f2fs_sb_info *sbi)
 #define stat_inc_data_blk_count(sbi, blks, gc_type)	do { } while (0)
 #define stat_inc_node_blk_count(sbi, blks, gc_type)	do { } while (0)
 
+/* To pass the CSEC check, replace macros with functions. */
+static inline void stat_inc_assr_lfs_blks(struct f2fs_sb_info *sbi) {}
+static inline void stat_inc_assr_ssr_blks(struct f2fs_sb_info *sbi) {}
+static inline void stat_inc_bggc_node_lfs_blks(struct f2fs_sb_info *sbi) {}
+static inline void stat_inc_bggc_node_ssr_blks(struct f2fs_sb_info *sbi) {}
+static inline void stat_inc_assr_lfs_segs(struct f2fs_sb_info *sbi) {}
+static inline void stat_inc_assr_ssr_segs(struct f2fs_sb_info *sbi) {}
 
 static inline int hmfs_build_stats(struct f2fs_sb_info *sbi) { return 0; }
 static inline void hmfs_destroy_stats(struct f2fs_sb_info *sbi) { }

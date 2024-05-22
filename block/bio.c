@@ -1988,41 +1988,6 @@ struct bio *bio_split(struct bio *bio, int sectors,
 }
 EXPORT_SYMBOL(bio_split);
 
-#ifdef CONFIG_MAS_UNISTORE_PRESERVE
-struct bio *bio_split_in_bytes(struct bio *bio, unsigned bytes,
-			gfp_t gfp, struct bio_set *bs)
-{
-	struct bio *split = NULL;
-
-	if ((bytes <= 0) || (bytes >= bio->bi_iter.bi_size)) {
-		pr_err("%s - wrong bytes\n", __func__);
-		return NULL;
-	}
-
-	split = bio_clone_fast(bio, gfp, bs);
-	if (!split)
-		return NULL;
-
-	split->bi_iter.bi_size = bytes;
-#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
-	mas_blk_inline_crypto_bio_split_pre(bio, split);
-#endif
-
-	if (bio_integrity(split))
-		bio_integrity_trim(split);
-
-	bio_advance(bio, split->bi_iter.bi_size);
-	bio->bi_iter.bi_done = 0;
-
-	if (bio_flagged(bio, BIO_TRACE_COMPLETION))
-		bio_set_flag(split, BIO_TRACE_COMPLETION);
-
-#ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
-	mas_blk_inline_crypto_bio_split_post(bio);
-#endif
-	return split;
-}
-#endif
 /**
  * bio_trim - trim a bio
  * @bio:	bio to trim

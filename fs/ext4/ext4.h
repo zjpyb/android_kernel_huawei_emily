@@ -1064,6 +1064,9 @@ struct ext4_inode_info {
 	/* Indicate the inline data space. */
 	u16 i_inline_off;
 	u16 i_inline_size;
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	atomic_t i_unwritten; /* Nr. of inflight conversions pending */
+#endif
 
 #ifdef CONFIG_QUOTA
 	/* quota space reservation, managed internally by quota code */
@@ -1078,7 +1081,9 @@ struct ext4_inode_info {
 	 */
 	struct list_head i_rsv_conversion_list;
 	struct work_struct i_rsv_conversion_work;
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 	atomic_t i_unwritten; /* Nr. of inflight conversions pending */
+#endif
 
 	spinlock_t i_block_reservation_lock;
 

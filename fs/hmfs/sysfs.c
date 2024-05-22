@@ -315,13 +315,21 @@ out:
 		return count;
 	}
 
+#ifdef CONFIG_HMFS_CHECK_FS
+	if (!strcmp(a->attr.name, "datamove_inject")) {
+		sbi->datamove_inject = (unsigned char)t;
+		return count;
+	}
+#endif
+
 #ifdef CONFIG_HMFS_STAT_FS
 	if (!strcmp(a->attr.name, "gc_stat_enable")) {
 		if (t == 0) {
+			int i;
 			struct gc_stat *sec_stat =
 						&(sbi->gc_stat);
 
-			for (int i = 0; i < ALL_GC_LEVELS; i++)
+			for (i = 0; i < ALL_GC_LEVELS; i++)
 				sec_stat->times[i] = 0;
 		}
 		return count;
@@ -473,6 +481,9 @@ F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, iostat_enable, iostat_enable);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, io_throttle_time, io_throttle_time);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, io_throttle_time_max, io_throttle_time_max);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, prefree_sec_threshold, prefree_sec_threshold);
+#ifdef CONFIG_HMFS_CHECK_FS
+F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, datamove_inject, datamove_inject);
+#endif
 #ifdef CONFIG_HMFS_STAT_FS
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, gc_stat_enable,
 						gc_stat_enable);
@@ -553,6 +564,9 @@ static struct attribute *f2fs_attrs[] = {
 	ATTR_LIST(io_throttle_time),
 	ATTR_LIST(io_throttle_time_max),
 	ATTR_LIST(prefree_sec_threshold),
+#ifdef CONFIG_HMFS_CHECK_FS
+	ATTR_LIST(datamove_inject),
+#endif
 #ifdef CONFIG_HMFS_STAT_FS
 	ATTR_LIST(gc_stat_enable),
 #endif
@@ -791,8 +805,10 @@ static int __maybe_unused section_bits_seq_show(struct seq_file *seq,
 		}
 		seq_printf(seq, "%-10d", i);
 		seq_printf(seq, "%d|%-6u|", se->type, valid_blocks_per_sec);
-		for (j = 0; j < segs_per_sec; j++)
+		for (j = 0; j < segs_per_sec; j++) {
+			se = get_seg_entry(sbi, i + j);
 			seq_printf(seq, " %s ", se->valid_blocks ? "1" : "0");
+		}
 		seq_putc(seq, '\n');
 	}
 
@@ -807,13 +823,13 @@ static int __maybe_unused section_bits_seq_show(struct seq_file *seq,
 	}
 	seq_printf(seq, "DataMove Unverified  Sections\n");
 	down_write(&dm->rw_sem);
-	hmfs_datamove_tree_print_info(sbi,
+	hmfs_datamove_tree_get_info(sbi,
 			&unverified_sec, &unverified_free_sec);
 	up_write(&dm->rw_sem);
 	seq_printf(seq, "Unverified  Section Number: %d\n", unverified_sec);
 	seq_printf(seq, "Unverified  Free Section Number: %d\n",
 			unverified_free_sec);
-	seq_printf(seq, "DM PU size: %u\n", HMFS_DATAMOVE_PU_SIZE(sbi));
+	seq_printf(seq, "DM PU size: %u\n", HMFS_DM_MAX_PU_SIZE);
 	return 0;
 }
 
@@ -964,9 +980,11 @@ static int slc_mode_info_seq_show(struct seq_file *seq, void *offset)
 	};
 
 	seq_puts(seq, "SLC MODE info:\n");
-	seq_printf(seq, "pe limits is %s\n", ctrl->pe_limited ? "on" : "off");
+	seq_printf(seq, "current pe limits is %s\n", ctrl->pe_limited ? "on" : "off");
 	seq_printf(seq, "current slc switch is %s\n",
-			ctrl->hmfs_is_slc_mode_enable ? "on" : "off");
+			ctrl->is_slc_mode_enable ? "on" : "off");
+	if (!sbi->segs_per_slc_sec)
+		seq_printf(seq, "flash cell level abnormal cause slc disable\n");
 	seq_printf(seq, "current write section count %u\n",
 			atomic_read(&ctrl->alloc_secs));
 	if (test_hw_opt(sbi, SLC_MODE)) {
@@ -1000,74 +1018,8 @@ static int slc_mode_info_seq_show(struct seq_file *seq, void *offset)
 			atomic_read(&ctrl->sec_count[1]));
 
 	seq_printf(seq, "main blkaddr: %llu\n", MAIN_BLKADDR(sbi));
-	return 0;
-}
-
-static void __print_sec_list(struct seq_file *seq, struct list_head *head)
-{
-	struct section_order *sec_order_entry = NULL;
-	int i = 0;
-
-	list_for_each_entry(sec_order_entry, head, list) {
-		++i;
-		seq_printf(seq, "\t%5d: secno:%u\n", i, sec_order_entry->secno);
-	}
-}
-
-static void __print_bl_info(struct seq_file *seq, struct bio_list *bl)
-{
-	int i;
-	int nr_blk;
-	block_t blk_addr;
-	struct bio *bio_tmp;
-	struct super_block *sb = seq->private;
-	struct f2fs_sb_info *sbi = F2FS_SB(sb);
-
-	i = 0;
-	bio_list_for_each(bio_tmp, bl) {
-		++i;
-		blk_addr = hmfs_sector_to_blkaddr(sbi, bio_tmp);
-		nr_blk = SECTOR_TO_BLOCK(bio_sectors(bio_tmp));
-		seq_printf(seq, "\t%5d: secno:%u, addr[%llu-%u], sec head[%d]/tail[%d]\n",
-				   i, GET_SEC_FROM_SEG(sbi, GET_SEGNO(sbi, blk_addr)),
-				   blk_addr, nr_blk,
-				   IS_FIRST_DATA_BLOCK_IN_SEC(sbi, blk_addr),
-				   IS_LAST_DATA_BLOCK_IN_SEC(sbi, blk_addr + nr_blk - 1, DATA));
-	}
-}
-
-static int order_list_info_seq_show(struct seq_file *seq, void *offset)
-{
-	struct super_block *sb = seq->private;
-	struct f2fs_sb_info *sbi = F2FS_SB(sb);
-	struct bio_list *bl;
-	struct list_head *sec_list = NULL;
-	int i;
-
-	seq_printf(seq, "main blkaddr: %llu\n", MAIN_BLKADDR(sbi));
-	seq_puts(seq, "bio order list:\n");
-
-	for (i = 0; i < STREAM_NR; ++i) {
-		mutex_lock(&sbi->bio_lock[i]);
-		bl = &sbi->bio_list[i];
-		sec_list = &sbi->section_list[i];
-		seq_printf(seq, "\tstream[%i] -- %llu | empty[%d]", i,
-				atomic_read(&sbi->last_blkaddr[i]),
-				bio_list_empty(bl));
-		if (!bio_list_empty(bl)) {
-			seq_printf(seq, " top[%llu]\n",
-					   hmfs_sector_to_blkaddr(sbi, bio_list_peek(bl)));
-			__print_bl_info(seq, bl);
-		} else {
-			seq_puts(seq, "\n");
-		}
-
-		if (!list_empty(sec_list))
-			__print_sec_list(seq, sec_list);
-		mutex_unlock(&sbi->bio_lock[i]);
-	}
-	seq_printf(seq, "total times: %u, scan order list times: %u\n",
-					sbi->order_stat_times[0], sbi->order_stat_times[1]);
+	seq_printf(seq, "slc sec size is %d[seg], sec size is %d[seg]\n",
+			sbi->segs_per_slc_sec, sbi->segs_per_sec);
 	return 0;
 }
 
@@ -1092,7 +1044,6 @@ F2FS_PROC_FILE_DEF(iostat_info);
 F2FS_PROC_FILE_DEF(currentseg_info);
 F2FS_PROC_FILE_DEF(victim_bits);
 F2FS_PROC_FILE_DEF(resizf2fs_info);
-F2FS_PROC_FILE_DEF(order_list_info);
 F2FS_PROC_FILE_DEF(undiscard_info);
 F2FS_PROC_FILE_DEF(slc_mode_info);
 
@@ -1860,8 +1811,6 @@ int hmfs_register_sysfs(struct f2fs_sb_info *sbi)
 				&f2fs_resizf2fs_info_fops, sb);
 		proc_create_data("slc_mode_info", S_IRUGO, sbi->s_proc,
 				&f2fs_slc_mode_info_fops, sb);
-		proc_create_data("order_list_info", S_IRUGO, sbi->s_proc,
-				&f2fs_order_list_info_fops, sb);
 		proc_create_data("oob_info_ctrl", S_IRUGO | S_IWUGO, sbi->s_proc,
 				&f2fs_oob_info_ctrl_fops, sb);
 		proc_create_data("pu_ctrl", S_IRUGO | S_IWUGO, sbi->s_proc,
@@ -1885,7 +1834,6 @@ void hmfs_unregister_sysfs(struct f2fs_sb_info *sbi)
 		remove_proc_entry("undiscard_info", sbi->s_proc);
 		remove_proc_entry("resizf2fs_info", sbi->s_proc);
 		remove_proc_entry("slc_mode_info", sbi->s_proc);
-		remove_proc_entry("order_list_info", sbi->s_proc);
 		remove_proc_entry("oob_info_ctrl", sbi->s_proc);
 		remove_proc_entry("pu_ctrl", sbi->s_proc);
 		remove_proc_entry("pu_status", sbi->s_proc);

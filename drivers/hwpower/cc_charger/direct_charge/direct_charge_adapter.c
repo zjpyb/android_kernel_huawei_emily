@@ -156,6 +156,7 @@ int dc_get_adapter_min_voltage(int *value)
 int dc_get_adapter_current(int *value)
 {
 	struct direct_charge_device *l_di = direct_charge_get_di();
+	int adapter_type = ADAPTER_TYPE_UNKNOWN;
 
 	if (!l_di)
 		return -1;
@@ -163,7 +164,11 @@ int dc_get_adapter_current(int *value)
 	if (direct_charge_get_stop_charging_flag())
 		return -1;
 
-	if (l_di->adaptor_vendor_id == ADAPTER_CHIP_IWATT)
+	adapter_type = dc_get_adapter_type();
+	if ((l_di->adaptor_vendor_id == ADAPTER_CHIP_IWATT) &&
+		((adapter_type == ADAPTER_TYPE_5V4P5A) ||
+		(adapter_type == ADAPTER_TYPE_10V2A) ||
+		(adapter_type == ADAPTER_TYPE_10V2P25A)))
 		return direct_charge_get_device_ibus(value);
 
 	if (adapter_get_output_current(g_prot, value)) {
@@ -443,6 +448,7 @@ int dc_set_adapter_voltage(int value)
 		l_di->adaptor_vset = l_di->max_adapter_vset;
 	}
 
+	l_di->adaptor_vset = l_value;
 	if (adapter_set_output_voltage(g_prot, l_value)) {
 		dc_fill_eh_buf(l_di->dsm_buff, sizeof(l_di->dsm_buff),
 			DC_EH_SET_APT_VOLT, NULL);

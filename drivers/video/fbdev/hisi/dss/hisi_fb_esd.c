@@ -262,6 +262,10 @@ void dpufb_esd_register(struct platform_device *pdev)
 		if (dpufd->panel_info.esd_check_time_period) {
 			hrtimer_start(&esd_ctrl->esd_hrtimer, ktime_set(dpufd->panel_info.esd_check_time_period / 1000,
 				(dpufd->panel_info.esd_check_time_period % 1000) * 1000000), HRTIMER_MODE_REL);
+		} else if (dpufd->panel_info.esd_first_check_delay) {
+			DPU_FB_INFO("esd check start");
+			hrtimer_start(&esd_ctrl->esd_hrtimer, ktime_set(dpufd->panel_info.esd_first_check_delay / 1000,
+				(dpufd->panel_info.esd_first_check_delay % 1000) * 1000000), HRTIMER_MODE_REL);
 		} else {
 			hrtimer_start(&esd_ctrl->esd_hrtimer, ktime_set(ESD_CHECK_TIME_PERIOD / 1000,
 				(ESD_CHECK_TIME_PERIOD % 1000) * 1000000), HRTIMER_MODE_REL);

@@ -48,7 +48,7 @@
 #define FTS_ROI_SUPPORTED			"roi_supported"
 #define FTS_ROI_SWITCH_ADDR		"roi_switch_addr"
 #define FTS_ROI_PKG_NUM_ADDR	"roi_pkg_num_addr"
-#define FTS_8201_GESTURE_SUPPORTED "fts_8201_gesture_supported"
+#define FTS_8201_GESTURE_SUPPORTED "double_click_supported"
 #define FTS_CONTROL_CS_GPIO "fts_control_cs_gpio"
 #define FTS_PALM_IRON_SUPPORT	"palm_iron_support"
 #define FTS_PALM_ESD_SUPPORT "palm_esd_support"
@@ -137,6 +137,9 @@
 #define FTS_FW_UPDATE_DURATION_CHECK	"fw_update_duration_check"
 #define FTS_USE_PINCTRL			"fts_use_pinctrl"
 #define FTS_READ_DEBUG_REG_AND_DIFFER	"read_debug_reg_and_differ"
+#define FTS_ALLOW_REFRESH_IC_TYPE "allow_refresh_ic_type"
+#define FTS_USE_DIF_IC_TYPE "use_dif_ic_type"
+#define FTS_SUPPORT_DUAL_CHIP_ARCH "support_dual_chip_arch"
 int focal_get_vendor_name_from_dts(const char *project_id,
 	char *vendor_name, size_t size);
 

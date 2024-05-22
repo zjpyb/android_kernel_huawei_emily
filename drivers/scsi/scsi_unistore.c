@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2017-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2021. All rights reserved.
  * Description: unistore implement
  *
  * This software is licensed under the terms of the GNU General Public
@@ -15,6 +15,7 @@
 #include <linux/blkdev.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_device.h>
+#include <scsi/scsi_cmnd.h>
 
 static int scsi_dev_pwron_info_sync(struct request_queue *q,
 	struct stor_dev_pwron_info *stor_info, unsigned int rescue_seg_size)
@@ -331,3 +332,82 @@ void scsi_dev_unistore_register(struct Scsi_Host *shost)
 		scsi_dev_bad_block_error_inject : NULL);
 #endif
 }
+
+void scsi_unistore_execute_done(struct request *rq)
+{
+	blk_put_request(rq);
+}
+
+int scsi_unistore_execute(struct scsi_device *sdev,
+	const unsigned char *cmd, int data_direction, void *buffer,
+	unsigned bufflen, int timeout, int retries, rq_end_io_fn *done)
+{
+	int ret = -ENOMEM;
+	struct scsi_request *rq = NULL;
+	struct request *req = mas_blk_get_request_reset(sdev->request_queue,
+			data_direction == DMA_TO_DEVICE ?
+			REQ_OP_SCSI_OUT : REQ_OP_SCSI_IN,
+			__GFP_RECLAIM | __GFP_NOFAIL);
+
+	if (IS_ERR_OR_NULL(req))
+		return -EBUSY;
+
+	rq = scsi_req(req);
+
+	if (bufflen &&	blk_rq_map_kern(sdev->request_queue, req,
+		buffer, bufflen, __GFP_RECLAIM | __GFP_NOFAIL))
+		goto out;
+
+	if (!rq->cmd || !req->bio)
+		goto out;
+
+	rq->cmd_len = BLK_MAX_CDB;
+	memcpy(rq->cmd, cmd, rq->cmd_len);
+	rq->retries = retries;
+	req->timeout = timeout;
+	req->rq_flags |= RQF_QUIET | RQF_PREEMPT;
+	if (done && (cmd[0] == READ_BUFFER))
+		req->mas_cmd_flags |= MAS_REQ_RESET;
+
+	/*
+	 * head injection *required* here otherwise quiesce won't work
+	 */
+	if (done) {
+		blk_execute_rq_nowait(req->q, NULL, req, 1, done);
+		return 0;
+	} else {
+		blk_execute_rq(req->q, NULL, req, 1);
+		ret = rq->result;
+	}
+out:
+	blk_put_request(req);
+
+	return ret;
+}
+
+#define RW_BUFFER_MODE 0x1
+#define VCMD_WRITE_DATA_MOVE_BUFFER_ID 0x21
+#define RW_BUFFER_OPCODE_OFFSET 0
+#define RW_BUFFER_MODE_OFFSET 1
+#define RW_BUFFER_BUFFER_ID_OFFSET 2
+
+bool scsi_unistore_is_datamove(struct scsi_cmnd *scmd)
+{
+	struct scsi_device *sdev = scmd->device;
+	struct request_queue *q = NULL;
+
+	if (!sdev || !scmd->cmnd)
+		return false;
+
+	q = sdev->request_queue;
+	if (!q || !blk_queue_query_unistore_enable(q))
+		return false;
+
+	if ((scmd->cmnd[RW_BUFFER_OPCODE_OFFSET] == WRITE_BUFFER) &&
+		(scmd->cmnd[RW_BUFFER_MODE_OFFSET] == RW_BUFFER_MODE) &&
+		(scmd->cmnd[RW_BUFFER_BUFFER_ID_OFFSET] == VCMD_WRITE_DATA_MOVE_BUFFER_ID))
+		return true;
+	else
+		return false;
+}
+

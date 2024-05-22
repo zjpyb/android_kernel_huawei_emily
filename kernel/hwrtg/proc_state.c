@@ -61,7 +61,7 @@
 
 DEFINE_IDR(rate_margin_idr);
 static int g_default_rate = 0;
-static rwlock_t g_state_margin_lock;
+DEFINE_RWLOCK(g_state_margin_lock);
 
 static atomic_t g_boost_thread_pid = ATOMIC_INIT(INIT_VALUE);
 static atomic_t g_boost_thread_tid = ATOMIC_INIT(INIT_VALUE);
@@ -164,6 +164,7 @@ static int get_proc_state(const char *state_str)
 }
 
 /*lint -e429*/
+/* Caller must hold g_state_margin_lock */
 static int put_state_margin(const char *state_str, const char *margin_str,
 			    struct idr *margin_idr)
 {
@@ -184,12 +185,10 @@ static int put_state_margin(const char *state_str, const char *margin_str,
 
 	pr_debug("[AWARE_RTG]: %s state=%d, margin=%d", __func__, state, margin);
 
-	write_lock(&g_state_margin_lock);
 	temp = idr_find(margin_idr, state);
 	if (!temp) {
 		temp = kzalloc(sizeof(int), GFP_ATOMIC);
 		if (temp == NULL) {
-			write_unlock(&g_state_margin_lock);
 			pr_err("[AWARE_RTG] %s kzalloc failed\n", __func__);
 			return -1;
 		}
@@ -198,13 +197,10 @@ static int put_state_margin(const char *state_str, const char *margin_str,
 		ret = idr_alloc(margin_idr, temp, state, state + 1, GFP_ATOMIC);
 		if (ret < 0) {
 			kfree(temp);
-			write_unlock(&g_state_margin_lock);
 			pr_err("[AWARE_RTG] %s idr_alloc failed, ret = %d\n", __func__, ret);
 			return -1;
 		}
 	}
-
-	write_unlock(&g_state_margin_lock);
 
 	return 0;
 }
@@ -591,7 +587,6 @@ int init_proc_state(const int *config, int len)
 	if ((config == NULL) || (len != RTG_CONFIG_NUM))
 		return -INVALID_ARG;
 
-	rwlock_init(&g_state_margin_lock);
 	if ((config[RTG_FRAME_MAX_UTIL] > 0) &&
 		(config[RTG_FRAME_MAX_UTIL] < DEFAULT_MAX_UTIL))
 		g_frame_max_util = config[RTG_FRAME_MAX_UTIL];
@@ -643,6 +638,7 @@ void deinit_proc_state(void)
 #endif
 }
 
+/* Caller must hold g_state_margin_lock */
 static struct idr *alloc_rtg_margin_idr(int rate)
 {
 	struct idr *margin_idr = NULL;
@@ -653,12 +649,10 @@ static struct idr *alloc_rtg_margin_idr(int rate)
 		return ERR_PTR(-EINVAL);
 	}
 
-	write_lock(&g_state_margin_lock);
 	margin_idr = idr_find(&rate_margin_idr, rate);
 	if (!margin_idr) {
 		margin_idr = kzalloc(sizeof(*margin_idr), GFP_ATOMIC);
 		if (!margin_idr) {
-			write_unlock(&g_state_margin_lock);
 			pr_err("[AWARE_RTG] %s kzalloc failed\n", __func__);
 			return ERR_PTR(-ENOMEM);
 		}
@@ -667,32 +661,23 @@ static struct idr *alloc_rtg_margin_idr(int rate)
 		ret = idr_alloc(&rate_margin_idr, margin_idr, rate, rate + 1, GFP_ATOMIC);
 		if (ret < 0) {
 			kfree(margin_idr);
-			write_unlock(&g_state_margin_lock);
 			pr_err("[AWARE_RTG] %s idr_alloc failed, ret = %d\n", __func__, ret);
 			return ERR_PTR(ret);
 		}
 	}
-	write_unlock(&g_state_margin_lock);
 
 	return margin_idr;
 }
 
-int parse_config(const struct rtg_str_data *rs_data)
+static int do_parse_config(char *data, int len)
 {
-	int len;
 	char *p = NULL;
 	char *tmp = NULL;
-	char *data = NULL;
 	struct idr *margin_idr = NULL;
 	int value;
 
-	if (rs_data == NULL)
+	if (strlen(data) != len)
 		return -INVALID_ARG;
-	data = rs_data->data;
-	len = rs_data->len;
-	if ((data == NULL) || (strlen(data) != len)) //lint !e737
-		return -INVALID_ARG;
-	g_default_rate = 0;
 	/*
 	 * DEFAULT_FRAME_RATE(60):
 	 *     eg: rtframe:4;activity:-16;frame0:8;frame1:10;frame2:20;click:-8;
@@ -701,6 +686,7 @@ int parse_config(const struct rtg_str_data *rs_data)
 	 *         rate:90;activity:-11;frame0:8;frame1:10;frame2:20;click:-8;
 	 *         rate:120;activity:-6;frame0:8;frame1:10;frame2:20;click:-8;
 	 */
+	g_default_rate = 0;
 	for (p = strsep(&data, ";"); p != NULL; p = strsep(&data, ";")) {
 		tmp = strsep(&p, ":");
 		if ((tmp == NULL) || (p == NULL))
@@ -739,6 +725,26 @@ int parse_config(const struct rtg_str_data *rs_data)
 	return SUCC;
 }
 
+int parse_config(const struct rtg_str_data *rs_data)
+{
+	int len;
+	char *data = NULL;
+	int ret;
+
+	if (rs_data == NULL)
+		return -INVALID_ARG;
+	data = rs_data->data;
+	len = rs_data->len;
+	if (data == NULL) //lint !e737
+		return -INVALID_ARG;
+
+	write_lock(&g_state_margin_lock);
+	ret = do_parse_config(data, len);
+	write_unlock(&g_state_margin_lock);
+
+	return ret;
+}
+
 #ifdef CONFIG_HW_RTG_MULTI_FRAME
 int parse_rtg_attr(const struct rtg_str_data *rs_data)
 {
@@ -766,8 +772,6 @@ int parse_rtg_attr(const struct rtg_str_data *rs_data)
 			return -INVALID_ARG;
 		if (!strcmp(tmp, "rtgId")) {
 			frame_info = rtg_frame_info(value);
-			if (!frame_info)
-				return -INVALID_RTG_ID;
 		} else if (!strcmp(tmp, "rate")) {
 			rate = value;
 		} else if (!strcmp(tmp, "type")) {
@@ -782,6 +786,9 @@ int parse_rtg_attr(const struct rtg_str_data *rs_data)
 			return -INVALID_ARG;
 		}
 	}
+
+	if (frame_info == NULL)
+		return -INVALID_RTG_ID;
 
 	if (rate > 0)
 		set_frame_rate(frame_info, rate);

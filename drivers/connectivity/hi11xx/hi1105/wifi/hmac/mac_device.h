@@ -611,6 +611,7 @@ extern uint8_t g_auc_mac_device_radio_cap[];
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
 extern mac_mcast_ampdu_cfg_stru g_mcast_ampdu_cfg;
 #endif
+extern oal_bool_enum_uint8 g_pt_mcast_enable;
 #ifdef _PRE_WLAN_CHBA_MGMT
 extern int32_t g_d2h_rate_complete;
 #endif

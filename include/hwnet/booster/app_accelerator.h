@@ -57,7 +57,7 @@ struct speed_test_status_msg {
 
 
 msg_process *app_acc_init(notify_event *fn);
-void app_acc_process(struct req_msg_head *msg);
+void app_acc_process(struct req_msg_head *msg, u32 len);
 int app_acc_get_uid(void);
 u32 app_acc_get_theshold(void);
 u32 app_acc_cubic_trubo_init_win(void);

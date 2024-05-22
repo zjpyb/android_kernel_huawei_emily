@@ -285,7 +285,7 @@ static void series_batt_speaker_charge_clear_resource(struct direct_charge_devic
 	di->compensate_v = 0;
 	di->ibat_abnormal_cnt = 0;
 	di->max_adaptor_cur = 0;
-	di->force_single_path_flag = false;
+	di->multi_ic_check_info.force_single_path_flag = false;
 	memset(&di->limit_max_pwr, 0, sizeof(di->limit_max_pwr));
 	di->scp_stop_charging_complete_flag = 1;
 	di->adaptor_test_result_type = AT_TYPE_OTHER;

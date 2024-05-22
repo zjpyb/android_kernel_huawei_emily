@@ -104,10 +104,22 @@ struct multi_ic_tbat_error_para {
 	int limit_current;
 };
 
+enum multi_ic_thre_info {
+	MULTI_IC_THRE_IBUS_LTH,
+	MULTI_IC_THRE_VBAT_HTH,
+	MULTI_IC_THRE_MAX,
+};
+
+struct multi_ic_thre_para {
+	int ibus_lth;
+	int vbat_hth;
+};
+
 struct multi_ic_check_para {
 	u32 multi_ic_start_time;
 	int ibat_th;
 	int limit_current;
+	bool force_single_path_flag;
 	int report_info[MULTI_IC_DMD_LEVEL_END];
 	unsigned int ibus_error_num[MULTI_IC_CURR_RATIO_PARA_LEVEL];
 	unsigned int vbat_error_num[MULTI_IC_VBAT_ERROR_PARA_LEVEL];
@@ -116,11 +128,13 @@ struct multi_ic_check_para {
 	struct multi_ic_curr_ratio_para curr_ratio[MULTI_IC_CURR_RATIO_PARA_LEVEL];
 	struct multi_ic_vbat_error_para vbat_error[MULTI_IC_VBAT_ERROR_PARA_LEVEL];
 	struct multi_ic_tbat_error_para tbat_error[MULTI_IC_TBAT_ERROR_PARA_LEVEL];
+	struct multi_ic_thre_para thre_para[CHARGE_PATH_MAX_NUM];
 };
 
 struct multi_ic_check_mode_para {
 	int support_multi_ic;
 	u32 support_select_temp;
+	u32 use_buck_as_aux_sc;
 	int ic_error_cnt[CHARGE_PATH_MAX_NUM];
 };
 

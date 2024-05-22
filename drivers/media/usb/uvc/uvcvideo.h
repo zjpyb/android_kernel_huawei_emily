@@ -501,6 +501,7 @@ struct uvc_streaming {
 	 */
 	struct mutex mutex;
 
+	struct notifier_block nb;
 	/* Buffers queue. */
 	unsigned int frozen : 1;
 	struct uvc_video_queue queue;

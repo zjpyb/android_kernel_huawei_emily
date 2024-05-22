@@ -218,7 +218,8 @@ static int bq25970_discharge(int enable, void *dev_data)
 		return -1;
 
 	if ((di->device_id == SWITCHCAP_HL1530) ||
-		(di->device_id == SWITCHCAP_SYH69637))
+		(di->device_id == SWITCHCAP_SYH69637) ||
+		(di->device_id == SWITCHCAP_HL7130))
 		ret = bq25970_write_mask(di, BQ2597X_BUS_OVP_REG,
 			HL1530_BUS_PD_EN_MASK, HL1530_BUS_PD_EN_SHIFT, value);
 	else
@@ -293,6 +294,9 @@ static int bq25970_get_device_id(void *dev_data)
 		break;
 	case BQ2597X_DEVICE_ID_HL1530:
 		di->device_id = SWITCHCAP_HL1530;
+		break;
+	case BQ2597X_DEVICE_ID_HL7130:
+		di->device_id = SWITCHCAP_HL7130;
 		break;
 	case BQ2597X_DEVICE_ID_SYH69637:
 		di->device_id = SWITCHCAP_SYH69637;
@@ -544,7 +548,8 @@ static int bq25970_is_tsbat_disabled(void *dev_data)
 
 	hwlog_info("is_tsbat_disabled [%x]=0x%x\n", BQ2597X_CHRG_CTL_REG, reg);
 
-	if (di->device_id == SWITCHCAP_HL1530)
+	if ((di->device_id == SWITCHCAP_HL1530) ||
+		(di->device_id == SWITCHCAP_HL7130))
 		return (reg & BQ2597X_TSBAT_DIS_MASK) ? -1 : 0;
 	return (reg & BQ2597X_TSBAT_DIS_MASK) ? 0 : -1;
 }
@@ -723,7 +728,8 @@ static int bq25970_config_watchdog_ms(int time, void *dev_data)
 static u8 bq25970_select_vbat_ovp_threshold(struct bq25970_device_info *di,
 	int ovp_threshold)
 {
-	if (di->device_id == SWITCHCAP_HL1530) {
+	if ((di->device_id == SWITCHCAP_HL1530) ||
+		(di->device_id == SWITCHCAP_HL7130)) {
 		if (ovp_threshold < HL1530_BAT_OVP_BASE)
 			ovp_threshold = HL1530_BAT_OVP_BASE;
 		if (ovp_threshold > HL1530_BAT_OVP_MAX)
@@ -791,7 +797,8 @@ static u8 bq25970_select_ac_ovp_threshold(struct bq25970_device_info *di,
 	int ovp_threshold)
 {
 	if ((di->device_id == SWITCHCAP_HL1530) ||
-		(di->device_id == SWITCHCAP_SYH69637)) {
+		(di->device_id == SWITCHCAP_SYH69637) ||
+		(di->device_id == SWITCHCAP_HL7130)) {
 		if (ovp_threshold == HL1530_AC_OVP_BASE_MIN)
 			ovp_threshold = BQ2597X_AC_OVP_MAX_18000MV;
 		else if (ovp_threshold < BQ2597X_AC_OVP_BASE_11000MV)
@@ -964,6 +971,9 @@ static int bq25970_config_ibus_low_deglitch(struct bq25970_device_info *di, int 
 	else
 		ibus_config = BQ2597X_IBUS_LOW_DEGLITCH_10US;
 
+	if (di->device_id == SWITCHCAP_HL7130)
+		ibus_config = BQ2597X_IBUS_LOW_DEGLITCH_5MS;
+
 	return bq25970_write_mask(di, BQ2597X_DEGLITCH_REG,
 		BQ2597X_IBUS_LOW_DEGLITCH_MASK, BQ2597X_IBUS_LOW_DEGLITCH_SHIFT,
 		ibus_config);
@@ -997,21 +1007,47 @@ static int bq25970_reg_init(struct bq25970_device_info *di)
 
 	ret = bq25970_write_byte(di, BQ2597X_CONTROL_REG,
 		BQ2597X_CONTROL_REG_INIT);
+	if (di->device_id == SWITCHCAP_NU2105) {
+		di->switching_frequency = BQ2597X_SW_FREQ_450KHZ;
+		ret += bq25970_write_mask(di, BQ2597X_PULSE_MODE_REG,
+			NU2105_SS_TIMEOUT_SET_MASK, NU2105_SS_TIMEOUT_SET_SHIFT,
+			NU2105_SS_TIMEOUT_SET_100MS);
+		ret += bq25970_write_mask(di, NU2105_CHRG_MODE_REG,
+			NU2105_CHRG_MODE_MASK, NU2105_CHRG_MODE_SHIFT,
+			NU2105_CHRG_MODE_REG_SC);
+	}
 	if ((di->device_id == SWITCHCAP_HL1530) ||
-		(di->device_id == SWITCHCAP_SYH69637))
+		(di->device_id == SWITCHCAP_SYH69637) ||
+		(di->device_id == SWITCHCAP_HL7130))
 		ret += bq25970_write_mask(di, BQ2597X_BUS_OVP_REG,
 			HL1530_BUS_PD_EN_MASK, HL1530_BUS_PD_EN_SHIFT,
 			BQ2597X_ALM_DISABLE);
+	if (di->device_id == SWITCHCAP_HL7130) {
+		ret += bq25970_write_byte(di, HL7130_PMID_VOUT_UV_OV_REG,
+			HL7130_PMID_VOUT_UV_OV_INIT);
+		ret += bq25970_write_byte(di, HL7130_CONTROL2_REG,
+			HL7130_CONTROL2_INIT);
+		ret += bq25970_write_byte(di, HL7130_ADC_CTL1_REG,
+			HL7130_ADC_CTL1_INIT);
+	}
 	ret += bq25970_write_byte(di, BQ2597X_CHRG_CTL_REG,
 		di->chrg_ctl_reg_init);
 	ret += bq25970_write_byte(di, BQ2597X_INT_MASK_REG,
 		BQ2597X_INT_MASK_REG_INIT);
 	ret += bq25970_write_byte(di, BQ2597X_FLT_MASK_REG,
 		BQ2597X_FLT_MASK_REG_INIT);
-	ret += bq25970_write_byte(di, BQ2597X_ADC_CTRL_REG,
-		BQ2597X_ADC_CTRL_REG_INIT);
-	ret += bq25970_write_byte(di, BQ2597X_ADC_FN_DIS_REG,
-		di->adc_fn_reg_init);
+
+	if (di->device_id == SWITCHCAP_HL7130) {
+		ret += bq25970_write_byte(di, BQ2597X_ADC_CTRL_REG,
+			HL7130_ADC_CTRL_REG_INIT);
+		ret += bq25970_write_byte(di, BQ2597X_ADC_FN_DIS_REG,
+			HL7130_ADC_FN_DIS_REG_INIT);
+	} else {
+		ret += bq25970_write_byte(di, BQ2597X_ADC_CTRL_REG,
+			BQ2597X_ADC_CTRL_REG_INIT);
+		ret += bq25970_write_byte(di, BQ2597X_ADC_FN_DIS_REG,
+			di->adc_fn_reg_init);
+	}
 	ret += bq25970_write_mask(di, BQ2597X_BAT_OVP_ALM_REG,
 		BQ2597X_BAT_OVP_ALM_DIS_MASK, BQ2597X_BAT_OVP_ALM_DIS_SHIFT,
 		BQ2597X_ALM_DISABLE);
@@ -1087,6 +1123,11 @@ static int bq25970_charge_exit(void *dev_data)
 	}
 
 	ret = bq25970_charge_enable(BQ2597X_SWITCHCAP_DISABLE, dev_data);
+
+	if (di->device_id == SWITCHCAP_NU2105)
+		ret += bq25970_write_mask(di, NU2105_CHRG_MODE_REG,
+			NU2105_CHRG_MODE_MASK, NU2105_CHRG_MODE_SHIFT,
+			NU2105_CHRG_MODE_REG_SC);
 
 	di->init_finish_flag = BQ2597X_NOT_INIT;
 	di->int_notify_enable_flag = BQ2597X_DISABLE_INT_NOTIFY;

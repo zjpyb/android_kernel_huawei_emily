@@ -1855,6 +1855,8 @@ static void uvc_delete(struct kref *kref)
 	list_for_each_safe(p, n, &dev->streams) {
 		struct uvc_streaming *streaming;
 		streaming = list_entry(p, struct uvc_streaming, list);
+		/* delete usb notify last by irq control */
+		usb_unregister_notify(&streaming->nb);
 		usb_driver_release_interface(&uvc_driver.driver,
 			streaming->intf);
 		usb_put_intf(streaming->intf);
@@ -1898,6 +1900,24 @@ static void uvc_unregister_video(struct uvc_device *dev)
 		media_device_unregister(&dev->mdev);
 #endif
 
+}
+
+static int uvc_dev_notify(struct notifier_block *nb,
+		unsigned long action, void *data)
+{
+	struct uvc_streaming *stream =
+		container_of(nb, struct uvc_streaming, nb);
+
+	switch (action) {
+	case USB_BUS_ADD:
+		break;
+	case USB_BUS_REMOVE:
+		/* give back all buffers to HAL while USB disconnected */
+		uvc_queue_cancel(&stream->queue, 1);
+		printk(KERN_INFO "uvc disconnected:%s\n", __func__);
+		break;
+	}
+	return NOTIFY_OK;
 }
 
 static int uvc_register_video(struct uvc_device *dev,
@@ -1954,6 +1974,9 @@ static int uvc_register_video(struct uvc_device *dev,
 		stream->chain->caps |= V4L2_CAP_VIDEO_CAPTURE;
 	else
 		stream->chain->caps |= V4L2_CAP_VIDEO_OUTPUT;
+
+	stream->nb.notifier_call = uvc_dev_notify;
+	usb_register_notify(&stream->nb);
 
 	kref_get(&dev->ref);
 	return 0;

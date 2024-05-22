@@ -116,6 +116,7 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 #define FTS_FW_DOWNLOAD_MODE_FT8756 0x01
 #define FOCAL_RESET_DELAY_TIME			10
 #define FOCAL_AFTER_WRITE_55_DELAY_TIME 	8
+#define FOCAL_CMD_LEN_MAX 4
 #define FOCAL_ADC_NUM_OFFSET 6
 #define SET_ON 1
 #define SET_OFF 0
@@ -124,6 +125,8 @@ extern  struct ts_kit_device_data *g_focal_dev_data ;
 
 #define FOCAL_DELAY_AFTER_ADC_SCAN 150
 #define FOCAL_DELAY_AFTER_RED_VREF 50
+#define CHIP_ID_FT8201 0x8006
+#define CHIP_ID_FT8201AB 0x8201
 
 enum data_num {
 	DATA_0 = 0,
@@ -145,6 +148,7 @@ enum focal_ic_type {
 	FOCAL_FT5422U,
 	FOCAL_FT3528,
 	FOCAL_FT8756,
+	FOCAL_FT8201_AB,
 };
 
 enum roi_data_status {
@@ -231,6 +235,9 @@ struct focal_platform_data {
 	u32 edge_data_addr;
 	u32 aft_wxy_enable;
 	u32 roi_pkg_num_addr;
+	u32 allow_refresh_ic_type;
+	u32 use_dif_ic_type;
+	u32 supported_vamalloc_fortest;
 	int need_distinguish_lcd;
 	int notify_lcd_esd_support;
 	int hide_plain_lcd_log;
@@ -259,6 +266,7 @@ struct focal_platform_data {
 	bool is_v3_pattern;
 	u32 support_get_debug_info_from_ic;
 	u8 get_debug_info_reg_addr;
+	u32 support_dual_chip_arch;
 };
 enum SPI_COM_MODE {
 	INTERRUPT_MODE = 0,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2021. All rights reserved.
  * Description: mas block unistore interface for hmfs
  *
  * This software is licensed under the terms of the GNU General Public
@@ -21,12 +21,9 @@
 #include <linux/bio.h>
 #include <linux/delay.h>
 #include <linux/gfp.h>
-#include <linux/hisi/powerkey_event.h>
-#include <trace/events/block.h>
 #include <linux/types.h>
 #include <trace/iotrace.h>
 #include "blk.h"
-#include "dsm_block.h"
 
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
 int mas_blk_device_pwron_info_sync(struct block_device *bi_bdev,
@@ -34,8 +31,11 @@ int mas_blk_device_pwron_info_sync(struct block_device *bi_bdev,
 {
 	int ret;
 	unsigned int i;
+	unsigned int j;
 	struct request_queue *q = bdev_get_queue(bi_bdev);
 	struct blk_dev_lld *lld = mas_blk_get_lld(q);
+	unsigned int blk_offset;
+	unsigned int section_addr;
 
 	if (!blk_queue_query_unistore_enable(q))
 		return -EFAULT;
@@ -43,7 +43,14 @@ int mas_blk_device_pwron_info_sync(struct block_device *bi_bdev,
 	if (!lld || !lld->unistore_ops.dev_pwron_info_sync)
 		return -EPERM;
 
+	if (!rescue_seg_size) {
+		pr_err("%s rescue_seg_size is %u\n", __func__, rescue_seg_size);
+		return -EINVAL;
+	}
+
 	io_trace_unistore_count(UNISTORE_PON_SYNC_SEND_CNT, 1);
+
+	stor_info->done_info.done = NULL;
 
 	ret = lld->unistore_ops.dev_pwron_info_sync(q, stor_info, rescue_seg_size);
 	if (ret) {
@@ -51,22 +58,40 @@ int mas_blk_device_pwron_info_sync(struct block_device *bi_bdev,
 		return ret;
 	}
 
-	for (i = 0; i < STREAM_NUM; i++) {
+	blk_offset = (unsigned int)(bi_bdev->bd_part->start_sect >> SECTION_SECTOR);
+	for (i = 0; i < BLK_STREAM_MAX_STRAM; i++) {
 		if (stor_info->dev_stream_addr[i] != 0)
 			stor_info->dev_stream_addr[i] =
-				stor_info->dev_stream_addr[i] -
-				(unsigned int)(bi_bdev->bd_part->start_sect >> SECTION_SECTOR);
+				stor_info->dev_stream_addr[i] - blk_offset;
 	}
 	for (i = 0; i < stor_info->rescue_seg_cnt; i++)
 		stor_info->rescue_seg[i] =
-			(stor_info->rescue_seg[i] << SECTOR_BYTE) -
-			(unsigned int)(bi_bdev->bd_part->start_sect >> SECTION_SECTOR);
+			(stor_info->rescue_seg[i] << SECTOR_BYTE) - blk_offset;
 
 	for (i = 0; i < DATA_MOVE_STREAM_NUM; i++) {
 		if (stor_info->dm_stream_addr[i] != 0)
 			stor_info->dm_stream_addr[i] =
-				stor_info->dm_stream_addr[i] -
-				(unsigned int)(bi_bdev->bd_part->start_sect >> SECTION_SECTOR);
+				stor_info->dm_stream_addr[i] - blk_offset;
+	}
+
+	for (i = 0; i < BLK_ORDER_STREAM_NUM; i++) {
+		for (j = 0; j < STREAM_SECTION_NUM; j++) {
+			/* default return value from FW */
+			if (stor_info->section_info[i][j] == 0xFFFF) {
+				stor_info->section_info[i][j] = 0;
+				continue;
+			}
+
+			section_addr = stor_info->section_info[i][j] * lld->mas_sec_size;
+			if (section_addr < blk_offset) {
+				pr_err("%s, section addr error: 0x%llx\n",
+					__func__, stor_info->section_info[i][j]);
+				stor_info->section_info[i][j] = 0;
+				continue;
+			}
+
+			stor_info->section_info[i][j] = section_addr - blk_offset;
+		}
 	}
 
 	return ret;
@@ -101,12 +126,52 @@ int mas_blk_stream_oob_info_fetch(struct block_device *bi_bdev,
 	return ret;
 }
 
+static void mas_blk_clear_section_info(
+	struct blk_dev_lld *lld, unsigned char stream)
+{
+	unsigned long flags;
+	struct unistore_section_info *section_info = NULL;
+
+	spin_lock_irqsave(&lld->expected_lba_lock[stream - 1], flags);
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+	if (lld->mas_sec_size)
+		pr_err("%s, old_section: 0x%llx, expected_lba: 0x%llx - 0x%llx ",
+			"expected_pu: 0x%llx, current_pu_size: 0x%llx\n",
+			__func__, lld->old_section[stream - 1],
+			lld->expected_lba[stream - 1] / lld->mas_sec_size,
+			lld->expected_lba[stream - 1] % lld->mas_sec_size,
+			lld->expected_pu[stream - 1], lld->current_pu_size[stream - 1]);
+#endif
+	do {
+		if (list_empty_careful(&lld->section_list[stream - 1]))
+			break;
+
+		section_info = list_first_entry(
+				&lld->section_list[stream - 1],
+				struct unistore_section_info, section_list);
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+		if (lld->mas_sec_size)
+			pr_err("%s, section_info: 0x%llx\n", __func__,
+				section_info->section_start_lba / lld->mas_sec_size);
+#endif
+		list_del_init(&section_info->section_list);
+		kfree(section_info);
+	} while (1);
+
+	lld->expected_lba[stream - 1] = 0;
+	lld->old_section[stream - 1] = 0;
+	lld->expected_pu[stream - 1] = 0;
+	lld->current_pu_size[stream - 1] = 0;
+	spin_unlock_irqrestore(&lld->expected_lba_lock[stream - 1], flags);
+}
+
 int mas_blk_device_reset_ftl(struct block_device *bi_bdev)
 {
 	struct request_queue *q = bdev_get_queue(bi_bdev);
 	struct blk_dev_lld *lld = mas_blk_get_lld(q);
 	struct stor_dev_reset_ftl reset_ftl_info = {0};
 	int ret;
+	unsigned char stream;
 
 	if (!blk_queue_query_unistore_enable(q))
 		return -EFAULT;
@@ -115,6 +180,9 @@ int mas_blk_device_reset_ftl(struct block_device *bi_bdev)
 		return -EPERM;
 
 	ret = lld->unistore_ops.dev_reset_ftl(q, &reset_ftl_info);
+
+	for (stream = 0; stream < BLK_ORDER_STREAM_NUM; stream++)
+		mas_blk_clear_section_info(lld, stream + 1); /* ORDER STREAM */
 
 	if (ret)
 		io_trace_unistore_count(UNISTORE_RESET_FTL_FAIL_CNT, 1);
@@ -125,6 +193,7 @@ int mas_blk_device_reset_ftl(struct block_device *bi_bdev)
 int mas_blk_device_close_section(struct block_device *bi_bdev,
 	struct stor_dev_reset_ftl *reset_ftl_info)
 {
+	int ret;
 	struct request_queue *q = bdev_get_queue(bi_bdev);
 	struct blk_dev_lld *lld = mas_blk_get_lld(q);
 
@@ -134,7 +203,26 @@ int mas_blk_device_close_section(struct block_device *bi_bdev,
 	if (!lld || !lld->unistore_ops.dev_reset_ftl)
 		return -EPERM;
 
-	return lld->unistore_ops.dev_reset_ftl(q, reset_ftl_info);
+	ret = lld->unistore_ops.dev_reset_ftl(q, reset_ftl_info);
+	if (ret) {
+		pr_err("%s, close section failed: %u\n", __func__, ret);
+		return ret;
+	}
+
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+	pr_err("%s, op_type: %u, stream_type: %u, stream_id: %u\n", __func__,
+		reset_ftl_info->op_type, reset_ftl_info->stream_type, reset_ftl_info->stream_id);
+#endif
+	/*
+	 * op_type: 0:reset ftl, 1:close section
+	 * stream_type: 0:normal, 1: datamove
+	 */
+	if ((reset_ftl_info->op_type == 1) &&
+		(reset_ftl_info->stream_type == 0) &&
+		mas_blk_is_order_stream(reset_ftl_info->stream_id))
+		mas_blk_clear_section_info(lld, reset_ftl_info->stream_id);
+
+	return ret;
 }
 
 int mas_blk_device_read_section(
@@ -280,6 +368,8 @@ int mas_blk_data_move(struct block_device *bi_bdev,
 	io_trace_unistore_count(UNISTORE_DATA_MOVE_SEND_CNT, 1);
 
 	data_move_info->dest_4k_lba += start_sect;
+	data_move_info->done_info.start_addr = start_sect;
+
 	for (i = 0; i < data_move_info->source_addr_num; i++) {
 		source_addr = (data_move_info->source_addr) + i;
 		source_addr->data_move_source_addr += start_sect;
@@ -332,9 +422,14 @@ int mas_blk_sync_read_verify(struct block_device *bi_bdev,
 	if (!blk_queue_query_unistore_enable(q))
 		return -EFAULT;
 
-	verify_info->cp_verify_l4k += start_sect;
-	verify_info->cp_open_l4k += start_sect;
-	verify_info->cp_cache_l4k += start_sect;
+	if (verify_info->cp_verify_l4k)
+		verify_info->cp_verify_l4k += start_sect;
+
+	if (verify_info->cp_open_l4k)
+		verify_info->cp_open_l4k += start_sect;
+
+	if (verify_info->cp_cache_l4k)
+		verify_info->cp_cache_l4k += start_sect;
 
 	if (!lld || !lld->unistore_ops.dev_sync_read_verify)
 		return -EPERM;
@@ -405,7 +500,7 @@ static int mas_blk_set_streamid(struct hd_struct *p, struct blkdev_cmd *cmd)
 		return -EFAULT;
 	}
 
-	if (stream.stream_id > MAX_WRITE_STREAM_TYPE) {
+	if (stream.stream_id >= BLK_STREAM_MAX_STRAM) {
 		pr_err("%s, set wrong stream id:%u\n", __func__, stream.stream_id);
 		return -EFAULT;
 	}
@@ -435,7 +530,7 @@ void mas_blk_fsync_barrier(struct block_device *bdev)
 }
 
 struct stor_pwron_info_to_user {
-	unsigned int dev_stream_addr[STREAM_NUM];
+	unsigned int dev_stream_addr[BLK_STREAM_MAX_STRAM];
 	unsigned int dm_stream_addr[DATA_MOVE_STREAM_NUM];
 	unsigned char io_slc_mode_status;
 };
@@ -468,7 +563,8 @@ static int mas_blk_get_open_ptr(struct block_device *bdev, struct blkdev_cmd *cm
 	}
 	vfree(stor_info.rescue_seg);
 
-	for (i = 0; i < STREAM_NUM; i++) {
+	memset(&stor_info_to_user, 0, sizeof(struct stor_pwron_info_to_user));
+	for (i = 0; i < BLK_STREAM_MAX_STRAM; i++) {
 		stor_info_to_user.dev_stream_addr[i] = stor_info.dev_stream_addr[i];
 		pr_err("%s, dev_stream_addr[%d] = 0x%x\n",
 				__func__, i, stor_info_to_user.dev_stream_addr[i]);
@@ -528,6 +624,7 @@ static int mas_blk_get_mapping_pos(struct block_device *bdev,
 	int ret;
 	struct stor_dev_mapping_partition mapping_info;
 
+	memset(&mapping_info, 0, sizeof(struct stor_dev_mapping_partition));
 	ret = mas_blk_device_read_mapping_partition(bdev, &mapping_info);
 	if (ret) {
 		pr_err("%s, blk_device_config_mapping_partition failed %d\n",
@@ -599,20 +696,66 @@ int mas_blk_close_section(struct block_device *bdev,
 	return ret;
 }
 
+static void mas_blk_add_section_list_tail(struct blk_dev_lld *lld,
+	sector_t section_start_lba, unsigned char stream_type, int flash_mode)
+{
+	unsigned long flags = 0;
+	struct unistore_section_info *section_info = NULL;
+	struct unistore_section_info *tail_section_info = NULL;
+
+	section_info = kmalloc(sizeof(struct unistore_section_info), GFP_NOIO);
+	if (unlikely(!section_info)) {
+		section_info = kmalloc(sizeof(struct unistore_section_info), GFP_NOIO | __GFP_NOFAIL);
+		if (unlikely(!section_info)) {
+			pr_err("%s, kmalloc fail\n", __func__);
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
+			rdr_syserr_process_for_ap((u32)MODID_AP_S_PANIC_STORAGE, 0ull, 0ull);
+#endif
+			return;
+		}
+	}
+
+	section_info->section_start_lba = section_start_lba;
+	section_info->slc_mode = (flash_mode == 1) ? true : false;
+	section_info->section_id = section_start_lba / lld->mas_sec_size;
+	section_info->rcv_io_complete_flag = false;
+	section_info->next_section_start_lba = 0;
+	section_info->next_section_id = 0;
+	section_info->section_insert_time = ktime_get();
+
+	spin_lock_irqsave(&lld->expected_lba_lock[stream_type - 1], flags);
+	if (list_empty_careful(&lld->section_list[stream_type - 1])) {
+		mas_blk_update_expected_info(lld, section_start_lba, stream_type);
+	} else {
+		tail_section_info = list_last_entry(
+			&lld->section_list[stream_type - 1],
+			struct unistore_section_info, section_list);
+		if (tail_section_info->section_id == section_info->section_id) {
+			pr_err("%s section add the same 0x%llx\n", __func__, section_info->section_id);
+			kfree(section_info);
+			goto out;
+		}
+		tail_section_info->next_section_start_lba = section_info->section_start_lba;
+		tail_section_info->next_section_id = section_info->section_id;
+	}
+
+	list_add_tail(&section_info->section_list, &lld->section_list[stream_type - 1]);
+out:
+	spin_unlock_irqrestore(&lld->expected_lba_lock[stream_type - 1], flags);
+}
+
 void mas_blk_insert_section_list(struct block_device *bdev,
 	unsigned int start_blkaddr, int stream_type, int flash_mode)
 {
 	sector_t section_start_lba;
-	unsigned long flags = 0;
 	struct hd_struct *p = NULL;
 	struct request_queue *q = NULL;
 	struct blk_dev_lld *lld = NULL;
-	struct unistore_section_info *section_info = NULL;
 
 	if (!bdev)
 		return;
 
-	if ((!stream_type) || stream_type > MAX_WRITE_STREAM_TYPE)
+	if (!mas_blk_is_order_stream(stream_type))
 		return;
 
 	q = bdev_get_queue(bdev);
@@ -620,8 +763,14 @@ void mas_blk_insert_section_list(struct block_device *bdev,
 		return;
 
 	lld = mas_blk_get_lld(q);
-	if (!lld || !lld->mas_sec_size) {
-		pr_err("%s - section size error: %u\n", __func__, lld->mas_sec_size);
+	if (!lld) {
+		pr_err("%s - lld is null\n", __func__);
+		return;
+	}
+
+	if (!lld->mas_sec_size || !lld->mas_pu_size) {
+		pr_err("%s - err, section size: %u, pu size: %u\n",
+			__func__, lld->mas_sec_size, lld->mas_pu_size);
 		return;
 	}
 
@@ -635,8 +784,10 @@ void mas_blk_insert_section_list(struct block_device *bdev,
 	section_start_lba = start_blkaddr + (p->start_sect >> 3);
 	rcu_read_unlock();
 
-	if (section_start_lba % (lld->mas_sec_size))
+	if (section_start_lba % (lld->mas_sec_size)) {
+		pr_err("%s - stream_type %d section_start_lba is err\n", __func__, stream_type);
 		return;
+	}
 
 #if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 	if (mas_blk_unistore_debug_en())
@@ -645,20 +796,11 @@ void mas_blk_insert_section_list(struct block_device *bdev,
 			__func__, start_blkaddr, section_start_lba / (lld->mas_sec_size),
 			section_start_lba % (lld->mas_sec_size), stream_type);
 #endif
-	section_info = kmalloc(sizeof(struct unistore_section_info), GFP_KERNEL);
-	if (unlikely(!section_info)) {
-		pr_err("%s, kmalloc fail\n", __func__);
-		return;
-	}
 
-	section_info->section_start_lba = section_start_lba;
-	section_info->slc_mode = (flash_mode == 1) ? true : false;
-
-	spin_lock_irqsave(&lld->expected_lba_lock[stream_type - 1], flags);
-	list_add_tail(&section_info->section_list, &lld->section_list[stream_type - 1]);
-	spin_unlock_irqrestore(&lld->expected_lba_lock[stream_type - 1], flags);
+	mas_blk_add_section_list_tail(lld, section_start_lba, stream_type, flash_mode);
 }
 
+#define MAX_4K_SECTION_CAP 0x708000
 static int mas_blk_set_max_meta_mapping_pos(struct block_device *bdev)
 {
 	int ret;
@@ -684,15 +826,21 @@ static int mas_blk_set_max_meta_mapping_pos(struct block_device *bdev)
 		return ret;
 	}
 
-	if (sec_size == 0x9000) /* 144M */
-		sec_num = 0xC8; /* section number = 200 */
-	else if (sec_size == 0x12000) /* 288M */
-		sec_num = 0x64; /* section number = 100 */
-	else
+	if (!sec_size) {
+		pr_err("%s, get sec_size err\n", __func__);
 		return -EFAULT;
+	}
 
 	for (i = 0; i < PARTITION_TYPE_MAX; i++)
 		total_size += mapping_info.partion_size[i];
+
+	sec_num = MAX_4K_SECTION_CAP / sec_size;
+	if ((total_size <= sec_num) || !sec_num) {
+		pr_err("%s, get sec_num err total_size %u sec_num %u\n",
+			__func__, total_size, sec_num);
+		return -EFAULT;
+	}
+	pr_err("%s sec_num %u\n", __func__, sec_num);
 
 	/* first partition */
 	mapping_info.partion_start[PARTITION_TYPE_META0] = 0;
@@ -733,6 +881,68 @@ int mas_blk_read_op_size(struct block_device *bdev,
 		pr_err("%s, copy_to_user failed, err = %d\n", __func__, err);
 
 	return err;
+}
+
+static int mas_blk_add_section(struct block_device *bdev,
+	struct blkdev_cmd *cmd)
+{
+	struct stor_dev_section_info section_info;
+
+	if (!cmd->cust_argp)
+		return -EFAULT;
+
+	if (copy_from_user(&section_info, cmd->cust_argp, sizeof(struct stor_dev_section_info))) {
+		pr_err("%s copy_from_user failed\n", __func__);
+		return -EFAULT;
+	}
+
+	mas_blk_insert_section_list(bdev, section_info.section_start_lba,
+		section_info.stream_type, section_info.flash_mode);
+
+	return 0;
+}
+
+void mas_blk_clear_section_list(struct block_device *bdev,
+	unsigned char stream_type)
+{
+	struct request_queue *q = NULL;
+	struct blk_dev_lld *lld = NULL;
+
+	if (!bdev)
+		return;
+
+	if (!mas_blk_is_order_stream(stream_type))
+		return;
+
+	q = bdev_get_queue(bdev);
+	if (!blk_queue_query_unistore_enable(q))
+		return;
+
+	lld = mas_blk_get_lld(q);
+	if (!lld) {
+		pr_err("%s lld is null\n", __func__);
+		return;
+	}
+
+	mas_blk_clear_section_info(lld, stream_type);
+}
+
+int mas_blk_clear_section(struct block_device *bdev,
+	struct blkdev_cmd *cmd)
+{
+	struct blkdev_set_stream stream;
+
+	if (!cmd->cust_argp)
+		return -EFAULT;
+
+	if (copy_from_user(&stream, cmd->cust_argp, sizeof(struct blkdev_set_stream))) {
+		pr_err("%s copy_from_user failed\n", __func__);
+		return -EFAULT;
+	}
+
+	mas_blk_clear_section_list(bdev, stream.stream_id);
+
+	return 0;
 }
 #endif /* CONFIG_MAS_UNISTORE_PRESERVE */
 
@@ -791,6 +1001,10 @@ int mas_blk_cust_ioctl(struct block_device *bdev, struct blkdev_cmd __user *arg)
 		return mas_blk_fs_sync_done(bdev);
 	case CUST_BLKDEV_SET_MAX_META_MAPPING_POS:
 		return mas_blk_set_max_meta_mapping_pos(bdev);
+	case CUST_BLKDEV_ADD_SECTION:
+		return mas_blk_add_section(bdev, &cmd);
+	case CUST_BLKDEV_CLEAR_SECTION:
+		return mas_blk_clear_section(bdev, &cmd);
 #endif
 	case CUST_BLKDEV_GET_UNISTORE_ENABLE:
 		return mas_blk_get_device_unistore_enabled(bdev, &cmd);

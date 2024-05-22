@@ -24,10 +24,58 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/zsmalloc.h>
+#include <linux/blkdev.h>
 
 #include "hyperhold_internal.h"
 #include "hyperhold_area.h"
 #include "hyperhold_list.h"
+
+static struct discard_type *discard_search(struct rb_root *root, int extent_id)
+{
+	struct rb_node *node = root->rb_node;
+
+	while (node) {
+		struct discard_type *data =
+			container_of(node, struct discard_type, node);
+		int result;
+
+		result = extent_id - data->extent_id;
+
+		if (result < 0)
+			node = node->rb_left;
+		else if (result > 0)
+			node = node->rb_right;
+		else
+			return data;
+	}
+	return NULL;
+}
+
+static int discard_insert(struct rb_root *root, struct discard_type *data)
+{
+	struct rb_node **new = &(root->rb_node), *parent = NULL;
+
+	/* Figure out where to put new node */
+	while (*new) {
+		struct discard_type *cur =
+			container_of(*new, struct discard_type, node);
+		int result = data->extent_id - cur->extent_id;
+
+		parent = *new;
+		if (result < 0)
+			new = &((*new)->rb_left);
+		else if (result > 0)
+			new = &((*new)->rb_right);
+		else
+			return -EEXIST;
+	}
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&data->node, parent, new);
+	rb_insert_color(&data->node, root);
+
+	return 0;
+}
 
 struct mem_cgroup *get_mem_cgroup(unsigned short mcg_id)
 {
@@ -408,6 +456,189 @@ void free_hyperhold_area(struct hyperhold_area *area)
 	vfree(area);
 }
 
+static struct discard_type *hyperhold_discard_first(const struct rb_root *root,
+					     struct hyperhold_area *area)
+{
+	int ret;
+	struct rb_node *node = NULL;
+	struct discard_type *data = NULL;
+
+	spin_lock(&area->hyperhold_discard_lock);
+	/* get the first discard extent (in sort order) */
+	node = rb_first(root);
+	if (!node) {
+		hh_print(HHLOG_ERR, "rb_tree null\n");
+		spin_unlock(&area->hyperhold_discard_lock);
+		return NULL;
+	}
+	data = rb_entry(node, struct discard_type, node);
+	ret = test_and_set_bit(extent_id2bit(area, data->extent_id), area->bitmap);
+	if (ret) {
+		hh_print(HHLOG_DEBUG, "rb_first_bit is set\n");
+		spin_unlock(&area->hyperhold_discard_lock);
+		return NULL;
+	}
+	spin_unlock(&area->hyperhold_discard_lock);
+
+	return data;
+}
+
+struct discard_type *hyperhold_discard_next(const struct rb_node *node,
+					    struct hyperhold_area *area)
+{
+	int ret;
+	struct discard_type *data = NULL;
+
+	spin_lock(&area->hyperhold_discard_lock);
+	node = rb_next(node);
+	if (!node) {
+		hh_print(HHLOG_DEBUG, "rb_next_bit is null\n");
+		spin_unlock(&area->hyperhold_discard_lock);
+		return NULL;
+	}
+	data = rb_entry(node, struct discard_type, node);
+	ret = test_and_set_bit(extent_id2bit(area, data->extent_id),
+			       area->bitmap);
+	if (ret) {
+		hh_print(HHLOG_DEBUG, "rb_next_bit is set\n");
+		spin_unlock(&area->hyperhold_discard_lock);
+		return NULL;
+	}
+	spin_unlock(&area->hyperhold_discard_lock);
+
+	return data;
+}
+
+static void hyperhold_issue_discard(int ext_id, int ext_nr,
+				    struct hyperhold_stat *stat)
+{
+	int ret;
+	struct block_device *bdev = hyperhold_bdev();
+
+	if (!bdev) {
+		hh_print(HHLOG_ERR, "bedv is null\n");
+		return;
+	}
+
+	ret = blkdev_issue_discard(bdev, ext_id * EXTENT_SECTOR_SIZE +
+						 hyperhold_get_start_sector(),
+				   ext_nr * EXTENT_SECTOR_SIZE, GFP_KERNEL, 0);
+	if (ret) {
+		atomic64_inc(&stat->discard_fail_cnt);
+		hh_print(HHLOG_ERR, "blkdev_issue_discard failed, ret = %d\n",
+			 ret);
+	} else {
+		atomic64_inc(&stat->discard_success_cnt);
+	}
+}
+
+static void hyperhold_discard_tree_erase(struct hyperhold_area *area,
+					 int ext_id, int ext_nr)
+{
+	int i;
+	struct rb_node *node = NULL;
+	struct discard_type *data = NULL;
+
+	spin_lock(&area->hyperhold_discard_lock);
+	data = discard_search(&area->discard_tree, ext_id);
+	for (i = 0; (i < ext_nr) && (data != NULL); i++) {
+		if ((ext_id + i) != data->extent_id)
+			continue;
+		hh_print(HHLOG_ERR, "erase ext_id = %d\n", data->extent_id);
+		if (!test_and_clear_bit(extent_id2bit(area, data->extent_id),
+					area->bitmap)) {
+			hh_print(HHLOG_DEBUG, "bit not set, ext = %d\n",
+				 data->extent_id);
+			WARN_ON_ONCE(1);
+		}
+		rb_erase(&data->node, &area->discard_tree);
+		node = rb_next(&data->node);
+		kfree(data);
+		if (!node)
+			break;
+		data = rb_entry(node, struct discard_type, node);
+	}
+	spin_unlock(&area->hyperhold_discard_lock);
+}
+
+void hyperhold_do_discard(struct work_struct *work)
+{
+	struct discard_type *data = NULL;
+	int temp_ext, temp_nr;
+	struct hyperhold_area *area = container_of(work, struct hyperhold_area,
+						   hyperhold_discard_work);
+	struct hyperhold_stat *stat = hyperhold_get_stat_obj();
+
+	if (!stat) {
+		hh_print(HHLOG_ERR, "NULL stat\n");
+		return;
+	}
+
+	/* get the first discard extent (in sort order) */
+	data = hyperhold_discard_first(&area->discard_tree, area);
+	if (!data) {
+		hh_print(HHLOG_ERR, "first extent error\n");
+		return;
+	}
+	temp_ext = data->extent_id;
+	temp_nr = 1;
+
+	while (data) {
+		atomic64_inc(&stat->discard_total_cnt);
+		/* get the next discard extent (in sort order) */
+		data = hyperhold_discard_next(&data->node, area);
+		if (!data) {
+			hh_print(HHLOG_ERR, "next extent error\n");
+			break;
+		}
+
+		/* merge discard extent, otherwise discard previous extent */
+		if ((temp_ext + temp_nr) == data->extent_id) {
+			atomic64_inc(&stat->discard_comp_cnt);
+			temp_nr++;
+		} else {
+			hyperhold_issue_discard(temp_ext, temp_nr, stat);
+			hyperhold_discard_tree_erase(area, temp_ext, temp_nr);
+			temp_ext = data->extent_id;
+			temp_nr = 1;
+		}
+	}
+	/* issue discard for the last extent */
+	hyperhold_issue_discard(temp_ext, temp_nr, stat);
+	hyperhold_discard_tree_erase(area, temp_ext, temp_nr);
+}
+
+void hyperhold_discard_extent(struct hyperhold_area *area)
+{
+	if (!hyperhold_discard_enable())
+		return;
+
+	if (!work_busy(&area->hyperhold_discard_work))
+		queue_work(system_freezable_wq, &area->hyperhold_discard_work);
+}
+
+static void hyperhold_discard_init(struct hyperhold_area *area)
+{
+	struct block_device *bdev = hyperhold_bdev();
+	struct request_queue *q = NULL;
+
+	if (!bdev) {
+		hh_print(HHLOG_ERR, "bedv is null\n");
+		return;
+	}
+	q = bdev_get_queue(bdev);
+
+	/* enable hyperhold_discard for unistore */
+	if (blk_queue_query_unistore_enable(q)) {
+		hh_print(HHLOG_ERR, "unistore enable discard\n");
+		hyperhold_set_discard_enable(true);
+		INIT_WORK(&area->hyperhold_discard_work, hyperhold_do_discard);
+		spin_lock_init(&area->hyperhold_discard_lock);
+	} else {
+		hh_print(HHLOG_ERR, "not unistore\n");
+	}
+}
+
 struct hyperhold_area *alloc_hyperhold_area(unsigned long ori_size,
 					    unsigned long comp_size)
 {
@@ -445,6 +676,9 @@ struct hyperhold_area *alloc_hyperhold_area(unsigned long ori_size,
 		hh_print(HHLOG_ERR, "init ext list table failed\n");
 		goto err_out;
 	}
+
+	hyperhold_discard_init(area);
+
 	hh_print(HHLOG_INFO, "hyperhold_area init OK.\n");
 	return area;
 err_out:
@@ -454,7 +688,31 @@ err_out:
 	return NULL;
 }
 
-void hyperhold_free_extent(struct hyperhold_area *area, int ext_id)
+static void discard_insert_extent(struct hyperhold_area *area, int ext_id)
+{
+	int ret = -EEXIST;
+	struct discard_type *newtype =
+		kmalloc(sizeof(struct discard_type), GFP_ATOMIC);
+
+	if (!newtype) {
+		hh_print(HHLOG_ERR, "allocate memory failed\n");
+		return;
+	}
+	newtype->extent_id = ext_id;
+
+	spin_lock(&area->hyperhold_discard_lock);
+	if (test_bit(extent_id2bit(area, ext_id), area->bitmap))
+		ret = discard_insert(&area->discard_tree, newtype);
+	spin_unlock(&area->hyperhold_discard_lock);
+
+	if (ret < 0) {
+		hh_print(HHLOG_ERR, "rb_tree insert failed\n");
+		kfree(newtype);
+	}
+}
+
+void hyperhold_free_extent(struct hyperhold_area *area, int ext_id,
+			   bool discard_wq)
 {
 	if (!area) {
 		hh_print(HHLOG_ERR, "NULL area\n");
@@ -466,12 +724,19 @@ void hyperhold_free_extent(struct hyperhold_area *area, int ext_id)
 	}
 	hh_print(HHLOG_DEBUG, "free ext id = %d.\n", ext_id);
 
+	if (hyperhold_discard_enable() && discard_wq)
+		discard_insert_extent(area, ext_id);
+
 	hh_list_set_mcgid(ext_idx(area, ext_id), area->ext_table, 0);
 	/*lint -e548*/
 	if (!test_and_clear_bit(extent_id2bit(area, ext_id), area->bitmap)) {
 		hh_print(HHLOG_ERR, "bit not set, ext = %d\n", ext_id);
 		WARN_ON_ONCE(1);
 	}
+
+	if (hyperhold_discard_enable() && discard_wq)
+		hyperhold_discard_extent(area);
+
 	/*lint +e548*/
 	atomic_dec(&area->stored_exts);
 }
@@ -496,6 +761,44 @@ retry:
 	}
 	if (test_and_set_bit(bit, bitmap))
 		goto retry;
+	return bit;
+}
+
+static int alloc_bitmap_discard(unsigned long *bitmap, int max, int last_bit,
+				struct hyperhold_area *area)
+{
+	int bit;
+	int ext_id;
+	struct discard_type *data = NULL;
+
+	if (!bitmap) {
+		hh_print(HHLOG_ERR, "NULL bitmap.\n");
+		return -EINVAL;
+	}
+retry:
+	bit = find_next_zero_bit(bitmap, max, last_bit);
+	if (bit == max) {
+		if (last_bit == 0) {
+			hh_print(HHLOG_ERR, "alloc bitmap failed.\n");
+			return -ENOSPC;
+		}
+		last_bit = 0;
+		goto retry;
+	}
+	if (test_and_set_bit(bit, bitmap))
+		goto retry;
+
+	ext_id = extent_bit2id(area, bit);
+
+	/* try to erase extent from the discard_tree */
+	spin_lock(&area->hyperhold_discard_lock);
+	data = discard_search(&area->discard_tree, ext_id);
+	if (data) {
+		hh_print(HHLOG_ERR, "erase exist ext_id = %d\n", ext_id);
+		rb_erase(&data->node, &area->discard_tree);
+		kfree(data);
+	}
+	spin_unlock(&area->hyperhold_discard_lock);
 
 	return bit;
 }
@@ -518,12 +821,18 @@ int hyperhold_alloc_extent(struct hyperhold_area *area, struct mem_cgroup *mcg)
 
 	last_bit = atomic_read(&area->last_alloc_bit);
 	hh_print(HHLOG_DEBUG, "last_bit = %d.\n", last_bit);
-	bit = alloc_bitmap(area->bitmap, area->nr_exts, last_bit);
+	if (hyperhold_discard_enable())
+		bit = alloc_bitmap_discard(area->bitmap, area->nr_exts,
+					   last_bit, area);
+	else
+		bit = alloc_bitmap(area->bitmap, area->nr_exts, last_bit);
+
 	if (bit < 0) {
-		hh_print(HHLOG_ERR, "alloc bitmap failed.\n");
+		hh_print(HHLOG_ERR, "alloc bitmap failed, bit = %d\n", bit);
 		return bit;
 	}
 	ext_id = extent_bit2id(area, bit);
+
 	mcg_id = hh_list_get_mcgid(ext_idx(area, ext_id), area->ext_table);
 	/*lint -e548*/
 	if (mcg_id) {
@@ -695,4 +1004,29 @@ int get_extent_zram_entry(struct hyperhold_area *area, int ext_id)
 	hh_unlock_list(ext_idx(area, ext_id), area->obj_table);
 
 	return index;
+}
+
+ssize_t hyperhold_discard_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	ssize_t size = 0;
+	struct hyperhold_stat *stat = hyperhold_get_stat_obj();
+
+	if (!stat) {
+		hh_print(HHLOG_ERR, "NULL stat\n");
+		return size;
+	}
+
+	size += scnprintf(buf + size, PAGE_SIZE,
+			  "hyperhold total discard: %d\n",
+			  atomic64_read(&stat->discard_total_cnt));
+	size += scnprintf(buf + size, PAGE_SIZE,
+			  "hyperhold success discard: %d\n",
+			  atomic64_read(&stat->discard_success_cnt));
+	size += scnprintf(buf + size, PAGE_SIZE, "hyperhold fail discard: %d\n",
+			  atomic64_read(&stat->discard_fail_cnt));
+	size += scnprintf(buf + size, PAGE_SIZE, "hyperhold comp discard: %d\n",
+			  atomic64_read(&stat->discard_comp_cnt));
+
+	return size;
 }

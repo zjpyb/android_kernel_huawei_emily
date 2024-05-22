@@ -51,7 +51,8 @@ extern void ufs_mq_req_insert(
 extern void ufs_mq_req_requeue(
 	struct request *req, const struct request_queue *q);
 extern void ufs_mq_req_timeout_handler(struct request *req);
-extern void ufs_mq_ctx_put(void);
+void ufs_mq_ctx_put(struct request_queue *q);
+struct blk_mq_ctx *ufs_mq_ctx_get(struct request_queue *q);
 extern void ufs_mq_hctx_get_by_req(
 	const struct request *rq, struct blk_mq_hw_ctx **hctx);
 extern unsigned int ufs_mq_tag_get(const struct blk_mq_alloc_data *data);

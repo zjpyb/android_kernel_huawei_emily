@@ -18,3 +18,9 @@ config MSPC_SUPPORT_DCS
         default n
         help
 	  whether to support dynamic binaries upgrade in Hisee
+config CRYPTO_CORE_PINCODE
+	depends on MSPC
+	bool "crypto_core support pincode."
+	default n
+	help
+	  whether crypto_core support pincode

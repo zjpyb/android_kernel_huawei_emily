@@ -51,6 +51,13 @@ struct tz_pageinfo {
 	u32 nr_pages;
 } __aligned(8);
 
+enum ion_sessions_type {
+	ION_SESSIONS_SECMEM,
+	ION_SESSIONS_VLTMM,
+	ION_SESSIONS_TEST, /* not supported at this time */
+	ION_SESSIONS_MAX
+};
+
 #define TEE_SECMEM_NAME "sec_mem"
 #define TEE_VLTMM_NAME  "vltmm"
 
@@ -63,4 +70,7 @@ int secmem_tee_exec_cmd(TEEC_Session *session,
 void secmem_tee_destroy(TEEC_Context *context, TEEC_Session *session);
 
 void seccg_pre_alloc_wk_func(struct work_struct *work);
+
+int sec_tee_init(TEEC_Context **context, TEEC_Session **session,
+		enum ion_sessions_type type);
 #endif

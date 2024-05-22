@@ -1017,6 +1017,7 @@ int32_t wal_force_scan_complete(oal_net_device_stru *net_dev, oal_bool_enum en_i
         /* 清除扫描结果上报的回调函数，无需上报 */
         if (hmac_device->st_scan_mgmt.st_scan_record_mgmt.uc_vap_id == mac_vap->uc_vap_id) {
             hmac_device->st_scan_mgmt.st_scan_record_mgmt.p_fn_cb = NULL;
+            scan_mgmt->en_is_scanning = OAL_FALSE;
         }
         oam_warning_log1(0, OAM_SF_SCAN, "{wal_force_scan_complete::vap_id[%d] notify kernel scan abort!}",
                          mac_vap->uc_vap_id);

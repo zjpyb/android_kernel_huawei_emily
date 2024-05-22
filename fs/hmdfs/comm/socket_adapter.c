@@ -28,8 +28,13 @@
 #include "DFS_1_0/adapter.h"
 #endif
 
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+#include "low_latency.h"
+#endif
+
 #define ACQUIRE_WFIRED_INTVAL_USEC_MIN 10
 #define ACQUIRE_WFIRED_INTVAL_USEC_MAX 30
+#define MAX_ASYNC_P2P_ATTEMPTS         3
 
 typedef void (*request_callback)(struct hmdfs_peer *, struct hmdfs_head_cmd *,
 				 void *);
@@ -130,59 +135,123 @@ static inline void statistic_con_sb_dirty(struct hmdfs_peer *con,
 		atomic64_inc(&con->sb_dirty_count);
 }
 
-int hmdfs_sendmessage(struct hmdfs_peer *node, struct hmdfs_send_data *msg)
+void hmdfs_try_get_p2p_session_async(struct hmdfs_peer *node)
+{
+	if (!(node->capability & (1 << CAPABILITY_P2P)))
+		return;
+	if (p2p_connection_available(node))
+		return;
+
+	if (node->pending_async_p2p_try < MAX_ASYNC_P2P_ATTEMPTS) {
+		hmdfs_info("device %llu support p2p, try to establish one",
+			   node->device_id);
+		++node->pending_async_p2p_try;
+		hmdfs_get_connection(node, 1 << NOTIFY_FLAG_P2P);
+	} else {
+		hmdfs_info_ratelimited("was limited by the pending try count");
+	}
+}
+
+static int wait_for_update_socket(struct hmdfs_peer *node)
+{
+	int time_left;
+	unsigned int timeout = node->sbi->p2p_conn_establish_timeout;
+
+	time_left = wait_event_interruptible_timeout(
+		node->establish_p2p_connection_wq,
+		(node->status == NODE_STAT_ONLINE ||
+		 node->get_p2p_fail != GET_P2P_WAITING),
+		timeout * HZ);
+
+	if (node->get_p2p_fail != GET_P2P_WAITING) {
+		hmdfs_err("get p2p session fail, reason %d", node->get_p2p_fail);
+		return -EFAULT;
+	}
+	if (time_left == -ERESTARTSYS || time_left == 0) {
+		hmdfs_err("get p2p session fail, timeout or interrupted");
+		return -EFAULT;
+	}
+
+	node->get_p2p_fail = GET_P2P_IDLE;
+	return 0;
+}
+
+int hmdfs_try_get_p2p_session_sync(struct hmdfs_peer *node)
+{
+	int ret;
+	bool locked = false;
+
+	if (!(node->capability & (1 << CAPABILITY_P2P))) {
+		return -EFAULT;
+	}
+	if (node->status != NODE_STAT_SHAKING) {
+		return 0;
+	}
+
+	if (mutex_trylock(&node->p2p_get_session_lock)) {
+		hmdfs_info("device %llu support p2p, try to establish one", node->device_id);
+		locked = true;
+		node->get_p2p_fail = GET_P2P_WAITING;
+		hmdfs_get_connection(node, 1 << NOTIFY_FLAG_P2P);
+	} else {
+		hmdfs_info_ratelimited("device %llu is already in the process of get_p2p_session_sync", node->device_id);
+	}
+
+	ret = wait_for_update_socket(node);
+	if (locked)
+		mutex_unlock(&node->p2p_get_session_lock);
+	return ret;
+}
+
+static void hmdfs_notify_offline(struct hmdfs_peer *node)
+{
+	struct notify_param param = { 0 };
+
+	if (node->status == NODE_STAT_OFFLINE)
+		return;
+
+	memcpy(param.remote_cid, node->cid, HMDFS_CID_SIZE);
+	param.notify = NOTIFY_OFFLINE;
+	param.remote_iid = node->iid;
+	param.fd = INVALID_SOCKET_FD;
+	notify(node, &param);
+}
+
+static int do_sendmessage(struct hmdfs_peer *node, struct hmdfs_send_data *msg)
 {
 	int ret = 0;
 	struct connection *connect = NULL;
-	struct tcp_handle *tcp = NULL;
 	struct hmdfs_head_cmd *head = msg->head;
-	const struct cred *old_cred;
-
-	if (!node) {
-		hmdfs_err("node NULL when send cmd %d",
-			  head->operations.command);
-		ret = -EAGAIN;
-		goto out_err;
-	} else if (node->status != NODE_STAT_ONLINE) {
-		hmdfs_err("device %llu OFFLINE %d when send cmd %d",
-			  node->device_id, node->status,
-			  head->operations.command);
-		ret = -EAGAIN;
-		goto out;
-	}
-
-	if (hmdfs_should_fail_sendmsg(&node->sbi->fault_inject, node, msg,
-				      &ret))
-		goto out;
-
-	old_cred = hmdfs_override_creds(node->sbi->system_cred);
+	u8 flag = head->operations.cmd_flag;
 
 	do {
-		connect = get_conn_impl(node, CONNECT_TYPE_TCP);
+		connect = get_conn_impl(node, flag);
 		if (!connect) {
-			hmdfs_info_ratelimited(
-				"device %llu no connection available when send cmd %d, get new session",
-				node->device_id, head->operations.command);
-			if (node->status != NODE_STAT_OFFLINE) {
-				struct notify_param param;
+			hmdfs_info_ratelimited("device %llu no connection available when send cmd %d, get new session",
+					       node->device_id,
+					       head->operations.command);
 
-				memcpy(param.remote_cid, node->cid,
-				       HMDFS_CID_SIZE);
-				param.notify = NOTIFY_OFFLINE;
-				param.remote_iid = node->iid;
-				param.fd = INVALID_SOCKET_FD;
-				notify(node, &param);
-			}
-			ret = -EAGAIN;
-			goto revert_cred;
+			if (!hmdfs_try_get_p2p_session_sync(node))
+				/* p2p established */
+				continue;
+			hmdfs_notify_offline(node);
+			return -EAGAIN;
 		}
+
+		if (connect->link_type == LINK_TYPE_P2P &&
+			!hmdfs_pair_conn_and_cmd_flag(connect, flag))
+			hmdfs_try_get_p2p_session_async(node);
+
+#ifdef CONFIG_HMDFS_LOW_LATENCY
+		if (connect->link_type == LINK_TYPE_P2P)
+			hmdfs_latency_update(&node->lat_req);
+#endif
 
 		ret = connect->send_message(connect, msg);
 		if (ret == -ESHUTDOWN) {
 			hmdfs_info("device %llu send cmd %d message fail, connection stop",
 				   node->device_id, head->operations.command);
 			connect->status = CONNECT_STAT_STOP;
-			tcp = connect->connect_handle;
 			if (node->status != NODE_STAT_OFFLINE) {
 				connection_get(connect);
 				if (!queue_work(node->reget_conn_wq,
@@ -198,14 +267,43 @@ int hmdfs_sendmessage(struct hmdfs_peer *node, struct hmdfs_send_data *msg)
 			hmdfs_node_inc_evt_seq(node);
 		} else {
 			connection_put(connect);
-			goto revert_cred;
+			return ret;
 		}
 	} while (node->status != NODE_STAT_OFFLINE);
-revert_cred:
-	hmdfs_revert_creds(old_cred);
 
+	return ret;
+}
+
+int hmdfs_sendmessage(struct hmdfs_peer *node, struct hmdfs_send_data *msg)
+{
+	int ret = 0;
+	struct hmdfs_head_cmd *head = msg->head;
+	const struct cred *old_cred = NULL;
+
+	if (!node) {
+		hmdfs_err("node NULL when send cmd %d",
+			  head->operations.command);
+		return -EAGAIN;
+	}
+
+	if (!hmdfs_is_node_online_or_shaking(node)) {
+		hmdfs_err("device %llu OFFLINE %d when send cmd %d",
+			  node->device_id, node->status,
+			  head->operations.command);
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	if (hmdfs_should_fail_sendmsg(&node->sbi->fault_inject, node, msg,
+				      &ret))
+		goto out;
+
+	old_cred = hmdfs_override_creds(node->sbi->system_cred);
+	ret = do_sendmessage(node, msg);
+	hmdfs_revert_creds(old_cred);
 	if (!ret)
 		statistic_con_sb_dirty(node, &head->operations);
+
 out:
 	if (node->version == DFS_2_0 &&
 	    head->operations.cmd_flag == C_REQUEST)
@@ -215,7 +313,7 @@ out:
 		 head->operations.cmd_flag == C_RESPONSE)
 		hmdfs_server_snd_statis(node->sbi,
 					head->operations.command, ret);
-out_err:
+
 	return ret;
 }
 
@@ -344,7 +442,7 @@ int hmdfs_send_async_request(struct hmdfs_peer *peer,
 		return -EINVAL;
 	}
 
-	if (!hmdfs_is_node_online(peer))
+	if (!hmdfs_is_node_online_or_shaking(peer))
 		return -EAGAIN;
 
 	mp = mp_alloc(peer, req);
@@ -423,7 +521,7 @@ int hmdfs_sendmessage_request(struct hmdfs_peer *con,
 	struct hmdfs_head_cmd *head = NULL;
 	bool dec = false;
 
-	if (!hmdfs_is_node_online(con))
+	if (!hmdfs_is_node_online_or_shaking(con))
 		return -EAGAIN;
 
 	if (timeout == TIMEOUT_UNINIT) {
@@ -602,6 +700,17 @@ out:
 	return ret;
 }
 
+struct hmdfs_async_work *hmdfs_alloc_asw(unsigned int nr)
+{
+	struct hmdfs_async_work *asw = NULL;
+
+	asw = kzalloc(sizeof(*asw) + sizeof(asw->pages[0]) * nr, GFP_KERNEL);
+	if (!asw)
+		return NULL;
+
+	return asw;
+}
+
 static void asw_release(struct kref *kref)
 {
 	struct hmdfs_async_work *asw = NULL;
@@ -627,14 +736,16 @@ void hmdfs_recv_page_work_fn(struct work_struct *ptr)
 
 	if (async_work->head.peer->version >= DFS_2_0)
 		hmdfs_client_resp_statis(async_work->head.peer->sbi,
-					 F_READPAGE, HMDFS_RESP_TIMEOUT, 0, 0);
-	hmdfs_err_ratelimited("timeout and release page, msg_id:%u",
+					 async_work->cmd, HMDFS_RESP_TIMEOUT,
+					 0, 0);
+	hmdfs_err_ratelimited("timeout and release page(s), msg_id:%u",
 			      async_work->head.msg_id);
 	asw_done(async_work);
 }
 
 int hmdfs_sendpage_request(struct hmdfs_peer *con,
-			   struct hmdfs_send_command *sm)
+			   struct hmdfs_send_command *sm,
+			   struct page **pages, unsigned int nr)
 {
 	int ret = 0;
 	struct hmdfs_send_data msg;
@@ -643,8 +754,6 @@ int hmdfs_sendpage_request(struct hmdfs_peer *con,
 	struct hmdfs_head_cmd head;
 	unsigned int timeout;
 	unsigned long start = jiffies;
-
-	WARN_ON(!sm->out_buf);
 
 	timeout = get_cmd_timeout(con->sbi, sm->operations.command);
 	if (timeout == TIMEOUT_UNINIT) {
@@ -675,7 +784,7 @@ int hmdfs_sendpage_request(struct hmdfs_peer *con,
 	msg.sdesc_len = 0;
 	msg.sdesc = NULL;
 
-	async_work = kzalloc(sizeof(*async_work), GFP_KERNEL);
+	async_work = hmdfs_alloc_asw(nr);
 	if (!async_work) {
 		ret = -ENOMEM;
 		goto unlock;
@@ -687,7 +796,9 @@ int hmdfs_sendpage_request(struct hmdfs_peer *con,
 		goto unlock;
 	}
 	head.msg_id = cpu_to_le32(async_work->head.msg_id);
-	async_work->page = sm->out_buf;
+	async_work->pages_nr = nr;
+	memcpy(async_work->pages, pages, nr * sizeof(*pages));
+	async_work->cmd = sm->operations.command;
 	asw_get(async_work);
 	INIT_DELAYED_WORK(&async_work->d_work, hmdfs_recv_page_work_fn);
 	ret = queue_delayed_work(con->async_wq, &async_work->d_work,
@@ -720,7 +831,7 @@ fail_and_unlock_page:
 	return ret;
 unlock:
 	kfree(async_work);
-	unlock_page(sm->out_buf);
+	hmdfs_put_pages(pages, nr);
 out:
 	return ret;
 }
@@ -729,7 +840,7 @@ static void hmdfs_request_handle_sync(struct hmdfs_peer *con,
 				      struct hmdfs_head_cmd *head, void *buf)
 {
 	unsigned long start = jiffies;
-	const struct cred *saved_cred = hmdfs_override_fsids(true);
+	const struct cred *saved_cred = hmdfs_override_fsids(con->sbi, true);
 
 	if (!saved_cred) {
 		hmdfs_err("prepare cred failed!");
@@ -962,11 +1073,33 @@ static void hmdfs_wait_mp_wfired(struct hmdfs_msg_parasite *mp)
 			     ACQUIRE_WFIRED_INTVAL_USEC_MAX);
 }
 
+static bool hmdfs_response_handle_async(struct hmdfs_peer *con,
+					struct hmdfs_head_cmd *head,
+					struct hmdfs_msg_idr_head *msg_head,
+					void *buf)
+{
+	bool woke = false;
+	struct hmdfs_msg_parasite *mp = (struct hmdfs_msg_parasite *)msg_head;
+
+	hmdfs_wait_mp_wfired(mp);
+	if (cancel_delayed_work(&mp->d_work)) {
+		mp->resp.out_buf = buf;
+		mp->resp.out_len = le32_to_cpu(head->data_len) - sizeof(*head);
+		mp->resp.ret_code = le32_to_cpu(head->ret_code);
+		queue_delayed_work(con->async_wq, &mp->d_work, 0);
+		hmdfs_client_resp_statis(con->sbi, head->operations.command,
+					 HMDFS_RESP_NORMAL, mp->start, jiffies);
+		woke = true;
+	}
+	mp_put(mp);
+
+	return woke;
+}
+
 int hmdfs_response_handle_sync(struct hmdfs_peer *con,
 			       struct hmdfs_head_cmd *head, void *buf)
 {
 	struct sendmsg_wait_queue *msg_info = NULL;
-	struct hmdfs_msg_parasite *mp = NULL;
 	struct hmdfs_msg_idr_head *msg_head = NULL;
 	u32 msg_id = le32_to_cpu(head->msg_id);
 	bool woke = false;
@@ -992,21 +1125,7 @@ int hmdfs_response_handle_sync(struct hmdfs_peer *con,
 		msg_put(msg_info);
 		break;
 	case MSG_IDR_MESSAGE_ASYNC:
-		mp = (struct hmdfs_msg_parasite *)msg_head;
-
-		hmdfs_wait_mp_wfired(mp);
-		if (cancel_delayed_work(&mp->d_work)) {
-			mp->resp.out_buf = buf;
-			mp->resp.out_len =
-				le32_to_cpu(head->data_len) - sizeof(*head);
-			mp->resp.ret_code = le32_to_cpu(head->ret_code);
-			queue_delayed_work(con->async_wq, &mp->d_work, 0);
-			hmdfs_client_resp_statis(con->sbi, cmd,
-						 HMDFS_RESP_NORMAL, mp->start,
-						 jiffies);
-			woke = true;
-		}
-		mp_put(mp);
+		woke = hmdfs_response_handle_async(con, head, msg_head, buf);
 		break;
 	default:
 		hmdfs_err("receive incorrect msg type %d msg_id %d cmd %d",
@@ -1104,14 +1223,6 @@ out_err:
 	kfree(buf);
 }
 
-static inline void hmdfs_recv_page_callback(struct hmdfs_peer *con,
-					    struct hmdfs_head_cmd *head,
-					    int err, void *data)
-{
-	if (head->operations.command == F_READPAGE)
-		hmdfs_client_recv_readpage(head, err, data);
-}
-
 static const struct connection_operations conn_operations[] = {
 #ifdef CONFIG_HMDFS_1_0
 	[USERDFS_VERSION] = {
@@ -1126,7 +1237,6 @@ static const struct connection_operations conn_operations[] = {
 #endif
 	[PROTOCOL_VERSION] = {
 		.recvmsg = hmdfs_recv_mesg_callback,
-		.recvpage = hmdfs_recv_page_callback,
 		/* remote device operations */
 		.remote_file_fops =
 			&hmdfs_dev_file_fops_remote,
@@ -1169,4 +1279,94 @@ void hmdfs_wakeup_async_work(struct hmdfs_async_work *async_work)
 			  async_work->head.msg_id);
 	else
 		hmdfs_recv_page_work_fn(&async_work->d_work.work);
+}
+
+static void hmdfs_p2p_check_expired(struct connection *conn, struct list_head *head)
+{
+	/* expire all connections in this second */
+	if (time_after_eq(jiffies + HZ, conn->p2p_deadline)) {
+		connection_get(conn);
+		list_add(&conn->p2p_disconnect_list, head);
+		return;
+	}
+
+	if (!timer_pending(&conn->node->p2p_timeout) ||
+	    time_before(conn->p2p_deadline, conn->node->p2p_timeout.expires))
+		mod_timer(&conn->node->p2p_timeout, conn->p2p_deadline);
+}
+
+static void hmdfs_p2p_timeout(struct hmdfs_peer *node)
+{
+	struct connection *conn = NULL;
+	struct connection *next = NULL;
+	LIST_HEAD(head);
+
+	hmdfs_info("timer on: %s", node->cid);
+
+	mutex_lock(&node->conn_impl_list_lock);
+	list_for_each_entry(conn, &node->conn_impl_list, list) {
+		if (conn->link_type == LINK_TYPE_P2P)
+			hmdfs_p2p_check_expired(conn, &head);
+	}
+	mutex_unlock(&node->conn_impl_list_lock);
+
+	list_for_each_entry_safe(conn, next, &head, p2p_disconnect_list) {
+		hmdfs_reget_connection(conn);
+		connection_put(conn);
+	}
+}
+
+void hmdfs_p2p_timeout_work_fn(struct work_struct *work)
+{
+	struct hmdfs_peer *peer =
+		container_of(work, struct hmdfs_peer, p2p_dwork.work);
+
+	hmdfs_p2p_timeout(peer);
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+void hmdfs_p2p_timeout_fn(unsigned long timer)
+{
+	struct hmdfs_peer *peer =
+		container_of((struct timer_list *)timer, struct hmdfs_peer,
+			     p2p_timeout);
+	schedule_delayed_work(&peer->p2p_dwork, 0);
+}
+#else
+void hmdfs_p2p_timeout_fn(struct timer_list *timer)
+{
+	struct hmdfs_peer *peer =
+		container_of(timer, struct hmdfs_peer, p2p_timeout);
+	schedule_delayed_work(&peer->p2p_dwork, 0);
+}
+#endif
+
+static void hmdfs_conn_mod_timer(struct hmdfs_peer *node, unsigned long deadline)
+{
+	unsigned long diff;
+
+	if (!timer_pending(&node->p2p_timeout) ||
+	    time_before(deadline, node->p2p_timeout.expires)) {
+		diff = node->p2p_timeout.expires - deadline;
+		if (!timer_pending(&node->p2p_timeout) || (diff >= HZ))
+			mod_timer(&node->p2p_timeout, deadline);
+	}
+}
+
+void hmdfs_conn_touch_timer(struct connection *conn)
+{
+	struct hmdfs_peer *node = conn->node;
+
+	if (conn->link_type != LINK_TYPE_P2P)
+		return;
+
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	if (conn->type == CONNECT_TYPE_D2DP) {
+		struct d2dp_handle *d2dp = conn->connect_handle;
+		hmdfs_conn_touch_timer(d2dp->tcp_connect);
+	}
+#endif
+
+	conn->p2p_deadline = jiffies + node->sbi->p2p_conn_timeout * HZ;
+	hmdfs_conn_mod_timer(node, conn->p2p_deadline);
 }

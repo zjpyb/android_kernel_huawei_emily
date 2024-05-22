@@ -712,8 +712,7 @@ STATIC int32_t hw_bfgx_input_check(uint32_t subsys)
         return -EINVAL;
     }
     if (oal_warn_on(is_bfgx_support() != OAL_TRUE)) {
-        ps_print_err("subsys is [%d], bfgx %s support\n", subsys,
-                     (is_bfgx_support() == OAL_TRUE) ? "" : "don't");
+        ps_print_err("subsys is [%d], bfgx %s support\n", subsys, (is_bfgx_support() == OAL_TRUE) ? "" : "don't");
         return -ENODEV;
     }
 
@@ -2686,10 +2685,8 @@ int32_t uart_loop_test(void)
 {
     uint32_t i, count;
     uint16_t pkt_len;
-    unsigned long long tx_total_len;
+    unsigned long long tx_total_len, throughout, effect;
     unsigned long long total_time = 0;
-    unsigned long long throughout;
-    unsigned long long effect;
     ktime_t start_time, end_time, trans_time;
     uint8_t *puc_buf = NULL;
 
@@ -2881,6 +2878,8 @@ STATIC struct miscdevice g_hw_wifiexcp_device = {
 static struct hw_ps_plat_data g_hisi_platform_data = {
 #ifdef _PRE_PRODUCT_HI1620S_KUNPENG
     .dev_name = "/dev/ttySC_SPI0",
+#elif defined(_PRE_PRODUCT_HI3751_V900)
+    .dev_name = "/dev/ttyAMA3",
 #else
     .dev_name = "/dev/ttyAMA4",
 #endif
@@ -3063,6 +3062,7 @@ STATIC int32_t ps_probe(struct platform_device *pdev)
     ps_plat_d->core_data->ps_plat = ps_plat_d;
     /* get reference of pdev */
     ps_plat_d->pm_pdev = pdev;
+    ps_plat_d->core_data->skb_retry_count = bd_info->skb_retry_count;
 
     err = plat_bfgx_exception_rst_register(ps_plat_d);
     if (err < 0) {

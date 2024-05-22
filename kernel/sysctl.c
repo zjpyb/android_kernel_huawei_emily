@@ -204,6 +204,16 @@ int should_only_do_gss(void)
 	return only_do_gss;
 }
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+/* Only shrink anon list when free swap is above 2 mbytes by default */
+static int sysctl_freeswap_min_mbytes __read_mostly = 2;
+
+int freeswap_min_mbytes(void)
+{
+	return sysctl_freeswap_min_mbytes;
+}
+#endif
+
 #ifdef CONFIG_PROC_SYSCTL
 
 /**
@@ -1985,6 +1995,17 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	{
+		.procname       = "freeswap_min_mbytes",
+		.data           = &sysctl_freeswap_min_mbytes,
+		.maxlen         = sizeof(sysctl_freeswap_min_mbytes),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2         = &one_hundred,
+	},
+#endif
 #ifdef CONFIG_OVERWRITE_FAULT_AROUND_BYTES
 	{
 		.procname   = "fault_around_bytes",

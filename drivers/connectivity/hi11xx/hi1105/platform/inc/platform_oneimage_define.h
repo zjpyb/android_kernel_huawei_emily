@@ -8,6 +8,7 @@
 *****************************************************************************/
 #include "wlan_oneimage_define.h"
 #include "hisi_nve_oneimage_define.h"
+#include "platform_firmware_oneimage_define.h"
 
 /*****************************************************************************
   2 ∫Í∂®“Â
@@ -115,14 +116,6 @@
 #define g_st_event_task    plat_oneimage_rename(g_st_event_task)
 #define g_event_task_lock    plat_oneimage_rename(g_event_task_lock)
 #define find_device_board_version    plat_oneimage_rename(find_device_board_version)
-#define firmware_cfg_clear    plat_oneimage_rename(firmware_cfg_clear)
-#define firmware_cfg_init    plat_oneimage_rename(firmware_cfg_init)
-#define firmware_download    plat_oneimage_rename(firmware_download)
-#define firmware_download_function    plat_oneimage_rename(firmware_download_function)
-#define firmware_download_function_priv    plat_oneimage_rename(firmware_download_function_priv)
-#define firmware_get_cfg    plat_oneimage_rename(firmware_get_cfg)
-#define firmware_parse_cmd    plat_oneimage_rename(firmware_parse_cmd)
-#define firmware_read_cfg    plat_oneimage_rename(firmware_read_cfg)
 #define free_board_flowctrl_gpio    plat_oneimage_rename(free_board_flowctrl_gpio)
 #define free_board_ir_gpio    plat_oneimage_rename(free_board_ir_gpio)
 #define free_board_power_gpio    plat_oneimage_rename(free_board_power_gpio)
@@ -659,6 +652,8 @@
 #define oal_sdio_tc_msg_001    plat_oneimage_rename(oal_sdio_tc_msg_001)
 #define oal_sdio_transfer_netbuf_list    plat_oneimage_rename(oal_sdio_transfer_netbuf_list)
 #define oal_sdio_transfer_tx    plat_oneimage_rename(oal_sdio_transfer_tx)
+#define oal_sdio_malloc_buffer  plat_oneimage_rename(oal_sdio_malloc_buffer)
+#define oal_sdio_free_buffer  plat_oneimage_rename(oal_sdio_free_buffer)
 #define oal_set_thread_property    plat_oneimage_rename(oal_set_thread_property)
 #define oal_set_wakelock_debuglevel    plat_oneimage_rename(oal_set_wakelock_debuglevel)
 #define _oal_smp_task_lock_    plat_oneimage_rename(_oal_smp_task_lock_)

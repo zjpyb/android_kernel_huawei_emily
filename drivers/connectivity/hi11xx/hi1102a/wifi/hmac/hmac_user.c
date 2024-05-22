@@ -226,7 +226,14 @@ oal_uint32 hmac_user_free(oal_uint16 us_idx)
 
     return ul_ret;
 }
-
+#ifdef _PRE_WLAN_FEATURE_BTCOEX
+void hmac_user_btcoex_init(hmac_user_stru *hmac_user)
+{
+    hmac_user->st_hmac_user_btcoex.st_hmac_btcoex_addba_req.en_ba_handle_allow = OAL_TRUE;
+    hmac_user->st_hmac_user_btcoex.en_delba_btcoex_trigger = OAL_FALSE;
+    hmac_user->st_hmac_user_btcoex.en_ba_type = BTCOEX_BA_TYPE_NORMAL;
+}
+#endif
 
 oal_void hmac_user_init(hmac_user_stru *pst_hmac_user)
 {
@@ -296,10 +303,9 @@ oal_void hmac_user_init(hmac_user_stru *pst_hmac_user)
     pst_hmac_user->ul_first_add_time = (oal_uint32)oal_time_get_stamp_ms();
     pst_hmac_user->us_clear_judge_count = 0;
 #ifdef _PRE_WLAN_FEATURE_BTCOEX
-    pst_hmac_user->st_hmac_user_btcoex.st_hmac_btcoex_addba_req.en_ba_handle_allow = OAL_TRUE;
-    pst_hmac_user->st_hmac_user_btcoex.en_delba_btcoex_trigger = OAL_FALSE;
-    pst_hmac_user->st_hmac_user_btcoex.en_ba_type = BTCOEX_BA_TYPE_NORMAL;
+    hmac_user_btcoex_init(pst_hmac_user);
 #endif
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     return;
 }
 
@@ -608,10 +614,9 @@ oal_uint32 hmac_user_del(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_hmac_use
 #endif
 
     if (oal_unlikely((pst_mac_vap == OAL_PTR_NULL) || (pst_hmac_user == OAL_PTR_NULL))) {
-        oam_error_log2(0, OAM_SF_UM, "{hmac_user_del::null,%x %x.}", (uintptr_t)pst_mac_vap, (uintptr_t)pst_hmac_user);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     pst_mac_user = (mac_user_stru *)(&pst_hmac_user->st_user_base_info);
 
     oam_warning_log4(pst_mac_vap->uc_vap_id, OAM_SF_UM, "{hmac_user_del::del user[%d] start,is multi user[%d], \

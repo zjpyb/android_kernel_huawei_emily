@@ -37,6 +37,9 @@ struct lcd_bias_voltage_info
 	unsigned char   state_reg;
 	unsigned char   state_val;
 	unsigned char   state_mask;
+	unsigned char   pull_down_support;
+	unsigned char   vpos_down_val;
+	unsigned char   vneg_down_val;
 };
 
 struct lcdkit_bias_ic_device
@@ -48,4 +51,5 @@ struct lcdkit_bias_ic_device
 
 int lcdkit_bias_set_voltage(void);
 struct lcd_bias_voltage_info *lcdkit_get_lcd_bias_ic_info(void);
+void lcdkit_bias_pull_down_boost(void);
 #endif

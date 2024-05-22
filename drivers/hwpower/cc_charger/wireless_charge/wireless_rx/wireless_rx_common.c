@@ -19,11 +19,14 @@
 
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
 #include <chipset_common/hwpower/accessory/wireless_lightstrap.h>
+#include <huawei_platform/usb/usb_extra_modem.h>
 
 enum wlrx_scene wlrx_get_scene(void)
 {
 	if (lightstrap_online_state())
 		return WLRX_SCN_LIGHTSTRAP;
+	if (uem_check_online_status())
+		return WLRX_SCN_UEM;
 
 	return WLRX_SCN_NORMAL;
 }

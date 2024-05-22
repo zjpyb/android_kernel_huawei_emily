@@ -46,6 +46,18 @@ config HISI_BOOTMEM_OPTIMIZE
 	  has hole, it will cost too much time. So let it only iterate memory which in memblock.
 	  if unsure, say N
 
+config PM_PEAK
+	bool "Physical Memory Peak"
+	default n
+	---help---
+	  Record physical memory peak for each task.
+
+config KSWAPD_DEBUG
+	bool "kswapd debug"
+	default n
+	---help---
+	  Provide extra log to find why kswapd is running frequently.
+
 config REFAULT_IO_VMSCAN
 	bool "Refault io vmscan"
 	default n

@@ -1103,7 +1103,7 @@ duno:
 				if (sk)
 					tcp_send_ack(sk);
 
-				mptcp_add_rem_addr_for_sk(meta_sk);
+				mptcp_add_rem_addr_for_sk(meta_sk, false);
 
 				full_mesh_add_interface_update_forbid_path(meta_sk);
 				full_mesh_create_subflows(meta_sk);
@@ -2189,7 +2189,7 @@ static void full_mesh_user_switch(struct sock *meta_sk, bool on, const char *ifa
 	meta_tp->user_switch = on;
 
 	if (on) {
-		mptcp_add_rem_addr_for_sk(meta_sk);
+		mptcp_add_rem_addr_for_sk(meta_sk, true);
 
 		full_mesh_create_subflows(meta_sk);
 		mptcp_debug("%s: try full_mesh_create_subflows\n", __func__);

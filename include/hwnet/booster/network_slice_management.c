@@ -204,10 +204,15 @@ void slice_ip_para_report(struct sk_buff *skb, unsigned short family)
 	return;
 }
 
-static void cmd_process(struct req_msg_head *msg)
+static void cmd_process(struct req_msg_head *msg, u32 len)
 {
 	if (!msg) {
 		pr_err("msg is null\n");
+		return;
+	}
+
+	if (msg->len != len) {
+		pr_err("network_slice_management msg len error!!! left = %d, right = %d", msg->len, len);
 		return;
 	}
 	if (msg->type == SLICE_RPT_CTRL_CMD)

@@ -14,6 +14,8 @@ subdir-ccflags-y += -I$(src)/cap_prox/
 subdir-ccflags-y += -I$(src)/handpress/
 subdir-ccflags-y += -I$(src)/motion/
 subdir-ccflags-y += -I$(src)/vibrator/
+subdir-ccflags-y += -I$(src)/ps/
+subdir-ccflags-y += -I$(src)/mag/
 
 # contexthub Driver
 obj-$(CONFIG_INPUTHUB_20)		+= contexthub_boot.o
@@ -40,3 +42,5 @@ obj-$(CONFIG_INPUTHUB_20) += cap_prox/
 obj-$(CONFIG_INPUTHUB_20) += handpress/
 obj-$(CONFIG_INPUTHUB_20) += motion/
 obj-$(CONFIG_INPUTHUB_20) += vibrator/
+obj-$(CONFIG_INPUTHUB_20) += ps/
+obj-$(CONFIG_INPUTHUB_20) += mag/

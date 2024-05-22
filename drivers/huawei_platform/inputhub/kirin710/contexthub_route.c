@@ -55,6 +55,8 @@
 #ifdef CONFIG_HUAWEI_HISHOW
 #define HALL1_N_VALUE  4
 #endif
+#define HOLSTER_DOUBLE_HALL_MODE 2
+#define HALL_DATA_SIZE 2
 
 static int step_ref_cnt;
 static int iom3_timeout = MAX_TIMEOUT_MS;
@@ -89,6 +91,8 @@ static uint32_t recovery_floor_count = 0;
 static unsigned int g_sensor_read_number[TAG_END];
 static struct workqueue_struct *mcu_aod_wq;
 static DEFINE_MUTEX(mutex_update);
+
+static int g_mag_opened;
 
 extern uint8_t tag_to_hal_sensor_type[TAG_SENSOR_END];
 extern int ak8789_register_report_data(int ms);
@@ -149,6 +153,11 @@ s16 *get_fingersense_data(void)
 unsigned int get_sensor_read_number(enum obj_tag tag)
 {
 	return g_sensor_read_number[tag];
+}
+
+int get_mag_opened(void)
+{
+	return g_mag_opened;
 }
 
 bool really_do_enable_disable(int *ref_cnt, bool enable, int bit)
@@ -475,13 +484,22 @@ void check_hall_hishow_state(int type)
 
 int ap_hall_report(int value)
 {
+	int report_data [HALL_DATA_SIZE] = { 0 };
+
 #ifdef CONFIG_HUAWEI_HISHOW
 	if (get_support_hall_hishow() == 1)
 		check_hall_hishow_state(value);
 
 #endif
 	hall_value = value;
-	return report_sensor_event(TAG_HALL, &value, sizeof(value));
+	hwlog_info("%s: hall_value: %d, hall_number: %d\n", __func__, value, get_hall_number());
+	if (get_hall_number() == HOLSTER_DOUBLE_HALL_MODE) {
+		report_data[0] = value;
+		report_data[1] = get_hall_number();
+		return report_sensor_event(TAG_HALL, report_data, sizeof(int) * HALL_DATA_SIZE);
+	} else {
+		return report_sensor_event(TAG_HALL, &value, sizeof(value));
+	}
 }
 int ap_color_report(int value[], int length)
 {
@@ -1091,6 +1109,8 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 			.resp = NO_RESP,
 			.length = 0
 		};
+		if (tag == TAG_MAG || tag == TAG_ORIENTATION)
+			g_mag_opened++;
 		hwlog_info("open sensor %s (tag:%d)!\n", obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag);
 		if (is_lock)
 			return inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);
@@ -1103,6 +1123,11 @@ static int inputhub_sensor_enable_internal(int tag, bool enable, bool is_lock)
 			.resp = NO_RESP,
 			.length = 0
 		};
+
+		if (tag == TAG_MAG || tag == TAG_ORIENTATION) {
+		if (g_mag_opened > 0)
+				g_mag_opened--; // 0 for mag is not opened
+		}
 		hwlog_info("close sensor %s (tag:%d)!\n", obj_tag_str[tag] ? obj_tag_str[tag] : "TAG_UNKNOWN", tag);
 		if (is_lock)
 			return inputhub_mcu_write_cmd_adapter(&pkt, sizeof(pkt), NULL);

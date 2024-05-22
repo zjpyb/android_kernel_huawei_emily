@@ -401,8 +401,10 @@ void update_frame_cfs_thread(struct frame_info *frame_info, int tid, int index)
 {
 	if (!frame_info)
 		return;
+	write_lock(&frame_info->lock);
 	if (index >= 0 && index < MAX_FRAME_CFS_THREADS)
 		frame_info->cfs_task[index] = do_update_thread(frame_info, 0, NOT_RT_PRIO, tid, frame_info->cfs_task[index]);
+	write_unlock(&frame_info->lock);
 }
 EXPORT_SYMBOL_GPL(update_frame_cfs_thread);
 

@@ -49,11 +49,11 @@ struct hipp_common_s {
 	int (*set_pref)(struct hipp_common_s *drv,
 		unsigned int swid, unsigned int len);
 	unsigned long (*iommu_map)(struct hipp_common_s *drv,
-		int sharefd, int prot, unsigned long *out_size);
+		struct dma_buf *dmabuf, int prot, unsigned long *out_size);
 	int (*iommu_unmap)(struct hipp_common_s *drv,
-		int sharefd, unsigned long iova);
-	void *(*kmap)(struct hipp_common_s *drv, int sharefd);
-	int (*kunmap)(struct hipp_common_s *drv, int sharefd, void *virt_addr);
+		struct dma_buf *dmabuf, unsigned long iova);
+	void *(*kmap)(struct hipp_common_s *drv, struct dma_buf *dmabuf);
+	int (*kunmap)(struct hipp_common_s *drv, struct dma_buf *dmabuf, void *virt_addr);
 	void (*dump)(struct hipp_common_s *drv);
 };
 

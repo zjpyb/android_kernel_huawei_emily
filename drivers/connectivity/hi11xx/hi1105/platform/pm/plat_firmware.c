@@ -750,7 +750,7 @@ STATIC int32_t download_dcxo_cali_data(uint8_t *key, uint8_t *value)
  *             file_path: 发送文件的路径
  * 返 回 值  : -1表示失败，0表示成功
  */
-STATIC int32_t parse_file_cmd(uint8_t *string, unsigned long *addr, char **file_path)
+int32_t parse_file_cmd(uint8_t *string, unsigned long *addr, char **file_path)
 {
     uint8_t *tmp = NULL;
     int32_t count = 0;

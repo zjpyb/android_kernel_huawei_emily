@@ -57,13 +57,24 @@ struct dentry *hmdfs_get_lo_d(struct dentry *dentry, int dev_id)
 	return d;
 }
 
-static void update_inode_attr(struct inode *inode, struct dentry *child_dentry)
+static void update_inode_attr(struct inode *inode, struct dentry *child_dentry,
+			      struct dentry *lo_d_dentry)
 {
 	struct inode *li = NULL;
 	struct hmdfs_dentry_info_merge *cdi = hmdfs_dm(child_dentry);
 	struct hmdfs_dentry_comrade *comrade = NULL;
 	struct hmdfs_dentry_comrade *fst_comrade = NULL;
 
+	if (lo_d_dentry) {
+		li = d_inode(lo_d_dentry);
+		if (li) {
+			inode->i_atime = li->i_atime;
+			inode->i_ctime = li->i_ctime;
+			inode->i_mtime = li->i_mtime;
+			inode->i_size = li->i_size;
+		}
+		return;
+	}
 	mutex_lock(&cdi->comrade_list_lock);
 	fst_comrade = list_first_entry(&cdi->comrade_list,
 				       struct hmdfs_dentry_comrade, list);
@@ -79,7 +90,6 @@ static void update_inode_attr(struct inode *inode, struct dentry *child_dentry)
 			inode->i_size = li->i_size;
 			continue;
 		}
-
 		if (hmdfs_time_compare(&inode->i_mtime, &li->i_mtime) < 0)
 			inode->i_mtime = li->i_mtime;
 	}
@@ -98,6 +108,35 @@ static int get_num_comrades(struct dentry *dentry)
 	mutex_unlock(&dim->comrade_list_lock);
 	return count;
 }
+static void hmdfs_fill_merge_inode(struct inode *inode,
+				   struct dentry *child_dentry,
+				   struct dentry *fst_lo_d)
+{
+	umode_t mode = d_inode(fst_lo_d)->i_mode;
+	/*
+	 * remote symlink need to treat as regfile,
+	 * the specific operation is performed by device_view.
+	 * local symlink is managed by merge_view.
+	 */
+	if (hm_islnk(hmdfs_d(fst_lo_d)->file_type) &&
+	    hmdfs_d(fst_lo_d)->device_id == 0) {
+		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+		inode->i_op = &hmdfs_symlink_iops_merge;
+		inode->i_fop = &hmdfs_file_fops_merge;
+		set_nlink(inode, 1);
+	} else if (S_ISREG(mode)) { // Reguler file 0660
+		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
+		inode->i_op = &hmdfs_file_iops_merge;
+		inode->i_fop = &hmdfs_file_fops_merge;
+		set_nlink(inode, 1);
+	} else if (S_ISDIR(mode)) { // Directory 0771
+		inode->i_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IXOTH;
+		inode->i_op = &hmdfs_dir_iops_merge;
+		inode->i_fop = &hmdfs_dir_fops_merge;
+		set_nlink(inode, get_num_comrades(child_dentry) + 2);
+	}
+
+}
 
 static struct inode *fill_inode_merge(struct super_block *sb,
 				      struct inode *parent_inode,
@@ -107,7 +146,6 @@ static struct inode *fill_inode_merge(struct super_block *sb,
 	struct dentry *fst_lo_d = NULL;
 	struct hmdfs_inode_info *info = NULL;
 	struct inode *inode = NULL;
-	umode_t mode;
 
 	if (lo_d_dentry) {
 		fst_lo_d = lo_d_dentry;
@@ -140,30 +178,8 @@ static struct inode *fill_inode_merge(struct super_block *sb,
 	inode->i_uid = KUIDT_INIT((uid_t)1000);
 	inode->i_gid = KGIDT_INIT((gid_t)1000);
 
-	update_inode_attr(inode, child_dentry);
-	mode = d_inode(fst_lo_d)->i_mode;
-	/* remote symlink need to treat as regfile,
-	 * the specific operation is performed by device_view.
-	 * local symlink is managed by merge_view.
-	 */
-	if (hm_islnk(hmdfs_d(fst_lo_d)->file_type) &&
-	    hmdfs_d(fst_lo_d)->device_id == 0) {
-		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-		inode->i_op = &hmdfs_symlink_iops_merge;
-		inode->i_fop = &hmdfs_file_fops_merge;
-		set_nlink(inode, 1);
-	} else if (S_ISREG(mode)) { // Reguler file 0660
-		inode->i_mode = S_IFREG | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
-		inode->i_op = &hmdfs_file_iops_merge;
-		inode->i_fop = &hmdfs_file_fops_merge;
-		set_nlink(inode, 1);
-	} else if (S_ISDIR(mode)) { // Directory 0771
-		inode->i_mode = S_IFDIR | S_IRWXU | S_IRWXG | S_IXOTH;
-		inode->i_op = &hmdfs_dir_iops_merge;
-		inode->i_fop = &hmdfs_dir_fops_merge;
-		set_nlink(inode, get_num_comrades(child_dentry) + 2);
-	}
-
+	update_inode_attr(inode, child_dentry, lo_d_dentry);
+	hmdfs_fill_merge_inode(inode, child_dentry, fst_lo_d);
 	unlock_new_inode(inode);
 out:
 	dput(fst_lo_d);
@@ -401,7 +417,7 @@ static int lookup_merge_normal(struct dentry *child_dentry, unsigned int flags)
 		if ((ftype == DT_DIR && !S_ISDIR(mode)) ||
 		    (ftype == DT_REG && S_ISDIR(mode))) {
 			destory_comrade(comrade);
-			ret = ret ? PTR_ERR(comrade) : 0;
+			ret = ret ? -ENOENT : 0;
 			continue;
 		}
 
@@ -660,11 +676,11 @@ out:
 static int hmdfs_getattr_merge(const struct path *path, struct kstat *stat,
 			       u32 request_mask, unsigned int flags)
 {
-	int ret;
 	struct path lower_path = {
 		.dentry = hmdfs_get_fst_lo_d(path->dentry),
 		.mnt = path->mnt,
 	};
+	int ret = 0;
 
 	if (unlikely(!lower_path.dentry)) {
 		hmdfs_err("Fatal! No comrades");
@@ -848,57 +864,55 @@ int hmdfs_create_lower_dentry(struct inode *i_parent, struct dentry *d_child,
 	struct hmdfs_dentry_comrade *new_comrade = NULL;
 	struct dentry *lo_d_child = NULL;
 	char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	char *absolute_path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	char *full_path = kmalloc(PATH_MAX, GFP_KERNEL);
 	char *path_name = NULL;
 	struct path path = { .mnt = NULL, .dentry = NULL };
-	int ret = 0;
+	int ret = -ENOMEM;
 
-	if (unlikely(!path_buf || !absolute_path_buf)) {
-		ret = -ENOMEM;
+	if (unlikely(!path_buf || !full_path))
 		goto out;
-	}
 
 	path_name = dentry_path_raw(lo_d_parent, path_buf, PATH_MAX);
 	if (IS_ERR(path_name)) {
 		ret = PTR_ERR(path_name);
 		goto out;
 	}
+
 	if ((strlen(sbi->real_dst) + strlen(path_name) +
 	     strlen(d_child->d_name.name) + 2) > PATH_MAX) {
 		ret = -ENAMETOOLONG;
 		goto out;
 	}
 
-	sprintf(absolute_path_buf, "%s%s/%s", sbi->real_dst, path_name,
+	sprintf(full_path, "%s%s/%s", sbi->real_dst, path_name,
 		d_child->d_name.name);
-
 	if (is_dir)
-		lo_d_child = kern_path_create(AT_FDCWD, absolute_path_buf,
+		lo_d_child = kern_path_create(AT_FDCWD, full_path,
 					      &path, LOOKUP_DIRECTORY);
 	else
-		lo_d_child = kern_path_create(AT_FDCWD, absolute_path_buf,
-					      &path, 0);
+		lo_d_child = kern_path_create(AT_FDCWD, full_path, &path, 0);
 	if (IS_ERR(lo_d_child)) {
 		ret = PTR_ERR(lo_d_child);
 		goto out;
 	}
-	// to ensure link_comrade after vfs_mkdir succeed
+
+	/* to ensure link_comrade after vfs_mkdir succeed */
 	ret = hmdfs_do_ops_merge(i_parent, d_child, lo_d_child, path,
 				 rec_op_para);
 	if (ret)
 		goto out_put;
+
 	new_comrade = alloc_comrade(lo_d_child, HMDFS_DEVID_LOCAL);
 	if (IS_ERR(new_comrade)) {
 		ret = PTR_ERR(new_comrade);
 		goto out_put;
-	} else {
-		link_comrade_unlocked(d_child, new_comrade);
 	}
 
+	link_comrade_unlocked(d_child, new_comrade);
 out_put:
 	done_path_create(&path, lo_d_child);
 out:
-	kfree(absolute_path_buf);
+	kfree(full_path);
 	kfree(path_buf);
 	return ret;
 }

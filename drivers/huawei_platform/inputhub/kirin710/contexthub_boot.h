@@ -46,6 +46,7 @@
 #define CMI_TPLCD                            15
 #define CTC_TPLCD                            16
 #define INX_TPLCD2                           17
+#define EDO_TPLCD                            18
 
 #define DTS_COMP_LG_ER69006A        "hisilicon,mipi_lg_eR69006A"
 #define DTS_COMP_JDI_NT35695_CUT3_1 "hisilicon,mipi_jdi_NT35695_cut3_1"
@@ -107,6 +108,11 @@
 #define DTS_COMP_INX_NT36572A_6P39 "inx_nt36572a_6p39_720p_video"  /* LTPS */
 #define DTS_COMP_INX_NT36526_6P39  "inx_nt36526_6p39_720p_video"   /* A-SI */
 #define DTS_COMP_TM_FT8615_G6_6P39 "tm_ft8615_g6_6p39_720p_video"
+
+#define DTS_COMP_SAMSUNG_AMS653VY01 "090_703_6p53"
+#define DTS_COMP_EDO_E652FAC73 "350_c03_6p53"
+
+#define LCD_PANEL_NAME_LEN 40
 
 enum SENSOR_POWER_CHECK {
 	SENSOR_POWER_STATE_OK = 0,
@@ -192,6 +198,11 @@ typedef struct {
 	uint8_t tplcd;
 } lcd_model;
 
+typedef struct _lcd_model_info_config {
+	char panel_name[LCD_PANEL_NAME_LEN];
+	int16_t manufacture;
+}lcd_panel_model;
+
 struct config_on_ddr {
 	struct dump_config dump_config;
 	log_buff_t log_buff_cb_backup;
@@ -221,5 +232,6 @@ void peri_used_release(void);
 struct dsm_client *inputhub_get_shb_dclient(void);
 #endif
 u8 get_tplcd_manufacture(void);
+u8 get_tplcd_manufacture_curr(void);
 struct dsm_dev *get_dsm_sensorhub(void);
 #endif /* __LINUX_INPUTHUB_CMU_H__ */

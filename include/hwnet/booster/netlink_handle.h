@@ -59,6 +59,7 @@ enum msg_rpt_type {
 	WIFI_PARA_RPT = 9,
 	SPEED_TEST_CHR_RPT = 10,
 	STREAM_DETECTION_RPT,
+	TRAFFIC_STATS_INFO_RPT = 12,
 	INTER_MSG_BASE = 0x8000,
 	WIFI_RPT_TIMER,
 	NBMSG_RPT_BUTT
@@ -97,7 +98,26 @@ enum req_msg_type {
 	STREAM_DETECTION_STOP,
 	UPDAT_INTERFACE_NAME = 26,
 	WIFI_PARA_COLLECT_UPDATE = 27,
+	/* statistics traffic begin */
+	ADD_TOP_UID = 28,
+	DEL_TOP_UID = 29,
+	UPDATE_CELLULAR_MODE = 30,
+	SYNC_TOP_UID_LIST = 31,
+	UPDATE_WIFI_STATE = 32,
+	UPDATE_VIRTUAL_SIM_STATE = 33,
+	/* statistics traffic end */
 	CMD_NUM_MAX
+};
+
+/* network type IDs defined for each network type */
+enum stats_network_type {
+	STATS_NETWORK_TYPE_SA = 0,
+	STATS_NETWORK_TYPE_NSA = 1,
+	STATS_NETWORK_TYPE_NSA_NO_ENDC = 2,
+	STATS_NETWORK_TYPE_LTE = 3,
+	STATS_NETWORK_TYPE_OTHER = 4,
+	STATS_NETWORK_TYPE_WIFI = 5,
+	RAT_NUM_MAX
 };
 
 /* module IDs defined for each module */
@@ -125,6 +145,6 @@ enum map_index {
 };
 
 typedef void notify_event(struct res_msg_head *msg);
-typedef void msg_process(struct req_msg_head *req);
+typedef void msg_process(struct req_msg_head *req, u32 len);
 
 #endif /* _NETLINK_HANDLE_H */

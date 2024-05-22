@@ -156,3 +156,17 @@ config GENERAL_SEE_PINCODE
 	default n
 	help
 	  whether general_see support pincode
+
+config GENERAL_SEE_PINCODE_POWER
+	depends on HISEE
+	bool "general_see support pincode power."
+	default n
+	help
+	  whether general_see support pincode power
+
+config GENERAL_SEE_PINCODE_DISABLE
+	depends on HISEE
+	bool "disable general_see pincode."
+	default n
+	help
+	whether general_see pincode is disabled

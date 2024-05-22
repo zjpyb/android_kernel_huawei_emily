@@ -150,7 +150,13 @@ const u16 cmd_map_model[CMD_NUM_MAX][MAP_ENTITY_NUM] = {
 	{ WIFI_RPT_TIMER, WIFI_PARA_COLLEC},
 	{ STREAM_DETECTION_START, STREAM_DETECT },
 	{ STREAM_DETECTION_STOP, STREAM_DETECT },
-	{ UPDAT_INTERFACE_NAME, IP_PARA_COLLEC }
+	{ UPDAT_INTERFACE_NAME, IP_PARA_COLLEC },
+	{ ADD_TOP_UID, IP_PARA_COLLEC },
+	{ DEL_TOP_UID, IP_PARA_COLLEC },
+	{ UPDATE_CELLULAR_MODE, IP_PARA_COLLEC },
+	{ SYNC_TOP_UID_LIST, IP_PARA_COLLEC },
+	{ UPDATE_WIFI_STATE, IP_PARA_COLLEC },
+	{ UPDATE_VIRTUAL_SIM_STATE, IP_PARA_COLLEC }
 };
 
 static void nl_notify_event(struct res_msg_head *msg)
@@ -182,7 +188,7 @@ static void nl_notify_event(struct res_msg_head *msg)
 	up(&g_ctx.sema);
 }
 
-static void process_cmd(struct req_msg_head *cmd)
+static void process_cmd(struct req_msg_head *cmd, u32 len)
 {
 	int i;
 
@@ -194,7 +200,7 @@ static void process_cmd(struct req_msg_head *cmd)
 			continue;
 		if (g_ctx.model_cb[cmd_map_model[i][MAP_VALUE_INDEX]] == NULL)
 			break;
-		g_ctx.model_cb[cmd_map_model[i][MAP_VALUE_INDEX]](cmd);
+		g_ctx.model_cb[cmd_map_model[i][MAP_VALUE_INDEX]](cmd, len);
 	}
 }
 
@@ -236,7 +242,7 @@ static void netlink_handle_rcv(struct sk_buff *__skb)
 		g_ctx.native_pid = nlh->nlmsg_pid;
 		break;
 	case NL_MSG_JNI_REQ:
-		process_cmd((struct req_msg_head *)NLMSG_DATA(nlh));
+		process_cmd((struct req_msg_head *)NLMSG_DATA(nlh), nlh->nlmsg_len - sizeof(struct nlmsghdr));
 		break;
 	default:
 		hwlog_err("invalid nlmsg_type %d\n", nlh->nlmsg_type);
@@ -316,7 +322,7 @@ static int netlink_handle_thread(void *data)
 			if (p->msg.type < INTER_MSG_BASE)
 				__nl_notify_event(&p->msg);
 			else
-				process_cmd((struct req_msg_head *)&p->msg);
+				process_cmd((struct req_msg_head *)&p->msg, p->msg.len);
 
 			kfree(p);
 			p = get_msg();

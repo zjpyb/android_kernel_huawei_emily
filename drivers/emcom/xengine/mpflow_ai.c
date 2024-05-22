@@ -882,7 +882,7 @@ void emcom_xengine_mpflow_ai_ip_config(const char *data, uint16_t len)
 	__be32 daddr[EMCOM_MPFLOW_AI_CLAT_IPV6] = {0};
 	int8_t app_index;
 
-	if (!data || (len % sizeof(struct emcom_xengine_mpflow_ai_ip_cfg))) {
+	if (!data || (len != sizeof(struct emcom_xengine_mpflow_ai_ip_cfg))) {
 		emcom_loge("invalid data, length: %u expect: %zu", len,
 			sizeof(struct emcom_xengine_mpflow_ai_ip_cfg));
 		return;

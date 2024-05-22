@@ -41,7 +41,8 @@ static int focal_get_data_check_sum(const u8 *data, size_t data_size,
 	u8 *check_sum);
 static int focal_enter_work_model_from_rom_update(
 	struct focal_platform_data *focal_pdata);
-
+static int focal_get_data_ecc(const u8 *data, size_t data_size,
+	u16 *ecc_r);
 static int focal_enter_work_model_by_hardware(void);
 #define RIGHT_OFFSET_BIT(m, n)  ((m) >> (n))
 #define RIGHT_OFFSET_16BIT(m)  (RIGHT_OFFSET_BIT(m, 16))     /*offset 16bits to right*/
@@ -298,7 +299,9 @@ static int focal_write_firmware_data(
 
 		if (TS_BUS_I2C == ts_platform_data->bops->btype) {
 			if(true == focal_pdata->focal_device_data->is_in_cell){
-				if (FOCAL_FT8201 == g_focal_dev_data->ic_type || FOCAL_FT8006U == g_focal_dev_data->ic_type) {
+				if ((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+					(FOCAL_FT8006U == g_focal_dev_data->ic_type) ||
+					(FOCAL_FT8201_AB == g_focal_dev_data->ic_type)) {
 					ret = focal_wait_firmware_write_finish(focal_pdata,
 						command, FTS_FW_WRITE_STATUS_ADDR_START , start_write_addr, data_size);
 				}else{
@@ -531,10 +534,13 @@ static int focal_write_app_data(
 	}else if(FOCAL_FT8201 == g_focal_dev_data->ic_type){
 			return focal_write_firmware_data(focal_pdata, fw_data, fw_length,
 				FTS_CMD_WRITE_FLASH, FTS_8201_FW_IC_ADDR_START);
-		}else{
-			return focal_write_firmware_data(focal_pdata, fw_data, fw_length,
-				FTS_CMD_WRITE_FLASH, FTS_FW_IC_ADDR_START);
-		}
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		return focal_write_firmware_data(focal_pdata, fw_data, fw_length,
+			FTS_CMD_WRITE_FLASH, 0);
+	} else {
+		return focal_write_firmware_data(focal_pdata, fw_data, fw_length,
+			FTS_CMD_WRITE_FLASH, FTS_FW_IC_ADDR_START);
+	}
 }
 
 /*
@@ -890,6 +896,102 @@ static int focal_read_check_sum(
 }
 
 /*
+ * param - start_addr : addr in ic to start check sum
+ *
+ * param - crc_length : length of data to check sum
+ *
+ * param - check_sum : buffer to receive check sum value
+ *
+ * return : if success, return 0, otherwize return error code
+ */
+static int focal_read_check_sum_16(
+	struct focal_platform_data *focal_pdata,
+	u32 start_addr,
+	u32 crc_length,
+	u16 *check_sum)
+{
+	int i;
+	int ret;
+	u32 ic_status = 0;
+	u8 cmd[7] = { 0 };
+	u8 reg_val[2] = { 0 };
+	u32 packet_len;
+	u32 cmdlen;
+
+	TS_LOG_INFO("FT8201AB crc check\n");
+	if (!focal_pdata || !check_sum) {
+		TS_LOG_ERR("%s: find a null point !!\n", __func__);
+		return -EINVAL;
+	}
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		if (crc_length > FTS_8201AB_LEN_FLASH_ECC_MAX) {
+			TS_LOG_ERR("%s:%s, crc_length=%u, max=%d\n",
+				__func__, "crc length out of range",
+				crc_length, FTS_8201AB_LEN_FLASH_ECC_MAX);
+			return -EINVAL;
+		}
+	} else {
+		if (crc_length > LEN_FLASH_ECC_MAX) {
+			TS_LOG_ERR("%s:%s, crc_length=%u, max=%d\n",
+				__func__, "crc length out of range",
+				crc_length, LEN_FLASH_ECC_MAX);
+			return -EINVAL;
+		}
+	}
+	/* start verify */
+	cmd[0] = FTS_CMD_CALC_CRC;
+	ret = focal_write(cmd, 1); /* write one value */
+	if (ret) {
+		TS_LOG_ERR("%s:start verify fail, ret=%d\n",
+			__func__, ret);
+		return ret;
+	}
+	msleep(focal_pdata->delay_time->calc_crc_delay);
+	packet_len = crc_length;
+
+	cmd[0] = FTS_CMD_SET_CALC_ADDR;
+	cmd[1] = (u8)RIGHT_OFFSET_16BIT(start_addr);
+	cmd[2] = (u8)RIGHT_OFFSET_8BIT(start_addr);
+	cmd[3] = (u8)(start_addr);
+	cmd[4] = RIGHT_OFFSET_16BIT(packet_len);
+	cmd[5] = RIGHT_OFFSET_8BIT(packet_len);
+	cmd[6] = (u8)(packet_len);
+	cmdlen = 7;
+
+	ret = focal_write(cmd, cmdlen);
+	if (ret) {
+		TS_LOG_ERR("%s:write verify parameter fail, ret=%d\n",
+			__func__, ret);
+		return ret;
+	}
+	msleep(crc_length / 256); /* delay times base on crc_length */
+	cmd[0] = FTS_CMD_GET_STATUS;
+	for (i = 0; i < focal_pdata->delay_time->read_ecc_query_times; i++) {
+		ret = focal_get_status(&ic_status);
+		if (ret) {
+			TS_LOG_ERR("%s:get ic status fail, ret=%d\n",
+				__func__, ret);
+		} else {
+			if (FTS_ECC_OK_STATUS == ic_status)
+				break;
+		}
+		if (i == focal_pdata->delay_time->read_ecc_query_times - 1)
+			TS_LOG_ERR("%s:%s, out of max retry times\n",
+				__func__, "status check fail");
+		msleep(1);
+	}
+	cmd[0] = FTS_CMD_READ_CRC;
+	ret = focal_read(cmd, 1, reg_val, 2);
+	if (ret < 0) {
+		TS_LOG_ERR("ecc read cmd write fail\n");
+		return ret;
+	}
+	*check_sum = ((u16)(reg_val[0] << 8) + reg_val[1]);
+	TS_LOG_INFO("FT8201AB crc check pass\n");
+	return 0;
+}
+
+/*
  * param - flash_type : buffer to receive flash type
  *
  * return : if success, return 0, otherwize return error code
@@ -946,7 +1048,9 @@ static int focal_check_firmware_size_in_pram_model(u32 fw_len)
 			"no flash type maech, use default", flash_type);
 		max_fw_len = FTS_FLASH_MAX_LEN_WINBOND;
 	}
-	if(FOCAL_FT8201 == g_focal_dev_data->ic_type || FOCAL_FT8006U== g_focal_dev_data->ic_type) {
+	if((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8006U== g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8201_AB == g_focal_dev_data->ic_type)) {
 		max_fw_len = FTS_8201_FLASH_MAX_LEN;
 	}
 
@@ -1102,8 +1206,11 @@ static int focal_firmware_update(
 	u32 fw_len)
 {
 	int ret = 0;
+	u8 cmd[4] = { 0 };
 	u8 check_sum_of_fw = 0;
 	u8 check_sum_in_ic = 0;
+	u16 check_sum_of_fw_16 = 0;
+	u16 check_sum_in_ic_16 = 0;
 
 	ret = focal_enter_pram_model(focal_pdata);
 	if (ret) {
@@ -1126,7 +1233,10 @@ static int focal_firmware_update(
 		goto enter_work_model_from_pram;
 	}
 
-	focal_get_data_check_sum(fw_data, fw_len, &check_sum_of_fw);
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB)
+		focal_get_data_ecc(fw_data, fw_len, &check_sum_of_fw_16);
+	else
+		focal_get_data_check_sum(fw_data, fw_len, &check_sum_of_fw);
 
 	ret = focal_auto_config_clock();
 	if (ret) {
@@ -1149,6 +1259,17 @@ static int focal_firmware_update(
 		goto enter_work_model_from_pram;
 	} else {
 		TS_LOG_INFO("%s:enter update model success\n", __func__);
+	}
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		cmd[0] = FTS_FIRMWARE_LEN;
+		cmd[1] = RIGHT_OFFSET_16BIT(fw_len);
+		cmd[2] = RIGHT_OFFSET_8BIT(fw_len);
+		cmd[3] = (u8)(fw_len);
+		ret = focal_write(cmd, 4);
+		if (ret < 0) {
+			TS_LOG_ERR("data len cmd write fail\n");
+			goto enter_work_model_from_pram;
+		}
 	}
 
 	ret = focal_erasure_app_area(focal_pdata);
@@ -1177,12 +1298,15 @@ static int focal_firmware_update(
 		ret = focal_read_check_sum(focal_pdata, FT8006U_FW_IC_ADDR_START,
 		fw_len, &check_sum_in_ic);
 	}else if(FOCAL_FT8201 == g_focal_dev_data->ic_type){
-			ret = focal_read_check_sum(focal_pdata, FTS_8201_FW_IC_ADDR_START,
+		ret = focal_read_check_sum(focal_pdata, FTS_8201_FW_IC_ADDR_START,
 			fw_len, &check_sum_in_ic);
-		}else{
-			ret = focal_read_check_sum(focal_pdata, FTS_FW_IC_ADDR_START,
-				fw_len, &check_sum_in_ic);
-		}
+	} else if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		ret = focal_read_check_sum_16(focal_pdata, 0,
+			fw_len, &check_sum_in_ic_16);
+	} else {
+		ret = focal_read_check_sum(focal_pdata, FTS_FW_IC_ADDR_START,
+			fw_len, &check_sum_in_ic);
+	}
 	if (ret) {
 		TS_LOG_ERR("%s:read check sum in ic fail, ret=%d\n",
 			__func__, ret);
@@ -1192,14 +1316,21 @@ static int focal_firmware_update(
 		goto enter_work_model_from_update_model;
 	}
 
-	TS_LOG_INFO("%s:crc_in_ic=0x%02X, crc_of_fw=0x%02X\n",
+	if (g_focal_dev_data->ic_type == FOCAL_FT8201_AB) {
+		TS_LOG_INFO("%s:crc_in_ic=0x%02X, crc_of_fw=0x%02X\n",
+			__func__, check_sum_in_ic_16, check_sum_of_fw_16);
+		if (check_sum_in_ic_16 != check_sum_of_fw_16) {
+			TS_LOG_ERR("%s:check sum check fail\n", __func__);
+			ret = -EIO;
+		}
+	} else {
+		TS_LOG_INFO("%s:crc_in_ic=0x%02X, crc_of_fw=0x%02X\n",
 			__func__, check_sum_in_ic, check_sum_of_fw);
-
-	if (check_sum_in_ic != check_sum_of_fw) {
-		TS_LOG_ERR("%s:check sum check fail\n", __func__);
-		ret = -EIO;
+		if (check_sum_in_ic != check_sum_of_fw) {
+			TS_LOG_ERR("%s:check sum check fail\n", __func__);
+			ret = -EIO;
+		}
 	}
-
 enter_work_model_from_update_model:
 	if (focal_enter_work_model_form_pram_update(focal_pdata)) {
 		TS_LOG_ERR("%s:enter work model fail, ret=%d\n", __func__, ret);
@@ -1612,7 +1743,7 @@ static int focal_get_data_ecc(
 	u16 *ecc_r)
 {
 	u16 ecc = 0;
-	u16 i = 0;
+	u32 i = 0;
 	u16 j = 0;
 	u16 coef = AL2_FCS_COEF;
 
@@ -2191,9 +2322,9 @@ int focal_firmware_auto_update(
 	}
 	dev = &focal_pdata->focal_platform_dev->dev;
 
-	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
+	if ((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8201_AB == g_focal_dev_data->ic_type))
 		g_tskit_fw_upgrade_flag = true;
-	}
 
 	/* 1. get firmware name */
 	ret = focal_get_firmware_name(focal_pdata,
@@ -2264,9 +2395,9 @@ release_fw:
 		focal_esdcheck_set_upgrade_flag(false);
 	}
 fw_release_flag:
-	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
+	if ((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8201_AB == g_focal_dev_data->ic_type))
 		g_tskit_fw_upgrade_flag = false;
-	}
 	return ret;
 }
 
@@ -2290,7 +2421,8 @@ int focal_firmware_manual_update(
 	dev = &focal_pdata->focal_platform_dev->dev;
 	TS_LOG_DEBUG("Enter %s\n",__func__);
 
-	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
+	if ((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8201_AB == g_focal_dev_data->ic_type)) {
 		g_tskit_fw_upgrade_flag = true;
 	}
 
@@ -2331,7 +2463,8 @@ release_fw:
 	release_firmware(fw);
 	fw = NULL;
 fw_release_flag:
-	if (FOCAL_FT8201 == g_focal_dev_data->ic_type) {
+	if ((FOCAL_FT8201 == g_focal_dev_data->ic_type) ||
+		(FOCAL_FT8201_AB == g_focal_dev_data->ic_type)) {
 		g_tskit_fw_upgrade_flag = false;
 	}
 	return ret;
@@ -2518,7 +2651,8 @@ int focal_read_chip_id_(u32 *chip_id)
 	cmd[2] = 0x00;
 	cmd[3] = 0x00;
 
-	if (g_focal_dev_data->ic_type == FOCAL_FT8756)
+	if ((g_focal_dev_data->ic_type == FOCAL_FT8756) ||
+		(g_focal_dev_data->ic_type == FOCAL_FT8201_AB))
 		cmd_len = 1;
 
 	ret = focal_read(cmd, cmd_len, reg_val, 2);
@@ -2943,14 +3077,43 @@ int focal_read_tp_color(
 int touch_driver_get_tpcolor_from_reg(void)
 {
 	int ret;
+	int i;
 	u8 color_id;
+	u8 ret_val;
 
 	ret = focal_write_reg(FTS_WORK_MODE_ADDR, FTS_FACTORY_MODE_VALUE);
 	if (ret) {
 		TS_LOG_ERR("%s:enter factory mode fail\n", __func__);
 		goto exit;
 	}
-	mdelay(1); /* delay one msec */
+	if (FOCAL_FT8201_AB == g_focal_dev_data->ic_type) {
+		TS_LOG_INFO("%s: start change factory mode\n", __func__);
+		for (i = 0; i < MAX_RETRY_TIME; i++) {
+			ret = focal_read_reg(FTS_WORK_MODE_ADDR, &ret_val);
+			if (ret) {
+				TS_LOG_ERR("%s: read FTS_WORK_MODE_ADDR error\n",
+					__func__);
+				return ret;
+			}
+			if (((ret_val >> 4) & 0x07) == 0x04) {
+				TS_LOG_INFO("%s: change factory success\n", __func__);
+				break;
+			} else {
+				ret = focal_write_reg(FTS_WORK_MODE_ADDR,
+					FTS_FACTORY_MODE_VALUE);
+				if (!ret) {
+					msleep(200);
+					continue;
+				} else {
+					TS_LOG_ERR("%s: write reg failed\n",
+						__func__);
+					return ret;
+				}
+			}
+		}
+	} else {
+		mdelay(1); /* delay one msec */
+	}
 	ret = focal_read_reg(FTS_COLOR_ID_ADDR, &color_id);
 	if (ret) {
 		TS_LOG_ERR("%s:read color id fail, color_id = %d\n",

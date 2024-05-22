@@ -273,6 +273,10 @@ static void nb_netlink_rcv(struct sk_buff *__skb)
 			g_native_space_pid = 0;
 			break;
 		case NBMSG_NATIVE_GET_RTT:
+			if (nlh->nlmsg_len < sizeof(struct nlmsghdr) + sizeof(struct native_requst)) {
+				hwlog_err("nb_netlink_rcv NBMSG_NATIVE_GET_RTT length error %d", nlh->nlmsg_len);
+				break;
+			}
 			process_native_requst(
 				(struct native_requst *)NLMSG_DATA(nlh));
 			break;

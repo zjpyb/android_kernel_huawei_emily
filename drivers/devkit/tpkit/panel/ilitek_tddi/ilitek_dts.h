@@ -25,6 +25,8 @@
 #define ILITEK_DTS_PRESSURE "pressure_supported"
 #define ILITEK_DTS_TP_COLOR "support_get_tp_color"
 
+#define ILITEK_HEAD_ROI "head_roi_support"
+
 #define ILITEK_DTS_PROJECT_ID_CTRL "project_id_length_control"
 
 #define ILITEK_DTS_RAW_DATA_PRINT "is_ic_rawdata_proc_printf"
@@ -45,6 +47,8 @@
 #define ILITEK_DTS_DEF_SUPPORT_GESTURE 0
 #define ILITEK_DTS_DEF_SUPPORT_PRESSURE 0
 #define ILITEK_DTS_DEF_TP_COLOR 1
+
+#define ILITEK_DTS_DEF_HEAD_ROI 0
 
 #define ILITEK_DTS_DEF_LCD_POWER_NOTIFY 1 /* tddi close fb_notify log */
 #define ILITEK_DTS_DEF_PROJECT_ID_CTRL 0

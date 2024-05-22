@@ -575,7 +575,7 @@ static void pmic_mntn_record_events(struct pmic_mntn_desc *pmic_mntn)
 		pmic_mntn_reg_write(pmic_mntn,
 			pmic_mntn->record_regs[index],
 			pmic_mntn->record_event_buff[index]);
-		len -= strlen(pmic_mntn->init_log_show);
+		len = PMIC_PRINT_BUF_SIZE - strlen(pmic_mntn->init_log_show);
 		snprintf(pmic_mntn->init_log_show +
 			strlen(pmic_mntn->init_log_show),
 			len,
@@ -1316,8 +1316,7 @@ static int pmic_mntn_record_buf_data_initial(
 				(const char **)&exch_reg_tmp[index].event_bit_name[bit]);
 
 		if (ret) {
-			dev_err(dev, "[%s]read attribute of %s\n", __func__,
-				compatible_string);
+			dev_err(dev, "[%s]read attribute of %s\n", __func__, compatible_string);
 			return -ENODEV;
 		}
 	}

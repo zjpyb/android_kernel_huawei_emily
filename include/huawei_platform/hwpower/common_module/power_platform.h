@@ -34,9 +34,12 @@
 #include <linux/hisi/usb/hisi_tcpm.h>
 #include <linux/mfd/hisi_pmic.h>
 #include <media/huawei/camera/pmic/hw_pmic.h>
+#include <huawei_platform/power/batt_info_pub.h>
 #ifdef CONFIG_HISI_POWERKEY_SPMI
 #include <linux/hisi/powerkey_event.h>
+#include <huawei_platform/usb/usb_extra_modem.h>
 #endif
+#include <huawei_platform/usb/usb_extra_modem.h>
 
 #define POWER_PLATFOR_SOC_UI_OFFSET    0
 
@@ -116,6 +119,14 @@ static inline int power_platform_get_battery_current_avg(void)
 
 static inline int power_platform_is_battery_removed(void)
 {
+	return coul_drv_battery_removed_before_boot();
+}
+
+static inline int power_platform_is_battery_changed(void)
+{
+	int changed_flag = get_batt_changed_on_boot();
+	if (changed_flag >= 0)
+		return changed_flag;
 	return coul_drv_battery_removed_before_boot();
 }
 
@@ -273,4 +284,18 @@ static inline void power_platform_set_charge_hiz(int enable)
 	charge_set_hiz_enable(enable);
 }
 
+static inline unsigned int power_platform_get_uem_leak_current(void)
+{
+	return uem_get_charge_leak_current();
+}
+
+static inline unsigned int power_platform_get_uem_resistance(void)
+{
+	return uem_get_charge_resistance();
+}
+
+static bool power_platform_check_online_status(void)
+{
+	return uem_check_online_status();
+}
 #endif /* _POWER_PLATFORM_H_ */

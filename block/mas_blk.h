@@ -33,6 +33,24 @@
 #define BLK_MAX_SQR_BW  0
 #define DEVICE_CAPACITY_128_G  0x10000000  /* 128G/512 */
 
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+#define SECTOR_BYTE 9
+#define SECTION_SECTOR 3
+#define BLKSIZE 4096 /* bytes */
+#define RESERVED_RESET_TAG_NUM 4
+
+struct unistore_section_info {
+	struct list_head section_list;
+	sector_t section_start_lba;
+	ktime_t section_insert_time;
+	sector_t section_id;
+	sector_t next_section_start_lba;
+	sector_t next_section_id;
+	bool slc_mode;
+	bool rcv_io_complete_flag;
+};
+#endif
+
 enum blk_lld_feature_bits {
 	__BLK_LLD_DUMP_SUPPORT = 0,
 	__BLK_LLD_LATENCY_SUPPORT,
@@ -101,8 +119,10 @@ struct blk_queue_ops {
 	void (*mq_req_requeue_fn)(struct request *, struct request_queue *);
 	/* Request timeout process in MQ */
 	void (*mq_req_timeout_fn)(struct request *);
+	/* Get the CTX in MQ */
+	struct blk_mq_ctx *(*mq_ctx_get_fn)(struct request_queue *);
 	/* Release the CTX in MQ */
-	void (*mq_ctx_put_fn)(void);
+	void (*mq_ctx_put_fn)(struct request_queue *);
 	/* Get hctx object by request */
 	void (*mq_hctx_get_by_req_fn)(
 		struct request *, struct blk_mq_hw_ctx **);
@@ -187,29 +207,6 @@ void mas_blk_bio_merge_done(
 	const struct request *next);
 int mas_blk_account_io_completion(
 	const struct request *req, unsigned int bytes);
-#ifdef CONFIG_MAS_UNISTORE_PRESERVE
-void mas_blk_partition_remap(
-	struct bio *bio, struct hd_struct *p);
-void mas_blk_update_expected_lba(
-	struct request *req, unsigned int nr_bytes);
-void mas_blk_add_bio_to_buf_list(struct request *req);
-bool mas_blk_bio_need_dispatch(struct bio* bio,
-	struct request_queue *q, struct stor_dev_pwron_info* stor_info);
-void mas_blk_update_recovery_bio_page(struct bio* bio);
-void mas_blk_dev_lld_init_unistore(
-	struct blk_dev_lld *blk_lld);
-void mas_blk_bio_set_opf_unistore(struct bio *bio);
-void mas_blk_request_init_from_bio_unistore(
-	struct request *req, struct bio *bio);
-struct bio* mas_blk_bio_segment_bytes_split(
-	struct bio *bio, struct bio_set *bs, unsigned int bytes,
-	unsigned front_seg_size, unsigned seg_size);
-unsigned int mas_blk_bio_get_residual_byte(
-	struct request_queue *q, struct bvec_iter iter);
-bool mas_blk_bio_check_over_section(
-	struct request_queue *q, struct bio *bio);
-void mas_blk_request_init_unistore(struct request * req);
-#endif
 struct request_queue *mas_blk_get_queue_by_lld(
 	struct blk_dev_lld *lld);
 int mas_blk_cust_ioctl(struct block_device *bdev,
@@ -305,23 +302,113 @@ void blk_req_set_make_req_nr(struct request *req);
 
 #define NO_EXTRA_MSG NULL
 
-#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 #ifdef CONFIG_MAS_UNISTORE_PRESERVE
-ssize_t mas_part_stream_id_show(
-	struct device *dev, struct device_attribute *attr, char *buf);
-ssize_t mas_part_stream_id_store(
-	struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
-ssize_t mas_part_stream_id_tst_show(
-	struct device *dev, struct device_attribute *attr, char *buf);
-ssize_t mas_part_stream_id_tst_store(
-	struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
-ssize_t mas_part_discard_simulate_store(
-	struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+void mas_blk_partition_remap(
+	struct bio *bio, struct hd_struct *p);
+bool mas_blk_match_expected_lba(
+	struct request_queue *q, struct bio *bio);
+void mas_blk_set_lba_flag(
+	struct request *rq, struct blk_dev_lld *lld);
+bool mas_blk_bio_need_dispatch(struct bio *bio,
+	struct request_queue *q, struct stor_dev_pwron_info* stor_info);
+void mas_blk_update_recovery_bio_page(struct bio *bio);
+void mas_blk_dev_lld_init_unistore(
+	struct blk_dev_lld *blk_lld);
+void mas_blk_bio_set_opf_unistore(struct bio *bio);
+void mas_blk_request_init_from_bio_unistore(
+	struct request *req, struct bio *bio);
+void mas_blk_order_info_reset(struct blk_dev_lld *lld);
+void mas_blk_req_update_unistore(
+	struct request *req, blk_status_t error, unsigned int nr_bytes);
+struct bio* mas_blk_bio_segment_bytes_split(
+	struct bio *bio, struct bio_set *bs, unsigned int bytes,
+	unsigned front_seg_size, unsigned seg_size);
+unsigned int mas_blk_bio_get_residual_byte(
+	struct request_queue *q, struct bvec_iter iter);
+bool mas_blk_bio_check_over_section(
+	struct request_queue *q, struct bio *bio);
+void mas_blk_request_init_unistore(struct request *req);
+bool mas_blk_expected_lba_pu(struct blk_dev_lld *lld,
+	unsigned char stream, sector_t req_lba);
+bool mas_blk_enable_disorder_stream(unsigned char stream_type);
+bool mas_blk_is_reserved_empty(
+	struct blk_mq_alloc_data *data);
+
+static inline void mas_blk_make_req_over_section(
+	struct bio *bio, bool write_over_section)
+{
+	if (write_over_section)
+		generic_make_request(bio);
+}
+
+void mas_blk_recovery_update_section_list(struct blk_dev_lld *lld,
+	sector_t expected_lba, unsigned char stream_type);
+bool mas_blk_is_section_ready(struct request_queue *q, struct bio *bio);
+void mas_blk_update_expected_info(struct blk_dev_lld *lld,
+	sector_t update_lba, unsigned char stream_type);
+
+static inline bool mas_blk_is_order_stream(unsigned char stream_type)
+{
+	return stream_type && (stream_type <= BLK_STREAM_HOT_DATA);
+}
+
+static void mas_blk_lld_lock(struct blk_dev_lld *blk_lld)
+{
+	if (!(blk_lld->features & BLK_LLD_UFS_UNISTORE_EN) ||
+		!(blk_lld->features & BLK_LLD_IOSCHED_UFS_MQ))
+		return;
+
+	preempt_disable();
+	if (!blk_lld->lock_map[smp_processor_id()])
+		blk_lld->lock_map[smp_processor_id()] = 1;
+	else
+		preempt_enable_no_resched();
+}
+
+static bool mas_blk_lld_unlock(struct blk_dev_lld *blk_lld)
+{
+	if (!(blk_lld->features & BLK_LLD_UFS_UNISTORE_EN) ||
+		!(blk_lld->features & BLK_LLD_IOSCHED_UFS_MQ))
+		return false;
+
+	if (!blk_lld->lock_map[smp_processor_id()])
+		return false;
+
+	blk_lld->lock_map[smp_processor_id()] = 0;
+	preempt_enable_no_resched();
+	return true;
+}
+
+static inline void mas_blk_lock(struct request_queue *q)
+{
+	struct blk_dev_lld *blk_lld = mas_blk_get_lld(q);
+
+	mas_blk_lld_lock(blk_lld);
+}
+
+static inline bool mas_blk_unlock(struct request_queue *q)
+{
+	struct blk_dev_lld *blk_lld = mas_blk_get_lld(q);
+
+	return mas_blk_lld_unlock(blk_lld);
+}
+
+static inline void mas_blk_lock_by_op(
+	struct request_queue *q, unsigned int op)
+{
+	if ((op != REQ_OP_READ) && (op != REQ_OP_WRITE))
+		return;
+
+	mas_blk_lock(q);
+}
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 ssize_t mas_queue_device_pwron_info_show(
 	struct request_queue *q, char *page);
 ssize_t mas_queue_device_reset_ftl_store(
 	struct request_queue *q, const char *page, size_t count);
 ssize_t mas_queue_device_read_section_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_device_read_pu_size_show(
 	struct request_queue *q, char *page);
 ssize_t mas_queue_device_config_mapping_partition_store(
 	struct request_queue *q, const char *page, size_t count);
@@ -361,7 +448,34 @@ ssize_t mas_queue_recovery_debug_on_show(
 	struct request_queue *q, char *page);
 ssize_t mas_queue_recovery_debug_on_store(
 	struct request_queue *q, const char *page, size_t count);
+ssize_t mas_queue_recovery_page_cnt_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_reset_cnt_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_enable_disorder_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_enable_disorder_store(
+	struct request_queue *q, const char *page, size_t count);
+bool mas_blk_enable_disorder(void);
+unsigned int mas_blk_get_max_recovery_num(void);
+ssize_t mas_queue_max_recovery_num_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_max_recovery_num_store(
+	struct request_queue *q, const char *page, size_t count);
+ssize_t mas_queue_recovery_del_num_show(
+	struct request_queue *q, char *page);
+ssize_t mas_queue_recovery_del_num_store(
+	struct request_queue *q, const char *page, size_t count);
+unsigned int mas_blk_get_max_del_num(void);
+#else
+static inline bool mas_blk_enable_disorder(void)
+{
+	return true;
+}
 #endif
+#endif
+
+#if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 ssize_t mas_queue_io_latency_warning_threshold_store(
 	const struct request_queue *q, const char *page, size_t count);
 ssize_t mas_queue_timeout_tst_enable_store(

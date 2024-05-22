@@ -64,6 +64,7 @@ struct zs_ext_para {
 struct hyperhold_cfg {
 	atomic_t enable;
 	atomic_t reclaim_in_enable;
+	atomic_t discard_enable;
 	atomic_t watchdog_protect;
 	int log_level;
 	struct timer_list wdt_timer;
@@ -213,6 +214,11 @@ void hyperhold_page_recycle(struct page *page,
 	}
 }
 
+struct block_device *hyperhold_bdev(void)
+{
+	return global_settings.zram->bdev;
+}
+
 int hyperhold_loglevel(void)
 {
 	return global_settings.log_level;
@@ -264,6 +270,17 @@ static void hyperhold_set_enable(bool en)
 
 	if (!hyperhold_enable())
 		atomic_set(&global_settings.enable, en ? 1 : 0);
+}
+
+bool hyperhold_discard_enable(void)
+{
+	return !!atomic_read(&global_settings.discard_enable);
+}
+
+void hyperhold_set_discard_enable(bool en)
+{
+	if (!hyperhold_discard_enable())
+		atomic_set(&global_settings.discard_enable, en ? 1 : 0);
 }
 
 static void hyperhold_wdt_timeout(unsigned long data)
@@ -586,6 +603,11 @@ static void hyperhold_stat_init(struct hyperhold_stat *stat)
 	atomic64_set(&stat->ext_cnt, 0);
 	atomic64_set(&stat->miss_free, 0);
 	atomic64_set(&stat->mcgid_clear, 0);
+
+	atomic64_set(&stat->discard_total_cnt, 0);
+	atomic64_set(&stat->discard_comp_cnt, 0);
+	atomic64_set(&stat->discard_fail_cnt, 0);
+	atomic64_set(&stat->discard_success_cnt, 0);
 
 	for (i = 0; i < HYPERHOLD_SCENARIO_BUTT; ++i) {
 		atomic64_set(&stat->io_fail_cnt[i], 0);

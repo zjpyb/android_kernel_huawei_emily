@@ -24,6 +24,34 @@
 #include <linux/list.h>
 #include <chipset_common/hwcfs/hwcfs_common.h>
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#define MUTEX_FLAG_OWNER_BOOST  0x08
+#define MUTEX_FLAGS	0x0f
+
+static bool is_mutex_owner_boost(struct mutex *lock)
+{
+	return atomic_long_read(&lock->owner) & MUTEX_FLAG_OWNER_BOOST;
+}
+
+static void mutex_owner_set_boost(struct mutex *lock)
+{
+	unsigned long owner;
+
+	owner = atomic_long_read(&lock->owner);
+	if (!(owner & MUTEX_FLAG_OWNER_BOOST))
+		atomic_long_or(MUTEX_FLAG_OWNER_BOOST, &lock->owner);
+}
+
+static void mutex_owner_clear_boost(struct mutex *lock)
+{
+	unsigned long owner;
+
+	owner = atomic_long_read(&lock->owner);
+	if (owner & MUTEX_FLAG_OWNER_BOOST)
+		atomic_long_andnot(MUTEX_FLAG_OWNER_BOOST, &lock->owner);
+}
+#endif
+
 static void mutex_list_add_vip(struct list_head *entry, struct list_head *head)
 {
 	struct list_head *pos = NULL;
@@ -49,7 +77,11 @@ void mutex_list_add(struct task_struct *task,
 	if (!entry || !head || !lock)
 		return;
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (is_vip && !is_mutex_owner_boost(lock))
+#else
 	if (is_vip && !lock->vip_dep_task)
+#endif
 		mutex_list_add_vip(entry, head);
 	else
 		list_add_tail(entry, head);
@@ -69,18 +101,33 @@ void mutex_dynamic_vip_enqueue(struct mutex *lock, struct task_struct *task)
 #else
 	owner = lock->owner;
 #endif
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (is_vip && !is_mutex_owner_boost(lock) && owner && !test_task_vip(owner)) {
+		dynamic_vip_enqueue(owner, DYNAMIC_VIP_MUTEX, task->vip_depth);
+		mutex_owner_set_boost(lock);
+	}
+#else
 	if (is_vip && !lock->vip_dep_task && owner && !test_task_vip(owner)) {
 		dynamic_vip_enqueue(owner, DYNAMIC_VIP_MUTEX, task->vip_depth);
 		lock->vip_dep_task = owner;
 	}
+#endif
 }
 
 void mutex_dynamic_vip_dequeue(struct mutex *lock, struct task_struct *task)
 {
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (lock && is_mutex_owner_boost(lock)) {
+		dynamic_vip_dequeue(task, DYNAMIC_VIP_MUTEX);
+		mutex_owner_clear_boost(lock);
+	}
+#else
 	if (lock && lock->vip_dep_task == task) {
 		dynamic_vip_dequeue(task, DYNAMIC_VIP_MUTEX);
 		lock->vip_dep_task = NULL;
 	}
+#endif
 }
 
 /*lint -restore*/

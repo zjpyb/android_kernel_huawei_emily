@@ -58,6 +58,7 @@
 #define HMDFS_MAX_WB_TIMEOUT_MS 900000
 
 #define HMDFS_READPAGES_NR_MAX	32
+#define HMDFS_READPAGES_NR_DEF	16
 
 enum {
 	HMDFS_FEATURE_READPAGES		= 1ULL << 0,
@@ -154,6 +155,11 @@ struct hmdfs_sb_info {
 	/* For features supporting */
 	u64 s_features;
 
+	/* For set recv_thread uid */
+	unsigned long mnt_uid;
+	/* Number of pages to read by client */
+	unsigned int s_readpages_nr;
+
 	/* For merge & device view */
 	unsigned int s_merge_switch;
 	/* For writeback */
@@ -178,6 +184,10 @@ struct hmdfs_sb_info {
 	/* stash dirty pages during offline */
 	bool s_offline_stash;
 
+	/* sync p2p get_session operation */
+	unsigned int p2p_conn_establish_timeout;
+	int p2p_conn_timeout;
+
 	/* Timeout (ms) to retry writing remote pages */
 	unsigned int wb_timeout_ms;
 
@@ -197,6 +207,9 @@ struct hmdfs_sb_info {
 	wait_queue_head_t async_readdir_wq;
 	/* don't allow async readdir */
 	bool async_readdir_prohibit;
+
+	/* whether hmdfs is mounted on external storage */
+	bool s_external_fs;
 };
 
 static inline struct hmdfs_sb_info *hmdfs_sb(struct super_block *sb)
@@ -245,6 +258,13 @@ static inline struct hmdfs_file_info *hmdfs_f(struct file *file)
 // Almost all the source files want this, so...
 #include "inode.h"
 
+/* hmdfs generic write func */
+bool hmdfs_generic_write_end(struct page *page, unsigned int len,
+			     unsigned int copied);
+
+int hmdfs_generic_write_begin(struct page *page, unsigned int len,
+			      struct page **pagep, loff_t pos,
+			      struct inode *inode);
 /* locking helpers */
 static inline struct dentry *lock_parent(struct dentry *dentry)
 {

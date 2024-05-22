@@ -237,13 +237,18 @@ static void update_wifi_collect(struct wifi_req_msg *msg)
 	g_gateway[1] = msg->wifi_gateway[1];
 }
 
-static void cmd_process(struct req_msg_head *msg)
+static void cmd_process(struct req_msg_head *msg, u32 len)
 {
 	pr_info("[WIFI_PARA]%s,len=%u, type=%u", __func__, msg->len, msg->type);
 	if (msg->len > MAX_REQ_DATA_LEN)
 		return;
 	if (msg->len < sizeof(struct req_msg_head))
 		return;
+
+	if (msg->len != len) {
+		pr_err("wifi_para_collec msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 	if (msg->type == WIFI_PARA_COLLECT_START)
 		start_wifi_collect((struct wifi_req_msg *)msg);
 	else if (msg->type == WIFI_PARA_COLLECT_STOP)

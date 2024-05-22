@@ -914,7 +914,7 @@ STATIC void board_info_init_hi1103(void)
     g_st_board_info.bd_ops.free_board_wakeup_gpio = hi1103_free_board_wakeup_gpio;
     g_st_board_info.bd_ops.board_flowctrl_gpio_init = hi1103_board_flowctrl_gpio_init;
     g_st_board_info.bd_ops.board_wifi_tas_gpio_init = hi1103_board_wifi_tas_gpio_init;
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
     g_st_board_info.bd_ops.suspend_board_gpio_in_s4 = hi1103_suspend_gpio;
     g_st_board_info.bd_ops.resume_board_gpio_in_s4 = hi1103_resume_gpio;
 #endif
@@ -940,7 +940,7 @@ STATIC void board_info_init_hi1103(void)
 #endif
 }
 
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 void suspend_board_gpio_in_s4(void)
 {
     ps_print_info("s4 suspend gpio..\n");
@@ -1164,6 +1164,21 @@ STATIC void buck_param_init(void)
 #endif
 }
 
+STATIC void skb_retry_param_init_by_ini(void)
+{
+    int32_t cfg_value = 0;
+    int32_t ret;
+
+    /* 获取ini的配置值 */
+    ret = get_cust_conf_int32(INI_MODU_PLAT, "skb_retry_count", &cfg_value);
+    if (ret == INI_FAILED) {
+        g_st_board_info.skb_retry_count = 3; /* 如果没有配置，默认为3 */
+    } else {
+        g_st_board_info.skb_retry_count = (uint16_t)cfg_value;
+    }
+    ps_print_info("skb_retry_param_init_by_ini: 0x%x\n",  g_st_board_info.skb_retry_count);
+}
+
 #ifdef _PRE_HI_DRV_GPIO
 #define SSI_CLK_HISI_GPIO 7*8
 #define SSI_DATA_HISI_GPIO (6 * 8 + 7)
@@ -1176,6 +1191,20 @@ STATIC void hitv_ssi_gpio_init(void)
     hitv_gpio_direction_output(SSI_DATA_HISI_GPIO, GPIO_HIGHLEVEL);
 }
 #endif
+
+STATIC void coldboot_partion_init(void)
+{
+#ifdef _PRE_CONFIG_USE_DTS
+    int32_t ret;
+    const char *coldboot_partion = NULL;
+
+    ret = get_board_custmize(DTS_NODE_HI110X_BFGX, DTS_PROP_HI110X_COLDBOOT_PARTION, &coldboot_partion);
+    if (ret == BOARD_SUCC) {
+        g_st_board_info.coldboot_partion = coldboot_partion;
+        ps_print_info("coldboot_partion: %s\n",  coldboot_partion);
+    }
+#endif
+}
 
 STATIC int32_t hi110x_board_probe(struct platform_device *pdev)
 {
@@ -1249,6 +1278,10 @@ STATIC int32_t hi110x_board_probe(struct platform_device *pdev)
     }
 
     buck_param_init();
+
+    skb_retry_param_init_by_ini();
+
+    coldboot_partion_init();
 
     ps_print_info("board init ok\n");
 

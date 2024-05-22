@@ -7465,13 +7465,13 @@ oal_uint32 hmac_atcmdsrv_get_ant_response(mac_vap_stru *pst_mac_vap, oal_uint8 u
 }
 
 
-oal_uint32 hmac_atcmdsrv_get_rx_pkcg(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
+oal_uint32 hmac_config_get_rx_fcs_info(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
 {
     hmac_vap_stru *pst_hmac_vap;
     dmac_atcmdsrv_atcmd_response_event *pst_atcmdsrv_get_rx_pkcg_event = OAL_PTR_NULL;
     pst_hmac_vap = mac_res_get_hmac_vap(pst_mac_vap->uc_vap_id);
     if (pst_hmac_vap == OAL_PTR_NULL) {
-        OAM_ERROR_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_atcmdsrv_get_rx_pkcg::pst_hmac_vap null.}");
+        OAM_ERROR_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_get_rx_fcs_info::pst_hmac_vap null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
     pst_mac_vap = &(pst_hmac_vap->st_vap_base_info);
@@ -7479,6 +7479,9 @@ oal_uint32 hmac_atcmdsrv_get_rx_pkcg(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len
     if (pst_atcmdsrv_get_rx_pkcg_event->uc_event_id == OAL_ATCMDSRV_GET_RX_PKCG) {
         pst_hmac_vap->st_atcmdsrv_get_status.ul_rx_pkct_succ_num = pst_atcmdsrv_get_rx_pkcg_event->ul_event_para;
         pst_hmac_vap->st_atcmdsrv_get_status.s_rx_rssi = pst_atcmdsrv_get_rx_pkcg_event->s_always_rx_rssi;
+        oam_warning_log2(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_get_rx_fcs_info:: \
+            rx_pkct_succ_num=[%d], rx_rssi=[%d]}", pst_hmac_vap->st_atcmdsrv_get_status.ul_rx_pkct_succ_num,
+            pst_hmac_vap->st_atcmdsrv_get_status.s_rx_rssi);
     }
     /* 唤醒wal_sdt_recv_reg_cmd等待的进程 */
     pst_hmac_vap->st_atcmdsrv_get_status.uc_get_rx_pkct_flag = OAL_TRUE;
@@ -8009,7 +8012,7 @@ OAL_STATIC OAL_CONST hmac_config_syn_stru g_ast_hmac_config_syn[] = {
     { WLAN_CFGID_CHECK_FEM_PA, { 0, 0 }, hmac_atcmdsrv_fem_pa_response },
     { WLAN_CFGID_GET_VERSION,  { 0, 0 }, hmac_atcmdsrv_dbb_num_response },
     { WLAN_CFGID_GET_ANT,      { 0, 0 }, hmac_atcmdsrv_get_ant_response },
-    { WLAN_CFGID_RX_FCS_INFO, { 0, 0 }, hmac_atcmdsrv_get_rx_pkcg },
+    { WLAN_CFGID_RX_FCS_INFO, { 0, 0 }, hmac_config_get_rx_fcs_info },
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
     { WLAN_CFGID_CHECK_LTE_GPIO, { 0, 0 }, hmac_atcmdsrv_lte_gpio_check },
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)

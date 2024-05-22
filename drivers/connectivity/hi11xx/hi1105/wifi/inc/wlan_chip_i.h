@@ -405,6 +405,13 @@ OAL_STATIC OAL_INLINE void wlan_chip_start_zero_wait_dfs(mac_vap_stru *mac_vap,
         return g_wlan_chip_ops->start_zero_wait_dfs(mac_vap, channel_info);
     }
 }
+OAL_STATIC OAL_INLINE void wlan_chip_tx_pt_mcast_set_cb(hmac_vap_stru *pst_vap,
+    mac_ether_header_stru *ether_hdr, mac_tx_ctl_stru *tx_ctl)
+{
+    if (g_pt_mcast_enable && g_wlan_chip_ops->tx_pt_mcast_set_cb) {
+        g_wlan_chip_ops->tx_pt_mcast_set_cb(pst_vap, ether_hdr, tx_ctl);
+    }
+}
 #endif /* end of wlan_chip_i.h */
 
 

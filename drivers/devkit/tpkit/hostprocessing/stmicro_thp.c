@@ -1,7 +1,7 @@
 /*
  * Thp driver code for stmicro
  *
- * Copyright (c) 2020-2021 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2020-2050 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -156,6 +156,10 @@ struct mutex poll_event_mutex;
 #endif
 static unsigned int g_power_off_staus;
 
+/* use sensorhub fingerprint scheme */
+static unsigned int sensorhub_gesture_enable;
+/* use double tap */
+static unsigned int support_doubletap_mode;
 static u8 *st_rbuff;
 static u8 *st_wbuff;
 
@@ -632,12 +636,66 @@ static int touch_driver_wrong_touch(struct thp_device *tdev)
 	return 0;
 }
 
+#define SCREEN_OFF_CMD_LEN 4
+static bool is_double_tap_frame_true(u8 *buf)
+{
+	/* A5 3A: legal frame head, 0F 80: double tap flag */
+	if ((buf[0] == 0xA5) && (buf[1] == 0x3A) &&
+		(buf[46] == 0x0F) && (buf[47] == 0x80)) {
+		return true;
+	}
+	return false;
+}
+
+static int get_double_tap_irq_frame(struct thp_device *tdev)
+{
+	int ret;
+	struct spi_device *sdev = tdev->thp_core->sdev;
+	uint8_t cmd_double_clear[GESTURE_CMD_LEN] = { 0xC0, 0x04, 0x00 };
+	uint8_t cmd_double_on[GESTURE_CMD_LEN] = { 0xC0, 0x04, 0x01 };
+	uint8_t cmd_double_tap[SCREEN_OFF_CMD_LEN] = { 0xC0, 0x09, 0x00, 0x01 };
+	u8 *tapbuf = tdev->thp_core->frame_read_buf;
+	uint32_t frame_size;
+
+	thp_log_info("%s: called\n", __func__);
+	ret = thp_set_frame_size(tdev, &frame_size);
+	if (ret)
+		thp_log_info("%s: get frame size error\n", __func__);
+	ret = alix_read(sdev, ALIX_FRAME_BUFFER_ADDRESS,
+		tapbuf, frame_size);
+	thp_log_info("%s: get double tap frame 0x%02X 0x%02X 0x%02X 0x%02x\n",
+		__func__, tapbuf[0], tapbuf[1], tapbuf[46], tapbuf[47]);
+	if (is_double_tap_frame_true(tapbuf)) {
+		thp_log_info("%s: clear double tap cmd\n", __func__);
+		ret = fw_write(sdev, cmd_double_clear, sizeof(cmd_double_clear));
+		if (ret)
+			thp_log_err("%s: clear double tap cmd fail, %d\n",
+				__func__, ret);
+		thp_log_info("%s: set doubletap cmd\n", __func__);
+		ret = fw_write(sdev, cmd_double_on, sizeof(cmd_double_on));
+		if (ret)
+			thp_log_err("%s: set double tap cmd fail, %d\n",
+				__func__, ret);
+		thp_log_info("%s: set double tap mode\n", __func__);
+		ret = fw_write(sdev, cmd_double_tap, sizeof(cmd_double_tap));
+		if (ret)
+			thp_log_err("%s: set double tap cmd fail, %d\n",
+				__func__, ret);
+		return 0;
+	}
+
+	return -ENODEV;
+}
+
 static int thp_st_chip_gesture_report(struct thp_device *tdev,
 	unsigned int *gesture_wakeup_value)
 {
 	int err;
-	uint8_t echo[GESTURE_CMD_LEN] = {GESTURE_HEAD, GESTURE_CMD_0,
-		GESTURE_CMD_1};
+	uint8_t echo[GESTURE_CMD_LEN] = {
+		GESTURE_HEAD,
+		GESTURE_CMD_0,
+		GESTURE_CMD_1
+	};
 	uint8_t cmd = CLEAR_IRQ_CMD;
 	uint8_t *read_data = NULL;
 
@@ -647,16 +705,21 @@ static int thp_st_chip_gesture_report(struct thp_device *tdev,
 		return -EINVAL;
 	}
 
-	read_data = tdev->rx_buff;
-	memset(read_data, 0, FIFO_EVENT_LEN);
+	if (support_doubletap_mode) {
+		err = get_double_tap_irq_frame(tdev);
+	} else {
+		read_data = tdev->rx_buff;
+		memset(read_data, 0, FIFO_EVENT_LEN);
 #ifdef CONFIG_HUAWEI_THP_MTK
-	mutex_lock(&poll_event_mutex);
+		mutex_lock(&poll_event_mutex);
 #endif
-	err = poll_for_event(tdev->thp_core->sdev, echo, GESTURE_CMD_LEN,
-		read_data, CHECK_WAIT_TIME);
+		err = poll_for_event(tdev->thp_core->sdev, echo, GESTURE_CMD_LEN,
+			read_data, CHECK_WAIT_TIME);
 #ifdef CONFIG_HUAWEI_THP_MTK
-	mutex_unlock(&poll_event_mutex);
+		mutex_unlock(&poll_event_mutex);
 #endif
+	}
+
 	if (err == 0) {
 		thp_log_info("found valid gesture type\n");
 		mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
@@ -959,15 +1022,19 @@ static void reset_ctrl(struct thp_device *tdev)
 }
 #endif
 
+#define SCREEN_ON_CMD_LEN 4
 static int touch_driver_resume(struct thp_device *tdev)
 {
 	int ret;
 	uint8_t cmd = CLEAR_IRQ_CMD;
+	uint8_t cmd_screen_on[SCREEN_ON_CMD_LEN] = { 0xC0, 0x09, 0x00, 0x02 };
+	struct spi_device *sdev = NULL;
 
 	if ((tdev == NULL) || (tdev->thp_core == NULL)) {
 		thp_log_err("%s: invalid input\n", __func__);
 		return -EINVAL;
 	}
+	sdev = tdev->thp_core->sdev;
 
 	ret = alix_write(tdev->thp_core->sdev, ALIX_INTERRUPT_ADDRESS,
 		&cmd, sizeof(cmd));
@@ -992,15 +1059,24 @@ static int touch_driver_resume(struct thp_device *tdev)
 			thp_log_info("%s: call sensorhub gestrue disable\n",
 				__func__);
 		}
+		if (!sensorhub_gesture_enable) { /* avoid clear sensorhub status */
 #ifdef CONFIG_HUAWEI_THP_MTK
-		reset_ctrl(tdev);
+			reset_ctrl(tdev);
 #else
-		gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
-		mdelay(1);
-		gpio_direction_output(tdev->gpios->rst_gpio, GPIO_HIGH);
-		if (tdev->thp_core->gesture_from_sensorhub)
-			thp_set_irq_status(tdev->thp_core, THP_IRQ_ENABLE);
+			gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
+			mdelay(1);
+			gpio_direction_output(tdev->gpios->rst_gpio, GPIO_HIGH);
+			if (tdev->thp_core->gesture_from_sensorhub)
+				thp_set_irq_status(tdev->thp_core, THP_IRQ_ENABLE);
 #endif
+		} else {
+			thp_log_info("%s: enter screen on mode\n", __func__);
+			ret = fw_write(sdev, cmd_screen_on,
+				sizeof(cmd_screen_on));
+			if (ret)
+				thp_log_err("%s:set screen on cmd fail, %d\n",
+					__func__, ret);
+		}
 	} else {
 		thp_log_info("%s: power on\n", __func__);
 		ret = touch_driver_power_on(tdev);
@@ -1015,28 +1091,40 @@ static int touch_driver_resume(struct thp_device *tdev)
 	return ret;
 }
 
+#define DOUBLE_TAP_CMD_LEN 3
+#define AOD_ENABLE_CMD_LEN 11
+#define SCREEN_OFF_CMD_LEN 4
+#define IDLE_CMD_LEN 3
 static int touch_driver_suspend_ap(struct thp_device *tdev)
 {
-	int ret;
+	int ret = 0;
 	uint8_t *cmd = st_wbuff;
 	struct spi_device *sdev = tdev->thp_core->sdev;
 	/* double tap cmd, C0: address, 04 01: enable double tap */
-	uint8_t cmd_double_tap[3] = { 0xC0, 0x04, 0x01 };
+	uint8_t cmd_double_tap[DOUBLE_TAP_CMD_LEN] = { 0xC0, 0x04, 0x01 };
 	/* single tap cmd, C0: address, 06 01: enable single tap */
-	uint8_t cmd_single_tap[11] = { 0xC0, 0x06, 0x01, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+	uint8_t cmd_single_tap[AOD_ENABLE_CMD_LEN] = {
+		0xC0, 0x06, 0x01, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00
+	};
+	uint8_t cmd_sensorhub[SCREEN_OFF_CMD_LEN] = { 0xC0, 0x09, 0x01, 0x00 };
+	uint8_t cmd_screen_off[SCREEN_OFF_CMD_LEN] = { 0xC0, 0x09, 0x00, 0x01 };
+	uint8_t cmd_idle[IDLE_CMD_LEN] = { 0xA0, 0x00, 0x01 };
 
 	memset(cmd, 0, SUSPEND_CMD_LEN);
 	cmd[0] = ALIX_CMD_SCAN_MODE;
 	cmd[1] = SCAN_MODE_1;
-	ret = fw_write(sdev, cmd, SCAN_MODE_CMD_LEN);
-	if (ret != 0) {
-		thp_log_err("%s:set scan mode fail\n", __func__);
-		return ret;
+	if (!support_doubletap_mode) {
+		ret = fw_write(sdev, cmd, SCAN_MODE_CMD_LEN);
+		if (ret) {
+			thp_log_err("%s:set scan mode fail\n", __func__);
+			return ret;
+		}
 	}
 
 	if (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) {
-		thp_log_info("%s: enter gesture mode\n", __func__);
+		thp_log_info("%s: set gesture mode\n", __func__);
 		ret = fw_write(sdev, cmd_double_tap,
 			sizeof(cmd_double_tap));
 		if (ret)
@@ -1045,11 +1133,19 @@ static int touch_driver_suspend_ap(struct thp_device *tdev)
 		mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 		tdev->thp_core->easy_wakeup_info.off_motion_on = true;
 		mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
+		if (support_doubletap_mode) {
+			ret = fw_write(sdev, cmd_sensorhub,
+			sizeof(cmd_sensorhub));
+			if (ret)
+				thp_log_err("%s:set sensorhub cmd fail, %d\n",
+						__func__, ret);
+		}
 	}
 
 	if ((tdev->thp_core->easy_wakeup_info.aod_mode == TS_TOUCH_AOD_OPEN) &&
-		(tdev->thp_core->support_vendor_ic_type == ST_BA80Y)) {
-		thp_log_info("%s: enter aod mode\n", __func__);
+		(tdev->thp_core->support_vendor_ic_type == ST_BA80Y) &&
+		(!sensorhub_gesture_enable)) {
+		thp_log_info("%s: set aod mode\n", __func__);
 		ret = fw_write(sdev, cmd_single_tap,
 			sizeof(cmd_single_tap));
 		if (ret)
@@ -1057,6 +1153,18 @@ static int touch_driver_suspend_ap(struct thp_device *tdev)
 				__func__, ret);
 	}
 
+	if (sensorhub_gesture_enable) {
+		thp_log_info("%s: set screen off mode\n", __func__);
+		ret = fw_write(sdev, cmd_screen_off,
+			sizeof(cmd_screen_off));
+		if (ret)
+			thp_log_err("%s:set screen off cmd fail, %d\n",
+				__func__, ret);
+		ret = fw_write(sdev, cmd_idle, sizeof(cmd_idle));
+		if (ret)
+			thp_log_err("%s:set idle cmd fail, %d\n",
+				__func__, ret);
+	}
 #ifdef CONFIG_HUAWEI_THP_MTK
 	if (g_st_thp_udfp_status && tdev->thp_core->use_ap_gesture) {
 		thp_log_info("%s: enable fp_status\n", __func__);
@@ -1116,6 +1224,7 @@ static int touch_driver_suspend(struct thp_device *tdev)
 {
 	int ret;
 	uint8_t *cmd = st_wbuff;
+	unsigned int flag;
 
 	if ((tdev == NULL) || (tdev->thp_core == NULL) ||
 		(tdev->thp_core->sdev == NULL)) {
@@ -1131,13 +1240,17 @@ static int touch_driver_suspend(struct thp_device *tdev)
 	if (ret != 0)
 		thp_log_err("%s: clear irq failed\n", __func__);
 	g_st_thp_udfp_status = thp_get_status(THP_STATUS_UDFP);
+	flag = (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) ||
+		g_st_thp_udfp_status || tdev->thp_core->aod_touch_status;
+#ifdef CONFIG_HUAWEI_THP_MTK
+	flag = (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) ||
+		(tdev->thp_core->aod_touch_status && tdev->thp_core->use_ap_gesture) ||
+		g_st_thp_udfp_status;
+#endif
 	if (is_pt_test_mode(tdev)) {
 		thp_log_info("%s: pt test mode\n", __func__);
 		ret = alix_sense_off(tdev->thp_core->sdev);
-	} else if ((tdev->thp_core->easy_wakeup_info.sleep_mode ==
-		TS_GESTURE_MODE) || g_st_thp_udfp_status ||
-		(tdev->thp_core->aod_touch_status &&
-		tdev->thp_core->use_ap_gesture)) {
+	} else if (flag) {
 		thp_log_info("%s: gesture or fingerprint mode\n", __func__);
 		g_power_off_staus = WORK_IN_SUSPEND;
 		ret = touch_driver_suspend_ap(tdev);
@@ -1346,6 +1459,25 @@ static int chip_communication_retry(struct thp_device *tdev)
 	return 0;
 }
 
+static void write_screen_on_cmd(struct thp_device *tdev)
+{
+	int ret;
+	uint8_t cmd_screen_on[SCREEN_ON_CMD_LEN] = { 0xC0, 0x09, 0x00, 0x02 };
+	struct spi_device *sdev = NULL;
+
+	thp_log_info("%s: called\n", __func__);
+	if (!tdev || !tdev->thp_core || !tdev->thp_core->sdev ||
+		!sensorhub_gesture_enable) {
+		thp_log_err("%s: have null ptr\n", __func__);
+		return;
+	}
+	sdev = tdev->thp_core->sdev;
+	thp_log_info("%s: enter screen on mode\n", __func__);
+	ret = fw_write(sdev, cmd_screen_on, sizeof(cmd_screen_on));
+	if (ret)
+		thp_log_err("%s:set screen on cmd fail, %d\n", __func__, ret);
+}
+
 static int touch_driver_chip_detect(struct thp_device *tdev)
 {
 	int ret;
@@ -1376,6 +1508,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 		ret = chip_communication_retry(tdev);
 		if (!ret) {
 			thp_log_info("%s: succeed\n", __func__);
+			write_screen_on_cmd(tdev);
 			return 0;
 		}
 		ret = touch_driver_power_off(tdev);
@@ -1453,6 +1586,23 @@ static int thp_parse_feature_ic_config(struct device_node *thp_node,
 	if (of_property_read_string(thp_node, "multi_vendor_name",
 		&cd->thp_dev->multi_vendor_name))
 		cd->thp_dev->multi_vendor_name = "null";
+
+	if (of_property_read_u32(thp_node, "sensorhub_gesture_enable",
+		&sensorhub_gesture_enable)) {
+		thp_log_info("%s: sensorhub_gesture_enable, use default 0\n",
+			__func__);
+		sensorhub_gesture_enable = 0;
+	}
+	thp_log_info("%s: sensorhub_gesture_enable = %u\n",
+		__func__, sensorhub_gesture_enable);
+	if (of_property_read_u32(thp_node, "support_doubletap_mode",
+		&support_doubletap_mode)) {
+		thp_log_info("%s: support_doubletap_mode, use default 0\n",
+			__func__);
+		support_doubletap_mode = 0;
+	}
+	thp_log_info("%s: support_doubletap_mode = %u\n",
+		__func__, support_doubletap_mode);
 
 	return NO_ERR;
 }

@@ -100,6 +100,8 @@
 	((sbi)->segs_per_sec * (sbi)->blocks_per_seg)
 #define GET_SEC_FROM_SEG(sbi, segno)				\
 	((segno) / (sbi)->segs_per_sec)
+#define GET_SEC_FROM_LBA(sbi, blkaddr)				\
+	(GET_SEC_FROM_SEG((sbi), GET_SEGNO((sbi), (blkaddr))))
 #define GET_SEG_FROM_SEC(sbi, secno)				\
 	((secno) * (sbi)->segs_per_sec)
 #define GET_ZONE_FROM_SEC(sbi, secno)				\
@@ -156,14 +158,6 @@ bool hmfs_is_last_addr_in_section(struct f2fs_sb_info *sbi,
 
 #define SSR_CONTIG_DIRTY_NUMS	32	/*Dirty pages for LFS alloction in grading ssr . */
 #define SSR_CONTIG_LARGE	256	/*Larege files */
-
-/*
- * seq write performance is better than random write
- * 1) one bio only have one inode request
- *    due to bio oob interface
- * 2) so should writeback buffer sequentially
- */
-#define DEF_MIN_SEQ_BLOCKS	20
 
 enum {
 	SEQ_NONE,
@@ -447,41 +441,6 @@ static inline int get_stream_id_by_type_temp(enum page_type type,
 	return stream_id;
 }
 
-static bool __hmfs_same_bdev(struct f2fs_sb_info *sbi,
-				block_t blk_addr, struct bio *bio)
-{
-	struct block_device *b = hmfs_target_device(sbi, blk_addr, NULL);
-	return bio->bi_disk == b->bd_disk && bio->bi_partno == b->bd_partno;
-}
-
-static inline block_t hmfs_sector_to_blkaddr(struct f2fs_sb_info *sbi,
-							struct bio *bio)
-{
-	int i;
-	block_t blk_addr = 0;
-
-	if (bio == NULL)
-		return NULL_ADDR;
-
-	if (sbi->s_ndevs) {
-		for (i = 0; i < sbi->s_ndevs; i++) {
-			if (__hmfs_same_bdev(sbi, FDEV(i).start_blk, bio)) {
-				blk_addr = FDEV(i).start_blk;
-				break;
-			}
-		}
-
-		if (i >= sbi->s_ndevs) {
-			f2fs_bug_on(sbi, 1);
-			return NULL_ADDR;
-		}
-	}
-
-	blk_addr +=  SECTOR_TO_BLOCK(bio->bi_iter.bi_sector);
-
-	return blk_addr;
-}
-
 static inline struct seg_entry *get_seg_entry(struct f2fs_sb_info *sbi,
 						unsigned int segno)
 {
@@ -494,6 +453,14 @@ static inline struct sec_entry *get_sec_entry(struct f2fs_sb_info *sbi,
 {
 	struct sit_info *sit_i = SIT_I(sbi);
 	return &sit_i->sec_entries[GET_SEC_FROM_SEG(sbi, segno)];
+}
+
+static inline void hmfs_dm_check_blkaddr(struct f2fs_sb_info *sbi, block_t blkaddr)
+{
+	if ((blkaddr < MAIN_BLKADDR(sbi)) || (blkaddr > MAX_BLKADDR(sbi))) {
+		hmfs_msg(sbi->sb, KERN_ERR, "dm illegal blkaddr %u\n", blkaddr);
+		f2fs_bug_on(sbi, 1);
+	}
 }
 
 static inline int hmfs_get_flash_mode(struct f2fs_sb_info *sbi,
@@ -531,8 +498,45 @@ static inline bool hmfs_is_file_atomic_switch(struct inode *inode)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
 	struct f2fs_inode_info *fi = F2FS_I(inode);
-	return (fi->fsync_ver == cur_cp_version(F2FS_CKPT(sbi)) &&
+	return (fi->cp_ver[FSYNC_CP_VER] == cur_cp_version(F2FS_CKPT(sbi)) &&
 			fi->last_atomic && !fi->fsync_atomic);
+}
+
+static inline bool hmfs_is_file_truncate_write(struct inode *inode, enum cp_ver_record item)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	return (fi->cp_ver[item] == cur_cp_version(F2FS_CKPT(sbi)));
+}
+
+
+static inline bool hmfs_is_file_fsync_after_wb(struct inode *inode)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	unsigned long long cur_ver = cur_cp_version(F2FS_CKPT(sbi));
+	/*
+	 * Data has been flushed by wb, so oob w/o fsync mark.
+	 * In this case, it should flush inode or CP.
+	 * It's difficult to hit this kind of scene, so choose CP.
+	 */
+	if (!fi->fsync_dirty_pages && fi->has_wb &&
+			fi->cp_ver[FSYNC_CP_VER] != cur_ver)
+		return true;
+
+	return false;
+}
+
+static inline void hmfs_inode_set_fofs(struct f2fs_sb_info *sbi,
+		struct f2fs_inode_info *fi, loff_t fofs)
+{
+	if (fi->cp_ver[WRITE_CP_VER] != cur_cp_version(F2FS_CKPT(sbi))) {
+		fi->cp_ver[WRITE_CP_VER] = cur_cp_version(F2FS_CKPT(sbi));
+		fi->fofs = fofs;
+	} else {
+		fi->fofs = max(fofs, fi->fofs);
+	}
 }
 
 static inline unsigned int get_valid_blocks(struct f2fs_sb_info *sbi,
@@ -957,7 +961,6 @@ static inline void verify_block_addr(struct f2fs_io_info *fio, block_t blk_addr)
 static inline int check_block_count(struct f2fs_sb_info *sbi,
 		int segno, struct f2fs_sit_entry *raw_sit)
 {
-#ifdef CONFIG_HMFS_CHECK_FS
 	bool is_valid  = test_bit_le(0, raw_sit->valid_map) ? true : false;
 	int valid_blocks = 0;
 	int cur_pos = 0, next_pos;
@@ -985,7 +988,7 @@ static inline int check_block_count(struct f2fs_sb_info *sbi,
 		hmfs_set_need_fsck_report();
 		return -EINVAL;
 	}
-#endif
+
 	/* check segment usage, and check boundary of a given segment number */
 	if (unlikely(GET_SIT_VBLOCKS(raw_sit) > sbi->blocks_per_seg
 					|| segno > TOTAL_SEGS(sbi) - 1)) {

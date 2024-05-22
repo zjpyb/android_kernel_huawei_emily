@@ -114,6 +114,7 @@ struct g_sensor_platform_data {
 	uint16_t y_calibrate_thredhold;
 	uint16_t z_calibrate_thredhold;
 	uint8_t wakeup_duration;
+	uint8_t phone_type;
 	uint8_t g_sensor_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
 };
 
@@ -192,6 +193,8 @@ struct ps_platform_data {
 	uint8_t oily_count_size;
 	uint16_t ps_tp_threshold;
 	uint8_t ps_extend_data[SENSOR_PLATFORM_EXTEND_DATA_SIZE];
+	uint8_t ps_phone_type;
+	uint8_t ps_phone_version;
 };
 
 struct ps_extend_platform_data {
@@ -249,7 +252,6 @@ struct tof_platform_data {
 #define ADUX_REGS_NEED_INITIATED_NUM     16
 #define SEMTECH_REGS_NEED_INITIATED_NUM  12
 #define AWINIC_REGS_NEED_INITIATED_NUM   12
-#define INIT_REG_VALUE_COUNT             17
 
 
 struct adux_sar_data {
@@ -289,7 +291,6 @@ struct aw9610_sar_data {
 	uint16_t threshold_to_ap;
 	uint16_t phone_type;
 	uint16_t threshold_to_modem[CAP_MODEM_THRESHOLE_LEN];
-	uint32_t init_reg_val[INIT_REG_VALUE_COUNT];
 	uint8_t ph;
 	uint16_t calibrate_thred[CAP_CALIBRATE_THRESHOLE_LEN];
 };
@@ -405,6 +406,7 @@ struct tp_ud_platform_data {
 	uint16_t soft_reset_support;
 	struct tp_ud_algo_config algo_conf;
 	uint16_t touch_report_restore_support;
+	uint16_t aod_display_support;
 };
 
 struct key_platform_data {
@@ -585,4 +587,5 @@ uint16_t *get_sensorlist(void);
 void add_sensor_list_info_id(uint16_t id);
 struct sensorlist_info *get_sensorlist_info_by_index(enum sensor_detect_list index);
 struct sleeve_detect_pare *get_sleeve_detect_parameter(void);
+int get_hall_number(void);
 #endif

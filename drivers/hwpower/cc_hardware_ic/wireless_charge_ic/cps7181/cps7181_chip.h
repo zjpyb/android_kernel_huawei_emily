@@ -31,7 +31,9 @@
 /* chip id register */
 #define CPS7181_CHIP_ID_ADDR                  0x1D00
 #define CPS7181_CHIP_ID_LEN                   4
-#define CPS7181_CHIP_ID                       0x7181
+/* The WP5301 series has two chip IDs: 0x7181 and 0x5301 */
+#define CPS7181_CHIP_ID_A                     0x7181
+#define CPS7181_CHIP_ID_B                     0x5301
 /* mtp_version register */
 #define CPS7181_MTP_VER_ADDR                  0x1D10
 #define CPS7181_MTP_VER_LEN                   2
@@ -328,6 +330,10 @@
 /* tx_chip_temp register, in degC */
 #define CPS7181_TX_CHIP_TEMP_ADDR             0x1E94
 #define CPS7181_TX_CHIP_TEMP_LEN              2
+/* tx_receive_rx_ept_type register */
+#define CPS7181_TX_RCVD_RX_EPT_ADDR           0x1E96
+#define CPS7181_TX_RCVD_RX_EPT_CLEAR          0
+#define CPS7181_TX_RCVD_RX_EPT_LEN            1
 /* rx_power value register, in mw */
 #define CPS7181_TX_PRX_ADDR                   0x1E98
 #define CPS7181_TX_PRX_LEN                    2

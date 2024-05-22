@@ -1758,7 +1758,7 @@ void mptcp_tcp_set_rto(struct sock *sk);
 bool mptcp_prune_ofo_queue(struct sock *sk);
 void fput_by_pid(pid_t pid, struct file *file);
 void mptcp_path_array_check(struct sock *meta_sk);
-void mptcp_add_rem_addr_for_sk(struct sock *meta_sk);
+void mptcp_add_rem_addr_for_sk(struct sock *meta_sk, bool is_mptcp_hw_ext_lock);
 u8	fullmesh_get_rem_locid(const struct mptcp_cb *mpcb);
 
 #endif /* CONFIG_MPTCP */

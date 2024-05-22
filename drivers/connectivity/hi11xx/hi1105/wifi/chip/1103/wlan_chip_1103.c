@@ -111,13 +111,10 @@ OAL_STATIC void hwifi_cfg_host_global_init_sounding(void)
 
 OAL_STATIC void hwifi_cfg_host_global_init_param_extend(void)
 {
-#if (defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)) || \
-    defined(_PRE_WLAN_FEATURE_HIEX)
     int32_t priv_value = 0;
     int32_t l_ret;
-#endif
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
     l_ret = hwifi_get_init_priv_value(WLAN_CFG_PRIV_LOCK_CPU_FREQ, &priv_value);
     if (l_ret == OAL_SUCC) {
         g_freq_lock_control.uc_lock_max_cpu_freq = (oal_bool_enum_uint8) !!priv_value;
@@ -141,6 +138,14 @@ OAL_STATIC void hwifi_cfg_host_global_init_param_extend(void)
         g_optimized_feature_switch_bitmap = (uint8_t)priv_value;
     }
 
+    l_ret = hwifi_get_init_priv_value(WLAN_CFG_PRIV_P2P_GO_ASSOC_USER_MAX_NUM, &priv_value);
+    if (l_ret == OAL_SUCC && (uint8_t)priv_value > 0 && (uint8_t)priv_value <= 8) { /* 8为最大用户数 */
+        g_p2p_go_max_user_num = (uint8_t)priv_value;
+    } else {
+        oam_warning_log2(0, OAM_SF_INI,
+            "{hwifi_cfg_host_global_init_param_extend::wlan_go_assoc_user_max_num read fail, ret[%d], value[%d].}",
+            l_ret, (uint8_t)priv_value);
+    }
 #ifdef _PRE_WLAN_FEATURE_FTM
         l_ret = hwifi_get_init_priv_value(WLAN_CFG_PRIV_FTM_CAP, &priv_value);
         if (l_ret == OAL_SUCC) {
@@ -160,7 +165,8 @@ void hwifi_cfg_host_global_init_dbdc_param(void)
     for (uc_device_idx = 0; uc_device_idx < WLAN_SERVICE_DEVICE_MAX_NUM_PER_CHIP; uc_device_idx++) {
         l_ret = hwifi_get_init_priv_value(uc_cmd_idx, &l_priv_value);
         if (l_ret == OAL_SUCC) {
-            /* 定制化 RADIO_0高4bit 给dbdc软件开关用 */
+            /* 定制化 RADIO_0 bit4 给dbdc软件开关用 */
+            g_wlan_priv_dbdc_radio_cap = (uint8_t)(((uint32_t)l_priv_value & 0x10) >> 4);
             l_priv_value = (int32_t)((uint32_t)l_priv_value & 0x0F);
             g_wlan_service_device_per_chip[uc_device_idx] = (uint8_t)(uint32_t)l_priv_value;
         }
@@ -363,6 +369,28 @@ static uint32_t wlan_chip_scan_req_alloc_and_fill_netbuf_1103(frw_event_mem_stru
     scan_req_event->us_remain = 0;
     return OAL_SUCC;
 }
+#define HMAC_PT_MCAST_PROTOCOL_LEN 4
+// 组播图传协议标记字段相对UDP头偏移量
+#define HMAC_PT_MCAST_PROTOCOL_OFFSET 12
+static oal_bool_enum_uint8 wlan_chip_tx_is_pt_mcast_data(uint8_t *payload)
+{
+    return (payload[BIT_OFFSET_0] == 0x4e && payload[BIT_OFFSET_1] == 0x45 && payload[BIT_OFFSET_2] == 0x58 &&
+            payload[BIT_OFFSET_3] == 0x54);
+}
+static void wlan_chip_tx_pt_mcast_set_cb_1103(hmac_vap_stru *pst_vap,
+    mac_ether_header_stru *ether_hdr, mac_tx_ctl_stru *tx_ctl)
+{
+    mac_ip_header_stru *ip_header = (mac_ip_header_stru *)(ether_hdr + 1);
+    udp_hdr_stru *pst_udp_hdr = (udp_hdr_stru *)(ip_header + 1); /* 偏移一个IP头，取UDP头 */
+    uint8_t *payload = (uint8_t *)(pst_udp_hdr + 1);
+    payload += HMAC_PT_MCAST_PROTOCOL_OFFSET;
+
+    if (wlan_chip_tx_is_pt_mcast_data(payload) || pst_vap->en_pt_mcast_switch) {
+        // 标识为组播图传报文
+        MAC_GET_CB_IS_PT_MCAST(tx_ctl) = OAL_TRUE;
+    }
+}
+
 const struct wlan_chip_ops g_wlan_chip_ops_1103 = {
 #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE
     .host_global_init_param = hwifi_cfg_host_global_init_param_1103,
@@ -435,6 +463,7 @@ const struct wlan_chip_ops g_wlan_chip_ops_1103 = {
 #ifdef _PRE_WLAN_FEATURE_DFS
     .start_zero_wait_dfs = NULL,
 #endif
+    .tx_pt_mcast_set_cb = wlan_chip_tx_pt_mcast_set_cb_1103,
 };
 
 const struct wlan_chip_ops g_wlan_chip_ops_1105 = {
@@ -509,5 +538,6 @@ const struct wlan_chip_ops g_wlan_chip_ops_1105 = {
 #ifdef _PRE_WLAN_FEATURE_DFS
     .start_zero_wait_dfs = NULL,
 #endif
+    .tx_pt_mcast_set_cb = NULL,
 };
 

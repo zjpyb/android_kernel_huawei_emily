@@ -537,7 +537,7 @@ static int hisee_manufacture_image_upgrade_process(const void *buf,
 {
 	int ret;
 
-	ret = hisee_poweroff_func(buf, HISEE_PWROFF_LOCK);
+	ret = hisee_force_power_off();
 	check_error_then_goto(ret);
 
 	/* wait hisee power down, if timeout or fail, return errno */

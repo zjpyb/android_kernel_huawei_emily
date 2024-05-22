@@ -43,6 +43,8 @@
 #include "shmem.h"
 #endif
 #include "vibrator_detect.h"
+#include "mag_detect.h"
+#include "mag_channel.h"
 
 #define ADAPT_SENSOR_LIST_NUM           20
 #define TP_REPLACE_PS        1
@@ -80,6 +82,9 @@
 #define PS_DEV_COUNT_MAX             1
 #define PS_DEVICE_ID_0               0
 
+#define DEVICE_ID_LEN                4
+#define AW_DETECT_LEN                2
+
 static int g_sensor_tof_flag;
 static int g_hifi_supported;
 static struct sensor_redetect_state s_redetect_state;
@@ -107,6 +112,8 @@ extern int gyro_range;
 
 static int get_combo_bus_tag(const char *bus, uint8_t *tag);
 static int support_hall_hishow = 0;
+/* hall_num_1: Hall is supported by default. */
+static int g_hall_number = 1;
 
 /*lint -e785*/
 struct gyro_platform_data gyro_data = {
@@ -149,6 +156,7 @@ struct g_sensor_platform_data gsensor_data = {
 	.y_calibrate_thredhold = 250, /* 250 mg */
 	.z_calibrate_thredhold = 320, /* 320 mg */
 	.wakeup_duration = 0x60, /* default set up 3 duration */
+	.phone_type = 0, /* default set up 0, 1:bach4 */
 };
 
 struct compass_platform_data mag_data = {
@@ -323,6 +331,7 @@ static struct tp_ud_platform_data tp_ud_data = {
 	.ic_type = 0,
 	.hover_enable = 0,
 	.i2c_max_speed_hz = 0,
+	.aod_display_support = 0,
 };
 
 static struct key_platform_data key_data = {
@@ -507,6 +516,11 @@ struct ps_device_info *ps_get_device_info(int32_t tag)
 
 	hwlog_info("%s error, please check tag %d\n", __func__, tag);
 	return NULL;
+}
+
+int get_hall_number(void)
+{
+	return g_hall_number;
 }
 
 int get_support_hall_hishow(void)
@@ -751,6 +765,9 @@ static void read_acc_data_from_dts(struct device_node *dn)
 	if (!of_property_read_u32(dn, "wakeup_duration", &temp))
 		gsensor_data.wakeup_duration = (uint8_t)temp;
 
+	if (!of_property_read_u32(dn, "acc_phone_type", &temp))
+		gsensor_data.phone_type = (uint8_t)temp;
+
 	read_sensorlist_info(dn, ACC);
 }
 
@@ -823,6 +840,8 @@ static void read_mag_data_from_dts(struct device_node *dn)
 	else
 		mag_data.gpio_rst = (GPIO_NUM_TYPE)temp;
 	read_sensorlist_info(dn, MAG);
+
+	read_magn_charger_current_data_from_dts(dn);
 }
 
 static void read_gyro_data_from_dts(struct device_node *dn)
@@ -1073,13 +1092,23 @@ static void read_ps_chip_info(void)
 	else if (!strncmp(chip_info, "huawei,vishay-vcnl36658",
 		sizeof("huawei,vishay-vcnl36658")))
 		dev_info->chip_type = PS_CHIP_VCNL36658;
+	else if (!strncmp(chip_info, "proximity,ps_s001006",
+		sizeof("proximity,ps_s001006")))
+		dev_info->chip_type = PS_CHIP_TMD2755;
+	else if (!strncmp(chip_info, "ps_s007_001",
+		sizeof("ps_s007_001")))
+		dev_info->chip_type = PS_CHIP_MN78911;
+	else if (!strncmp(chip_info, "ps_s003_004",
+		sizeof("ps_s003_004")))
+		dev_info->chip_type = PS_CHIP_STK33562;
 	else
 		return;
 
 	hwlog_debug("%s:ps i2c_address suc\n", __func__);
 }
 
-static void read_ps_data_from_dts(struct device_node *dn)
+static void read_ps_data_from_dts(struct device_node *dn,
+	struct sensor_detect_manager *sm)
 {
 	int temp = 0;
 	const char *ps_chip_info = "proximity-tp";
@@ -1218,11 +1247,18 @@ static void read_ps_data_from_dts(struct device_node *dn)
 	if (!of_property_read_u32(dn, "ps_tp_threshold", &temp))
 		ps_data.ps_tp_threshold = (uint16_t)temp;
 
+	if (!of_property_read_u32(dn, "ps_phone_type", &temp))
+		ps_data.ps_phone_type = (uint8_t)temp;
+
+	if (!of_property_read_u32(dn, "ps_phone_version", &temp))
+		ps_data.ps_phone_version = (uint8_t)temp;
+
 	if (!of_property_read_u32(dn, "file_id", &temp))
 		dyn_req->file_list[dyn_req->file_count] = (uint16_t)temp;
 	dyn_req->file_count++;
 
 	read_sensorlist_info(dn, PS);
+	select_ps_para(sm);
 }
 
 static void read_tof_data_from_dts(struct device_node *dn)
@@ -1636,6 +1672,26 @@ static int get_adapt_file_id_for_dyn_load(void)
 	return 0;
 }
 
+static int get_hall_config_from_dts(void)
+{
+	unsigned int i = 0;
+	struct device_node *sensorhub_node = NULL;
+
+	sensorhub_node = of_find_compatible_node(NULL, NULL, "huawei,sensorhub");
+	if (!sensorhub_node) {
+		hwlog_err("%s, can't find node sensorhub\n", __func__);
+		return -1; /* get huawei sensorhub node fail */
+	}
+
+	/* find number of the hall sensor */
+	if (!of_property_read_u32(sensorhub_node, "hall_number", &i)) {
+		g_hall_number = i;
+		hwlog_info("sensor get hall number %d\n", g_hall_number);
+	}
+
+	return 0;
+}
+
 static void swap1(uint16_t *left, uint16_t *right)
 {
 	uint16_t temp;
@@ -1754,6 +1810,10 @@ static int get_adapt_id_and_send(void)
 		hwlog_err("get_adapt_file_id_for_dyn_load() failed!\n");
 
 	hwlog_info("get file id number = %d\n", dyn_req->file_count);
+
+	ret =  get_hall_config_from_dts();
+	if (ret < 0)
+		hwlog_err("get_hall_config_from_dts() failed!\n");
 
 	ret = get_adapt_sensor_list_id();
 	if (ret < 0)
@@ -2023,8 +2083,6 @@ static int fingerprint_sensor_detect(struct device_node *dn, int index,
 				__func__, sensor_vendor);
 			return FINGERPRINT_SENSOR_DETECT_SUCCESS;
 		}
-		hwlog_info("%s: fingerprint device %s\n", __func__,
-			sensor_vendor);
 	} else {
 		hwlog_err("%s: get sensor_vendor err\n", __func__);
 		ret = RET_FAIL;
@@ -2311,6 +2369,11 @@ __weak const char *thp_get_vendor_name(void)
 	return NULL;
 }
 
+__weak const int get_thp_unregister_ic_num(void)
+{
+	return 0;
+}
+
 static int tp_ud_sensor_detect(struct device_node *dn)
 {
 	int ret;
@@ -2318,6 +2381,8 @@ static int tp_ud_sensor_detect(struct device_node *dn)
 	const char *attached_vendor_name = NULL;
 	const char *bus_type = NULL;
 	uint32_t temp = 0;
+	int retry_count = 400;
+	int unregister_ic_num;
 
 	ret = of_property_read_string(dn, "vendor_name", &configed_vendor_name);
 	if (ret) {
@@ -2352,6 +2417,17 @@ static int tp_ud_sensor_detect(struct device_node *dn)
 		}
 		tp_ud_data.cfg.i2c_address = temp;
 	}
+
+	while (retry_count) {
+		unregister_ic_num = get_thp_unregister_ic_num();
+		if (!unregister_ic_num) {
+			hwlog_info("%s:unregister ic num:%d\n", __func__, unregister_ic_num);
+			break;
+		}
+		retry_count--;
+		mdelay(5);
+	}
+	hwlog_info("%s:unregister ic num:%d\n", __func__, unregister_ic_num);
 
 	attached_vendor_name = thp_get_vendor_name();
 	if (!attached_vendor_name) {
@@ -2598,6 +2674,15 @@ static void read_tp_ud_from_dts(struct device_node *dn)
 		hwlog_info("%s:read soft_reset_support = %u\n",
 			__func__, tp_ud_data.soft_reset_support);
 	}
+
+	if (of_property_read_u32(dn, "aod_display_support", &temp)) {
+		hwlog_info("%s:read aod_display_support not config\n", __func__);
+		tp_ud_data.aod_display_support = 0; /* default value */
+	} else {
+		tp_ud_data.aod_display_support = (uint16_t)temp;
+		hwlog_info("%s:read aod_display_support = %u\n",
+			__func__, tp_ud_data.aod_display_support);
+	}
 }
 
 int detect_disable_sample_task_prop(struct device_node *dn, uint32_t *value)
@@ -2704,6 +2789,40 @@ static int get_combo_prop(struct device_node *dn, struct detect_word *p_det_wd)
 	return 0;
 }
 
+static int i2c_detect_sensors(char *device_name, int i2c_address,
+			      int i2c_bus_num, int register_add,
+			      u32 *wia, int len)
+{
+	int i;
+	int ret;
+	uint32_t device_id = 0;
+	uint8_t detect_device_id[DEVICE_ID_LEN] = { 0 };
+
+	ret = mcu_i2c_rw((uint8_t)i2c_bus_num, (uint8_t)i2c_address,
+			 (uint8_t *)&register_add, AW_DETECT_LEN,
+			 &detect_device_id, DEVICE_ID_LEN);
+	if (ret) {
+		hwlog_err("%s:detect_i2c_device:send i2c read cmd to mcu fail,ret=%d\n", device_name, ret);
+		return -1;
+	}
+
+	ret = memcpy_s(&device_id, sizeof(device_id), detect_device_id, DEVICE_ID_LEN);
+	if (ret != EOK) {
+		hwlog_err("%s:memcpy_s fail,ret %d\n", __func__, ret);
+		return -1;
+	}
+
+	for (i = 0; i < len; i++) {
+		if (device_id == wia[i]) {
+			hwlog_info("%s:i2c detect  suc!chip_value:0x%x\n", device_name, device_id);
+			return 0;
+		}
+	}
+
+	hwlog_info("%s:i2c detect fail,chip_value:0x%x,len:%d\n", device_name, device_id, len);
+	return -1;
+}
+
 static int detect_i2c_device(struct device_node *dn, char *device_name)
 {
 	int i;
@@ -2714,6 +2833,7 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 	int len;
 	u32 wia[10] = { 0 };
 	uint8_t detected_device_id;
+	uint8_t i2c_detect_long_type = 0;
 	struct property *prop = NULL;
 
 	if (of_property_read_u32(dn, "bus_number", &i2c_bus_num) ||
@@ -2739,6 +2859,19 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 	hwlog_info("%s:i2c %d slave addr 0x%x chip_id_reg 0x%x chipid value 0x%x 0x%x 0x%x 0x%x\n",
 		device_name, i2c_bus_num, i2c_address, register_add, wia[0], wia[1], wia[2], wia[3]);
 
+	of_property_read_u8(dn, "i2c_detect_long_type", &i2c_detect_long_type);
+	hwlog_info("%s:read i2c_detect_long_type:0x%x\n", device_name, i2c_detect_long_type);
+
+	if (i2c_detect_long_type) {
+		ret = i2c_detect_sensors(device_name, i2c_address,
+					 i2c_bus_num, register_add,
+					 wia, len);
+		if (ret)
+			return -1;
+		else
+			return 0;
+	}
+
 	ret = mcu_i2c_rw((uint8_t)i2c_bus_num, (uint8_t)i2c_address,
 		(uint8_t *)&register_add, 1, &detected_device_id, 1);
 	if (ret) {
@@ -2747,7 +2880,7 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 		return -1;
 	}
 	if (!strncmp(device_name, "vibrator", strlen("vibrator"))) {
-		hwlog_info("virbator temp i2c detect success,chip_value:0x%x,len:%d!\n", detected_device_id, len);
+		hwlog_info("virbator temp i2c detect success,chip_value:0x%x,len:%d\n", detected_device_id, len);
 		return 0;
 	}
 	for (i = 0; i < len; i++) {
@@ -2757,7 +2890,7 @@ static int detect_i2c_device(struct device_node *dn, char *device_name)
 			return 0;
 		}
 	}
-	hwlog_info("%s:i2c detect fail,chip_value:0x%x,len:%d!\n", device_name, detected_device_id, len);
+	hwlog_info("%s:i2c detect fail,chip_value:0x%x,len:%d\n", device_name, detected_device_id, len);
 	return -1;
 }
 
@@ -3023,7 +3156,7 @@ static void extend_config_after_sensor_detect(struct device_node *dn, int index)
 		read_als_data_from_dts(dn, &sensor_manager[index]);
 		break;
 	case PS:
-		read_ps_data_from_dts(dn);
+		read_ps_data_from_dts(dn, &sensor_manager[index]);
 		break;
 	case AIRPRESS:
 		read_airpress_data_from_dts(dn);
@@ -3594,6 +3727,7 @@ void sensor_redetect_init(void)
 	handpress_detect_init(sensor_manager, SENSOR_MAX);
 	motion_detect_init(sensor_manager, SENSOR_MAX);
 	vibrator_detect_init(sensor_manager, SENSOR_MAX);
+	mag_detect_init(sensor_manager, SENSOR_MAX);
 	wakeup_source_init(&sensor_rd, "sensorhub_redetect");
 	INIT_WORK(&redetect_work, redetect_sensor_work_handler);
 }

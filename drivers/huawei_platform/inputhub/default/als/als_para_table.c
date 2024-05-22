@@ -636,6 +636,9 @@ static void select_ams_tcs3701_als_data_ex(struct als_platform_data *pf_data,
 	uint32_t i;
 	tcs3701_als_para_table *tcs3701_tab = tcs3701_array;
 
+	hwlog_info("%s phone_type=%d phone_version=%d tp_lcd_manufacture=%d phone_color=%d\n",
+		__func__, pf_data->als_phone_type, pf_data->als_phone_version,
+		get_tplcd_manufacture(), phone_color);
 	if (tcs3701_array == NULL)
 		return;
 

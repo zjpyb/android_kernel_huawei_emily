@@ -31,6 +31,7 @@
 #define BQ40Z50_BATT_TEMP_ABNORMAL_LOW       (-20)
 #define BQ40Z50_BATT_TEMP_ABNORMAL_HIGH      60
 #define BQ40Z50_BATT_TEMP_ZERO               273
+#define BQ40Z50_BATT_TEMP_ABNORMAL_MAX_CNT   2
 
 #define BQ40Z50_BATT_RESISTANCE              3
 #define BQ40Z50_RESISTANCE_SCALE             10
@@ -114,6 +115,7 @@ struct bq40z50_device_info {
 	int charge_status;
 	int vbat_max;
 	u32 is_smart_battery;
+	u32 abnormal_temp_count;
 };
 
 struct bq40z50_log_data {

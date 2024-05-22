@@ -112,8 +112,11 @@ static void dc_change2singlepath(struct direct_charge_device *di)
 		return;
 
 	while (count) {
-		if (di->force_single_path_flag)
+		if (di->multi_ic_check_info.force_single_path_flag) {
+			dc_preparation_before_switch_to_singlepath(di->working_mode,
+				di->dc_volt_ratio, di->init_delt_vset);
 			break;
+		}
 		if (dcm_get_ic_ibus(di->working_mode, di->cur_mode, &ibus))
 			return;
 		hwlog_info("charge2single check ibat is %d\n", ibus);
@@ -140,7 +143,7 @@ static void dc_change2multipath(struct direct_charge_device *di)
 	if (di->cur_mode == CHARGE_MULTI_IC)
 		return;
 
-	if (di->force_single_path_flag)
+	if (di->multi_ic_check_info.force_single_path_flag)
 		return;
 
 	if (multi_ic_check_ic_status(&di->multi_ic_mode_para)) {
@@ -240,7 +243,7 @@ void dc_select_charge_path(void)
 	if (dc_rt_select_charge_path(l_di))
 		return;
 
-	if (l_di->force_single_path_flag) {
+	if (l_di->multi_ic_check_info.force_single_path_flag) {
 		dc_change2singlepath(l_di);
 		return;
 	}

@@ -193,11 +193,6 @@ static int smart_softtimer_try_to_del_sync(struct softtimer_list *timer)
 		return -EACCES;
 	}
 
-	if (list_empty(&timer->entry))    {
-		spin_unlock_bh(&timer_control.soft_timer_lock);
-		return 0;
-	}
-
 	/*
 	 * Timer always not null, check in caller. Null == null will never happen.
 	 * If timer callback is running, delete will wait until callback finish.
@@ -206,6 +201,10 @@ static int smart_softtimer_try_to_del_sync(struct softtimer_list *timer)
 		spin_unlock_bh(&timer_control.soft_timer_lock);
 		pr_info("Timer is not finish!Delete later\n");
 		return -EACCES;
+	}
+	if (list_empty(&timer->entry)) {
+		spin_unlock_bh(&timer_control.soft_timer_lock);
+		return 0;
 	}
 
 	/* if the last one,just delete it */

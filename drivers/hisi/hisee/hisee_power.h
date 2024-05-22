@@ -49,11 +49,15 @@ enum hisee_timeout_vote_id_type {
 
 /* the para to lpm3 throug atf */
 enum hisee_power_operation {
-	HISEE_POWER_OFF = 0x01000100,
-	HISEE_POWER_ON_BOOTING = 0x01000101,
-	HISEE_POWER_ON_UPGRADE = 0x01000102,
-	HISEE_POWER_ON_UPGRADE_SM = 0x01000103,
-	HISEE_POWER_ON_BOOTING_MISC = 0x01000104,
+	HISEE_POWER_OFF              = 0x01000100,
+	HISEE_POWER_ON_BOOTING       = 0x01000101,
+	HISEE_POWER_ON_UPGRADE       = 0x01000102,
+	HISEE_POWER_ON_UPGRADE_SM    = 0x01000103,
+	HISEE_POWER_ON_BOOTING_MISC  = 0x01000104,
+#ifdef CONFIG_GENERAL_SEE_PINCODE_POWER
+	GENERAL_SEE_PINCODE_VOTE_ON  = 0x01000200,
+	GENERAL_SEE_PINCODE_VOTE_OFF = 0x01000201,
+#endif
 	HISEE_POWER_MAX_OP,
 };
 
@@ -131,6 +135,7 @@ int hisee_poweron_upgrade_func(const void *buf, int para);
 int hisee_poweroff_func(const void *buf, int para);
 int hisee_poweron_timeout_func(const void *buf, int para);
 enum hisee_power_status hisee_get_power_status(void);
+int hisee_force_power_off(void);
 
 #ifdef CONFIG_SMX_PROCESS
 int smx_process(enum hisee_power_operation op_type,
@@ -138,5 +143,9 @@ int smx_process(enum hisee_power_operation op_type,
 #endif
 #ifdef CONFIG_HISEE_NFC_IRQ_SWITCH
 int hisee_nfc_irq_switch_func(const void *buf, int para);
+#endif
+#ifdef CONFIG_GENERAL_SEE_PINCODE_POWER
+s32 hisee_allow_down_func(const void *buf, s32 para);
+s32 hisee_pincode_vote(u32 op_type);
 #endif
 #endif

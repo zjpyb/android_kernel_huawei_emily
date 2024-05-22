@@ -960,6 +960,26 @@ static int _rpmb_prepared_work(void)
 	return HISEE_OK;
 }
 
+#ifdef CONFIG_GENERAL_SEE_PINCODE
+#define GENERAL_SEE_PINCODE_UNINITIALIZED    0U
+#define GENERAL_SEE_PINCODE_UNSUPPORT        1U
+#define GENERAL_SEE_PINCODE_SUPPORT          2U
+
+static int hisee_check_status(void)
+{
+	int state;
+
+	state = atfd_hisee_smc((u64)HISEE_FN_MAIN_SERVICE_CMD,
+				GENERAL_SEE_GET_PINCODE_STATUS, 0, 0);
+	if (state == GENERAL_SEE_PINCODE_UNINITIALIZED ||
+	    state == GENERAL_SEE_PINCODE_SUPPORT)
+		return HISEE_OK;
+
+	pr_err("%s:hisee is not supported or get status failed:%x!\n", __func__, state);
+	return HISEE_ERROR;
+}
+#endif /* CONFIG_GENERAL_SEE_PINCODE */
+
 static int rpmb_ready_body(void *arg)
 {
 	int ret;
@@ -994,6 +1014,12 @@ static int rpmb_ready_body(void *arg)
 	g_cos_image_upgrade_done = HISEE_TRUE;
 
 #ifdef CONFIG_GENERAL_SEE_PINCODE
+	ret = hisee_check_status();
+	if (ret != HISEE_OK) {
+		pr_err("%s:hisee is not supported:%x!\n", __func__, ret);
+		return set_errno_then_exit(ret);
+	}
+
 	ret = hisee_poweron_timeout_func(time, 0);
 	if (ret != HISEE_OK)
 		pr_err("%s:power on hisee failed:%x\n", __func__, ret);

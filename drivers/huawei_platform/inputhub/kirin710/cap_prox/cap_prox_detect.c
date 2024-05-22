@@ -335,15 +335,17 @@ static void read_cap_prox_aw96101_from_dts(struct device_node *dn,
 	struct sensor_detect_manager *sm)
 {
 	uint16_t *threshold_to_modem = NULL;
-	uint32_t *init_reg_val = NULL;
-	uint32_t init_reg_val_default[INIT_REG_VALUE_COUNT] = {
-		0x00010005, 0x00020529, 0x000300cc, 0x00040001,
-		0x00050F55,
-		0x00069905, 0x000700e8, 0x00080200, 0x00090000,
-		0x000a000C, 0x00798000,
-		0x000b9905, 0x000c00e8, 0x000d0200, 0x000e0000,
-		0x000f000C, 0x007a8000
-	};
+	uint16_t aw9610_phone_type = 0;
+
+	read_chip_info(dn, CAP_PROX);
+	if (of_property_read_u16(dn, "phone_type", &aw9610_phone_type)) {
+		sar_pdata.sar_datas.aw9610_data.phone_type = 0;
+		hwlog_err("%s:read phone_type fail\n", __func__);
+	} else {
+		sar_pdata.sar_datas.aw9610_data.phone_type = aw9610_phone_type;
+		hwlog_info("%s:read phone_type:0x%x\n", __func__,
+			sar_pdata.sar_datas.aw9610_data.phone_type);
+	}
 
 	threshold_to_modem = sar_pdata.sar_datas.aw9610_data.threshold_to_modem;
 	if (of_property_read_u16_array(dn, "to_modem_threshold",
@@ -355,20 +357,6 @@ static void read_cap_prox_aw96101_from_dts(struct device_node *dn,
 	hwlog_info("read threshold_to_modem %u %u %u\n",
 		*threshold_to_modem, *(threshold_to_modem + 1),
 		*(threshold_to_modem + (CAP_MODEM_THRESHOLE_LEN - 1)));
-
-	init_reg_val = sar_pdata.sar_datas.aw9610_data.init_reg_val;
-	if (of_property_read_u32_array(dn, "init_reg_val", init_reg_val,
-		AWINIC_REGS_NEED_INITIATED_NUM)) {
-		hwlog_err("%s:read init_reg_val fail\n", __func__);
-		if (memcpy_s(init_reg_val,
-			sizeof(sar_pdata.sar_datas.aw9610_data.init_reg_val),
-			init_reg_val_default,
-			sizeof(init_reg_val_default)) != EOK)
-			return;
-	}
-	hwlog_info("init_reg_val[0]:%8x init_reg_val[%d]%8x\n",
-		*init_reg_val, AWINIC_REGS_NEED_INITIATED_NUM - 1,
-		*(init_reg_val + AWINIC_REGS_NEED_INITIATED_NUM - 1));
 }
 
 static void read_cap_prox_aw96102_from_dts(struct device_node *dn,

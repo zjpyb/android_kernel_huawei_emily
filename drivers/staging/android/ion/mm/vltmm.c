@@ -678,24 +678,9 @@ static int smem_ta_session_init(void)
 	int ret;
 
 	if (!ta_init) {
-		context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
-		if (!context)
-			return -1;
-
-		session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
-		if (!session) {
-			kfree(context);
-			context = NULL;
-			return -1;
-		}
-
-		ret = secmem_tee_init(context, session, TEE_VLTMM_NAME);
+		ret = sec_tee_init(&context, &session, ION_SESSIONS_VLTMM);
 		if (ret) {
 			pr_err("TA session init failed\n");
-			kfree(context);
-			kfree(session);
-			context = NULL;
-			session = NULL;
 			return -1;
 		}
 		ta_init = 1;

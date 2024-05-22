@@ -1210,6 +1210,12 @@ typedef enum {
 } dmac_rx_frame_ctrl_enum;
 typedef oal_uint8 dmac_rx_frame_ctrl_enum_uint8;
 
+enum custom_filter_switch {
+    CUSTOM_APF_CLOSE_SWITCH,
+    CUSTOM_ARP_CLOSE_MULITCAST_FILTER,
+    CUSTOM_FILTER_SWITCH_BUTT
+};
+
 #if defined(_PRE_WLAN_FEATURE_DATA_SAMPLE)
 typedef enum {
     DMAC_RX_SAMPLE, /* DMAC收到数采请求 */

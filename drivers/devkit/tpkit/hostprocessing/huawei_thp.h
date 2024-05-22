@@ -522,6 +522,14 @@ enum thp_panel_index {
 	SINGLE_TOUCH_PANEL = 255,
 };
 
+#ifdef CONFIG_LCDKIT_DRIVER
+#define TP_DRIVER_TYPE_MATCH_FAIL (-1)
+enum tp_driver_type {
+	THP = 0,
+	TS_KIT_1_0,
+};
+#endif
+
 #ifdef CONFIG_HUAWEI_THP_MTK
 #define AOD_NOTIFY_TP_SUSPEND 1
 #define AOD_NOTIFY_TP_RESUME 2
@@ -874,6 +882,9 @@ struct thp_core_data {
 #if defined(THP_CHARGER_FB)
 	struct notifier_block charger_detect_notify;
 #endif
+#if defined(CONFIG_THP_IRQ_STATISTIC_AQ)
+	u32 statistic_invalid_irq;
+#endif
 	char project_id[THP_PROJECT_ID_LEN + 1];
 	char app_info[MAX_APP_INFO_LEN + 1];
 	const char *ic_name;
@@ -918,6 +929,7 @@ struct thp_core_data {
 	u32 use_hwlock;
 	u32 delay_work_for_pm;
 	u32 support_phone_sleep_mode;
+	u32 aptouch_daemon_version;
 	int event;
 	u8 thp_event_waitq_flag;
 	wait_queue_head_t thp_event_waitq;
@@ -1039,6 +1051,7 @@ struct thp_core_data {
 	u32 support_stylus3_plam_suppression;
 	u32 spi_speed_mode;
 	u32 sensorhub_support_gesture;
+	u32 thp_compatible_tskit;
 };
 
 enum screen_status {

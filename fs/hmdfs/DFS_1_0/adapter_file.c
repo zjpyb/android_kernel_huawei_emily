@@ -201,26 +201,14 @@ static int write_begin(struct file *file, struct address_space *mapping,
 	struct inode *inode = file_inode(file);
 	struct page *page = pagecache_get_page(
 		mapping, index, FGP_LOCK | FGP_WRITE | FGP_CREAT, GFP_NOFS);
+	bool ret = true;
+
 	if (!page)
 		return -ENOMEM;
 
-	*pagep = page;
-
-	wait_on_page_writeback(page);
-
-	// If this page will be covered completely.
-	if (len == HMDFS_PAGE_SIZE || PageUptodate(page))
+	ret = hmdfs_generic_write_begin(page, len, pagep, pos, inode);
+	if (!ret)
 		return 0;
-
-	/*
-	 * If data existed in this page will covered,
-	 * we just need to clear this page.
-	 */
-	if (!((unsigned long long)pos & (HMDFS_PAGE_SIZE - 1)) &&
-	    (pos + len) >= i_size_read(inode)) {
-		zero_user_segment(page, len, HMDFS_PAGE_SIZE);
-		return 0;
-	}
 	// We need readpage before write date to this page.
 	readpage(file, page);
 	lock_page(page);
@@ -233,14 +221,10 @@ static int write_end(struct file *file, struct address_space *mapping,
 		     struct page *page, void *fsdata)
 {
 	struct inode *inode = page->mapping->host;
+	bool ret;
 
-	if (!PageUptodate(page)) {
-		if (unlikely(copied != len))
-			copied = 0;
-		else
-			SetPageUptodate(page);
-	}
-	if (!copied)
+	ret = hmdfs_generic_write_end(page, len, copied);
+	if (!ret)
 		goto unlock_out;
 
 	set_page_dirty(page);

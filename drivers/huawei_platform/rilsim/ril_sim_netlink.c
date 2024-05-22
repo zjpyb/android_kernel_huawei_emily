@@ -57,6 +57,12 @@ static int is_slot_valid(int slot)
 static int process_sim_update_msg(const struct nlmsghdr *nlh)
 {
 	int slot_id;
+	if (nlh->nlmsg_len < NLMSG_HDRLEN || nlh->nlmsg_len - NLMSG_HDRLEN != sizeof(knl_sim_pin_info)) {
+		hwlog_err("%s: nlmsg_len:%ld, NLMSG_HDRLEN:%d, struct size:%zu\n",
+			__func__, nlh->nlmsg_len, NLMSG_HDRLEN, sizeof(knl_sim_pin_info));
+		return KNL_FAILED;
+	}
+
 	knl_sim_pin_info *pin_info = (knl_sim_pin_info *)nlmsg_data(nlh);
 
 	if (!pin_info) {
@@ -78,6 +84,10 @@ static int process_sim_update_msg(const struct nlmsghdr *nlh)
 static int process_sim_get_pin_msg(const struct nlmsghdr *nlh)
 {
 	int slot_id;
+	if (nlh->nlmsg_len < sizeof(knl_ril_sim_card_info)) {
+		hwlog_err("%s: nlh len is invalid\n", __func__);
+		return KNL_FAILED;
+	}
 	knl_ril_sim_card_info *p_card_info = (knl_ril_sim_card_info *)nlmsg_data(nlh);
 
 	if (!p_card_info) {

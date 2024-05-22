@@ -7,10 +7,24 @@
 #ifndef _HUAWEI_MMAP_SEM_CHECK_H_
 #define _HUAWEI_MMAP_SEM_CHECK_H_
 
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+#include <linux/mm_types.h>
+#endif
+
 #include <linux/rwsem.h>
 #include <linux/types.h>
 
 void check_mmap_sem(pid_t pid);
+
+#ifdef CONFIG_DETECT_MMAP_SEM_AQ
+void get_mmap_sem_debug(struct mm_struct *mm,
+	void (*func)(struct rw_semaphore *));
+#else
+static inline void get_mmap_sem_debug(struct mm_struct *mm,
+	void (*func)(struct rw_semaphore *))
+{
+}
+#endif
 
 #ifdef CONFIG_DETECT_HUAWEI_MMAP_SEM_DBG
 void mmap_sem_debug(const struct rw_semaphore *sem);

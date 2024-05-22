@@ -904,6 +904,9 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	atomic_set(&mm->mm_users, 1);
 	atomic_set(&mm->mm_count, 1);
 	init_rwsem(&mm->mmap_sem);
+#if defined(CONFIG_HW_VIP_SEMAPHORE) && defined(CONFIG_HARMONY_PERFORMANCE_AQ)
+	mm->mmap_sem.vip_sem = true;
+#endif
 	INIT_LIST_HEAD(&mm->mmlist);
 	mm->core_state = NULL;
 	atomic_long_set(&mm->nr_ptes, 0);
@@ -1308,6 +1311,9 @@ static struct mm_struct *dup_mm(struct task_struct *tsk)
 
 	mm->hiwater_rss = get_mm_rss(mm);
 	mm->hiwater_vm = mm->total_vm;
+#ifdef CONFIG_PM_PEAK
+	mm->hiwater_pm = mm->hiwater_rss;
+#endif
 
 	if (mm->binfmt && !try_module_get(mm->binfmt->module))
 		goto free_pt;
@@ -1332,7 +1338,9 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 	tsk->min_flt = tsk->maj_flt = 0;
 	tsk->nvcsw = tsk->nivcsw = 0;
 #ifdef CONFIG_DETECT_HUNG_TASK
+#if defined CONFIG_OPTIMIZE_MM_AQ && !defined CONFIG_DETECT_HUAWEI_HUNG_TASK
 	tsk->last_switch_count = tsk->nvcsw + tsk->nivcsw;
+#endif
 #endif
 
 	tsk->mm = NULL;

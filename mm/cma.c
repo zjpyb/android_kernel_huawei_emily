@@ -53,7 +53,11 @@
 
 struct cma cma_areas[MAX_CMA_AREAS];
 unsigned cma_area_count;
+
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 static DEFINE_MUTEX(cma_mutex);
+#endif
+
 #ifdef CONFIG_ZONE_MEDIA
 unsigned long cma_max_pfn;
 unsigned long cma_min_pfn;
@@ -464,11 +468,13 @@ static void cma_debug_show_areas(struct cma *cma)
 static inline void cma_debug_show_areas(struct cma *cma) { }
 #endif
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #ifdef CONFIG_HISI_CMA_DEBUG
 struct mutex *get_cma_mutex(void)
 {
 	return &cma_mutex;
 }
+#endif
 #endif
 
 /**
@@ -540,10 +546,12 @@ retry:
 
 		pfn = cma->base_pfn + (bitmap_no << cma->order_per_bit);
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #ifdef CONFIG_HISI_CMA_DEBUG
 		cma_mutex_lock_with_record();
 #else
 		mutex_lock(&cma_mutex);
+#endif
 #endif
 
 #ifdef CONFIG_HISI_CMA_DEBUG
@@ -556,7 +564,9 @@ retry:
 		show_record_alloc_time_info(ktime_get(), time_start);
 #endif
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 		mutex_unlock(&cma_mutex);
+#endif
 		if (ret == 0) {
 			page = pfn_to_page(pfn);
 			break;

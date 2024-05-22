@@ -1737,6 +1737,9 @@ u64 kbase_mem_alias(struct kbase_context *kctx, u64 *flags, u64 stride,
 	if (!nents)
 		goto bad_nents;
 
+	if (stride > U64_MAX / nents)
+		goto bad_size;
+
 	if ((nents * stride) > (U64_MAX / PAGE_SIZE))
 		/* 64-bit address range is the max */
 		goto bad_size;
@@ -2516,7 +2519,7 @@ static int kbase_cpu_mmap(struct kbase_context *kctx,
  out:
 	return err;
 }
-
+#ifdef CONFIG_MALI_VECTOR_DUMP
 static int kbase_mmu_dump_mmap(struct kbase_context *kctx, struct vm_area_struct *vma, struct kbase_va_region **const reg, void **const kmap_addr)
 {
 	struct kbase_va_region *new_reg;
@@ -2579,7 +2582,7 @@ out_va_region:
 out:
 	return err;
 }
-
+#endif
 
 void kbase_os_mem_map_lock(struct kbase_context *kctx)
 {
@@ -2717,6 +2720,7 @@ int kbase_context_mmap(struct kbase_context *const kctx,
 		err = -EINVAL;
 		goto out_unlock;
 	case PFN_DOWN(BASE_MEM_MMU_DUMP_HANDLE):
+#if defined(CONFIG_MALI_VECTOR_DUMP)
 		/* MMU dump */
 		err = kbase_mmu_dump_mmap(kctx, vma, &reg, &kaddr);
 		if (0 != err)
@@ -2724,6 +2728,11 @@ int kbase_context_mmap(struct kbase_context *const kctx,
 		/* free the region on munmap */
 		free_on_close = 1;
 		break;
+#else
+		/* Illegal handle for direct map */
+		err = -EINVAL;
+		goto out_unlock;
+#endif /* defined(CONFIG_MALI_VECTOR_DUMP) */
 	case PFN_DOWN(BASE_MEM_COOKIE_BASE) ...
 	     PFN_DOWN(BASE_MEM_FIRST_FREE_ADDRESS) - 1: {
 		err = kbasep_reg_mmap(kctx, vma, &reg, &nr_pages,
@@ -2800,13 +2809,13 @@ int kbase_context_mmap(struct kbase_context *const kctx,
 
 	err = kbase_cpu_mmap(kctx, reg, vma, kaddr, nr_pages, aligned_offset,
 			free_on_close);
-
+#if defined(CONFIG_MALI_VECTOR_DUMP)
 	if (vma->vm_pgoff == PFN_DOWN(BASE_MEM_MMU_DUMP_HANDLE)) {
 		/* MMU dump - userspace should now have a reference on
 		 * the pages, so we can now free the kernel mapping */
 		vfree(kaddr);
 	}
-
+#endif /* defined(CONFIG_MALI_VECTOR_DUMP) */
 out_unlock:
 	kbase_gpu_vm_unlock(kctx);
 out:
@@ -2957,8 +2966,10 @@ void *kbase_vmap_prot(struct kbase_context *kctx, u64 gpu_addr, size_t size,
 	/* check access permissions can be satisfied
 	 * Intended only for checking KBASE_REG_{CPU,GPU}_{RD,WR}
 	 */
-	if ((reg->flags & prot_request) != prot_request)
+	if ((reg->flags & prot_request) != prot_request) {
+		dev_warn(kctx->kbdev->dev, "mismatch prot request in kbase_vamp_prot\n");
 		goto out_unlock;
+	}
 
 	offset_bytes = gpu_addr - (reg->start_pfn << PAGE_SHIFT);
 	cpu_alloc = kbase_mem_phy_alloc_get(reg->cpu_alloc);

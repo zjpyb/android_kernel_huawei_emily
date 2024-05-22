@@ -173,9 +173,9 @@ const struct stwlc68_sram_info stwlc68_sram[] = {
 		.patch_id_to         = 0xFFFF,
 		.bad_addr_from       = 0x1c18,
 		.bad_addr_to         = 0x2000,
-		.sram_data           = stwlc68_rx_sram_4832,
-		.sram_size           = ARRAY_SIZE(stwlc68_rx_sram_4832),
-		.sram_id             = 0x4832,
+		.sram_data           = stwlc68_rx_sram_4870,
+		.sram_size           = ARRAY_SIZE(stwlc68_rx_sram_4870),
+		.sram_id             = 0x4870,
 		.dev_type            = WIRELESS_DEVICE_PAD,
 	},
 	{

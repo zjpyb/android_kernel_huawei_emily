@@ -1571,7 +1571,7 @@ STATIC int32_t hi1103_check_host_wakeup_wlan(void)
     return 0;
 }
 
-#ifdef _PRE_CONFIG_ARCH_KIRIN_S4_FEATURE
+#if defined(_PRE_CONFIG_ARCH_KIRIN_S4_FEATURE) || defined(_PRE_TV_STD_FEATURE)
 void hi1103_suspend_power_gpio(void)
 {
     int physical_gpio;
@@ -1621,6 +1621,14 @@ void hi1103_suspend_wakeup_gpio(void)
     physical_gpio = g_st_board_info.host_wakeup_wlan;
     if (physical_gpio == 0) {
         oal_print_hi11xx_log(HI11XX_LOG_ERR, "host_wakeup_wlan suspend fail.\n");
+        return;
+    }
+    gpio_free(physical_gpio);
+#endif
+#ifdef _PRE_H2D_GPIO_WKUP
+    physical_gpio = g_st_board_info.host_wakeup_bfg;
+    if (physical_gpio == 0) {
+        oal_print_hi11xx_log(HI11XX_LOG_ERR, "host_wakeup_bfg suspend fail.\n");
         return;
     }
     gpio_free(physical_gpio);
@@ -1731,7 +1739,6 @@ void hi1103_resume_wakeup_gpio(void)
     if (ret != BOARD_SUCC) {
         return;
     }
-#else
 #endif
     return;
 }

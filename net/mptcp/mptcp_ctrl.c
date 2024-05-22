@@ -671,6 +671,14 @@ static void mptcp_sock_def_error_report(struct sock *sk)
 void mptcp_mpcb_put(struct mptcp_cb *mpcb)
 {
 	if (atomic_dec_and_test(&mpcb->mpcb_refcnt)) {
+		struct mptcp_deleted_flow_info *deleted = NULL;
+		struct mptcp_deleted_flow_info *tmp = NULL;
+		list_for_each_entry_safe(deleted, tmp, &mpcb->deleted_flow_info, node) {
+			mptcp_debug("%s: %s:%u  sent:%llu received %llu", __func__,
+				deleted->ifname, deleted->loc_id,
+				deleted->tcpi_bytes_acked, deleted->tcpi_bytes_received);
+			kfree(deleted);
+		}
 		mptcp_cleanup_path_manager(mpcb);
 		mptcp_cleanup_scheduler(mpcb);
 		kfree(mpcb->master_info);
@@ -1805,16 +1813,10 @@ void mptcp_close(struct sock *meta_sk, long timeout)
 	struct sk_buff *skb;
 	int data_was_unread = 0;
 	int state;
-	u64 sent = 0;
-	u64 recv = 0;
 #ifdef CONFIG_HUAWEI_XENGINE
 	struct mptcp_hw_ext_sock hw_ext_sock;
 	struct socket *sock = meta_sk->sk_socket;
 #endif
-	struct mptcp_deleted_flow_info *deleted = NULL;
-	struct mptcp_deleted_flow_info *tmp = NULL;
-	char src_ip_str[INET_ADDRSTRLEN];
-	char dst_ip_str[INET_ADDRSTRLEN];
 
 	mptcp_debug("%s: Close of meta_sk with tok %#x\n",
 		    __func__, mpcb->mptcp_loc_token);
@@ -1888,24 +1890,10 @@ adjudge_to_death:
 	state = meta_sk->sk_state;
 	sock_hold(meta_sk);
 
-	list_for_each_entry_safe(deleted, tmp, &mpcb->deleted_flow_info, node) {
-		mptcp_debug("%s: %s:%u  sent:%llu received %llu", __func__,
-			deleted->ifname, deleted->loc_id,
-			deleted->tcpi_bytes_acked, deleted->tcpi_bytes_received);
-		sent += deleted->tcpi_bytes_acked;
-		recv += deleted->tcpi_bytes_received;
-		kfree(deleted);
-	}
-
 	/* socket will be freed after mptcp_close - we have to prevent
 	 * access from the subflows.
 	 */
 	mptcp_for_each_sk(mpcb, sk_it) {
-		mptcp_debug("%s: loc_id:%u  sent:%llu received %llu", __func__,
-			tcp_sk(sk_it)->mptcp->loc_id,
-			tcp_sk(sk_it)->bytes_acked, tcp_sk(sk_it)->bytes_received);
-		sent += tcp_sk(sk_it)->bytes_acked;
-		recv += tcp_sk(sk_it)->bytes_received;
 		/* Similar to sock_orphan, but we don't set it DEAD, because
 		 * the callbacks are still set and must be called.
 		 */
@@ -1914,14 +1902,6 @@ adjudge_to_death:
 		sk_it->sk_wq  = NULL;
 		write_unlock_bh(&sk_it->sk_callback_lock);
 	}
-
-	mptcp_debug("%s: src_addr:%s:%d dst_addr:%s:%d sent:%llu of %llu received %llu of %llu \n",
-		    __func__,
-		    anonymousIPv4addr(((struct inet_sock *)meta_tp)->inet_saddr, src_ip_str, INET_ADDRSTRLEN),
-		    ntohs(((struct inet_sock *)meta_tp)->inet_sport),
-		    anonymousIPv4addr(((struct inet_sock *)meta_tp)->inet_daddr, dst_ip_str, INET_ADDRSTRLEN),
-		    ntohs(((struct inet_sock *)meta_tp)->inet_dport),
-		    meta_tp->bytes_acked, sent, meta_tp->bytes_received, recv);
 
 #ifdef CONFIG_HUAWEI_XENGINE
 	if (sock && meta_tp->mptcp_cap_flag == MPTCP_CAP_PID_FD) {

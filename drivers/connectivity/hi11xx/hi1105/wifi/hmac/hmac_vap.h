@@ -286,7 +286,7 @@ typedef struct hmac_vap_tag {
     int16_t s_free_power;                                /* 底噪 */
     uint8_t beacon_rssi; /* 收到的beacon信号强度 */
     oal_bool_enum_uint8 en_monitor_mode;
-
+    oal_bool_enum_uint8 en_pt_mcast_switch;
     int32_t center_freq; /* 中心频点 */
     mac_cfg_show_dieid_stru st_dieid;
     hmac_atcmdsrv_get_stats_stru st_atcmdsrv_get_status;

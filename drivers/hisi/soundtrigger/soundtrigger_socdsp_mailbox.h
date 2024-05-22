@@ -121,7 +121,7 @@ struct msg_node {
 int start_recognition_msg(uint16_t msg_type, int module_id, bool is_lp);
 int stop_recognition_msg(uint16_t msg_type, int module_id, bool is_lp);
 int get_handle_msg(uint16_t msg_type, int *socdsp_handle);
-int parameter_set_msg(uint16_t msg_type, int module_id, const struct parameter_set *set_val);
+int parameter_set_msg(uint16_t msg_type, int module_id, const struct parameter_set *set_val, uint32_t para_size);
 int soundtrigger_mailbox_init(void);
 void soundtrigger_mailbox_deinit(void);
 

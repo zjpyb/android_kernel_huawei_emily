@@ -41,6 +41,7 @@ obj-$(CONFIG_DEV_IVP) += ivp/
 obj-$(CONFIG_HISTAR_ISP) += isp/
 obj-$(CONFIG_DRMDRIVER)                         += drmdriver/
 obj-$(CONFIG_HI3XXX_EFUSE)                      += efuse/
+obj-$(CONFIG_SECURITY_INFO)                     += security_info/
 obj-y                                           += hisi_cma/
 obj-y                                           += hitest/
 obj-y                                           += tzdriver/

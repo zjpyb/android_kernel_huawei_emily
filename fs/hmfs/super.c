@@ -1011,6 +1011,7 @@ static int parse_options(struct super_block *sb, char *options)
 static struct inode *f2fs_alloc_inode(struct super_block *sb)
 {
 	struct f2fs_inode_info *fi;
+	int i;
 
 	fi = kmem_cache_alloc(f2fs_inode_cachep, GFP_F2FS_ZERO);
 	if (!fi)
@@ -1031,7 +1032,8 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 	fi->fsync_task = NULL;
 	if (F2FS_CKPT(F2FS_SB(sb))) {
 		/* ckpt is NULL when alloc meta_inode */
-		fi->fsync_ver = cur_cp_version(F2FS_CKPT(F2FS_SB(sb)));
+		for (i = 0; i < NR_CP_VER; i++)
+			fi->cp_ver[i] = INIT_CP_VER;
 	}
 
 	fi->last_stream = STREAM_NR;
@@ -1297,6 +1299,8 @@ static void f2fs_put_super(struct super_block *sb)
 		kfree(F2FS_OPTION(sbi).s_qf_names[i]);
 #endif
 	destroy_percpu_info(sbi);
+	if (sbi->hmfs_io_expire_workqueue)
+		destroy_workqueue(sbi->hmfs_io_expire_workqueue);
 	for (i = 0; i < NR_PAGE_TYPE; i++)
 		kfree(sbi->write_io[i]);
 #ifdef CONFIG_HMFS_STAT_FS
@@ -3458,35 +3462,6 @@ static void f2fs_tuning_parameters(struct f2fs_sb_info *sbi)
 	sbi->readdir_ra = 1;
 }
 
-static void hmfs_init_section_list(struct f2fs_sb_info *sbi)
-{
-	int i;
-
-	for (i = STREAM_META; i < STREAM_NR; i++) {
-		INIT_LIST_HEAD(&sbi->section_list[i]);
-		spin_lock_init(&sbi->section_list_lock[i]);
-	}
-}
-
-static inline void hmfs_init_bio_list(struct f2fs_sb_info *sbi)
-{
-	int i;
-	block_t blkaddr;
-	int curseg_type;
-
-	for (i = STREAM_META; i < STREAM_NR; i++) {
-		bio_list_init(&sbi->bio_list[i]);
-		atomic_set(&sbi->last_blkaddr[i], 0);
-		mutex_init(&sbi->bio_lock[i]);
-	}
-
-	for (i = STREAM_COLD_NODE; i < STREAM_NR; i++) {
-		curseg_type = CURSEG_T(i);
-		blkaddr = NEXT_FREE_BLKADDR(sbi, CURSEG_I(sbi, curseg_type));
-		atomic_set(&sbi->last_blkaddr[i], blkaddr);
-	}
-}
-
 #ifdef CONFIG_HMFS_GRADING_SSR
 static int f2fs_init_grading_ssr(struct f2fs_sb_info *sbi)
 {
@@ -3518,9 +3493,11 @@ static int f2fs_init_grading_ssr(struct f2fs_sb_info *sbi)
 
 static int init_pu_align_info(struct f2fs_sb_info *sbi)
 {
+	int i;
 	int ret;
 	struct stor_dev_program_size pu_size;
 
+	sbi->segs_per_slc_sec = 0;
 	ret = mas_blk_get_program_size(sbi->sb->s_bdev, &pu_size);
 	if (ret) {
 		sbi->skip_pu_align = true;
@@ -3530,6 +3507,13 @@ static int init_pu_align_info(struct f2fs_sb_info *sbi)
 	sbi->skip_pu_align = false;
 	sbi->pu_size[SLC_MODE] = pu_size.slc_program_size;
 	sbi->pu_size[TLC_MODE] = pu_size.tlc_program_size;
+	for (i = 0; i < NR_CURSEG_DM_TYPE; i++)
+		sbi->next_pu_size[i] = pu_size.tlc_program_size;
+
+	/* slc depend on cell levels eg.1/3 for TLC(Tri-Lev-CELL) */
+	if (sbi->pu_size[TLC_MODE] && sbi->pu_size[SLC_MODE])
+		sbi->segs_per_slc_sec = sbi->segs_per_sec *
+			sbi->pu_size[SLC_MODE] / sbi->pu_size[TLC_MODE];
 
 	return ret;
 }
@@ -3708,6 +3692,17 @@ try_onemore:
 	spin_lock_init(&sbi->iostat_lock);
 	sbi->iostat_enable = false;
 
+	if (!sbi->hmfs_io_expire_workqueue)
+		sbi->hmfs_io_expire_workqueue =
+			alloc_workqueue("io_expire", WQ_UNBOUND, 0);
+
+	if (!sbi->hmfs_io_expire_workqueue) {
+		hmfs_msg(sbi->sb, KERN_ERR,
+			"Failed to alloc io_expire_workqueue!");
+		err = -ENOMEM;
+		goto free_options;
+	}
+
 	for (i = 0; i < NR_PAGE_TYPE; i++) {
 		int n = (i == META) ? 1: NR_TEMP_TYPE;
 		int j;
@@ -3728,11 +3723,17 @@ try_onemore:
 			sbi->write_io[i][j].bio = NULL;
 			spin_lock_init(&sbi->write_io[i][j].io_lock);
 			INIT_LIST_HEAD(&sbi->write_io[i][j].io_list);
+
+			INIT_DELAYED_WORK(&sbi->write_io[i][j].io_expire_work,
+					submit_merged_bio_quickly_fn);
 		}
 	}
 
 	sbi->io_throttle_time = 0;
 	sbi->io_throttle_time_max = IO_THROTTLE_TIME_MAX;
+#ifdef CONFIG_HMFS_CHECK_FS
+	sbi->datamove_inject = 0;
+#endif
 
 	spin_lock_init(&sbi->cp_rwsem_lock);
 	init_rwsem(&sbi->cp_rwsem);
@@ -3805,6 +3806,7 @@ try_onemore:
 	sbi->current_reserved_blocks = 0;
 	limit_reserve_root(sbi);
 	init_hmfs_gc_loop(sbi);
+	sbi->gc_loop.unc_fail_cnt = 0;
 
 	for (i = 0; i < NR_INODE_TYPE; i++) {
 		INIT_LIST_HEAD(&sbi->inode_list[i]);
@@ -3915,13 +3917,10 @@ try_onemore:
 	/* set oob recovery */
 	hmfs_set_oob_switch(sbi, IS_MULTI_SEGS_IN_SEC(sbi));
 
-	hmfs_init_section_list(sbi);
 	/* if SPOR, need to sync write position with ufs */
 	err = hmfs_sync_device_info(sbi, &need_cp);
 	if (err)
 		goto free_meta;
-
-	hmfs_init_bio_list(sbi);
 
 	if (unlikely(is_set_ckpt_flags(sbi, CP_DISABLED_FLAG))) {
 		hmfs_free_oob_rsvd_space(sbi);
@@ -4087,6 +4086,8 @@ free_io_dummy:
 free_percpu:
 	destroy_percpu_info(sbi);
 free_bio_info:
+	if (sbi->hmfs_io_expire_workqueue)
+		destroy_workqueue(sbi->hmfs_io_expire_workqueue);
 	for (i = 0; i < NR_PAGE_TYPE; i++)
 		kfree(sbi->write_io[i]);
 free_options:

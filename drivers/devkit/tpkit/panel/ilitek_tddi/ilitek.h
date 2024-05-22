@@ -170,7 +170,7 @@ extern int pc_cnt_in;
 /* Path */
 #define DEBUG_DATA_FILE_SIZE (10*K)
 #define DEBUG_DATA_FILE_PATH "/data/vendor/log/ILITEK_log.csv"
-#define CSV_LCM_ON_PATH "/data/vendor/log/mp_lcm_on_log"
+#define CSV_LCM_ON_PATH "/data/vendor/log/ilitek_mp_lcm_on_log"
 #define CSV_LCM_OFF_PATH "/data/vendor/log/ilitek_mp_lcm_off_log"
 #define POWER_STATUS_PATH "/sys/class/power_supply/battery/status"
 #define DUMP_FLASH_PATH "/data/vendor/log/flash_dump"
@@ -208,6 +208,10 @@ extern bool debug_en;
 #define OFF 0
 #define NONE -1
 #define DO_SPI_RECOVER -2
+
+enum IC_HARDWARE_TYPE {
+	ILI9883 = 5,
+};
 
 enum TP_SPI_CLK_LIST {
 	TP_SPI_CLK_1M = 1000000,
@@ -364,6 +368,7 @@ enum TP_ERR_CODE {
 	EFW_REST,
 	EFW_ERASE,
 	EFW_PROGRAM,
+	EMP_PARA_NULL
 };
 
 enum TP_IC_TYPE {
@@ -437,7 +442,7 @@ struct gesture_symbol {
 #define CORE_VER_1420 0x01040200
 #define CORE_VER_1430 0x01040300
 #define CORE_VER_1460 0x01040600
-#define MAX_HEX_FILE_SIZE (160*K)
+#define MAX_HEX_FILE_SIZE (256 * K)
 #define ILI_FILE_HEADER 256
 #define DLM_START_ADDRESS 0x20610
 #define DLM_HEX_ADDRESS 0x10000
@@ -557,6 +562,7 @@ struct gesture_symbol {
 
 #define ESD_GESTURE_CORE146_PWD 0xF38A
 #define SPI_ESD_GESTURE_CORE146_RUN 0xA67C
+#define SPI_ESD_GESTURE_CORE146_RUN_ILI9883 0x5B92
 #define I2C_ESD_GESTURE_CORE146_RUN 0xA67C
 #define SPI_ESD_GESTURE_CORE146_PWD_ADDR 0x4005C
 #define I2C_ESD_GESTURE_CORE146_PWD_ADDR 0x4005C
@@ -637,6 +643,8 @@ struct gesture_symbol {
 #define ILI9881N_AA 0x98811700
 #define ILI9881O_AA 0x98811800
 #define ILI9882_CHIP 0x9882
+#define ILI9883_CHIP 0x9883
+
 #define TDDI_PID_ADDR 0x4009C
 #define TDDI_OTP_ID_ADDR 0x400A0
 #define TDDI_ANA_ID_ADDR 0x400A4
@@ -705,11 +713,13 @@ struct ilitek_ts_data {
 	u32 finger_nums;
 	u32 use_ic_res;
 	u32 support_roi;
+	u32 head_roi;
 	u32 support_pressure;
 	u32 support_gesture;
 	u32 support_get_tp_color;
 	u32 only_open_once_captest_threshold;
 	u32 project_id_length_control;
+	u32 ic_hardware_type;
 
 	bool open_threshold_status;
 	u16 panel_wid;
@@ -742,7 +752,7 @@ struct ilitek_ts_data {
 	int last_touch;
 
 	u8 roi_data[ROI_DATA_READ_LENGTH];
-	u8 roi_buf[ROI_DATA_READ_LENGTH+1];
+	u8 roi_buf[ROI_DATA_READ_LENGTH + 3];
 	bool roi_switch_backup;
 	struct mutex roi_mutex;
 	bool roi_data_ready;

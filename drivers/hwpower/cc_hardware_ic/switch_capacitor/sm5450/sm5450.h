@@ -50,6 +50,7 @@ struct sm5450_device_info {
 	int switching_frequency;
 	int sense_r_actual;
 	int sense_r_config;
+	int ignore_discharge_flag;
 	struct mutex scp_detect_lock;
 	struct mutex accp_adapter_reg_lock;
 	unsigned int fcp_support;

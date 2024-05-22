@@ -138,6 +138,29 @@ out:
 	return ret;
 }
 
+void lcdkit_backlight_vboost_config(void)
+{
+	int ret = 0;
+	if (plcdkit_bl_ic->bl_config.vboost_enable) {
+		mdelay(plcdkit_bl_ic->bl_config.vboost_delay1);
+
+		ret = lcdkit_backlight_ic_write_byte(plcdkit_bl_ic,
+			plcdkit_bl_ic->bl_config.vboost_cmd1.cmd_reg,
+			plcdkit_bl_ic->bl_config.vboost_cmd1.cmd_val);
+		if (ret < 0)
+			LCDKIT_ERR("operation  reg 0x%x failed!\n",
+				plcdkit_bl_ic->bl_config.vboost_cmd1.cmd_reg);
+
+		mdelay(plcdkit_bl_ic->bl_config.vboost_delay2);
+		ret = lcdkit_backlight_ic_write_byte(plcdkit_bl_ic,
+			plcdkit_bl_ic->bl_config.vboost_cmd2.cmd_reg,
+			plcdkit_bl_ic->bl_config.vboost_cmd2.cmd_val);
+		if (ret < 0)
+			LCDKIT_ERR("operation  reg 0x%x failed!\n",
+				plcdkit_bl_ic->bl_config.vboost_cmd2.cmd_reg);
+	}
+}
+
 int lcdkit_backlight_ic_inital(void)
 {
 	int ret = 0;
@@ -180,10 +203,25 @@ int lcdkit_backlight_ic_inital(void)
 			return ret;
 		}
 	}
+	lcdkit_backlight_vboost_config();
 
 	if (plcdkit_bl_ic->bl_config.ic_init_delay)
 		mdelay(plcdkit_bl_ic->bl_config.ic_init_delay);
 	return ret;
+}
+
+static void lcdkit_dync_dimming_config(void)
+{
+	int ret = 0;
+	if (plcdkit_bl_ic->bl_config.bl_dimming_support != LCD_BACKLIGHT_DIMMING_SUPPORT)
+		return;
+	ret = lcdkit_backlight_ic_write_byte(plcdkit_bl_ic,
+		plcdkit_bl_ic->bl_config.bl_dimming_cmd.cmd_reg,
+		plcdkit_bl_ic->bl_config.bl_dimming_cmd.cmd_val);
+	if (ret < 0) {
+		LCDKIT_ERR("set backlight ic brightness failed!\n");
+		return ret;
+	}
 }
 
 int lcdkit_backlight_ic_set_brightness(unsigned int level)
@@ -279,6 +317,7 @@ int lcdkit_backlight_ic_set_brightness(unsigned int level)
 		LCDKIT_INFO("[backlight on] backlight ic ovp/ocp/tsd check!\n");
 		lcdkit_backlight_ic_ovp_check();
 		bl_backlight_off_flag = false;
+		lcdkit_dync_dimming_config();
 	}
 #endif
 	up(&(plcdkit_bl_ic->test_sem));
@@ -648,6 +687,8 @@ void lcdkit_parse_backlight_ic_config(struct device_node *np)
 		return;
 	}
 
+	if (!strcmp(chip_name, "hw_rt8555"))
+		g_bl_config.name = "8555";
 	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-level", &g_bl_config.bl_level);
 	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-ctrl-mode", &g_bl_config.bl_ctrl_mod);
 	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-type", &g_bl_config.ic_type);
@@ -757,6 +798,13 @@ void lcdkit_parse_backlight_ic_config(struct device_node *np)
 	lcdkit_parse_backlight_ic_cmd(np, "lcdkit-bl-ic-bl-enhance-cur-ramp-cmd", &g_bl_config.bl_enhance_cur_ramp_cmd);
 	lcdkit_parse_backlight_ic_cmd(np, "lcdkit-bl-ic-bl-enhance-boost-cur-cmd", &g_bl_config.bl_enhance_boost_cur_cmd);
 	lcdkit_parse_backlight_ic_cmd(np, "lcdkit-bl-ic-bl-enhance-sink-cmd", &g_bl_config.bl_enhance_bl_sink_cmd);
+	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-vboost-enable", &g_bl_config.vboost_enable);
+	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-vboost-delay1", &g_bl_config.vboost_delay1);
+	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-vboost-delay2", &g_bl_config.vboost_delay2);
+	lcdkit_parse_backlight_ic_cmd(np, "lcdkit-bl-ic-vboost-cmd1", &g_bl_config.vboost_cmd1);
+	lcdkit_parse_backlight_ic_cmd(np, "lcdkit-bl-ic-vboost-cmd2", &g_bl_config.vboost_cmd2);
+	lcdkit_parse_backlight_ic_param(np, "lcdkit-bl-ic-dimming-support", &g_bl_config.bl_dimming_support);
+	lcdkit_parse_backlight_ic_backlightcmd(np, "lcdkit-bl-ic-dimming-cmd", &g_bl_config.bl_dimming_cmd);
 	/* fault check param */
 #if defined (CONFIG_HUAWEI_DSM)
 	if(g_bl_config.ovp_check_enable)

@@ -28,8 +28,10 @@ static inline unsigned long cma_bitmap_maxno(struct cma *cma)
 	return cma->count >> cma->order_per_bit;
 }
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 #ifdef CONFIG_HISI_CMA_DEBUG
 struct mutex *get_cma_mutex(void);
+#endif
 #endif
 
 #endif

@@ -116,6 +116,11 @@ static const struct misc_msg_info g_msg_info[] = {
 	{ ID_AP_HIFI_SET_WIRED_HEADSET_PARA_CMD, "ID_AP_HIFI_SET_WIRED_HEADSET_PARA_CMD" },
 	{ ID_AP_HIFI_GET_VALUE_DATA_CMD, "ID_AP_HIFI_GET_VALUE_DATA_CMD" },
 	{ ID_HIFI_AP_GET_VALUE_DATA_CNF, "ID_HIFI_AP_GET_VALUE_DATA_CNF" },
+	{ ID_AP_HIFI_SET_SOUND_ENHANCE_SWITCH_CMD, "ID_AP_HIFI_SET_SOUND_ENHANCE_SWITCH_CMD" },
+	{ ID_AP_HIFI_SET_SOUND_ENHANCE_SCENE_CMD, "ID_AP_HIFI_SET_SOUND_ENHANCE_SCENE_CMD" },
+	{ ID_AP_HIFI_SET_SOUND_ENHANCE_PARA_CMD, "ID_AP_HIFI_SET_SOUND_ENHANCE_PARA_CMD" },
+	{ ID_AP_DSP_GET_REC_START_DMA_STAMP_REQ, "ID_AP_DSP_GET_REC_START_DMA_STAMP_REQ" },
+	{ ID_DSP_AP_GET_REC_START_DMA_STAMP_CNF, "ID_DSP_AP_GET_REC_START_DMA_STAMP_CNF" },
 };
 
 extern int hisi_dptx_set_aparam(unsigned int channel_num,
@@ -271,6 +276,29 @@ static void input_param_free(void **kernel_para_addr)
 	}
 }
 
+static void get_ap_timestamp(const void *kernel_para_addr, unsigned int kernel_para_size)
+{
+	struct record_start_dma_stamp_get_cnf *cnf_msg = (struct record_start_dma_stamp_get_cnf *)kernel_para_addr;
+	struct timeval time;
+	spinlock_t read_time_lock;
+	unsigned long flags;
+
+	if (sizeof(*cnf_msg) > kernel_para_size)
+		return;
+
+	if (cnf_msg->msg_id != ID_DSP_AP_GET_REC_START_DMA_STAMP_CNF)
+		return;
+
+	spin_lock_init(&read_time_lock);
+	spin_lock_irqsave(&read_time_lock, flags);
+	do_gettimeofday(&time);
+	cnf_msg->kernel_stamp = DSP_STAMP;
+	spin_unlock_irqrestore(&read_time_lock, flags);
+
+	cnf_msg->kernel_time_s = time.tv_sec;
+	cnf_msg->kernel_time_us = time.tv_usec;
+}
+
 static int get_output_param(unsigned int kernel_para_size, const void *kernel_para_addr,
 	unsigned int *usr_para_size, void __user *usr_para_addr)
 {
@@ -303,6 +331,8 @@ static int get_output_param(unsigned int kernel_para_size, const void *kernel_pa
 		ret = -EINVAL;
 		goto end;
 	}
+
+	get_ap_timestamp(kernel_para_addr, kernel_para_size);
 
 	/* Copy data from kernel space to user space: to from n */
 	if (try_copy_to_user(para_to, kernel_para_addr, para_n)) {
@@ -654,6 +684,54 @@ static int write_smartpa_param(uintptr_t arg)
 
 	return ret;
 }
+
+static int write_sound_enhance_param(uintptr_t arg)
+{
+	int ret = OK;
+	void *vir_addr = NULL;
+	void *para_addr_in = NULL;
+	void *para_addr_out = NULL;
+	struct misc_io_sync_param para;
+
+	if (try_copy_from_user(&para, (void *)arg, sizeof(para))) {
+		loge("copy from user fail\n");
+		return ERROR;
+	}
+
+	para_addr_in  = INT_TO_ADDR(para.para_in_l, para.para_in_h);
+	para_addr_out = INT_TO_ADDR(para.para_out_l, para.para_out_h);
+
+	vir_addr = (unsigned char *)(g_msg_priv.base_virt +
+		(HIFI_SOUND_ENHANCE_PARA_ADDR - DSP_UNSEC_BASE_ADDR));
+
+	logd("vir addr: 0x%pK vir data: 0x%x\n", vir_addr, (*(int *)vir_addr));
+	logd("user addr: 0x%pK, size: %u\n", para_addr_in, para.para_size_in);
+
+	if (para.para_size_in > DSP_SOUND_ENHANCE_BUFF_SIZE) {
+		loge("the para size in: %u is greater than: %u\n",
+			para.para_size_in, (unsigned int)(DSP_SOUND_ENHANCE_BUFF_SIZE));
+		return ERROR;
+	}
+
+	if (para.para_size_out != sizeof(ret)) {
+		loge("the para size out: %u is not equal to sizeof ret: %zu\n",
+			para.para_size_out, sizeof(ret));
+		return ERROR;
+	}
+
+	if (try_copy_from_user(vir_addr, (void __user *)para_addr_in,
+		para.para_size_in)) {
+		loge("copy data to dsp error\n");
+		ret = ERROR;
+	}
+
+	if (try_copy_to_user((void __user *)para_addr_out, &ret, sizeof(ret))) {
+		loge("copy data to user fail\n");
+		ret = ERROR;
+	}
+
+	return ret;
+}
 static int usbaudio_cmd(uintptr_t arg)
 {
 	void *para_addr_in = NULL;
@@ -712,7 +790,7 @@ static int usbaudio_cmd(uintptr_t arg)
 	return 0;
 }
 
-static int cmd_switch(const struct soundtrigger_sync_msg *input, int *output)
+static int cmd_switch(const struct soundtrigger_sync_msg *input, unsigned int input_para_size, int *output)
 {
 	switch (input->msg_type) {
 	case WAKEUP_CHN_MSG_START:
@@ -724,7 +802,7 @@ static int cmd_switch(const struct soundtrigger_sync_msg *input, int *output)
 	case WAKEUP_CHN_MSG_PARAMETER_SET:
 	case LP_WAKEUP_CHN_MSG_PARAMETER_SET:
 		*output = parameter_set_msg(input->msg_type,
-			input->module_id, &input->set_param);
+			input->module_id, &input->set_param, input_para_size);
 		break;
 	case WAKEUP_CHN_MSG_PARAMETER_GET:
 	case LP_WAKEUP_CHN_MSG_PARAMETER_GET:
@@ -789,7 +867,7 @@ static int soundtrigger_cmd(uintptr_t arg)
 		return ERROR;
 	}
 
-	ret = cmd_switch(input, &output);
+	ret = cmd_switch(input, (para.para_size_in - sizeof(*input)), &output);
 
 	if (try_copy_to_user((void __user *)para_addr_out, &output, sizeof(output))) {
 		loge("copy data to user fail\n");
@@ -889,6 +967,7 @@ static const struct dsp_ioctl_cmd cmd_func[] = {
 	msg_func(HIFI_MISC_IOCTL_GET_PHYS, get_phys_cmd),
 	msg_func(HIFI_MISC_IOCTL_WRITE_PARAMS, write_param),
 	msg_func(HIFI_MISC_IOCTL_AUDIO_EFFECT_PARAMS, write_audio_effect_param),
+	msg_func(HIFI_MISC_IOCTL_SOUND_ENHANCE_PARAMS, write_sound_enhance_param),
 	msg_func(HIFI_MISC_IOCTL_DUMP_HIFI, socdsp_dump),
 	msg_func(HIFI_MISC_IOCTL_GET_VOICE_BSD_PARAM, socdsp_om_get_voice_bsd_param),
 	msg_func(HIFI_MISC_IOCTL_WAKEUP_THREAD, soc_dsp_wakeup_read_thread),

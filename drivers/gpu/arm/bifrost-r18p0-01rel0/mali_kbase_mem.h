@@ -1097,6 +1097,26 @@ int kbase_mmu_init(struct kbase_device *kbdev, struct kbase_mmu_table *mmut,
  */
 void kbase_mmu_term(struct kbase_device *kbdev, struct kbase_mmu_table *mmut);
 
+/**
+ * kbase_mmu_create_ate - Create an address translation entry
+ *
+ * @kbdev:    Instance of GPU platform device, allocated from the probe method.
+ * @phy:      Physical address of the page to be mapped for GPU access.
+ * @flags:    Bitmask of attributes of the GPU memory region being mapped.
+ * @level:    Page table level for which to build an address translation entry.
+ * @group_id: The physical memory group in which the page was allocated.
+ *            Valid range is 0..(MEMORY_GROUP_MANAGER_NR_GROUPS-1).
+ *
+ * This function creates an address translation entry to encode the physical
+ * address of a page to be mapped for access by the GPU, along with any extra
+ * attributes required for the GPU memory region.
+ *
+ * Return: An address translation entry, either in LPAE or AArch64 format
+ *         (depending on the driver's configuration).
+ */
+u64 kbase_mmu_create_ate(struct kbase_device *kbdev,
+	struct tagged_addr phy, unsigned long flags, int level, int group_id);
+
 int kbase_mmu_insert_pages_no_flush(struct kbase_device *kbdev,
 				    struct kbase_mmu_table *mmut,
 				    const u64 start_vpfn,
@@ -1174,7 +1194,7 @@ void kbase_mmu_disable(struct kbase_context *kctx);
 void kbase_mmu_disable_as(struct kbase_device *kbdev, int as_nr);
 
 void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat);
-
+#if defined(CONFIG_MALI_VECTOR_DUMP)
 /** Dump the MMU tables to a buffer
  *
  * This function allocates a buffer (of @c nr_pages pages) to hold a dump of the MMU tables and fills it. If the
@@ -1191,7 +1211,7 @@ void kbase_mmu_interrupt(struct kbase_device *kbdev, u32 irq_stat);
  * small)
  */
 void *kbase_mmu_dump(struct kbase_context *kctx, int nr_pages);
-
+#endif
 /**
  * kbase_sync_now - Perform cache maintenance on a memory region
  *

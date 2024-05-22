@@ -1437,12 +1437,17 @@ void mmc_mq_req_timeout_handler(struct request *req)
 	}
 }
 
-void mmc_mq_ctx_put(void)
+void mmc_mq_ctx_put(struct request_queue *q)
 {
 #ifdef CONFIG_PREEMPT_COUNT
 	barrier();
 	preempt_count_dec();
 #endif
+}
+
+struct blk_mq_ctx *mmc_mq_ctx_get(struct request_queue *q)
+{
+	return per_cpu_ptr(q->queue_ctx, get_cpu());
 }
 
 void mmc_mq_hctx_get_by_req(

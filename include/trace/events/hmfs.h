@@ -152,8 +152,10 @@ TRACE_DEFINE_ENUM(CP_TRIMMED);
 		{ CP_SWITCH_STREAM,	"stream has switched" },	\
 		{ CP_XATTR_DIRTY,	"xattr needs recovery" },	\
 		{ CP_OOB_OVERFLOW,	"exceed oob write limit" },	\
-		{ CP_OOB_CHG_ATOMIC,	"exchange atomic write" })
-
+		{ CP_OOB_CHG_ATOMIC,	"exchange atomic write" },	\
+		{ CP_TRUNCATE_WRITE,	"truncate needs cp" },	\
+		{ CP_PUNCH_WRITE,	"punch needs cp" },	\
+		{ CP_FSYNC_AFTER_WB,	"after writeback needs cp" })
 
 struct f2fs_io_info;
 struct extent_info;
@@ -606,8 +608,8 @@ TRACE_EVENT(hmfs_gc_policy,
 		__field(unsigned int,	wait_ms)
 		__field(int,	iolimit)
 		__field(bool,	is_greedy)
-		__field(bool,   enable_idle)
-		__field(bool,   fg_gc)
+		__field(bool,	enable_idle)
+		__field(bool,	fg_gc)
 	),
 
 	TP_fast_assign(
@@ -1220,75 +1222,6 @@ TRACE_EVENT(hmfs_datamove_align,
 		__entry->old_blkoff,
 		__entry->new_segno,
 		__entry->new_blkoff)
-);
-
-DECLARE_EVENT_CLASS(f2fs__bio_list,
-
-	TP_PROTO(struct bio *bio, block_t last_blkaddr, int type),
-
-	TP_ARGS(bio, last_blkaddr, type),
-
-	TP_STRUCT__entry(
-		__field(int,	op)
-		__field(int,	op_flags)
-		__field(int,	type)
-		__field(block_t,	last_blkaddr)
-		__field(sector_t,	sector)
-		__field(unsigned int,	size)
-		__field(unsigned int,	stream_id)
-	),
-
-	TP_fast_assign(
-		__entry->op		= bio_op(bio);
-		__entry->op_flags	= bio->bi_opf;
-		__entry->type		= type;
-		__entry->last_blkaddr   = last_blkaddr;
-		__entry->sector		= bio->bi_iter.bi_sector;
-		__entry->size		= bio->bi_iter.bi_size;
-		__entry->stream_id	= bio->mas_bio.stream_type;
-	),
-
-	TP_printk("rw = %s(%s), %s, sbi_last_blkaddr = %lld, "
-			"blkaddr = %lld, nr_blk = %u (%u)",
-		show_bio_type(__entry->op, __entry->op_flags),
-		show_block_type(__entry->type),
-		(unsigned long long)__entry->last_blkaddr,
-		(unsigned long long)__entry->sector / 8,
-		__entry->size / 4096,
-		__entry->stream_id)
-);
-
-DEFINE_EVENT_CONDITION(f2fs__bio_list, hmfs_bio_list_insert,
-
-	TP_PROTO(struct bio *bio, block_t last_blkaddr, int type),
-
-	TP_ARGS(bio, last_blkaddr, type),
-
-	TP_CONDITION(bio)
-);
-DEFINE_EVENT_CONDITION(f2fs__bio_list, hmfs_bio_list_pre_submit,
-
-	TP_PROTO(struct bio *bio, block_t last_blkaddr, int type),
-
-	TP_ARGS(bio, last_blkaddr, type),
-
-	TP_CONDITION(bio)
-);
-DEFINE_EVENT_CONDITION(f2fs__bio_list, hmfs_bio_list_submit_direct,
-
-	TP_PROTO(struct bio *bio, block_t last_blkaddr, int type),
-
-	TP_ARGS(bio, last_blkaddr, type),
-
-	TP_CONDITION(bio)
-);
-DEFINE_EVENT_CONDITION(f2fs__bio_list, hmfs_bio_list_submit_inlist,
-
-	TP_PROTO(struct bio *bio, block_t last_blkaddr, int type),
-
-	TP_ARGS(bio, last_blkaddr, type),
-
-	TP_CONDITION(bio)
 );
 
 TRACE_EVENT(hmfs_datamove_write_cp,

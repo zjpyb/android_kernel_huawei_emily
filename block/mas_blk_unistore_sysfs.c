@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2016-2019. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2021. All rights reserved.
  * Description: mas block unistore debugfs
  *
  * This software is licensed under the terms of the GNU General Public
@@ -21,11 +21,8 @@
 #include <linux/bio.h>
 #include <linux/delay.h>
 #include <linux/gfp.h>
-#include <linux/hisi/powerkey_event.h>
-#include <trace/events/block.h>
 #include <linux/types.h>
 #include "blk.h"
-#include "dsm_block.h"
 
 #if defined(CONFIG_MAS_DEBUG_FS) || defined(CONFIG_MAS_BLK_DEBUG)
 static unsigned int oob_lba = 0;
@@ -38,6 +35,10 @@ static unsigned short tst_tlc_total_block_num = 0;
 static unsigned char tst_tlc_bad_block_num = 0;
 static unsigned char real_bad_tlc_cnt = 0;
 static int recovery_debug_on = 0;
+static int unistore_debug_en = 0;
+static int disorder_response_en = 1;
+static unsigned int g_max_recovery_num = 72;
+static unsigned int g_max_del_num = 2;
 
 ssize_t mas_queue_device_pwron_info_show(
 	struct request_queue *q, char *page)
@@ -45,7 +46,8 @@ ssize_t mas_queue_device_pwron_info_show(
 	ssize_t offset = 0;
 	int ret = -EPERM;
 	unsigned int i;
-	struct stor_dev_pwron_info stor_info;
+	unsigned int j;
+	struct stor_dev_pwron_info stor_info = { 0 };
 	struct blk_dev_lld *lld_fn = mas_blk_get_lld(q);
 
 	if (!lld_fn || !lld_fn->unistore_ops.dev_pwron_info_sync)
@@ -65,10 +67,19 @@ ssize_t mas_queue_device_pwron_info_show(
 		goto free_rescue_seg;
 	}
 
-	for (i = 0; i < STREAM_NUM; i++)
+	for (i = 0; i < BLK_STREAM_MAX_STRAM; i++)
 		offset += snprintf(page + offset, PAGE_SIZE - offset,
 			"stream_addr[%u] = %u:\n",
 			i, stor_info.dev_stream_addr[i]);
+
+	for (i = 0; i < BLK_ORDER_STREAM_NUM; i++) {
+		offset += snprintf(page + offset, PAGE_SIZE - offset,
+			"stream_%u: ", i + 1);
+		for (j = 0; j < STREAM_SECTION_NUM; j++)
+			offset += snprintf(page + offset, PAGE_SIZE - offset,
+				"sec%u:0x%llx ", j, stor_info.section_info[i][j]);
+		offset += snprintf(page + offset, PAGE_SIZE - offset, "\n");
+	}
 
 	for (i = 0; i < stor_info.rescue_seg_cnt; i++)
 		offset += snprintf(page + offset, PAGE_SIZE - offset,
@@ -83,7 +94,7 @@ ssize_t mas_queue_device_pwron_info_show(
 			"dm_stream_addr[%u] = %u:\n",
 			i, stor_info.dm_stream_addr[i]);
 
-	for (i = 0; i < STREAM_NUM; i++)
+	for (i = 0; i < BLK_STREAM_MAX_STRAM; i++)
 		offset += snprintf(page + offset, PAGE_SIZE - offset,
 			"stream_lun_info[%u] = %u:\n",
 			i, stor_info.stream_lun_info[i]);
@@ -112,7 +123,7 @@ ssize_t mas_queue_stream_oob_info_show(
 	int ret = -EPERM;
 	unsigned int j;
 	unsigned int lba;
-	struct stor_dev_pwron_info stor_info;
+	struct stor_dev_pwron_info stor_info = { 0 };
 	struct stor_dev_stream_info stream_info;
 	struct stor_dev_stream_oob_info *oob_info = NULL;
 	struct blk_dev_lld *lld_fn = NULL;
@@ -212,6 +223,18 @@ ssize_t mas_queue_device_read_section_show(
 	}
 
 	return snprintf(page, PAGE_SIZE, "section size: %u\n", section_size);
+}
+
+ssize_t mas_queue_device_read_pu_size_show(
+	struct request_queue *q, char *page)
+{
+	int ret = -EPERM;
+	struct blk_dev_lld *lld_fn = mas_blk_get_lld(q);
+
+	if (!lld_fn)
+		return ret;
+
+	return snprintf(page, PAGE_SIZE, "pu size: %u\n", lld_fn->mas_pu_size);
 }
 
 ssize_t mas_queue_device_config_mapping_partition_show(
@@ -344,6 +367,14 @@ ssize_t mas_queue_device_rescue_block_inject_data_store(
 	return count;
 }
 
+void mas_queue_device_data_move_store_done(
+	struct stor_dev_verify_info verify_info, void *private_data)
+{
+	pr_err("%s, status %u reason %u private_data 0x%pK 0x%pK\n", __func__,
+		verify_info.verify_done_status, verify_info.verify_fail_reason,
+		private_data, mas_queue_device_data_move_store_done);
+}
+
 static void data_move_store_init(
 	struct stor_dev_data_move_info *data_move_info,
 	struct stor_dev_data_move_source_addr *source_addr,
@@ -366,6 +397,10 @@ static void data_move_store_init(
 	data_move_info->verify_info.lun_info = 0;
 	data_move_info->verify_info.verify_done_status = 0;
 	data_move_info->verify_info.verify_fail_reason = 0;
+
+	data_move_info->done_info.done = mas_queue_device_data_move_store_done;
+	data_move_info->done_info.private_data =
+		(void *)mas_queue_device_data_move_store_done;
 }
 
 static void data_move_source_addr_init(
@@ -418,7 +453,7 @@ ssize_t mas_queue_device_data_move_store(
 	int data_move_num = 1;
 	struct stor_dev_data_move_source_addr *source_addr = NULL;
 	struct stor_dev_data_move_source_inode *source_inode = NULL;
-	struct stor_dev_data_move_info data_move_info;
+	struct stor_dev_data_move_info data_move_info = { 0 };
 	unsigned int mas_sec_size = mas_blk_get_sec_size(q);
 
 	if (tst_data_move_num > 0)
@@ -699,6 +734,175 @@ ssize_t mas_queue_recovery_debug_on_store(
 		recovery_debug_on = val;
 	else
 		recovery_debug_on = 0;
+
+	return (ssize_t)count;
+}
+
+ssize_t mas_queue_unistore_en_show(
+	struct request_queue *q, char *page)
+{
+	unsigned long offset = 0;
+	struct blk_dev_lld *lld = mas_blk_get_lld(q);
+
+	offset += snprintf(page, PAGE_SIZE, "unistore_enabled: %d\n",
+		(lld->features & BLK_LLD_UFS_UNISTORE_EN) ? 1 : 0);
+
+	return (ssize_t)offset;
+}
+
+int mas_blk_unistore_debug_en(void)
+{
+	return unistore_debug_en;
+}
+
+ssize_t mas_queue_unistore_debug_en_show(
+	struct request_queue *q, char *page)
+{
+	unsigned long offset;
+	offset = snprintf(page, PAGE_SIZE,
+		"unistore_debug_en: %d\n", unistore_debug_en);
+	return (ssize_t)offset;
+}
+
+ssize_t mas_queue_unistore_debug_en_store(
+	struct request_queue *q, const char *page, size_t count)
+{
+	ssize_t ret;
+	unsigned long val;
+
+	ret = queue_var_store(&val, page, count);
+	if (ret < 0)
+		return (ssize_t)count;
+
+	if (val)
+		unistore_debug_en = 1;
+	else
+		unistore_debug_en = 0;
+
+	return (ssize_t)count;
+}
+
+ssize_t mas_queue_recovery_page_cnt_show(
+	struct request_queue *q, char *page)
+{
+	ssize_t offset = 0;
+	unsigned int i;
+	struct blk_dev_lld *lld = mas_blk_get_lld(q);
+
+	offset += snprintf(page + offset, PAGE_SIZE - offset,
+		"anon:%d, non_anon:%d, max_recovery_size:0x%llx\n",
+		mas_blk_get_recovery_pages(true),
+		mas_blk_get_recovery_pages(false),
+		lld->max_recovery_size);
+
+	for (i = 0; i <= BLK_ORDER_STREAM_NUM; i++)
+		offset += snprintf(page + offset, PAGE_SIZE - offset,
+			"stream_%u, replaced_page: %d, io_num: %u, page_size: %u, page_cnt: %u\n",
+			i, lld->replaced_page_cnt[i],
+			lld->buf_bio_num[i],
+			lld->buf_bio_size[i] / BLKSIZE,
+			lld->buf_page_num[i]);
+
+	return offset;
+}
+
+ssize_t mas_queue_reset_cnt_show(
+	struct request_queue *q, char *page)
+{
+	struct blk_dev_lld *lld = mas_blk_get_lld(q);
+	if (!lld)
+		return -EPERM;
+
+	return snprintf(page, PAGE_SIZE, "unistore_reset_cnt: %d\n",
+		atomic_read(&lld->reset_cnt));
+}
+
+bool mas_blk_enable_disorder(void)
+{
+	return disorder_response_en ? true : false;
+}
+
+ssize_t mas_queue_enable_disorder_show(
+	struct request_queue *q, char *page)
+{
+	unsigned long offset;
+	offset = snprintf(page, PAGE_SIZE,
+		"disorder_response_en: %d\n", disorder_response_en);
+	return (ssize_t)offset;
+}
+
+ssize_t mas_queue_enable_disorder_store(
+	struct request_queue *q, const char *page, size_t count)
+{
+	ssize_t ret;
+	unsigned long val;
+
+	ret = queue_var_store(&val, page, count);
+	if (ret < 0)
+		return (ssize_t)count;
+
+	if (val)
+		disorder_response_en = 1;
+	else
+		disorder_response_en = 0;
+
+	return (ssize_t)count;
+}
+
+unsigned int mas_blk_get_max_recovery_num(void)
+{
+	return g_max_recovery_num;
+}
+
+ssize_t mas_queue_max_recovery_num_show(
+	struct request_queue *q, char *page)
+{
+	unsigned long offset;
+	offset = snprintf(page, PAGE_SIZE,
+		"max_recovery_num: %u\n", g_max_recovery_num);
+	return (ssize_t)offset;
+}
+
+ssize_t mas_queue_max_recovery_num_store(
+	struct request_queue *q, const char *page, size_t count)
+{
+	ssize_t ret;
+	unsigned long val;
+
+	ret = queue_var_store(&val, page, count);
+	if (ret < 0)
+		return (ssize_t)count;
+
+	g_max_recovery_num = (unsigned int)val;
+
+	return (ssize_t)count;
+}
+
+unsigned int mas_blk_get_max_del_num(void)
+{
+	return g_max_del_num;
+}
+
+ssize_t mas_queue_recovery_del_num_show(
+	struct request_queue *q, char *page)
+{
+	unsigned long offset;
+	offset = snprintf(page, PAGE_SIZE,
+		"max_del_num: %u\n", g_max_del_num);
+	return (ssize_t)offset;
+}
+
+ssize_t mas_queue_recovery_del_num_store(
+	struct request_queue *q, const char *page, size_t count)
+{
+	ssize_t ret;
+	unsigned long val;
+
+	ret = queue_var_store(&val, page, count);
+	if (ret < 0)
+		return (ssize_t)count;
+
+	g_max_del_num = (unsigned int)val;
 
 	return (ssize_t)count;
 }

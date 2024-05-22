@@ -518,6 +518,10 @@ int hisi_cmdlist_add_nop_node(struct dpu_fb_data_type *dpufd, uint32_t cmdlist_i
 
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
+			if (!dpufd->cmdlist_data) {
+				DPU_FB_ERR("cmdlist_data is nullptr!\n");
+				return -EINVAL;
+			}
 			node = hisi_cmdlist_get_free_node(dpufd->cmdlist_data->cmdlist_nodes_temp[i], &id);
 			if (!node) {
 				DPU_FB_ERR("failed to hisi_get_free_cmdlist_node!\n");
@@ -598,6 +602,10 @@ int hisi_cmdlist_add_new_node(struct dpu_fb_data_type *dpufd, uint32_t cmdlist_i
 
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
+			if (!dpufd->cmdlist_data) {
+				DPU_FB_ERR("cmdlist_data is nullptr!\n");
+				return -EINVAL;
+			}
 			node = hisi_cmdlist_get_free_node(dpufd->cmdlist_data->cmdlist_nodes_temp[i], &id);
 			dpu_check_and_return(!node, -EINVAL, ERR, "failed to hisi_get_free_cmdnode!\n");
 
@@ -835,13 +843,19 @@ static uint32_t get_hisi_cmdlist_node_addr(struct dpu_fb_data_type *dpufd, int m
 {
 	struct dss_cmdlist_node *cmdlist_node = NULL;
 
-	if (mctl_idx >= DSS_MCTL2)
-		cmdlist_node = list_first_entry(
-			&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[cmdlist_index]),
+	if (mctl_idx >= DSS_MCTL2) {
+		if (!dpufd->cmdlist_data_tmp[wb_compose_type])
+			return 0;
+
+		cmdlist_node = list_first_entry(&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[cmdlist_index]),
 			struct dss_cmdlist_node, list_node);
-	else
+	} else {
+		if (!dpufd->cmdlist_data)
+			return 0;
+
 		cmdlist_node = list_first_entry(&(dpufd->cmdlist_data->cmdlist_head_temp[cmdlist_index]),
 			struct dss_cmdlist_node, list_node);
+	}
 
 	return cmdlist_node->header_phys;
 }
@@ -1329,14 +1343,19 @@ int hisi_cmdlist_dump_all_node(struct dpu_fb_data_type *dpufd, dss_overlay_t *po
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if (0x1 == (cmdlist_idxs_temp & 0x1)) {
 			if (pov_req && pov_req->wb_enable) {
-				if (dpufd->index == MEDIACOMMON_PANEL_IDX)
-					hisi_dump_cmdlist_one_node(
-						&(dpufd->media_common_cmdlist_data->cmdlist_head_temp[i]), i);
-				else
-					hisi_dump_cmdlist_one_node(
-						&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[i]), i);
-			} else
-				hisi_dump_cmdlist_one_node(&(dpufd->cmdlist_data->cmdlist_head_temp[i]), i);
+				if (dpufd->index == MEDIACOMMON_PANEL_IDX) {
+					if (dpufd->media_common_cmdlist_data)
+						hisi_dump_cmdlist_one_node(
+							&(dpufd->media_common_cmdlist_data->cmdlist_head_temp[i]), i);
+				} else {
+					if (dpufd->cmdlist_data_tmp[wb_compose_type])
+						hisi_dump_cmdlist_one_node(
+							&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[i]), i);
+				}
+			} else {
+				if (dpufd->cmdlist_data)
+					hisi_dump_cmdlist_one_node(&(dpufd->cmdlist_data->cmdlist_head_temp[i]), i);
+			}
 		}
 
 		cmdlist_idxs_temp = cmdlist_idxs_temp >> 1;
@@ -1481,12 +1500,15 @@ int hisi_cmdlist_del_node(struct dpu_fb_data_type *dpufd, dss_overlay_t *pov_req
 	for (i = 0; i < HISI_DSS_CMDLIST_MAX; i++) {
 		if ((cmdlist_idxs_temp & 0x1) == 0x1) {
 			if (pov_req && pov_req->wb_enable) {
-				if (dpufd->index == MEDIACOMMON_PANEL_IDX)
-					hisi_cmdlist_del_all_node(
-						&(dpufd->media_common_cmdlist_data->cmdlist_head_temp[i]));
-				else
-					hisi_cmdlist_del_all_node(
-						&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[i]));
+				if (dpufd->index == MEDIACOMMON_PANEL_IDX) {
+					if (dpufd->media_common_cmdlist_data)
+						hisi_cmdlist_del_all_node(
+							&(dpufd->media_common_cmdlist_data->cmdlist_head_temp[i]));
+				} else {
+					if (dpufd->cmdlist_data_tmp[wb_compose_type])
+						hisi_cmdlist_del_all_node(
+							&(dpufd->cmdlist_data_tmp[wb_compose_type]->cmdlist_head_temp[i]));
+				}
 			} else {
 				if (dpufd->cmdlist_data)
 					hisi_cmdlist_del_all_node(&(dpufd->cmdlist_data->cmdlist_head_temp[i]));

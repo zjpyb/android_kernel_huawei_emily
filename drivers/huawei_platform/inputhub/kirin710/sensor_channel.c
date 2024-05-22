@@ -26,6 +26,7 @@
 #include "contexthub_route.h"
 #include "sensor_config.h"
 #include "sensor_info.h"
+#include "mag_channel.h"
 
 int first_start_flag;
 int gyro_first_start_flag;
@@ -396,7 +397,8 @@ static void get_als_calibrate_data(void)
 		(t == ALS_CHIP_LITEON_LTR582) || (dev_info->is_cali_supported == 1) ||
 		(t == ALS_CHIP_APDS9999_RGB) || (t == ALS_CHIP_AMS_TMD3702_RGB) ||
 		(t == ALS_CHIP_APDS9253_RGB) || (t == ALS_CHIP_VISHAY_VCNL36658) ||
-		(t == ALS_CHIP_BU27006) || (t == ALS_CHIP_TCS3707))) {
+		(t == ALS_CHIP_BU27006) || (t == ALS_CHIP_TCS3707) || (t == ALS_CHIP_SY3133) ||
+		(t == ALS_CHIP_TMD2755)  || (t == ALS_CHIP_STK33562) || (t == ALS_CHIP_MN78911))) {
 		ret = send_als_calibrate_data_to_mcu();
 		if (ret)
 			hwlog_err("%s read from nv err,ret=%d", __func__, ret);

@@ -501,8 +501,8 @@ static int sm5450_fcp_adapter_reset(void *dev_data)
 		hwlog_err("fcp adapter reset error\n");
 		return sm5450_scp_wdt_reset_by_sw(di);
 	}
-	ret = sm5450_config_vbuscon_ovp_ref_mv(SM5450_VBUS_OVP_REF_RESET, di);
-	ret += sm5450_config_vbus_ovp_ref_mv(SM5450_VBUSCON_OVP_REF_RESET, di);
+	ret = sm5450_config_vbuscon_ovp_ref_mv(SM5450_VBUSCON_OVP_REF_INIT, di);
+	ret += sm5450_config_vbus_ovp_ref_mv(SM5450_VBUS_OVP_REF_INIT, di);
 
 	return ret;
 }

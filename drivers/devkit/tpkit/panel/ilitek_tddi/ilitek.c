@@ -651,6 +651,7 @@ int ilitek_read_roi_data(void)
 	u16 raw_data = 0;
 	int ret = 0;
 	struct ts_kit_device_data *ts_dev_data = ilits->ts_dev_data;
+	int len = 0;
 
 	TS_LOG_DEBUG("roi_switch = %d, roi_support =%d\n",
 		ts_dev_data->ts_platform_data->feature_info.roi_info.roi_switch,
@@ -660,26 +661,35 @@ int ilitek_read_roi_data(void)
 		ilits->finger,
 		ilits->last_touch);
 
-	if(ts_dev_data->ts_platform_data->feature_info.roi_info.roi_switch
+	if (ts_dev_data->ts_platform_data->feature_info.roi_info.roi_switch
 		&& ts_dev_data->ts_platform_data->feature_info.roi_info.roi_supported) {
 		if (ilits->last_touch != ilits->finger &&
-			ilits->finger <= ILITEK_ROI_FINGERS ) {
+			ilits->finger <= ILITEK_ROI_FINGERS) {
 			mutex_lock(&ilits->roi_mutex);
 			ilits->roi_data_ready = false;
 			mutex_unlock(&ilits->roi_mutex);
 			ret = ili_ic_func_ctrl("roi_set",P5_X_GET_ROI_DATA);
-			if (ret){
+			if (ret) {
 				TS_LOG_ERR("set roi cmd failed, ret = %d\n", ret);
 				return ret;
 			}
 			mdelay(1);
-			ret = ilits->wrapper(NULL, 0, ilits->roi_buf, ROI_DATA_READ_LENGTH+1, OFF, OFF);
-			if (ret <0){
+			if (ilits->head_roi)
+				len = ROI_DATA_READ_LENGTH + 3;
+			else
+				len = ROI_DATA_READ_LENGTH + 1;
+
+			ret = ilits->wrapper(NULL, 0, ilits->roi_buf, len, OFF, OFF);
+			if (ret < 0) {
 				TS_LOG_ERR("spi read roi data failed, ret = %d\n", ret);
 				return ret;
 			}
 			mutex_lock(&ilits->roi_mutex);
-			memcpy(ilits->roi_data,&ilits->roi_buf[1], ROI_DATA_READ_LENGTH);
+			if (ilits->head_roi)
+				memcpy(ilits->roi_data, &ilits->roi_buf[2], ROI_DATA_READ_LENGTH);
+			else
+				memcpy(ilits->roi_data, &ilits->roi_buf[1], ROI_DATA_READ_LENGTH);
+
 			ilits->roi_data_ready = true;
 			mutex_unlock(&ilits->roi_mutex);
 			complete_all(&ilits->roi_completion);
@@ -789,6 +799,8 @@ int ilitek_tddi_read_report_data(struct ts_fingers *p_info)
 		else
 			TS_LOG_ERR("spi not recovery, need retry\n");
 	}
+	if ((ilits->ic_hardware_type == ILI9883) && (ilits->tr_buf[0] == P5_X_GESTURE_PACKET_ID))
+		rlen = P5_X_GESTURE_INFO_LENGTH;
 
 	ili_dump_data(ilits->tr_buf, 8, rlen, 0, "finger report");
 

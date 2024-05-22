@@ -754,7 +754,7 @@ static void wireless_charge_send_fod_status(struct wlrx_dev_info *di)
 		wlc_preproccess_fod_status(di);
 		return;
 	}
-	wlrx_send_fod_status(WLTRX_DRV_MAIN, WIRELESS_PROTOCOL_QI);
+	wlrx_send_fod_status(WLTRX_DRV_MAIN, WIRELESS_PROTOCOL_QI, di->tx_type);
 }
 
 static void wlrx_get_tx_prop(struct wlrx_dev_info *di)
@@ -1133,7 +1133,7 @@ void wireless_charge_update_max_vout_and_iout(bool ignore_cnt_flag)
 	di->pctrl->irx = dts->product_cfg->irx;
 
 	vbus_ch_get_mode(VBUS_CH_USER_WR_TX, VBUS_CH_TYPE_BOOST_GPIO, &mode);
-	if ((mode == VBUS_CH_IN_OTG_MODE) || di->pwroff_reset_flag ||
+	if (((mode == VBUS_CH_IN_OTG_MODE) && dts->otg_need_plim) || di->pwroff_reset_flag ||
 		!di->extra_pwr_good_flag) {
 		di->tx_vout_max = min(di->tx_vout_max, TX_DEFAULT_VOUT);
 		di->rx_vout_max = min(di->rx_vout_max, RX_DEFAULT_VOUT);

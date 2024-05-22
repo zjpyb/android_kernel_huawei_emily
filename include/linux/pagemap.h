@@ -16,6 +16,10 @@
 #include <linux/hardirq.h> /* for in_interrupt() */
 #include <linux/hugetlb_inline.h>
 
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+struct pagevec;
+#endif
+
 /*
  * Bits in mapping->flags.
  */
@@ -637,6 +641,10 @@ int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 extern void delete_from_page_cache(struct page *page);
 extern void __delete_from_page_cache(struct page *page, void *shadow);
 int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask);
+#ifdef CONFIG_HARMONY_PERFORMANCE_AQ
+void delete_from_page_cache_batch(struct address_space *mapping,
+				  struct pagevec *pvec);
+#endif
 
 /*
  * Like add_to_page_cache_locked, but used to add newly allocated pages:

@@ -43,6 +43,7 @@ static const struct adapter_protocol_device_data g_fcp_protocol_dev_data[] = {
 	{ PROTOCOL_DEVICE_ID_BQ2560X, "bq2560x" },
 	{ PROTOCOL_DEVICE_ID_RT9466, "rt9466" },
 	{ PROTOCOL_DEVICE_ID_SM5450, "sm5450" },
+	{ PROTOCOL_DEVICE_ID_HL7139, "hl7139" },
 	{ PROTOCOL_DEVICE_ID_SC8545, "sc8545" },
 	{ PROTOCOL_DEVICE_ID_SC200X, "sc200x" },
 };

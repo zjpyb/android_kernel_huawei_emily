@@ -139,6 +139,14 @@ static inline int kmem_cache_debug(struct kmem_cache *s)
 #endif
 }
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static inline bool slub_debug_orig_size(struct kmem_cache *s)
+{
+	return (kmem_cache_debug(s) && (s->flags & SLAB_STORE_USER) &&
+				(s->flags & SLAB_KMALLOC));
+}
+#endif
+
 void *fixup_red_left(struct kmem_cache *s, void *p)
 {
 	if (kmem_cache_debug(s) && s->flags & SLAB_RED_ZONE)
@@ -738,6 +746,47 @@ static void print_page_info(struct page *page)
 
 }
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+/*
+ * kmalloc caches has fixed sizes (mostly power of 2), and kmalloc() API
+ * family will round up the real request size to these fixed ones, so
+ * there could be an extra area than what is requested. Save the original
+ * request size in the meta data area, for better debug and sanity check.
+ */
+static inline void set_orig_size(struct kmem_cache *s,
+				void *object, unsigned int orig_size)
+{
+	void *p = object;
+
+	if (!slub_debug_orig_size(s))
+		return;
+
+	if (s->offset)
+		p += s->offset + sizeof(void *);
+	else
+		p += s->inuse;
+	p += sizeof(struct track) * 2;
+
+	*(unsigned int *)p = orig_size;
+}
+
+static inline unsigned int get_orig_size(struct kmem_cache *s, void *object)
+{
+	void *p = object;
+
+	if (!slub_debug_orig_size(s))
+		return s->object_size;
+
+	if (s->offset)
+		p += s->offset + sizeof(void *);
+	else
+		p += s->inuse;
+	p += sizeof(struct track) * 2;
+
+	return *(unsigned int *)p;
+}
+#endif
+
 static void slab_bug(struct kmem_cache *s, char *fmt, ...)
 {
 	struct va_format vaf;
@@ -811,6 +860,11 @@ static void print_trailer(struct kmem_cache *s, struct page *page, u8 *p)
 
 	if (s->flags & SLAB_STORE_USER)
 		off += 2 * sizeof(struct track);
+
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	if (slub_debug_orig_size(s))
+		off += sizeof(unsigned int);
+#endif
 
 	off += kasan_metadata_size(s);
 
@@ -916,7 +970,9 @@ static int check_bytes_and_report(struct kmem_cache *s, struct page *page,
  *
  * 	A. Free pointer (if we cannot overwrite object on free)
  * 	B. Tracking data for SLAB_STORE_USER
- * 	C. Padding to reach required alignment boundary or at mininum
+ * 	C. Original request size for kmalloc object (SLAB_STORE_USER enabled &&
+ * 		CONFIG_SLUB_DEBUG_WASTE_ENG_AQ defined)
+ * 	D. Padding to reach required alignment boundary or at mininum
  * 		one word if debugging is on to be able to detect writes
  * 		before the word boundary.
  *
@@ -938,9 +994,19 @@ static int check_pad_bytes(struct kmem_cache *s, struct page *page, u8 *p)
 		/* Freepointer is placed after the object. */
 		off += sizeof(void *);
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	if (s->flags & SLAB_STORE_USER) {
+		/* We also have user information there */
+		off += 2 * sizeof(struct track);
+
+		if (s->flags & SLAB_KMALLOC)
+			off += sizeof(unsigned int);
+	}
+#else
 	if (s->flags & SLAB_STORE_USER)
 		/* We also have user information there */
 		off += 2 * sizeof(struct track);
+#endif
 
 	off += kasan_metadata_size(s);
 
@@ -1236,9 +1302,15 @@ static inline int alloc_consistency_checks(struct kmem_cache *s,
 	return 1;
 }
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static noinline int alloc_debug_processing(struct kmem_cache *s,
+					struct page *page,
+					void *object, unsigned long addr, int orig_size)
+#else
 static noinline int alloc_debug_processing(struct kmem_cache *s,
 					struct page *page,
 					void *object, unsigned long addr)
+#endif
 {
 	if (s->flags & SLAB_CONSISTENCY_CHECKS) {
 		if (!alloc_consistency_checks(s, page, object, addr))
@@ -1249,6 +1321,9 @@ static noinline int alloc_debug_processing(struct kmem_cache *s,
 	if (s->flags & SLAB_STORE_USER)
 		set_track(s, object, TRACK_ALLOC, addr);
 	trace(s, page, object, 1);
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	set_orig_size(s, object, orig_size);
+#endif
 	init_object(s, object, SLUB_RED_ACTIVE);
 	return 1;
 
@@ -1438,8 +1513,13 @@ static inline void setup_object_debug(struct kmem_cache *s,
 static inline void setup_page_debug(struct kmem_cache *s,
 			void *addr, int order) {}
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static inline int alloc_debug_processing(struct kmem_cache *s,
+	struct page *page, void *object, unsigned long addr, int orig_size) { return 0; }
+#else
 static inline int alloc_debug_processing(struct kmem_cache *s,
 	struct page *page, void *object, unsigned long addr) { return 0; }
+#endif
 
 static inline int free_debug_processing(
 	struct kmem_cache *s, struct page *page,
@@ -2668,8 +2748,13 @@ static inline void *get_freelist(struct kmem_cache *s, struct page *page)
  * Version of __slab_alloc to use when we know that interrupts are
  * already disabled (which is the case for bulk allocation).
  */
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
+			  unsigned long addr, struct kmem_cache_cpu *c, unsigned int orig_size)
+#else
 static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 			  unsigned long addr, struct kmem_cache_cpu *c)
+#endif
 {
 	void *freelist;
 	struct page *page;
@@ -2759,8 +2844,13 @@ new_slab:
 		goto load_freelist;
 
 	/* Only entered in the debug case */
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	if (kmem_cache_debug(s) &&
+			!alloc_debug_processing(s, page, freelist, addr, orig_size))
+#else
 	if (kmem_cache_debug(s) &&
 			!alloc_debug_processing(s, page, freelist, addr))
+#endif
 		goto new_slab;	/* Slab failed checks. Next slab needed */
 
 	deactivate_slab(s, page, get_freepointer(s, freelist), c);
@@ -2771,8 +2861,13 @@ new_slab:
  * Another one that disabled interrupt and compensates for possible
  * cpu changes by refetching the per cpu area pointer.
  */
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
+			  unsigned long addr, struct kmem_cache_cpu *c, unsigned int orig_size)
+#else
 static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 			  unsigned long addr, struct kmem_cache_cpu *c)
+#endif
 {
 	void *p;
 	unsigned long flags;
@@ -2787,7 +2882,11 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 	c = this_cpu_ptr(s->cpu_slab);
 #endif
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	p = ___slab_alloc(s, gfpflags, node, addr, c, orig_size);
+#else
 	p = ___slab_alloc(s, gfpflags, node, addr, c);
+#endif
 
 	local_irq_restore(flags);
 	return p;
@@ -2803,8 +2902,13 @@ static void *__slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
  *
  * Otherwise we can simply pick the next object from the lockless free list.
  */
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static __always_inline void *slab_alloc_node(struct kmem_cache *s,
+		gfp_t gfpflags, int node, unsigned long addr, size_t orig_size)
+#else
 static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 		gfp_t gfpflags, int node, unsigned long addr)
+#endif
 {
 	void *object;
 	struct kmem_cache_cpu *c;
@@ -2851,7 +2955,11 @@ redo:
 	object = c->freelist;
 	page = c->page;
 	if (unlikely(!object || !node_match(page, node))) {
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+		object = __slab_alloc(s, gfpflags, node, addr, c, orig_size);
+#else
 		object = __slab_alloc(s, gfpflags, node, addr, c);
+#endif
 		stat(s, ALLOC_SLOWPATH);
 	} else {
 		void *next_object = get_freepointer_safe(s, object);
@@ -2896,15 +3004,27 @@ redo:
 	return object;
 }
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static __always_inline void *slab_alloc(struct kmem_cache *s,
+		gfp_t gfpflags, unsigned long addr, size_t orig_size)
+{
+	return slab_alloc_node(s, gfpflags, NUMA_NO_NODE, addr, orig_size);
+}
+#else
 static __always_inline void *slab_alloc(struct kmem_cache *s,
 		gfp_t gfpflags, unsigned long addr)
 {
 	return slab_alloc_node(s, gfpflags, NUMA_NO_NODE, addr);
 }
+#endif
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	void *ret = slab_alloc(s, gfpflags, _RET_IP_, s->object_size);
+#else
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
+#endif
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
 				s->size, gfpflags);
@@ -2916,7 +3036,11 @@ EXPORT_SYMBOL(kmem_cache_alloc);
 #ifdef CONFIG_TRACING
 void *kmem_cache_alloc_trace(struct kmem_cache *s, gfp_t gfpflags, size_t size)
 {
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	void *ret = slab_alloc(s, gfpflags, _RET_IP_, size);
+#else
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
+#endif
 	trace_kmalloc(_RET_IP_, ret, size, s->size, gfpflags);
 	kmalloc_trace_hook((unsigned char)MEM_ALLOC, _RET_IP_, (unsigned long long)ret,/*lint !e571*/
                 virt_to_phys(ret), (unsigned int)size);
@@ -3341,8 +3465,13 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 			 * Invoking slow path likely have side-effect
 			 * of re-populating per CPU c->freelist
 			 */
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+			p[i] = ___slab_alloc(s, flags, NUMA_NO_NODE,
+					    _RET_IP_, c, s->object_size);
+#else
 			p[i] = ___slab_alloc(s, flags, NUMA_NO_NODE,
 					    _RET_IP_, c);
+#endif
 			if (unlikely(!p[i]))
 				goto error;
 
@@ -3732,12 +3861,26 @@ static int calculate_sizes(struct kmem_cache *s, int forced_order)
 	}
 
 #ifdef CONFIG_SLUB_DEBUG
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	if (flags & SLAB_STORE_USER) {
+		/*
+		 * Need to store information about allocs and frees after
+		 * the object.
+		 */
+		size += 2 * sizeof(struct track);
+
+		/* Save the original kmalloc request size */
+		if (flags & SLAB_KMALLOC)
+			size += sizeof(unsigned int);
+	}
+#else
 	if (flags & SLAB_STORE_USER)
 		/*
 		 * Need to store information about allocs and frees after
 		 * the object.
 		 */
 		size += 2 * sizeof(struct track);
+#endif
 #endif
 
 	kasan_cache_create(s, &size, &s->flags);
@@ -3997,7 +4140,11 @@ void *__kmalloc(size_t size, gfp_t flags)
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	ret = slab_alloc(s, flags, _RET_IP_, size);
+#else
 	ret = slab_alloc(s, flags, _RET_IP_);
+#endif
 
 	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
 	kmalloc_trace_hook((unsigned char)MEM_ALLOC, _RET_IP_, (unsigned long long)ret,/*lint !e571*/
@@ -4566,7 +4713,11 @@ void *__kmalloc_track_caller(size_t size, gfp_t gfpflags, unsigned long caller)
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	ret = slab_alloc(s, gfpflags, caller, size);
+#else
 	ret = slab_alloc(s, gfpflags, caller);
+#endif
 
 	/* Honor the call site pointer we received. */
 	trace_kmalloc(caller, ret, size, s->size, gfpflags);
@@ -4715,6 +4866,9 @@ static long validate_slab_cache(struct kmem_cache *s)
 struct location {
 	unsigned long count;
 	unsigned long addr;
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	unsigned long waste;
+#endif
 	long long sum_time;
 	long min_time;
 	long max_time;
@@ -4757,13 +4911,24 @@ static int alloc_loc_track(struct loc_track *t, unsigned long max, gfp_t flags)
 	return 1;
 }
 
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+static int add_location(struct loc_track *t, struct kmem_cache *s,
+				const struct track *track,
+				unsigned int orig_size)
+#else
 static int add_location(struct loc_track *t, struct kmem_cache *s,
 				const struct track *track)
+#endif
 {
 	long start, end, pos;
 	struct location *l;
 	unsigned long caddr;
 	unsigned long age = jiffies - track->when;
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	unsigned long cwaste;
+	unsigned int waste = s->object_size - orig_size;
+#endif
+
 
 	start = -1;
 	end = t->count;
@@ -4779,7 +4944,12 @@ static int add_location(struct loc_track *t, struct kmem_cache *s,
 			break;
 
 		caddr = t->loc[pos].addr;
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+		cwaste = t->loc[pos].waste;
+		if ((track->addr == caddr) && (waste == cwaste)) {
+#else
 		if (track->addr == caddr) {
+#endif
 
 			l = &t->loc[pos];
 			l->count++;
@@ -4804,6 +4974,10 @@ static int add_location(struct loc_track *t, struct kmem_cache *s,
 
 		if (track->addr < caddr)
 			end = pos;
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+		else if (track->addr == caddr && waste < cwaste)
+			end = pos;
+#endif
 		else
 			start = pos;
 	}
@@ -4826,6 +5000,9 @@ static int add_location(struct loc_track *t, struct kmem_cache *s,
 	l->max_time = age;
 	l->min_pid = track->pid;
 	l->max_pid = track->pid;
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	l->waste = waste;
+#endif
 	cpumask_clear(to_cpumask(l->cpus));
 	cpumask_set_cpu(track->cpu, to_cpumask(l->cpus));
 	nodes_clear(l->nodes);
@@ -4838,6 +5015,9 @@ static void process_slab(struct loc_track *t, struct kmem_cache *s,
 		unsigned long *map)
 {
 	void *addr = page_address(page);
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+	bool is_alloc = (alloc == TRACK_ALLOC);
+#endif
 	void *p;
 
 	bitmap_zero(map, page->objects);
@@ -4845,7 +5025,13 @@ static void process_slab(struct loc_track *t, struct kmem_cache *s,
 
 	for_each_object(p, s, addr, page->objects)
 		if (!test_bit(slab_index(p, s, addr), map))
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+			add_location(t, s, get_track(s, p, alloc),
+				is_alloc ? get_orig_size(s, p) :
+					s->object_size);
+#else
 			add_location(t, s, get_track(s, p, alloc));
+#endif
 }
 
 static int list_locations(struct kmem_cache *s, char *buf,
@@ -4893,6 +5079,12 @@ static int list_locations(struct kmem_cache *s, char *buf,
 			len += sprintf(buf + len, "%pS", (void *)l->addr);
 		else
 			len += sprintf(buf + len, "<not-available>");
+
+#ifdef CONFIG_SLUB_DEBUG_WASTE_ENG_AQ
+		if (l->waste)
+			len += sprintf(buf + len, " waste=%lu/%lu",
+				l->count * l->waste, l->waste);
+#endif
 
 		if (l->sum_time != l->min_time) {
 			len += sprintf(buf + len, " age=%ld/%ld/%ld",

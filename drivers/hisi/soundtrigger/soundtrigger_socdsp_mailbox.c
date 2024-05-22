@@ -316,7 +316,7 @@ static void set_wakeup_start(bool is_lp, bool value)
 		wakeup_is_start = value;
 }
 
-int parameter_set_msg(uint16_t msg_type, int module_id, const struct parameter_set *set_val)
+int parameter_set_msg(uint16_t msg_type, int module_id, const struct parameter_set *set_val, uint32_t para_size)
 {
 	int ret;
 	unsigned long ret_val;
@@ -335,8 +335,8 @@ int parameter_set_msg(uint16_t msg_type, int module_id, const struct parameter_s
 	memcpy(&set_msg.para, set_val, sizeof(*set_val));
 
 	if (set_msg.para.key == MLIB_ST_PARA_MODEL) {
-		if (set_val->model.length > AP_AUDIO_WAKEUP_MODEL_SIZE) {
-			AUDIO_LOGE("model length exceed %u", set_val->model.length);
+		if (set_val->model.length != para_size) {
+			AUDIO_LOGE("the model length is not equal to the param length %u", set_val->model.length);
 			return -EINVAL;
 		}
 

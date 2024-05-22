@@ -66,6 +66,9 @@ void task_mem(struct seq_file *m, struct mm_struct *mm)
 		"VmPin:\t%8lu kB\n"
 		"VmHWM:\t%8lu kB\n"
 		"VmRSS:\t%8lu kB\n"
+#ifdef CONFIG_PM_PEAK
+		"PmPeak:\t%8lu kB\n"
+#endif
 		"RssAnon:\t%8lu kB\n"
 		"RssFile:\t%8lu kB\n"
 		"RssShmem:\t%8lu kB\n"
@@ -82,6 +85,9 @@ void task_mem(struct seq_file *m, struct mm_struct *mm)
 		mm->pinned_vm << (PAGE_SHIFT-10),
 		hiwater_rss << (PAGE_SHIFT-10),
 		total_rss << (PAGE_SHIFT-10),
+#ifdef CONFIG_PM_PEAK
+		mm->hiwater_pm << (PAGE_SHIFT - 10),
+#endif
 		anon << (PAGE_SHIFT-10),
 		file << (PAGE_SHIFT-10),
 		shmem << (PAGE_SHIFT-10),

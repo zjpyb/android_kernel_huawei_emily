@@ -104,6 +104,7 @@ struct rt1711_chip {
 	int irq_gpio;
 	int irq;
 	int chip_id;
+	int vendor_id;
 	struct wakeup_source rt1711h_wakelock;
 	unsigned int pd_remove_cc_open;
 };
@@ -845,6 +846,44 @@ static int rt1711h_init_cc_params(struct tcpc_device *tcpc, uint8_t cc_res)
 	return rv;
 }
 
+static int rt1711h_tcpc_set_vswing(struct tcpc_device *tcpc)
+{
+	int ret;
+	unsigned char reg_val;
+
+	ret = rt1711_i2c_read8(tcpc, RT1711H_REG_BMCIO_VCONOCP);
+	pr_info("%s read VCONOCP ret=  %d\n", __func__, ret);
+	if (ret < 0)
+		return ret;
+
+	reg_val = (unsigned char)ret;
+	rt1711_i2c_write8(tcpc, RT1711H_REG_BMCIO_VCONOCP,
+		reg_val & (~RT1711H_REG_ADJ_VBUS_MEASURE));
+
+	rt1711_i2c_write8(tcpc, RT1711H_REG_CMD_REG2,
+		RT1711H_REG_CMD_REG2_ENABLE);
+
+	rt1711_i2c_write8(tcpc, RT1711H_REG_CMD_REG1,
+		RT1711H_REG_CMD_REG1_ENABLE);
+
+	ret = rt1711_i2c_read8(tcpc, RT1711H_REG_ADJ_VSWING);
+	pr_info("%s read VSWING ret=  %d\n", __func__, ret);
+	if (ret < 0)
+		return ret;
+
+	reg_val = (unsigned char)ret;
+	reg_val = reg_val & (~RT1711H_REG_SETTING_VSWING_MASK);
+	rt1711_i2c_write8(tcpc, RT1711H_REG_ADJ_VSWING,
+		reg_val | RT1711H_REG_SETTING_VSWING);
+
+	rt1711_i2c_write8(tcpc, RT1711H_REG_CMD_REG2,
+		RT1711H_REG_CMD_REG2_CLEAN);
+	rt1711_i2c_write8(tcpc, RT1711H_REG_CMD_REG1,
+		RT1711H_REG_CMD_REG1_CLEAN);
+
+	return 0;
+}
+
 static int rt1711_tcpc_init(struct tcpc_device *tcpc, bool sw_reset)
 {
 	int ret;
@@ -856,6 +895,12 @@ static int rt1711_tcpc_init(struct tcpc_device *tcpc, bool sw_reset)
 
 	if (sw_reset) {
 		ret = rt1711_software_reset(tcpc);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (chip->vendor_id == ETEK_ET7303_VID) {
+		ret = rt1711h_tcpc_set_vswing(tcpc);
 		if (ret < 0)
 			return ret;
 	}
@@ -1749,13 +1794,10 @@ static int rt1711_tcpcdev_init(struct rt1711_chip *chip, struct device *dev)
 	return 0;
 }
 
-#define RICHTEK_1711_VID 0x29cf
-#define ET7303_VID 0x6dcf
-#define RICHTEK_1711_PID 0x1711
-
 static int rt1711h_check_revision(struct i2c_client *client)
 {
 	u16 vid, pid, did;
+	u32 chip_revision;
 	int ret;
 	u8 data = 1;
 
@@ -1765,19 +1807,24 @@ static int rt1711h_check_revision(struct i2c_client *client)
 		return -EIO;
 	}
 
-	if ((vid != RICHTEK_1711_VID) && (vid != ET7303_VID)) {
-		pr_info("%s failed, VID=0x%04x\n", __func__, vid);
-		return -ENODEV;
-	}
-
 	ret = rt1711_read_device(client, TCPC_V10_REG_PID, 2, &pid);
 	if (ret < 0) {
 		dev_err(&client->dev, "read product ID fail\n");
 		return -EIO;
 	}
 
-	if (pid != RICHTEK_1711_PID) {
-		pr_info("%s failed, PID=0x%04x\n", __func__, pid);
+	if (vid == RICHTEK_1711_VID) {
+		if (pid != RICHTEK_1711_PID) {
+			pr_info("%s failed, VID=0x%04x PID=0x%04x\n", __func__, vid, pid);
+			return -ENODEV;
+		}
+	} else if (vid == ETEK_ET7303_VID) {
+		if (pid != ETEK_ET7303_PID) {
+			pr_info("%s failed, VID=0x%04x PID=0x%04x\n", __func__, vid, pid);
+			return -ENODEV;
+		}
+	} else {
+		pr_info("%s failed, VID=0x%04x\n", __func__, vid);
 		return -ENODEV;
 	}
 
@@ -1793,7 +1840,10 @@ static int rt1711h_check_revision(struct i2c_client *client)
 		return -EIO;
 	}
 
-	return did;
+	/* vid[31:16], did[15:0] */
+	chip_revision = ((u32)vid << SHIFT_16) | did;
+
+	return chip_revision;
 }
 static int is_cable_for_direct_charge(void)
 {
@@ -1819,7 +1869,8 @@ static int rt1711_i2c_probe(struct i2c_client *client,
 {
 	struct rt1711_chip *chip = NULL;
 	struct power_devices_info_data *power_dev_info = NULL;
-	int ret = 0, chip_id;
+	int ret = 0;
+	int chip_revision;
 	int need_not_config_extra_pmic = 0;
 	bool use_dt = client->dev.of_node;
 
@@ -1843,8 +1894,8 @@ static int rt1711_i2c_probe(struct i2c_client *client,
 	else
 		pr_info("I2C functionality check : failure\n");
 
-	chip_id = rt1711h_check_revision(client);
-	if (chip_id < 0)
+	chip_revision = rt1711h_check_revision(client);
+	if (chip_revision < 0)
 		return ret;
 #if TCPC_ENABLE_ANYMSG
 	check_printk_performance();
@@ -1868,8 +1919,10 @@ static int rt1711_i2c_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, chip);
 	INIT_DELAYED_WORK(&chip->poll_work, rt1711_poll_work);
 
-	chip->chip_id = chip_id;
-	pr_info("rt1711h_chipID = 0x%0x\n", chip_id);
+	chip->chip_id = chip_revision & DID_MASK;
+	chip->vendor_id = (chip_revision >> SHIFT_16) & VID_MASK;
+	pr_info("rt1711h_chipID = 0x%0x, vendor id = 0x%0x\n",
+		chip->chip_id, chip->vendor_id);
 
 	ret = rt1711_regmap_init(chip);
 	if (ret < 0) {
@@ -1908,7 +1961,7 @@ static int rt1711_i2c_probe(struct i2c_client *client,
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
 		power_dev_info->dev_name = chip->dev->driver->name;
-		power_dev_info->dev_id = chip_id;
+		power_dev_info->dev_id = chip->chip_id;
 		power_dev_info->ver_id = 0;
 	}
 

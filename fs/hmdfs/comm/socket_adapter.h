@@ -29,8 +29,6 @@
 
 struct connection_operations {
 	void (*recvmsg)(struct hmdfs_peer *con, void *head, void *buf);
-	void (*recvpage)(struct hmdfs_peer *con, struct hmdfs_head_cmd *head,
-			 int err, void *data);
 	const struct file_operations *remote_file_fops;
 	const struct inode_operations *remote_file_iops;
 	const struct address_space_operations *remote_file_aops;
@@ -67,12 +65,15 @@ static inline void hmdfs_init_cmd(struct hmdfs_cmd *op, u8 cmd)
 	op->reserved2 = 0;
 }
 
+int hmdfs_try_get_p2p_session_sync(struct hmdfs_peer *node);
+void hmdfs_try_get_p2p_session_async(struct hmdfs_peer *node);
 int hmdfs_send_async_request(struct hmdfs_peer *peer,
 			     const struct hmdfs_req *req);
 int hmdfs_sendmessage_request(struct hmdfs_peer *con,
 			      struct hmdfs_send_command *msg);
 int hmdfs_sendpage_request(struct hmdfs_peer *con,
-			   struct hmdfs_send_command *msg);
+			   struct hmdfs_send_command *sm,
+			   struct page **pages, unsigned int nr);
 
 int hmdfs_sendmessage_response(struct hmdfs_peer *con,
 			       struct hmdfs_head_cmd *cmd, __u32 data_len,
@@ -82,6 +83,14 @@ int hmdfs_readfile_response(struct hmdfs_peer *con, struct hmdfs_head_cmd *head,
 const struct connection_operations *hmdfs_get_peer_operation(__u8 version);
 
 void hmdfs_recv_page_work_fn(struct work_struct *ptr);
+void hmdfs_p2p_timeout_work_fn(struct work_struct *w);
+void hmdfs_conn_touch_timer(struct connection *conn);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
+void hmdfs_p2p_timeout_fn(unsigned long timer);
+#else
+void hmdfs_p2p_timeout_fn(struct timer_list *timer);
+#endif
 
 /*****************************************************************************
  * statistics info for RPC
@@ -154,9 +163,12 @@ enum HMDFS_TIME_OUT {
 	TIMEOUT_NONE = 0,
 	TIMEOUT_COMMON = 4,
 	TIMEOUT_6S = 6,
+	TIMEOUT_20S = 20,
 	TIMEOUT_30S = 30,
 	TIMEOUT_1M = 60,
 	TIMEOUT_90S = 90,
+	TIMEOUT_2M = 2 * 60,
+	TIMEOUT_5M = 5 * 60,
 	TIMEOUT_CONFIG = UINT_MAX - 1, // for hmdfs_req to read from config
 	TIMEOUT_UNINIT = UINT_MAX,
 };
@@ -183,10 +195,19 @@ void msg_put(struct sendmsg_wait_queue *msg_wq);
 void head_put(struct hmdfs_msg_idr_head *head);
 void mp_put(struct hmdfs_msg_parasite *mp);
 void asw_put(struct hmdfs_async_work *asw);
+struct hmdfs_async_work *hmdfs_alloc_asw(unsigned int nr);
+
+static inline void hmdfs_put_pages(struct page **pages, unsigned int nr)
+{
+	unsigned int i;
+	for (i = 0; i < nr; i++)
+		unlock_page(pages[i]);
+}
+
 static inline void asw_done(struct hmdfs_async_work *asw)
 {
-	if (asw->page)
-		unlock_page(asw->page);
+	if (asw->pages_nr)
+		hmdfs_put_pages(asw->pages, asw->pages_nr);
 	asw_put(asw);
 }
 

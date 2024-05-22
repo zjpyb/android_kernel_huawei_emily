@@ -23,6 +23,7 @@
 #include <linux/device.h>
 #include <linux/workqueue.h>
 #include <linux/bitops.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_ic.h>
 
 /*************************struct define area***************************/
 struct bq2560x_device_info {
@@ -36,12 +37,25 @@ struct bq2560x_device_info {
 	int hiz_iin_limit;
 	int fcp_support;
 	int gpio_fcp;
+	int ffc_support;
+	int vbus;
+	int device_id;
+	u32 support_sc;
+	u32 ic_role;
+	u32 sc_max_input_current;
+	u32 sc_max_charge_current;
+	u32 init_clear_hiz;
+	u32 shipmode_clear_hiz;
+	struct dc_ic_ops sc_ops;
+	struct dc_batinfo_ops batinfo_ops;
+	char name[CHIP_DEV_NAME_LEN];
 };
 
 /*************************marco define area***************************/
 /* default value */
 #define BQ2560X_RILIM_220_OHM                        220
 #define BQ2560X_ADC_CHANNEL_IIN_10                   10
+#define SGM41513_SLAVE_ADDR                          0x1A
 
 #define BQ2560X_REG_NUM                              12
 
@@ -370,6 +384,9 @@ struct bq2560x_device_info {
 
 #define VENDOR_ID                                    0x2
 #define SGM41511H_VENDOR_ID                          0x1
+#define SGM41512H_VENDOR_ID                          0x5
+#define SGM41513H_VENDOR_ID                          0x0
+#define ETA6963_VENDOR_ID                            0x7
 
 #define BQ2560X_REG_SS_VBUS_PLUGGED                  1
 

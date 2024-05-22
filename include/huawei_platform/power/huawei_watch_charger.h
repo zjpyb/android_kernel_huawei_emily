@@ -59,6 +59,8 @@ enum watch_charge_cmd_to_mcu {
 	SET_ENABLE_HIZ   = 11,
 	/* set stop charge cut-off voltage */
 	SET_TERM_VOLT    = 12,
+	/* get battery info when mcu ready */
+	GET_BAT_INFO     = 13,
 	/* defalt cmd */
 	DEFAULT_CMD      = 0XFF,
 };

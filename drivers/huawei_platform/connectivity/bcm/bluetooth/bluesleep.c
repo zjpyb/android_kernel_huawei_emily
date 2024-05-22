@@ -736,7 +736,7 @@ static int __init bluesleep_init(void)
 #ifdef CONFIG_HWCONNECTIVITY
 	/*For OneTrack, we need check it's the right chip type or not.
 	   If it's not the right chip type, don't init the driver */
-	if (!isMyConnectivityChip(CHIP_TYPE_BCM)) {
+	if ((!isMyConnectivityChip(CHIP_TYPE_BCM)) && (!isMyConnectivityChip(CHIP_TYPE_SYNA))) {
 		pr_err("BT-sleep chip type is not match, skip driver init");
 		return -EINVAL;
 	}

@@ -33,6 +33,7 @@
 #define ACC_UNKNOWN_STR          "UNKNOWN"
 #define ACC_PING_SUCC_STR        "PING_SUCC"
 #define ACC_PING_TIMEOUT_STR     "PING_TIMEOUT"
+#define ACC_PING_ERR_STR         "PING_ERR"
 #define ACC_CHARGE_DONE_STR      "CHARGE_DONE"
 #define ACC_CHARGE_ERROR_STR     "CHARGE_ERR"
 #define ACC_DEV_INFO_MAX         512

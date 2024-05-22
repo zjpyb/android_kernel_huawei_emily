@@ -26,6 +26,7 @@ obj-$(CONFIG_HISI_CAMERA_LM3642_IR) += lm3642_ir.o
 obj-$(CONFIG_HISI_CAMERA_MP3331_IR) += aux_flash_ldo.o
 obj-$(CONFIG_HISI_CAMERA_MP3331_IR) += mp3331_ir.o
 obj-$(CONFIG_HISI_CAMERA_SY7804) += sy7804.o
+obj-$(CONFIG_HISI_CAMERA_SGM3785) += sgm3785.o
 # obj-y += lm3642.o
 #obj-y += += pmu_led.o
 obj-$(CONFIG_HISI_CAMERA_LM3646) += lm3646.o

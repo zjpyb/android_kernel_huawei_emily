@@ -185,6 +185,25 @@ static int sc200x_get_chip_info(struct sc200x_device_info *di)
 	return SC200X_SUCCESS;
 }
 
+static int sc200x_shipmode_handler(void)
+{
+	if (!g_sc200x_dev)
+		return -EINVAL;
+
+	if (g_sc200x_dev->shipmode_enable) {
+		g_sc200x_dev->shipmode_enable = false;
+		if (sc200x_write_reg(g_sc200x_dev,
+			SC200X_REG_PMU_CTRL, SC200X_PMU_CTRL_VALUE0))
+			return SC200X_FAILED;
+
+		if (sc200x_write_reg(g_sc200x_dev,
+			SC200X_REG_PMU_CTRL, SC200X_PMU_CTRL_VALUE1))
+			return SC200X_FAILED;
+	}
+
+	return SC200X_SUCCESS;
+}
+
 #ifdef CONFIG_SYSFS
 static ssize_t sc200x_shipmode_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
@@ -195,13 +214,7 @@ static ssize_t sc200x_shipmode_store(struct device *dev,
 	if (strncmp(buf, SC200X_SHIPMODE_CMD, strlen(SC200X_SHIPMODE_CMD)))
 		return -EINVAL;
 
-	if (sc200x_write_reg(g_sc200x_dev,
-		SC200X_REG_PMU_CTRL, SC200X_PMU_CTRL_VALUE0))
-		return -EINVAL;
-
-	if (sc200x_write_reg(g_sc200x_dev,
-		SC200X_REG_PMU_CTRL, SC200X_PMU_CTRL_VALUE1))
-		return -EINVAL;
+	g_sc200x_dev->shipmode_enable = true;
 
 	return count;
 }
@@ -333,6 +346,9 @@ static void sc200x_shutdown(struct i2c_client *client)
 	/* clear accp enable bit */
 	sc200x_write_reg_mask(di, SC200X_REG_DEV_CTRL,
 		0x00, SC200X_ACCP_EN_MASK);
+
+	if (sc200x_shipmode_handler())
+		hwlog_err("enter shipmode failed\n");
 }
 
 static const struct of_device_id sc200x_ids[] = {

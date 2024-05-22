@@ -244,7 +244,8 @@ static inline __u16 hmdfs_perm_get_next_level(__u16 perm)
 struct fs_struct *hmdfs_override_fsstruct(struct fs_struct *saved_fs);
 void hmdfs_revert_fsstruct(struct fs_struct *saved_fs,
 			   struct fs_struct *copied_fs);
-const struct cred *hmdfs_override_fsids(bool is_recv_thread);
+const struct cred *hmdfs_override_fsids(struct hmdfs_sb_info *sbi,
+					bool is_recv_thread);
 const struct cred *hmdfs_override_dir_fsids(struct inode *dir,
 					    struct dentry *dentry, __u16 *perm);
 const struct cred *hmdfs_override_file_fsids(struct inode *dir, __u16 *perm);

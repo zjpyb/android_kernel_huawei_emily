@@ -126,6 +126,8 @@ static int _usb2_phy_init(struct phy_priv *priv)
 		upc_set_eye_diagram_param(priv->phy_param_t28,
 				priv->phy_param_s28);
 
+	override_usb_trim(priv->mode);
+
 	info("-\n");
 	return 0;
 

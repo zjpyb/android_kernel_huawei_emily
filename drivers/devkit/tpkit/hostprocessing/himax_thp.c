@@ -174,6 +174,7 @@
 #define THP_PROJECTID_VENDOR_NAME_LEN 3
 #define VENDOR_ID_BOE "130"
 #define VENDOR_ID_BOE_1 "131" /* boe module without c21 capacitance */
+#define VENDOR_ID_BOE_2 "132"
 #define VENDOR_ID_INX "120"
 #define VENDOR_NAME_BOE "boe"
 #define VENDOR_NAME_INX "cmi"
@@ -239,6 +240,7 @@ struct himax_thp_private_data {
 	u32 himax_ic_hispeed_support;
 	u32 himax_gesture_need_lcd_rst;
 	u32 himax_gesture_need_msleep_for_qcom;
+	u32 himax_retry_read_projectid_from_lcd;
 };
 struct himax_thp_private_data thp_private_data;
 static struct spi_device *hx_spi_dev;
@@ -849,6 +851,18 @@ int touch_driver_init(struct thp_device *tdev)
 	} else {
 		himax_p->himax_gesture_need_msleep_for_qcom = value;
 		thp_log_info("%s: msleep_for_qcom flag %d\n",
+			__func__, value);
+	}
+
+	rc = of_property_read_u32(hx83112_node,
+		"allow_retry_read_projectid_from_lcd", &value);
+	if (rc) {
+		himax_p->himax_retry_read_projectid_from_lcd = 0;
+		thp_log_err("%s: retry read projectid not found\n",
+			__func__);
+	} else {
+		himax_p->himax_retry_read_projectid_from_lcd = value;
+		thp_log_info("%s: retry read projectid flag %d\n",
 			__func__, value);
 	}
 	rc = thp_parse_spi_config(hx83112_node, cd);
@@ -1548,10 +1562,14 @@ int touch_driver_83102_chip_detect(struct thp_device *tdev)
 #ifdef CONFIG_VMAP_STACK
 	size_t size_xfer;
 #endif
+	struct himax_thp_private_data *himax_p = NULL;
+	struct thp_core_data *cd = NULL;
 	if (!tdev) {
 		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
+	himax_p = tdev->private_data;
+	cd = tdev->thp_core;
 #ifdef CONFIG_VMAP_STACK
 	g_dma_rx_buf = (uint8_t *)(tdev->rx_buff);
 	if (!g_dma_rx_buf) {
@@ -1583,13 +1601,27 @@ int touch_driver_83102_chip_detect(struct thp_device *tdev)
 	thp_bus_unlock();
 	ret =  touch_driver_read_panel_info(tdev);
 	if (ret) {
-		thp_log_err("%s: read panel info  fail\n", __func__);
-		return -EINVAL;
+		thp_log_err("%s: read panel info fail\n", __func__);
+		if (himax_p->himax_retry_read_projectid_from_lcd) {
+			thp_log_err("%s: try read tp info from lcd\n", __func__);
+			if (g_huawei_project_id)
+				kfree(g_huawei_project_id);
+			g_huawei_project_id = kcalloc((THP_PROJECT_ID_LEN),
+				sizeof(*g_huawei_project_id), GFP_KERNEL);
+			if (!g_huawei_project_id) {
+				thp_log_err("%s: Fail kcalloc memory for project id\n",
+					__func__);
+				return -EINVAL;
+			}
+			memcpy(g_huawei_project_id, cd->project_id, THP_PROJECT_ID_LEN);
+			return NO_ERR;
+		} else {
+			return -EINVAL;
+		}
 	}
 	/* Get tp_color */
 	if (g_huawei_cg_color != NULL)
 		cypress_ts_kit_color[0] = *g_huawei_cg_color;
-
 	return ret;
 }
 
@@ -1855,6 +1887,9 @@ int touch_driver_get_project_id(struct thp_device *tdev,
 		cd->vendor_name = VENDOR_NAME_BOE;
 	} else if (!strncmp(temp_buf,
 		VENDOR_ID_BOE_1, THP_PROJECTID_VENDOR_NAME_LEN)) {
+		cd->vendor_name = VENDOR_NAME_BOE;
+	} else if (!strncmp(temp_buf,
+		VENDOR_ID_BOE_2, THP_PROJECTID_VENDOR_NAME_LEN)) {
 		cd->vendor_name = VENDOR_NAME_BOE;
 	} else if (!strncmp(temp_buf,
 		VENDOR_ID_INX, THP_PROJECTID_VENDOR_NAME_LEN)) {

@@ -313,6 +313,12 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 	touch_driver_hw_reset(tdev);
 	if (ret) {
 		thp_log_err("%s: chip is not detected\n", __func__);
+		if (tdev->thp_core->fast_booting_solution) {
+			kfree(tdev->tx_buff);
+			tdev->tx_buff = NULL;
+			kfree(tdev);
+			tdev = NULL;
+		}
 		return -ENODEV;
 	}
 
@@ -395,6 +401,7 @@ static int __init touch_driver_module_init(void)
 {
 	int ret;
 	struct thp_device *dev = NULL;
+	struct thp_core_data *cd = thp_get_core_data();
 
 	thp_log_info("%s: called\n", __func__);
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
@@ -412,6 +419,15 @@ static int __init touch_driver_module_init(void)
 
 	dev->ic_name = ILITEK_IC_NAME;
 	dev->ops = &ilitek_dev_ops;
+	if (cd && cd->fast_booting_solution) {
+		thp_send_detect_cmd(dev, NO_SYNC_TIMEOUT);
+		/*
+		 * The thp_register_dev will be called later to complete
+		 * the real detect action.If it fails, the detect function will
+		 * release the resources requested here.
+		 */
+		return 0;
+	}
 
 	ret = thp_register_dev(dev);
 	if (ret) {

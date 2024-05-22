@@ -12,6 +12,7 @@
 #include "device_node.h"
 
 #include <linux/errno.h>
+#include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -54,26 +55,79 @@ static void ctrl_cmd_init_handler(const char *buf, size_t len,
 		HMDFS_ACCOUNT_HASH_MAX_LEN);
 }
 
+static void hmdfs_fill_connection_info(struct connection_init_info *conn_info,
+				       struct update_socket_param *cmd,
+				       struct socket *sock)
+{
+	conn_info->fd            = cmd->newfd;
+	conn_info->sock          = sock;
+	conn_info->master_key    = cmd->masterkey;
+	conn_info->status        = cmd->status;
+	conn_info->protocol      = cmd->protocol;
+	conn_info->link_type     = cmd->link_type;
+#ifdef CONFIG_HMDFS_D2DP_TRANSPORT
+	conn_info->d2dp_udp_port = cmd->udp_port;
+	conn_info->d2dp_version  = 0;
+	conn_info->device_type   = cmd->device_type;
+	conn_info->binded_fd     = cmd->binded_fd;
+#endif
+}
+
+static void ctrl_cmd_update_devsl_handler(const char *buf, size_t len,
+				      struct hmdfs_sb_info *sbi)
+{
+	struct update_devsl_param cmd;
+	struct hmdfs_peer *node = NULL;
+
+	if (unlikely(!buf || len != sizeof(cmd))) {
+		hmdfs_err("Recved a invalid userbuf");
+		return;
+	}
+	memcpy(&cmd, buf, sizeof(cmd));
+
+	node = hmdfs_lookup_from_cid(sbi, cmd.cid);
+	if (unlikely(!node)) {
+		hmdfs_err("failed to update devsl: cannot get peer");
+		return;
+	}
+	node->devsl = cmd.devsl;
+	hmdfs_info("Found peer: device_id = %llu, devsl = %u", node->device_id, node->devsl);
+	peer_put(node);
+}
+
 static void ctrl_cmd_update_socket_handler(const char *buf, size_t len,
 					   struct hmdfs_sb_info *sbi)
 {
+	int err = 0;
 	struct update_socket_param cmd;
 	struct hmdfs_peer *node = NULL;
 	struct connection *conn = NULL;
+	struct socket *sock = NULL;
+	struct connection_init_info conn_info = { 0 };
 
 	if (unlikely(!buf || len != sizeof(cmd))) {
 		hmdfs_err("len/buf error");
 		goto out;
 	}
 	memcpy(&cmd, buf, sizeof(cmd));
-
+	hmdfs_info("newfd: %d, status: %d, link_type: %s, proto: %s",
+		   cmd.newfd, cmd.status,
+		   cmd.link_type == LINK_TYPE_P2P ? "P2P" : "WLAN",
+		   cmd.protocol ? "UDP" : "TCP");
 	node = hmdfs_get_peer(sbi, cmd.cid, cmd.local_iid);
 	if (unlikely(!node)) {
 		hmdfs_err("failed to update ctrl node: cannot get peer");
 		goto out;
 	}
 
-	conn = hmdfs_get_conn_tcp(node, cmd.newfd, cmd.masterkey, cmd.status);
+	sock = sockfd_lookup(cmd.newfd, &err);
+	if (!sock) {
+		hmdfs_err("lookup socket fail, fd %d, err %d", cmd.newfd, err);
+		goto out;
+	}
+
+	hmdfs_fill_connection_info(&conn_info, &cmd, sock);
+	conn = hmdfs_get_conn(node, &conn_info);
 	if (unlikely(!conn)) {
 		hmdfs_err("failed to update ctrl node: cannot get conn");
 	} else if (!sbi->system_cred) {
@@ -84,6 +138,7 @@ static void ctrl_cmd_update_socket_handler(const char *buf, size_t len,
 		else
 			hmdfs_check_cred(system_cred);
 	}
+	node->pending_async_p2p_try = 0;
 out:
 	if (conn)
 		connection_put(conn);
@@ -103,7 +158,7 @@ static void ctrl_cmd_off_line_handler(const char *buf, size_t len,
 {
 	struct offline_param cmd;
 	struct hmdfs_peer *node = NULL;
-	struct notify_param param;
+	struct notify_param param = { 0 };
 
 	if (unlikely(!buf || len != sizeof(cmd))) {
 		hmdfs_err("Recved a invalid userbuf");
@@ -187,6 +242,91 @@ static void ctrl_cmd_set_account(const char *buf, size_t len,
 		HMDFS_ACCOUNT_HASH_MAX_LEN);
 }
 
+static void ctrl_cmd_udpate_capability(const char *buf, size_t len,
+				       struct hmdfs_sb_info *sbi)
+{
+	struct update_capability_param cmd;
+	struct hmdfs_peer *node = NULL;
+
+	if (unlikely(!buf || len != sizeof(cmd))) {
+		hmdfs_err("len/buf error");
+		return;
+	}
+	memcpy(&cmd, buf, sizeof(cmd));
+
+	node = hmdfs_get_peer(sbi, cmd.cid, sbi->local_info.iid);
+	if (unlikely(!node)) {
+		hmdfs_err("failed to update capability: cannot get peer");
+		return;
+	}
+
+	node->pending_async_p2p_try = 0;
+	node->capability = cmd.capability;
+	hmdfs_info("peer: %llu, p2p capability: %llu, original status: %d",
+		   node->device_id, cmd.capability, node->status);
+
+	if (!(cmd.capability & (1 << CAPABILITY_P2P)))
+		hmdfs_p2p_fail_for(node, GET_P2P_FAIL_NO_CAPABILITY);
+
+	cmpxchg(&node->status, NODE_STAT_OFFLINE, NODE_STAT_SHAKING);
+}
+
+static void ctrl_cmd_get_p2p_session_fail(const char *buf, size_t len,
+					  struct hmdfs_sb_info *sbi)
+{
+	struct get_p2p_session_fail_param cmd;
+	struct hmdfs_peer *node = NULL;
+
+	if (unlikely(!buf || len != sizeof(cmd))) {
+		hmdfs_err("len/buf error");
+		return;
+	}
+	memcpy(&cmd, buf, sizeof(cmd));
+
+	node = hmdfs_get_peer(sbi, cmd.cid, sbi->local_info.iid);
+	if (unlikely(!node)) {
+		hmdfs_err("failed to update capability: cannot get peer");
+		return;
+	}
+	if (node->pending_async_p2p_try > 0)
+		--node->pending_async_p2p_try;
+	hmdfs_p2p_fail_for(node, GET_P2P_FAIL_SOFTBUS);
+}
+
+static void ctrl_cmd_delete_connection(const char *buf, size_t len,
+				       struct hmdfs_sb_info *sbi)
+{
+	int err = 0;
+	struct socket *sock = NULL;
+	struct hmdfs_peer *peer = NULL;
+	struct delete_connection_param cmd = { 0 };
+
+	if (unlikely(!buf || len != sizeof(cmd))) {
+		hmdfs_err("len/buf error");
+		return;
+	}
+	memcpy(&cmd, buf, sizeof(cmd));
+
+	hmdfs_info("trying to delete connection with fd %d", cmd.fd);
+
+	peer = hmdfs_lookup_from_cid(sbi, cmd.cid);
+	if (unlikely(!peer)) {
+		hmdfs_err("failed to delete connection: no peer");
+		return;
+	}
+
+	sock = sockfd_lookup(cmd.fd, &err);
+	if (unlikely(!sock)) {
+		hmdfs_err("failed to delete connection: no socket: %d", err);
+		goto out_release_peer;
+	}
+
+	hmdfs_delete_connection_by_sock(peer, sock);
+	sockfd_put(sock);
+out_release_peer:
+	peer_put(peer);
+}
+
 typedef void (*ctrl_cmd_handler)(const char *buf, size_t len,
 				 struct hmdfs_sb_info *sbi);
 
@@ -196,16 +336,19 @@ static const ctrl_cmd_handler cmd_handler[CMD_CNT] = {
 	[CMD_OFF_LINE] = ctrl_cmd_off_line_handler,
 	[CMD_SET_ACCOUNT] = ctrl_cmd_set_account,
 	[CMD_OFF_LINE_ALL] = ctrl_cmd_off_line_all_handler,
+	[CMD_UPDATE_CAPABILITY] = ctrl_cmd_udpate_capability,
+	[CMD_GET_P2P_SESSION_FAIL] = ctrl_cmd_get_p2p_session_fail,
+	[CMD_DELETE_CONNECTION] = ctrl_cmd_delete_connection,
+	[CMD_UPDATE_DEVSL] = ctrl_cmd_update_devsl_handler,
 };
 
 static ssize_t sbi_cmd_show(struct kobject *kobj, struct sbi_attribute *attr,
 			    char *buf)
 {
-	struct notify_param param;
+	struct notify_param param = { 0 };
 	int out_len;
 	struct hmdfs_sb_info *sbi = to_sbi(kobj);
 
-	memset(&param, 0, sizeof(param));
 	spin_lock(&sbi->notify_fifo_lock);
 	out_len = kfifo_out(&sbi->notify_fifo, &param, sizeof(param));
 	spin_unlock(&sbi->notify_fifo_lock);
@@ -228,6 +371,14 @@ static const char *cmd2str(int cmd)
 		return "CMD_SET_ACCOUNT";
 	case 4:
 		return "CMD_OFF_LINE_ALL";
+	case 5:
+		return "CMD_UPDATE_CAPABILITY";
+	case 6:
+		return "CMD_GET_P2P_SESSION_FAIL";
+	case 7:
+		return "CMD_DELETE_CONNECTION";
+	case 8:
+		return "CMD_UPDATE_DEVSL";
 	default:
 		return "illegal cmd";
 	}
@@ -268,25 +419,37 @@ static ssize_t sbi_status_show(struct kobject *kobj, struct sbi_attribute *attr,
 	struct hmdfs_sb_info *sbi = NULL;
 	struct hmdfs_peer *peer = NULL;
 	struct connection *conn_impl = NULL;
-	struct tcp_handle *tcp = NULL;
+	struct socket *sock = NULL;
+	int state;
 
 	sbi = to_sbi(kobj);
-	size += sprintf(buf + size, "peers  version  status\n");
+	size += sprintf(buf + size, "peers  version  status  support_p2p\n");
 
 	mutex_lock(&sbi->connections.node_lock);
 	list_for_each_entry(peer, &sbi->connections.node_list, list) {
-		size += sprintf(buf + size, "%llu  %d  %d\n", peer->device_id,
-				peer->version, peer->status);
+		size += sprintf(buf + size, "%llu \t%d \t%d \t%llu\n",
+				peer->device_id, peer->version, peer->status,
+				peer->capability);
 		// connection information
 		size += sprintf(
 			buf + size,
-			"\t socket_fd  connection_status  tcp_status  ... refcnt\n");
+			"  socket_fd conn_status socket_status socket_address"
+			" refcnt link_type conn_type dport sport client\n");
 		mutex_lock(&peer->conn_impl_list_lock);
 		list_for_each_entry(conn_impl, &peer->conn_impl_list, list) {
-			tcp = conn_impl->connect_handle;
-			size += sprintf(buf + size, "\t %d  \t%d  \t%d  \t%p  \t%ld\n",
-					tcp->fd, conn_impl->status,
-					tcp->sock->state, tcp->sock, file_count(tcp->sock->file));
+			sock = hmdfs_handle_get_socket(conn_impl);
+			state = sock ? sock->state : -1;
+			size += sprintf(buf + size, "\t%d \t%d \t%d \t%p \t%ld"
+					" \t%d \t%s \t%u \t%u \t%d\n",
+					conn_impl->fd, conn_impl->status,
+					sock->state, sock,
+					file_count(sock->file),
+					conn_impl->link_type,
+					conn_impl->type == CONNECT_TYPE_TCP ?
+					"TCP" : "D2DP",
+					be16_to_cpu(sock->sk->sk_dport),
+					sock->sk->sk_num,
+					conn_impl->client);
 		}
 		mutex_unlock(&peer->conn_impl_list_lock);
 	}
@@ -311,24 +474,26 @@ static ssize_t sbi_stat_show(struct kobject *kobj, struct sbi_attribute *attr,
 	struct hmdfs_sb_info *sbi = NULL;
 	struct hmdfs_peer *peer = NULL;
 	struct connection *conn_impl = NULL;
-	struct tcp_handle *tcp = NULL;
 
 	sbi = to_sbi(kobj);
 	mutex_lock(&sbi->connections.node_lock);
 	list_for_each_entry(peer, &sbi->connections.node_list, list) {
-		// connection information
 		mutex_lock(&peer->conn_impl_list_lock);
 		list_for_each_entry(conn_impl, &peer->conn_impl_list, list) {
-			tcp = conn_impl->connect_handle;
-			size += sprintf(buf + size, "socket_fd: %d\n", tcp->fd);
+			struct connection_stat *stat = &conn_impl->stat;
+			uint64_t snd_msgs = atomic64_read(&stat->send_messages);
+			uint64_t snd_data = atomic64_read(&stat->send_bytes);
+			uint64_t rcv_msgs = atomic64_read(&stat->recv_messages);
+			uint64_t rcv_data = atomic64_read(&stat->recv_bytes);
+
+			size += sprintf(buf + size, "socket_fd: %d, type: %d\n",
+					conn_impl->fd, conn_impl->type);
 			size += sprintf(buf + size,
-					"\tsend_msg %d \tsend_bytes %llu\n",
-					conn_impl->stat.send_message_count,
-					conn_impl->stat.send_bytes);
+					"\tsend_msg %llu \tsend_bytes %llu\n",
+					snd_msgs, snd_data);
 			size += sprintf(buf + size,
-					"\trecv_msg %d \trecv_bytes %llu\n",
-					conn_impl->stat.recv_message_count,
-					conn_impl->stat.recv_bytes);
+					"\trecv_msg %llu \trecv_bytes %llu\n",
+					rcv_msgs, rcv_data);
 		}
 		mutex_unlock(&peer->conn_impl_list_lock);
 	}
@@ -349,10 +514,12 @@ static ssize_t sbi_stat_store(struct kobject *kobj, struct sbi_attribute *attr,
 		// connection information
 		mutex_lock(&peer->conn_impl_list_lock);
 		list_for_each_entry(conn_impl, &peer->conn_impl_list, list) {
-			conn_impl->stat.send_message_count = 0;
-			conn_impl->stat.send_bytes = 0;
-			conn_impl->stat.recv_message_count = 0,
-			conn_impl->stat.recv_bytes = 0;
+			struct connection_stat *stat = &conn_impl->stat;
+
+			atomic64_set(&stat->send_messages, 0);
+			atomic64_set(&stat->send_bytes, 0);
+			atomic64_set(&stat->recv_messages, 0);
+			atomic64_set(&stat->recv_bytes, 0);
 		}
 		mutex_unlock(&peer->conn_impl_list_lock);
 	}
@@ -1280,6 +1447,67 @@ static ssize_t sbi_features_show(struct kobject *kobj,
 static struct sbi_attribute sbi_features_attr = __ATTR(features, 0444,
 	sbi_features_show, NULL);
 
+static ssize_t sbi_readpages_attr_show(struct kobject *kobj,
+				       struct sbi_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%u\n", to_sbi(kobj)->s_readpages_nr);
+}
+
+static ssize_t sbi_readpages_attr_store(struct kobject *kobj,
+					struct sbi_attribute *attr,
+					const char *buf, size_t len)
+{
+	int ret;
+	unsigned int readpages_nr;
+	struct hmdfs_sb_info *sbi = to_sbi(kobj);
+
+	ret = kstrtouint(buf, 0, &readpages_nr);
+	if (ret)
+		return ret;
+
+	if (readpages_nr < 1 || readpages_nr > HMDFS_READPAGES_NR_MAX)
+		return -EINVAL;
+
+	sbi->s_readpages_nr = readpages_nr;
+
+	return len;
+}
+
+static struct sbi_attribute sbi_readpages_attr =
+__ATTR(readpages_nr, 0644, sbi_readpages_attr_show, sbi_readpages_attr_store);
+
+static ssize_t sbi_p2p_conn_timeout_show(struct kobject *kobj,
+					  struct sbi_attribute *attr,
+					  char *buf)
+{
+	const struct hmdfs_sb_info *sbi = to_sbi(kobj);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->p2p_conn_timeout);
+}
+
+static ssize_t sbi_p2p_conn_timeout_store(struct kobject *kobj,
+					  struct sbi_attribute *attr,
+					  const char *buf,
+					  size_t len)
+{
+	struct hmdfs_sb_info *sbi = to_sbi(kobj);
+	int timeout = 0;
+	int err;
+
+	err = kstrtoint(buf, 10, &timeout);
+	if (err)
+		return err;
+
+	sbi->p2p_conn_timeout = timeout;
+
+	return len;
+}
+
+
+static struct sbi_attribute sbi_p2p_conn_timeout_attr =
+__ATTR(p2p_conn_timeout, 0644, sbi_p2p_conn_timeout_show,
+	sbi_p2p_conn_timeout_store);
+
 static struct attribute *sbi_attrs[] = {
 	&sbi_cmd_attr.attr,
 	&sbi_status_attr.attr,
@@ -1312,6 +1540,8 @@ static struct attribute *sbi_attrs[] = {
 	&sbi_seq_attr.attr,
 	&sbi_peers_attr.attr,
 	&sbi_features_attr.attr,
+	&sbi_readpages_attr.attr,
+	&sbi_p2p_conn_timeout_attr.attr,
 	NULL,
 };
 
@@ -1400,7 +1630,7 @@ static ssize_t cmd_timeout_store(struct kobject *kobj, struct attribute *attr,
 
 HMDFS_CMD_ATTR(open, F_OPEN);
 HMDFS_CMD_ATTR(release, F_RELEASE);
-HMDFS_CMD_ATTR(readpage, F_READPAGE);
+HMDFS_CMD_ATTR(readpages, F_READPAGES);
 HMDFS_CMD_ATTR(writepage, F_WRITEPAGE);
 HMDFS_CMD_ATTR(iterate, F_ITERATE);
 HMDFS_CMD_ATTR(rmdir, F_RMDIR);
@@ -1416,6 +1646,7 @@ HMDFS_CMD_ATTR(syncfs, F_SYNCFS);
 HMDFS_CMD_ATTR(getxattr, F_GETXATTR);
 HMDFS_CMD_ATTR(setxattr, F_SETXATTR);
 HMDFS_CMD_ATTR(listxattr, F_LISTXATTR);
+HMDFS_CMD_ATTR(readpage, F_READPAGE);
 
 #define ATTR_LIST(_name) (&hmdfs_attr_##_name.attr)
 
@@ -1429,6 +1660,7 @@ static struct attribute *sbi_timeout_attrs[] = {
 	ATTR_LIST(getattr),  ATTR_LIST(fsync),
 	ATTR_LIST(syncfs),   ATTR_LIST(getxattr),
 	ATTR_LIST(setxattr), ATTR_LIST(listxattr),
+	ATTR_LIST(readpages),
 	NULL
 };
 
@@ -1459,7 +1691,8 @@ void hmdfs_release_sysfs(struct hmdfs_sb_info *sbi)
 	wait_for_completion(&sbi->s_kobj_unregister);
 }
 
-int hmdfs_register_sysfs(const char *name, struct hmdfs_sb_info *sbi)
+int hmdfs_register_sysfs(struct hmdfs_sb_info *sbi, const char *name,
+			 int namelen)
 {
 	int ret;
 	struct kobject *kobj = NULL;

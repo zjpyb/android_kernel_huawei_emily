@@ -64,7 +64,7 @@ struct mutex {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
-#ifdef CONFIG_HW_VIP_THREAD
+#if defined(CONFIG_HW_VIP_THREAD) && !defined(CONFIG_OPTIMIZE_MM_AQ)
 	struct task_struct *vip_dep_task;
 #endif
 
@@ -72,7 +72,11 @@ struct mutex {
 
 static inline struct task_struct *__mutex_owner(struct mutex *lock)
 {
+#if defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_OPTIMIZE_MM_AQ)
+	return (struct task_struct *)(atomic_long_read(&lock->owner) & ~0x0f);
+#else
 	return (struct task_struct *)(atomic_long_read(&lock->owner) & ~0x07);
+#endif
 }
 
 /*
@@ -125,7 +129,7 @@ do {									\
 # define __DEP_MAP_MUTEX_INITIALIZER(lockname)
 #endif
 
-#ifdef CONFIG_HW_VIP_THREAD
+#if defined(CONFIG_HW_VIP_THREAD) && !defined(CONFIG_OPTIMIZE_MM_AQ)
 #define __MUTEX_INITIALIZER(lockname) \
 		{ .owner = ATOMIC_LONG_INIT(0) \
 		, .wait_lock = __SPIN_LOCK_UNLOCKED(lockname.wait_lock) \

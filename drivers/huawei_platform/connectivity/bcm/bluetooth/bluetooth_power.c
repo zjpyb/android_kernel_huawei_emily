@@ -98,16 +98,21 @@ static int bluetooth_power_handle(struct bluepower_data *p_dev_data, int on)
 			}
 #endif
 
-			/*enable bt     sleep clk */
+			/*For OneTrack, we need check it's the right chip type or not.
+			   If it's not the right chip type, don't init the driver */
+			if (!isMyConnectivityChip(CHIP_TYPE_SYNA)) {
+				/*enable bt     sleep clk */
 
-			pr_info("enable bluetooth 32 clk======>\n");
-			ret = clk_prepare_enable(p_dev_data->clk);
-			if (unlikely(ret < 0)) {
-				pr_err("%s : enable	clk	failed %d",
-				       __func__, ret);
-				goto clk_err;
+				pr_info("enable bluetooth 32 clk======>\n");
+				ret = clk_prepare_enable(p_dev_data->clk);
+				if (unlikely(ret < 0)) {
+					pr_err("%s : enable	clk	failed %d",
+					       __func__, ret);
+					goto clk_err;
+				}
+				msleep(5);
+
 			}
-			msleep(5);
 
 			pr_info("power on gpio BT_EN\n");
 			gpio_set_value(p_dev_data->gpio_enable.gpio, 1);
@@ -136,8 +141,12 @@ static int bluetooth_power_handle(struct bluepower_data *p_dev_data, int on)
 			gpio_set_value(p_dev_data->gpio_enable.gpio, 0);
 			msleep(5);
 
-			/*disable sleep clk */
-			clk_disable(p_dev_data->clk);
+			/*For OneTrack, we need check it's the right chip type or not.
+			   If it's not the right chip type, don't init the driver */
+			if (!isMyConnectivityChip(CHIP_TYPE_SYNA)) {
+				/*disable sleep clk */
+				clk_disable(p_dev_data->clk);
+			}
 
 			p_dev_data->pwr_count = 0;
 			pr_info("%s, bluetooth power off out\n", __func__);
@@ -466,6 +475,16 @@ static int bluetooth_power_probe(struct platform_device *pdev)
 #endif
 	}
 
+	#ifdef CONFIG_HWCONNECTIVITY
+		if (isMyConnectivityChip(CHIP_TYPE_SYNA)) {
+			ret = clk_prepare_enable(bt_data->clk);
+			if (ret < 0) {
+			    return ret;
+			}
+			msleep(5);
+		}
+	#endif
+
 	ret = gpio_request(bt_data->gpio_enable.gpio, "bt_gpio_enable");
 	if (ret < 0) {
 		pr_err("%s: gpio_request %d  failed, ret:%d .\n", __func__,
@@ -652,7 +671,7 @@ static int __init bluetooth_power_init(void)
 #ifdef CONFIG_HWCONNECTIVITY
 	/*For OneTrack, we need check it's the right chip type or not.
 	   If it's not the right chip type, don't init the driver */
-	if (!isMyConnectivityChip(CHIP_TYPE_BCM)) {
+	if ((!isMyConnectivityChip(CHIP_TYPE_BCM)) && (!isMyConnectivityChip(CHIP_TYPE_SYNA))) {
 		pr_err("BT chip type is not match, skip driver init");
 		return -EINVAL;
 	}

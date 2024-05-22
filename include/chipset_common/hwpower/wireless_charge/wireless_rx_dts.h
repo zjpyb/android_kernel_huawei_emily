@@ -19,6 +19,8 @@
 #ifndef _WIRELESS_RX_DTS_H_
 #define _WIRELESS_RX_DTS_H_
 
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
+
 struct wlrx_pctrl;
 struct wlrx_soc_para;
 struct wlrx_intfr;
@@ -49,6 +51,8 @@ struct wlrx_dts {
 	struct wlrx_pmode *pmode_cfg;
 	int vmode_cfg_level;
 	struct wlrx_vmode *vmode_cfg;
+	int otg_need_plim;
+	int eff_para[WLRX_SCN_END];
 };
 
 struct device_node;

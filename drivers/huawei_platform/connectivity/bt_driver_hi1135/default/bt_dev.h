@@ -29,6 +29,6 @@
 #include "bt_dev.h"
 
 int32 bt_dev_log_level(void);
-void data_str_printf(int len, const uint8 *ptr);
+void data_str_printf(int32 len, const uint8 *ptr);
 void bt_get_core_reference(struct bt_core_s **core_data);
 #endif

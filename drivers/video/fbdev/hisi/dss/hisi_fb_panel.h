@@ -14,6 +14,8 @@
 #define HISI_FB_PANEL_H
 
 #include "hisi_fb_panel_struct.h"
+#include "hisi_fb_panel_struct_ex.h"
+#include "hisi_fb_panel_struct_ex_ex.h"
 
 /* record lcd display fps support value
  */

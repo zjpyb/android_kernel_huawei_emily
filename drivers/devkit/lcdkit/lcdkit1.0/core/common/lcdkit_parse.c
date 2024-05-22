@@ -272,6 +272,7 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	int ret;
 	uint32_t left_time_to_te_us = 0;
 	uint32_t right_time_to_te_us = 0;
+	uint32_t dc_time_to_te_us = 0;
 
 	lcdkit_info.panel_infos.panel_name = (char*)of_get_property(np, "hw,lcdkit-panel-name", NULL);
 	lcdkit_info.panel_infos.panel_model = (char*)of_get_property(np, "hw,lcdkit-panel-model", NULL);
@@ -301,8 +302,10 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 		&lcdkit_info.panel_infos.ts_control_lcd_reset_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-tp-lcd-reset-sync-support", &lcdkit_info.panel_infos.tp_lcd_reset_sync,0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-support", &lcdkit_info.panel_infos.esd_support, 0);
+	OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-support-tp-driver-type", &lcdkit_info.panel_infos.lcd_support_tp_driver_type, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-fac-esd-support", &lcdkit_info.panel_infos.fac_esd_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-check-reg-support", &lcdkit_info.panel_infos.check_reg_support, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-barcode-at-read-support", &lcdkit_info.panel_infos.barcode_at_read_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-mipi-check-support", &lcdkit_info.panel_infos.mipi_check_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-display-region-support", &lcdkit_info.panel_infos.display_region_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-checksum-support", &lcdkit_info.panel_infos.checksum_support, 0);
@@ -344,6 +347,7 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-dis-on-cmds-delay-margin-time", &lcdkit_info.panel_infos.dis_on_cmds_delay_margin_time, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-btb-support", &lcdkit_btb_inf.btb_support, 0);
 	OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-btb-cfg-addr", &lcdkit_btb_inf.btb_con_addr, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-btb-check-support", &lcdkit_btb_inf.btb_check_support, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-reset-shutdown-later", &lcdkit_info.panel_infos.reset_shutdown_later, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-pcd-errflag-check-support",&lcdkit_info.panel_infos.pcd_errflag_check_support,0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-cabc-switch-support",&lcdkit_info.panel_infos.cabc_switch_support,0);
@@ -365,8 +369,15 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	/* parse LeftTimeThUs & RightTimeThUs */
 	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-left-time-to-te-us", &left_time_to_te_us);
 	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-right-time-to-te-us", &right_time_to_te_us);
+	OF_PROPERTY_READ_U32_RETURN(np, "hw,lcdkit-dc-time-to-te-us", &dc_time_to_te_us);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-dcdelay-support",
+		&lcdkit_info.panel_infos.dcdelay_support, 0);
 	lcdkit_info.panel_infos.left_time_to_te_us = (uint64_t)left_time_to_te_us;
 	lcdkit_info.panel_infos.right_time_to_te_us = (uint64_t)right_time_to_te_us;
+	lcdkit_info.panel_infos.dc_time_to_te_us = (uint64_t)dc_time_to_te_us;
+
+	/* Parse btb gpio list */
+	ret = lcdkit_parse_int_array_data(np, "hw,lcdkit-panel-btb-gpio", &lcdkit_btb_inf.btb_gpio);
 
 	/* Parse panel on cmds */
 	ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-on-command", "hw,lcdkit-panel-on-command-state",
@@ -619,13 +630,19 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 		/* esd check */
 		ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-esd-reg-command", "hw,lcdkit-panel-esd-reg-command-state", &lcdkit_info.panel_infos.esd_cmds);
 		ret = lcdkit_parse_int_array_data(np, "hw,lcdkit-panel-esd-value", &lcdkit_info.panel_infos.esd_value);
+		ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-esd-reg-main-curic-command", "hw,lcdkit-panel-esd-reg-main-curic-command-state", &lcdkit_info.panel_infos.esd_main_curic_cmds);
+		ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-esd-reg-main-oriic-command", "hw,lcdkit-panel-esd-reg-main-oriic-command-state", &lcdkit_info.panel_infos.esd_main_oriic_cmds);
 		ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-esd-reg-curic-command", "hw,lcdkit-panel-esd-reg-curic-command-state", &lcdkit_info.panel_infos.esd_curic_cmds);
 		ret = lcdkit_parse_dcs_cmds(np, "hw,lcdkit-panel-esd-reg-oriic-command", "hw,lcdkit-panel-esd-reg-oriic-command-state", &lcdkit_info.panel_infos.esd_oriic_cmds);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-esd-check-num",&lcdkit_info.panel_infos.esd_check_num, 3);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-expect-value-type",&lcdkit_info.panel_infos.esd_expect_value_type, 0);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-use-second-ic-for-esd",&lcdkit_info.panel_infos.use_second_ic, 0);
+		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-use-dual-ic-for-esd", &lcdkit_info.panel_infos.use_dual_ic, 0);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-tp-esd-gpio-event", &lcdkit_info.panel_infos.tp_esd_event, 0);
+		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-send-tp-esd-gpio-event",
+			&lcdkit_info.panel_infos.send_tp_esd_event, 0);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-gpio-detect-support", &lcdkit_info.panel_infos.esd_gpio_detect_support, 0);
+		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-gpio-recovery", &lcdkit_info.panel_infos.esd_gpio_recovery, 0);
 		OF_PROPERTY_READ_U32_DEFAULT(np, "hw,lcdkit-panel-esd-gpio-detect-num", &lcdkit_info.panel_infos.esd_gpio_detect_num, 0);
 		OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-panel-esd-gpio-normal-value", &lcdkit_info.panel_infos.esd_gpio_normal_value, 0);
 	}
@@ -858,6 +875,8 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-lcd-type", &g_tskit_ic_type, 1);
 	/* for TP gesture special sequence */
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-gesture-sequence-flag", &lcdkit_info.panel_infos.tp_gesture_sequence_flag, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-bl-poweron-after-dsi-cmd", &lcdkit_info.panel_infos.bl_poweron_after_dsi_cmd, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-bl-disable-before-lcd-suspend", &lcdkit_info.panel_infos.bl_disable_before_lcd_suspend, 0);
 	/* for power mode ctrl */
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-bias-power-ctrl-mode", &lcdkit_info.panel_infos.bias_power_ctrl_mode, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-iovcc-power-ctrl-mode", &lcdkit_info.panel_infos.iovcc_power_ctrl_mode, 0);
@@ -912,6 +931,8 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-lcd-rst-second-high", &lcdkit_info.panel_infos.reset_step2_H, 0);
 	/* for reset ctrl */
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-iovcc-on-is-need-reset", &lcdkit_info.panel_infos.first_reset, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-vsp-on-is-need-reset", &lcdkit_info.panel_infos.vsp_on_is_need_reset, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-reset-low-after-vsn-on", &lcdkit_info.panel_infos.reset_low_after_vsn_on, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-vsn-on-is-need-reset", &lcdkit_info.panel_infos.second_reset, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-reset-pull-high-flag", &lcdkit_info.panel_infos.reset_pull_high_flag, 0);
 	/* for tp_reset after lcd reset low */
@@ -922,8 +943,14 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	/* for tp reset when prox enable on lcd power on */
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-prox-not-need-lcd-reset",
 		&lcdkit_info.panel_infos.prox_not_need_lcd_reset, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-power-off-not-need-reset",
+		&lcdkit_info.panel_infos.power_off_not_need_reset, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-iovcc-not-need-low",
+		&lcdkit_info.panel_infos.power_iovcc_not_need_low, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-reset-prox",
 		&lcdkit_info.panel_infos.delay_af_reset_prox, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-mipi-rx-have-tx-cmd",
+		&lcdkit_info.panel_infos.mipi_rx_have_tx_cmd, 0);
 	/* for nova lcdkit off sequence */
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-tp-before-lcd-sleep", &lcdkit_info.panel_infos.tp_before_lcdsleep, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-tp-before-suspend", &lcdkit_info.panel_infos.delay_af_tp_before_suspend, 0);
@@ -938,6 +965,8 @@ void lcdkit_parse_panel_dts(struct device_node* np)
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-lp11", &lcdkit_info.panel_infos.delay_af_LP11, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-tp-after-resume", &lcdkit_info.panel_infos.delay_af_tp_after_resume, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-tp-reset", &lcdkit_info.panel_infos.delay_af_tp_reset, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-bf-esd-sec-read", &lcdkit_info.panel_infos.delay_bf_esd_sec_read, 0);
+	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-dsi-cmd", &lcdkit_info.panel_infos.delay_af_dsi_cmd, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-rst-after-vbat", &lcdkit_info.panel_infos.rst_after_vbat_flag, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-lcdph-delay-set-flag", &lcdkit_info.panel_infos.lcdph_delay_set_flag, 0);
 	OF_PROPERTY_READ_U8_DEFAULT(np, "hw,lcdkit-delay-af-display-on", &lcdkit_info.panel_infos.delay_af_display_on, 0);

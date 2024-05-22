@@ -23,6 +23,9 @@
 #ifdef FTRACE_ENABLE
 #include "ftrace.h"
 #endif
+#ifdef _PRE_COLDBOOT_FEATURE
+#include "plat_firmware_flash.h"
+#endif
 
 #undef THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_PLAT_MAIN_C
@@ -138,6 +141,9 @@ int32_t plat_init(void)
     }
 #endif
 
+#ifdef _PRE_COLDBOOT_FEATURE
+    firmware_coldboot_partion_save();
+#endif
     /* 启动完成后，输出打印 */
     oal_io_print("plat_init:: platform_main_init finish!\r\n");
 

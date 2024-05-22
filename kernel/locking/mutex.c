@@ -52,7 +52,7 @@ __mutex_init(struct mutex *lock, const char *name, struct lock_class_key *key)
 #ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 	osq_lock_init(&lock->osq);
 #endif
-#ifdef CONFIG_HW_VIP_THREAD
+#if defined(CONFIG_HW_VIP_THREAD) && !defined(CONFIG_OPTIMIZE_MM_AQ)
 	lock->vip_dep_task = NULL;
 #endif
 
@@ -68,12 +68,18 @@ EXPORT_SYMBOL(__mutex_init);
  * Bit0 indicates a non-empty waiter list; unlock must issue a wakeup.
  * Bit1 indicates unlock needs to hand the lock to the top-waiter
  * Bit2 indicates handoff has been done and we're waiting for pickup.
+ * Bit3 indicates mutex owner has been boosted.
  */
 #define MUTEX_FLAG_WAITERS	0x01
 #define MUTEX_FLAG_HANDOFF	0x02
 #define MUTEX_FLAG_PICKUP	0x04
 
+#if defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_OPTIMIZE_MM_AQ)
+#define MUTEX_FLAG_OWNER_BOOST  0x08
+#define MUTEX_FLAGS             0x0f
+#else
 #define MUTEX_FLAGS		0x07
+#endif
 
 static inline struct task_struct *__owner_task(unsigned long owner)
 {

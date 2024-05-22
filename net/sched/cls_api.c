@@ -545,7 +545,7 @@ static int tc_ctl_tfilter(struct sk_buff *skb, struct nlmsghdr *n,
 	struct net_device *dev;
 	struct Qdisc  *q;
 	struct tcf_chain_info chain_info;
-	struct tcf_chain *chain = NULL;
+	struct tcf_chain *chain;
 	struct tcf_block *block;
 	struct tcf_proto *tp;
 	const struct Qdisc_class_ops *cops;
@@ -571,6 +571,8 @@ replay:
 	prio_allocate = false;
 	parent = t->tcm_parent;
 	cl = 0;
+	q = NULL;
+	chain = NULL;
 
 	if (prio == 0) {
 		switch (n->nlmsg_type) {

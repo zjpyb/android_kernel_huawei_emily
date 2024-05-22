@@ -235,10 +235,14 @@ OAL_STATIC wlan_cfg_cmd g_wifi_config_priv[] = {
     { "hiex_cap",                     WLAN_CFG_PRIV_HIEX_CAP},
     { "ftm_cap",                      WLAN_CFG_PRIV_FTM_CAP},
     { "wlan_feature_miracast_sink",   WLAN_CFG_PRIV_MIRACAST_SINK },
+    { "disable_w58_channel",          WLAN_CFG_PRIV_DISABLE_W58_CHANNEL },
+    { "wlan_go_assoc_user_max_num",   WLAN_CFG_PRIV_P2P_GO_ASSOC_USER_MAX_NUM },
+
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
     { "mcast_ampdu_enable",           WLAN_CFG_PRIV_MCAST_AMPDU_ENABLE},
 #endif
-
+    { "pt_mcast_enable",             WLAN_CFG_PRIV_PT_MCAST_ENABLE},
+    { "close_filter_switch",         WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH},
     { NULL,                 0 }
 };
 
@@ -603,6 +607,7 @@ OAL_STATIC wlan_cfg_cmd g_wifi_config_cmds[] = {
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
     { "mcast_ampdu_enable",             WLAN_CFG_INIT_MCAST_AMPDU_ENABLE},
 #endif
+    { "pt_mcast_enable",             WLAN_CFG_INIT_PT_MCAST_ENABLE},
     { NULL,         0 }
 };
 
@@ -1203,6 +1208,7 @@ OAL_STATIC void host_params_performance_init(void)
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
     g_host_init_params[WLAN_CFG_INIT_MCAST_AMPDU_ENABLE] = OAL_FALSE;
 #endif
+    g_host_init_params[WLAN_CFG_INIT_PT_MCAST_ENABLE] = OAL_FALSE;
 }
 /*
  * 功能描述  : 给定制化参数全局数组 g_host_init_params 附初值
@@ -1725,8 +1731,7 @@ OAL_STATIC void hwifi_custom_adapt_device_ini_ldac_m2s_rssi_param(uint8_t *puc_d
     l_ret = memcpy_s(puc_data, (WLAN_LARGE_NETBUF_SIZE - *pul_data_len), &st_syn_msg, CUSTOM_MSG_DATA_HDR_LEN);
     l_ret += memcpy_s(puc_data + CUSTOM_MSG_DATA_HDR_LEN,
                       (WLAN_LARGE_NETBUF_SIZE - *pul_data_len - CUSTOM_MSG_DATA_HDR_LEN),
-                      &ast_ldac_m2s_rssi_threshold,
-                      sizeof(ast_ldac_m2s_rssi_threshold));
+                      &ast_ldac_m2s_rssi_threshold, sizeof(ast_ldac_m2s_rssi_threshold));
     if (l_ret != EOK) {
         oam_error_log2(0, OAM_SF_CFG,
             "{hwifi_custom_adapt_device_ini_ldac_m2s_rssi_param:memcpy_s fail[%d],data_len[%d]}", l_ret, *pul_data_len);
@@ -1953,8 +1958,7 @@ OAL_STATIC int32_t hwifi_custom_adapt_device_priv_ini_radio_cap_param(uint8_t *p
     int32_t ret;
     hmac_to_dmac_cfg_custom_data_stru st_syn_msg = {0};
     int32_t l_priv_value = 0;
-    uint8_t uc_cmd_idx;
-    uint8_t uc_device_idx;
+    uint8_t uc_cmd_idx, uc_device_idx;
     uint8_t auc_wlan_service_device_per_chip[WLAN_SERVICE_DEVICE_MAX_NUM_PER_CHIP] = { WLAN_INIT_DEVICE_RADIO_CAP };
 
     if (puc_data == NULL) {
@@ -2224,7 +2228,9 @@ OAL_STATIC void hwifi_custom_adapt_priv_ini_param_extend_etc(
         case WLAN_CFG_PRIV_FTM_CAP:
             pst_syn_msg->en_syn_id = CUSTOM_CFGID_PRIV_INI_FTM_CAP_ID;
             break;
-
+        case WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH:
+            pst_syn_msg->en_syn_id = CUSTOM_CFGID_PRIV_CLOSE_FILTER_SWITCH_ID;
+            break;
         default:
             break;
     }
@@ -2270,6 +2276,9 @@ OAL_STATIC void hwifi_custom_adapt_priv_ini_param_extend(hmac_to_dmac_cfg_custom
             pst_syn_msg->en_syn_id = CUSTOM_CFGID_PRIV_INI_MCAST_AMPDU_ENABLE_ID;
             break;
 #endif
+        case WLAN_CFG_PRIV_PT_MCAST_ENABLE:
+            pst_syn_msg->en_syn_id = CUSTOM_CFGID_PRIV_INI_PT_MCAST_ENABLE_ID;
+            break;
         case WLAN_CFG_PRIV_MIRACAST_SINK:
             pst_syn_msg->en_syn_id = CUSTOM_CFGID_PRIV_INI_MIRACAST_SINK;
             break;
@@ -2368,10 +2377,12 @@ OAL_STATIC void hwifi_custom_adapt_priv_ini_extend(hmac_to_dmac_cfg_custom_data_
         case WLAN_CFG_PRIV_PHY_CAP_SWITCH:
         case WLAN_CFG_PRIV_OPTIMIZED_FEATURE_SWITCH:
         case WLAN_CFG_PRIV_DDR_SWITCH:
+        case WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH:
         case WLAN_CFG_PRIV_FTM_CAP:
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
         case WLAN_CFG_PRIV_MCAST_AMPDU_ENABLE:
 #endif
+        case WLAN_CFG_PRIV_PT_MCAST_ENABLE:
         case WLAN_CFG_PRIV_MIRACAST_SINK:
             hwifi_custom_adapt_priv_ini_param_extend(pst_syn_msg, uc_cfg_id, puc_priv_cfg_value);
             break;
@@ -2429,6 +2440,13 @@ static void hwifi_priv_ini_param_set_mcast_ampdu_enable_id(hmac_to_dmac_cfg_cust
     oal_io_print("hwifi_priv_ini_param_set_mcast_ampdu_enable_id::mcast_ampdu_enable[%d]", *priv_cfg_value);
 }
 #endif
+
+static void hwifi_priv_ini_param_set_pt_mcast_enable_id(hmac_to_dmac_cfg_custom_data_stru *syn_msg,
+    uint8_t cfg_id, uint8_t *priv_cfg_value)
+{
+    syn_msg->en_syn_id = WLAN_CFG_PRIV_PT_MCAST_ENABLE;
+    oal_io_print("hwifi_priv_ini_param_set_pt_mcast_enable_id::pt_mcast_enable[%d]", *priv_cfg_value);
+}
 
 static void hwifi_priv_ini_param_set_su_bfee_id(hmac_to_dmac_cfg_custom_data_stru *syn_msg,
                                                 uint8_t cfg_id,
@@ -2631,6 +2649,7 @@ OAL_STATIC int32_t hwifi_custom_adapt_priv_ini_param(uint8_t uc_cfg_id, uint8_t 
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
         { WLAN_CFG_PRIV_MCAST_AMPDU_ENABLE,              hwifi_priv_ini_param_set_mcast_ampdu_enable_id},
 #endif
+        { WLAN_CFG_PRIV_PT_MCAST_ENABLE,                 hwifi_priv_ini_param_set_pt_mcast_enable_id},
     };
 
     if (puc_data == NULL) {
@@ -2912,9 +2931,11 @@ OAL_STATIC void hwifi_custom_adapt_device_priv_ini_param_extend(uint8_t *puc_dat
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_DC_FLOWCTL_SWITCH, puc_data + data_len, &data_len);
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_PHY_CAP_SWITCH, puc_data + data_len, &data_len);
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_OPTIMIZED_FEATURE_SWITCH, puc_data + data_len, &data_len);
+    hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_CLOSE_FILTER_SWITCH, puc_data + data_len, &data_len);
 #ifdef _PRE_WLAN_FEATURE_MCAST_AMPDU
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_MCAST_AMPDU_ENABLE, puc_data + data_len, &data_len);
 #endif
+    hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_PT_MCAST_ENABLE, puc_data + data_len, &data_len);
     hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_MIRACAST_SINK, puc_data + data_len, &data_len);
 
     l_ret = hwifi_custom_adapt_priv_ini_param(WLAN_CFG_PRIV_FTM_CAP, puc_data + data_len, &data_len);
@@ -5100,7 +5121,7 @@ void hwifi_config_cpu_freq_ini_param_1103(void)
 {
     int32_t l_val;
 
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
     l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_PRIV_DMA_LATENCY);
     g_freq_lock_control.uc_lock_dma_latency = (l_val > 0) ? OAL_TRUE : OAL_FALSE;
     g_freq_lock_control.dma_latency_value = (uint16_t)l_val;
@@ -5516,6 +5537,9 @@ void hwifi_config_host_global_ini_param_1103(void)
     l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_MCAST_AMPDU_ENABLE);
     g_mcast_ampdu_cfg.mcast_ampdu_enable = (l_val > 0) ? OAL_TRUE : OAL_FALSE;
 #endif
+    /******************************************** 组播图传 ********************************************/
+    l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_PT_MCAST_ENABLE);
+    g_pt_mcast_enable = (l_val > 0) ? OAL_TRUE : OAL_FALSE;
     /******************************************** 随机MAC地址扫描 ********************************************/
     l_val = hwifi_get_init_value(CUS_TAG_INI, WLAN_CFG_INIT_RANDOM_MAC_ADDR_SCAN);
     g_wlan_cust.uc_random_mac_addr_scan = !!l_val;

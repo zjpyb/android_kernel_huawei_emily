@@ -32,6 +32,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#include <linux/oom.h>
+#endif
 
 #include <mali_kbase.h>
 #include <mali_kbase_defs.h>
@@ -145,6 +148,39 @@ static void kbase_device_all_as_term(struct kbase_device *kbdev)
 		kbase_device_as_term(kbdev, i);
 }
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+#define KBASE_PAGES_TO_KIB(pages) (((unsigned int)pages) << (PAGE_SHIFT - 10))
+
+/**
+ * mali_oom_notifier_handler - Mali driver out-of-memory handler
+ *
+ * @nb - notifier block - used to retrieve kbdev pointer
+ * @action - action (unused)
+ * @data - data pointer (unused)
+ * This function simply lists memory usage by the Mali driver, per GPU device,
+ * for diagnostic purposes.
+ */
+static int mali_oom_notifier_handler(struct notifier_block *nb,
+				     unsigned long action, void *data)
+{
+	struct kbase_device *kbdev;
+	unsigned long kbdev_alloc_total;
+
+	if (WARN_ON(nb == NULL))
+		return NOTIFY_BAD;
+
+	kbdev = container_of(nb, struct kbase_device, oom_notifier_block);
+
+	kbdev_alloc_total =
+		KBASE_PAGES_TO_KIB(atomic_read(&(kbdev->memdev.used_pages)));
+
+	dev_err(kbdev->dev, "OOM notifier: dev %s  %lu kB\n", kbdev->devname,
+		kbdev_alloc_total);
+
+	return NOTIFY_OK;
+}
+#endif
+
 int kbase_device_init(struct kbase_device * const kbdev)
 {
 	int err;
@@ -244,6 +280,17 @@ int kbase_device_init(struct kbase_device * const kbdev)
 	mutex_init(&kbdev->kctx_list_lock);
 	INIT_LIST_HEAD(&kbdev->kctx_list);
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	dev_dbg(kbdev->dev, "Registering mali_oom_notifier_handler");
+	kbdev->oom_notifier_block.notifier_call = mali_oom_notifier_handler;
+	err = register_oom_notifier(&kbdev->oom_notifier_block);
+	if (err) {
+		dev_err(kbdev->dev,
+			"Unable to register OOM notifier for Mali - but will continue\n");
+		kbdev->oom_notifier_block.notifier_call = NULL;
+	}
+#endif
+
 	return 0;
 term_trace:
 	kbasep_trace_term(kbdev);
@@ -270,6 +317,11 @@ void kbase_device_term(struct kbase_device *kbdev)
 	kbasep_trace_term(kbdev);
 
 	kbase_device_all_as_term(kbdev);
+
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (kbdev->oom_notifier_block.notifier_call)
+		unregister_oom_notifier(&kbdev->oom_notifier_block);
+#endif
 }
 
 void kbase_device_free(struct kbase_device *kbdev)

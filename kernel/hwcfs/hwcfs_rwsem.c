@@ -36,6 +36,18 @@ struct rwsem_waiter {
 
 #define RWSEM_READER_OWNED ((struct task_struct *)1UL)
 
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+static inline bool is_sem_boost(const struct rw_semaphore *sem)
+{
+	return sem->boost;
+}
+#else
+static inline struct task_struct *is_sem_boost(const struct rw_semaphore *sem)
+{
+	return sem->vip_dep_task;
+}
+#endif
+
 static inline bool rwsem_owner_is_writer(struct task_struct *owner)
 {
 	return owner && owner != RWSEM_READER_OWNED;
@@ -76,6 +88,7 @@ void rwsem_dynamic_vip_enqueue(
 	struct task_struct *tsk, struct task_struct *waiter_task,
 	struct task_struct *owner, struct rw_semaphore *sem)
 {
+#ifndef CONFIG_HARMONY_PERFORMANCE_AQ
 	bool is_vip = test_set_dynamic_vip(tsk);
 
 	if (waiter_task && is_vip) {
@@ -85,15 +98,47 @@ void rwsem_dynamic_vip_enqueue(
 			sem->vip_dep_task = owner;
 		}
 	}
+#else
+	if (!waiter_task || !tsk || !sem || is_sem_boost(sem) || !rwsem_owner_is_writer(owner))
+		return;
+	if (test_task_vip(owner))
+		return;
+	if (!test_set_dynamic_vip(tsk)) {
+#ifdef CONFIG_HW_VIP_SEMAPHORE
+		if (sem->vip_sem && owner->prio >= DEFAULT_PRIO && tsk->group_leader) {
+			if (!tsk->group_leader->static_vip)
+				return;
+			tsk = tsk->group_leader;
+		} else {
+			return;
+		}
+#else
+		return;
+#endif
+	}
+	dynamic_vip_enqueue(owner, DYNAMIC_VIP_RWSEM, tsk->vip_depth);
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	sem->boost = true;
+#else
+	sem->vip_dep_task = owner;
+#endif
+#endif
 }
 
 void rwsem_dynamic_vip_dequeue(struct rw_semaphore *sem,
 	struct task_struct *tsk)
 {
+#ifdef CONFIG_OPTIMIZE_MM_AQ
+	if (tsk && sem && sem->boost) {
+		dynamic_vip_dequeue(tsk, DYNAMIC_VIP_RWSEM);
+		sem->boost = false;
+	}
+#else
 	if (tsk && sem && sem->vip_dep_task == tsk) {
 		dynamic_vip_dequeue(tsk, DYNAMIC_VIP_RWSEM);
 		sem->vip_dep_task = NULL;
 	}
+#endif
 }
 
 /*lint -restore*/

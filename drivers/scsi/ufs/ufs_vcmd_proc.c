@@ -99,7 +99,6 @@ static int ufshcd_rw_buffer_vcmd_retry(struct scsi_device *dev,
 {
 	int i;
 	int ret = -EINVAL;
-	struct scsi_sense_hdr sshdr;
 	unsigned char cmd[RW_BUFFER_CDB_LEN] = { 0 };
 
 	cmd[RW_BUFFER_OPCODE_OFFSET] = vcmd->opcode;
@@ -115,9 +114,9 @@ static int ufshcd_rw_buffer_vcmd_retry(struct scsi_device *dev,
 		cmd[RW_BUFFER_2ND_RESERVED_OFFSET + i] = vcmd->reserved_2nd[i];
 
 	for (i = 0; i < vcmd->retries; ++i) {
-		ret = scsi_execute_req(dev, cmd, data_direction, vcmd->buffer,
-			vcmd->buffer_len, &sshdr, VCMD_REQ_TIMEOUT,
-			vcmd->retries, NULL);
+		ret = scsi_unistore_execute(dev, cmd, data_direction,
+			vcmd->buffer, vcmd->buffer_len, VCMD_REQ_TIMEOUT,
+			vcmd->retries, vcmd->done);
 		if (!ret)
 			break;
 	}

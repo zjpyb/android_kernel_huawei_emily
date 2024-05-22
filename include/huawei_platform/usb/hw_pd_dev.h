@@ -444,7 +444,7 @@ void pd_dpm_set_ignore_vbuson_event(bool ignore);
 void pd_dpm_set_ignore_vbusoff_event(bool ignore);
 void pd_pdm_enable_drp(void);
 
-
+void pd_dpm_start_data_role_swap(void);
 int pd_dpm_get_cur_usb_event(void);
 void pd_dpm_audioacc_sink_vbus(unsigned long event, void *data);
 int pmic_vbus_irq_is_enabled(void);
@@ -459,6 +459,7 @@ bool pd_dpm_check_cc_vbus_short(void);
 bool pd_dpm_get_cc_moisture_status(void);
 int pd_dpm_get_otg_channel(void);
 enum cur_cap pd_dpm_get_cvdo_cur_cap(void);
+void pd_dpm_set_emark_detect_enable(int flag);
 int pd_dpm_get_emark_detect_enable(void);
 void pd_dpm_detect_emark_cable(void);
 void pd_dpm_detect_emark_cable_finish(void);
@@ -467,6 +468,8 @@ void pd_dpm_cc_dynamic_protect(void);
 void pd_dpm_set_source_sink_state(enum charger_event_type type);
 bool pmic_vbus_is_connected(void);
 void pmic_vbus_disconnect_process(void);
+void pd_dpm_usb_host_on(void);
+void pd_dpm_usb_host_off(void);
 #if defined(CONFIG_TCPC_CLASS) || defined(CONFIG_HW_TCPC_CLASS)
 bool pd_judge_is_cover(void);
 #else

@@ -26,7 +26,7 @@ struct device_node;
 #ifdef CONFIG_WIRELESS_CHARGER
 int wlrx_fod_init(unsigned int drv_type, const struct device_node *np);
 void wlrx_fod_deinit(unsigned int drv_type);
-void wlrx_send_fod_status(unsigned int drv_type, unsigned int prot_type);
+void wlrx_send_fod_status(unsigned int drv_type, unsigned int prot_type, unsigned int tx_type);
 #else
 static inline int wlrx_fod_init(unsigned int drv_type, const struct device_node *np)
 {
@@ -37,7 +37,7 @@ static inline void wlrx_fod_deinit(unsigned int drv_type)
 {
 }
 
-static inline void wlrx_send_fod_status(unsigned int drv_type, unsigned int prot_type)
+static inline void wlrx_send_fod_status(unsigned int drv_type, unsigned int prot_type, unsigned int tx_type)
 {
 }
 #endif /* CONFIG_WIRELESS_CHARGER */

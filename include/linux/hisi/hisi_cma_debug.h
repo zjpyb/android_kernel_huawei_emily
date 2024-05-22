@@ -123,5 +123,7 @@ void cma_add_debug_list(struct cma *cma);
 void set_himntn_cma_trace_flag(void);
 int get_himntn_cma_trace_flag(void);
 
+#ifndef CONFIG_OPTIMIZE_MM_AQ
 void cma_mutex_lock_with_record(void);
+#endif
 #endif

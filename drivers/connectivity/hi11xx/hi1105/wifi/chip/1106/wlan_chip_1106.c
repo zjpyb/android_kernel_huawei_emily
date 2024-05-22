@@ -85,7 +85,7 @@ OAL_STATIC void hwifi_cfg_host_global_init_sounding_1106(void)
 
 OAL_STATIC void hwifi_cfg_host_global_init_param_extend_1106(void)
 {
-#if defined(_PRE_FEATURE_PLAT_LOCK_CPUFREQ) && !defined(CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT)
+#ifdef _PRE_FEATURE_PLAT_LOCK_CPUFREQ
     if (hwifi_get_cust_read_status(CUS_TAG_HOST, WLAN_CFG_HOST_LOCK_CPU_FREQ)) {
         g_freq_lock_control.uc_lock_max_cpu_freq = g_cust_host.lock_max_cpu_freq;
     }
@@ -139,7 +139,8 @@ OAL_STATIC void hwifi_cfg_host_global_init_param_1106(void)
     hwifi_cfg_host_global_switch_init_1106();
     /*************************** 私有定制化 *******************************/
     for (device_idx = 0; device_idx < WLAN_SERVICE_DEVICE_MAX_NUM_PER_CHIP; device_idx++) {
-        /* 定制化 RADIO_0高4bit 给dbdc软件开关用 */
+        /* 定制化 RADIO_0 bit4 给dbdc软件开关用 */
+        g_wlan_priv_dbdc_radio_cap = (uint8_t)((g_cust_cap.radio_cap[device_idx] & 0x10) >> 4);
         g_wlan_service_device_per_chip[device_idx] = g_cust_cap.radio_cap[device_idx] & 0x0F;
     }
     /* 同步host侧业务device */
@@ -433,6 +434,7 @@ const struct wlan_chip_ops g_wlan_chip_ops_1106 = {
 #ifdef _PRE_WLAN_FEATURE_DFS
     .start_zero_wait_dfs = hmac_config_start_zero_wait_dfs_handle,
 #endif
+    .tx_pt_mcast_set_cb = NULL,
 };
 
 const struct wlan_chip_ops g_wlan_chip_ops_bisheng = {
@@ -506,4 +508,5 @@ const struct wlan_chip_ops g_wlan_chip_ops_bisheng = {
 #ifdef _PRE_WLAN_FEATURE_DFS
     .start_zero_wait_dfs = hmac_config_start_zero_wait_dfs_handle,
 #endif
+    .tx_pt_mcast_set_cb = NULL,
 };

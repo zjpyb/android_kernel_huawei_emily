@@ -10,6 +10,7 @@ char g_wifi_country_code[COUNTRY_CODE_LEN] = "00";
 wlan_cust_country_code_ingore_flag_stru g_cust_country_code_ignore_flag = {0}; /* 定制化国家码配置 */
 
 oal_bool_enum_uint8 g_en_nv_dp_init_is_null = OAL_TRUE; /* NVRAM中dp init置空标志 */
+uint8_t g_wlan_priv_dbdc_radio_cap = 1; /* 默认支持dbdc */
 
 #ifdef _PRE_WLAN_FEATURE_TAS_ANT_SWITCH
 oal_bool_enum_uint8 g_tas_switch_en[HAL_HOST_MAX_RF_NUM] = {0};

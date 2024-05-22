@@ -38,10 +38,6 @@ extern "C" {
 /* 0.0 定制化变量声明 */
 /* 定制化待设计为一个结构体，并对外提供内联函数访问形态，而不是预编译访问形态 */
 /* 0.1.2 热点入网功能 */
-/* 作为P2P GO 允许关联最大用户数 */
-#define WLAN_P2P_GO_ASSOC_USER_MAX_NUM_DEFAULT WLAN_P2P_GO_ASSOC_USER_MAX_NUM_1103
-
-
 /* 1.0 WLAN芯片对应的spec */
 /* 每个board支持chip的最大个数放入平台 */
 /* 每个chip支持device的最大个数放入平台 */

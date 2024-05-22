@@ -92,6 +92,7 @@ static int f2fs_create_sdp_encryption_context_from_policy(struct inode *inode,
 	int res = 0;
 	struct f2fs_sdp_fscrypt_context sdp_ctx = { 0 };
 	struct f2fs_sb_info *sb = F2FS_I_SB(inode);
+	u8 master_key_descriptor_tmp[FS_KEY_DESCRIPTOR_SIZE];
 
 	if (!policy)
 		return -EINVAL;
@@ -107,10 +108,21 @@ static int f2fs_create_sdp_encryption_context_from_policy(struct inode *inode,
 	if (policy->flags & ~FS_POLICY_FLAGS_VALID)
 		return -EINVAL;
 
-	res = hmfs_check_keyring_by_policy(sb->encryption_ver, inode, policy);
-	if (res)
-		return res;
-
+#ifdef CONFIG_SCSI_UFS_ENHANCED_INLINE_CRYPTO_V3
+	if (S_ISREG(inode->i_mode) && (inode->i_crypt_info) &&
+	    i_size_read(inode)) {
+		pr_err("hmfs_sdp %s: inode(%lu) the file is not null in FBE3, can not set sdp.\n",
+		       __func__, inode->i_ino);
+		return -EINVAL;
+	}
+#endif
+	if (S_ISREG(inode->i_mode)) {
+		memcpy(master_key_descriptor_tmp, policy->master_key_descriptor,
+			FS_KEY_DESCRIPTOR_SIZE);
+		res = hmfs_check_keyring_by_policy(sb->encryption_ver, inode, policy);
+		if (res)
+			return res;
+	}
 	sdp_ctx.format = FS_ENCRYPTION_CONTEXT_FORMAT_V2;
 	memcpy(sdp_ctx.master_key_descriptor, policy->master_key_descriptor,
 					FS_KEY_DESCRIPTOR_SIZE);

@@ -1000,7 +1000,8 @@ void pogopin_otg_status_change_process(uint8_t value)
 		for (times = 0; times < CHECK_TIMES; times++) {
 			/* wait 200ms for pogo otg status stabilize */
 			msleep(POGOPIN_TIME_DELAYE_200MS);
-			if (gpio_get_value(di->typec_int_gpio) == HIGH) {
+			if ((gpio_get_value(di->typec_int_gpio) == HIGH) &&
+				(gpio_get_value(di->pogopin_int_gpio) == HIGH)) {
 				pogopin_event_notify(POGOPIN_OTG_AND_CHG_STOP);
 				break;
 			}

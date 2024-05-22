@@ -11,7 +11,6 @@
 #define WLAN_P2P_GO_ASSOC_USER_MAX_NUM_1103 4
 #endif
 
-
 /* 支持的建立rx ba 的最大个数 */
 #define WLAN_MAX_RX_BA_1103 32
 

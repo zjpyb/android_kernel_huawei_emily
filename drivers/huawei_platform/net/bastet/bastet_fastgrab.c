@@ -37,6 +37,7 @@ struct bst_fg_app_info_stru g_fast_grab_app_info[BST_FG_MAX_APP_NUMBER];
 uid_t g_currnt_acc_uid;
 struct bst_fg_custom_stru g_st_bastet_fg_custom;
 struct bst_fg_hongbao_stru g_st_bastet_fg_hongbao;
+spinlock_t g_fg_lock;
 
 #ifdef CONFIG_CHR_NETLINK_MODULE
 static notify_event *g_notifier = NULL;
@@ -75,6 +76,7 @@ void bst_fg_init(void)
 
 	g_st_bastet_fg_hongbao.uc_congestion_proc_flag = false;
 	g_st_bastet_fg_hongbao.uc_duration_time = 0;
+	spin_lock_init(&g_fg_lock);
 }
 
 /*
@@ -203,26 +205,39 @@ static uint8_t bst_fg_proc_wx_packet_dl(struct sock *pst_sock,
 	if (pst_sock->fg_Spec != BST_FG_WECHAT_PUSH)
 		return 0;
 
+	spin_lock_bh(&g_fg_lock);
 	/* Set the "PUSH"( 0 0 4 ) SIP-Command to be compared object. */
 	pst_kwd_ins = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)
 		->pst_kws[BST_FG_FLAG_WECHAT_PUSH];
 	version = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)->us_version;
-	if (pst_kwd_ins == NULL)
+	if (pst_kwd_ins == NULL) {
+		spin_unlock_bh(&g_fg_lock);
 		return 0;
+	}
+
 	if (is_satisfied_keyword_version(version,
 		pst_kwd_ins->st_key_word.us_min_ver,
 		pst_kwd_ins->st_key_word.us_max_ver))
 		b_found = bst_fg_proc_wx_match_keyword_dl(pst_kwd_ins, p_data, ul_length);
-	if (b_found)
+
+	if (b_found) {
+		spin_unlock_bh(&g_fg_lock);
 		return 1;
+	}
+
 	pst_kwd_ins_new = bst_fg_get_app_ins(BST_FG_IDX_WECHAT)
 		->pst_kws[BST_FG_FLAG_WECHAT_PUSH_NEW];
-	if (pst_kwd_ins_new == NULL)
+	if (pst_kwd_ins_new == NULL) {
+		spin_unlock_bh(&g_fg_lock);
 		return 0;
+	}
+
 	if (is_satisfied_keyword_version(version,
 		pst_kwd_ins_new->st_key_word.us_min_ver,
 		pst_kwd_ins_new->st_key_word.us_max_ver))
 		b_found = bst_fg_proc_wx_match_keyword_dl(pst_kwd_ins_new, p_data, ul_length);
+
+	spin_unlock_bh(&g_fg_lock);
 	if (b_found)
 		return 1;
 	return 0;
@@ -474,6 +489,11 @@ static struct sock *bst_fg_get_sock_by_fd_pid(int fd, int32_t pid)
 		return NULL;
 
 	if (sk->sk_state != TCP_ESTABLISHED) {
+		sock_put(sk);
+		return NULL;
+	}
+
+	if (sk->sk_protocol != IPPROTO_TCP) {
 		sock_put(sk);
 		return NULL;
 	}

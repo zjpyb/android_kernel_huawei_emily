@@ -20,6 +20,10 @@ else ifeq (v818, $(findstring v818,$(TARGET_DEVICE)))
 PLAT_DEFCONFIG_FILE  := plat_1105_$(HI110X_BOARD_VERSION)_defconfig
 HI110X_COMM_DEFCONFIG := hi1105_comm_defconfig
 BUILDIN_FLAG := $(HI110X_DRIVER_BUILTIN_PATH)
+else ifeq (v900, $(findstring v900,$(TARGET_DEVICE)))
+PLAT_DEFCONFIG_FILE  := plat_1105_$(HI110X_BOARD_VERSION)_defconfig
+HI110X_COMM_DEFCONFIG := hi1105_comm_defconfig
+BUILDIN_FLAG := $(HI110X_DRIVER_BUILTIN_PATH)
 endif
 
 BUILDIN_FLAG ?= $(KERNELRELEASE)
@@ -98,6 +102,8 @@ main-objs := plat_main.o
 main-objs := $(addprefix main/,$(main-objs))
 
 pm-objs :=  plat_firmware.o plat_firmware_util.o plat_pm.o  plat_pm_wlan.o plat_cali.o plat_efuse.o platform_common_clk.o
+
+pm-objs += plat_firmware_flash.o
 
 ifeq ($(BFGX_UART_DOWNLOAD_SUPPORT),yes)
 KBUILD_CFLAGS += -DBFGX_UART_DOWNLOAD_SUPPORT
@@ -288,6 +294,9 @@ ifeq (Hi3751, $(findstring Hi3751,$(TARGET_DEVICE)))
 MODULE_PARAM ?= ARCH=arm64 CROSS_COMPILE=aarch64-hisiv610-linux- CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT=yes
 KERNEL_DIR ?= $(LINUX_SRC)
 else ifeq (v818, $(findstring v818,$(TARGET_DEVICE)))
+MODULE_PARAM ?= ARCH=arm64 CROSS_COMPILE=aarch64-hi100-linux- CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT=no
+KERNEL_DIR ?= $(LINUX_SRC)
+else ifeq (v900, $(findstring v900,$(TARGET_DEVICE)))
 MODULE_PARAM ?= ARCH=arm64 CROSS_COMPILE=aarch64-hi100-linux- CONFIG_HI110X_KERNEL_MODULES_BUILD_SUPPORT=no
 KERNEL_DIR ?= $(LINUX_SRC)
 else

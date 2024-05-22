@@ -149,7 +149,7 @@ static inline int acm_hash_add(struct acm_htbl *hash_table,
 	struct hlist_head *hash = hash_table->head;
 
 	if (unlikely(hash_table->nr_nodes > HASHTBL_MAX_SZ - 1)) {
-		pr_err("Failed to add node, acm hash table is full!\n");
+		pr_err_ratelimited("Failed to add node, acm hash table is full!\n");
 		return -ENOSPC;
 	}
 	phead = &hash[elf_hash(hash_node->pkgname)];
@@ -178,7 +178,7 @@ static inline void acm_hash_del(struct acm_htbl *hash_table,
 static inline int acm_dir_list_add(struct list_head *head, struct acm_dnode *node)
 {
 	if (unlikely(acm_dir_list.nr_nodes > ACM_DIR_LIST_MAX - 1)) {
-		pr_err("Failed to add node, acm dir list is full!\n");
+		pr_err_ratelimited("Failed to add node, acm dir list is full!\n");
 		return -ENOSPC;
 	}
 	list_add_tail(&node->lnode, head);
@@ -383,7 +383,7 @@ static int do_cmd_add_dir(unsigned long args)
 		goto add_dir_ret;
 	}
 
-	pr_info("Add a dir: %s\n", dir_node->dir);
+	pr_info("Add a dir: %s\n", fwk_dir->dir);
 
 add_dir_ret:
 	kfree(fwk_dir);
@@ -442,7 +442,7 @@ static int acm_dmd_add(struct list_head *head, struct acm_lnode *node)
 	spin_lock(&acm_dmd_list.spinlock);
 	if (acm_dmd_list.nr_nodes > ACM_DMD_LIST_MAX_NODES - 1) {
 		spin_unlock(&acm_dmd_list.spinlock);
-		pr_err("List was too long! Dropped a pkgname!\n");
+		pr_err_ratelimited("List was too long! Dropped a pkgname!\n");
 		return -ENOSPC;
 	}
 	list_add_tail(&node->lnode, head);
@@ -934,7 +934,7 @@ static void add_cache(struct acm_lnode *node)
 	       sizeof(*node));
 	dmd_cache.cache[dmd_cache.count].nr++;
 	dmd_cache.count++;
-	pr_info("count = %d, nr = %d\n",
+	pr_info_ratelimited("count = %d, nr = %d\n",
 		dmd_cache.count, dmd_cache.cache[dmd_cache.count - 1].nr);
 }
 

@@ -846,7 +846,10 @@ static int sle95250_get_batt_safe_info(struct platform_device *pdev,
 
 	switch (type) {
 	case BATT_CHARGE_CYCLES:
-		*(int *)value = BATT_INVALID_CYCLES;
+		if (di->mem.source != BATTERY_SPARE_PART)
+			*(int *)value = BATT_FREE_LIMIT_CYC + 1;
+		else
+			*(int *)value = 0;
 		break;
 	case BATT_SPARE_PART:
 		ret = sle95250_check_spar_batt(di, &cell_type);

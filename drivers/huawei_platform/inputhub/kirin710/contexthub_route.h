@@ -275,6 +275,8 @@ bool *get_fingersense_data_intrans(void);
 s16 *get_fingersense_data(void);
 unsigned int get_sensor_read_number(enum obj_tag tag);
 t_ap_sensor_ops_record *get_all_ap_sensor_operations(void);
+int get_mag_opened(void);
+
 #ifdef CONFIG_INPUTHUB_20
 extern int ap_hall_report(int value);
 #else /* CONFIG_INPUTHUB_20 = 0 */

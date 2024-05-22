@@ -487,8 +487,10 @@ int dpe_set_clk_rate(struct platform_device *pdev)
 #define PERI_VOLTAGE_LEVEL0_065V		(0) // 0.65v
 #define PERI_VOLTAGE_LEVEL1_075V		(2) // 0.75v
 #define PERI_VOLTAGE_LEVEL2_080V		(3) // 0.80v
-int dpe_get_voltage_value(uint32_t dss_voltage_level)
+int dpe_get_voltage_value(struct dpu_fb_data_type *dpufd, uint32_t dss_voltage_level)
 {
+	void_unused(dpufd);
+
 	switch (dss_voltage_level) {
 	case PERI_VOLTAGE_LEVEL0:
 		return PERI_VOLTAGE_LEVEL0_065V; // 0.65v

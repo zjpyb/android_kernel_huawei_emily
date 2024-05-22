@@ -206,6 +206,37 @@ int dc_ic_get_ic_index_for_ibat(int mode, unsigned int path, unsigned int *index
 	return ic_num;
 }
 
+int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
+{
+	int i;
+	struct dc_ic_mode_para *para = NULL;
+
+	if (!ibat)
+		return -EINVAL;
+
+	para = dc_ic_get_ic_mode_para(mode);
+	if (!para)
+		return -1;
+
+	for (i = 0; i < para->ic_para_size; i++) {
+		if (para->ic_para[i].ic_index == index) {
+			*ibat = para->ic_para[i].max_ibat;
+			break;
+		}
+	}
+
+	return 0;
+}
+
+bool dc_ic_get_ibat_from_coul(int *ibat)
+{
+	if (!ibat || !g_dc_ic_di || !g_dc_ic_di->use_coul_ibat)
+		return false;
+
+	*ibat = (0 - power_platform_get_battery_current());
+	return true;
+}
+
 bool dc_ic_get_vbat_from_coul(int *vbat)
 {
 	if (!vbat || !g_dc_ic_di || !g_dc_ic_di->use_coul_vbat)
@@ -239,6 +270,14 @@ static int dc_ic_parse_ic_para(struct device_node *np, struct dc_ic_dev *di, int
 		col = row * DC_IC_INFO_TOTAL + DC_IC_INFO_VBAT_POINT;
 		di->mode_para[index].ic_para[row].vbat_sample_point = idata[col];
 	}
+	for (row = 0; row < di->mode_para[index].ic_para_size; row++)
+		hwlog_info("%s[%d]=%d %d %d %d %d\n", str, row,
+			di->mode_para[index].ic_para[row].ic_index,
+			di->mode_para[index].ic_para[row].path_index,
+			di->mode_para[index].ic_para[row].max_ibat,
+			di->mode_para[index].ic_para[row].ibat_sample_point,
+			di->mode_para[index].ic_para[row].vbat_sample_point);
+
 	return 0;
 }
 
@@ -309,6 +348,8 @@ static void dc_ic_parse_dts(struct device_node *np, struct dc_ic_dev *di)
 		return;
 
 	di->para_flag = true;
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"use_coul_ibat", &di->use_coul_ibat, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"use_coul_vbat", &di->use_coul_vbat, 0);
 }

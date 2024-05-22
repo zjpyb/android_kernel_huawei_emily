@@ -140,8 +140,7 @@ static void sion_test(struct ion_secsg_heap *secsg_heap,
 			return;
 		}
 
-		ret = secmem_tee_init(secsg_heap->context,
-			secsg_heap->session, TEE_SECMEM_NAME);
+		ret = sec_tee_init(&secsg_heap->context, &secsg_heap->session, ION_SESSIONS_TEST);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			kfree(secsg_heap->context);
@@ -631,8 +630,7 @@ static int ion_secsg_heap_allocate(struct ion_heap *heap,
 	/* init the TA conversion here */
 	if (__secsg_type_filer(secsg_heap->heap_attr, buffer->flags) &&
 		!secsg_heap->ta_init) {
-		ret = secmem_tee_init(secsg_heap->context,
-			secsg_heap->session, TEE_SECMEM_NAME);
+		ret = sec_tee_init(&secsg_heap->context, &secsg_heap->session, ION_SESSIONS_SECMEM);
 		if (ret) {
 			pr_err("[%s] TA init failed\n", __func__);
 			goto out;
@@ -881,16 +879,6 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 	if (ret)
 		goto free_heap;
 
-	if (__secsg_type_filer(secsg_heap->heap_attr, ION_FLAG_SECURE_BUFFER)) {
-		secsg_heap->context = kzalloc(sizeof(TEEC_Context), GFP_KERNEL);
-		if (!secsg_heap->context)
-			goto free_heap;
-
-		secsg_heap->session = kzalloc(sizeof(TEEC_Session), GFP_KERNEL);
-		if (!secsg_heap->session)
-			goto free_context;
-	}
-
 	secsg_heap->ta_init = 0;
 
 	pr_err("secsg heap info %s:\n"
@@ -914,9 +902,6 @@ struct ion_heap *ion_secsg_heap_create(struct ion_platform_heap *heap_data)
 
 	return &secsg_heap->heap;
 
-free_context:
-	if (secsg_heap->context)
-		kfree(secsg_heap->context);
 free_heap:
 	kfree(secsg_heap);
 	return ERR_PTR(-ENOMEM);

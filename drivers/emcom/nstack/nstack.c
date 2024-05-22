@@ -19,6 +19,12 @@ void nstack_event_process(int32_t event, uint8_t *pdata, uint16_t len)
 	switch (event) {
 #ifdef CONFIG_HW_NSTACK_FI
 	case NETLINK_EMCOM_DK_NSTACK_FI_CFG:
+		if (pdata == NULL || len < sizeof(struct fi_cfg_head) ||
+		    ((struct fi_cfg_head *)pdata)->len != len) {
+			emcom_loge("nstack received unsupported message, length: %u, expect: %zu",
+				len, sizeof(struct fi_cfg_head));
+			return;
+		}
 		fi_cfg_process((struct fi_cfg_head *)pdata);
 	break;
 #endif

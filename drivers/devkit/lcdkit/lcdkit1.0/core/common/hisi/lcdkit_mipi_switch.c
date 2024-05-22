@@ -181,7 +181,7 @@ int i2c_switch_ap(void)
 int get_i2c_switch_value(void)
 {
 	LCDKIT_INFO("get_i2c_switch_value i2c_irq_value=%d\n", g_display_switch->i2c_irq_value);
-	return g_display_switch->i2c_irq_value;
+	return i2c_switch_ap();
 }
 
 static int init_ts_gpio(struct platform_device *pdev)

@@ -96,10 +96,15 @@ void handle_speed_test_status(struct req_msg_head *msg)
 	}
 }
 
-void app_acc_process(struct req_msg_head *msg)
+void app_acc_process(struct req_msg_head *msg, u32 len)
 {
 	if (!msg)
 		return;
+
+	if (msg->len != len) {
+		pr_err("app_accelerator msg len error!!! left = %d, right = %d", msg->len, len);
+		return;
+	}
 
 	pr_info("[APP_ACC] type :%d", msg->type);
 	if (msg->type == APP_ACCELARTER_CMD) {

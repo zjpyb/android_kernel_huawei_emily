@@ -63,6 +63,16 @@ static int dwc3_usb20_phy_init(struct chip_dwc3_device *chip_dwc3, unsigned int 
 static int dwc3_usb20_phy_shutdown(struct chip_dwc3_device *chip_dwc,
 		unsigned int combophy_flag, unsigned int keep_power);
 
+void chip_usb_set_hifi_ip_first(int flag)
+{
+	struct chip_dwc3_device *chip_dwc3 = chip_dwc3_dev;
+
+	if (!chip_dwc3)
+		return;
+
+	chip_dwc3->hifi_ip_first = flag;
+}
+
 bool chip_usb_state_is_host(void)
 {
 	struct chip_dwc3_device *chip_dwc3 = chip_dwc3_dev;

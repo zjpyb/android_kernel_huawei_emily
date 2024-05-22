@@ -854,6 +854,7 @@ struct Scsi_Host {
 #ifdef CONFIG_SCSI_UFS_UNISTORE
 	bool unistore_enable;
 	unsigned int mas_sec_size;
+	unsigned int mas_pu_size;
 	int vcmd_set;
 #endif
 
@@ -1049,5 +1050,9 @@ static inline unsigned char scsi_host_get_guard(struct Scsi_Host *shost)
 extern struct Scsi_Host *scsi_register(struct scsi_host_template *, int);
 extern void scsi_unregister(struct Scsi_Host *);
 extern int scsi_host_set_state(struct Scsi_Host *, enum scsi_host_state);
+
+#ifdef CONFIG_SCSI_UFS_UNISTORE
+bool scsi_unistore_is_datamove(struct scsi_cmnd *scmd);
+#endif
 
 #endif /* _SCSI_SCSI_HOST_H */
